@@ -2,8 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { buildParsedRecords } from './build';
+import { fixtureFileHashes } from './content';
+import { syntheticMarkers } from './guards';
 import { PARSERS, RuleImportError, compareConversionFactorPasses } from './parsers';
-import type { ImportWindow, ImportableType, ParseOutcome, RuleFileParser } from './parsers/types';
+import type { ImportWindow, ImportableType, ParseOptions, ParseOutcome, RuleFileParser } from './parsers/types';
 import { REVIEW_SUFFIX, decodeSourceText, serializeRecords, sha256 } from './records';
 import { isIsoDate } from './schema';
 
@@ -23,7 +25,10 @@ export interface ImportRequest {
   readonly file: string;
   /** The second, independent preparation of a hand-made file (required for conversion_factor). */
   readonly secondPass?: string;
-  readonly url?: string | null;
+  /** Where the file was downloaded from (required: content cites public documents by address). */
+  readonly url: string;
+  /** Column choices for a layout with more than one candidate (the GPCI work floor). */
+  readonly parseOptions?: ParseOptions;
   readonly title?: string;
   /** When the file was downloaded (YYYY-MM-DD). */
   readonly retrieved: string;
@@ -72,7 +77,20 @@ interface ReadFile {
   readonly outcome: ParseOutcome;
 }
 
-function readAndParse(file: string, parser: RuleFileParser, importWindow: ImportWindow): ReadFile {
+interface ReadContext {
+  readonly parser: RuleFileParser;
+  readonly window: ImportWindow;
+  readonly options: ParseOptions;
+  /** SHA-256 to path of every file under fixtures/. */
+  readonly fixtures: ReadonlyMap<string, string>;
+}
+
+/**
+ * Reads and parses one file, refusing a SYNTHETIC fixture however it arrives: a banner on its
+ * first line, the same bytes as any file under fixtures/ (renamed or not), or a row carrying a
+ * reserved SYNTHETIC identifier (carrier 99999, state ZZ, ZIP 000xx).
+ */
+function readAndParse(file: string, context: ReadContext): ReadFile {
   const name = path.basename(file);
   if (!SOURCE_NAME.test(name)) {
     throw new RuleImportError(`rename ${JSON.stringify(name)} to letters, digits, dots, dashes and underscores before importing; it becomes a repository path`);
@@ -82,7 +100,19 @@ function readAndParse(file: string, parser: RuleFileParser, importWindow: Import
   if (/SYNTHETIC/.test(text.split('\n', 1)[0] ?? '')) {
     throw new RuleImportError(`${name} says SYNTHETIC on its first line: synthetic fixtures are never imported as content`);
   }
-  return { name, bytes, sha256: sha256(bytes), outcome: parser.parse(text, importWindow) };
+  const hash = sha256(bytes);
+  const copyOf = context.fixtures.get(hash);
+  if (copyOf !== undefined) {
+    throw new RuleImportError(`${name} has the same bytes as ${copyOf}: synthetic fixtures are never imported as content`);
+  }
+  const outcome = context.parser.parse(text, context.window, context.options);
+  for (const row of outcome.rows) {
+    const markers = syntheticMarkers(row.key, row.value);
+    if (markers.length > 0) {
+      throw new RuleImportError(`${name} ${row.locator}: ${markers.join('; ')}; synthetic fixtures are never imported as content`);
+    }
+  }
+  return { name, bytes, sha256: hash, outcome };
 }
 
 /** Copies a source into content/sources/<type>/ with a <name>.sha256 beside it; never replaces a different file. */
@@ -103,12 +133,12 @@ function storeSource(root: string, type: ImportableType, file: ReadFile): string
   return relative;
 }
 
-function reviewText(parser: RuleFileParser, details: { draft: string; records: number; source: string; sha256: string; retrieved: string; url: string | null; notes: readonly string[] }): string {
+function reviewText(parser: RuleFileParser, details: { draft: string; records: number; source: string; sha256: string; retrieved: string; url: string; notes: readonly string[] }): string {
   const lines = [
     `# Review: ${parser.title}`,
     '',
     `- Draft: \`${details.draft}\` (${String(details.records)} records, verification L1)`,
-    `- Source: \`${details.source}\`, SHA-256 \`${details.sha256}\`, retrieved ${details.retrieved}${details.url === null ? '' : ` from ${details.url}`}`,
+    `- Source: \`${details.source}\`, SHA-256 \`${details.sha256}\`, retrieved ${details.retrieved} from ${details.url}`,
     '',
   ];
   if (details.notes.length > 0) {
@@ -135,8 +165,12 @@ export function importRuleFile(request: ImportRequest): ImportResult {
     throw new RuleImportError(`--second-pass applies only to conversion_factor; ${request.type} is loaded from the published file`);
   }
 
-  const first = readAndParse(request.file, parser, importWindow);
-  const second = request.secondPass === undefined ? undefined : readAndParse(request.secondPass, parser, importWindow);
+  if (!/^https?:\/\/\S+$/.test(request.url)) {
+    throw new RuleImportError('--url must be the http(s) address the file was downloaded from');
+  }
+  const context: ReadContext = { parser, window: importWindow, options: request.parseOptions ?? {}, fixtures: fixtureFileHashes(request.root) };
+  const first = readAndParse(request.file, context);
+  const second = request.secondPass === undefined ? undefined : readAndParse(request.secondPass, context);
   if (second !== undefined) {
     const differences = compareConversionFactorPasses(first.outcome.rows, second.outcome.rows);
     if (differences.length > 0) {
@@ -145,7 +179,7 @@ export function importRuleFile(request: ImportRequest): ImportResult {
   }
 
   const sourcePath = path.posix.join('content', 'sources', request.type, first.name);
-  const url = request.url ?? null;
+  const { url } = request;
   const records = buildParsedRecords({
     parser,
     rows: first.outcome.rows,

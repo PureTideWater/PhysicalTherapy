@@ -121,13 +121,28 @@ export function findHeader(rows: readonly Row[], isHeader: (row: Row) => boolean
   return index;
 }
 
-/** The column whose normalized label matches `pattern`, or -1. */
-export function findColumn(labels: readonly string[], pattern: RegExp): number {
-  return labels.findIndex((label) => pattern.test(label));
+/** Every column whose normalized label matches `pattern`, in order. */
+export function matchingColumns(labels: readonly string[], pattern: RegExp): number[] {
+  return labels.flatMap((label, column) => (pattern.test(label) ? [column] : []));
 }
 
+/**
+ * The one column whose normalized label matches `pattern`, or -1 when none does. When more than
+ * one heading matches, the parser cannot know which the layout means, so it refuses instead of
+ * taking the first: a wrong column would put the wrong numbers in every record.
+ */
+export function findColumn(labels: readonly string[], pattern: RegExp, name: string = pattern.source, line?: number): number {
+  const columns = matchingColumns(labels, pattern);
+  if (columns.length > 1) {
+    const where = line === undefined ? '' : `line ${String(line)}: `;
+    throw new RuleImportError(`${where}more than one column could be the ${name}: ${columns.map((column) => JSON.stringify(labels[column] ?? '')).join(', ')}; the parser does not guess between them`);
+  }
+  return columns[0] ?? -1;
+}
+
+/** The one column matching `pattern`; refuses a file with none or with several. */
 export function requireColumn(labels: readonly string[], pattern: RegExp, name: string, line: number): number {
-  const column = findColumn(labels, pattern);
+  const column = findColumn(labels, pattern, name, line);
   if (column === -1) {
     throw new RuleImportError(`line ${String(line)}: no ${name} column among the headers ${JSON.stringify(labels)}`);
   }

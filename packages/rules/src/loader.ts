@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { readRelease } from './content';
-import { RELEASE_NOTES_FILE } from './manifest';
-import { findOverlaps, recordLabel, recordSha256 } from './records';
+import { FIRST_SYNTHETIC_RELEASE, RELEASE_NOTES_FILE, isSyntheticReleaseNumber } from './manifest';
+import { type Located, findOverlaps, recordLabel, recordSha256 } from './records';
 import type { RuleRecord } from './schema';
 
 /**
@@ -18,6 +18,20 @@ export interface SqlClient {
 
 export class ReleaseLoadError extends Error {
   override readonly name = 'ReleaseLoadError';
+}
+
+export interface LoadOptions {
+  /**
+   * The release number the caller asked for. The manifest must name it, or nothing is written: a
+   * release row is permanent once committed, so the number is checked before the transaction opens.
+   */
+  readonly release: number;
+  /**
+   * Test only. Lets a SYNTHETIC fixture release (invented values, verification L1, numbered from
+   * 900000) load into a scratch test database. Only the database tests built on
+   * withScratchDatabase pass it; the release commands never do.
+   */
+  readonly allowSyntheticFixtureForTests?: boolean;
 }
 
 export interface LoadResult {
@@ -69,18 +83,52 @@ function releaseNotes(dir: string): string {
   }
 }
 
+/** Why a release may not load under these options; empty when it may. */
+export function loadRefusals(releaseNo: number, records: readonly Located<RuleRecord>[], options: LoadOptions): string[] {
+  const problems: string[] = [];
+  if (releaseNo !== options.release) {
+    problems.push(`MANIFEST.json names release ${String(releaseNo)}, not ${String(options.release)}`);
+  }
+  const synthetic = records.filter(({ record }) => record.source.synthetic);
+  const unverified = records.filter(({ record }) => record.verification.level === 'L1');
+  if (options.allowSyntheticFixtureForTests === true) {
+    if (!isSyntheticReleaseNumber(releaseNo)) {
+      problems.push(`a SYNTHETIC fixture release is numbered from ${String(FIRST_SYNTHETIC_RELEASE)}; release ${String(releaseNo)} is a real release number`);
+    }
+    const real = records.filter(({ record }) => !record.source.synthetic);
+    problems.push(...real.slice(0, 5).map(({ record, where }) => `${where}: ${recordLabel(record)} is not synthetic; a fixture release holds only SYNTHETIC records`));
+    return problems;
+  }
+  if (isSyntheticReleaseNumber(releaseNo)) {
+    problems.push(`release numbers from ${String(FIRST_SYNTHETIC_RELEASE)} are reserved for SYNTHETIC fixture releases, which load only into scratch test databases`);
+  }
+  problems.push(
+    ...synthetic.slice(0, 5).map(({ record, where }) => `${where}: ${recordLabel(record)} is SYNTHETIC; invented values never load as rule content`),
+    ...unverified.slice(0, 5).map(({ record, where }) => `${where}: ${recordLabel(record)} is at verification L1; a release loads only records verified to L2 or L3`),
+  );
+  if (synthetic.length > 5 || unverified.length > 5) {
+    problems.push(`(${String(synthetic.length)} synthetic and ${String(unverified.length)} L1 record(s) in all)`);
+  }
+  return problems;
+}
+
 /**
- * Verifies the release (manifest, every record against the schema, no overlapping windows), then in
+ * Verifies the release (manifest, every record against the schema, no overlapping windows, the
+ * release number asked for, and every record verified to L2 or higher and not synthetic), then in
  * one transaction inserts the release, its records, and marks it published. From then on the
  * database refuses any change to either table's rows for that release. Loading the same release
- * again is a no-op; loading a different release under a number already loaded is refused.
+ * again is a no-op; loading a different release under a number already loaded is refused. Nothing
+ * is written when any check fails.
  */
-export async function loadRelease(client: SqlClient, dir: string): Promise<LoadResult> {
+export async function loadRelease(client: SqlClient, dir: string, options: LoadOptions): Promise<LoadResult> {
   const release = readRelease(dir);
   const problems = [
     ...release.problems,
     ...findOverlaps(release.records).map(({ first, second }) => `${second.where}: ${recordLabel(second.record)} overlaps ${first.where}`),
   ];
+  if (release.problems.length === 0) {
+    problems.push(...loadRefusals(release.manifest.release, release.records, options));
+  }
   if (problems.length > 0) {
     throw new ReleaseLoadError([`the release in ${dir} is not loadable:`, ...problems.slice(0, 20).map((line) => `  ${line}`)].join('\n'));
   }

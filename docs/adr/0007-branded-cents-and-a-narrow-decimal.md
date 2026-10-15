@@ -19,10 +19,14 @@ a second rounding could reach a money path without a compile error. ESLint catch
 - `Cents` is a branded `bigint`. It is built only by `cents(bigint)`, the parsers (`parseAmount` for dollar
   text, `parseCents` for the JSON integer string) and the arithmetic helpers. `cents()` also refuses a number at
   runtime, for values that arrive through a cast.
-- `Decimal` is our own interface over a decimal.js clone (40 significant digits, exponent notation off). Its
-  operands are `Decimal` only, it has no `toNumber`, and it has no rounding method. `decimal(text | bigint |
-  Decimal)` builds one and refuses anything else, including exponent and leading-point text; `rate()` adds the
-  numeric(14,6) shape check.
+- `Decimal` is our own interface over a small wrapper around decimal.js (exponent notation off). Sums,
+  differences and products are exact: they run in a decimal.js clone at its maximum precision (a billion
+  significant digits), so no intermediate value loses a digit and a line can only be rounded where
+  `roundToCents` rounds it. Division is the one inexact operation: a quotient that does not terminate stops at
+  40 significant digits (`QUOTIENT_DIGITS`); dividing by 100 for a percentage terminates and is exact. Its
+  operands are `Decimal` only, checked at compile time and at runtime; it has no `toNumber` and no rounding
+  method. `decimal(text | bigint | Decimal)` builds one and refuses anything else, including exponent and
+  leading-point text; `rate()` adds the numeric(14,6) shape check.
 - `UnroundedCents` is a branded `Decimal` produced by `multiplyCents`, `addUnrounded`, `sumUnrounded` and
   `unroundedFromDollars`. `roundToCents(UnroundedCents, rule)` is the one function from unrounded to `Cents`;
   passing `Cents` (already rounded) or a bare `Decimal` does not compile. `roundOnce` returns the cents with the
@@ -36,7 +40,8 @@ a second rounding could reach a money path without a compile error. ESLint catch
 | Option | Why not |
 | --- | --- |
 | Keep exporting the decimal.js constructor and rely on lint | Lint sees literals, not a number that flows in from elsewhere; `toNumber()` and `toDecimalPlaces()` stay one call away |
-| A full wrapper class around decimal.js | A second object per value and a reimplementation of every method; the cast to a narrower interface costs nothing at runtime and gives the same compile-time guarantee |
+| A cast of one 40-digit decimal.js clone to the narrow interface (this ADR's first version) | decimal.js rounds sums and products at the clone's precision too, so a term below the 40th digit next to a half could be rounded twice (0.5 minus 10^-41 rounded to 1 cent, not 0); a cast cannot route division to a second clone |
+| One clone at maximum precision for everything | A non-terminating quotient would compute a billion digits |
 | Plain `bigint` cents with naming conventions | A unit count or an ID is also a bigint; the brand makes "this was parsed or computed as money" a type |
 
 ## Consequences
@@ -45,7 +50,10 @@ a second rounding could reach a money path without a compile error. ESLint catch
   grep for `roundToCents` to find every rounding step.
 - Code outside the money packages that needs a decimal goes through `decimal()`; there is no `new Decimal`.
 - `Decimal.dividedBy` rounds non-terminating quotients at 40 significant digits, far below a cent; dividing by
-  100 for a percentage is exact.
+  100 for a percentage is exact. A test holds the double-rounding case above, and the product of eight
+  eight-digit rates, to their exact values.
+- The wrapper costs one small object per operation; the pricing performance target (100,000 lines in two
+  minutes) is measured when the engine lands.
 
 ## Revisit when
 

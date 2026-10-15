@@ -13,12 +13,14 @@ import { assembleRelease } from './assemble';
 import { ReleaseToolError, parseReleaseNumber } from './commands';
 import { dryRun } from './dry-run';
 import { diffRecords, impactLines, releaseDirectory } from './impact';
+import { loadDirectoryRefusal } from './load-directory';
 import { SYNTHETIC_RELEASE_DIR, renderSyntheticRelease } from './synthetic';
 
 let root = '';
 
-const SOURCE_TEXT = 'SYNTHETIC: the KX threshold is $1,111 for PT and SLP combined.\n';
-const SOURCE_PATH = 'content/sources/plan/rules.md';
+const SOURCE_TEXT = 'The KX threshold is $1,111 for PT and SLP combined, with review at $1,333.\n';
+const SOURCE_PATH = 'content/sources/therapy_threshold/rules.md';
+const SOURCE_URL = 'https://example.invalid/rules';
 
 function write(file: string, text: string): void {
   mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -28,8 +30,8 @@ function write(file: string, text: string): void {
 function draft(level: 'L1' | 'L2' | 'L3', overrides: Partial<RuleRecord> = {}): RuleRecord {
   return exampleRecord('therapy_threshold', {
     source: {
-      title: 'Plan rules reference',
-      url: null,
+      title: 'Therapy rules page',
+      url: SOURCE_URL,
       path: SOURCE_PATH,
       retrieved: '2026-10-15',
       sha256: sha256(SOURCE_TEXT),
@@ -40,7 +42,7 @@ function draft(level: 'L1' | 'L2' | 'L3', overrides: Partial<RuleRecord> = {}): 
       synthetic: false,
     },
     verification: { level, by: level === 'L1' ? 'pnpm verify-content' : 'A. Reviewer', on: '2026-10-20', questions: [] },
-    quotes: ['$1,111 for PT and SLP combined'],
+    quotes: ['$1,111 for PT and SLP combined, with review at $1,333'],
     ...overrides,
   });
 }
@@ -69,10 +71,32 @@ afterEach(() => {
 });
 
 describe('release:assemble', () => {
-  it('refuses L1 drafts and writes nothing', () => {
+  it('assembles only the drafts at L2 or higher and lists the rest in RELEASE.md', () => {
     writeDrafts([draft('L2'), draft('L1', { key: { discipline: 'OT' } })]);
+    writeDrafts([draft('L1', { effective_from: '2027-01-01', effective_to: '2027-12-31' })], 'therapy_threshold/2027/records');
+    const result = assembleRelease({ root, release: 1, today: '2026-10-21' });
+    expect(result).toMatchObject({
+      records: 1,
+      excluded: 2,
+      files: ['RELEASE.md', 'therapy_threshold/2026/records.json', 'therapy_threshold/2026/records.second-pass.json', 'MANIFEST.json'],
+    });
+    const dir = path.join(root, result.dir);
+    expect(JSON.parse(readFileSync(path.join(dir, 'therapy_threshold/2026/records.json'), 'utf8'))).toEqual([draft('L2')]);
+    const second = JSON.parse(readFileSync(path.join(dir, 'therapy_threshold/2026/records.second-pass.json'), 'utf8')) as { transcribed_by: string; records: { key: unknown }[] };
+    expect(second).toMatchObject({ transcribed_by: 'second', records: [{ key: { discipline: 'PT_SLP' } }] });
+    const notes = readFileSync(path.join(dir, 'RELEASE.md'), 'utf8');
+    expect(notes).toContain('## Drafts not in this release');
+    expect(notes).toContain('2 draft record(s) stay in content/drafts until they are verified to L2:');
+    expect(notes).toContain('- `content/drafts/therapy_threshold/2026/records.json` (`therapy_threshold`): 1 at verification L1');
+    expect(notes).toContain('- `content/drafts/therapy_threshold/2027/records.json` (`therapy_threshold`): 1 at verification L1');
+    expect(checkContent(root).problems).toEqual([]);
+    expect(existsSync(path.join(root, 'content/drafts/therapy_threshold/2027/records.json'))).toBe(true);
+  });
+
+  it('refuses when no draft is verified to L2, writing nothing', () => {
+    writeDrafts([draft('L1'), draft('L1', { key: { discipline: 'OT' } })]);
     expect(() => assembleRelease({ root, release: 1, today: '2026-10-21' })).toThrow(
-      /release 1 not assembled: 1 draft record\(s\) are not verified to L2[\s\S]*therapy_threshold\/2026\/records.json record 2: verification L1 \(therapy_threshold\)/,
+      'release 1 not assembled: none of the 2 draft record(s) is verified to L2 or higher; verify them against their sources first',
     );
     expect(existsSync(path.join(root, 'content/outgoing/1'))).toBe(false);
   });
@@ -89,9 +113,10 @@ describe('release:assemble', () => {
     expect(readFileSync(path.join(dir, 'therapy_threshold/2026/records.json'), 'utf8')).toBe(readFileSync(path.join(root, 'content/drafts/therapy_threshold/2026/records.json'), 'utf8'));
     const notes = readFileSync(path.join(dir, 'RELEASE.md'), 'utf8');
     expect(notes).toContain('# Content release 1');
-    expect(notes).toContain('Prepared 2026-10-21 by `pnpm release:assemble 1` from content/drafts.');
+    expect(notes).toContain('Prepared 2026-10-21 by `pnpm release:assemble 1` from the drafts in content/drafts verified to L2 or higher.');
     expect(notes).toContain('| `therapy_threshold` | 2 | 2026-01-01 | 2026-12-31 | L2 |');
-    expect(notes).toContain(`| Plan rules reference | \`${SOURCE_PATH}\` | none | 2026-10-15 | \`${sha256(SOURCE_TEXT)}\` |`);
+    expect(notes).toContain(`| Therapy rules page | \`${SOURCE_PATH}\` | ${SOURCE_URL} | 2026-10-15 | \`${sha256(SOURCE_TEXT)}\` |`);
+    expect(notes).toContain('Every draft in content/drafts is in this release.');
     expect(notes).toContain('- L2 by A. Reviewer on 2026-10-20: `therapy_threshold`');
     expect(notes).toContain('Release 1 is the first release: every record is new.');
     expect(notes).toContain("No pricing runs exist yet (pricing runs arrive with the engine in milestones 5 and 7), so no run's lines would change.");
@@ -135,7 +160,7 @@ describe('release:dry-run', () => {
   it('lists what changed against the previous release', () => {
     writeDrafts([draft('L2'), draft('L2', { key: { discipline: 'OT' } })]);
     assembleRelease({ root, release: 1, today: '2026-10-21' });
-    writeDrafts([draft('L2', { value: { kx_threshold_cents: '111100', medical_review_threshold_cents: '133301' } })]);
+    writeDrafts([draft('L2', { effective_to: '2026-06-30' })]);
     assembleRelease({ root, release: 2, today: '2026-10-22' });
     expect(dryRun(root, 2).slice(0, 3)).toEqual(['release:dry-run 2: 1 records.', 'Against release 1:', '- therapy_threshold: 0 added, 1 removed, 1 changed']);
     expect(readFileSync(path.join(root, 'content/outgoing/2/RELEASE.md'), 'utf8')).toContain('- therapy_threshold: 0 added, 1 removed, 1 changed');
@@ -190,8 +215,31 @@ describe('parseReleaseNumber', () => {
     ['1.5', undefined],
     ['x', undefined],
     [undefined, undefined],
+    ['899999', 899999],
+    ['900000', undefined],
+    ['900001', undefined],
+    ['1000000', undefined],
   ])('reads %j as %j', (text, expected) => {
     expect(parseReleaseNumber(text)).toBe(expected);
+  });
+});
+
+describe('release:load directories', () => {
+  it('refuses fixture releases, and nothing else', () => {
+    expect(loadDirectoryRefusal(repositoryRoot, path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR))).toMatch(/is a SYNTHETIC fixture release/);
+    expect(loadDirectoryRefusal(repositoryRoot, path.join(repositoryRoot, 'fixtures'))).toMatch(/SYNTHETIC fixture release/);
+    expect(loadDirectoryRefusal(repositoryRoot, path.join(repositoryRoot, 'content/releases/1'))).toBeUndefined();
+    expect(loadDirectoryRefusal(repositoryRoot, path.join(repositoryRoot, 'fixtures-elsewhere/1'))).toBeUndefined();
+  });
+
+  it('stops pnpm release:load before it connects to any database', () => {
+    const result = spawnSync('pnpm', ['-s', 'release:load', String(1), '--dir', SYNTHETIC_RELEASE_DIR], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      env: { ...process.env, DATABASE_URL: 'postgres://nobody:nothing@127.0.0.1:9/none', INIT_CWD: repositoryRoot },
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('is a SYNTHETIC fixture release; fixtures load only into scratch test databases');
   });
 });
 

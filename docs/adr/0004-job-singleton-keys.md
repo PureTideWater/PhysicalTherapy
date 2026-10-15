@@ -41,3 +41,9 @@ alert (JOB-02; section 10: "parsed at most three times"). A key of only practice
   lock in its handler.
 - pg-boss installs and migrates its own `pgboss` schema on start. The application role owns nothing, so
   milestone 1 decides which role owns that schema and how its migrations run before the worker starts.
+- Open for the founder (raised with the milestone 0 review): the plan says a failed job "retries three times"
+  (section 5 J11, section 6, section 8: "Three retries, then alert") but also that a document is "parsed at most
+  three times" (section 10) and that JOB-02 alerts after "three failures". This ADR reads three attempts in all.
+  The data dictionary's job table also names `singleton_key` and `idempotency_key` separately; this ADR folds the
+  idempotency subject into the singleton key. Either reading can change in milestone 1, when the job tables and
+  the alert arrive, without touching anything that exists now.

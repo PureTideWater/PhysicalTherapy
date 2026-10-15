@@ -1,3 +1,4 @@
+import { containsNumber } from '../records';
 import { RuleImportError, cell, dateCell, decimalCell, findHeader, isBlankRow, normalizeLabel, parseDelimited } from './delimited';
 import type { ImportWindow, ParseOutcome, ParsedRow, RuleFileParser } from './types';
 
@@ -45,8 +46,8 @@ function parse(text: string, window: ImportWindow): ParseOutcome {
     if (citation === '' || quote === '') {
       throw new RuleImportError(`${where}: the citation and the final rule's quote are required`);
     }
-    if (!quote.includes(factor)) {
-      throw new RuleImportError(`${where}: the quote does not contain the factor ${factor} as typed`);
+    if (!containsNumber(quote, factor)) {
+      throw new RuleImportError(`${where}: the quote does not contain the factor ${factor} as typed, as a number of its own`);
     }
     parsed.push({
       key: { applicability },

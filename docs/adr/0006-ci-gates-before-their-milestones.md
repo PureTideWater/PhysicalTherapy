@@ -24,7 +24,10 @@ later milestones. A placeholder that always passes would let real work land unga
   authorization helpers will live.
 - **`pnpm cdk:diff`** asks STS for the caller identity (one attempt, ten-second timeout). With working
   credentials it runs `cdk diff tp-staging`; otherwise it synthesizes every stack and prints that the diff
-  against staging needs credentials, so the step proves the CDK app synthesizes on every pull request.
+  against staging needs credentials, so the step proves the CDK app synthesizes on every pull request. On GitHub
+  Actions that note is a `::warning::` annotation, so every pull request shows that no diff ran. ci.yml gives the
+  job no AWS credentials, so today the gate never diffs; it becomes a real diff in milestone 1, when the stacks
+  get resources and a read-only OIDC role in the staging (synthetic-data) account is added for pull requests.
 - **`pnpm test:e2e`** builds the web app and serves the standalone `server.js` the container runs, then runs
   the Playwright smoke test. It uses Playwright's Chromium where installed (`PLAYWRIGHT_BROWSERS_PATH`) and the
   runner's Google Chrome (`channel: 'chrome'`) where not, so CI downloads no browser.

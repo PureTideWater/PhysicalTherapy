@@ -31,6 +31,8 @@ const BODIES: { [T in RuleRecordType]: Pick<Extract<RuleRecord, { record_type: T
       pctc_indicator: '0',
       global_days: 'XXX',
       multiple_procedure_indicator: '5',
+      year: 2026,
+      quarter: 'A',
     },
   },
   pfs_gpci: {
@@ -41,7 +43,7 @@ const BODIES: { [T in RuleRecordType]: Pick<Extract<RuleRecord, { record_type: T
   mppr_rate: { key: { component: 'practice_expense' }, value: { reduction_percent: '40', applies_to: 'SYNTHETIC second and later units' } },
   therapy_threshold: { key: { discipline: 'PT_SLP' }, value: { kx_threshold_cents: '111100', medical_review_threshold_cents: '133300' } },
   assistant_modifier: { key: { modifier: 'CQ' }, value: { payment_percent: '77' } },
-  sequestration: { key: { program: 'medicare' }, value: { reduction_percent: '3', applies_to: 'SYNTHETIC payment after the beneficiary share' } },
+  sequestration: { key: { program: 'medicare' }, value: { reduction_percent: '3', applies_to: 'SYNTHETIC payment after the beneficiary share', suspended: false } },
   ncci_ptp: {
     key: { column1: '97140', column2: '97530' },
     value: { modifier_indicator: '1', rationale: 'SYNTHETIC rationale', in_existence_prior_to_1996: false },

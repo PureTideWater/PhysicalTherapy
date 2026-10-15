@@ -16,10 +16,10 @@ function parse(text: string, window: ImportWindow): ParseOutcome {
   const columns = {
     code: requireColumn(labels, /^CODE$/, 'code', header.line),
     description: requireColumn(labels, /DESCRIPTION/, 'description', header.line),
-    start: findColumn(labels, /START/),
-    modified: findColumn(labels, /MODIFIED/),
-    stop: findColumn(labels, /STOP|DEACTIVAT/),
-    notes: findColumn(labels, /NOTE/),
+    start: findColumn(labels, /START/, 'start date', header.line),
+    modified: findColumn(labels, /MODIFIED/, 'last modified date', header.line),
+    stop: findColumn(labels, /STOP|DEACTIVAT/, 'stop date', header.line),
+    notes: findColumn(labels, /NOTE/, 'notes', header.line),
   };
   const optionalDate = (row: Row, column: number, name: string) => (column === -1 ? null : dateCell(row, column, name));
   const seen = new Set<string>();

@@ -2,8 +2,6 @@ import path from 'node:path';
 
 import type { NextConfig } from 'next';
 
-import { headerRules } from './src/lib/security-headers';
-
 const monorepoRoot = path.resolve(import.meta.dirname, '../..');
 
 const config: NextConfig = {
@@ -26,7 +24,6 @@ const config: NextConfig = {
     '@tp/triage',
     '@tp/ui',
   ],
-  headers: () => Promise.resolve(headerRules(process.env.NODE_ENV === 'development')),
 };
 
 export default config;

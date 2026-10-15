@@ -121,9 +121,13 @@ describe('PPRRVU (pfs_rvu)', () => {
     expect(byKey(rows).get('G0283|')?.value).toMatchObject({ facility_pe_na: true, multiple_procedure_indicator: '5' });
   });
 
-  it('takes the window it is given', () => {
-    const { rows } = parse('pfs_rvu', text, { year: 2026, effectiveFrom: '2026-04-01', effectiveTo: null });
-    expect(rows[0]).toMatchObject({ effective_from: '2026-04-01', effective_to: null });
+  it('takes the window it is given, and records the year and quarter it starts in', () => {
+    expect(parse('pfs_rvu', text).rows[0]?.value).toMatchObject({ year: 2026, quarter: 'A' });
+    const { rows, notes } = parse('pfs_rvu', text, { year: 2026, effectiveFrom: '2026-04-01', effectiveTo: null });
+    expect(rows[0]).toMatchObject({ effective_from: '2026-04-01', effective_to: null, value: { year: 2026, quarter: 'B' } });
+    expect(notes).toEqual(['fee schedule year 2026, quarter B (from the window starting 2026-04-01)']);
+    expect(parse('pfs_rvu', text, { year: 2026, effectiveFrom: '2026-10-01', effectiveTo: '2026-12-31' }).rows[0]?.value).toMatchObject({ quarter: 'D' });
+    expect(() => parse('pfs_rvu', text, { year: 2026, effectiveFrom: '2025-10-01', effectiveTo: null })).toThrow(/--effective-from 2025-10-01 is not in 2026/);
   });
 
   it('reads headings written on one row too', () => {
@@ -176,9 +180,50 @@ describe('GPCI (pfs_gpci)', () => {
         effective_to: '2026-12-31',
         quote: '99999,ZZ,01,SYNTHETIC LOCALITY ONE,1.000,0.950,0.650',
         locator: 'line 3',
+        note: 'work GPCI read from the column headed "2026 PW GPCI (with 1.0 Floor)"',
       },
     ]);
-    expect(outcome.notes).toEqual(['notes after the table (from line 4) were not read as localities']);
+    expect(outcome.notes).toEqual([
+      'work GPCI read from the column headed "2026 PW GPCI (with 1.0 Floor)"',
+      'notes after the table (from line 4) were not read as localities',
+    ]);
+  });
+
+  describe('a file with the work GPCI with and without the 1.0 floor', () => {
+    const both = [
+      'Medicare Administrative Contractor (MAC),State,Locality Number,Locality Name,2026 PW GPCI (without 1.0 Floor),2026 PW GPCI (with 1.0 Floor),2026 PE GPCI,2026 MP GPCI',
+      '99999,ZZ,01,TEST,0.900,1.000,0.950,0.650',
+      '',
+    ].join('\n');
+
+    it('refuses to choose, naming both headings', () => {
+      expect(() => parse('pfs_gpci', both)).toThrow(
+        /more than one work GPCI column \("2026 PW GPCI \(WITHOUT 1.0 FLOOR\)", "2026 PW GPCI \(WITH 1.0 FLOOR\)"\); say which applies with --gpci-floor with or --gpci-floor without/,
+      );
+    });
+
+    it('reads the column chosen, and records its heading', () => {
+      const without = PARSERS.pfs_gpci.parse(both, YEAR, { gpciWorkFloor: 'without' }).rows[0];
+      expect(without).toMatchObject({ value: { work_gpci: '0.900' }, note: 'work GPCI read from the column headed "2026 PW GPCI (without 1.0 Floor)"' });
+      const withFloor = PARSERS.pfs_gpci.parse(both, YEAR, { gpciWorkFloor: 'with' }).rows[0];
+      expect(withFloor).toMatchObject({ value: { work_gpci: '1.000' }, note: 'work GPCI read from the column headed "2026 PW GPCI (with 1.0 Floor)"' });
+    });
+
+    it('refuses a choice the only work column contradicts', () => {
+      expect(() => PARSERS.pfs_gpci.parse(text, YEAR, { gpciWorkFloor: 'without' })).toThrow(/--gpci-floor without was given, but the only work GPCI column is headed/);
+      expect(PARSERS.pfs_gpci.parse(text, YEAR, { gpciWorkFloor: 'with' }).rows[0]?.value.work_gpci).toBe('1.000');
+    });
+
+    it('refuses a choice no column matches', () => {
+      const twoWithout = both.replace('(with 1.0 Floor)', '(without 1.0 Floor, revised)');
+      expect(() => PARSERS.pfs_gpci.parse(twoWithout, YEAR, { gpciWorkFloor: 'with' })).toThrow(/no single work GPCI column is with the 1.0 floor/);
+    });
+  });
+
+  it('refuses any other heading that matches more than one column', () => {
+    expect(() => parse('pfs_gpci', text.replace('2026 MP GPCI', '2026 MP GPCI,MALPRACTICE NOTE'))).toThrow(
+      /more than one column could be the malpractice GPCI: "2026 MP GPCI", "MALPRACTICE NOTE"; the parser does not guess/,
+    );
   });
 
   it('pads a one-digit locality', () => {
@@ -259,6 +304,8 @@ describe('conversion factors', () => {
     ['other headings', first.replace('citation,quote', 'source,quote'), /the headings must be exactly/],
     ['an unknown applicability', first.replace('non_qualifying_apm,', 'everyone,'), /applicability "everyone"/],
     ['a factor missing from its quote', first.replace('is $20.0000', 'is $20.00'), /the quote does not contain the factor 20.0000/],
+    ['a factor found only inside a longer number', first.replace('20.0000,2026', '0.0000,2026'), /the quote does not contain the factor 0.0000 as typed, as a number of its own/],
+    ['a truncated factor', first.replace('20.0000,2026', '20.00,2026'), /the quote does not contain the factor 20.00 as typed/],
     ['a start in another year', first.replace('20.0000,2026-01-01', '20.0000,2025-01-01'), /effective_from 2025-01-01 is not in 2026/],
     ['no start', first.replace('20.0000,2026-01-01', '20.0000,'), /effective_from is required/],
     ['no citation', first.replace('SYNTHETIC final rule page 1,"SYNTHETIC: the conversion factor for clinicians', ',"SYNTHETIC: the conversion factor for clinicians'), /citation and the final rule's quote are required/],
@@ -287,6 +334,22 @@ describe('therapy MPPR rate file (mppr_rate)', () => {
     expect(outcome.rows.map((row) => row.value)).toEqual([{ pe_reduction_percent: null }, { pe_reduction_percent: null }]);
     expect(outcome.notes).toEqual([]);
     expect(parse('mppr_rate', 'CPT,REDUCTION %\n97110,50%\n97112,\n').rows.map((row) => row.value.pe_reduction_percent)).toEqual(['50', null]);
+  });
+
+  it('never reads a money column as the reduction share', () => {
+    const amounts = parse('mppr_rate', 'HCPCS,MOD,LOCALITY,REDUCED NON-FACILITY PE AMOUNT\n97110,,01,23.45\n');
+    expect(amounts.rows[0]?.value).toEqual({ pe_reduction_percent: null });
+    for (const heading of ['REDUCED PRICE PERCENT', 'PAYMENT %', 'FEE SHARE', 'DOLLAR PERCENT', 'PE REDUCTION $ %']) {
+      expect(parse('mppr_rate', `HCPCS,${heading}\n97110,23.45\n`).rows[0]?.value, heading).toEqual({ pe_reduction_percent: null });
+    }
+    expect(parse('mppr_rate', 'HCPCS,REDUCED PRICE,PE REDUCTION PERCENT\n97110,23.45,50\n').rows[0]?.value).toEqual({ pe_reduction_percent: '50' });
+    expect(parse('mppr_rate', 'HCPCS,PE SHARE\n97110,50\n').rows[0]?.value).toEqual({ pe_reduction_percent: '50' });
+  });
+
+  it('refuses two candidate share columns', () => {
+    expect(() => parse('mppr_rate', 'HCPCS,PE REDUCTION PERCENT,PE SHARE\n97110,50,50\n')).toThrow(
+      /line 1: more than one column could be the practice-expense reduction share: "PE REDUCTION PERCENT", "PE SHARE"/,
+    );
   });
 
   it.each([

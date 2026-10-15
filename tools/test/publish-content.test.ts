@@ -111,6 +111,38 @@ describe('publish-content.sh', () => {
     expect(publish()).toMatchObject({ status: 1, stderr: expect.stringContaining('not a numbered release') as string });
   });
 
+  it('refuses a release holding records below L2 or marked synthetic, publishing nothing', () => {
+    const record = (level: string, synthetic = false) => ({
+      record_type: 'therapy_threshold',
+      key: { discipline: 'PT_SLP' },
+      verification: { level },
+      source: { synthetic },
+    });
+    prepare('6', {
+      'RELEASE.md': '# 6\n',
+      'therapy_threshold/2026/records.json': JSON.stringify([record('L2'), record('L1')]),
+      'therapy_threshold/2026/records.second-pass.json': JSON.stringify({ records: [] }),
+    });
+    commitAll('an L1 record');
+    const result = publish();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('content/outgoing/6 holds records below L2 or marked synthetic');
+    expect(result.stderr).toContain('therapy_threshold {"discipline":"PT_SLP"} L1');
+    expect(existsSync(path.join(repo, 'content/releases'))).toBe(false);
+    expect(git('tag', '--list')).toBe('');
+
+    rmSync(path.join(repo, 'content/outgoing/6'), { recursive: true });
+    prepare('6', { 'RELEASE.md': '# 6\n', 'therapy_threshold/2026/records.json': JSON.stringify([record('L3', true)]) });
+    commitAll('a synthetic record');
+    expect(publish()).toMatchObject({ status: 1, stderr: expect.stringContaining('L3 SYNTHETIC') as string });
+  });
+
+  it('refuses a number reserved for SYNTHETIC fixture releases', () => {
+    prepare('900001', { 'RELEASE.md': '# synthetic\n' });
+    commitAll('synthetic number');
+    expect(publish()).toMatchObject({ status: 1, stderr: expect.stringContaining('reserved for SYNTHETIC fixture releases') as string });
+  });
+
   it('refuses a release number that is already tagged', () => {
     git('tag', '-a', 'content-release-5', '-m', 'existing');
     prepare('5', { 'RELEASE.md': '# 5\n' });

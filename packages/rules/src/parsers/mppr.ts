@@ -5,15 +5,17 @@ import type { ParseOutcome, ParsedRow, RuleFileParser } from './types';
  * The CMS therapy MPPR rate file: the codes subject to the multiple procedure payment reduction
  * for "always therapy" services. The parser reads the code column (headed HCPCS or CPT) and, when
  * the file has them, a modifier column and a practice-expense reduction share column (headed with
- * REDUCTION, PERCENT or %). Other columns, such as reduced amounts per locality, are not read: the
- * engine computes the reduction from the RVU and GPCI records and the reduction percentage.
+ * PERCENT, SHARE, PCT or %). Columns of money (headed AMOUNT, PRICE, PAYMENT, FEE or $), such as
+ * reduced amounts per locality, are never read as a share: the engine computes the reduction from
+ * the RVU and GPCI records and the reduction percentage. Two candidate share columns are refused.
  *
  * A file with one row per code and locality repeats each code; repeats are folded into one record
  * per code and modifier, and must agree on the share.
  */
 const CODE = /\bHCPCS\b|\bCPT\b/;
 const MODIFIER = /^MOD/;
-const REDUCTION = /REDUC|PERCENT|%/;
+/** A share or percentage heading that does not name a money amount. */
+const REDUCTION = /^(?!.*(?:AMOUNT|PRICE|PAYMENT|FEE|DOLLAR|\$)).*(?:PERCENT|SHARE|\bPCT\b|%)/;
 
 function reductionShare(row: Row, column: number): string | null {
   if (column === -1) {
@@ -35,9 +37,9 @@ function parse(text: string, window: { effectiveFrom: string; effectiveTo: strin
   const header = rows[at] as Row;
   const labels = header.cells.map(normalizeLabel);
   const columns = {
-    code: findColumn(labels, CODE),
-    modifier: findColumn(labels, MODIFIER),
-    reduction: findColumn(labels, REDUCTION),
+    code: findColumn(labels, CODE, 'HCPCS or CPT code', header.line),
+    modifier: findColumn(labels, MODIFIER, 'modifier', header.line),
+    reduction: findColumn(labels, REDUCTION, 'practice-expense reduction share', header.line),
   };
   const byCode = new Map<string, ParsedRow>();
   let repeats = 0;

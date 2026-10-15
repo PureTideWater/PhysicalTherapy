@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DENIAL_CATEGORIES,
+  MIN_QUOTE_LENGTH,
   RULE_RECORD_TYPES,
   VERIFICATION_LEVELS,
+  cmsQuarterOf,
   isIsoDate,
   isRepositoryPath,
   isRuleRecordType,
@@ -86,11 +88,30 @@ describe('the envelope', () => {
 
   it('requires at least one quote, a verification level and a calendar date', () => {
     expect(issuesOf(exampleRecord('carc', { quotes: [] }))).toEqual(['quotes: must quote the source at least once']);
-    expect(issuesOf(exampleRecord('carc', { quotes: [''] }))).toEqual(['quotes.0: must not be empty']);
+    expect(issuesOf(exampleRecord('carc', { quotes: [''] }))).toEqual([
+      'quotes.0: must quote at least 8 characters of the source',
+      'quotes.0: must quote words or numbers, not only spaces and punctuation',
+    ]);
     expect(issuesOf(exampleRecord('carc', { verification: { level: 'L4', by: 'x', on: '2026-10-15', questions: [] } as never }))).toEqual([
       expect.stringContaining('verification.level'),
     ]);
     expect(issuesOf(exampleRecord('carc', { effective_from: '2026-13-01' }))).toEqual([expect.stringContaining('effective_from')]);
+  });
+
+  it('refuses a quote that is blank, punctuation or shorter than eight characters, ignoring surrounding spaces', () => {
+    expect(issuesOf(exampleRecord('carc', { quotes: ['    abc    '] }))).toEqual(['quotes.0: must quote at least 8 characters of the source']);
+    expect(issuesOf(exampleRecord('carc', { quotes: ['--------'] }))).toEqual(['quotes.0: must quote words or numbers, not only spaces and punctuation']);
+    expect(issuesOf(exampleRecord('carc', { quotes: ['  $2,480 for PT  '] }))).toEqual([]);
+    expect(MIN_QUOTE_LENGTH).toBe(8);
+  });
+
+  it('requires the source URL on a real record at L2 or above, and on no other', () => {
+    const real = { ...EXAMPLE_SOURCE, synthetic: false, title: 'A public page', path: 'content/sources/carc/x.csv' };
+    const l2 = { level: 'L2' as const, by: 'A. Reviewer', on: '2026-10-20', questions: [] };
+    expect(issuesOf(exampleRecord('carc', { source: real, verification: l2 }))).toEqual([expect.stringContaining('source.url: must name where the source was downloaded from')]);
+    expect(issuesOf(exampleRecord('carc', { source: { ...real, url: 'https://example.invalid/x.csv' }, verification: l2 }))).toEqual([]);
+    expect(issuesOf(exampleRecord('carc', { source: real }))).toEqual([]);
+    expect(issuesOf(exampleRecord('carc', { verification: l2 }))).toEqual([]);
   });
 
   it('refuses an effective window that ends before it starts', () => {
@@ -147,7 +168,8 @@ describe('ranges on numeric fields', () => {
     expect(issuesOf(withValue('pfs_gpci', { work_gpci: '0.0001', pe_gpci: '5' }))).toEqual([]);
     expect(issuesOf(withValue('therapy_threshold', { kx_threshold_cents: '1', medical_review_threshold_cents: '10000000' }))).toEqual([]);
     expect(issuesOf(withValue('assistant_modifier', { payment_percent: '100' }))).toEqual([]);
-    expect(issuesOf(withValue('sequestration', { reduction_percent: '0' }))).toEqual([]);
+    expect(issuesOf(withValue('sequestration', { reduction_percent: '0', suspended: true }))).toEqual([]);
+    expect(issuesOf(withValue('sequestration', { reduction_percent: '0.0001' }))).toEqual([]);
     expect(issuesOf(withValue('ncci_mue', { mue: 0 }))).toEqual([]);
     expect(issuesOf(withValue('dispute_window', { length: 120, unit: 'months' }))).toEqual([]);
     expect(issuesOf(withValue('dispute_window', { length: 3650, unit: 'days' }))).toEqual([]);
@@ -158,6 +180,29 @@ describe('ranges on numeric fields', () => {
     expect(issuesOf(exampleRecord('pfs_rvu', { key: { hcpcs: '97110', modifier: 'G' } }))).toEqual([expect.stringContaining('key.modifier')]);
     expect(issuesOf(exampleRecord('locality_map', { key: { zip: '123' } }))).toEqual([expect.stringContaining('key.zip')]);
     expect(issuesOf(exampleRecord('assistant_modifier', { key: { modifier: 'GP' } as never }))).toEqual([expect.stringContaining('key.modifier')]);
+  });
+});
+
+describe('sequestration suspensions', () => {
+  it('reduce by exactly 0, while a reduction in force is above 0', () => {
+    expect(issuesOf(withValue('sequestration', { reduction_percent: '0', suspended: false }))).toEqual([expect.stringContaining('a suspension reduces by 0')]);
+    expect(issuesOf(withValue('sequestration', { reduction_percent: '2', suspended: true }))).toEqual([expect.stringContaining('a suspension reduces by 0')]);
+    expect(issuesOf(withValue('sequestration', { reduction_percent: '0.00', suspended: true }))).toEqual([]);
+  });
+});
+
+describe('the fee schedule year and quarter of an RVU record', () => {
+  it('match the start of its window', () => {
+    expect(cmsQuarterOf('2026-01-01')).toBe('A');
+    expect(cmsQuarterOf('2026-04-01')).toBe('B');
+    expect(cmsQuarterOf('2026-09-30')).toBe('C');
+    expect(cmsQuarterOf('2026-10-01')).toBe('D');
+    expect(issuesOf(exampleRecord('pfs_rvu', { effective_from: '2026-04-01', effective_to: null }))).toEqual([
+      'value.quarter: must match effective_from 2026-04-01 (year 2026, quarter B)',
+    ]);
+    expect(issuesOf(withValue('pfs_rvu', { year: 2025 }))).toEqual(['value.quarter: must match effective_from 2026-01-01 (year 2026, quarter A)']);
+    expect(issuesOf(withValue('pfs_rvu', { quarter: 'E' }))).toEqual([expect.stringContaining('value.quarter')]);
+    expect(issuesOf({ ...exampleRecord('pfs_rvu', { effective_from: '2026-07-01', effective_to: null }), value: { ...exampleRecord('pfs_rvu').value, quarter: 'C' } })).toEqual([]);
   });
 });
 

@@ -12,7 +12,7 @@
       "retrieved": "2026-10-15",
       "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
       "method": "hand_typed",
-      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_by": "milestone 0 part B build session",
       "transcribed_on": "2026-10-15",
       "locator": "Therapy-specific Medicare rules table, row \"Timely filing\" (line 29)",
       "synthetic": false
@@ -22,6 +22,7 @@
       "by": "pnpm verify-content",
       "on": "2026-10-15",
       "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
         "Read the CMS timely filing rule: must a Medicare claim be filed within 12 months of the date of service? Store the CMS page or regulation under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
         "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."
       ]
@@ -44,7 +45,7 @@
       "retrieved": "2026-10-15",
       "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
       "method": "hand_typed",
-      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_by": "milestone 0 part B build session",
       "transcribed_on": "2026-10-15",
       "locator": "Therapy-specific Medicare rules table, row \"Redetermination and reconsideration\" (line 30)",
       "synthetic": false
@@ -54,6 +55,7 @@
       "by": "pnpm verify-content",
       "on": "2026-10-15",
       "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
         "Read the CMS appeals guidance: is a redetermination requested within 120 days? Store it under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
         "From what event do the 120 days run? The rules reference does not say, so measured_from is null; set it from the source (the engine computes windows from remittance dates, PRD section 11, step 8).",
         "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."
@@ -78,7 +80,7 @@
       "retrieved": "2026-10-15",
       "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
       "method": "hand_typed",
-      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_by": "milestone 0 part B build session",
       "transcribed_on": "2026-10-15",
       "locator": "Therapy-specific Medicare rules table, row \"Redetermination and reconsideration\" (line 30)",
       "synthetic": false
@@ -88,6 +90,7 @@
       "by": "pnpm verify-content",
       "on": "2026-10-15",
       "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
         "Read the CMS appeals guidance: is a reconsideration requested within 180 days? Store it under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
         "From what event do the 180 days run? The rules reference does not say, so measured_from is null; set it from the source (the engine computes windows from remittance dates, PRD section 11, step 8).",
         "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."

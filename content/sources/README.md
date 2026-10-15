@@ -15,8 +15,10 @@ NCCI tables, the X12 external code lists (CARC, RARC, claim status) and state pr
 - Quotes in a record must appear verbatim in the stored source text; the content checker verifies it.
 - Public documents only. The purchased X12 implementation guide is licensed, not public: its text is never
   committed here or anywhere else in the repository.
-- No PHI, no contract, no remittance, ever. Synthetic files never come here (`rules:import` refuses a file
-  that says SYNTHETIC on its first line); they live in `fixtures/synthetic/cms/`.
+- No PHI, no contract, no remittance, ever. Synthetic files never come here; they live in
+  `fixtures/synthetic/cms/`. `rules:import` refuses a file that says SYNTHETIC on its first line, has the same
+  bytes as any file under `fixtures/`, or carries a reserved SYNTHETIC identifier (carrier 99999, state ZZ,
+  ZIP codes 00000 to 00099); `pnpm verify-content` refuses the same in any stored source or record here.
 
 ## What is here now
 
@@ -25,9 +27,18 @@ NCCI tables, the X12 external code lists (CARC, RARC, claim status) and state pr
 | `plan/rules-reference.md` | A byte-for-byte copy of `docs/product/rules-reference.md` (the plan's Rules reference tab as of 2026-10-14), with `rules-reference.md.sha256` | The hand-typed release 1 drafts (thresholds, assistant modifiers, sequestration, the MPPR percentage, Medicare windows, North Carolina prompt pay), at L1 |
 
 The plan's rules reference is the only source this environment could reach: cms.gov, x12.org and ncdoi.gov
-are blocked here. It is a secondary source. Each hand-typed draft names, in its notes and L2 questions, the
-primary page to read and store in its place (the CMS therapy services page, the CY 2026 final rule, the NCDOI
-prompt-pay page and G.S. 58-3-225).
+are blocked here. It is a secondary source, so the checker keeps every record citing `content/sources/plan/` at
+L1: none of them can enter a release. Each hand-typed draft names, in its notes and L2 questions, the primary
+page to read and store in its place (the CMS therapy services page, the CY 2026 final rule, the NCDOI
+prompt-pay page and G.S. 58-3-225). Both transcriptions of those drafts were typed by the same build session,
+so neither is an independent second pass; the checker refuses L2 while both name the same transcriber.
+
+## Milestone 0 status: open
+
+Milestone 0's done check ("release 1 loads into an empty database") is not met. None of the ten files below
+is in the repository, so there is no parsed draft, no record at L2, no `content/outgoing/1` and no
+`content/releases/1`. The only release that has ever loaded is the SYNTHETIC test fixture
+(`fixtures/synthetic/rules/release-synth-900001`), into scratch test databases. The steps below finish it.
 
 ## Release 1: the files a person must download
 
@@ -38,13 +49,16 @@ page has moved, search cms.gov or x12.org for the title given. File names inside
 release to release; the commands use example names.
 
 Download each file to your machine (never into the repository by hand), rename it to letters, digits, dots,
-dashes and underscores if needed, and run the command from the repository root. `--url` records where it came
-from; `--retrieved` defaults to today.
+dashes and underscores if needed, and run the command from the repository root. `--url` (required) records
+where it came from; `--retrieved` defaults to today. The parsers were written without the published layout
+documents, so the first real import of each file checks its layout: a parser refuses a file whose headings it
+does not recognize, or where more than one heading could be the column it needs, and names the headings; fix
+the parser in a pull request rather than editing the file.
 
 | # | Record type | What to download | From | Command |
 | --- | --- | --- | --- | --- |
 | 1 | `pfs_rvu` | The January 2026 relative value file zip (RVU26A); inside it, the PPRRVU file in CSV form | CMS, "PFS Relative Value Files" (https://www.cms.gov/medicare/payment/fee-schedules/physician/pfs-relative-value-files) | `pnpm rules:import --type pfs_rvu --year 2026 --file PPRRVU26_JAN.csv --url <page>` |
-| 2 | `pfs_gpci` | The GPCI file from the same zip (CSV) | Same RVU26A zip | `pnpm rules:import --type pfs_gpci --year 2026 --file GPCI2026.csv --url <page>` |
+| 2 | `pfs_gpci` | The GPCI file from the same zip (CSV). If it carries the work GPCI both with and without the 1.0 floor, say which Medicare applies in 2026 with `--gpci-floor with` or `--gpci-floor without` (from the final rule); every record names the heading it was read from | Same RVU26A zip | `pnpm rules:import --type pfs_gpci --year 2026 --file GPCI2026.csv --url <page> [--gpci-floor with\|without]` |
 | 3 | `locality_map` | The ZIP code to carrier locality file for the current quarter; inside it, the fixed-width `ZIP5_<month><year>.txt` | CMS, "Zip Code to Carrier Locality File" (physician fee schedule pages on cms.gov) | `pnpm rules:import --type locality_map --year 2026 --file ZIP5_OCT2026.txt --url <page>` |
 | 4 | `conversion_factor` | Nothing to download as a table: read the two CY 2026 conversion factors (qualifying APM participants and everyone else) in the CY 2026 physician fee schedule final rule, and prepare the CSV below **twice**, independently | The final rule in the Federal Register (https://www.federalregister.gov), and the RVU26A zip's documentation | `pnpm rules:import --type conversion_factor --year 2026 --file cf-2026-a.csv --second-pass cf-2026-b.csv --url <Federal Register URL>` |
 | 5 | `mppr_rate` | The therapy MPPR rate file (last updated February 24, 2026 to add 97026) | CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services) | `pnpm rules:import --type mppr_rate --year 2026 --file MPPR_THERAPY_2026.csv --url <page>` |
@@ -65,7 +79,9 @@ qualifying_apm,<factor>,2026-01-01,2026-12-31,<FR volume and page>,"<the final r
 ```
 
 Effective windows: files with no dates of their own (RVU, GPCI, ZIP, MPPR, MUE) take the calendar year unless
-`--effective-from` and `--effective-to` (or `open`) say otherwise. A quarterly update is a new file with its own
+`--effective-from` and `--effective-to` (or `open`) say otherwise. RVU records also carry the fee schedule year
+and the CMS quarter (A January, B April, C July, D October), taken from the window's start: import RVU26B with
+`--effective-from 2026-04-01`. A quarterly update is a new file with its own
 window; re-import the previous quarter's file with `--effective-to` set to the day before, or the checker
 refuses the overlap. NCCI PTP edits and code lists carry their own start and stop dates. Each NCCI quarter and
 each code-list export is complete, so remove the previous one's draft before importing the next.
@@ -81,10 +97,12 @@ before committing it; the plan does not yet say whether only therapy code pairs 
    draft's `<file>.review.md`.
 2. Replace the plan-sourced drafts with primary sources: store the CMS therapy services page (or the final rule),
    the sequestration notice, the Medicare appeals guidance, and G.S. 58-3-225 with the NCDOI page under
-   `content/sources/<type>/`; re-cite each hand-typed draft in `content/drafts/` to them, with quotes from the
-   stored files; fill in what the plan leaves open (the North Carolina interest rate, the windows' starting
-   events, sequestration's dates); and have a second person redo each `records.second-pass.json` from the
-   stored source.
+   `content/sources/<type>/` with their `.sha256`; re-cite each hand-typed draft in `content/drafts/` to them
+   (`source.path`, `source.sha256`, and `source.url`, which a record at L2 must have), with quotes from the
+   stored files that state each value; fill in what the plan leaves open (the North Carolina interest rate,
+   the windows' starting events, sequestration's dates and any suspension, as its own record with
+   `suspended: true`); and have a second person redo each `records.second-pass.json` from the stored source,
+   under their own name.
 3. Run `pnpm verify-content` until it passes.
 4. Verify to L2: a person reads every draft against its stored source, answers its questions, and sets
    `verification` on each record to level L2 with their name and the date. For a parsed draft, after reading
@@ -97,7 +115,9 @@ before committing it; the plan does not yet say whether only therapy code pairs 
      && mv /tmp/draft.json content/drafts/pfs_rvu/2026/PPRRVU26_JAN.json
    ```
 
-5. `pnpm release:assemble 1` (refuses while any draft is still L1), then `pnpm verify-content` and
+5. `pnpm release:assemble 1` (it takes the drafts at L2 or higher and lists any left at L1 in RELEASE.md, under
+   "Drafts not in this release"; release 1 should leave none out), then `pnpm verify-content` and
    `pnpm release:dry-run 1`.
-6. Open a pull request titled "content: release 1" with the dry-run output; review and merge it. CI publishes
-   `content/outgoing/1` to `content/releases/1` and tags `content-release-1`; `pnpm release:load 1` loads it.
+6. Open a pull request titled "content: release 1" with the dry-run output; review and merge it. CI runs the
+   checker again, publishes `content/outgoing/1` to `content/releases/1` and tags `content-release-1`.
+7. On an empty database: `pnpm db:migrate` then `pnpm release:load 1`. That is milestone 0's done check.

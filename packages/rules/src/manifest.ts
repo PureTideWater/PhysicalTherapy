@@ -11,6 +11,18 @@ import { isRepositoryPath, sha256Hex } from './schema';
 export const MANIFEST_FILE = 'MANIFEST.json';
 export const RELEASE_NOTES_FILE = 'RELEASE.md';
 
+/**
+ * Release numbers are split in two ranges so a test fixture can never take a real release's number:
+ * real content releases are 1 to 899999; SYNTHETIC fixture releases (fixtures/synthetic/rules) are
+ * 900000 and above. The content checker, the release commands and the loader all enforce it.
+ */
+export const FIRST_SYNTHETIC_RELEASE = 900_000;
+
+/** True for a number in the range reserved for SYNTHETIC fixture releases. */
+export function isSyntheticReleaseNumber(release: number): boolean {
+  return release >= FIRST_SYNTHETIC_RELEASE;
+}
+
 export const manifestSchema = z.strictObject({
   release: z.number().int().positive(),
   files: z

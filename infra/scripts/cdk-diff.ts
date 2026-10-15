@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 import { awsCredentialsAvailable, planCdkDiff } from '../lib/cdk-diff-plan';
 
-const plan = planCdkDiff(await awsCredentialsAvailable());
+const plan = planCdkDiff(await awsCredentialsAvailable(), process.env.GITHUB_ACTIONS === 'true');
 const result = spawnSync('cdk', plan.args, {
   stdio: 'inherit',
   env: { ...process.env, CDK_DISABLE_CLI_TELEMETRY: 'true' },

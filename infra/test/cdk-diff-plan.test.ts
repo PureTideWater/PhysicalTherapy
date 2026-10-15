@@ -10,7 +10,14 @@ describe('planCdkDiff', () => {
   it('synthesizes every stack and says why when they do not', () => {
     const plan = planCdkDiff(false);
     expect(plan.args).toEqual(['synth', '--quiet', '--no-notices']);
-    expect(plan.note).toMatch(/diff against staging \(tp-staging\) needs credentials/);
+    expect(plan.note).toMatch(/^cdk:diff: no usable AWS credentials.*diff against staging \(tp-staging\) needs credentials/);
+  });
+
+  it('raises a GitHub warning annotation when the diff could not run in CI', () => {
+    const plan = planCdkDiff(false, true);
+    expect(plan.args).toEqual(['synth', '--quiet', '--no-notices']);
+    expect(plan.note).toMatch(/^::warning title=cdk:diff did not diff::no usable AWS credentials/);
+    expect(planCdkDiff(true, true).note).toBeUndefined();
   });
 });
 

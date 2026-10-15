@@ -1,19 +1,31 @@
 import { copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MANIFEST_FILE, RELEASE_NOTES_FILE, type RuleRecord, buildManifest, compareText, secondPassPathFor, serializeManifest, sha256 } from '@tp/rules';
-import { fileSha256, isRecordFile, listContentFiles, readRecordFile } from '@tp/rules/content';
+import {
+  MANIFEST_FILE,
+  RELEASE_NOTES_FILE,
+  type RuleRecord,
+  buildManifest,
+  compareText,
+  recordLabel,
+  secondPassPathFor,
+  serializeManifest,
+  serializeRecords,
+  sha256,
+} from '@tp/rules';
+import { fileSha256, isRecordFile, listContentFiles, readRecordFile, readSecondPassFile } from '@tp/rules/content';
 
 import { checkContentSet, contentSetAt } from '../verify-content/check';
 import { ReleaseToolError } from './commands';
 import { impactLines } from './impact';
 
 /**
- * `pnpm release:assemble <n>` (the load-release skill, steps 1 and 2): copies the drafts into
- * content/outgoing/<n>/ with RELEASE.md and MANIFEST.json. A release is a complete snapshot that
- * pricing runs pin, so it is all or nothing: the drafts must pass the content checker, and if any
- * record is still at L1 (or lacks a source hash) nothing is assembled. content/releases is never
- * written here; CI publishes on merge.
+ * `pnpm release:assemble <n>` (the load-release skill, steps 1 and 2): lists the drafts at L2 or
+ * higher, refuses any record without a source hash, and copies them into content/outgoing/<n>/ with
+ * RELEASE.md and MANIFEST.json. The drafts must pass the content checker first. Drafts still at L1
+ * stay in content/drafts and RELEASE.md lists them under "Drafts not in this release", so a reader
+ * sees what the release leaves out; the dry-run's diff shows any record type it drops against the
+ * release before. content/releases is never written here; CI publishes on merge.
  */
 
 const DRAFTS = 'content/drafts';
@@ -28,7 +40,16 @@ export interface AssembleResult {
   readonly dir: string;
   readonly files: readonly string[];
   readonly records: number;
+  /** Draft records left out because they are below L2 or lack a source hash. */
+  readonly excluded: number;
   readonly manifestSha256: string;
+}
+
+/** A draft record left out of the release, and why. */
+export interface ExcludedDraft {
+  readonly where: string;
+  readonly recordType: string;
+  readonly reason: string;
 }
 
 interface ReleaseNotesInput {
@@ -37,6 +58,32 @@ interface ReleaseNotesInput {
   readonly summary: string;
   readonly records: readonly RuleRecord[];
   readonly impact: readonly string[];
+  /** Drafts left out (assembled releases only; fixture releases leave nothing out). */
+  readonly excluded?: readonly ExcludedDraft[];
+}
+
+/** One line per draft file with records left out: how many, of which type, and why. */
+function excludedLines(excluded: readonly ExcludedDraft[]): string[] {
+  if (excluded.length === 0) {
+    return ['Every draft in content/drafts is in this release.'];
+  }
+  const byFile = new Map<string, { recordType: string; reasons: Map<string, number> }>();
+  for (const draft of excluded) {
+    const file = draft.where.replace(/ record \d+$/, '');
+    const entry = byFile.get(file) ?? { recordType: draft.recordType, reasons: new Map<string, number>() };
+    entry.reasons.set(draft.reason, (entry.reasons.get(draft.reason) ?? 0) + 1);
+    byFile.set(file, entry);
+  }
+  return [
+    `${String(excluded.length)} draft record(s) stay in content/drafts until they are verified to L2:`,
+    '',
+    ...[...byFile.entries()]
+      .sort(([a], [b]) => compareText(a, b))
+      .map(([file, entry]) => {
+        const reasons = [...entry.reasons.entries()].map(([reason, count]) => `${String(count)} ${reason}`).join(', ');
+        return `- \`content/drafts/${file}\` (\`${entry.recordType}\`): ${reasons}`;
+      }),
+  ];
 }
 
 function cellText(text: string): string {
@@ -101,6 +148,7 @@ export function releaseNotes(input: ReleaseNotesInput): string {
     '',
     ...verifierLines,
     '',
+    ...(input.excluded === undefined ? [] : ['## Drafts not in this release', '', ...excludedLines(input.excluded), '']),
     '## Impact on existing runs',
     '',
     ...input.impact,
@@ -140,61 +188,83 @@ export function assembleRelease(request: AssembleRequest): AssembleResult {
     .map((file) => file.path)
     .filter(isRecordFile);
   const records: RuleRecord[] = [];
-  const refused: string[] = [];
+  const excluded: ExcludedDraft[] = [];
+  /** Per record file: the records it contributes, and whether that is all of them. */
+  const selections = new Map<string, { included: RuleRecord[]; complete: boolean }>();
   for (const file of recordFiles) {
     const contents = readRecordFile(path.join(draftsDir, file), file);
+    const included: RuleRecord[] = [];
     for (const { record, where } of contents.records) {
       if (record.verification.level === 'L1') {
-        refused.push(`${where}: verification L1 (${record.record_type})`);
+        excluded.push({ where, recordType: record.record_type, reason: 'at verification L1' });
       } else if (!/^[0-9a-f]{64}$/.test(record.source.sha256)) {
-        refused.push(`${where}: no source hash`);
+        excluded.push({ where, recordType: record.record_type, reason: 'without a source hash' });
       } else {
-        records.push(record);
+        included.push(record);
       }
     }
-  }
-  if (refused.length > 0) {
-    throw new ReleaseToolError(
-      [
-        `release ${String(release)} not assembled: ${String(refused.length)} draft record(s) are not verified to L2 or lack a source hash, and a release must be complete.`,
-        'Verify them against their sources (L2), or move them out of content/drafts until they are:',
-        ...refused.slice(0, 20).map((line) => `  ${line}`),
-        ...(refused.length > 20 ? [`  ...and ${String(refused.length - 20)} more`] : []),
-      ].join('\n'),
-    );
+    records.push(...included);
+    selections.set(file, { included, complete: included.length === contents.records.length });
   }
   if (records.length === 0) {
-    throw new ReleaseToolError('there are no drafts in content/drafts to assemble');
+    throw new ReleaseToolError(
+      excluded.length === 0
+        ? 'there are no drafts in content/drafts to assemble'
+        : `release ${String(release)} not assembled: none of the ${String(excluded.length)} draft record(s) is verified to L2 or higher; verify them against their sources first`,
+    );
   }
 
   const impact = impactLines(root, release, records);
   const dir = path.join(root, relativeDir);
   try {
     const copied: string[] = [];
+    const place = (name: string) => {
+      mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
+      copied.push(name);
+      return path.join(dir, name);
+    };
     for (const file of recordFiles) {
-      for (const name of [file, secondPassPathFor(file)]) {
-        if (existsSync(path.join(draftsDir, name))) {
-          mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
-          copyFileSync(path.join(draftsDir, name), path.join(dir, name));
-          copied.push(name);
+      const selection = selections.get(file);
+      if (selection === undefined || selection.included.length === 0) {
+        continue;
+      }
+      const secondPath = secondPassPathFor(file);
+      const hasSecond = existsSync(path.join(draftsDir, secondPath));
+      if (selection.complete) {
+        // The whole file is verified: copy it and its second pass unchanged.
+        copyFileSync(path.join(draftsDir, file), place(file));
+        if (hasSecond) {
+          copyFileSync(path.join(draftsDir, secondPath), place(secondPath));
+        }
+        continue;
+      }
+      // Part of the file is verified: write those records, and the matching part of the second pass.
+      writeFileSync(place(file), serializeRecords(selection.included));
+      if (hasSecond) {
+        const second = readSecondPassFile(path.join(draftsDir, secondPath), secondPath).secondPass;
+        const labels = new Set(selection.included.filter((record) => record.source.method === 'hand_typed').map((record) => recordLabel(record)));
+        const kept = second?.records.filter((record) => labels.has(recordLabel(record))) ?? [];
+        if (second !== undefined && kept.length > 0) {
+          writeFileSync(place(secondPath), `${JSON.stringify({ ...second, records: kept }, null, 2)}\n`);
         }
       }
     }
     const notes = releaseNotes({
       title: `Content release ${String(release)}`,
       summary: [
-        `Prepared ${request.today} by \`pnpm release:assemble ${String(release)}\` from content/drafts. On merge, CI publishes it to`,
+        `Prepared ${request.today} by \`pnpm release:assemble ${String(release)}\` from the drafts in content/drafts verified to L2 or higher. On merge, CI publishes it to`,
         `\`content/releases/${String(release)}\` and tags \`content-release-${String(release)}\` (docs/adr/0003-content-release-manifest.md).`,
       ].join('\n'),
       records,
       impact,
+      excluded,
     });
     const manifestSha256 = sealRelease(dir, release, notes);
     const verify = checkContentSet(root, contentSetAt(root, relativeDir));
     if (verify.problems.length > 0) {
       throw new ReleaseToolError(['the assembled release does not verify:', ...verify.problems.slice(0, 20).map((problem) => `  ${problem}`)].join('\n'));
     }
-    return { dir: relativeDir, files: [RELEASE_NOTES_FILE, ...copied, MANIFEST_FILE], records: records.length, manifestSha256 };
+    return { dir: relativeDir, files: [RELEASE_NOTES_FILE, ...copied, MANIFEST_FILE], records: records.length, excluded: excluded.length, manifestSha256 };
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     throw error;

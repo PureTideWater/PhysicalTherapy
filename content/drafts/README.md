@@ -13,13 +13,16 @@ Contract rate records are never here; they live in the database under each pract
    release when any record lacks a source, any effective window overlaps another for the same key, any
    numeric field fails its range, or any quote does not appear in the stored source text, and it refuses
    hand-typed records whose two transcriptions differ.
-3. **Prepare.** The `/load-release` skill runs `pnpm release:assemble <n>`, which copies the drafts into
-   [`content/outgoing/<n>/`](../outgoing/README.md) with `RELEASE.md` and `MANIFEST.json`. A release is a
-   complete snapshot that pricing runs pin, so assembly refuses while any draft is still at L1.
-4. **Publish.** On merge to main, CI (`.github/workflows/publish-content.yml`) verifies the manifest, moves the
-   release to `content/releases/<n>/` and tags it `content-release-<n>`. Nothing else writes `content/releases`.
+3. **Prepare.** The `/load-release` skill runs `pnpm release:assemble <n>`, which copies the drafts at L2 or
+   higher into [`content/outgoing/<n>/`](../outgoing/README.md) with `RELEASE.md` and `MANIFEST.json`, and
+   lists the drafts it left out (still at L1) in `RELEASE.md`.
+4. **Publish.** On merge to main, CI (`.github/workflows/publish-content.yml`) runs the checker on the release,
+   verifies the manifest, refuses any record below L2 or marked synthetic, moves the release to
+   `content/releases/<n>/` and tags it `content-release-<n>`. Nothing else writes `content/releases`.
 5. **Load.** `pnpm release:load <n>` (and later the worker) loads the release into the global tables; new
    pricing runs pin it, and a re-run of an older run under it lists the changed lines before anyone accepts it.
+   The loader refuses, before writing anything, a manifest that names another number, any record below L2,
+   any synthetic record and any directory under `fixtures/`.
 
 ## Files
 
@@ -33,7 +36,9 @@ Every record carries `record_type`, `key`, `value`, `effective_from`, `effective
 open), `source` (title, URL, the stored file's path and SHA-256, retrieved date, how it was entered: by parser,
 or hand-typed with who typed it, and where in the file), `verification` (L1 script-checked, L2 read against the
 source by a person, L3 confirmed by a reimbursement specialist, with who, when and the open questions),
-`quotes` (text that must appear verbatim in the stored source) and `notes`. Money is integer cents written as a
+`quotes` (text that must appear verbatim in the stored source; at least eight characters, and for a hand-typed
+record every money, percentage and day value must appear in one of them as written, such as `$2,480` or `85%`)
+and `notes`. Money is integer cents written as a
 string (`"248000"`), rates and relative values are decimal strings, counts are integers.
 
 ## Record types
@@ -45,11 +50,14 @@ CARC and RARC that the rules reference keeps as a rule record).
 
 ## What is here now
 
-The hand-typed drafts for release 1, at L1, from the plan's rules reference (`content/sources/plan/`): the 2026
-therapy thresholds, the CQ and CO assistant-modifier percentage, sequestration, the MPPR practice-expense
-reduction, the Medicare timely filing, redetermination and reconsideration windows, and North Carolina prompt
-pay. Each lists the questions a reviewer must answer for L2. The parsed CMS and X12 drafts arrive when someone
-downloads the files and runs `pnpm rules:import` ([content/sources/README.md](../sources/README.md)).
+Hand-typed placeholders, at L1, from the plan's rules reference (`content/sources/plan/`), a secondary source:
+the 2026 therapy thresholds, the CQ and CO assistant-modifier percentage, sequestration, the MPPR
+practice-expense reduction, the Medicare timely filing, redetermination and reconsideration windows, and North
+Carolina prompt pay. They are not release 1 content: the checker keeps any record citing the plan at L1, and
+both of their transcriptions came from the same build session, so a second person redoes each second pass
+after they are re-cited to the primary CMS and state documents. Each lists the questions a reviewer must
+answer for L2. The parsed CMS and X12 drafts arrive when someone downloads the files and runs
+`pnpm rules:import` ([content/sources/README.md](../sources/README.md)). Milestone 0 stays open until then.
 
 ## Rules for this directory
 

@@ -6,7 +6,10 @@
  * release loader `@tp/rules/loader`.
  */
 export {
+  CMS_QUARTERS,
+  type CmsQuarter,
   DENIAL_CATEGORIES,
+  MIN_QUOTE_LENGTH,
   RULE_RECORD_TYPES,
   type ParseResult,
   type RuleRecord,
@@ -19,6 +22,7 @@ export {
   VERIFICATION_LEVELS,
   type Verification,
   type VerificationLevel,
+  cmsQuarterOf,
   describeIssues,
   isIsoDate,
   isRepositoryPath,
@@ -34,6 +38,7 @@ export {
   SECOND_PASS_SUFFIX,
   canonicalJson,
   compareText,
+  containsNumber,
   decodeSourceText,
   diffTranscriptions,
   findOverlaps,
@@ -48,12 +53,14 @@ export {
   windowsOverlap,
 } from './records';
 export { type BuildRequest, type ParsedSource, buildParsedRecords } from './build';
+export { SYNTHETIC_CARRIER, SYNTHETIC_STATE, dollarForms, percentForms, syntheticMarkers, typedValues, unquotedValues } from './guards';
 export {
   CONVERSION_FACTOR_HEADINGS,
   IMPORTABLE_TYPES,
   type ImportWindow,
   type ImportableType,
   PARSERS,
+  type ParseOptions,
   type ParseOutcome,
   type ParsedRow,
   type RuleFileParser,
@@ -62,11 +69,13 @@ export {
   isImportableType,
 } from './parsers';
 export {
+  FIRST_SYNTHETIC_RELEASE,
   MANIFEST_FILE,
   type Manifest,
   RELEASE_NOTES_FILE,
   buildManifest,
   compareManifest,
+  isSyntheticReleaseNumber,
   manifestSchema,
   serializeManifest,
 } from './manifest';

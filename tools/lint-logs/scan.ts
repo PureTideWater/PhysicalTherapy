@@ -24,7 +24,7 @@ const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx',
 
 /**
  * Dependency and build output inside the scan roots. Coverage and mutation reports are written at the
- * repository root, outside them; apps/web has screens named coverage and reports that must be scanned.
+ * repository root, outside them; screens named coverage and reports will live under apps/web and are scanned.
  */
 const SKIPPED_DIRECTORIES = new Set(['node_modules', '.next', 'dist', 'cdk.out', 'playwright-report', 'test-results', 'e2e']);
 

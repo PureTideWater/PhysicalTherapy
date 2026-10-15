@@ -2,11 +2,33 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import fc from 'fast-check';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { isTestFile, listSourceFiles, scanRepository, scanSource } from './scan';
 
 const messages = (code: string) => scanSource('example.ts', code).map((violation) => violation.message);
+
+describe('scanSource (property)', () => {
+  const words = fc.stringMatching(/^[a-z ]{1,30}$/);
+
+  it('accepts any fixed message with allowlisted ID fields, and refuses any message holding nine digits', () => {
+    fc.assert(
+      fc.property(words, fc.stringMatching(/^\d{9,12}$/), words, (before, digits, after) => {
+        expect(messages(`logger.info('${before}', { practice_id: practiceId, job_id: jobId });`)).toEqual([]);
+        expect(messages(`logger.info('${before}${digits}${after}');`)).toEqual([expect.stringContaining('nine or more digits')]);
+      }),
+    );
+  });
+
+  it('refuses every interpolated message, whatever it interpolates', () => {
+    fc.assert(
+      fc.property(words, fc.constantFrom('id', 'name', 'value', 'job.id'), (text, expression) => {
+        expect(messages(`logger.warn(\`${text}\${${expression}}\`);`)).toEqual([expect.stringContaining('log messages are fixed text')]);
+      }),
+    );
+  });
+});
 
 describe('scanSource', () => {
   it.each([

@@ -75,11 +75,25 @@ describe('check-releases-immutable.sh', () => {
     expect(check()).toMatchObject({ status: 0, output: expect.stringContaining('1 published release(s) unchanged') as string });
   });
 
-  it('passes when a new release directory appears', () => {
+  it('fails when a pull request adds a release directory by hand', () => {
     publishReleaseOne();
-    write('content/releases/2/MANIFEST.json', '{"release":2}\n');
-    commitAll('release 2');
-    expect(check().status).toBe(0);
+    write('content/releases/2/a.json', '{}\n');
+    commitAll('release 2 by hand');
+    expect(check()).toMatchObject({ status: 1, output: expect.stringContaining('content/releases/2 is not on main') as string });
+  });
+
+  it('fails on a hand-made release when the base has none, committed or untracked', () => {
+    git('checkout', '-q', '-b', 'feature');
+    write('content/releases/1/MANIFEST.json', '{"release":1}\n');
+    expect(check()).toMatchObject({ status: 1, output: expect.stringContaining('content/releases/1 is not on main') as string });
+    commitAll('release 1 by hand');
+    expect(check().status).toBe(1);
+  });
+
+  it('passes the branch the publish workflow commits to, once its base has the release', () => {
+    publishReleaseOne();
+    expect(check('main').status).toBe(0);
+    expect(check('HEAD').status).toBe(0);
   });
 
   it('fails when a published file is modified', () => {

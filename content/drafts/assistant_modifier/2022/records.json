@@ -12,7 +12,7 @@
       "retrieved": "2026-10-15",
       "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
       "method": "hand_typed",
-      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_by": "milestone 0 part B build session",
       "transcribed_on": "2026-10-15",
       "locator": "Therapy-specific Medicare rules table, row \"Assistant modifiers CQ and CO\" (line 22)",
       "synthetic": false
@@ -22,6 +22,7 @@
       "by": "pnpm verify-content",
       "on": "2026-10-15",
       "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
         "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services): are services with the CQ modifier paid at 85% of the otherwise applicable amount, effective January 1, 2022?",
         "Store that CMS page (or the final rule that set the reduction) under content/sources/assistant_modifier/ and re-cite this record to it, quoting the stored file.",
         "Has CMS changed the percentage since 2022? The window is open-ended."
@@ -46,7 +47,7 @@
       "retrieved": "2026-10-15",
       "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
       "method": "hand_typed",
-      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_by": "milestone 0 part B build session",
       "transcribed_on": "2026-10-15",
       "locator": "Therapy-specific Medicare rules table, row \"Assistant modifiers CQ and CO\" (line 22)",
       "synthetic": false
@@ -56,6 +57,7 @@
       "by": "pnpm verify-content",
       "on": "2026-10-15",
       "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
         "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services): are services with the CO modifier paid at 85% of the otherwise applicable amount, effective January 1, 2022?",
         "Store that CMS page (or the final rule that set the reduction) under content/sources/assistant_modifier/ and re-cite this record to it, quoting the stored file.",
         "Has CMS changed the percentage since 2022? The window is open-ended."

@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
@@ -57,6 +58,34 @@ describe('singletonKey', () => {
   it('differs across practices for the same subject', () => {
     const other = singletonKey('parse_835', { practice_id: OTHER_PRACTICE, document_id: SUBJECT });
     expect(other).not.toBe(singletonKey('parse_835', examples.parse_835));
+  });
+
+  it('gives two jobs the same key only when type, practice and subject are all the same (property)', () => {
+    const month = fc.tuple(fc.integer({ min: 2000, max: 2099 }), fc.integer({ min: 1, max: 12 })).map(([year, m]) => `${String(year)}-${String(m).padStart(2, '0')}`);
+    const job = fc.oneof(
+      fc.record({ type: fc.constant('parse_835' as const), practice: fc.uuid(), subject: fc.uuid() }),
+      fc.record({ type: fc.constant('price' as const), practice: fc.uuid(), subject: fc.uuid() }),
+      fc.record({ type: fc.constant('reconcile' as const), practice: fc.uuid(), subject: fc.uuid() }),
+      fc.record({ type: fc.constant('digest' as const), practice: fc.uuid(), subject: month }),
+    );
+    const keyOf = (item: { type: 'parse_835' | 'price' | 'reconcile' | 'digest'; practice: string; subject: string }) => {
+      switch (item.type) {
+        case 'parse_835':
+          return singletonKey(item.type, { practice_id: item.practice, document_id: item.subject });
+        case 'price':
+          return singletonKey(item.type, { practice_id: item.practice, pricing_run_id: item.subject });
+        case 'reconcile':
+          return singletonKey(item.type, { practice_id: item.practice, document_id: item.subject });
+        case 'digest':
+          return singletonKey(item.type, { practice_id: item.practice, period: item.subject });
+      }
+    };
+    fc.assert(
+      fc.property(job, job, (a, b) => {
+        const same = a.type === b.type && a.practice === b.practice && a.subject === b.subject;
+        expect(keyOf(a) === keyOf(b)).toBe(same);
+      }),
+    );
   });
 });
 

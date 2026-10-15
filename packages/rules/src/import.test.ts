@@ -1,11 +1,11 @@
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { type ImportRequest, importRuleFile } from './import';
-import { RuleImportError } from './parsers';
+import { type ImportableType, RuleImportError } from './parsers';
 import { sha256 } from './records';
 import { parseRuleRecord } from './schema';
 
@@ -15,20 +15,37 @@ let root = '';
 let downloads = '';
 
 /**
- * A synthetic file copied as if downloaded: renamed, and without its SYNTHETIC banner line, which
- * the importer refuses. The copy lives in a temporary directory and never reaches content/.
+ * A synthetic file copied as if downloaded: renamed, without its SYNTHETIC banner line, and with the
+ * reserved SYNTHETIC carrier and state (99999, ZZ) swapped for other invented ones, since the
+ * importer refuses all three. The copy lives in a temporary directory and never reaches content/.
  */
 function download(fixture: string, name = fixture): string {
   const file = path.join(downloads, name);
   const text = readFileSync(path.join(CMS, fixture), 'utf8');
-  writeFileSync(file, text.startsWith('SYNTHETIC') ? text.slice(text.indexOf('\n') + 1) : text);
+  const unbannered = text.startsWith('SYNTHETIC') ? text.slice(text.indexOf('\n') + 1) : text;
+  writeFileSync(file, unbannered.replaceAll('99999', '99998').replaceAll(',ZZ,', ',YY,'));
   return file;
 }
 
 function request(overrides: Partial<ImportRequest>): ImportRequest {
   const file = overrides.file ?? download('PPRRVU_SYNTHETIC.csv', 'PPRRVU26_JAN.csv');
-  return { root, type: 'pfs_rvu', year: 2026, retrieved: '2026-10-15', today: '2026-10-16', ...overrides, file };
+  return { root, type: 'pfs_rvu', year: 2026, url: 'https://example.invalid/download', retrieved: '2026-10-15', today: '2026-10-16', ...overrides, file };
 }
+
+/** The record type each synthetic CMS- and X12-format fixture is laid out for. */
+const FIXTURE_TYPES: Readonly<Record<string, ImportableType>> = {
+  'PPRRVU_SYNTHETIC.csv': 'pfs_rvu',
+  'GPCI_SYNTHETIC.csv': 'pfs_gpci',
+  'ZIP5_SYNTHETIC.txt': 'locality_map',
+  'conversion-factor-SYNTHETIC-pass-1.csv': 'conversion_factor',
+  'conversion-factor-SYNTHETIC-pass-2.csv': 'conversion_factor',
+  'MPPR_SYNTHETIC.csv': 'mppr_rate',
+  'NCCI_PTP_SYNTHETIC.txt': 'ncci_ptp',
+  'NCCI_MUE_SYNTHETIC.csv': 'ncci_mue',
+  'CARC_SYNTHETIC.csv': 'carc',
+  'RARC_SYNTHETIC.csv': 'rarc',
+  'CLAIM_STATUS_SYNTHETIC.csv': 'claim_status_code',
+};
 
 function readJson(relative: string): unknown {
   return JSON.parse(readFileSync(path.join(root, relative), 'utf8')) as unknown;
@@ -88,8 +105,30 @@ describe('importRuleFile', () => {
 
   it('writes import notes into the review file', () => {
     const result = importRuleFile(request({ type: 'pfs_gpci', file: download('GPCI_SYNTHETIC.csv', 'GPCI2026.csv') }));
-    expect(result.notes).toEqual(['notes after the table (from line 3) were not read as localities']);
+    expect(result.notes).toEqual([
+      'work GPCI read from the column headed "2026 PW GPCI (with 1.0 Floor)"',
+      'notes after the table (from line 3) were not read as localities',
+    ]);
     expect(readFileSync(path.join(root, result.review), 'utf8')).toContain('- notes after the table (from line 3) were not read as localities');
+  });
+
+  it('passes the GPCI floor choice to the parser', () => {
+    const file = path.join(downloads, 'GPCI2026.csv');
+    writeFileSync(
+      file,
+      [
+        'Medicare Administrative Contractor (MAC),State,Locality Number,Locality Name,2026 PW GPCI (without 1.0 Floor),2026 PW GPCI (with 1.0 Floor),2026 PE GPCI,2026 MP GPCI',
+        '99998,YY,01,TEST,0.900,1.000,0.950,0.650',
+        '',
+      ].join('\n'),
+    );
+    expect(() => importRuleFile(request({ type: 'pfs_gpci', file }))).toThrow(/say which applies with --gpci-floor with or --gpci-floor without/);
+    const result = importRuleFile(request({ type: 'pfs_gpci', file, parseOptions: { gpciWorkFloor: 'without' } }));
+    expect((readJson(result.draft) as { value: { work_gpci: string } }[])[0]?.value.work_gpci).toBe('0.900');
+  });
+
+  it('requires the http(s) address the file came from', () => {
+    expect(() => importRuleFile(request({ url: 'downloads folder' }))).toThrow(/--url must be the http\(s\) address/);
   });
 
   it('applies the effective window options', () => {
@@ -122,6 +161,30 @@ describe('importRuleFile', () => {
     const file = path.join(downloads, 'GPCI2026.csv');
     copyFileSync(path.join(CMS, 'GPCI_SYNTHETIC.csv'), file);
     expect(() => importRuleFile(request({ type: 'pfs_gpci', file }))).toThrow(/says SYNTHETIC on its first line/);
+    expect(existsSync(path.join(root, 'content'))).toBe(false);
+  });
+
+  it('refuses every file in fixtures/synthetic/cms, renamed as if downloaded', () => {
+    cpSync(CMS, path.join(root, 'fixtures/synthetic/cms'), { recursive: true });
+    const files = readdirSync(CMS).filter((name) => !name.endsWith('.md'));
+    expect([...files].sort()).toEqual(Object.keys(FIXTURE_TYPES).sort());
+    for (const name of files) {
+      const type = FIXTURE_TYPES[name] ?? 'pfs_rvu';
+      const file = path.join(downloads, `DOWNLOAD_${String(files.indexOf(name))}${path.extname(name)}`);
+      copyFileSync(path.join(CMS, name), file);
+      const secondPass = type === 'conversion_factor' ? { secondPass: file } : {};
+      expect(() => importRuleFile(request({ type, file, ...secondPass })), name).toThrow(/synthetic fixtures are never imported as content/);
+    }
+    expect(existsSync(path.join(root, 'content'))).toBe(false);
+  });
+
+  it('refuses a fixture with no banner by its bytes, and an edited copy by its reserved identifiers', () => {
+    cpSync(CMS, path.join(root, 'fixtures/synthetic/cms'), { recursive: true });
+    const file = path.join(downloads, 'ZIP5_OCT2026.txt');
+    copyFileSync(path.join(CMS, 'ZIP5_SYNTHETIC.txt'), file);
+    expect(() => importRuleFile(request({ type: 'locality_map', file }))).toThrow(/has the same bytes as fixtures\/synthetic\/cms\/ZIP5_SYNTHETIC.txt/);
+    writeFileSync(file, `${readFileSync(file, 'utf8')}\n`);
+    expect(() => importRuleFile(request({ type: 'locality_map', file }))).toThrow(/is a reserved SYNTHETIC ZIP code/);
     expect(existsSync(path.join(root, 'content'))).toBe(false);
   });
 

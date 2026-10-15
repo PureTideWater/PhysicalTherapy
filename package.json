@@ -4,7 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "dev": "tsx tools/dev.ts",
@@ -26,6 +26,7 @@
     "release:dry-run": "tsx tools/release/index.ts dry-run",
     "release:load": "tsx tools/release/index.ts load",
     "cdk:diff": "pnpm --filter @tp/infra cdk:diff",
+    "licenses:check": "tsx tools/check-licenses/index.ts",
     "stryker": "stryker"
   },
   "devDependencies": {

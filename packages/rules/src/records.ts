@@ -243,3 +243,13 @@ export function quoteIndex(sourceText: string): (quote: string) => boolean {
   const lines = new Set(sourceText.split(/\r?\n/));
   return (quote) => lines.has(quote) || sourceText.includes(quote);
 }
+
+/**
+ * True when `number` (digits, optionally with a point, a "$" or thousands commas) appears in `text`
+ * as a number of its own: not inside a longer one, so "3.4" is not found in "$33.4009" and "30" is
+ * not found in "130" or "30.5".
+ */
+export function containsNumber(text: string, number: string): boolean {
+  const escaped = number.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\d.,])${escaped}(?!\\d|[.,]\\d)`).test(text);
+}

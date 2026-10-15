@@ -1,7 +1,7 @@
 # SYNTHETIC therapy rules for tests
 
 Invented values for tests only. None of these is a CMS, state or X12 value, and none may be used to
-price a real line. The synthetic release in fixtures/synthetic/rules/release-synth-1 quotes these
+price a real line. The synthetic release in fixtures/synthetic/rules/release-synth-900001 quotes these
 sentences in its hand-typed records.
 
 - SYNTHETIC KX threshold: $1,111 for PT and SLP combined and $1,222 for OT in 2026.

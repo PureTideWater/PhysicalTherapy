@@ -1,11 +1,23 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MIGRATIONS_DIR, MigrationError, historyProblems, readMigrations } from './migrate';
-import { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, appDevLoginUrl, bootstrapStatements } from './roles';
+import {
+  APP_DEV_LOGIN,
+  APP_ROLE,
+  OWNER_ROLE,
+  type RoleAttributes,
+  RoleBootstrapError,
+  WANTED_ROLES,
+  appDevLoginUrl,
+  createRoleStatement,
+  grantStatements,
+  managedRoles,
+  roleAlteration,
+} from './roles';
 
 let dir = '';
 
@@ -21,15 +33,24 @@ describe('readMigrations', () => {
   it('reads SQL files in name order with the SHA-256 of their bytes', () => {
     writeFileSync(path.join(dir, '20261015120001_second.sql'), 'SELECT 2;');
     writeFileSync(path.join(dir, '20261015120000_first.sql'), 'SELECT 1;');
-    writeFileSync(path.join(dir, 'README.md'), 'not a migration');
     expect(readMigrations(dir)).toEqual([
       { name: '20261015120000_first.sql', sql: 'SELECT 1;', checksum: '17db4fd369edb9244b9f91d9aeed145c3d04ad8ba6e95d06247f07a63527d11a' },
       { name: '20261015120001_second.sql', sql: 'SELECT 2;', checksum: expect.stringMatching(/^[0-9a-f]{64}$/) },
     ]);
   });
 
-  it.each(['1_short.sql', '20261015120000-dash.sql', '20261015120000_Upper.sql'])('refuses the file name %s', (name) => {
-    writeFileSync(path.join(dir, name), 'SELECT 1;');
+  it.each(['1_short.sql', '20261015120000-dash.sql', '20261015120000_Upper.sql', '20270101000000_x.SQL', '20270101000000_x.sql.bak', 'README.md', 'notes'])(
+    'refuses %s rather than skip it',
+    (name) => {
+      writeFileSync(path.join(dir, '20261015120000_first.sql'), 'SELECT 1;');
+      writeFileSync(path.join(dir, name), 'SELECT 1;');
+      expect(() => readMigrations(dir)).toThrow(MigrationError);
+      expect(() => readMigrations(dir)).toThrow(`${name}: everything in the migrations directory is a migration file`);
+    },
+  );
+
+  it('refuses a directory among the migrations', () => {
+    mkdirSync(path.join(dir, '20270101000000_x.sql'));
     expect(() => readMigrations(dir)).toThrow(MigrationError);
   });
 
@@ -59,19 +80,38 @@ describe('historyProblems', () => {
 });
 
 describe('roles', () => {
+  const owner = WANTED_ROLES[OWNER_ROLE] as RoleAttributes;
+
   it('creates the dev login only when asked', () => {
-    expect(bootstrapStatements({ devLogin: false }).join('\n')).not.toContain(APP_DEV_LOGIN);
-    expect(bootstrapStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN}`);
+    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE]);
+    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, APP_DEV_LOGIN]);
+    expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(APP_DEV_LOGIN);
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN}`);
+    expect(() => createRoleStatement('someone_else')).toThrow(RoleBootstrapError);
   });
 
   it('never gives the application or owner role superuser, bypass or login', () => {
     for (const role of [APP_ROLE, OWNER_ROLE]) {
-      const statements = bootstrapStatements({ devLogin: true }).filter((statement) => statement.includes(`ROLE ${role} `));
-      expect(statements.length).toBeGreaterThan(0);
-      for (const statement of statements) {
-        expect(statement).toMatch(/NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS/);
-      }
+      expect(createRoleStatement(role)).toContain(`CREATE ROLE ${role} NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`);
+      expect(WANTED_ROLES[role]).toEqual({ rolcanlogin: false, rolinherit: true, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
     }
+    expect(createRoleStatement(APP_DEV_LOGIN)).toContain("LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD 'tp_app_dev'");
+  });
+
+  it('alters an existing role only where it differs, naming nothing else', () => {
+    expect(roleAlteration(OWNER_ROLE, owner, owner, false)).toBeNull();
+    expect(roleAlteration(OWNER_ROLE, { ...owner, rolcanlogin: true }, owner, false)).toBe(`ALTER ROLE ${OWNER_ROLE} NOLOGIN`);
+    expect(roleAlteration(OWNER_ROLE, { ...owner, rolcreatedb: true, rolinherit: false }, owner, false)).toBe(`ALTER ROLE ${OWNER_ROLE} INHERIT NOCREATEDB`);
+    expect(roleAlteration(OWNER_ROLE, { ...owner, rolsuper: true, rolbypassrls: true }, owner, true)).toBe(`ALTER ROLE ${OWNER_ROLE} NOSUPERUSER NOBYPASSRLS`);
+  });
+
+  it('refuses, from a connection that is not a superuser, an attribute only a superuser can remove', () => {
+    for (const attribute of ['rolsuper', 'rolreplication', 'rolbypassrls'] as const) {
+      expect(() => roleAlteration(APP_ROLE, { ...owner, [attribute]: true }, owner, false)).toThrow(RoleBootstrapError);
+    }
+    expect(() => roleAlteration(APP_ROLE, { ...owner, rolbypassrls: true }, owner, false)).toThrow(
+      `role ${APP_ROLE} has BYPASSRLS set, which only a superuser can remove; ask a superuser to run ALTER ROLE ${APP_ROLE} NOBYPASSRLS`,
+    );
   });
 
   it('builds the dev login URL on the same server and database', () => {

@@ -27,6 +27,18 @@ export interface ImportWindow {
   readonly effectiveTo: string | null;
 }
 
+/**
+ * Choices a person makes for a file whose layout has more than one candidate column. The parser
+ * never guesses; it refuses and names the choice to make.
+ */
+export interface ParseOptions {
+  /**
+   * GPCI files can carry two work GPCI columns, with and without the 1.0 work GPCI floor. Which one
+   * Medicare applies in the year is a person's reading of the year's law and final rule.
+   */
+  readonly gpciWorkFloor?: 'with' | 'without';
+}
+
 /** One record's worth of a file: everything but the source and verification, which the importer adds. */
 export interface ParsedRow {
   readonly key: Record<string, unknown>;
@@ -54,5 +66,5 @@ export interface RuleFileParser {
   readonly title: string;
   /** What a person must answer, reading the file, to raise its records to L2. */
   readonly reviewQuestions: readonly string[];
-  parse(text: string, window: ImportWindow): ParseOutcome;
+  parse(text: string, window: ImportWindow, options?: ParseOptions): ParseOutcome;
 }

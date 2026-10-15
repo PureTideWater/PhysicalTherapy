@@ -1,3 +1,5 @@
+import { isSyntheticReleaseNumber } from '@tp/rules';
+
 /**
  * The release commands of the load-release skill and PRD section 9: assemble builds
  * content/outgoing/<n> with RELEASE.md and MANIFEST.json from verified drafts; dry-run lists the
@@ -11,9 +13,16 @@ export function isReleaseCommand(value: string | undefined): value is ReleaseCom
   return RELEASE_COMMANDS.some((command) => command === value);
 }
 
-/** A release number: a positive integer written without leading zeros. */
+/**
+ * A real release number: a positive integer written without leading zeros, below the range
+ * reserved for SYNTHETIC fixture releases (FIRST_SYNTHETIC_RELEASE, 900000).
+ */
 export function parseReleaseNumber(text: string | undefined): number | undefined {
-  return text !== undefined && /^[1-9]\d{0,8}$/.test(text) ? Number.parseInt(text, 10) : undefined;
+  if (text === undefined || !/^[1-9]\d{0,5}$/.test(text)) {
+    return undefined;
+  }
+  const release = Number.parseInt(text, 10);
+  return isSyntheticReleaseNumber(release) ? undefined : release;
 }
 
 export class ReleaseToolError extends Error {

@@ -1,0 +1,15 @@
+{
+  "licenses": ["0BSD", "Apache-2.0", "BlueOak-1.0.0", "BSD-2-Clause", "BSD-3-Clause", "CC-BY-4.0", "CC0-1.0", "ISC", "MIT", "Python-2.0", "Unlicense"],
+  "exceptions": [
+    {
+      "package": "@img/sharp-libvips-linux-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "libvips, the unmodified native library sharp loads dynamically for Next.js image optimization; LGPL permits dynamic linking without changing the product's license. Counsel confirms before the first customer release."
+    },
+    {
+      "package": "@img/sharp-libvips-linuxmusl-x64",
+      "license": "LGPL-3.0-or-later",
+      "reason": "As @img/sharp-libvips-linux-x64, for musl-based images."
+    }
+  ]
+}

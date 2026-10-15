@@ -54,14 +54,14 @@ describe('the types refuse floats and unchecked values', () => {
   it('takes only decimals as operands and offers no way back to a number', () => {
     const value = decimal('1.5');
     // @ts-expect-error operands are decimals, never numbers
-    expect(value.times(2).toString()).toBe('3');
+    expect(() => value.times(2)).toThrow(/takes decimals only, never a number/);
     // @ts-expect-error operands are decimals, never strings
-    expect(value.plus('1').toString()).toBe('2.5');
+    expect(() => value.plus('1')).toThrow(/takes decimals only/);
     // @ts-expect-error there is no toNumber
     const toNumber: unknown = value.toNumber;
     // @ts-expect-error there is no rounding outside roundToCents
     const toDecimalPlaces: unknown = value.toDecimalPlaces;
-    expect([typeof toNumber, typeof toDecimalPlaces]).toEqual(['function', 'function']);
+    expect([typeof toNumber, typeof toDecimalPlaces]).toEqual(['undefined', 'undefined']);
   });
 
   it('rounds unrounded amounts once, and refuses to round cents or bare decimals', () => {

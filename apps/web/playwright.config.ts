@@ -27,10 +27,10 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], ...(bundledChromium ? {} : { channel: 'chrome' }) },
     },
   ],
-  // The smoke test runs against a production build, so it sees the headers production sends.
+  // The smoke test runs against a production build, the server the container image runs.
   webServer: {
     command: `pnpm run build && PORT=${String(port)} bash scripts/start-standalone.sh`,
-    url: `${baseURL}/sign-in`,
+    url: `${baseURL}/`,
     timeout: 300_000,
     reuseExistingServer: !process.env.CI,
     stdout: 'ignore',

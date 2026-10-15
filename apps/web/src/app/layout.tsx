@@ -4,8 +4,9 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 /**
- * Every page renders per request: pages can carry PHI, so none is prerendered or cached, and each
- * response leaves with Cache-Control: private, no-store (next.config headers).
+ * Every page renders per request: pages can carry PHI, so none is prerendered or cached, and Next
+ * sends each dynamic response with Cache-Control: private, no-cache, no-store (the smoke test checks
+ * it). The full security-header set arrives in milestone 11.
  */
 export const dynamic = 'force-dynamic';
 

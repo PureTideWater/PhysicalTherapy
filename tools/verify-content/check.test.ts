@@ -11,8 +11,9 @@ import { checkContent, checkContentSet, contentSetAt, defaultContentSets } from 
 
 let root = '';
 
-const SOURCE_TEXT = 'The KX threshold is $1,111 for PT and SLP combined.\nSecond line.\n';
-const SOURCE_PATH = 'content/sources/plan/rules.md';
+const SOURCE_TEXT = 'The KX threshold is $1,111 for PT and SLP combined, with review at $1,333.\nSecond line.\n';
+const SOURCE_PATH = 'content/sources/therapy_threshold/rules.md';
+const QUOTE = '$1,111 for PT and SLP combined, with review at $1,333';
 
 function write(file: string, text: string): void {
   mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
@@ -34,14 +35,19 @@ function handTyped(overrides: Partial<RuleRecord> = {}): RuleRecord {
       locator: 'line 1',
       synthetic: false,
     },
-    quotes: ['$1,111 for PT and SLP combined'],
+    quotes: [QUOTE],
     ...overrides,
   });
 }
 
-function secondPass(records: readonly RuleRecord[]): string {
+/** The hand-typed source of `handTyped()`, typed as such so a test can change its transcriber. */
+function handSource(): Extract<RuleRecord['source'], { method: 'hand_typed' }> {
+  return handTyped().source as Extract<RuleRecord['source'], { method: 'hand_typed' }>;
+}
+
+function secondPass(records: readonly RuleRecord[], transcribedBy = 'second'): string {
   return JSON.stringify({
-    transcribed_by: 'second',
+    transcribed_by: transcribedBy,
     transcribed_on: '2026-10-15',
     records: records.map(({ record_type, key, value, effective_from, effective_to, quotes }) => ({ record_type, key, value, effective_from, effective_to, quotes })),
   });
@@ -94,16 +100,36 @@ describe('checkContent on drafts', () => {
   });
 
   it('refuses a source that is missing, or whose hash does not match the stored file', () => {
-    drafts([handTyped({ source: { ...handTyped().source, path: 'content/sources/plan/missing.md' } })]);
-    expect(problems()).toEqual([expect.stringContaining('the stored source content/sources/plan/missing.md is missing')]);
+    drafts([handTyped({ source: { ...handTyped().source, path: 'content/sources/therapy_threshold/missing.md' } })]);
+    expect(problems()).toEqual([expect.stringContaining('the stored source content/sources/therapy_threshold/missing.md is missing')]);
     write(SOURCE_PATH, `${SOURCE_TEXT}changed\n`);
     drafts([handTyped()]);
     expect(problems()).toEqual([expect.stringContaining(`source.sha256 does not match the stored file ${SOURCE_PATH}`)]);
   });
 
   it('refuses a quote that is not in the stored source', () => {
-    drafts([handTyped({ quotes: ['$1,112 for PT and SLP combined'] })]);
-    expect(problems()).toEqual([expect.stringContaining('quotes.0 does not appear in content/sources/plan/rules.md: "$1,112 for PT and SLP combined"')]);
+    drafts([handTyped({ quotes: [QUOTE.replace('$1,111', '$1,112')] })]);
+    expect(problems()).toEqual(
+      expect.arrayContaining([expect.stringContaining('quotes.0 does not appear in content/sources/therapy_threshold/rules.md: "$1,112 for PT and SLP combined')]),
+    );
+  });
+
+  it('refuses a hand-typed value that its quotes do not state', () => {
+    drafts([handTyped({ value: { kx_threshold_cents: '999900', medical_review_threshold_cents: '133300' } })]);
+    expect(problems()).toEqual([
+      expect.stringContaining('value.kx_threshold_cents does not appear in any quote (as "$9,999" or "$9999" or "$9,999.00" or "$9999.00")'),
+    ]);
+    drafts([handTyped({ quotes: ['$1,111 for PT and SLP combined'] })]);
+    expect(problems()).toEqual(
+      expect.arrayContaining([expect.stringContaining('value.medical_review_threshold_cents does not appear in any quote (as "$1,333"')]),
+    );
+  });
+
+  it('refuses a quote that is blank, punctuation or too short', () => {
+    for (const quote of [' ', '        ', '$', '........', 'review']) {
+      drafts([handTyped({ quotes: [QUOTE, quote] })]);
+      expect(problems(), JSON.stringify(quote)).toEqual(expect.arrayContaining([expect.stringMatching(/quotes\.1: must quote/)]));
+    }
   });
 
   it('refuses overlapping effective windows for the same record type and key', () => {
@@ -137,6 +163,24 @@ describe('checkContent on drafts', () => {
       ]);
     });
 
+    it('refuses, at L2 or above, a second pass by the person who typed the first', () => {
+      const atL2 = handTyped({
+        source: { ...handSource(), url: 'https://example.invalid/rules', transcribed_by: 'one person' },
+        verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] },
+      });
+      write('content/drafts/therapy_threshold/2026/records.json', serializeRecords([atL2]));
+      write('content/drafts/therapy_threshold/2026/records.second-pass.json', secondPass([atL2], 'one person'));
+      expect(problems()).toEqual([
+        'content/drafts/therapy_threshold/2026/records.second-pass.json: was transcribed by "one person", who also typed the first pass of 1 record(s) at L2 or above; the second pass must be independent (another person)',
+      ]);
+      write('content/drafts/therapy_threshold/2026/records.second-pass.json', secondPass([atL2], 'another person'));
+      expect(problems()).toEqual([]);
+      const atL1 = handTyped({ source: { ...handSource(), transcribed_by: 'one person' } });
+      write('content/drafts/therapy_threshold/2026/records.json', serializeRecords([atL1]));
+      write('content/drafts/therapy_threshold/2026/records.second-pass.json', secondPass([atL1], 'one person'));
+      expect(problems()).toEqual([]);
+    });
+
     it('refuses a second pass that is invalid, orphaned, or beside parsed records only', () => {
       drafts([handTyped()]);
       write('content/drafts/therapy_threshold/2026/records.second-pass.json', '{"records": []}');
@@ -159,6 +203,43 @@ describe('checkContent on drafts', () => {
     write('fixtures/x.md', SOURCE_TEXT);
     drafts([handTyped({ source: { ...handTyped().source, path: 'fixtures/x.md' } })]);
     expect(problems()).toEqual([expect.stringContaining('source.path fixtures/x.md must be under content/sources/')]);
+  });
+
+  it('refuses a stored source with the bytes of a fixture file, whatever its name', () => {
+    write('fixtures/synthetic/cms/rules-copy.md', SOURCE_TEXT);
+    drafts([handTyped()]);
+    expect(problems()).toEqual([
+      expect.stringContaining(`the stored source ${SOURCE_PATH} has the same bytes as fixtures/synthetic/cms/rules-copy.md: synthetic fixtures never enter content`),
+    ]);
+  });
+
+  it('refuses the reserved SYNTHETIC carrier, state and ZIP codes in content', () => {
+    const marked = exampleRecord('locality_map', { source: handTyped().source, quotes: [QUOTE] });
+    write('content/drafts/locality_map/2026/records.json', serializeRecords([marked]));
+    write('content/drafts/locality_map/2026/records.second-pass.json', secondPass([marked]));
+    expect(problems()).toEqual([
+      expect.stringContaining('key.zip 00011 is a reserved SYNTHETIC ZIP code (00000 to 00099); synthetic reference data never enters content'),
+      expect.stringContaining('value.state ZZ is the reserved SYNTHETIC state'),
+      expect.stringContaining('value.carrier 99999 is the reserved SYNTHETIC carrier'),
+    ]);
+  });
+
+  it("keeps a record citing the plan's own rules reference at L1", () => {
+    write('content/sources/plan/rules-reference.md', SOURCE_TEXT);
+    const planSource = { ...handTyped().source, path: 'content/sources/plan/rules-reference.md' };
+    drafts([handTyped({ source: planSource })]);
+    expect(problems()).toEqual([]);
+    const raised = handTyped({
+      source: { ...planSource, url: 'https://example.invalid/plan' },
+      verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] },
+    });
+    drafts([raised]);
+    expect(problems()).toEqual([expect.stringContaining("cites content/sources/plan/rules-reference.md, the plan's own rules reference: a secondary source stays at L1")]);
+  });
+
+  it('refuses a record at L2 or above that names no source URL', () => {
+    drafts([handTyped({ verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] } })]);
+    expect(problems()).toEqual([expect.stringContaining('source.url: must name where the source was downloaded from')]);
   });
 
   it('refuses files that are not records, second passes or notes, links, and misplaced records', () => {
@@ -191,7 +272,11 @@ describe('checkContent on releases', () => {
   }
 
   const verified = (overrides: Partial<RuleRecord> = {}) =>
-    handTyped({ verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] }, ...overrides });
+    handTyped({
+      source: { ...handTyped().source, url: 'https://example.invalid/rules' },
+      verification: { level: 'L2', by: 'reviewer', on: '2026-10-20', questions: [] },
+      ...overrides,
+    });
 
   function releaseFiles(records: readonly RuleRecord[]): Record<string, string> {
     return {
@@ -209,7 +294,18 @@ describe('checkContent on releases', () => {
 
   it('refuses L1 records in a prepared or published release', () => {
     release('content/releases/1', releaseFiles([handTyped()]), 1);
-    expect(problems()).toEqual([expect.stringContaining('a prepared or published release holds only records verified to L2 or L3')]);
+    expect(problems()).toEqual([expect.stringContaining('a release holds only records verified to L2 or L3')]);
+  });
+
+  it('applies the L2 rule to any release directory outside fixtures/, wherever it is', () => {
+    release('elsewhere/2', releaseFiles([handTyped()]), 2);
+    expect(problems(['elsewhere/2'])).toEqual([expect.stringContaining('a release holds only records verified to L2 or L3')]);
+    expect(contentSetAt(root, 'elsewhere/2')).toMatchObject({ kind: 'release', published: true, numbered: false, synthetic: false });
+  });
+
+  it('keeps real and SYNTHETIC release numbers apart', () => {
+    release('content/outgoing/900001', releaseFiles([verified()]), 900001);
+    expect(problems()).toEqual(['content/outgoing/900001: MANIFEST.json names release 900001: numbers from 900000 are reserved for SYNTHETIC fixture releases']);
   });
 
   it('refuses a release whose files do not match its manifest, or that names another number', () => {
@@ -244,20 +340,24 @@ describe('checkContent on releases', () => {
   it('checks a fixture release when pointed at it: synthetic, any level, sources under fixtures/', () => {
     write('fixtures/synthetic/cms/rules.md', SOURCE_TEXT);
     const synthetic = handTyped({ source: { ...handTyped().source, path: 'fixtures/synthetic/cms/rules.md', synthetic: true, title: 'SYNTHETIC rules' } });
-    release('fixtures/synthetic/rules/release-a', releaseFiles([synthetic]), 1);
+    release('fixtures/synthetic/rules/release-a', releaseFiles([synthetic]), 900001);
     expect(problems(['fixtures/synthetic/rules/release-a'])).toEqual([]);
-    release('fixtures/synthetic/rules/release-b', releaseFiles([handTyped()]), 1);
+    release('fixtures/synthetic/rules/release-b', releaseFiles([handTyped()]), 900002);
     expect(problems([path.join(root, 'fixtures/synthetic/rules/release-b')])).toEqual([
-      expect.stringContaining('source.path content/sources/plan/rules.md must be under fixtures/'),
+      expect.stringContaining(`source.path ${SOURCE_PATH} must be under fixtures/`),
       expect.stringContaining('a fixture record must be marked synthetic'),
+    ]);
+    release('fixtures/synthetic/rules/release-c', releaseFiles([synthetic]), 1);
+    expect(problems(['fixtures/synthetic/rules/release-c'])).toEqual([
+      'fixtures/synthetic/rules/release-c: MANIFEST.json names release 1: SYNTHETIC fixture releases are numbered from 900000, so they never take a real release\'s number',
     ]);
     expect(problems(['fixtures/synthetic/rules/missing'])).toEqual(['fixtures/synthetic/rules/missing: no such directory']);
   });
 
   it('describes a directory given on the command line', () => {
     write('content/outgoing/4/MANIFEST.json', '{}');
-    expect(contentSetAt(root, 'content/outgoing/4')).toEqual({ dir: 'content/outgoing/4', kind: 'release', published: true, synthetic: false });
-    expect(contentSetAt(root, path.join(root, 'fixtures/x'))).toEqual({ dir: 'fixtures/x', kind: 'drafts', published: false, synthetic: true });
+    expect(contentSetAt(root, 'content/outgoing/4')).toEqual({ dir: 'content/outgoing/4', kind: 'release', published: true, numbered: true, synthetic: false });
+    expect(contentSetAt(root, path.join(root, 'fixtures/x'))).toEqual({ dir: 'fixtures/x', kind: 'drafts', published: false, numbered: false, synthetic: true });
     expect(checkContentSet(root, contentSetAt(root, 'content/drafts')).problems).toEqual([]);
   });
 });
@@ -269,6 +369,6 @@ describe('this repository', () => {
   });
 
   it('passes the synthetic fixture release', () => {
-    expect(checkContent(repositoryRoot, ['fixtures/synthetic/rules/release-synth-1']).problems).toEqual([]);
+    expect(checkContent(repositoryRoot, ['fixtures/synthetic/rules/release-synth-900001']).problems).toEqual([]);
   });
 });

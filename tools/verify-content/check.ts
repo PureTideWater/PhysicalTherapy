@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  FIRST_SYNTHETIC_RELEASE,
   MANIFEST_FILE,
   type RuleRecord,
   compareManifest,
@@ -10,13 +11,16 @@ import {
   diffTranscriptions,
   findOverlaps,
   isSecondPassFile,
+  isSyntheticReleaseNumber,
   manifestSchema,
   quoteIndex,
   recordLabel,
   secondPassPathFor,
   sha256,
+  syntheticMarkers,
+  unquotedValues,
 } from '@tp/rules';
-import { type ContentFile, isRecordFile, listContentFiles, readRecordFile, readSecondPassFile } from '@tp/rules/content';
+import { type ContentFile, fixtureFileHashes, isRecordFile, listContentFiles, readRecordFile, readSecondPassFile } from '@tp/rules/content';
 
 /**
  * `pnpm verify-content`: the content checker (PRD section 9). For each content set (the drafts,
@@ -27,9 +31,15 @@ import { type ContentFile, isRecordFile, listContentFiles, readRecordFile, readS
  * - a record lacks a source, its stored source file is missing, or the file's SHA-256 differs;
  * - a quote does not appear verbatim in the stored source text;
  * - two records with the same record type and key have overlapping effective windows;
- * - a hand-typed record has no second transcription, or the two transcriptions differ;
- * - a release's files do not match its MANIFEST.json, or a prepared or published record is below L2;
- * - synthetic data appears in content, or real data in a fixture.
+ * - a hand-typed record has no second transcription, or the two transcriptions differ; at L2 or
+ *   above, the second pass must be by someone other than the first transcriber;
+ * - a hand-typed money, percentage or day value does not appear in any of its record's quotes;
+ * - a release's files do not match its MANIFEST.json, or any release outside fixtures/ (prepared,
+ *   published or named on the command line) holds a record below L2, or a release number is in the
+ *   wrong range (real releases below 900000, SYNTHETIC fixture releases from 900000);
+ * - a record cites the plan's own rules reference (content/sources/plan/) at L2 or above;
+ * - synthetic data appears in content (a synthetic record, a stored source with the bytes of a
+ *   fixture file, or a reserved SYNTHETIC identifier), or real data in a fixture.
  */
 
 export type ContentSetKind = 'drafts' | 'release';
@@ -38,8 +48,10 @@ export interface ContentSet {
   /** Repository-relative directory, with forward slashes. */
   readonly dir: string;
   readonly kind: ContentSetKind;
-  /** content/outgoing/<n> or content/releases/<n>: every record must be at L2 or L3. */
+  /** A release (it holds a MANIFEST.json) outside fixtures/: every record must be at L2 or L3. */
   readonly published: boolean;
+  /** content/outgoing/<n> or content/releases/<n>: the manifest must name the directory's number. */
+  readonly numbered: boolean;
   /** Under fixtures/: every record must be synthetic. Anywhere else: none may be. */
   readonly synthetic: boolean;
 }
@@ -60,17 +72,20 @@ function toPosix(relative: string): string {
 /** The content set at `dir` (relative to `root` or absolute): a release when it holds a MANIFEST.json. */
 export function contentSetAt(root: string, dir: string): ContentSet {
   const relative = toPosix(path.relative(root, path.resolve(root, dir)));
+  const kind = existsSync(path.join(root, relative, MANIFEST_FILE)) ? 'release' : 'drafts';
+  const synthetic = relative === 'fixtures' || relative.startsWith('fixtures/');
   return {
     dir: relative,
-    kind: existsSync(path.join(root, relative, MANIFEST_FILE)) ? 'release' : 'drafts',
-    published: RELEASE_PARENTS.some((parent) => relative.startsWith(`${parent}/`)),
-    synthetic: relative === 'fixtures' || relative.startsWith('fixtures/'),
+    kind,
+    published: kind === 'release' && !synthetic,
+    numbered: RELEASE_PARENTS.some((parent) => relative.startsWith(`${parent}/`)),
+    synthetic,
   };
 }
 
 /** The drafts, then every numbered directory under content/outgoing and content/releases. */
 export function defaultContentSets(root: string): { sets: ContentSet[]; problems: string[] } {
-  const sets: ContentSet[] = [{ dir: 'content/drafts', kind: 'drafts', published: false, synthetic: false }];
+  const sets: ContentSet[] = [{ dir: 'content/drafts', kind: 'drafts', published: false, numbered: false, synthetic: false }];
   const problems: string[] = [];
   for (const parent of RELEASE_PARENTS) {
     let entries;
@@ -91,7 +106,7 @@ export function defaultContentSets(root: string): { sets: ContentSet[]; problems
       .map((entry) => entry.name)
       .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
     for (const name of numbered) {
-      sets.push({ dir: `${parent}/${name}`, kind: 'release', published: true, synthetic: false });
+      sets.push({ dir: `${parent}/${name}`, kind: 'release', published: true, numbered: true, synthetic: false });
     }
   }
   return { sets, problems };
@@ -101,11 +116,17 @@ interface StoredSource {
   readonly problem?: string;
   readonly sha256?: string;
   readonly has?: (quote: string) => boolean;
+  /** The fixture file with the same bytes, when the stored source is a copy of one. */
+  readonly fixtureCopyOf?: string;
 }
 
-/** Reads each cited source once: its hash and a quote lookup over its text. */
+/** Where the plan's own rules reference is stored: a secondary source, never enough for L2. */
+export const PLAN_SOURCES = 'content/sources/plan/';
+
+/** Reads each cited source once: its hash, a quote lookup over its text, and whether it copies a fixture. */
 function sourceReader(root: string): (sourcePath: string) => StoredSource {
   const cache = new Map<string, StoredSource>();
+  let fixtures: Map<string, string> | undefined;
   return (sourcePath) => {
     const cached = cache.get(sourcePath);
     if (cached) {
@@ -118,7 +139,10 @@ function sourceReader(root: string): (sourcePath: string) => StoredSource {
         throw new Error('not a regular file');
       }
       const bytes = readFileSync(absolute);
-      stored = { sha256: sha256(bytes), has: quoteIndex(decodeSourceText(bytes)) };
+      const hash = sha256(bytes);
+      fixtures ??= fixtureFileHashes(root);
+      const copyOf = sourcePath.startsWith('fixtures/') ? undefined : fixtures.get(hash);
+      stored = { sha256: hash, has: quoteIndex(decodeSourceText(bytes)), ...(copyOf === undefined ? {} : { fixtureCopyOf: copyOf }) };
     } catch {
       stored = { problem: `the stored source ${sourcePath} is missing (or is not a regular file)` };
     }
@@ -141,12 +165,24 @@ function checkRecord(record: RuleRecord, set: ContentSet, readSource: (sourcePat
     problems.push('synthetic reference data never enters content; it lives under fixtures/');
   }
   if (set.published && record.verification.level === 'L1') {
-    problems.push('a prepared or published release holds only records verified to L2 or L3');
+    problems.push('a release holds only records verified to L2 or L3');
   }
+  if (!set.synthetic) {
+    problems.push(...syntheticMarkers(record.key, record.value).map((marker) => `${marker}; synthetic reference data never enters content`));
+    if (source.path.startsWith(PLAN_SOURCES) && record.verification.level !== 'L1') {
+      problems.push(
+        `cites ${source.path}, the plan's own rules reference: a secondary source stays at L1; store the primary document under content/sources/${record.record_type}/ and re-cite the record to it before raising it to L2`,
+      );
+    }
+  }
+  problems.push(...unquotedValues(record));
   const stored = readSource(source.path);
   if (stored.problem !== undefined) {
     problems.push(stored.problem);
     return problems;
+  }
+  if (!set.synthetic && stored.fixtureCopyOf !== undefined) {
+    problems.push(`the stored source ${source.path} has the same bytes as ${stored.fixtureCopyOf}: synthetic fixtures never enter content`);
   }
   if (stored.sha256 !== source.sha256) {
     problems.push(`source.sha256 does not match the stored file ${source.path} (it is ${stored.sha256 ?? ''})`);
@@ -183,8 +219,14 @@ function checkManifestOf(root: string, set: ContentSet, files: readonly ContentF
   }
   const problems: string[] = [];
   const name = path.posix.basename(set.dir);
-  if (set.published && String(manifest.data.release) !== name) {
+  if (set.numbered && String(manifest.data.release) !== name) {
     problems.push(`${MANIFEST_FILE} names release ${String(manifest.data.release)} but the directory is ${name}`);
+  }
+  if (set.synthetic && !isSyntheticReleaseNumber(manifest.data.release)) {
+    problems.push(`${MANIFEST_FILE} names release ${String(manifest.data.release)}: SYNTHETIC fixture releases are numbered from ${String(FIRST_SYNTHETIC_RELEASE)}, so they never take a real release's number`);
+  }
+  if (!set.synthetic && isSyntheticReleaseNumber(manifest.data.release)) {
+    problems.push(`${MANIFEST_FILE} names release ${String(manifest.data.release)}: numbers from ${String(FIRST_SYNTHETIC_RELEASE)} are reserved for SYNTHETIC fixture releases`);
   }
   const present = new Map(
     files.filter((file) => file.path !== MANIFEST_FILE && !file.symlink).map((file) => [file.path, sha256(readFileSync(path.join(absolute, file.path)))]),
@@ -263,6 +305,16 @@ export function checkContentSet(root: string, set: ContentSet, readSource = sour
     if (second.secondPass !== undefined) {
       for (const difference of diffTranscriptions(handTyped, second.secondPass.records)) {
         at(secondPath, `the transcriptions differ: ${difference}`);
+      }
+      const secondBy = second.secondPass.transcribed_by;
+      const notIndependent = handTyped.filter(
+        (record) => record.verification.level !== 'L1' && record.source.method === 'hand_typed' && record.source.transcribed_by === secondBy,
+      );
+      if (notIndependent.length > 0) {
+        at(
+          secondPath,
+          `was transcribed by ${JSON.stringify(secondBy)}, who also typed the first pass of ${String(notIndependent.length)} record(s) at L2 or above; the second pass must be independent (another person)`,
+        );
       }
     }
   }

@@ -1,5 +1,6 @@
 import { type Row, RuleImportError, cell, decimalCell, isBlankRow, normalizeLabel, parseDelimited } from './delimited';
-import type { ParseOutcome, ParsedRow, RuleFileParser } from './types';
+import { cmsQuarterOf } from '../schema';
+import type { ImportWindow, ParseOutcome, ParsedRow, RuleFileParser } from './types';
 
 /**
  * The CMS physician fee schedule relative value file (PPRRVU, CSV version), read by the column
@@ -87,9 +88,15 @@ function matching(row: Row, column: number, pattern: RegExp, name: string): stri
   return value;
 }
 
-function parse(text: string, window: { effectiveFrom: string; effectiveTo: string | null }): ParseOutcome {
+function parse(text: string, window: ImportWindow): ParseOutcome {
   const rows = parseDelimited(text, ',');
   const { labels, dataStart } = headingBlock(rows);
+  // The file's quarterly release follows from its window: RVU26A is effective January 1 (quarter
+  // A), RVU26B April 1 (B), and so on. A window that does not start in the file's year is refused.
+  if (!window.effectiveFrom.startsWith(`${String(window.year)}-`)) {
+    throw new RuleImportError(`--effective-from ${window.effectiveFrom} is not in ${String(window.year)}, the fee schedule year of this file`);
+  }
+  const quarter = cmsQuarterOf(window.effectiveFrom);
   for (const [column, pattern, meaning] of HEADINGS) {
     if (!pattern.test(labels[column] ?? '')) {
       throw new RuleImportError(
@@ -123,6 +130,8 @@ function parse(text: string, window: { effectiveFrom: string; effectiveTo: strin
         pctc_indicator: matching(row, COLUMNS.pctc, /^\d?$/, 'PC/TC indicator'),
         global_days: matching(row, COLUMNS.globalDays, /^(?:\d{3}|[A-Z]{3})?$/, 'global days'),
         multiple_procedure_indicator: matching(row, COLUMNS.multipleProcedure, /^\d?$/, 'multiple-procedure indicator'),
+        year: window.year,
+        quarter,
       },
       effective_from: window.effectiveFrom,
       effective_to: window.effectiveTo,
@@ -133,7 +142,7 @@ function parse(text: string, window: { effectiveFrom: string; effectiveTo: strin
   if (parsed.length === 0) {
     throw new RuleImportError('the file has a heading row but no codes');
   }
-  return { rows: parsed, notes: [] };
+  return { rows: parsed, notes: [`fee schedule year ${String(window.year)}, quarter ${quarter} (from the window starting ${window.effectiveFrom})`] };
 }
 
 export const pprrvuParser: RuleFileParser = {
@@ -143,7 +152,7 @@ export const pprrvuParser: RuleFileParser = {
   reviewQuestions: [
     'Do the columns the parser checked (HCPCS, MOD, status, work RVU, non-facility and facility PE RVU with their NA indicators, MP RVU, PC/TC, global days, multiple procedure) match the RVUPUF record layout shipped with this file?',
     'Spot-check at least five codes, including 97110, 97140 and 97530, against the stored file and the CMS physician fee schedule look-up.',
-    "Is the effective window right for this file's release (January, April, July or October), and is the earlier quarter's window closed the day before?",
+    "Is the effective window right for this file's release (January, April, July or October), so the year and quarter (A to D) recorded on every record match the file's name (RVU26A, RVU26B, ...), and is the earlier quarter's window closed the day before?",
   ],
   parse,
 };

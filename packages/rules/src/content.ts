@@ -104,6 +104,20 @@ export function fileSha256(file: string): string {
   return sha256(readFileSync(file));
 }
 
+/**
+ * The SHA-256 of every file under <root>/fixtures, mapped to its repository path. A stored source
+ * or an imported file with one of these hashes is a SYNTHETIC fixture, wherever it was copied from.
+ */
+export function fixtureFileHashes(root: string): Map<string, string> {
+  const hashes = new Map<string, string>();
+  for (const file of listContentFiles(path.join(root, 'fixtures'))) {
+    if (!file.symlink) {
+      hashes.set(fileSha256(path.join(root, 'fixtures', file.path)), `fixtures/${file.path}`);
+    }
+  }
+  return hashes;
+}
+
 export interface ReleaseContents {
   readonly manifest: Manifest;
   /** SHA-256 of MANIFEST.json's bytes: what `rule_release.manifest_sha256` records. */

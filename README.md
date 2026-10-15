@@ -8,7 +8,7 @@ No real PHI, real 835, real contract or real export ever enters this repository.
 
 ## Development
 
-Prerequisites: Node 24 (see `.nvmrc`; Node 22 or later works), pnpm 10.28 (`corepack enable` or
+Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm 10.28 (`corepack enable` or
 `npm install --global pnpm@10.28.0`), and Docker for `pnpm dev`. Nothing in the test suites needs Docker:
 database tests use `DATABASE_URL`, defaulting to the docker-compose Postgres at
 `postgres://postgres:test@localhost:5432/postgres`.
@@ -22,18 +22,26 @@ pnpm test:e2e        # builds the web app and runs the Playwright smoke test
 pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
 pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
+pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
+pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 ```
 
 Global rule content (PRD section 9; [content/sources/README.md](content/sources/README.md) lists the files
 release 1 needs):
 
 ```sh
-pnpm rules:import --type <type> --year <year> --file <path>   # a public CMS or X12 file -> L1 drafts
+pnpm rules:import --type <type> --year <year> --file <path> --url <url>   # a public CMS or X12 file -> L1 drafts
 pnpm verify-content [dir...]       # the content checker: drafts and releases, or a fixture release
-pnpm release:assemble <n>          # verified drafts -> content/outgoing/<n> with RELEASE.md and MANIFEST.json
+pnpm release:assemble <n>          # drafts at L2 or higher -> content/outgoing/<n> with RELEASE.md and MANIFEST.json
 pnpm release:dry-run <n>           # what release n changes, and the pricing runs it would change
-pnpm release:load <n> [--dir <d>]  # load a published release (or a directory) into DATABASE_URL
+pnpm release:load <n> [--dir <d>]  # load a published release (or a directory outside fixtures/) into DATABASE_URL
 ```
+
+**Milestone 0 is not complete.** Its done check ("release 1 loads into an empty database") needs the 2026 CMS
+and X12 files, which cannot be downloaded from the environment the repository was built in (cms.gov, x12.org
+and ncdoi.gov refuse it). The drafts in `content/drafts` are hand-typed from the plan's own rules reference, a
+secondary source, and stay at L1; they are not release 1 content. [content/sources/README.md](content/sources/README.md)
+lists what a person with network access does to finish it.
 
 | Path | What lives there |
 | --- | --- |

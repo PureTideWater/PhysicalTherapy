@@ -30,10 +30,23 @@ const modelSdkSyntax = [
 
 /**
  * No floats on amounts in the money packages (CLAUDE.md rule 2): amounts are bigint cents and rates
- * are Decimal, all through @tp/money. See packages/money/README.md for what to write instead. packages/rules
- * is included because rule records carry cents, rates and relative values.
+ * are Decimal, all through @tp/money. See packages/money/README.md for what to write instead. Beside
+ * the engine, ledger and packets: packages/rules (rule records carry cents, rates and relative
+ * values), packages/contracts (rate records; .claude/rules/money-and-contracts.md), packages/edi835
+ * (it parses every remittance amount), packages/triage (materiality and pursuit-cost cents) and
+ * packages/synth (the amounts it generates).
  */
-export const MONEY_PACKAGES = ['packages/money', 'packages/pricing', 'packages/ledger', 'packages/packets', 'packages/rules'];
+export const MONEY_PACKAGES = [
+  'packages/money',
+  'packages/pricing',
+  'packages/ledger',
+  'packages/packets',
+  'packages/rules',
+  'packages/contracts',
+  'packages/edi835',
+  'packages/triage',
+  'packages/synth',
+];
 const MONEY_MESSAGE = 'Money is bigint cents and rates are Decimal (packages/money/README.md).';
 const moneySyntax = [
   { selector: "CallExpression[callee.name='parseFloat']", message: `parseFloat is forbidden here. ${MONEY_MESSAGE}` },
@@ -57,7 +70,7 @@ export default defineConfig(
       '**/.next/**',
       '**/dist/**',
       '**/cdk.out/**',
-      // Root-level output only: apps/web has Coverage and Reports screens under those names.
+      // Root-level output only: screens named Coverage and Reports will live under apps/web.
       'coverage/**',
       'reports/**',
       '.stryker-tmp/**',

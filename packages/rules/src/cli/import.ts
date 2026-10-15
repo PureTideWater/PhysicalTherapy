@@ -5,13 +5,13 @@ import { importRuleFile } from '../import';
 import { IMPORTABLE_TYPES, RuleImportError, isImportableType } from '../parsers';
 
 /**
- * pnpm rules:import --type <type> --year <year> --file <path>
- *   [--second-pass <path>] [--url <url>] [--title <title>] [--retrieved YYYY-MM-DD]
- *   [--effective-from YYYY-MM-DD] [--effective-to YYYY-MM-DD|open]
+ * pnpm rules:import --type <type> --year <year> --file <path> --url <url>
+ *   [--second-pass <path>] [--title <title>] [--retrieved YYYY-MM-DD]
+ *   [--effective-from YYYY-MM-DD] [--effective-to YYYY-MM-DD|open] [--gpci-floor with|without]
  */
-const USAGE = `usage: pnpm rules:import --type <${IMPORTABLE_TYPES.join('|')}> --year <year> --file <path>
-         [--second-pass <path>] [--url <download url>] [--title <title>] [--retrieved YYYY-MM-DD]
-         [--effective-from YYYY-MM-DD] [--effective-to YYYY-MM-DD|open]`;
+const USAGE = `usage: pnpm rules:import --type <${IMPORTABLE_TYPES.join('|')}> --year <year> --file <path> --url <download url>
+         [--second-pass <path>] [--title <title>] [--retrieved YYYY-MM-DD]
+         [--effective-from YYYY-MM-DD] [--effective-to YYYY-MM-DD|open] [--gpci-floor with|without]`;
 
 const root = path.resolve(import.meta.dirname, '../../../..');
 const today = new Date().toISOString().slice(0, 10);
@@ -35,6 +35,7 @@ try {
       retrieved: { type: 'string' },
       'effective-from': { type: 'string' },
       'effective-to': { type: 'string' },
+      'gpci-floor': { type: 'string' },
     },
     strict: true,
     allowPositionals: false,
@@ -43,8 +44,17 @@ try {
   fail(USAGE, 2);
 }
 
-const { type, year, file } = values;
-if (type === undefined || year === undefined || file === undefined || !isImportableType(type) || !/^\d{4}$/.test(year)) {
+const { type, year, file, url } = values;
+const floor = values['gpci-floor'];
+if (
+  type === undefined ||
+  year === undefined ||
+  file === undefined ||
+  url === undefined ||
+  !isImportableType(type) ||
+  !/^\d{4}$/.test(year) ||
+  (floor !== undefined && (type !== 'pfs_gpci' || (floor !== 'with' && floor !== 'without')))
+) {
   fail(USAGE, 2);
 }
 
@@ -56,7 +66,8 @@ try {
     year: Number.parseInt(year, 10),
     file: path.resolve(process.env.INIT_CWD ?? process.cwd(), file),
     ...(values['second-pass'] === undefined ? {} : { secondPass: path.resolve(process.env.INIT_CWD ?? process.cwd(), values['second-pass']) }),
-    url: values.url ?? null,
+    url,
+    ...(floor === 'with' || floor === 'without' ? { parseOptions: { gpciWorkFloor: floor } } : {}),
     ...(values.title === undefined ? {} : { title: values.title }),
     retrieved: values.retrieved ?? today,
     ...(values['effective-from'] === undefined ? {} : { effectiveFrom: values['effective-from'] }),

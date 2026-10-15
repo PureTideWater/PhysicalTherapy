@@ -56,6 +56,16 @@ export const DENIAL_CATEGORIES = [
   'other',
 ] as const;
 
+/** CMS quarterly releases of the physician fee schedule files: A January, B April, C July, D October. */
+export const CMS_QUARTERS = ['A', 'B', 'C', 'D'] as const;
+export type CmsQuarter = (typeof CMS_QUARTERS)[number];
+
+/** The CMS quarter a date falls in (January to March is A). */
+export function cmsQuarterOf(isoDateText: string): CmsQuarter {
+  const month = Number.parseInt(isoDateText.slice(5, 7), 10);
+  return CMS_QUARTERS[Math.floor((month - 1) / 3)] ?? 'A';
+}
+
 // ---------------------------------------------------------------------------------------------
 // Primitive fields
 
@@ -88,6 +98,11 @@ export function isRepositoryPath(text: string): boolean {
 const repositoryPath = z.string().refine(isRepositoryPath, 'must be a repository-relative path that stays inside the repository');
 
 const DECIMAL_TEXT = /^\d+(?:\.\d+)?$/;
+
+/** True for decimal text equal to zero ("0", "0.00"); false for anything else, malformed text included. */
+function isZeroDecimal(text: string): boolean {
+  return DECIMAL_TEXT.test(text) && decimal(text).isZero();
+}
 
 interface DecimalRange {
   /** Most digits allowed after the point. */
@@ -149,6 +164,18 @@ const stateCode = z.string().regex(/^[A-Z]{2}$/, 'must be a two-letter state cod
 const listCode = z.string().regex(/^[0-9A-Z]{1,6}$/, 'must be a code of one to six letters or digits');
 const text = z.string().min(1, 'must not be empty');
 
+/** The shortest quote the checker accepts, not counting surrounding whitespace. */
+export const MIN_QUOTE_LENGTH = 8;
+
+/**
+ * A quote from the stored source: at least eight characters besides surrounding whitespace, with a
+ * letter or digit among them, so a blank or a lone punctuation mark cannot pass the quote check.
+ */
+const quote = z
+  .string()
+  .refine((value) => value.trim().length >= MIN_QUOTE_LENGTH, `must quote at least ${String(MIN_QUOTE_LENGTH)} characters of the source`)
+  .refine((value) => /[\p{L}\p{N}]/u.test(value), 'must quote words or numbers, not only spaces and punctuation');
+
 const rvu = decimalText({ places: 4, min: '0', max: '9999' });
 const gpciIndex = decimalText({ places: 4, min: '0', max: '5', aboveMin: true });
 const percent = decimalText({ places: 4, min: '0', max: '100' });
@@ -184,6 +211,9 @@ const BODIES = {
       pctc_indicator: z.string().regex(/^\d?$/, 'must be one digit or empty'),
       global_days: z.string().regex(/^(?:\d{3}|[A-Z]{3})?$/, 'must be three digits, three letters, or empty'),
       multiple_procedure_indicator: z.string().regex(/^\d?$/, 'must be one digit or empty'),
+      /** The fee schedule year and CMS quarterly release (A January, B April, C July, D October) the file belongs to. */
+      year: integer(1990, 2100),
+      quarter: z.enum(CMS_QUARTERS),
     }),
   }),
   pfs_gpci: z.strictObject({
@@ -223,10 +253,17 @@ const BODIES = {
     key: z.strictObject({ modifier: z.enum(['CQ', 'CO']) }),
     value: z.strictObject({ payment_percent: positivePercent }),
   }),
-  sequestration: z.strictObject({
-    key: z.strictObject({ program: z.literal('medicare') }),
-    value: z.strictObject({ reduction_percent: percent, applies_to: text }),
-  }),
+  sequestration: z
+    .strictObject({
+      key: z.strictObject({ program: z.literal('medicare') }),
+      // A suspension is its own record (suspended true, reduction 0) over the suspended dates, so a
+      // date with no sequestration record at all is a gap the engine reports, never a silent 0%.
+      value: z.strictObject({ reduction_percent: percent, applies_to: text, suspended: z.boolean() }),
+    })
+    .refine((body) => (body.value.suspended ? isZeroDecimal(body.value.reduction_percent) : !isZeroDecimal(body.value.reduction_percent)), {
+      message: 'is out of range: a suspension reduces by 0, and a reduction in force by more than 0',
+      path: ['value', 'reduction_percent'],
+    }),
   ncci_ptp: z.strictObject({
     key: z.strictObject({ column1: hcpcsCode, column2: hcpcsCode }),
     value: z.strictObject({
@@ -295,7 +332,10 @@ const BODIES = {
 
 const sourceCommon = {
   title: text,
-  /** Where the file was downloaded from; null for a document with no public address. */
+  /**
+   * Where the file was downloaded from. Null is allowed only for SYNTHETIC fixtures and for drafts
+   * still at L1 (the plan-sourced hand-typed drafts); a record at L2 or above must name its URL.
+   */
   url: z.url({ protocol: /^https?$/ }).nullable(),
   /** The stored copy, relative to the repository root (content/sources/... or fixtures/...). */
   path: repositoryPath,
@@ -339,7 +379,7 @@ const envelope = z.strictObject({
   source: sourceSchema,
   verification: verificationSchema,
   /** Text that must appear verbatim in the stored source file. */
-  quotes: z.array(text).min(1, 'must quote the source at least once'),
+  quotes: z.array(quote).min(1, 'must quote the source at least once'),
   notes: z.string(),
 });
 type Envelope = z.infer<typeof envelope>;
@@ -360,6 +400,23 @@ export const ruleRecordSchema = envelope
     const datesValid = isIsoDate(record.effective_from) && (record.effective_to === null || isIsoDate(record.effective_to));
     if (datesValid && record.effective_to !== null && record.effective_to < record.effective_from) {
       context.addIssue({ code: 'custom', message: 'must not be before effective_from', path: ['effective_to'] });
+    }
+    if (!record.source.synthetic && record.verification.level !== 'L1' && record.source.url === null) {
+      context.addIssue({
+        code: 'custom',
+        message: 'must name where the source was downloaded from: a record verified to L2 or above cites a public document by its URL',
+        path: ['source', 'url'],
+      });
+    }
+    if (record.record_type === 'pfs_rvu' && body.success && isIsoDate(record.effective_from)) {
+      const { year, quarter } = record.value as { year: number; quarter: CmsQuarter };
+      if (String(year) !== record.effective_from.slice(0, 4) || quarter !== cmsQuarterOf(record.effective_from)) {
+        context.addIssue({
+          code: 'custom',
+          message: `must match effective_from ${record.effective_from} (year ${record.effective_from.slice(0, 4)}, quarter ${cmsQuarterOf(record.effective_from)})`,
+          path: ['value', 'quarter'],
+        });
+      }
     }
   })
   .transform((record) => record as RuleRecord);
@@ -397,7 +454,7 @@ export const secondPassSchema = z.strictObject({
         value: z.record(z.string(), z.unknown()),
         effective_from: isoDate,
         effective_to: isoDate.nullable(),
-        quotes: z.array(text).min(1),
+        quotes: z.array(quote).min(1),
       }),
     )
     .min(1, 'must hold at least one record'),

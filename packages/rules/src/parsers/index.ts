@@ -23,4 +23,4 @@ export const PARSERS: Readonly<Record<ImportableType, RuleFileParser>> = {
 
 export { compareConversionFactorPasses, CONVERSION_FACTOR_HEADINGS } from './conversion-factor';
 export { RuleImportError } from './delimited';
-export { IMPORTABLE_TYPES, type ImportWindow, type ImportableType, type ParseOutcome, type ParsedRow, type RuleFileParser, isImportableType } from './types';
+export { IMPORTABLE_TYPES, type ImportWindow, type ImportableType, type ParseOptions, type ParseOutcome, type ParsedRow, type RuleFileParser, isImportableType } from './types';

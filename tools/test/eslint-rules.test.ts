@@ -53,7 +53,17 @@ describe('model SDKs outside packages/model-gateway (PRD section 14, SEC-09)', (
 });
 
 describe('floats on amounts in the money packages', () => {
-  const moneyFiles = ['packages/money/src/x.ts', 'packages/pricing/src/x.ts', 'packages/ledger/src/x.ts', 'packages/packets/src/x.ts', 'packages/rules/src/x.ts'];
+  const moneyFiles = [
+    'packages/money/src/x.ts',
+    'packages/pricing/src/x.ts',
+    'packages/ledger/src/x.ts',
+    'packages/packets/src/x.ts',
+    'packages/rules/src/x.ts',
+    'packages/contracts/src/x.ts',
+    'packages/edi835/src/x.ts',
+    'packages/triage/src/x.ts',
+    'packages/synth/src/x.ts',
+  ];
 
   it.each([
     ['parseFloat', "const a = parseFloat('1.5');", /parseFloat is forbidden/],
@@ -67,6 +77,13 @@ describe('floats on amounts in the money packages', () => {
   ])('fails %s', async (_name, code, expected) => {
     for (const file of moneyFiles) {
       expect(await ruleHits(code, file), file).toEqual([expect.stringMatching(expected)]);
+    }
+  });
+
+  it('fails a float on an amount in every package that touches one', async () => {
+    const probe = "const a = Number('1.10') * 0.85;\nconst b = parseFloat('12.34');";
+    for (const file of moneyFiles) {
+      expect(await ruleHits(probe, file), file).toHaveLength(3);
     }
   });
 

@@ -20,11 +20,28 @@ migration is never edited. Roles belong to the whole PostgreSQL cluster, while t
   `tp_app_dev` is a login for it with a fixed local password, created only by `pnpm db:migrate --dev-login`
   (developer machines and tests); deployed environments create their own logins from Secrets Manager. The
   bootstrap is idempotent and retries the catalog conflicts a concurrent bootstrap in another database causes;
-  a connecting user that is not a superuser is granted `tp_owner` so it can `SET ROLE`.
+  a connecting user that is not a superuser is granted `tp_owner` so it can `SET ROLE`. It runs from a superuser
+  and from a login with CREATEROLE that is not one (the RDS master user, the deploy job's login): it reads
+  `pg_roles` and alters only the attributes that differ, because PostgreSQL 16 refuses `ALTER ROLE ... NOSUPERUSER`
+  (or NOREPLICATION, NOBYPASSRLS) from a non-superuser even when nothing changes. If one of those three is wrong,
+  it stops and names the `ALTER ROLE` a superuser must run. A database test migrates a fresh database as such a
+  login.
 - **Migrations.** `packages/db/migrations/<YYYYMMDDHHMMSS>_<name>.sql`, applied in name order, each in its own
-  transaction as `tp_owner`, under an advisory lock. `schema_migrations` records each file's SHA-256; the runner
+  transaction as `tp_owner`, under an advisory lock. Every file in the directory must be named that way (a
+  `.SQL` or a README is refused, never skipped). `schema_migrations` records each file's SHA-256; the runner
   refuses to apply anything when an applied file changed or is missing, or when a new file sorts before one
-  already applied. The Drizzle schema in `packages/db/src/schema/` mirrors the SQL for typed queries, and a
+  already applied. Each migration's transaction starts with `SET LOCAL ROLE tp_owner`; after its SQL the runner
+  checks that the role is still `tp_owner`, that every relation, function and type in schema `public` belongs
+  to `tp_owner`, and that `tp_app` owns nothing, and rolls the migration back otherwise (a `RESET ROLE` inside a
+  migration is caught).
+- **Dry run, forward and back.** `pnpm db:migrate --dry-run` runs the role bootstrap and every pending migration,
+  with the same checks, in one transaction and rolls it back. Migrations are forward-only, so "back" (PRD section
+  18: "migration dry-run forward and back") means two things here: the dry run's rollback leaves the database
+  exactly at its previous head, which a database test proves by comparing a catalog snapshot (relations, owners,
+  grants, columns, functions, triggers, schemas, applied migrations) before and after a dry run from the previous
+  head; and a deploy goes back by redeploying the previous image against the new schema, which the add, backfill
+  and remove rule (PRD section 15) keeps safe. A migration that could not run under the previous image is split.
+  Migrations that would need a down script are not written. The Drizzle schema in `packages/db/src/schema/` mirrors the SQL for typed queries, and a
   database test checks the two agree; milestone 1 adds its tenancy tables beside `rules.ts`.
 - **Global tables.** `rule_release` and `rule_record` follow the data dictionary (plus the `id`, `created_at`,
   `updated_at` conventions). The application role gets SELECT and has INSERT, UPDATE, DELETE and TRUNCATE
@@ -37,6 +54,7 @@ migration is never edited. Roles belong to the whole PostgreSQL cluster, while t
 | Option | Why not |
 | --- | --- |
 | A migration tool (drizzle-kit, node-pg-migrate) | The plan has hand-written SQL migrations; a hundred-line runner with a checksum table does what is needed and is read in one sitting |
+| Down migrations for "back" | Forward-only is the plan's rule (the new-migration skill); a down script is untested code that runs only in an emergency |
 | A login owner role | A second credential to store and rotate; SET ROLE from the deploy job's login gives the same ownership |
 | Revoking writes from the application role only | The owner and the loader could still rewrite a published release; triggers make "immutable once published" true for everyone |
 | Roles created by infrastructure code only | Tests and local development need them too; the idempotent bootstrap runs everywhere and infrastructure adds the logins |

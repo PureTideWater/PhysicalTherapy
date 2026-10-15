@@ -3,6 +3,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { OWNER_ROLE, readDatabaseUrl } from '@tp/db';
+import { FIRST_SYNTHETIC_RELEASE } from '@tp/rules';
 import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
 import pg from 'pg';
 
@@ -10,13 +11,17 @@ import { repositoryRoot } from '../content-files';
 import { assembleRelease } from './assemble';
 import { RELEASE_COMMANDS, ReleaseToolError, isReleaseCommand, parseReleaseNumber } from './commands';
 import { dryRun } from './dry-run';
+import { loadDirectoryRefusal } from './load-directory';
 
 /**
- * pnpm release:assemble <n>                  content/drafts -> content/outgoing/<n> (verified drafts only)
+ * pnpm release:assemble <n>                  content/drafts at L2+ -> content/outgoing/<n> (L1 drafts listed, left out)
  * pnpm release:dry-run <n>                   what release n changes, and which runs it would change
  * pnpm release:load <n> [--dir <directory>]  load content/releases/<n> (or a directory) into DATABASE_URL
  */
-const USAGE = `usage: pnpm release:<${RELEASE_COMMANDS.join('|')}> <release-number>   (release:load also takes --dir <directory>)`;
+const USAGE = [
+  `usage: pnpm release:<${RELEASE_COMMANDS.join('|')}> <release-number>   (release:load also takes --dir <directory>)`,
+  `Release numbers run from 1 to ${String(FIRST_SYNTHETIC_RELEASE - 1)}; ${String(FIRST_SYNTHETIC_RELEASE)} and above are reserved for SYNTHETIC fixture releases.`,
+].join('\n');
 
 function fail(message: string, code = 1): never {
   process.stderr.write(`${message}\n`);
@@ -38,6 +43,10 @@ if (!isReleaseCommand(command) || release === undefined || parsed.positionals.le
 async function load(releaseNo: number, dirOption: string | undefined): Promise<void> {
   const dir =
     dirOption === undefined ? path.join(repositoryRoot, 'content', 'releases', String(releaseNo)) : path.resolve(process.env.INIT_CWD ?? process.cwd(), dirOption);
+  const refusal = loadDirectoryRefusal(repositoryRoot, dir);
+  if (refusal !== undefined) {
+    fail(`release:load: ${refusal}`);
+  }
   if (!existsSync(dir)) {
     fail(`release:load: ${dir} does not exist; only published releases (content/releases/<n>) load unless --dir names another`);
   }
@@ -45,10 +54,9 @@ async function load(releaseNo: number, dirOption: string | undefined): Promise<v
   await client.connect();
   try {
     await client.query(`SET ROLE ${OWNER_ROLE}`);
-    const result = await loadRelease(client, dir);
-    if (result.releaseNo !== releaseNo) {
-      fail(`release:load: ${dir} holds release ${String(result.releaseNo)}, not ${String(releaseNo)}`);
-    }
+    // The loader checks the manifest's number, the verification levels and the synthetic marks
+    // before it opens a transaction, so a refused release leaves nothing behind.
+    const result = await loadRelease(client, dir, { release: releaseNo });
     process.stdout.write(
       `release:load: release ${String(result.releaseNo)} ${result.status === 'loaded' ? 'loaded' : 'was already loaded'} (${String(result.records)} records, manifest ${result.manifestSha256}).\n`,
     );
@@ -63,6 +71,7 @@ try {
     process.stdout.write(
       [
         `release:assemble: ${result.dir} holds ${String(result.records)} records in ${String(result.files.length)} files (MANIFEST.json sha256 ${result.manifestSha256}).`,
+        ...(result.excluded === 0 ? [] : [`${String(result.excluded)} draft record(s) below L2 stay in content/drafts; RELEASE.md lists them under "Drafts not in this release".`]),
         `Next: pnpm verify-content, pnpm release:dry-run ${String(release)}, then a pull request titled "content: release ${String(release)}".`,
         '',
       ].join('\n'),

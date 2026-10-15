@@ -8,10 +8,12 @@ The only arithmetic path for money in the platform (CLAUDE.md rule 2).
   `parseCents("1234")`; write them back with `formatCents` (`"12.34"`), `centsToString` (`"1234"`) or
   `formatUsd(cents, locale)`, none of which passes through a float. Add and subtract with `addCents`,
   `subtractCents`, `negateCents`, `sumCents`, `compareCents`, `minCents` and `maxCents`.
-- **Rates and unrounded values are `Decimal`s** (decimal.js at 40 significant digits, behind a narrower
-  interface). `decimal("0.85")` and `decimal(85n)` build them; `rate("1.10")` also checks the numeric(14,6)
-  shape. Operands are other decimals only: `d.times(2)` and `d.plus("1")` do not compile, and there is no
-  `toNumber`. Text output is always plain digits, never exponent notation.
+- **Rates and unrounded values are `Decimal`s** (decimal.js behind a narrower interface). Sums,
+  differences and products are exact, whatever their length; only a quotient that does not terminate
+  stops, at 40 significant digits. `decimal("0.85")` and `decimal(85n)` build them; `rate("1.10")` also
+  checks the numeric(14,6) shape. Operands are other decimals only: `d.times(2)` and `d.plus("1")` do not
+  compile and throw at runtime, and there is no `toNumber`. Text output is always plain digits, never
+  exponent notation.
 - **Rounding happens once per line.** `multiplyCents(amount, rate)` keeps the full product as
   `UnroundedCents`; `addUnrounded`, `sumUnrounded` and `unroundedFromDollars` keep it unrounded. Only
   `roundToCents(unrounded, rule)` turns it into `Cents`, under the contract's rule (`HALF_UP_CENT`,

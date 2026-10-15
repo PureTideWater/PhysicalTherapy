@@ -2,7 +2,8 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { MoneyError, cents } from './cents';
-import { centsToDecimal, decimal, isDecimal, rate } from './decimal';
+import { type Decimal, QUOTIENT_DIGITS, centsToDecimal, decimal, isDecimal, rate } from './decimal';
+import { roundToCents, unroundedCents } from './rounding';
 
 describe('decimal', () => {
   it.each(['0', '-0', '1', '-12', '0.85', '33.2875', '0.000000000000000000000000000001', '123456789012345678901234567890'])(
@@ -54,7 +55,35 @@ describe('decimal', () => {
   });
 
   it('keeps forty significant digits on a quotient that does not terminate', () => {
+    expect(QUOTIENT_DIGITS).toBe(40);
     expect(decimal('1').dividedBy(decimal('3')).toString()).toBe(`0.${'3'.repeat(40)}`);
+    expect(decimal('2').dividedBy(decimal('3')).significantDigits()).toBe(40);
+  });
+
+  it('never rounds a sum, a difference or a product, however many digits it needs', () => {
+    const tiny = decimal(`0.${'0'.repeat(40)}1`);
+    expect(decimal('0.5').minus(tiny).toString()).toBe(`0.4${'9'.repeat(40)}`);
+    expect(decimal('1000000000000000000000000000000').plus(decimal('0.00000000001')).toString()).toBe('1000000000000000000000000000000.00000000001');
+    let product = decimal('1');
+    for (let factor = 0; factor < 8; factor += 1) {
+      product = product.times(decimal('99.999999'));
+    }
+    expect(product.significantDigits()).toBeGreaterThan(40);
+    expect(product.toString()).toBe(
+      '9999999200000027.999999440000006999999944000000279999999200000001',
+    );
+  });
+
+  it('rounds a half that sits just below a half, after a sub-precision term, down (no double rounding)', () => {
+    const justBelowHalf = unroundedCents(decimal('0.5').minus(decimal(`0.${'0'.repeat(40)}1`)));
+    expect(roundToCents(justBelowHalf, 'HALF_UP_CENT')).toBe(0n);
+    expect(roundToCents(justBelowHalf, 'HALF_EVEN_CENT')).toBe(0n);
+    expect(roundToCents(unroundedCents(decimal('0.5')), 'HALF_UP_CENT')).toBe(1n);
+  });
+
+  it('refuses operands that are not decimals, at runtime too', () => {
+    expect(() => decimal('1').plus(1 as unknown as Decimal)).toThrow(MoneyError);
+    expect(() => decimal('1').comparedTo({} as unknown as Decimal)).toThrow(/takes decimals only/);
   });
 
   it('recognizes its own values', () => {

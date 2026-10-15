@@ -20,15 +20,15 @@ import { repositoryRoot } from '../content-files';
 import { releaseNotes } from './assemble';
 
 /**
- * Builds the SYNTHETIC test release in fixtures/synthetic/rules/release-synth-1: the parsed records
+ * Builds the SYNTHETIC test release in fixtures/synthetic/rules/release-synth-900001: the parsed records
  * come from the synthetic CMS- and X12-format files in fixtures/synthetic/cms through the same
  * parsers as real imports; the hand-typed records (thresholds, assistant, sequestration, the MPPR
  * percentage, windows, prompt pay, a denial category) and their second passes are committed by hand
  * beside them. RELEASE.md and MANIFEST.json cover both. A unit test keeps the committed files equal
  * to what this produces; run `tsx tools/release/synthetic.ts` after changing a synthetic source.
  */
-export const SYNTHETIC_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-1';
-export const SYNTHETIC_RELEASE_NUMBER = 1;
+export const SYNTHETIC_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900001';
+export const SYNTHETIC_RELEASE_NUMBER = 900_001;
 const SYNTHETIC_SOURCES_DIR = 'fixtures/synthetic/cms';
 const BUILT_ON = '2026-10-15';
 

@@ -26,6 +26,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "fast-check": "catalog:",
     "@types/node": "catalog:",
     "esbuild": "^0.28.2",
     "tsx": "catalog:",

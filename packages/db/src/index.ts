@@ -5,5 +5,18 @@
  */
 export { readDatabaseUrl } from './config';
 export { MIGRATIONS_DIR, type MigrateOptions, type MigrateResult, type Migration, MigrationError, historyProblems, migrate, readMigrations } from './migrate';
-export { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, appDevLoginUrl, bootstrapRoles, bootstrapStatements } from './roles';
+export {
+  APP_DEV_LOGIN,
+  APP_ROLE,
+  OWNER_ROLE,
+  type RoleAttributes,
+  RoleBootstrapError,
+  WANTED_ROLES,
+  appDevLoginUrl,
+  bootstrapRoles,
+  createRoleStatement,
+  grantStatements,
+  managedRoles,
+  roleAlteration,
+} from './roles';
 export * from './schema';
