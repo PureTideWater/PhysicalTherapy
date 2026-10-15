@@ -1,7 +1,7 @@
 # Worksheet G39: Mapped as government, then as other
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -36,7 +36,7 @@ Step 1, the agreement.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `NO_AGREEMENT` | | | | | | |
-| 2 | unpriced `NO_AGREEMENT` | | | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `NO_AGREEMENT` | | | | | | | |
+| 2 | unpriced `NO_AGREEMENT` | | | | | | | |

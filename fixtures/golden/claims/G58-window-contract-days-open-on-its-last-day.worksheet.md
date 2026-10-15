@@ -1,7 +1,7 @@
 # Worksheet G58: A contract's 90-day dispute window, open on its last day; an underpayment and an overpayment
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -13,7 +13,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Remittance date: 2026-07-17; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g58: contract, contract version cv-g58-1, 2026-01-01 to open.
 - Contract version cv-g58-1 (contract contract-g58, version 1, signed_off, 2026-01-01 to open; windows: timely filing 180 days, dispute 90 days, appeal levels level 1 90 days, level 2 60 days):
-  - Rate record rr-g58-1: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
+  - Rate record rr-g58-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ Step 1, the agreement.
   - cv-g58-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.
 - Rate records of cv-g58-1 against code 97110, modifier set [GP], place of service 11, 2026-03-10:
   - rr-g58-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.
-- Rate record rr-g58-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).
+- Rate record rr-g58-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies); contract-specific adjustment: none.
 
 Step 2, the base amount by method.
 - Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.
@@ -43,7 +43,11 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 1.056 x $20.0000 = $21.12.
 - At 110%, per unit: work 682 cents ($6.82), practice expense 1483.9 cents ($14.839), malpractice 157.3 cents ($1.573); total 2323.2 cents ($23.232).
 
-Step 3, units: 2 as billed; 2323.2 cents ($23.232) x 2 = 4646.4 cents ($46.464).
+Step 3, units and edits.
+- Units: 2 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 2323.2 cents ($23.232) x 2 = 4646.4 cents ($46.464).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
 
 ### Line 2: 97140 x 1 on 2026-03-10
 
@@ -53,7 +57,7 @@ Step 1, the agreement.
   - cv-g58-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.
 - Rate records of cv-g58-1 against code 97140, modifier set [GP], place of service 11, 2026-03-10:
   - rr-g58-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.
-- Rate record rr-g58-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).
+- Rate record rr-g58-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies); contract-specific adjustment: none.
 
 Step 2, the base amount by method.
 - Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.
@@ -66,17 +70,21 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 1.229 x $20.0000 = $24.58.
 - At 110%, per unit: work 748 cents ($7.48), practice expense 1755.6 cents ($17.556), malpractice 200.2 cents ($2.002); total 2703.8 cents ($27.038).
 
-Step 3, units: 1 as billed; 2703.8 cents ($27.038) x 1 = 2703.8 cents ($27.038).
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 2703.8 cents ($27.038) x 1 = 2703.8 cents ($27.038).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
 
 ## Steps 4 to 8, per line
 
 ### Line 1
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - mppr: flag apply_mppr is off; not applied.
 - assistant_reduction: flag apply_assistant_reduction is off; not applied.
 - sequestration: flag apply_sequestration is off; not applied.
-- Contract-specific adjustments: none (phase one rate records define none).
+- contract_adjustment: the rate record defines none; not applied.
 
 Step 5, patient share: 840 cents ($8.40) from the line's PR adjustments (PR-2 840); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -89,11 +97,11 @@ Step 8, dispute window: the contract's dispute window, 90 days from the remittan
 
 ### Line 2
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - mppr: flag apply_mppr is off; not applied.
 - assistant_reduction: flag apply_assistant_reduction is off; not applied.
 - sequestration: flag apply_sequestration is off; not applied.
-- Contract-specific adjustments: none (phase one rate records define none).
+- contract_adjustment: the rate record defines none; not applied.
 
 Step 5, patient share: 480 cents ($4.80) from the line's PR adjustments (PR-2 480); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -106,7 +114,7 @@ Step 8, dispute window: the contract's dispute window, 90 days from the remittan
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | priced | 4646 | 4646.4 | HALF_UP_CENT | 840 | 646 | OPEN (ends 2026-10-15) |
-| 2 | priced | 2704 | 2703.8 | HALF_UP_CENT | 480 | -196 | OPEN (ends 2026-10-15) |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 4646 | 4646.4 | HALF_UP_CENT | 840 | 646 | OPEN (ends 2026-10-15) | none |
+| 2 | priced | 2704 | 2703.8 | HALF_UP_CENT | 480 | -196 | OPEN (ends 2026-10-15) | none |

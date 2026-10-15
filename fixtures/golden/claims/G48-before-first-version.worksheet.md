@@ -1,7 +1,7 @@
 # Worksheet G48: A service date before the contract's first version
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -13,7 +13,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g48: contract, contract version cv-g48-1, 2026-01-01 to open.
 - Contract version cv-g48-1 (contract contract-g48, version 1, signed_off, 2026-07-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
-  - Rate record rr-g48-1: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-07-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
+  - Rate record rr-g48-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-07-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -31,6 +31,6 @@ Step 1, the agreement.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | | | | |

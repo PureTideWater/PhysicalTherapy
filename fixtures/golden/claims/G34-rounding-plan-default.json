@@ -1,5 +1,5 @@
 {
-  "format": "tp-golden-claim/2",
+  "format": "tp-golden-claim/3",
   "id": "G34",
   "title": "No contract and no practice rounding: the plan's HALF_UP_CENT",
   "covers": ["PRC-13"],
@@ -70,6 +70,7 @@
           {"name": "assistant_reduction", "before_cents": "2458", "after_cents": "2458"},
           {"name": "sequestration", "before_cents": "2458", "after_cents": "2396.5"}
         ],
+        "review_flags": [],
         "variance_cents": "-61",
         "window": {"ends_on": null, "status": "NO_WINDOW"}
       }
@@ -79,7 +80,7 @@
     "# Worksheet G34: No contract and no practice rounding: the plan's HALF_UP_CENT",
     "",
     "Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).",
-    "Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.",
+    "Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.",
     "Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.",
     "",
     "## Inputs",
@@ -102,7 +103,7 @@
     "",
     "Step 1, the agreement.",
     "- Mapping map-ma-1 (ma_noncontracted, 2026-01-01 to open) is in force on 2026-03-10.",
-    "- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies.",
+    "- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies; no contract-specific adjustment.",
     "",
     "Step 2, the base amount by method.",
     "- Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.",
@@ -115,7 +116,11 @@
     "- Fee schedule amount per unit: 1.229 x $20.0000 = $24.58.",
     "- At 100%, per unit: work 680 cents ($6.80), practice expense 1596 cents ($15.96), malpractice 182 cents ($1.82); total 2458 cents ($24.58).",
     "",
-    "Step 3, units: 1 as billed; 2458 cents ($24.58) x 1 = 2458 cents ($24.58).",
+    "Step 3, units and edits.",
+    "- Units: 1 as billed, under the timed-units rule MEDICARE_POOLED, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).",
+    "- Medically unlikely edit: apply_ncci is on; ncci_mue 97140 (2026-01-01 to 2026-12-31, adjudication indicator 3) allows 6 unit(s); 1 is within it.",
+    "- Base: 2458 cents ($24.58) x 1 = 2458 cents ($24.58).",
+    "- Procedure-to-procedure edits: apply_ncci is on; no ncci_ptp record in force on 2026-03-10 has 97140 in column 2 and another line's code of the date in column 1.",
     "",
     "## Step 4a, the multiple procedure reduction, per day",
     "",
@@ -132,12 +137,11 @@
     "",
     "### Line 1",
     "",
-    "Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).",
+    "Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.",
     "- mppr: before 2458, after 2458; its unit is the day's highest-ranked, kept whole; unchanged.",
     "- assistant_reduction: before 2458, after 2458; no CQ or CO modifier on the line; unchanged.",
     "- sequestration: before 2458, after 2396.5; the amount 2458 cents ($24.58) less the patient share 408 leaves the payer's share 2050 cents ($20.50); 3% of the payer's share is 61.5; 2458 - 61.5 = 2396.5 cents ($23.965).",
-    "- Contract-specific adjustments: none (phase one rate records define none).",
-    "- apply_ncci is on: NCCI edits and MUE arrive in milestone 7 and change no amount here.",
+    "- contract_adjustment: the Medicare Advantage non-contracted terms define none; not applied.",
     "",
     "Step 5, patient share: 408 cents ($4.08) from the line's PR adjustments (PR-2 408); reported beside the expected amount, never subtracted from it.",
     "- Claim status 1 (processed as primary); the claim is not reversed.",
@@ -150,9 +154,9 @@
     "",
     "## Results",
     "",
-    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- |",
-    "| 1 | priced | 2397 | 2396.5 | HALF_UP_CENT | 408 | -61 | NO_WINDOW |"
+    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | priced | 2397 | 2396.5 | HALF_UP_CENT | 408 | -61 | NO_WINDOW | none |"
   ],
   "provenance": {"computed_by": "independent worksheet tools/golden-worksheet", "specialist_verified": false}
 }

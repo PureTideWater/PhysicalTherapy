@@ -3,13 +3,16 @@
 
 From a golden claim file's inputs and the rule release it names, this program computes every line's
 expected allowed amount by the algorithm of PRD section 11, in its order: resolve the agreement,
-compute the base amount by method, apply units (a timed-units rule of UNKNOWN stops the line), apply
-the flagged adjustments (multiple procedure reduction, assistant reduction, sequestration), report the
-patient share and stop secondary and reversed claims, round once at the end under the record's rule
-keeping the unrounded value, compare with observed allowed (the variance), and work out the dispute
-deadline from the remittance date. It writes a human-readable worksheet per claim: every input value,
-every intermediate amount, each adjustment's before and after, the rounding, the variance and the
-window.
+compute the base amount by method (a fixed schedule, a percentage of the Medicare fee schedule, the
+lesser of a schedule and the line charge, a per-visit amount, or an unsupported method), apply units
+and the edits (a medically unlikely edit stops the line for review, a timed-units rule of UNKNOWN
+stops it, a procedure-to-procedure edit raises a review flag and leaves the price alone), apply the
+adjustments (multiple procedure reduction, assistant reduction, sequestration, then the rate record's
+own percentage or cap), report the patient share and stop secondary and reversed claims, round once
+at the end under the record's rule keeping the unrounded value, compare with observed allowed (the
+variance), and work out the dispute deadline from the remittance date. It writes a human-readable
+worksheet per claim: every input value, every intermediate amount, each adjustment's before and
+after, each edit, the rounding, the variance and the window.
 
 It shares no code with packages/pricing: it is Python, standard library only, run with `python3 -I`.
 Every operation runs in a decimal context that traps any inexact result or rounding, so a figure is
@@ -37,7 +40,7 @@ import sys
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
-FORMAT = "tp-golden-claim/2"
+FORMAT = "tp-golden-claim/3"
 COMPUTED_BY = "independent worksheet tools/golden-worksheet"
 REPOSITORY = Path(__file__).resolve().parents[2]
 GOLDEN_DIR = REPOSITORY / "fixtures" / "golden" / "claims"
@@ -62,8 +65,13 @@ DEFAULT_ROUNDING = "HALF_UP_CENT"
 MAPPING_KINDS = ("contract", "no_agreement", "ma_noncontracted", "government", "other")
 NO_AGREEMENT_KINDS = ("no_agreement", "government", "other")
 VERSION_STATUSES = ("draft", "proposed", "approved", "signed_off", "superseded")
-PHASE_ONE_METHODS = ("PERCENT_OF_MEDICARE", "UNSUPPORTED")
-LATER_METHODS = ("FIXED_SCHEDULE", "LESSER_OF", "PER_VISIT")
+METHODS = ("FIXED_SCHEDULE", "PERCENT_OF_MEDICARE", "LESSER_OF", "PER_VISIT", "UNSUPPORTED")
+SCHEDULE_METHODS = ("FIXED_SCHEDULE", "PERCENT_OF_MEDICARE")
+# The multiple procedure reduction cuts a fee-schedule practice-expense part; only PERCENT_OF_MEDICARE has one.
+# A fixed amount, a per-visit amount or a lesser-of term with apply_mppr on has no rule (QUESTIONS Q39): the
+# engine stops it for review (ENGINE_ERROR mppr_needs_fee_schedule), so no golden line holds it.
+MPPR_METHODS = ("PERCENT_OF_MEDICARE",)
+CONTRACT_ADJUSTMENT_KINDS = ("PERCENT", "CAP")
 TIMED_UNITS_RULES = ("MEDICARE_POOLED", "PER_CODE", "UNKNOWN")
 # The most units one line may carry; more is malformed input, an engine error and never a golden line.
 MAX_UNITS = 999
@@ -86,6 +94,10 @@ FIRST_LEVEL_WINDOW = "redetermination"
 ASSISTANT_MODIFIERS = ("CQ", "CO")
 FLAG_NAMES = ("apply_mppr", "apply_assistant_reduction", "apply_sequestration", "apply_ncci")
 ADJUSTMENT_OF_FLAG = {"apply_mppr": "mppr", "apply_assistant_reduction": "assistant_reduction", "apply_sequestration": "sequestration"}
+# NCCI procedure-to-procedure edits: the modifier indicator of the SYNTHETIC file's header ("0=not allowed
+# 1=allowed 9=not applicable"). Only 1 lets a 59 or X modifier bypass the edit (QUESTIONS Q41).
+PTP_BYPASS_INDICATOR = "1"
+PTP_FLAG = "NCCI_PTP"
 UNPRICED_REASONS = (
     "NO_AGREEMENT", "NO_MAPPING", "AMBIGUOUS_RATE", "NO_RATE_FOR_CODE", "NO_PFS_VALUE", "UNSUPPORTED_METHOD",
     "SECONDARY_PAYER", "MUE_EXCEEDED", "UNITS_RULE_UNKNOWN", "DATE_OUTSIDE_VERSIONS", "REVERSED_CLAIM", "ENGINE_ERROR",
@@ -410,26 +422,76 @@ def validate_rate_record(record, where):
     if scope["places_of_service"] is not None:
         string_list(scope["places_of_service"], f"{where}.scope.places_of_service", r"^\d{2}$")
     window(scope, f"{where}.scope")
-    method = record["method"]
-    if method in LATER_METHODS:
-        raise InputError(f"{where}.method: {method} arrives in milestone 7; phase one has no golden line for it")
-    choice(method, f"{where}.method", PHASE_ONE_METHODS)
-    if method == "PERCENT_OF_MEDICARE":
-        parameters = strict(record["parameters"], f"{where}.parameters", ["percentage", "year_basis", "locality_basis", "conversion_factor"])
-        percentage = number(parameters["percentage"], f"{where}.parameters.percentage")
-        if percentage <= 0:
-            raise InputError(f"{where}.parameters.percentage: must be above zero")
-        text(parameters["year_basis"], f"{where}.parameters.year_basis", r"^(?:CURRENT|LOCKED:\d{4})$")
-        choice(parameters["locality_basis"], f"{where}.parameters.locality_basis", ("practice",))
-        choice(parameters["conversion_factor"], f"{where}.parameters.conversion_factor", CONVERSION_FACTORS)
+    method = choice(record["method"], f"{where}.method", METHODS)
+    parameters = record["parameters"]
+    if method == "UNSUPPORTED":
+        strict(parameters, f"{where}.parameters", [])
+    elif method == "PERCENT_OF_MEDICARE":
+        strict(parameters, f"{where}.parameters", ["percentage", "year_basis", "locality_basis", "conversion_factor", "contract_adjustment"])
+        validate_percent_schedule(parameters, f"{where}.parameters")
+    elif method == "LESSER_OF":
+        strict(parameters, f"{where}.parameters", ["schedule", "charge_basis", "contract_adjustment"])
+        schedule = parameters["schedule"]
+        if not isinstance(schedule, dict):
+            raise InputError(f"{where}.parameters.schedule: must be an object")
+        schedule_method = choice(schedule.get("method"), f"{where}.parameters.schedule.method", SCHEDULE_METHODS)
+        if schedule_method == "FIXED_SCHEDULE":
+            strict(schedule, f"{where}.parameters.schedule", ["method", "amount_cents"])
+            amount(schedule["amount_cents"], f"{where}.parameters.schedule.amount_cents")
+        else:
+            strict(schedule, f"{where}.parameters.schedule", ["method", "percentage", "year_basis", "locality_basis", "conversion_factor"])
+            validate_percent_schedule(schedule, f"{where}.parameters.schedule")
+        choice(parameters["charge_basis"], f"{where}.parameters.charge_basis", ("LINE_CHARGE",))
     else:
-        strict(record["parameters"], f"{where}.parameters", [])
+        strict(parameters, f"{where}.parameters", ["amount_cents", "contract_adjustment"])
+        amount(parameters["amount_cents"], f"{where}.parameters.amount_cents")
+    if method != "UNSUPPORTED":
+        validate_contract_adjustment(parameters["contract_adjustment"], f"{where}.parameters.contract_adjustment")
     flags = strict(record["flags"], f"{where}.flags", list(FLAG_NAMES) + ["timed_units_rule", "rounding"])
     for name in FLAG_NAMES:
         boolean(flags[name], f"{where}.flags.{name}")
     choice(flags["timed_units_rule"], f"{where}.flags.timed_units_rule", TIMED_UNITS_RULES)
     if flags["rounding"] is not None:
         choice(flags["rounding"], f"{where}.flags.rounding", tuple(ROUNDING_RULES))
+    if flags["apply_mppr"] and method not in MPPR_METHODS and method != "UNSUPPORTED":
+        raise InputError(
+            f"{where}.flags.apply_mppr: {method} has no fee-schedule practice-expense part for the multiple procedure reduction to cut; "
+            "the engine stops such a line for review (ENGINE_ERROR mppr_needs_fee_schedule), so it is not a golden line (fixtures/golden/QUESTIONS.md Q39)"
+        )
+
+
+def amount(value, where):
+    """Whole cents of zero or more, as the contract states an amount."""
+    found = cents(value, where)
+    if found < 0:
+        raise InputError(f"{where}: must be zero or more")
+    return found
+
+
+def validate_percent_schedule(parameters, where):
+    percentage = number(parameters["percentage"], f"{where}.percentage")
+    if percentage <= 0:
+        raise InputError(f"{where}.percentage: must be above zero")
+    text(parameters["year_basis"], f"{where}.year_basis", r"^(?:CURRENT|LOCKED:\d{4})$")
+    choice(parameters["locality_basis"], f"{where}.locality_basis", ("practice",))
+    choice(parameters["conversion_factor"], f"{where}.conversion_factor", CONVERSION_FACTORS)
+
+
+def validate_contract_adjustment(adjustment, where):
+    """The rate record's own adjustment (PRD 11 step 4): null, a percentage of the amount, or a cap on the line."""
+    if adjustment is None:
+        return
+    if not isinstance(adjustment, dict):
+        raise InputError(f"{where}: must be null or an object")
+    kind = choice(adjustment.get("kind"), f"{where}.kind", CONTRACT_ADJUSTMENT_KINDS)
+    if kind == "PERCENT":
+        strict(adjustment, where, ["kind", "percent"])
+        percent = number(adjustment["percent"], f"{where}.percent")
+        if not ZERO < percent <= 1000:
+            raise InputError(f"{where}.percent: must be above 0 and at most 1000")
+    else:
+        strict(adjustment, where, ["kind", "cap_cents"])
+        amount(adjustment["cap_cents"], f"{where}.cap_cents")
 
 
 # ---------------------------------------------------------------------------------------------
@@ -504,18 +566,27 @@ def load_release(reference):
 
 
 class Terms:
-    """What prices a line: a signed-off rate record, or the Original Medicare terms of an MA non-contracted plan."""
+    """What prices a line: a signed-off rate record, or the Original Medicare terms of an MA non-contracted plan.
 
-    def __init__(self, mapping, version, record, method, percentage, year_basis, conversion_factor, flags, rounding):
+    `schedule` names how the per-unit amount is found: PERCENT_OF_MEDICARE (the fee schedule at `percentage`,
+    for the method itself or a lesser-of schedule), FIXED_SCHEDULE (`amount` per unit, for the method or a
+    lesser-of schedule), PER_VISIT (`amount` once per claim and date), or None (UNSUPPORTED).
+    """
+
+    def __init__(self, mapping, version, record, method, flags, rounding, schedule=None, percentage=None, year_basis=None,
+                 conversion_factor=None, amount=None, contract_adjustment=None):
         self.mapping = mapping
         self.version = version
         self.record = record
         self.method = method
+        self.flags = flags
+        self.rounding = rounding
+        self.schedule = schedule
         self.percentage = percentage
         self.year_basis = year_basis
         self.conversion_factor = conversion_factor
-        self.flags = flags
-        self.rounding = rounding
+        self.amount = amount
+        self.contract_adjustment = contract_adjustment
 
     def identity(self):
         return {
@@ -524,6 +595,60 @@ class Terms:
             "contract_version_id": None if self.version is None else self.version["contract_version_id"],
             "rate_record_id": None if self.record is None else self.record["rate_record_id"],
         }
+
+
+def percent_schedule_text(parameters):
+    return (
+        f"PERCENT_OF_MEDICARE at {percent_text(Decimal(parameters['percentage']))}, year basis {parameters['year_basis']}, "
+        f"locality basis {parameters['locality_basis']}, conversion factor {parameters['conversion_factor']}"
+    )
+
+
+def method_text(record):
+    """A rate record's method and parameters in words."""
+    method, parameters = record["method"], record["parameters"]
+    if method == "PERCENT_OF_MEDICARE":
+        return percent_schedule_text(parameters)
+    if method == "FIXED_SCHEDULE":
+        return f"FIXED_SCHEDULE, {money(Decimal(parameters['amount_cents']))} per unit"
+    if method == "PER_VISIT":
+        return f"PER_VISIT, {money(Decimal(parameters['amount_cents']))} once per claim and date across the included codes"
+    if method == "LESSER_OF":
+        schedule = parameters["schedule"]
+        if schedule["method"] == "FIXED_SCHEDULE":
+            scheduled = f"FIXED_SCHEDULE, {money(Decimal(schedule['amount_cents']))} per unit"
+        else:
+            scheduled = percent_schedule_text(schedule)
+        return f"LESSER_OF the line charge and the schedule ({scheduled})"
+    return "UNSUPPORTED"
+
+
+def contract_adjustment_text(adjustment):
+    if adjustment is None:
+        return "none"
+    if adjustment["kind"] == "PERCENT":
+        return f"pays {percent_text(Decimal(adjustment['percent']))} of the amount"
+    return f"caps the line at {money(Decimal(adjustment['cap_cents']))}"
+
+
+def record_terms(mapping, version, record):
+    """The Terms of a contract rate record."""
+    flags = record["flags"]
+    rounding = flags["rounding"]
+    method = record["method"]
+    parameters = record["parameters"]
+    if method == "UNSUPPORTED":
+        return Terms(mapping, version, record, method, flags, rounding)
+    adjustment = parameters["contract_adjustment"]
+    if method in ("FIXED_SCHEDULE", "PER_VISIT"):
+        return Terms(mapping, version, record, method, flags, rounding, schedule=method, amount=Decimal(parameters["amount_cents"]), contract_adjustment=adjustment)
+    schedule = parameters["schedule"] if method == "LESSER_OF" else parameters
+    if method == "LESSER_OF" and schedule["method"] == "FIXED_SCHEDULE":
+        return Terms(mapping, version, record, method, flags, rounding, schedule="FIXED_SCHEDULE", amount=Decimal(schedule["amount_cents"]), contract_adjustment=adjustment)
+    return Terms(
+        mapping, version, record, method, flags, rounding, schedule="PERCENT_OF_MEDICARE", percentage=Decimal(schedule["percentage"]),
+        year_basis=schedule["year_basis"], conversion_factor=schedule["conversion_factor"], contract_adjustment=adjustment,
+    )
 
 
 def flags_text(flags):
@@ -567,6 +692,7 @@ class Line:
         self.base = None
         self.amount = None
         self.adjustments = []
+        self.review_flags = []
         self.patient_share = sum((Decimal(item["amount_cents"]) for item in facts["patient_share_adjustments"]), ZERO)
         self.rounding = None
         self.rounded = None
@@ -601,11 +727,11 @@ def resolve_agreement(case, line):
     if mapping["kind"] == "ma_noncontracted":
         flags = {name: True for name in FLAG_NAMES}
         flags["timed_units_rule"] = "MEDICARE_POOLED"
-        line.terms = Terms(mapping, None, None, "PERCENT_OF_MEDICARE", HUNDRED, "CURRENT", "non_qualifying_apm", flags, None)
+        line.terms = Terms(mapping, None, None, "PERCENT_OF_MEDICARE", flags, None, schedule="PERCENT_OF_MEDICARE", percentage=HUNDRED, year_basis="CURRENT", conversion_factor="non_qualifying_apm")
         line.say(
             "- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, "
             "year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on "
-            f"({flags_text(flags)}); no contract rounding, so the practice default applies."
+            f"({flags_text(flags)}); no contract rounding, so the practice default applies; no contract-specific adjustment."
         )
         return
     chosen = next(version for version in inputs["contract_versions"] if version["contract_version_id"] == mapping["contract_version_id"])
@@ -639,30 +765,47 @@ def resolve_agreement(case, line):
         line.stop("NO_RATE_FOR_CODE", "No rate record of the version matches the line.")
         return
     record = matches[0]
-    flags = record["flags"]
-    rounding = flags["rounding"]
+    line.terms = record_terms(mapping, version, record)
     if record["method"] == "UNSUPPORTED":
-        line.terms = Terms(mapping, version, record, "UNSUPPORTED", None, None, None, flags, rounding)
         line.say(f"- Rate record {record['rate_record_id']}: method UNSUPPORTED.")
         return
-    parameters = record["parameters"]
-    line.terms = Terms(mapping, version, record, "PERCENT_OF_MEDICARE", Decimal(parameters["percentage"]), parameters["year_basis"], parameters["conversion_factor"], flags, rounding)
+    rounding = record["flags"]["rounding"]
     line.say(
-        f"- Rate record {record['rate_record_id']}: PERCENT_OF_MEDICARE at {percent_text(Decimal(parameters['percentage']))}, year basis {parameters['year_basis']}, "
-        f"locality basis {parameters['locality_basis']}, conversion factor {parameters['conversion_factor']}; flags {flags_text(flags)}; "
-        f"rounding {rounding if rounding is not None else 'not stated (the practice default applies)'}."
+        f"- Rate record {record['rate_record_id']}: {method_text(record)}; flags {flags_text(record['flags'])}; "
+        f"rounding {rounding if rounding is not None else 'not stated (the practice default applies)'}; "
+        f"contract-specific adjustment: {contract_adjustment_text(record['parameters']['contract_adjustment'])}."
     )
 
 
 def base_amount(case, line, release):
-    """Step 2. The per-unit amount by method, for the basis year."""
+    """Step 2. The per-unit amount by method: a fixed amount, the fee schedule for the basis year, or a per-visit amount."""
     terms = line.terms
-    facts = line.facts
     line.say("")
     line.say("Step 2, the base amount by method.")
     if terms.method == "UNSUPPORTED":
         line.stop("UNSUPPORTED_METHOD", "The rate record's method is UNSUPPORTED (capitation or an undefined case rate).")
         return
+    if terms.method == "PER_VISIT":
+        codes = terms.record["scope"]["codes"]
+        included = "every code" if codes is None else ", ".join(codes)
+        line.say(
+            f"- PER_VISIT: {money(terms.amount)} once per claim and date across the record's included codes ({included}); units do not "
+            "multiply it, and the first included line of the date carries it while the others expect zero (step 3)."
+        )
+        return
+    if terms.method == "LESSER_OF":
+        line.say("- LESSER_OF: the schedule's amount for the units billed is compared with the line charge in step 3, and the lesser is the base.")
+    if terms.schedule == "FIXED_SCHEDULE":
+        line.unit_total = terms.amount
+        line.say(f"- {'The schedule is FIXED_SCHEDULE' if terms.method == 'LESSER_OF' else 'FIXED_SCHEDULE'}: {money(terms.amount)} per unit for the code and modifier set.")
+        return
+    fee_schedule(case, line, release)
+
+
+def fee_schedule(case, line, release):
+    """Step 2 for a percentage of Medicare: the fee-schedule amount per unit for the basis year, at the percentage."""
+    terms = line.terms
+    facts = line.facts
     service_year = int(line.date[:4])
     if terms.year_basis == "CURRENT":
         basis_year = service_year
@@ -730,20 +873,127 @@ def base_amount(case, line, release):
     line.unit_total = total
 
 
-def apply_units(line):
-    """Step 3. Units as billed; under a timed-units rule of UNKNOWN they are a reason for review, not a price."""
+def apply_units(case, line, release):
+    """Step 3. Units as billed and the edits: a medically unlikely edit and a timed-units rule of UNKNOWN stop the
+    line for review; then the base by method; then the procedure-to-procedure edits, which flag and never price."""
+    terms = line.terms
+    flags = terms.flags
+    code = line.facts["procedure_code"]
+    rule = flags["timed_units_rule"]
     line.say("")
-    if line.terms.flags["timed_units_rule"] == "UNKNOWN":
-        line.say(f"Step 3, units: {line.units} as billed, under the timed-units rule UNKNOWN.")
+    line.say("Step 3, units and edits.")
+    if rule == "UNKNOWN":
+        line.say(f"- Units: {line.units} as billed, under the timed-units rule UNKNOWN.")
+    else:
+        line.say(f"- Units: {line.units} as billed, under the timed-units rule {rule}, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).")
+    if not flags["apply_ncci"]:
+        line.say("- Medically unlikely edit: apply_ncci is off; not checked.")
+    else:
+        mue = release.in_force("ncci_mue", {"hcpcs": code}, line.date)
+        if mue is None:
+            line.say(f"- Medically unlikely edit: apply_ncci is on; release {release.number} has no ncci_mue record for {code} in force on {line.date}, so there is no limit to check.")
+        else:
+            limit = mue["value"]["mue"]
+            source = f"ncci_mue {code} ({window_text(mue['effective_from'], mue['effective_to'])}, adjudication indicator {mue['value']['adjudication_indicator']}) allows {limit} unit(s)"
+            if line.units > limit:
+                line.say(f"- Medically unlikely edit: apply_ncci is on; {source}.")
+                line.stop(
+                    "MUE_EXCEEDED",
+                    f"{line.units} units exceed the {limit} the edit allows: the units are a reason for review, not priced down (PRD 11 step 3). "
+                    "The line's units are compared on their own (fixtures/golden/QUESTIONS.md Q42).",
+                )
+                return
+            line.say(f"- Medically unlikely edit: apply_ncci is on; {source}; {line.units} {'is' if line.units == 1 else 'are'} within it.")
+    if rule == "UNKNOWN":
         line.stop(
             "UNITS_RULE_UNKNOWN",
             "The rate record does not say how the payer counts timed units, and no minutes are imported: the units are a reason "
             "for review, not a price (PRD 20; fixtures/golden/QUESTIONS.md Q32). The line is neither ranked nor reduced.",
         )
         return
-    line.base = line.unit_total * Decimal(line.units)
+    if terms.method == "PER_VISIT":
+        line.say("- Base: the per-visit amount is placed once per claim and date, below (the per-visit step).")
+    elif terms.method == "LESSER_OF":
+        schedule = line.unit_total * Decimal(line.units)
+        charge = Decimal(line.facts["charge_cents"])
+        line.base = min(schedule, charge)
+        winner = "the schedule" if schedule <= charge else "the line charge"
+        line.say(
+            f"- Base, the lesser of the schedule and the line charge: the schedule for {line.units} unit(s) is {money(line.unit_total)} x {line.units} = "
+            f"{money(schedule)}; the line charge is {money(charge)}; the lesser is {winner}, {money(line.base)}"
+            f"{' (they are equal)' if schedule == charge else ''}."
+        )
+    else:
+        line.base = line.unit_total * Decimal(line.units)
+        line.say(f"- Base: {money(line.unit_total)} x {line.units} = {money(line.base)}.")
     line.amount = line.base
-    line.say(f"Step 3, units: {line.units} as billed; {money(line.unit_total)} x {line.units} = {money(line.base)}.")
+    procedure_to_procedure(case, line, release)
+
+
+def bypassing(modifiers):
+    """The modifiers that can bypass a procedure-to-procedure edit: 59 and the X modifiers (PRD 2 point 6)."""
+    return [modifier for modifier in modifiers if modifier == "59" or modifier.startswith("X")]
+
+
+def procedure_to_procedure(case, line, release):
+    """Step 3, NCCI procedure-to-procedure edits: this line's code in column 2 against another line's code in column 1
+    on the same date. An edit that stands raises a review flag on this line; the price is never changed."""
+    code = line.facts["procedure_code"]
+    if not line.terms.flags["apply_ncci"]:
+        line.say("- Procedure-to-procedure edits: apply_ncci is off; not checked.")
+        return
+    others = sorted((facts for facts in case["inputs"]["claim"]["lines"] if facts["line_no"] != line.no and facts["service_date"] == line.date), key=lambda facts: facts["line_no"])
+    edits = []
+    for other in others:
+        record = release.in_force("ncci_ptp", {"column1": other["procedure_code"], "column2": code}, line.date)
+        if record is not None:
+            edits.append((other, record))
+    if not edits:
+        line.say(f"- Procedure-to-procedure edits: apply_ncci is on; no ncci_ptp record in force on {line.date} has {code} in column 2 and another line's code of the date in column 1.")
+        return
+    line.say(f"- Procedure-to-procedure edits: apply_ncci is on; {code} is in column 2 of these edits with the claim's other lines on {line.date}:")
+    for other, record in edits:
+        indicator = record["value"]["modifier_indicator"]
+        source = f"ncci_ptp column 1 {other['procedure_code']}, column 2 {code} ({window_text(record['effective_from'], record['effective_to'])}, modifier indicator {indicator})"
+        own, theirs = bypassing(line.facts["modifiers"]), bypassing(other["modifiers"])
+        carried = "; ".join(part for part in (
+            f"line {line.no} carries {' '.join(own)}" if own else "",
+            f"line {other['line_no']} carries {' '.join(theirs)}" if theirs else "",
+        ) if part)
+        if indicator == PTP_BYPASS_INDICATOR and carried:
+            line.say(f"  - Line {other['line_no']} ({other['procedure_code']}): {source}. The indicator allows a modifier and {carried}: the edit is bypassed, no flag.")
+            continue
+        if indicator == PTP_BYPASS_INDICATOR:
+            why = "the indicator allows a 59 or X modifier and neither line carries one"
+        else:
+            why = f"indicator {indicator} lets no modifier bypass the edit (fixtures/golden/QUESTIONS.md Q41)" + (f", though {carried}" if carried else "")
+        line.review_flags.append({"flag": PTP_FLAG, "column1_line_no": other["line_no"]})
+        line.say(f"  - Line {other['line_no']} ({other['procedure_code']}): {source}. {why[0].upper()}{why[1:]}: review flag {PTP_FLAG} with line {other['line_no']}. The price is not changed.")
+
+
+def per_visit_amounts(lines, visit_log):
+    """Step 3 for PER_VISIT, per claim, date and rate record: the lines priced so far under the record on the date share
+    one visit amount; the lowest line number carries it and the others expect zero (PRD 11 step 2)."""
+    groups = {}
+    for line in lines:
+        if line.reason is None and line.terms.method == "PER_VISIT":
+            groups.setdefault((line.date, line.terms.record["rate_record_id"]), []).append(line)
+    for (date, record_id), group in sorted(groups.items()):
+        group.sort(key=lambda line: line.no)
+        amount_ = group[0].terms.amount
+        visit_log.append(f"### Per-visit amount on {date}, rate record {record_id}")
+        visit_log.append("")
+        listed = ", ".join(f"line {line.no} ({line.facts['procedure_code']})" for line in group)
+        visit_log.append(
+            f"Lines priced so far under {record_id} on {date}: {listed}. The visit pays {money(amount_)} once per claim and date; the first "
+            "included line (the lowest line number) carries it and the others expect zero."
+        )
+        for index, line in enumerate(group):
+            line.base = amount_ if index == 0 else ZERO
+            line.amount = line.base
+            role = "carries the visit amount" if index == 0 else f"expects zero (line {group[0].no} carries the visit)"
+            visit_log.append(f"- Line {line.no}: {role}; base {money(line.base)}.")
+        visit_log.append("")
 
 
 def mppr_rate_for(release, code, date):
@@ -854,6 +1104,21 @@ def sequestration(line, release):
     ))
 
 
+def contract_adjustment(line):
+    """Step 4d. The rate record's own adjustment, after the Medicare ones: a percentage of the amount, or a cap on the line."""
+    adjustment = line.terms.contract_adjustment
+    before = line.amount
+    if adjustment["kind"] == "PERCENT":
+        percent = Decimal(adjustment["percent"])
+        line.amount = before * percent / HUNDRED
+        how = f"the rate record pays {percent_text(percent)} of the amount: {money(before)} x {percent_text(percent)} = {money(line.amount)}"
+    else:
+        cap = Decimal(adjustment["cap_cents"])
+        line.amount = min(before, cap)
+        how = f"the rate record caps the line at {money(cap)}: the lesser of {fmt(before)} and {fmt(cap)} is {money(line.amount)}"
+    line.adjustments.append(("contract_adjustment", before, line.amount, how))
+
+
 def add_days(date_text, days):
     return (datetime.date.fromisoformat(date_text) + datetime.timedelta(days=days)).isoformat()
 
@@ -923,7 +1188,9 @@ def price_case(case):
         if line.reason is None:
             base_amount(case, line, release)
         if line.reason is None:
-            apply_units(line)
+            apply_units(case, line, release)
+    visit_log = []
+    per_visit_amounts(lines, visit_log)
     day_log = []
     if any(line.reason is None and line.terms.flags["apply_mppr"] for line in lines):
         multiple_procedure_reduction(lines, release, day_log)
@@ -932,20 +1199,22 @@ def price_case(case):
             assistant_reduction(line, release)
         if line.reason is None and line.terms.flags["apply_sequestration"]:
             sequestration(line, release)
+        if line.reason is None and line.terms.contract_adjustment is not None:
+            contract_adjustment(line)
     default_rounding = inputs["practice_settings"]["default_rounding"]
     for line in lines:
         if line.reason is not None:
             continue
         line.say("")
-        line.say("Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).")
+        line.say("Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.")
         for name in ("apply_mppr", "apply_assistant_reduction", "apply_sequestration"):
             if not line.terms.flags[name]:
                 line.say(f"- {ADJUSTMENT_OF_FLAG[name]}: flag {name} is off; not applied.")
         for name, before, after, how in line.adjustments:
             line.say(f"- {name}: before {fmt(before)}, after {fmt(after)}; {how}.")
-        line.say("- Contract-specific adjustments: none (phase one rate records define none).")
-        if line.terms.flags["apply_ncci"]:
-            line.say("- apply_ncci is on: NCCI edits and MUE arrive in milestone 7 and change no amount here.")
+        if line.terms.contract_adjustment is None:
+            whose = "the Medicare Advantage non-contracted terms define" if line.terms.record is None else "the rate record defines"
+            line.say(f"- contract_adjustment: {whose} none; not applied.")
         line.say("")
         shares = ", ".join(f"PR-{item['reason_code']} {item['amount_cents']}" for item in line.facts["patient_share_adjustments"]) or "none"
         line.say(f"Step 5, patient share: {money(line.patient_share)} from the line's PR adjustments ({shares}); reported beside the expected amount, never subtracted from it.")
@@ -976,7 +1245,7 @@ def price_case(case):
         )
         line.window = dispute_window(case, line, release)
     expected = {"lines": [expected_line(line) for line in lines]}
-    return expected, render_worksheet(case, release, lines, day_log)
+    return expected, render_worksheet(case, release, lines, visit_log, day_log)
 
 
 def expected_line(line):
@@ -993,6 +1262,7 @@ def expected_line(line):
         "terms": line.terms.identity(),
         "base_cents": fmt(line.base),
         "adjustments": [{"name": name, "before_cents": fmt(before), "after_cents": fmt(after)} for name, before, after, _ in line.adjustments],
+        "review_flags": [dict(flag) for flag in line.review_flags],
         "variance_cents": fmt(line.variance),
         "window": line.window,
     }
@@ -1002,7 +1272,7 @@ def expected_line(line):
 # The worksheet
 
 
-def render_worksheet(case, release, lines, day_log):
+def render_worksheet(case, release, lines, visit_log, day_log):
     inputs = case["inputs"]
     claim = inputs["claim"]
     practice = inputs["practice_settings"]
@@ -1010,7 +1280,7 @@ def render_worksheet(case, release, lines, day_log):
         f"# Worksheet {case['id']}: {case['title']}",
         "",
         f"Computed by the {COMPUTED_BY} (Python, exact decimal arithmetic; no code shared with packages/pricing).",
-        "Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.",
+        "Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.",
         f"Every reference value comes from SYNTHETIC release {release.number}: invented for tests, never a CMS value.",
         "",
         "## Inputs",
@@ -1037,12 +1307,11 @@ def render_worksheet(case, release, lines, day_log):
             f"{window_text(version['effective_from'], version['effective_to'])}; windows: {windows_text(version['windows'])}):"
         )
         for record in version["rate_records"]:
-            if record["method"] == "PERCENT_OF_MEDICARE":
-                parameters = record["parameters"]
-                terms = f"PERCENT_OF_MEDICARE {percent_text(Decimal(parameters['percentage']))}, {parameters['year_basis']}, locality {parameters['locality_basis']}, {parameters['conversion_factor']}"
-            else:
-                terms = "UNSUPPORTED"
-            out.append(f"  - Rate record {record['rate_record_id']}: {terms}; scope {scope_text(record['scope'])}; flags {flags_text(record['flags'])}; rounding {record['flags']['rounding'] or 'not stated'}.")
+            adjustment = "" if record["method"] == "UNSUPPORTED" else f"; contract-specific adjustment {contract_adjustment_text(record['parameters']['contract_adjustment'])}"
+            out.append(
+                f"  - Rate record {record['rate_record_id']}: {method_text(record)}; scope {scope_text(record['scope'])}; flags {flags_text(record['flags'])}; "
+                f"rounding {record['flags']['rounding'] or 'not stated'}{adjustment}."
+            )
     out += [
         "",
         "| Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |",
@@ -1063,6 +1332,9 @@ def render_worksheet(case, release, lines, day_log):
         cut = next((index for index, item in enumerate(steps) if item.startswith("Step 4")), len(steps))
         out += trim(steps[:cut])
         line.rest = steps[cut:]
+    if visit_log:
+        out += ["", "## Step 3, the per-visit amount, per claim and date", ""]
+        out += trim(visit_log)
     if day_log:
         out += ["", "## Step 4a, the multiple procedure reduction, per day", ""]
         out += trim(day_log)
@@ -1076,15 +1348,16 @@ def render_worksheet(case, release, lines, day_log):
         "",
         "## Results",
         "",
-        "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for line in lines:
         if line.reason is not None:
-            out.append(f"| {line.no} | unpriced `{line.reason}` | | | | | | |")
+            out.append(f"| {line.no} | unpriced `{line.reason}` | | | | | | | |")
         else:
             window_cell = line.window["status"] if line.window["ends_on"] is None else f"{line.window['status']} (ends {line.window['ends_on']})"
-            out.append(f"| {line.no} | priced | {fmt(line.rounded)} | {fmt(line.amount)} | {line.rounding} | {fmt(line.patient_share)} | {fmt(line.variance)} | {window_cell} |")
+            flags = ", ".join(f"{flag['flag']} with line {flag['column1_line_no']}" for flag in line.review_flags) or "none"
+            out.append(f"| {line.no} | priced | {fmt(line.rounded)} | {fmt(line.amount)} | {line.rounding} | {fmt(line.patient_share)} | {fmt(line.variance)} | {window_cell} | {flags} |")
     return out
 
 

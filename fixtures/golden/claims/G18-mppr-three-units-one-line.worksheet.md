@@ -1,7 +1,7 @@
 # Worksheet G18: Multiple procedure reduction within one line of three units
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -24,7 +24,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 
 Step 1, the agreement.
 - Mapping map-ma-1 (ma_noncontracted, 2026-01-01 to open) is in force on 2026-03-10.
-- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies.
+- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies; no contract-specific adjustment.
 
 Step 2, the base amount by method.
 - Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.
@@ -37,7 +37,11 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 1.056 x $20.0000 = $21.12.
 - At 100%, per unit: work 620 cents ($6.20), practice expense 1349 cents ($13.49), malpractice 143 cents ($1.43); total 2112 cents ($21.12).
 
-Step 3, units: 3 as billed; 2112 cents ($21.12) x 3 = 6336 cents ($63.36).
+Step 3, units and edits.
+- Units: 3 as billed, under the timed-units rule MEDICARE_POOLED, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is on; ncci_mue 97110 (2026-01-01 to 2026-12-31, adjudication indicator 3) allows 7 unit(s); 3 are within it.
+- Base: 2112 cents ($21.12) x 3 = 6336 cents ($63.36).
+- Procedure-to-procedure edits: apply_ncci is on; no ncci_ptp record in force on 2026-03-10 has 97110 in column 2 and another line's code of the date in column 1.
 
 ## Step 4a, the multiple procedure reduction, per day
 
@@ -56,12 +60,11 @@ Lines with apply_mppr on and a price so far: line 1. Units are ranked by their p
 
 ### Line 1
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - mppr: before 6336, after 5256.8; 6336 cents ($63.36) - the reductions of its units 1079.2 = 5256.8 cents ($52.568).
 - assistant_reduction: before 5256.8, after 5256.8; no CQ or CO modifier on the line; unchanged.
 - sequestration: before 5256.8, after 5129.096; the amount 5256.8 cents ($52.568) less the patient share 1000 leaves the payer's share 4256.8 cents ($42.568); 3% of the payer's share is 127.704; 5256.8 - 127.704 = 5129.096 cents ($51.29096).
-- Contract-specific adjustments: none (phase one rate records define none).
-- apply_ncci is on: NCCI edits and MUE arrive in milestone 7 and change no amount here.
+- contract_adjustment: the Medicare Advantage non-contracted terms define none; not applied.
 
 Step 5, patient share: 1000 cents ($10.00) from the line's PR adjustments (PR-2 1000); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -74,6 +77,6 @@ Step 8, dispute window: the remittance date is not known, so no deadline can be 
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | priced | 5129 | 5129.096 | HALF_UP_CENT | 1000 | 129 | NO_WINDOW |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 5129 | 5129.096 | HALF_UP_CENT | 1000 | 129 | NO_WINDOW | none |

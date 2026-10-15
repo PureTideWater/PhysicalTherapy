@@ -1,7 +1,7 @@
 # Worksheet G13: Multiple procedure reduction with a tie across two codes (2025 values)
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900002: invented for tests, never a CMS value.
 
 ## Inputs
@@ -13,7 +13,7 @@ Every reference value comes from SYNTHETIC release 900002: invented for tests, n
 - Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g13: contract, contract version cv-g13-1, 2026-01-01 to open.
 - Contract version cv-g13-1 (contract contract-g13, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
-  - Rate record rr-g13-1: PERCENT_OF_MEDICARE 100%, LOCKED:2025, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
+  - Rate record rr-g13-1: PERCENT_OF_MEDICARE at 100%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -30,7 +30,7 @@ Step 1, the agreement.
   - cv-g13-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.
 - Rate records of cv-g13-1 against code 97112, modifier set [GP], place of service 11, 2026-04-14:
   - rr-g13-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.
-- Rate record rr-g13-1: PERCENT_OF_MEDICARE at 100%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).
+- Rate record rr-g13-1: PERCENT_OF_MEDICARE at 100%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies); contract-specific adjustment: none.
 
 Step 2, the base amount by method.
 - Year basis LOCKED:2025: the 2025 fee schedule; each value is the latest record in force during 2025.
@@ -43,7 +43,11 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 0.9975 x $19.6123 = $19.56326925.
 - At 100%, per unit: work 607.9813 cents ($6.079813), practice expense 1216.747092 cents ($12.16747092), malpractice 131.598533 cents ($1.31598533); total 1956.326925 cents ($19.56326925).
 
-Step 3, units: 1 as billed; 1956.326925 cents ($19.56326925) x 1 = 1956.326925 cents ($19.56326925).
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 1956.326925 cents ($19.56326925) x 1 = 1956.326925 cents ($19.56326925).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
 
 ### Line 2: 97110 x 1 on 2026-04-14
 
@@ -53,7 +57,7 @@ Step 1, the agreement.
   - cv-g13-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.
 - Rate records of cv-g13-1 against code 97110, modifier set [GP], place of service 11, 2026-04-14:
   - rr-g13-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.
-- Rate record rr-g13-1: PERCENT_OF_MEDICARE at 100%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).
+- Rate record rr-g13-1: PERCENT_OF_MEDICARE at 100%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies); contract-specific adjustment: none.
 
 Step 2, the base amount by method.
 - Year basis LOCKED:2025: the 2025 fee schedule; each value is the latest record in force during 2025.
@@ -66,7 +70,11 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 0.9814 x $19.6123 = $19.24751122.
 - At 100%, per unit: work 588.369 cents ($5.88369), practice expense 1216.747092 cents ($12.16747092), malpractice 119.63503 cents ($1.1963503); total 1924.751122 cents ($19.24751122).
 
-Step 3, units: 1 as billed; 1924.751122 cents ($19.24751122) x 1 = 1924.751122 cents ($19.24751122).
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 1924.751122 cents ($19.24751122) x 1 = 1924.751122 cents ($19.24751122).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
 
 ## Step 4a, the multiple procedure reduction, per day
 
@@ -85,11 +93,11 @@ Lines with apply_mppr on and a price so far: line 1, line 2. Units are ranked by
 
 ### Line 1
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - assistant_reduction: flag apply_assistant_reduction is off; not applied.
 - sequestration: flag apply_sequestration is off; not applied.
 - mppr: before 1956.326925, after 1956.326925; its unit is the day's highest-ranked, kept whole; unchanged.
-- Contract-specific adjustments: none (phase one rate records define none).
+- contract_adjustment: the rate record defines none; not applied.
 
 Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -102,11 +110,11 @@ Step 8, dispute window: the remittance date is not known, so no deadline can be 
 
 ### Line 2
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - assistant_reduction: flag apply_assistant_reduction is off; not applied.
 - sequestration: flag apply_sequestration is off; not applied.
 - mppr: before 1924.751122, after 1438.0522852; 1924.751122 cents ($19.24751122) - the reductions of its units 486.6988368 = 1438.0522852 cents ($14.380522852).
-- Contract-specific adjustments: none (phase one rate records define none).
+- contract_adjustment: the rate record defines none; not applied.
 
 Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -119,7 +127,7 @@ Step 8, dispute window: the remittance date is not known, so no deadline can be 
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | priced | 1956 | 1956.326925 | HALF_UP_CENT | 0 | 56 | NO_WINDOW |
-| 2 | priced | 1438 | 1438.0522852 | HALF_UP_CENT | 0 | 138 | NO_WINDOW |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 1956 | 1956.326925 | HALF_UP_CENT | 0 | 56 | NO_WINDOW | none |
+| 2 | priced | 1438 | 1438.0522852 | HALF_UP_CENT | 0 | 138 | NO_WINDOW | none |

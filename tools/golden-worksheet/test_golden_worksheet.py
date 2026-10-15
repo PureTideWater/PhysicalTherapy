@@ -111,10 +111,50 @@ class Validation(unittest.TestCase):
         self.refused(lambda case: self.line(case).update(charge_cents="60.00"), "integer cents written as a string")
         self.refused(lambda case: self.rate_record(case)["parameters"].update(percentage="1e2"), "decimal string")
 
-    def test_refuses_methods_of_later_milestones(self):
-        self.refused(lambda case: self.rate_record(case).update(method="FIXED_SCHEDULE"), "arrives in milestone 7")
+    def test_refuses_malformed_methods_and_parameters(self):
+        self.refused(lambda case: self.rate_record(case).update(method="CAPITATION"), "method: must be one of FIXED_SCHEDULE")
+        self.refused(lambda case: self.rate_record(case).update(method="FIXED_SCHEDULE"), "missing amount_cents")
         self.refused(lambda case: self.rate_record(case)["parameters"].update(year_basis="LOCKED:25"), "does not match")
         self.refused(lambda case: self.rate_record(case)["flags"].update(timed_units_rule="SOMETIMES"), "must be one of MEDICARE_POOLED")
+        self.refused(lambda case: self.rate_record(case)["parameters"].pop("contract_adjustment"), "missing contract_adjustment")
+
+    def test_refuses_malformed_fixed_lesser_of_and_per_visit_parameters(self):
+        def as_method(method, parameters, **flag_changes):
+            def mutate(case):
+                record = self.rate_record(case)
+                record.update(method=method, parameters=parameters)
+                record["flags"].update(flag_changes)
+            return mutate
+        fixed = {"amount_cents": "3250", "contract_adjustment": None}
+        self.refused(as_method("FIXED_SCHEDULE", {**fixed, "amount_cents": "-1"}), "amount_cents: must be zero or more")
+        self.refused(as_method("PER_VISIT", {**fixed, "amount_cents": 3250}), "integer cents written as a string")
+        self.refused(as_method("PER_VISIT", {"amount_cents": "3250"}), "missing contract_adjustment")
+        lesser = {"schedule": {"method": "FIXED_SCHEDULE", "amount_cents": "3400"}, "charge_basis": "LINE_CHARGE", "contract_adjustment": None}
+        self.refused(as_method("LESSER_OF", {**lesser, "schedule": "3400"}), "schedule: must be an object")
+        self.refused(as_method("LESSER_OF", {**lesser, "schedule": {"method": "PER_VISIT", "amount_cents": "1"}}), "schedule.method: must be one of FIXED_SCHEDULE, PERCENT_OF_MEDICARE")
+        self.refused(as_method("LESSER_OF", {**lesser, "schedule": {"method": "FIXED_SCHEDULE", "amount_cents": "1", "percentage": "1"}}), "unknown key percentage")
+        self.refused(as_method("LESSER_OF", {**lesser, "schedule": {"method": "PERCENT_OF_MEDICARE", "percentage": "0", "year_basis": "CURRENT", "locality_basis": "practice", "conversion_factor": "qualifying_apm"}}), "percentage: must be above zero")
+        self.refused(as_method("LESSER_OF", {**lesser, "charge_basis": "TOTAL_CHARGE"}), "charge_basis: must be one of LINE_CHARGE")
+        for method, parameters in (("FIXED_SCHEDULE", fixed), ("PER_VISIT", fixed), ("LESSER_OF", lesser)):
+            with self.subTest(method=method):
+                self.refused(as_method(method, parameters, apply_mppr=True), "no fee-schedule practice-expense part")
+        case = copy.deepcopy(self.case)
+        as_method("FIXED_SCHEDULE", fixed, apply_mppr=False)(case)
+        gw.validate(case)
+
+    def test_refuses_a_malformed_contract_adjustment(self):
+        def adjustment(value):
+            return lambda case: self.rate_record(case)["parameters"].update(contract_adjustment=value)
+        self.refused(adjustment("95"), "must be null or an object")
+        self.refused(adjustment({"kind": "DISCOUNT", "percent": "5"}), "kind: must be one of PERCENT, CAP")
+        self.refused(adjustment({"kind": "PERCENT", "percent": "0"}), "above 0 and at most 1000")
+        self.refused(adjustment({"kind": "PERCENT", "percent": "1000.5"}), "above 0 and at most 1000")
+        self.refused(adjustment({"kind": "PERCENT", "cap_cents": "100"}), "missing percent")
+        self.refused(adjustment({"kind": "CAP", "cap_cents": "-5"}), "cap_cents: must be zero or more")
+        for value in ({"kind": "PERCENT", "percent": "1000"}, {"kind": "CAP", "cap_cents": "0"}, None):
+            case = copy.deepcopy(self.case)
+            adjustment(value)(case)
+            gw.validate(case)
 
     def test_refuses_what_the_engine_stops_as_an_engine_error(self):
         self.refused(lambda case: self.line(case).update(units="1000"), "more than 999 units")
@@ -508,6 +548,138 @@ class Windows(unittest.TestCase):
         self.assertEqual(outcome(golden("G64"), 2)["adjustments"][0], {"name": "mppr", "before_cents": "3948", "after_cents": "2887.8"})
 
 
+class Methods(unittest.TestCase):
+    def test_a_fixed_schedule_is_its_amount_per_unit_times_the_units(self):
+        case = golden("G101")
+        self.assertEqual([(outcome(case, n)["base_cents"], outcome(case, n)["method"]) for n in (1, 2, 3)], [("6500", "FIXED_SCHEDULE"), ("3175", "FIXED_SCHEDULE"), ("8625", "FIXED_SCHEDULE")])
+        case["inputs"]["claim"]["lines"][0]["units"] = "4"
+        self.assertEqual(outcome(case, 1)["base_cents"], "13000")
+
+    def test_lesser_of_takes_the_lesser_of_the_schedule_and_the_charge(self):
+        self.assertEqual([outcome(golden("G121"), n)["base_cents"] for n in (1, 2)], ["6000", "3400"])
+        self.assertEqual([outcome(golden("G122"), n)["base_cents"] for n in (1, 2)], ["3400", "10200"])
+        self.assertEqual([outcome(golden("G123"), n)["base_cents"] for n in (1, 2)], ["3000", "7396.25"])
+        self.assertEqual([outcome(golden("G135"), n)["base_cents"] for n in (1, 2)], ["6800", "2400"])
+        _, worksheet = gw.price_case(golden("G122"))
+        self.assertTrue(any("(they are equal)" in item for item in worksheet))
+
+    def test_a_lesser_of_percent_schedule_without_a_value_is_no_pfs_value(self):
+        self.assertEqual([outcome(golden("G126"), n).get("unpriced_reason") for n in (1, 2, 3)], ["NO_PFS_VALUE", "NO_PFS_VALUE", None])
+
+    def test_per_visit_the_first_included_line_carries_it_and_the_others_expect_zero(self):
+        self.assertEqual([outcome(golden("G141"), n)["base_cents"] for n in (1, 2, 3)], ["8800", "0", "0"])
+        self.assertEqual([outcome(golden("G145"), n)["base_cents"] for n in (1, 2, 3, 4)], ["8800", "0", "8800", "0"])
+        self.assertEqual([outcome(golden("G147"), n)["base_cents"] for n in (1, 2, 3)], ["8800", "3000", "0"])
+
+    def test_per_visit_follows_line_numbers_not_listing_order(self):
+        case = golden("G142")
+        listed = outcome(case, 1)
+        case["inputs"]["claim"]["lines"].reverse()
+        self.assertEqual(outcome(case, 1), listed)
+        self.assertEqual(listed["base_cents"], "8800")
+
+    def test_per_visit_falls_to_the_next_line_when_the_first_stops(self):
+        case = golden("G146")
+        self.assertEqual([outcome(case, n).get("unpriced_reason") for n in (1, 2, 3)], ["MUE_EXCEEDED", None, None])
+        self.assertEqual([outcome(case, n)["base_cents"] for n in (2, 3)], ["8800", "0"])
+
+    def test_per_visit_assistant_reduction_follows_the_line(self):
+        self.assertEqual(outcome(golden("G143"), 1)["adjustments"][0], {"name": "assistant_reduction", "before_cents": "8800", "after_cents": "6776"})
+        self.assertEqual(outcome(golden("G144"), 2)["adjustments"][0], {"name": "assistant_reduction", "before_cents": "0", "after_cents": "0"})
+
+
+class Edits(unittest.TestCase):
+    def flags(self, name, number):
+        return outcome(golden(name), number)["review_flags"]
+
+    def test_units_above_the_mue_with_ncci_on_stop_for_review(self):
+        case = golden("G105")
+        self.assertEqual([outcome(case, n).get("unpriced_reason") for n in (1, 2, 3)], ["MUE_EXCEEDED", None, "MUE_EXCEEDED"])
+        case["inputs"]["contract_versions"][0]["rate_records"][0]["flags"]["apply_ncci"] = False
+        self.assertEqual(outcome(case, 1)["base_cents"], "26000")
+        self.assertEqual(outcome(golden("G182"), 2)["base_cents"], "14800")
+
+    def test_a_code_without_an_mue_record_has_no_limit(self):
+        self.assertEqual(outcome(golden("G112"), 1)["base_cents"], "8500")
+        _, worksheet = gw.price_case(golden("G112"))
+        self.assertTrue(any("has no ncci_mue record for 97750" in item for item in worksheet))
+
+    def test_the_mue_comes_before_the_timed_units_rule(self):
+        case = golden("G109")
+        case["inputs"]["claim"]["lines"][1]["procedure_code"] = "97110"
+        case["inputs"]["claim"]["lines"][1]["units"] = "8"
+        self.assertEqual(outcome(case, 2)["unpriced_reason"], "MUE_EXCEEDED")
+
+    def test_a_procedure_to_procedure_edit_flags_the_column_two_line_and_never_prices(self):
+        self.assertEqual(self.flags("G102", 2), [{"flag": "NCCI_PTP", "column1_line_no": 1}])
+        self.assertEqual(self.flags("G102", 1), [])
+        self.assertEqual(outcome(golden("G102"), 2)["expected_allowed_cents"], "6666")
+        self.assertEqual(outcome(golden("G161"), 3)["expected_allowed_cents"], outcome(golden("G162"), 3)["expected_allowed_cents"])
+
+    def test_59_or_an_x_modifier_on_either_line_bypasses_an_indicator_1_edit(self):
+        self.assertEqual([self.flags("G103", n) for n in (1, 2)], [[], []])
+        self.assertEqual(self.flags("G104", 2), [])
+        self.assertEqual(self.flags("G104", 4), [{"flag": "NCCI_PTP", "column1_line_no": 3}])
+        self.assertEqual(gw.bypassing(["GP", "59", "XS", "XU", "KX"]), ["59", "XS", "XU"])
+
+    def test_indicators_0_and_9_let_no_modifier_bypass(self):
+        self.assertEqual(self.flags("G125", 2), [{"flag": "NCCI_PTP", "column1_line_no": 1}])
+        self.assertEqual(self.flags("G164", 2), [{"flag": "NCCI_PTP", "column1_line_no": 1}])
+        self.assertEqual(self.flags("G165", 2), [])
+
+    def test_the_column_two_line_terms_decide_and_an_unpriced_column_one_line_still_counts(self):
+        self.assertEqual([self.flags("G136", n) for n in (2, 4)], [[], []])
+        self.assertEqual(self.flags("G167", 3), [{"flag": "NCCI_PTP", "column1_line_no": 1}])
+
+    def test_timed_units_rules_are_recorded(self):
+        _, worksheet = gw.price_case(golden("G112"))
+        self.assertTrue(any("under the timed-units rule MEDICARE_POOLED, recorded" in item for item in worksheet))
+        _, worksheet = gw.price_case(golden("G101"))
+        self.assertTrue(any("under the timed-units rule PER_CODE, recorded" in item for item in worksheet))
+
+
+class ContractAdjustments(unittest.TestCase):
+    def test_a_percentage_of_the_amount_after_the_medicare_adjustments(self):
+        line = outcome(golden("G121"), 1)
+        self.assertEqual([item["name"] for item in line["adjustments"]], ["sequestration", "contract_adjustment"])
+        self.assertEqual(line["adjustments"][1], {"name": "contract_adjustment", "before_cents": "5856", "after_cents": "5738.88"})
+
+    def test_a_cap_on_the_line(self):
+        self.assertEqual(outcome(golden("G111"), 1)["adjustments"][1], {"name": "contract_adjustment", "before_cents": "6866", "after_cents": "6000"})
+        self.assertEqual(outcome(golden("G111"), 2)["adjustments"][1], {"name": "contract_adjustment", "before_cents": "2643.41", "after_cents": "2643.41"})
+        self.assertEqual(outcome(golden("G163"), 1)["expected_allowed_cents"], "5800")
+
+    def test_no_adjustment_leaves_no_entry(self):
+        self.assertNotIn("contract_adjustment", [item["name"] for item in outcome(golden("G102"), 1)["adjustments"]])
+        self.assertNotIn("contract_adjustment", [item["name"] for item in outcome(golden("G01"), 1)["adjustments"]])
+
+
+class FixturePayers(unittest.TestCase):
+    def test_the_committed_claims_carry_the_fixture_payers_inputs(self):
+        import fixture_payers  # noqa: PLC0415
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            status = fixture_payers.main(["check"])
+        self.assertEqual(status, 0, out.getvalue())
+        self.assertIn("5 payer(s)", out.getvalue())
+        self.assertGreaterEqual(sum(len(spec["lines"]) for spec in fixture_payers.CLAIMS), 200)
+
+    def test_each_payer_is_one_contract(self):
+        import fixture_payers  # noqa: PLC0415
+        for payer in fixture_payers.PAYERS.values():
+            with self.subTest(payer=payer.letter):
+                self.assertEqual(len({version["contract_id"] for version in payer.contract_versions}), 1)
+                methods = {record["method"] for version in payer.contract_versions for record in version["rate_records"]}
+                self.assertTrue(methods)
+
+    def test_usage(self):
+        import fixture_payers  # noqa: PLC0415
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(fixture_payers.main([]), 2)
+        self.assertIn("usage", err.getvalue())
+
+
 class Files(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -598,7 +770,7 @@ class Files(unittest.TestCase):
     def test_checks_every_committed_file_by_default(self):
         status, out, _ = self.run_main("check", "--json")
         report = json.loads(out)
-        self.assertEqual((status, report["lines"], report["differences"]), (0, 119, []))
+        self.assertEqual((status, report["lines"], report["differences"]), (0, 326, []))
 
     def test_trims_blank_lines_at_both_ends(self):
         self.assertEqual(gw.trim(["", "a", "", "b", ""]), ["a", "", "b"])

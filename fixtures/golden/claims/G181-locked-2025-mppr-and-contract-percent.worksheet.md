@@ -1,0 +1,204 @@
+# Worksheet G181: Locked to the 2025 fee schedule at 115%, the reduction on, then the contract's 97.5%
+
+Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
+Every reference value comes from SYNTHETIC release 900002: invented for tests, never a CMS value.
+
+## Inputs
+
+- Release 900002 at fixtures/synthetic/rules/release-synth-900002; its MANIFEST.json has SHA-256 ac9b17c76f65ffe83be6bb543fb91349efa7470231d888e34e75fbfc3000ac52 and every file matched it.
+- Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
+- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
+- Claim SYNTH-CLAIM-G181: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-E/PLAN-EPO.
+- Remittance date: 2026-02-27; dispute windows are judged on the triage date 2026-10-15.
+- Mapping map-e-epo: contract, contract version cv-e-1, 2025-07-01 to 2026-08-31.
+- Mapping map-e-left: no_agreement, 2026-09-01 to open.
+- Contract version cv-e-0 (contract contract-synth-e, version 1, superseded, 2025-07-01 to 2025-12-31; windows: timely filing 120 days, dispute 30 days, appeal levels none stated):
+  - Rate record rr-e0-therapy: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; scope codes 97110, 97112, 97116, 97140, 97530; any modifiers; any place of service; 2025-07-01 to 2025-12-31; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment none.
+- Contract version cv-e-1 (contract contract-synth-e, version 2, signed_off, 2026-01-01 to 2026-03-31; windows: timely filing 120 days, dispute 30 days, appeal levels none stated):
+  - Rate record rr-e1-therapy: PERCENT_OF_MEDICARE at 115%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; scope codes 97110, 97112, 97116, 97140, 97530; any modifiers; any place of service; 2026-01-01 to 2026-03-31; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment pays 97.5% of the amount.
+  - Rate record rr-e1-modalities: PERCENT_OF_MEDICARE at 115%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; scope codes 97026, 97035; any modifiers; any place of service; 2026-01-01 to 2026-03-31; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment pays 97.5% of the amount.
+  - Rate record rr-e1-evaluation: FIXED_SCHEDULE, 7400 cents ($74.00) per unit; scope codes 97161, 97162, 97163; any modifiers; any place of service; 2026-01-01 to 2026-03-31; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
+- Contract version cv-e-2 (contract contract-synth-e, version 3, signed_off, 2026-05-01 to open; windows: timely filing 120 days, dispute 180 days, appeal levels level 1 90 days):
+  - Rate record rr-e2-therapy: PERCENT_OF_MEDICARE at 120%, year basis CURRENT, locality basis practice, conversion factor qualifying_apm; scope codes 97110, 97112, 97140, 97530; any modifiers; any place of service; 2026-05-01 to open; flags apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule PER_CODE; rounding TRUNCATE; contract-specific adjustment none.
+  - Rate record rr-e2-97116: FIXED_SCHEDULE, 2500 cents ($25.00) per unit; scope codes 97116; any modifiers; any place of service; 2026-05-01 to open; flags apply_mppr off, apply_assistant_reduction on, apply_sequestration off, apply_ncci on; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment caps the line at 6000 cents ($60.00).
+  - Rate record rr-e2-evaluation: LESSER_OF the line charge and the schedule (FIXED_SCHEDULE, 7600 cents ($76.00) per unit); scope codes 97161, 97162, 97163, 97164; any modifiers; any place of service; 2026-05-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci on; timed_units_rule PER_CODE; rounding HALF_UP_CENT; contract-specific adjustment none.
+  - Rate record rr-e2-97750: PERCENT_OF_MEDICARE at 120%, year basis CURRENT, locality basis practice, conversion factor qualifying_apm; scope codes 97750; any modifiers; any place of service; 2026-05-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci on; timed_units_rule PER_CODE; rounding TRUNCATE; contract-specific adjustment none.
+
+| Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | 97110 | GP | 2 | 2026-02-10 | 11 | 12000 | 4100 (amt_b6) | none |
+| 2 | 97112 | GP | 1 | 2026-02-10 | 11 | 6000 | 2150 (amt_b6) | none |
+| 3 | 97140 | GP | 1 | 2026-02-10 | 11 | 6000 | 2600 (amt_b6) | none |
+
+## Steps 1 to 3, per line
+
+### Line 1: 97110 x 2 on 2026-02-10
+
+Step 1, the agreement.
+- Mapping map-e-epo (contract, 2025-07-01 to 2026-08-31) is in force on 2026-02-10.
+- The mapping names contract version cv-e-1 of contract contract-synth-e; the version that prices the line is the signed-off one of that contract in force on 2026-02-10:
+  - cv-e-0 (version 1, superseded, 2025-07-01 to 2025-12-31): not signed off.
+  - cv-e-1 (version 2, signed_off, 2026-01-01 to 2026-03-31): signed off and in force.
+  - cv-e-2 (version 3, signed_off, 2026-05-01 to open): outside its window.
+- Rate records of cv-e-1 against code 97110, modifier set [GP], place of service 11, 2026-02-10:
+  - rr-e1-therapy (codes 97110, 97112, 97116, 97140, 97530; any modifiers; any place of service; 2026-01-01 to 2026-03-31): matches.
+  - rr-e1-modalities (codes 97026, 97035; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97110 is not in its codes.
+  - rr-e1-evaluation (codes 97161, 97162, 97163; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97110 is not in its codes.
+- Rate record rr-e1-therapy: PERCENT_OF_MEDICARE at 115%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment: pays 97.5% of the amount.
+
+Step 2, the base amount by method.
+- Year basis LOCKED:2025: the 2025 fee schedule; each value is the latest record in force during 2025.
+- pfs_rvu 97110 (year 2025, quarter A, 2025-01-01 to 2025-12-31): work 0.30, PE non-facility 0.66, PE facility 0.20, MP 0.10, status A.
+- Place of service 11 is non-facility, so the non-facility practice-expense value applies.
+- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-02-10, 2026-01-01 to 2026-12-31).
+- pfs_gpci 99999-01 (2025-01-01 to 2025-12-31): work 1.000, PE 0.940, MP 0.610.
+- conversion_factor non_qualifying_apm (2025-01-01 to 2025-12-31): $19.6123 per RVU.
+- Geographically adjusted RVUs: work 0.30 x 1.000 = 0.3; PE 0.66 x 0.940 = 0.6204; MP 0.10 x 0.610 = 0.061; total 0.9814.
+- Fee schedule amount per unit: 0.9814 x $19.6123 = $19.24751122.
+- At 115%, per unit: work 676.62435 cents ($6.7662435), practice expense 1399.2591558 cents ($13.992591558), malpractice 137.5802845 cents ($1.375802845); total 2213.4637903 cents ($22.134637903).
+
+Step 3, units and edits.
+- Units: 2 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 2213.4637903 cents ($22.134637903) x 2 = 4426.9275806 cents ($44.269275806).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
+
+### Line 2: 97112 x 1 on 2026-02-10
+
+Step 1, the agreement.
+- Mapping map-e-epo (contract, 2025-07-01 to 2026-08-31) is in force on 2026-02-10.
+- The mapping names contract version cv-e-1 of contract contract-synth-e; the version that prices the line is the signed-off one of that contract in force on 2026-02-10:
+  - cv-e-0 (version 1, superseded, 2025-07-01 to 2025-12-31): not signed off.
+  - cv-e-1 (version 2, signed_off, 2026-01-01 to 2026-03-31): signed off and in force.
+  - cv-e-2 (version 3, signed_off, 2026-05-01 to open): outside its window.
+- Rate records of cv-e-1 against code 97112, modifier set [GP], place of service 11, 2026-02-10:
+  - rr-e1-therapy (codes 97110, 97112, 97116, 97140, 97530; any modifiers; any place of service; 2026-01-01 to 2026-03-31): matches.
+  - rr-e1-modalities (codes 97026, 97035; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97112 is not in its codes.
+  - rr-e1-evaluation (codes 97161, 97162, 97163; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97112 is not in its codes.
+- Rate record rr-e1-therapy: PERCENT_OF_MEDICARE at 115%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment: pays 97.5% of the amount.
+
+Step 2, the base amount by method.
+- Year basis LOCKED:2025: the 2025 fee schedule; each value is the latest record in force during 2025.
+- pfs_rvu 97112 (year 2025, quarter A, 2025-01-01 to 2025-12-31): work 0.31, PE non-facility 0.66, PE facility 0.21, MP 0.11, status A.
+- Place of service 11 is non-facility, so the non-facility practice-expense value applies.
+- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-02-10, 2026-01-01 to 2026-12-31).
+- pfs_gpci 99999-01 (2025-01-01 to 2025-12-31): work 1.000, PE 0.940, MP 0.610.
+- conversion_factor non_qualifying_apm (2025-01-01 to 2025-12-31): $19.6123 per RVU.
+- Geographically adjusted RVUs: work 0.31 x 1.000 = 0.31; PE 0.66 x 0.940 = 0.6204; MP 0.11 x 0.610 = 0.0671; total 0.9975.
+- Fee schedule amount per unit: 0.9975 x $19.6123 = $19.56326925.
+- At 115%, per unit: work 699.178495 cents ($6.99178495), practice expense 1399.2591558 cents ($13.992591558), malpractice 151.33831295 cents ($1.5133831295); total 2249.77596375 cents ($22.4977596375).
+
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 2249.77596375 cents ($22.4977596375) x 1 = 2249.77596375 cents ($22.4977596375).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
+
+### Line 3: 97140 x 1 on 2026-02-10
+
+Step 1, the agreement.
+- Mapping map-e-epo (contract, 2025-07-01 to 2026-08-31) is in force on 2026-02-10.
+- The mapping names contract version cv-e-1 of contract contract-synth-e; the version that prices the line is the signed-off one of that contract in force on 2026-02-10:
+  - cv-e-0 (version 1, superseded, 2025-07-01 to 2025-12-31): not signed off.
+  - cv-e-1 (version 2, signed_off, 2026-01-01 to 2026-03-31): signed off and in force.
+  - cv-e-2 (version 3, signed_off, 2026-05-01 to open): outside its window.
+- Rate records of cv-e-1 against code 97140, modifier set [GP], place of service 11, 2026-02-10:
+  - rr-e1-therapy (codes 97110, 97112, 97116, 97140, 97530; any modifiers; any place of service; 2026-01-01 to 2026-03-31): matches.
+  - rr-e1-modalities (codes 97026, 97035; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97140 is not in its codes.
+  - rr-e1-evaluation (codes 97161, 97162, 97163; any modifiers; any place of service; 2026-01-01 to 2026-03-31): no match, code 97140 is not in its codes.
+- Rate record rr-e1-therapy: PERCENT_OF_MEDICARE at 115%, year basis LOCKED:2025, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding HALF_EVEN_CENT; contract-specific adjustment: pays 97.5% of the amount.
+
+Step 2, the base amount by method.
+- Year basis LOCKED:2025: the 2025 fee schedule; each value is the latest record in force during 2025.
+- pfs_rvu 97140 (year 2025, quarter A, 2025-01-01 to 2025-12-31): work 0.33, PE non-facility 0.80, PE facility 0.23, MP 0.13, status A.
+- Place of service 11 is non-facility, so the non-facility practice-expense value applies.
+- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-02-10, 2026-01-01 to 2026-12-31).
+- pfs_gpci 99999-01 (2025-01-01 to 2025-12-31): work 1.000, PE 0.940, MP 0.610.
+- conversion_factor non_qualifying_apm (2025-01-01 to 2025-12-31): $19.6123 per RVU.
+- Geographically adjusted RVUs: work 0.33 x 1.000 = 0.33; PE 0.80 x 0.940 = 0.752; MP 0.13 x 0.610 = 0.0793; total 1.1613.
+- Fee schedule amount per unit: 1.1613 x $19.6123 = $22.77576399.
+- At 115%, per unit: work 744.286785 cents ($7.44286785), practice expense 1696.071704 cents ($16.96071704), malpractice 178.85436985 cents ($1.7885436985); total 2619.21285885 cents ($26.1921285885).
+
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is off; not checked.
+- Base: 2619.21285885 cents ($26.1921285885) x 1 = 2619.21285885 cents ($26.1921285885).
+- Procedure-to-procedure edits: apply_ncci is off; not checked.
+
+## Step 4a, the multiple procedure reduction, per day
+
+### Multiple procedure reduction on 2026-02-10
+
+Lines with apply_mppr on and a price so far: line 1, line 2, line 3. Units are ranked by their practice-expense amount, highest first; ties go to the lower line number, then the earlier unit (fixtures/golden/QUESTIONS.md).
+- Line 1 (97110): always therapy, mppr_rate 97110 (2026-01-01 to 2026-12-31): 40%.
+- Line 2 (97112): always therapy, mppr_rate 97112 (2026-01-01 to 2026-12-31): 40%.
+- Line 3 (97140): always therapy, mppr_rate 97140 (2026-01-01 to 2026-12-31): 40%.
+
+| Rank | Line | Code | Unit | PE amount per unit (cents) | Treatment | Reduction (cents) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 3 | 97140 | 1 | 1696.071704 | kept whole | 0 |
+| 2 | 1 | 97110 | 1 | 1399.2591558 | PE reduced by 40% | 1399.2591558 x 40% = 559.70366232 |
+| 3 | 1 | 97110 | 2 | 1399.2591558 | PE reduced by 40% | 1399.2591558 x 40% = 559.70366232 |
+| 4 | 2 | 97112 | 1 | 1399.2591558 | PE reduced by 40% | 1399.2591558 x 40% = 559.70366232 |
+
+## Steps 4 to 8, per line
+
+### Line 1
+
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
+- assistant_reduction: flag apply_assistant_reduction is off; not applied.
+- sequestration: flag apply_sequestration is off; not applied.
+- mppr: before 4426.9275806, after 3307.52025596; 4426.9275806 cents ($44.269275806) - the reductions of its units 1119.40732464 = 3307.52025596 cents ($33.0752025596).
+- contract_adjustment: before 3307.52025596, after 3224.832249561; the rate record pays 97.5% of the amount: 3307.52025596 cents ($33.0752025596) x 97.5% = 3224.832249561 cents ($32.24832249561).
+
+Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
+- Claim status 1 (processed as primary); the claim is not reversed.
+
+Step 6, rounding once: 3224.832249561 cents under HALF_EVEN_CENT (the rate record's rule; halves move to the even cent) = **3225 cents ($32.25)**; the unrounded 3224.832249561 is kept beside it.
+
+Step 7, variance: expected allowed 3225 - observed allowed 4100 cents (amt_b6) = -875 cents: an overpayment, recorded and never pursued.
+
+Step 8, dispute window: the contract's dispute window, 30 days from the remittance date 2026-02-27, ends on 2026-03-29; on the triage date 2026-10-15 it is passed: WINDOW_PASSED, validated and not actionable; the amount is unchanged.
+
+### Line 2
+
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
+- assistant_reduction: flag apply_assistant_reduction is off; not applied.
+- sequestration: flag apply_sequestration is off; not applied.
+- mppr: before 2249.77596375, after 1690.07230143; 2249.77596375 cents ($22.4977596375) - the reductions of its units 559.70366232 = 1690.07230143 cents ($16.9007230143).
+- contract_adjustment: before 1690.07230143, after 1647.82049389425; the rate record pays 97.5% of the amount: 1690.07230143 cents ($16.9007230143) x 97.5% = 1647.82049389425 cents ($16.4782049389425).
+
+Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
+- Claim status 1 (processed as primary); the claim is not reversed.
+
+Step 6, rounding once: 1647.82049389425 cents under HALF_EVEN_CENT (the rate record's rule; halves move to the even cent) = **1648 cents ($16.48)**; the unrounded 1647.82049389425 is kept beside it.
+
+Step 7, variance: expected allowed 1648 - observed allowed 2150 cents (amt_b6) = -502 cents: an overpayment, recorded and never pursued.
+
+Step 8, dispute window: the contract's dispute window, 30 days from the remittance date 2026-02-27, ends on 2026-03-29; on the triage date 2026-10-15 it is passed: WINDOW_PASSED, validated and not actionable; the amount is unchanged.
+
+### Line 3
+
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
+- assistant_reduction: flag apply_assistant_reduction is off; not applied.
+- sequestration: flag apply_sequestration is off; not applied.
+- mppr: before 2619.21285885, after 2619.21285885; its unit is the day's highest-ranked, kept whole; unchanged.
+- contract_adjustment: before 2619.21285885, after 2553.73253737875; the rate record pays 97.5% of the amount: 2619.21285885 cents ($26.1921285885) x 97.5% = 2553.73253737875 cents ($25.5373253737875).
+
+Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
+- Claim status 1 (processed as primary); the claim is not reversed.
+
+Step 6, rounding once: 2553.73253737875 cents under HALF_EVEN_CENT (the rate record's rule; halves move to the even cent) = **2554 cents ($25.54)**; the unrounded 2553.73253737875 is kept beside it.
+
+Step 7, variance: expected allowed 2554 - observed allowed 2600 cents (amt_b6) = -46 cents: an overpayment, recorded and never pursued.
+
+Step 8, dispute window: the contract's dispute window, 30 days from the remittance date 2026-02-27, ends on 2026-03-29; on the triage date 2026-10-15 it is passed: WINDOW_PASSED, validated and not actionable; the amount is unchanged.
+
+## Results
+
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 3225 | 3224.832249561 | HALF_EVEN_CENT | 0 | -875 | WINDOW_PASSED (ends 2026-03-29) | none |
+| 2 | priced | 1648 | 1647.82049389425 | HALF_EVEN_CENT | 0 | -502 | WINDOW_PASSED (ends 2026-03-29) | none |
+| 3 | priced | 2554 | 2553.73253737875 | HALF_EVEN_CENT | 0 | -46 | WINDOW_PASSED (ends 2026-03-29) | none |

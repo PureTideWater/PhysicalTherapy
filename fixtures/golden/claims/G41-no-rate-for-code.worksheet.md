@@ -1,7 +1,7 @@
 # Worksheet G41: No rate record matches: by code, by place of service, by modifier set
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -13,7 +13,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g41: contract, contract version cv-g41-1, 2026-01-01 to open.
 - Contract version cv-g41-1 (contract contract-g41, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
-  - Rate record rr-g41-1: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope codes 97110, 97140; modifier sets [GP]; places of service 11; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
+  - Rate record rr-g41-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; scope codes 97110, 97140; modifier sets [GP]; places of service 11; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -55,8 +55,8 @@ Step 1, the agreement.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `NO_RATE_FOR_CODE` | | | | | | |
-| 2 | unpriced `NO_RATE_FOR_CODE` | | | | | | |
-| 3 | unpriced `NO_RATE_FOR_CODE` | | | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `NO_RATE_FOR_CODE` | | | | | | | |
+| 2 | unpriced `NO_RATE_FOR_CODE` | | | | | | | |
+| 3 | unpriced `NO_RATE_FOR_CODE` | | | | | | | |

@@ -17,20 +17,24 @@ const WORKSHEET = 'tools/golden-worksheet/golden_worksheet.py';
 const CLAIMS = 'fixtures/golden/claims';
 const COMPUTED_BY = 'independent worksheet tools/golden-worksheet';
 
-/** The unpriced reasons a phase-one (milestone 5) golden line can hold; MUE_EXCEEDED arrives with NCCI, and ENGINE_ERROR is never a golden line. */
-const PHASE_ONE_REASONS = [
+/** The unpriced reasons a golden line can hold: every reason of the closed list but ENGINE_ERROR, which is never a golden line. */
+const GOLDEN_REASONS = [
   'NO_MAPPING',
   'NO_AGREEMENT',
   'AMBIGUOUS_RATE',
   'NO_RATE_FOR_CODE',
   'NO_PFS_VALUE',
+  'MUE_EXCEEDED',
   'UNITS_RULE_UNKNOWN',
   'SECONDARY_PAYER',
   'DATE_OUTSIDE_VERSIONS',
   'REVERSED_CLAIM',
   'UNSUPPORTED_METHOD',
 ];
-const LATER_REASONS = ['MUE_EXCEEDED', 'ENGINE_ERROR'];
+const NEVER_GOLDEN = ['ENGINE_ERROR'];
+const METHODS = ['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE', 'LESSER_OF', 'PER_VISIT', 'UNSUPPORTED'];
+const FLAGS = ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration', 'apply_ncci'];
+const FIXTURE_PAYERS = ['A', 'B', 'C', 'D', 'E'];
 
 interface Difference {
   readonly file: string;
@@ -54,24 +58,43 @@ interface GoldenLine {
   readonly unpriced_reason?: string;
   readonly expected_unrounded_cents?: string;
   readonly rounding?: string;
+  readonly method?: string;
+  readonly base_cents?: string;
+  readonly adjustments?: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
+  readonly review_flags?: readonly { readonly flag: string; readonly column1_line_no: number }[];
   readonly variance_cents?: string;
   readonly window?: { readonly ends_on: string | null; readonly status: string };
 }
 
 interface RateRecord {
   readonly method: string;
-  readonly parameters: { readonly year_basis?: string; readonly conversion_factor?: string };
+  readonly parameters: {
+    readonly year_basis?: string;
+    readonly conversion_factor?: string;
+    readonly schedule?: { readonly method: string };
+    readonly contract_adjustment?: { readonly kind: string } | null;
+  };
   readonly flags: Record<string, boolean | string | null>;
 }
 
+interface ContractVersion {
+  readonly contract_id: string;
+  readonly rate_records: readonly RateRecord[];
+}
+
 interface GoldenClaim {
+  readonly format: string;
   readonly id: string;
   readonly covers: readonly string[];
   readonly inputs: {
     readonly place_of_service_settings: Record<string, string>;
-    readonly claim: { readonly lines: readonly { readonly modifiers: readonly string[]; readonly place_of_service: string; readonly patient_share_adjustments: readonly unknown[] }[] };
+    readonly claim: {
+      readonly claim_status_code: string;
+      readonly reversed: boolean;
+      readonly lines: readonly { readonly modifiers: readonly string[]; readonly place_of_service: string; readonly patient_share_adjustments: readonly unknown[] }[];
+    };
     readonly mappings: readonly { readonly kind: string }[];
-    readonly contract_versions: readonly { readonly rate_records: readonly RateRecord[] }[];
+    readonly contract_versions: readonly ContractVersion[];
   };
   readonly expected: { readonly lines: readonly GoldenLine[] };
   readonly provenance: { readonly computed_by: string; readonly specialist_verified: boolean };
@@ -140,21 +163,61 @@ describe('golden lines', () => {
     }
   });
 
-  it('hold at least the one hundred lines of milestone 5, each claim with its provenance', () => {
-    expect(lines.length).toBeGreaterThanOrEqual(100);
+  it('hold at least the two hundred lines of Monitoring v1, in format 3, each claim with its provenance', () => {
+    expect(lines.length).toBeGreaterThanOrEqual(200);
     expect(new Set(claims.map((claim) => claim.id)).size).toBe(claims.length);
     for (const claim of claims) {
+      expect(claim.format, claim.id).toBe('tp-golden-claim/3');
       expect(claim.provenance.computed_by, claim.id).toBe(COMPUTED_BY);
       expect(typeof claim.provenance.specialist_verified, claim.id).toBe('boolean');
     }
   });
 
-  it('cover every unpriced reason of phase one and none of the later ones', () => {
+  it('cover every unpriced reason a golden line can hold', () => {
     const table = readFileSync(path.join(repositoryRoot, 'docs/product/unpriced-reasons.md'), 'utf8');
     const listed = [...table.matchAll(/^\| `([A-Z_]+)` \|/gm)].map((match) => match[1]);
-    expect([...PHASE_ONE_REASONS, ...LATER_REASONS].sort()).toEqual([...listed].sort());
+    expect([...GOLDEN_REASONS, ...NEVER_GOLDEN].sort()).toEqual([...listed].sort());
     const reasons = new Set(lines.map((line) => line.unpriced_reason).filter((reason) => reason !== undefined));
-    expect([...reasons].sort()).toEqual([...PHASE_ONE_REASONS].sort());
+    expect([...reasons].sort()).toEqual([...GOLDEN_REASONS].sort());
+  });
+
+  it('hold two hundred lines across the five fixture payers, each one SYNTHETIC contract carried identically by its claims', () => {
+    const payerLines = new Map<string, number>();
+    for (const letter of FIXTURE_PAYERS) {
+      const ofPayer = claims.filter((claim) => claim.covers.includes(`fixture payer ${letter}`));
+      expect(ofPayer.length, letter).toBeGreaterThan(5);
+      const contracts = new Set(ofPayer.map((claim) => JSON.stringify(claim.inputs.contract_versions)));
+      expect(contracts.size, letter).toBe(1);
+      expect(new Set(ofPayer.flatMap((claim) => claim.inputs.contract_versions.map((version) => version.contract_id))).size, letter).toBe(1);
+      payerLines.set(letter, ofPayer.reduce((count, claim) => count + claim.expected.lines.length, 0));
+    }
+    expect([...payerLines.values()].reduce((total, count) => total + count, 0)).toBeGreaterThanOrEqual(200);
+    const reasons = new Set(
+      claims.filter((claim) => claim.covers.some((item) => item.startsWith('fixture payer '))).flatMap((claim) => claim.expected.lines.flatMap((line) => (line.unpriced_reason === undefined ? [] : [line.unpriced_reason]))),
+    );
+    expect([...reasons].sort()).toEqual([...GOLDEN_REASONS].sort());
+  });
+
+  it('cover every method, every adjustment flag on and off, contract adjustments, the edits and reversals', () => {
+    expect(new Set(records.map((record) => record.method))).toEqual(new Set(METHODS));
+    const priced = lines.filter((line) => line.outcome === 'priced');
+    expect(new Set(priced.map((line) => line.method))).toEqual(new Set(METHODS.filter((method) => method !== 'UNSUPPORTED')));
+    for (const flag of FLAGS) {
+      expect(new Set(records.map((record) => record.flags[flag])), flag).toEqual(new Set([true, false]));
+    }
+    expect(new Set(records.flatMap((record) => (record.method === 'LESSER_OF' ? [record.parameters.schedule?.method] : [])))).toEqual(new Set(['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE']));
+    expect(new Set(records.flatMap((record) => (record.parameters.contract_adjustment ? [record.parameters.contract_adjustment.kind] : [])))).toEqual(new Set(['PERCENT', 'CAP']));
+    const contractAdjusted = priced.flatMap((line) => (line.adjustments ?? []).filter((item) => item.name === 'contract_adjustment'));
+    expect(contractAdjusted.some((item) => item.before_cents !== item.after_cents)).toBe(true);
+    expect(contractAdjusted.some((item) => item.before_cents === item.after_cents)).toBe(true);
+    expect(priced.some((line) => (line.review_flags ?? []).some((flag) => flag.flag === 'NCCI_PTP'))).toBe(true);
+    expect(new Set(records.map((record) => record.flags.timed_units_rule))).toEqual(new Set(['MEDICARE_POOLED', 'PER_CODE', 'UNKNOWN']));
+    expect(priced.some((line) => line.method === 'PER_VISIT' && line.base_cents === '0')).toBe(true);
+    // A reversal (status 22) or a reversed claim against every fixture payer's contract.
+    for (const letter of FIXTURE_PAYERS) {
+      const reversals = claims.filter((claim) => claim.covers.includes(`fixture payer ${letter}`) && (claim.inputs.claim.claim_status_code === '22' || claim.inputs.claim.reversed));
+      expect(reversals.length, letter).toBeGreaterThan(0);
+    }
   });
 
   it('cover the cases the plan names', () => {
@@ -168,9 +231,6 @@ describe('golden lines', () => {
     expect(new Set(percent.map((record) => record.parameters.conversion_factor))).toEqual(new Set(['non_qualifying_apm', 'qualifying_apm']));
     expect(percent.some((record) => record.parameters.year_basis === 'CURRENT')).toBe(true);
     expect(percent.some((record) => record.parameters.year_basis?.startsWith('LOCKED:') === true)).toBe(true);
-    for (const flag of ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration']) {
-      expect(new Set(records.map((record) => record.flags[flag])), flag).toEqual(new Set([true, false]));
-    }
     expect(claims.some((claim) => claim.inputs.mappings.some((mapping) => mapping.kind === 'ma_noncontracted'))).toBe(true);
     const claimLines = claims.flatMap((claim) => claim.inputs.claim.lines.map((line) => ({ line, settings: claim.inputs.place_of_service_settings })));
     expect(new Set(claimLines.map(({ line, settings }) => settings[line.place_of_service]))).toEqual(new Set(['facility', 'non_facility']));
@@ -183,7 +243,7 @@ describe('golden lines', () => {
     const sides = new Set(priced.map((line) => ((line.variance_cents ?? '0').startsWith('-') ? 'overpaid' : line.variance_cents === '0' ? 'even' : 'underpaid')));
     expect(sides.has('underpaid') && sides.has('overpaid')).toBe(true);
     expect(new Set(priced.map((line) => line.window?.status))).toEqual(new Set(['OPEN', 'WINDOW_PASSED', 'NO_WINDOW']));
-    for (const id of ['PRC-14', 'PRC-15', 'claim status 19', 'claim status 20', 'UNITS_RULE_UNKNOWN', 'suspended sequestration', 'MPPR general rate']) {
+    for (const id of ['PRC-05', 'PRC-06', 'PRC-07', 'PRC-10', 'PRC-11', 'PRC-14', 'PRC-15', 'claim status 19', 'claim status 20', 'UNITS_RULE_UNKNOWN', 'suspended sequestration', 'MPPR general rate']) {
       expect(covered.has(id), id).toBe(true);
     }
   });

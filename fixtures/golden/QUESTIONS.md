@@ -4,7 +4,7 @@ The golden lines in `claims/` were computed by the independent worksheet (`tools
 reimbursement specialist, and every claim says `"specialist_verified": false`. Wherever the plan (PRD sections 2,
 9 and 11, the rules reference, the test matrix) leaves a pricing judgement open, the worksheet had to choose. Each
 choice is listed here with the plan's words that leave it open, what the worksheet does, the alternatives, and the
-golden claims whose cents depend on it. Milestone 5 closes only after the specialist has answered each one and
+golden claims whose cents depend on it. Milestones 5 and 7 close only after the specialist has answered each one and
 verified each worksheet; a changed answer changes the inputs or the worksheet, then `write`, then a reviewed diff.
 
 All reference values are SYNTHETIC (release 900001; 900002 adds 2025; 900003 varies sequestration, the general
@@ -171,12 +171,14 @@ to G35.
 **Q28. Where the contract percentage applies.** *Choice:* to the per-unit fee-schedule amount before every
 adjustment, so the reduction cuts the practice-expense part at the contract's percentage. *Claims:* G24.
 
-**Q29. Flags without a phase-one effect.** *Choice:* `apply_ncci` changes no amount until milestone 7; every golden line
-keeps its units at or below the SYNTHETIC MUE so that milestone 7 does not turn it into `MUE_EXCEEDED`. The MA terms'
-`timed_units_rule` is `MEDICARE_POOLED`, recorded only; a record's `UNKNOWN` is Q32.
+**Q29. Flags without a phase-one effect.** *Choice in phase one:* `apply_ncci` changed no amount, and every golden line
+kept its units at or below the SYNTHETIC MUE. *From milestone 7* (Q41, Q42) the MUE stops a line above it and a
+procedure-to-procedure edit raises a review flag; no phase-one line exceeds its MUE, so none changed, and eight gained a
+flag (Q41). The MA terms' `timed_units_rule` is `MEDICARE_POOLED`, recorded only; a record's `UNKNOWN` is Q32.
 
 **Q30. Contract-specific adjustments.** Section 11 step 4 ends with "contract-specific adjustments (a percentage or a
-cap the record defines)". *Choice:* no rate-record field defines one yet, so none is applied.
+cap the record defines)". *Choice in phase one:* no rate-record field defined one, so none was applied. Milestone 7
+adds the field; Q45.
 
 ## Added with the review of milestones 3 to 5
 
@@ -229,3 +231,69 @@ specialist:* the override the practice settings should carry.
 **Q38. A bound on units.** *Choice:* more than 999 units on one line is malformed input (`ENGINE_ERROR`
 `units_above_limit`); it is never ranked. No golden line comes near it. *For the specialist:* whether a lower bound,
 or the MUE where `apply_ncci` is off, should apply instead (milestone 7).
+
+## Added with milestone 7: the remaining methods, NCCI and MUE, contract-specific adjustments
+
+The five fixture payers (`tools/golden-worksheet/fixture_payers.py`; README) are SYNTHETIC contracts written to exercise
+these branches. Their terms are test assumptions, not readings of a real contract: payer B incorporating sequestration
+and payer E Medicare's adjustments on commercial contracts are there so every flag is on somewhere and off elsewhere.
+
+**Q39. The multiple procedure reduction on a fixed, per-visit or lesser-of term.** PRD 11 step 4 cuts "the
+practice-expense component" of the day's later units. A fixed amount, a per-visit amount, or a lesser-of amount that
+may be the charge has no practice-expense component. *Choice:* `apply_mppr` is allowed only on `PERCENT_OF_MEDICARE`
+terms; on a fixed, per-visit or lesser-of term the engine stops the line for review (`ENGINE_ERROR`
+`mppr_needs_fee_schedule`, which pages no one), so no golden line holds it. *For the specialist:* how a contract that
+writes Medicare's reduction into a fixed schedule or a "lesser of charges or 100% of Medicare" term should be priced
+(reduce the schedule before the comparison with the charge, reduce a fixed amount by a stated share, or not at all).
+
+**Q40. A per-visit term under a timed-units rule of `UNKNOWN`.** Units do not multiply a per-visit amount, so how
+timed units are counted cannot change it. *Choice:* Q32's reading applies to every method: a line under `UNKNOWN` stops
+with `UNITS_RULE_UNKNOWN`, per-visit included. *Claims:* G149. *Alternative:* price per-visit lines whatever the rule.
+
+**Q41. Procedure-to-procedure edits.** PRD 2 point 6: "97140 with 97530 on the same day needs a 59 or X modifier under
+those edits"; PRC-11 expects a review flag; the plan says nothing changes the price. *Choices:* (1) an edit is an
+`ncci_ptp` record in force on the service date with this line's code in column 2 and the code of another line of the
+same claim and date in column 1, whatever that line's own outcome (a billed column-1 line counts even when it is
+unpriced, G167); (2) only the column-2 line carries the flag (`NCCI_PTP`, naming the column-1 line), and only when its
+own term has `apply_ncci` on (G136); (3) a modifier of 59, or any modifier beginning with X, on either line of the pair
+bypasses the edit when the record's modifier indicator is `1`; indicators `0` and `9` let no modifier bypass it (the
+SYNTHETIC file's header reads "0=not allowed 1=allowed 9=not applicable"; G125, G164); (4) the claim's lines only, not
+the patient's other claims of the day (as Q15). The flag is reported on the priced line and in its trace; the amount is
+never changed. *Claims:* G102 to G104, G111, G120, G124, G125, G136, G142, G146, G148, G149, G157, G161 to G165, G167 to G169, G184.
+Eight phase-one lines gained the flag when the edits arrived (their amounts are unchanged): G01 line 3, G03 line 3,
+G04 line 1, G14 line 3, G16 line 1, G19 lines 2 and 3, G20 line 3. *For the specialist:* the list of X modifiers, which
+line the modifier must be on, what indicator 9 means here, and whether a flag on a priced line should keep it from
+becoming actionable.
+
+**Q42. Medically unlikely edits.** PRD 11 step 3: "Units above the MUE value when `apply_ncci` is on are `MUE_EXCEEDED`
+for review, not priced down." *Choices:* the line's own units against the `ncci_mue` value for its code in force on the
+service date, whatever the record's adjudication indicator (the SYNTHETIC file marks indicators 2 and 3 as date-of-service
+edits, which would sum a code's units across the day's lines; the worksheet does not); units equal to the value price;
+a code with no record in force has no limit (G112); the MUE is checked after the fee-schedule value (so `NO_PFS_VALUE`
+comes first) and before the timed-units rule (so `MUE_EXCEEDED` wins over `UNITS_RULE_UNKNOWN`); it applies to every
+method, per-visit included (G146, G158). A line stopped for its MUE is neither ranked nor reduced and never carries a
+visit. *Claims:* G105, G136, G146, G158, G167, G193, G194. *For the specialist:* whether date-of-service indicators should
+sum the day's units, and whether the MUE should bound units when `apply_ncci` is off (Q38).
+
+**Q43. Lesser of billed charges and the schedule.** PRD 11 step 2: "the lesser of the computed schedule amount and the
+line charge". *Choices:* the schedule's amount for the units billed (the fixed amount, or the fee schedule at the
+record's percentage, times the units) against the line's charge (`charge_basis` `LINE_CHARGE`), at step 3; the lesser
+is the base, and the adjustments that follow (assistant, sequestration, the contract's own) apply to it whichever won;
+equal amounts are the same base. *Claims:* G121 to G126, G133, G135, G137, G186, G194. *Alternative:* compare after the
+adjustments (the schedule's allowed amount against the charge).
+
+**Q44. Per-visit amounts.** PRD 11 step 2: "applied once per claim per date across the included codes; the first
+included line carries it and the rest expect zero". *Choices:* the included codes are the record's scope codes; the
+visit is per claim, service date and rate record (two per-visit terms on one date pay twice, G147); "first" is the lowest
+line number among the lines priced so far (agreement, method and units resolved), so a line stopped for its MUE passes
+the visit to the next (G146), and the listing order of the remittance does not matter (G142); the assistant reduction
+follows the line, so CQ on the carrying line reduces the visit and on a zero line changes nothing (G143, G144); each
+line's variance is its own, so a payer that spreads the visit over the lines shows an underpaid first line and
+overpaid others (G141). *For the specialist:* whether the variance should be judged per visit.
+
+**Q45. Contract-specific adjustments.** PRD 11 step 4: "contract-specific adjustments (a percentage or a cap the
+record defines)", after sequestration. *Choices:* a rate record defines at most one, in its parameters
+(`contract_adjustment`): `PERCENT` pays that percentage of the amount after the Medicare adjustments (G121, G148, G181),
+`CAP` limits the line's amount to the cap (G111, G147, G163, G174, G185), per line, not per unit, visit or day; a record
+that defines none leaves no adjustment entry. *For the specialist:* whether a cap is per unit, line or day, and whether a
+record may carry a percentage and a cap together (and in which order).

@@ -1,7 +1,7 @@
 # Worksheet G16: Medicare Advantage non-contracted, 97026 and 97035 in an office
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.
 
 ## Inputs
@@ -25,7 +25,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 
 Step 1, the agreement.
 - Mapping map-ma-1 (ma_noncontracted, 2026-01-01 to open) is in force on 2026-03-10.
-- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies.
+- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies; no contract-specific adjustment.
 
 Step 2, the base amount by method.
 - Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.
@@ -38,13 +38,18 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 0.346 x $20.0000 = $6.92.
 - At 100%, per unit: work 120 cents ($1.20), practice expense 494 cents ($4.94), malpractice 78 cents ($0.78); total 692 cents ($6.92).
 
-Step 3, units: 1 as billed; 692 cents ($6.92) x 1 = 692 cents ($6.92).
+Step 3, units and edits.
+- Units: 1 as billed, under the timed-units rule MEDICARE_POOLED, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is on; ncci_mue 97026 (2026-01-01 to 2026-12-31, adjudication indicator 1) allows 2 unit(s); 1 is within it.
+- Base: 692 cents ($6.92) x 1 = 692 cents ($6.92).
+- Procedure-to-procedure edits: apply_ncci is on; 97026 is in column 2 of these edits with the claim's other lines on 2026-03-10:
+  - Line 2 (97035): ncci_ptp column 1 97035, column 2 97026 (1996-01-01 to open, modifier indicator 9). Indicator 9 lets no modifier bypass the edit (fixtures/golden/QUESTIONS.md Q41): review flag NCCI_PTP with line 2. The price is not changed.
 
 ### Line 2: 97035 x 2 on 2026-03-10
 
 Step 1, the agreement.
 - Mapping map-ma-1 (ma_noncontracted, 2026-01-01 to open) is in force on 2026-03-10.
-- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies.
+- Medicare Advantage, non-contracted: priced as Original Medicare would, method PERCENT_OF_MEDICARE at 100%, year basis CURRENT, conversion factor non_qualifying_apm (the rules reference's default), every Medicare adjustment on (apply_mppr on, apply_assistant_reduction on, apply_sequestration on, apply_ncci on; timed_units_rule MEDICARE_POOLED); no contract rounding, so the practice default applies; no contract-specific adjustment.
 
 Step 2, the base amount by method.
 - Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.
@@ -57,7 +62,11 @@ Step 2, the base amount by method.
 - Fee schedule amount per unit: 0.515 x $20.0000 = $10.30.
 - At 100%, per unit: work 300 cents ($3.00), practice expense 665 cents ($6.65), malpractice 65 cents ($0.65); total 1030 cents ($10.30).
 
-Step 3, units: 2 as billed; 1030 cents ($10.30) x 2 = 2060 cents ($20.60).
+Step 3, units and edits.
+- Units: 2 as billed, under the timed-units rule MEDICARE_POOLED, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).
+- Medically unlikely edit: apply_ncci is on; ncci_mue 97035 (2026-01-01 to 2026-12-31, adjudication indicator 1) allows 3 unit(s); 2 are within it.
+- Base: 1030 cents ($10.30) x 2 = 2060 cents ($20.60).
+- Procedure-to-procedure edits: apply_ncci is on; no ncci_ptp record in force on 2026-03-10 has 97035 in column 2 and another line's code of the date in column 1.
 
 ## Step 4a, the multiple procedure reduction, per day
 
@@ -77,12 +86,11 @@ Lines with apply_mppr on and a price so far: line 1, line 2. Units are ranked by
 
 ### Line 1
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - mppr: before 692, after 494.4; 692 cents ($6.92) - the reductions of its units 197.6 = 494.4 cents ($4.944).
 - assistant_reduction: before 494.4, after 494.4; no CQ or CO modifier on the line; unchanged.
 - sequestration: before 494.4, after 479.568; the amount 494.4 cents ($4.944) less the patient share 0 leaves the payer's share 494.4 cents ($4.944); 3% of the payer's share is 14.832; 494.4 - 14.832 = 479.568 cents ($4.79568).
-- Contract-specific adjustments: none (phase one rate records define none).
-- apply_ncci is on: NCCI edits and MUE arrive in milestone 7 and change no amount here.
+- contract_adjustment: the Medicare Advantage non-contracted terms define none; not applied.
 
 Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -95,12 +103,11 @@ Step 8, dispute window: the remittance date is not known, so no deadline can be 
 
 ### Line 2
 
-Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
+Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.
 - mppr: before 2060, after 1794; 2060 cents ($20.60) - the reductions of its units 266 = 1794 cents ($17.94).
 - assistant_reduction: before 1794, after 1794; no CQ or CO modifier on the line; unchanged.
 - sequestration: before 1794, after 1751.58; the amount 1794 cents ($17.94) less the patient share 380 leaves the payer's share 1414 cents ($14.14); 3% of the payer's share is 42.42; 1794 - 42.42 = 1751.58 cents ($17.5158).
-- Contract-specific adjustments: none (phase one rate records define none).
-- apply_ncci is on: NCCI edits and MUE arrive in milestone 7 and change no amount here.
+- contract_adjustment: the Medicare Advantage non-contracted terms define none; not applied.
 
 Step 5, patient share: 380 cents ($3.80) from the line's PR adjustments (PR-2 380); reported beside the expected amount, never subtracted from it.
 - Claim status 1 (processed as primary); the claim is not reversed.
@@ -113,7 +120,7 @@ Step 8, dispute window: the remittance date is not known, so no deadline can be 
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | priced | 480 | 479.568 | HALF_UP_CENT | 0 | 30 | NO_WINDOW |
-| 2 | priced | 1752 | 1751.58 | HALF_UP_CENT | 380 | -148 | NO_WINDOW |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 480 | 479.568 | HALF_UP_CENT | 0 | 30 | NO_WINDOW | NCCI_PTP with line 2 |
+| 2 | priced | 1752 | 1751.58 | HALF_UP_CENT | 380 | -148 | NO_WINDOW | none |

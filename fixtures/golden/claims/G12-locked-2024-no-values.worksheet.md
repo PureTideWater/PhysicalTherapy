@@ -1,7 +1,7 @@
 # Worksheet G12: Locked to 2024: the release holds no 2024 fee schedule
 
 Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).
-Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.
+Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.
 Every reference value comes from SYNTHETIC release 900002: invented for tests, never a CMS value.
 
 ## Inputs
@@ -13,7 +13,7 @@ Every reference value comes from SYNTHETIC release 900002: invented for tests, n
 - Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g12: contract, contract version cv-g12-1, 2026-01-01 to open.
 - Contract version cv-g12-1 (contract contract-g12, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
-  - Rate record rr-g12-1: PERCENT_OF_MEDICARE 105%, LOCKED:2024, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
+  - Rate record rr-g12-1: PERCENT_OF_MEDICARE at 105%, year basis LOCKED:2024, locality basis practice, conversion factor non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated; contract-specific adjustment none.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -29,7 +29,7 @@ Step 1, the agreement.
   - cv-g12-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.
 - Rate records of cv-g12-1 against code 97110, modifier set [GP], place of service 11, 2026-04-14:
   - rr-g12-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.
-- Rate record rr-g12-1: PERCENT_OF_MEDICARE at 105%, year basis LOCKED:2024, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).
+- Rate record rr-g12-1: PERCENT_OF_MEDICARE at 105%, year basis LOCKED:2024, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies); contract-specific adjustment: none.
 
 Step 2, the base amount by method.
 - Year basis LOCKED:2024: the 2024 fee schedule; each value is the latest record in force during 2024.
@@ -37,6 +37,6 @@ Step 2, the base amount by method.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `NO_PFS_VALUE` | | | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `NO_PFS_VALUE` | | | | | | | |
