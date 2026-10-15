@@ -4,7 +4,8 @@
  * separator at position 4, the component separator at 105, the segment terminator at 106, the
  * repetition separator in ISA11); nothing assumes `*`, `:` or `~`. A UTF-8 byte-order mark before
  * the first ISA is recorded and skipped; carriage returns, line feeds, tabs and spaces between
- * segments (after a terminator, at the end of the file) are skipped unless they are delimiters.
+ * segments (after a terminator) are skipped unless they are delimiters, and after an IEA (between
+ * interchanges, at the end of the file) always.
  */
 import { type EdiError, notAn835, syntaxError } from './errors';
 
@@ -48,6 +49,7 @@ export const ISA_LENGTH = 106;
 export const MAX_SEGMENT_LENGTH = 65_536;
 const SEGMENT_ID = /^[A-Z][A-Z0-9]{1,2}$/;
 const WHITESPACE = ['\r', '\n', '\t', ' '];
+const ALL_WHITESPACE: ReadonlySet<string> = new Set(WHITESPACE);
 const BOM = '﻿';
 
 /** The segment ID if the text is shaped like one, else '' (it may be anything, never echoed). */
@@ -133,9 +135,9 @@ export class Tokenizer {
     this.buffer = '';
   }
 
-  private skipWhitespace(from: number): number {
+  private skipWhitespace(from: number, skip: ReadonlySet<string> = this.skip): number {
     let position = from;
-    while (position < this.buffer.length && this.skip.has(this.buffer.charAt(position))) {
+    while (position < this.buffer.length && skip.has(this.buffer.charAt(position))) {
       position += 1;
     }
     return position;
@@ -165,7 +167,10 @@ export class Tokenizer {
   /** Reads one ISA header at `from`; undefined when more input is needed (or the input stopped). */
   private readIsa(from: number, final: boolean): number | undefined {
     const first = this.interchanges === 0;
-    const position = first ? from : this.skipWhitespace(from);
+    // After an IEA, carriage returns, line feeds, tabs and spaces are skipped even when one of them was the
+    // last interchange's terminator (a blank line after IEA): its delimiters end with it, and only text that is
+    // not whitespace must be another ISA.
+    const position = first ? from : this.skipWhitespace(from, ALL_WHITESPACE);
     const available = this.buffer.length - position;
     const index = this.segments + 1;
     const head = this.buffer.slice(position, position + 3);

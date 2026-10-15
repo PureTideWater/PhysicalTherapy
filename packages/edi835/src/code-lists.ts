@@ -11,7 +11,8 @@
  *
  * The release's `claim_status_code` records are the external claim status codes of the 276/277
  * transactions; no 835 element uses them (CLP02's claim status is the structure's own set).
- * An unknown code loads with an EDI_UNKNOWN_CODE flag and is never dropped.
+ * An unknown CARC or RARC loads with an EDI_UNKNOWN_CODE flag and is never dropped; a value outside
+ * one of the structure's own sets holds its transaction set (EDI_SYNTAX invalid_code), as pyx12 does.
  */
 import { type RuleRecord } from '@tp/rules';
 

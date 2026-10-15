@@ -450,7 +450,7 @@ export function truncateInside(rendered: RenderedX12, index: number, element: nu
   const before = renderDocument({ interchanges: [{ delimiters, segments: interchange.segments.slice(0, index) }] });
   const parts = segmentText(target, delimiters).split(delimiters.element);
   const partial = [...parts.slice(0, element), (parts[element] ?? '').slice(0, keep)].join(delimiters.element);
-  return { text: before + partial, error: { code: 'EDI_SYNTAX', segmentIndex: index + 1, segmentId: target.id, elementPosition: element } };
+  return { text: before + partial, error: { code: 'EDI_SYNTAX', segmentIndex: index + 1, segmentId: target.id, elementPosition: element, reason: 'truncated' } };
 }
 
 function lastIndexOf(rendered: RenderedX12, id: string): number {

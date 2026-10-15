@@ -10,11 +10,12 @@
  *   the payment being BPR02, negative when BPR03 is D.
  *
  * Observed allowed per line: AMT B6 when sent; otherwise SVC03 plus the line's PR adjustments; when
- * the claim carries PR adjustments and no line does, the claim's PR total is allocated to the lines
- * without B6 in proportion to their charges (each share truncated toward zero, the remaining cents
- * one at a time in line order), and those lines are flagged.
+ * the claim carries PR adjustments and no line does, the claim's PR total is allocated over every
+ * line in proportion to its charge (each share truncated toward zero, the remaining cents one at a
+ * time in line order); a line with B6 keeps B6, which already includes its share, and the lines
+ * without B6 take their shares and are flagged.
  */
-import { type Cents, ZERO_CENTS, addCents, cents, negateCents, subtractCents, sumCents } from '@tp/money';
+import { type Cents, addCents, cents, negateCents, subtractCents, sumCents } from '@tp/money';
 
 import { type Adjustment, type ObservedAllowed } from './types';
 
@@ -81,15 +82,14 @@ export function observedAllowed(claim: ClaimFigures): ObservedAllowed[] {
   const claimShare = patientShare(claim.adjustments);
   const linesCarryShare = claim.lines.some((line) => line.adjustments.some((adjustment) => adjustment.group === 'PR'));
   const allocate = claimShare !== 0n && !linesCarryShare;
-  const eligible = claim.lines.flatMap((line, position) => (line.lineAllowedCents === null ? [position] : []));
-  const shares = allocate ? allocateProRata(claimShare, eligible.map((position) => (claim.lines[position] as LineFigures).chargeCents)) : [];
-  const shareByPosition = new Map(eligible.map((position, index) => [position, shares[index] ?? ZERO_CENTS]));
+  // Over every line, B6 or not: a B6 line's allowed already holds its share, which no other line takes.
+  const shares = allocate ? allocateProRata(claimShare, claim.lines.map((line) => line.chargeCents)) : [];
   return claim.lines.map((line, position) => {
     if (line.lineAllowedCents !== null) {
       return { cents: line.lineAllowedCents, basis: 'amt_b6', allocatedFromClaim: false, allocatedPatientShareCents: null };
     }
     if (allocate) {
-      const share = shareByPosition.get(position) as Cents;
+      const share = shares[position] as Cents;
       return { cents: addCents(line.paidCents, share), basis: 'paid_plus_pr', allocatedFromClaim: true, allocatedPatientShareCents: share };
     }
     return { cents: addCents(line.paidCents, patientShare(line.adjustments)), basis: 'paid_plus_pr', allocatedFromClaim: false, allocatedPatientShareCents: null };

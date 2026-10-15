@@ -8,7 +8,7 @@ import { type Disposition, dispose } from './classify';
 import type { LandedDocument, UploadLanding } from './landing';
 import { DEFAULT_SCAN_WAIT, type ScanService, type ScanWait, waitForVerdict } from './scan';
 import { HEAD_BYTES, sniff } from './sniff';
-import { type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLimits, inspectZip, zipEntries } from './zip';
+import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLimits, inspectZip, zipEntries } from './zip';
 
 /**
  * The intake job (PRD 5, J4; PRD 6, Intake and documents; PRD 10, Pipeline steps 1 and 2; PRD 16,
@@ -26,10 +26,12 @@ import { type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLimits, inspectZi
  *    is the job's idempotency subject); a clean document of another kind is stored; an executable or a
  *    script is quarantined (PAR-28); anything else is held with its reason.
  * 6. A zip is expanded entry by entry (zip.ts): each entry becomes its own document (parent_document_id
- *    the zip), sealed under its own key, hashed, deduplicated, sniffed and held or kept on its own, so a
- *    bad entry is held while the others continue (PAR-27). If any entry is an executable, a script or
- *    the EICAR file, the whole upload is quarantined and nothing is queued (PAR-28). Otherwise every
- *    clean 835 entry is queued for parse, and the zip is expanded.
+ *    the zip), sniffed from its first bytes before anything is written (an entry its first bytes hold,
+ *    an executable or not an 835, is never copied out of the zip), then sealed under its own key,
+ *    hashed, deduplicated and held or kept on its own, so a bad entry is held while the others continue
+ *    (PAR-27). If any entry is an executable, a script or the EICAR file, the whole upload is
+ *    quarantined and nothing is queued (PAR-28). Otherwise every clean 835 entry is queued for parse,
+ *    and the zip is expanded.
  *
  * Every step is idempotent, so a retried attempt resumes: an entry's document ID is derived from the
  * zip's ID and the entry's position, entries already decided are skipped, a sealed object already
@@ -100,6 +102,41 @@ async function claimBytes(scope: Scope, practiceId: string, documentId: string, 
   }
   await scope.client.query('UPDATE source_document SET sha256 = $2 WHERE id = $1 AND sha256 IS NULL', [documentId, sha256]);
   return 'first';
+}
+
+/**
+ * The first `length` bytes of a stream, and the whole stream again (those bytes included) to write, or
+ * `close` to stop reading it. Holds at most the head and one chunk.
+ */
+async function peek(source: AsyncIterable<Buffer>, length: number): Promise<{ readonly head: Buffer; readonly whole: AsyncIterable<Buffer>; close(): Promise<void> }> {
+  const iterator = source[Symbol.asyncIterator]();
+  const buffered: Buffer[] = [];
+  let read = 0;
+  let ended = false;
+  while (read < length) {
+    const next = await iterator.next();
+    if (next.done === true) {
+      ended = true;
+      break;
+    }
+    buffered.push(next.value);
+    read += next.value.length;
+  }
+  const whole = async function* (): AsyncGenerator<Buffer> {
+    yield* buffered;
+    if (!ended) {
+      for (let next = await iterator.next(); next.done !== true; next = await iterator.next()) {
+        yield next.value;
+      }
+    }
+  };
+  return {
+    head: Buffer.concat(buffered).subarray(0, length),
+    whole: whole(),
+    close: async () => {
+      await iterator.return?.();
+    },
+  };
 }
 
 /** The disposition of a stored document, from its first bytes (and, for a zip, its directory). */
@@ -203,6 +240,22 @@ class Intake {
     }
   }
 
+  /**
+   * An entry's bytes sealed under its key, unless its first bytes hold it (an executable, a script, not
+   * the declared kind, empty): then nothing is written and the hold is returned. A zip inside the zip is
+   * written, so its directory can be read to tell a workbook from a nested zip.
+   */
+  private async sealUnlessHeld(kind: DocumentKind, key: string, entry: ZipEntry): Promise<WrittenDocument | Extract<Disposition, { action: 'hold' }>> {
+    const opened = await peek(entry.open(), HEAD_BYTES);
+    const sniffed = sniff(opened.head);
+    const early = sniffed.type === 'zip' ? undefined : dispose(kind, sniffed, { entry: true });
+    if (early?.action === 'hold') {
+      await opened.close();
+      return early;
+    }
+    return this.services.documents.write(this.cipher, key, opened.whole);
+  }
+
   /** Each entry of the zip becomes its own document, one at a time; then the 835s are queued, or all is quarantined. */
   private async expand(zip: DocumentRow, reader: DocumentReader, inventory: ZipInventory): Promise<void> {
     const { documents } = this.services;
@@ -227,9 +280,9 @@ class Intake {
       if (entry.hold !== undefined) {
         continue;
       }
-      let written: WrittenDocument;
+      let sealed: WrittenDocument | Extract<Disposition, { action: 'hold' }>;
       try {
-        written = (await documents.exists(key)) ? await documents.digest(this.cipher, key) : await documents.write(this.cipher, key, entry.open());
+        sealed = (await documents.exists(key)) ? await documents.digest(this.cipher, key) : await this.sealUnlessHeld(zip.kind, key, entry);
       } catch (error) {
         if (!(error instanceof ZipEntryError)) {
           throw error;
@@ -237,6 +290,14 @@ class Intake {
         await this.transaction((scope) => setStatus(scope, id, 'unreadable'));
         continue;
       }
+      if ('action' in sealed) {
+        // Held by its first bytes, never written: quarantined (and the upload with it), or held with its reason.
+        const held = sealed.status;
+        await this.transaction((scope) => recordVerdict(scope, id, held === 'quarantined' ? 'flagged' : 'clean', held));
+        quarantined ||= held === 'quarantined';
+        continue;
+      }
+      const written = sealed;
       // The archive was scanned whole; each entry is then checked for its own signatures below.
       await this.transaction((scope) => recordVerdict(scope, id, 'clean'));
       if ((await this.transaction((scope) => claimBytes(scope, this.practiceId, id, written.sha256))) === 'duplicate') {

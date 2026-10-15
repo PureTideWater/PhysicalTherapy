@@ -5,7 +5,7 @@ import { type LoadableRemittance, type Name, isLoadable, remittancesOf } from '@
 import { SYNTHETIC_BODY, parseText, syntheticInterchange } from '@tp/edi835/testing';
 import { describe, expect, it } from 'vitest';
 
-import { type LoadPlan, type PlanResult, fitsNumeric93, loadPlan, normalizeKeyPart, payerIdentity, personKey, planKey } from './plan';
+import { type LoadPlan, type PlanResult, fitsNumeric93, loadPlan, normalizeKeyPart, payerIdentity, personKey, placeOfService, planKey } from './plan';
 
 /**
  * The load plan (plan.ts): what each loadable transaction set becomes, from SYNTHETIC 835s parsed with
@@ -89,7 +89,7 @@ describe('the load plan', () => {
       facilityType: '11',
       frequencyCode: '1',
       planKey: 'CLP06:12',
-      patient: { key: 'name|SYNTHLAST|SYNTHFIRST||', lastName: 'SYNTHLAST', firstName: 'SYNTHFIRST', memberId: 'SYNMBR0001', groupNumber: null },
+      patient: { key: 'name|SYNTHLAST|SYNTHFIRST|||member|SYNMBR0001', lastName: 'SYNTHLAST', firstName: 'SYNTHFIRST', memberId: 'SYNMBR0001', groupNumber: null },
       insured: null,
       serviceFrom: '2026-03-15',
       serviceTo: '2026-03-15',
@@ -110,6 +110,7 @@ describe('the load plan', () => {
         originalUnits: null,
         serviceDate: '2026-03-15',
         serviceDateTo: null,
+        placeOfService: '11',
         lineAllowedCents: null,
         observedAllowedCents: 12000n,
         observedAllowedBasis: 'paid_plus_pr',
@@ -148,9 +149,32 @@ describe('the load plan', () => {
     );
     const [claim] = planned(loadPlan(remittance)).claims;
     expect(claim?.patient).toEqual({ key: 'name|SYNTHLAST|SYNTHFIRST|Q|JR', lastName: 'SYNTHLAST', firstName: 'SYNTHFIRST', memberId: null, groupNumber: null });
-    expect(claim?.insured).toEqual({ key: 'name|SYNTHSUBSCRIBER|SYNTHFIRST||', lastName: 'SYNTHSUBSCRIBER', firstName: 'SYNTHFIRST', memberId: 'SYNMBR0002', groupNumber: 'SYNGROUP01' });
+    expect(claim?.insured).toEqual({ key: 'name|SYNTHSUBSCRIBER|SYNTHFIRST|||member|SYNMBR0002', lastName: 'SYNTHSUBSCRIBER', firstName: 'SYNTHFIRST', memberId: 'SYNMBR0002', groupNumber: 'SYNGROUP01' });
     const own = planned(loadPlan(only(body(after('NM1*QC', 'REF*1L*SYNGROUP01'))))).claims[0];
     expect(own?.patient.groupNumber).toBe('SYNGROUP01');
+  });
+
+  it('never gives two people of one name one key when their member IDs differ, and keeps one person one key', () => {
+    const twins = only(
+      body((segments) => [
+        ...segments.map((segment) => segment.replace('BPR*C*100.00', 'BPR*C*200.00')),
+        ...segments
+          .slice(segments.indexOf('LX*1') + 1)
+          .map((segment) => segment.replace('SYNPCN0001', 'SYNPCN0002').replace('SYNCCN0001', 'SYNCCN0002').replace('MI*SYNMBR0001', 'MI*SYNMBR0002')),
+      ]),
+    );
+    const [first, second] = planned(loadPlan(twins)).claims;
+    expect([first?.patient.key, second?.patient.key]).toEqual(['name|SYNTHLAST|SYNTHFIRST|||member|SYNMBR0001', 'name|SYNTHLAST|SYNTHFIRST|||member|SYNMBR0002']);
+    expect([first?.patient.memberId, second?.patient.memberId]).toEqual(['SYNMBR0001', 'SYNMBR0002']);
+  });
+
+  it('takes a professional line’s place of service from CLP08, and none for a line billed with a revenue code', () => {
+    const line = (qualifier: string, revenueCode: string | null) => ({ procedure: { qualifier, code: '97110', modifiers: [], description: null }, revenueCode });
+    expect(placeOfService({ facilityCode: '11' }, line('HC', null))).toBe('11');
+    expect(placeOfService({ facilityCode: '13' }, line('HC', '0420'))).toBeNull();
+    expect(placeOfService({ facilityCode: '13' }, line('NU', null))).toBeNull();
+    expect(placeOfService({ facilityCode: null }, line('HC', null))).toBeNull();
+    expect(placeOfService({ facilityCode: '1' }, line('HC', null))).toBeNull();
   });
 
   it('keys a patient by name, else by identifier, else by the patient control number', () => {

@@ -76,6 +76,17 @@ describe('the parse report', () => {
     expect(row.errors).toEqual([{ code: 'EDI_UNKNOWN_CODE', list: 'carc', segmentIndex: 25, segmentId: 'CAS', elementPosition: 2, transaction: { interchange: 0, group: 0, transaction: 0, st02: '0001' } }]);
     const odd = parseReportRow({ ...report, receipt: { ...report.receipt, unknownCodes: ['carc:SYNTHETIC NAME', 'rarc:N901'] } }, new Map([[FIRST, loaded(1, 2)]]));
     expect(odd.unknownCodes).toEqual(['carc:(not shown)', 'rarc:N901']);
+    const structural = parseReportRow({ ...report, receipt: { ...report.receipt, unknownCodes: ['patient_id_qualifier:SYN12345', 'carc:Z999'] } }, new Map([[FIRST, loaded(1, 2)]]));
+    expect(structural.unknownCodes).toEqual(['carc:Z999', 'patient_id_qualifier:(not shown)']);
+  });
+
+  it('never carries a value read from an NM1 identifier position: a member ID in NM108 holds the set, unshown', () => {
+    const text = readFileSync(path.join(FIXTURES, 'PAR-01/remit.835'), 'latin1').replace(/NM1\*QC\*1\*([^*~]*)\*([^*~]*)\*\*\*\*MI\*([^*~]*)~/, 'NM1*QC*1*$1*$2***MI*SYN12345~');
+    expect(text).toContain('***MI*SYN12345~');
+    const row = parseReportRow(parseText(text).report, new Map());
+    expect(row).toMatchObject({ outcome: 'held', unknownCodes: [] });
+    expect(row.errors).toEqual([expect.objectContaining({ code: 'EDI_SYNTAX', reason: 'invalid_code', segmentId: 'NM1', elementPosition: 8 })]);
+    expect(JSON.stringify(row)).not.toContain('SYN12345');
   });
 
   it('flags an unknown code at a component of its element', () => {
@@ -98,7 +109,7 @@ describe('the parse report', () => {
       reasons: [expect.objectContaining({ code: 'EDI_SYNTAX', reason: 'invalid_decimal', segmentIndex: 19, segmentId: 'SVC', elementPosition: 5 })],
     });
     expect(resultOf({ kind: 'duplicate', remittanceId: REMITTANCE, documentId: DOCUMENT })).toEqual({ outcome: 'duplicate_remittance', remittanceId: REMITTANCE, documentId: DOCUMENT });
-    expect(resultOf({ kind: 'loaded', remittanceId: REMITTANCE, already: true, claims: 1, lines: 2, review: null })).toEqual(loaded(1, 2));
+    expect(resultOf({ kind: 'loaded', remittanceId: REMITTANCE, claims: 1, lines: 2, review: null })).toEqual(loaded(1, 2));
     const row = parseReportRow(reportOf('PAR-01/remit.835'), new Map([[FIRST, resultOf({ kind: 'refused', at: { segmentIndex: 19, segmentId: 'SVC', elementPosition: 5 } })]]));
     expect(row).toMatchObject({ outcome: 'held', errors: [expect.objectContaining({ code: 'EDI_SYNTAX', reason: 'invalid_decimal' })] });
   });

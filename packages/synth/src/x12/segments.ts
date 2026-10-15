@@ -110,11 +110,17 @@ export interface RenderOptions {
   readonly lineEnding?: '' | '\n' | '\r\n';
   /** A UTF-8 byte-order mark before the first ISA. */
   readonly bom?: boolean;
+  /** Carriage returns, line feeds, tabs or spaces after the last interchange (a blank line after IEA). */
+  readonly trailingWhitespace?: string;
 }
 
 /** Renders a document to text, segment by segment, with each interchange's own delimiters. */
 export function renderDocument(document: X12Document, options: RenderOptions = {}): string {
   const lineEnding = options.lineEnding ?? '';
+  const trailing = options.trailingWhitespace ?? '';
+  if (!/^[\r\n\t ]*$/.test(trailing)) {
+    throw new X12BuildError('trailing text after the last interchange must be whitespace');
+  }
   let text = options.bom === true ? '\uFEFF' : '';
   for (const interchange of document.interchanges) {
     checkDelimiters(interchange.delimiters);
@@ -122,7 +128,7 @@ export function renderDocument(document: X12Document, options: RenderOptions = {
       text += segmentText(segment, interchange.delimiters) + interchange.delimiters.segment + lineEnding;
     }
   }
-  return text;
+  return text + trailing;
 }
 
 /** Every segment of a document in file order, with its interchange's delimiters. */

@@ -47,4 +47,21 @@ describe('the fixture writer guard', () => {
     expect(() => assertSyntheticX12(writeZip([{ name: 'a.835', bytes: bytes(otherSender) }]), 'zip')).toThrow(/zip!a\.835/);
     expect(() => assertSyntheticX12(bytes('Code,Description\n'), 'csv')).not.toThrow();
   });
+
+  it('reads each interchange with its own delimiters, so a second sender behind other delimiters is refused', () => {
+    const bytes = (text: string) => new Uint8Array(Buffer.from(text, 'utf8'));
+    const otherDelimiters = (text: string) => text.replaceAll('*', '|').replaceAll(':', '>').replaceAll('~', "'");
+    const second = otherDelimiters(synthetic);
+    expect(() => assertSyntheticX12(bytes(`${synthetic}\r\n${second}`), 'two')).not.toThrow();
+    expect(() => assertSyntheticX12(bytes(`${synthetic}${otherDelimiters(otherSender)}`), 'isa')).toThrow(/ISA06/);
+    expect(() => assertSyntheticX12(bytes(`${synthetic}\n${otherDelimiters(synthetic.replace('*SYNTH*', '*OTHER*'))}`), 'gs')).toThrow(/GS02/);
+    // A line feed as the terminator, a blank line, then the other sender.
+    const newline = synthetic.replaceAll('~', '\n');
+    expect(() => assertSyntheticX12(bytes(`${newline}\n${second}`), 'newline')).not.toThrow();
+    expect(() => assertSyntheticX12(bytes(`${newline}\n${otherDelimiters(otherSender)}`), 'newline-isa')).toThrow(/ISA06/);
+    // A second interchange cut inside its header, after or before ISA06.
+    expect(() => assertSyntheticX12(bytes(`${synthetic}${otherSender.slice(0, 60)}`), 'cut')).toThrow(/ISA06/);
+    expect(() => assertSyntheticX12(bytes(`${synthetic}${otherSender.slice(0, 40)}`), 'cut-early')).toThrow(/ISA06/);
+    expect(() => assertSyntheticX12(bytes(`${synthetic}${synthetic.slice(0, 40)}`), 'cut-synthetic')).not.toThrow();
+  });
 });

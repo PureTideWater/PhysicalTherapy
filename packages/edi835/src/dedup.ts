@@ -3,9 +3,11 @@
  * practice already holds. First by file hash: the same bytes are a duplicate document and load zero
  * rows. Then by remittance key (sender, payee, ISA13, TRN02, BPR02; the loader adds the practice): the
  * same remittance from a second download or a resent file is linked to the first and loads zero rows.
- * A different remittance with a trace the payer already used for this payee (TRN02 and TRN03 equal,
- * the key not) loads and is surfaced for review; its BPR16 date says whether it is the rare payer
- * reusing a trace on another day.
+ * A remittance with a trace the payer already used for this payee (TRN02 and TRN03 equal, the key not)
+ * is the same payment when its amount (BPR02) and date (BPR16) are the same too: a file resent with a
+ * regenerated envelope (a new ISA13), also linked to the first with zero rows (docs/adr/0031). Any
+ * other one loads and is surfaced for review; its BPR16 date says whether it is the rare payer reusing
+ * a trace on another day.
  */
 import { type EdiError, duplicate } from './errors';
 import { type LoadableRemittance, type RemittanceKey } from './types';
@@ -37,19 +39,31 @@ export interface KnownRemittance {
 
 export type RemittanceDecision =
   | { readonly outcome: 'new' }
-  | { readonly outcome: 'duplicate_remittance'; readonly duplicateOf: string; readonly error: EdiError }
+  | {
+      readonly outcome: 'duplicate_remittance';
+      readonly duplicateOf: string;
+      /** key: the remittance key itself; same_payment: the same trace, amount and date under another envelope. */
+      readonly basis: 'key' | 'same_payment';
+      readonly error: EdiError;
+    }
   | { readonly outcome: 'review_trace_reused'; readonly sameTraceAs: string; readonly anotherDate: boolean };
 
 /** What loading `remittance` does, given the remittances the practice already holds. */
 export function remittanceDecision(remittance: LoadableRemittance, known: readonly KnownRemittance[]): RemittanceDecision {
+  const at = { segmentIndex: remittance.trace.segmentIndex, segmentId: 'TRN', elementPosition: 2 };
   const key = remittanceKeyText(remittance.dedupKey);
   const same = known.find((item) => remittanceKeyText(item.key) === key);
   if (same !== undefined) {
-    return { outcome: 'duplicate_remittance', duplicateOf: same.id, error: duplicate({ segmentIndex: remittance.trace.segmentIndex, segmentId: 'TRN', elementPosition: 2 }, 'remittance') };
+    return { outcome: 'duplicate_remittance', duplicateOf: same.id, basis: 'key', error: duplicate(at, 'remittance') };
   }
-  const trace = known.find(
+  const traces = known.filter(
     (item) => item.key.payeeId === remittance.dedupKey.payeeId && item.key.trn02 === remittance.trace.number && item.originatorId === remittance.trace.originatorId,
   );
+  const payment = traces.find((item) => item.key.bpr02Cents === remittance.dedupKey.bpr02Cents && item.paymentDate === remittance.payment.date);
+  if (payment !== undefined) {
+    return { outcome: 'duplicate_remittance', duplicateOf: payment.id, basis: 'same_payment', error: duplicate(at, 'remittance') };
+  }
+  const [trace] = traces;
   if (trace !== undefined) {
     return { outcome: 'review_trace_reused', sameTraceAs: trace.id, anotherDate: trace.paymentDate !== remittance.payment.date };
   }

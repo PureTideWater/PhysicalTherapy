@@ -6,7 +6,7 @@
  */
 import { type Cents, parseAmount } from '@tp/money';
 
-import { type CodeListName, type CodeListProvider } from './code-lists';
+import { type CodeListName, type CodeListProvider, type ExternalCodeList } from './code-lists';
 import { type EdiError, type Position, type SyntaxReason, syntaxError, unknownCode } from './errors';
 import { type ComponentSpec, type SegmentSpec } from './spec';
 import { type Segment } from './tokenizer';
@@ -48,11 +48,15 @@ export function isPositiveDecimal(text: string): boolean {
   return DECIMAL.test(text) && !text.startsWith('-') && /[1-9]/.test(text);
 }
 
-/** An unknown code: loaded with this flag, never dropped (PRD section 10). */
+/**
+ * An unknown reason or remark code (CARC or RARC, the external lists a rule release carries): loaded
+ * with this flag, never dropped (PRD section 10). A value outside one of the structure's own code sets
+ * is not flagged: it holds the transaction set (EDI_SYNTAX invalid_code).
+ */
 export interface UnknownCode extends Position {
   readonly code: 'EDI_UNKNOWN_CODE';
-  readonly list: CodeListName;
-  /** The code as sent (a code from a code list, never a patient field). */
+  readonly list: ExternalCodeList;
+  /** The code as sent (a reason or remark code, never a patient field). */
   readonly value: string;
   readonly message: string;
 }
@@ -124,10 +128,23 @@ function where(segment: Segment, elementPosition: number, componentPosition?: nu
     : { segmentIndex: segment.index, segmentId: segment.id, elementPosition, componentPosition };
 }
 
-export function flagUnknown(context: CheckContext, segment: Segment, list: CodeListName, value: string, elementPosition: number, componentPosition?: number): void {
+export function flagUnknown(context: CheckContext, segment: Segment, list: ExternalCodeList, value: string, elementPosition: number, componentPosition?: number): void {
   if (!context.codeLists.has(list, value, context.codeDate)) {
     const position = where(segment, elementPosition, componentPosition);
     context.sink.flag({ ...unknownCode(position, list), code: 'EDI_UNKNOWN_CODE', list, value });
+  }
+}
+
+/**
+ * Checks a code against its list (PRD section 10, step 6): an unknown CARC or RARC loads flagged; a
+ * value outside one of the structure's own sets (claim status, adjustment group, provider adjustment
+ * reason, payment method, every qualifier) holds the transaction set at its position, as pyx12 does.
+ */
+export function checkCode(context: CheckContext, segment: Segment, list: CodeListName, value: string, elementPosition: number, componentPosition?: number): void {
+  if (list === 'carc' || list === 'rarc') {
+    flagUnknown(context, segment, list, value, elementPosition, componentPosition);
+  } else if (!context.codeLists.has(list, value, context.codeDate)) {
+    context.sink.hold(syntaxError(where(segment, elementPosition, componentPosition), 'invalid_code'));
   }
 }
 
@@ -141,8 +158,9 @@ const KIND_REASON: Readonly<Record<'decimal' | 'units' | 'date' | 'date6' | 'num
 
 /**
  * Checks a segment's elements against its spec: required elements present, no repeated element,
- * amounts, decimals, units, dates and whole numbers well formed (each failure holds the
- * transaction), and codes known (each unknown one is flagged). Returns the typed view.
+ * amounts, decimals, units, dates and whole numbers well formed, and codes in the structure's own
+ * sets (each failure holds the transaction), and reason and remark codes known (each unknown one is
+ * flagged). Returns the typed view.
  */
 export function checkSegment(segment: Segment, spec: SegmentSpec, context: CheckContext): Fields {
   const fields = new Fields(segment);
@@ -172,13 +190,13 @@ export function checkSegment(segment: Segment, spec: SegmentSpec, context: Check
               sink.hold(syntaxError(where(segment, position, componentIndex + 1), 'missing_element'));
             }
           } else if (spec.list !== undefined) {
-            flagUnknown(context, segment, spec.list, value, position, componentIndex + 1);
+            checkCode(context, segment, spec.list, value, position, componentIndex + 1);
           }
         });
         return;
       case 'id':
         if (element.list !== undefined) {
-          flagUnknown(context, segment, element.list, raw, position);
+          checkCode(context, segment, element.list, raw, position);
         }
         return;
       case 'text':

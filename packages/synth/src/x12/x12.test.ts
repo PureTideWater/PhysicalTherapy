@@ -51,6 +51,8 @@ describe('segments', () => {
   it('renders line endings and a byte-order mark on request', () => {
     const document = documentFor835(file(sample()));
     expect(renderDocument(document, { lineEnding: '\r\n', bom: true })).toMatch(/^\uFEFFISA\*.*~\r\nGS\*/s);
+    expect(renderDocument(document, { trailingWhitespace: '\r\n' })).toMatch(/IEA\*1\*\d{9}~\r\n$/);
+    expect(() => renderDocument(document, { trailingWhitespace: 'x' })).toThrow(/whitespace/);
   });
 });
 

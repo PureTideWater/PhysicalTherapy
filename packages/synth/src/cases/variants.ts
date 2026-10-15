@@ -4,10 +4,14 @@
  * claims with no lines, modifiers, decimal units, service periods, unknown codes, line endings, a BOM,
  * trimmed amounts and every segment the writer supports. Each lives in fixtures/synthetic/variants/.
  */
+import { addCents } from '@tp/money';
+
 import { addDays, calendarDate } from '../core/dates';
+import { outcomeOf, receiptOf } from '../expected/parse';
+import { type EdiErrorExpectation, type OracleRejection, type ParseExpectation, type TransactionExpectation } from '../expected/types';
 import { type SynthWorld, dollars, envelopeOf, line, remittance, reversalOf } from '../x12/factory';
-import { type Claim, type File835, type ProviderAdjustment, type Remittance835 } from '../x12/model';
-import { type CaseBuilder, type X12RenderOptions } from './builder';
+import { type AdjustmentGroup, type CasSegment, type Claim, type ClaimStatusCode, type File835, type ProviderAdjustment, type Remittance835 } from '../x12/model';
+import { type CaseBuilder, type X12RenderOptions, render835 } from './builder';
 import { TIMED_CODES, controlNumber, therapyClaim, therapyLine, traceNumber } from './common';
 import { basicsOf } from './par';
 
@@ -52,6 +56,36 @@ function single(b: CaseBuilder, payerKey: string, claims: Claim[], description: 
 
 function plb(items: ProviderAdjustment['items'], providerId = '9900000001'): ProviderAdjustment {
   return { providerId, fiscalPeriodDate: FISCAL, items };
+}
+
+/**
+ * Six adjustments in one CAS segment (CAS02 to CAS19), the last of them one cent off when `offByOneCent`:
+ * the paid amounts stay those of the balanced form, so the claim (and the line) is held by exactly -0.01.
+ */
+function sixAdjustments(group: AdjustmentGroup, reasons: readonly string[], amounts: readonly string[], offByOneCent: boolean): CasSegment {
+  return {
+    group,
+    items: reasons.map((reason, index) => {
+      const amount = dollars(amounts[index] ?? '0.00');
+      return { reason, amount: offByOneCent && index === reasons.length - 1 ? addCents(amount, dollars('0.01')) : amount, quantity: index % 2 === 1 ? String(index) : undefined };
+    }),
+  };
+}
+
+/** The first transaction set of a parse expectation held by `error` alone, as a structural hold leaves balance unchecked. */
+function heldBy(parse: ParseExpectation, error: EdiErrorExpectation): ParseExpectation {
+  const transactions: TransactionExpectation[] = parse.transactions.map((transaction, index) => (index === 0 ? { ...transaction, status: 'held', heldReasons: [error] } : transaction));
+  return { ...parse, outcome: outcomeOf(transactions), transactions, receipt: receiptOf(transactions) };
+}
+
+/** Segment index (from 1) of the first `id` segment of a rendered single-interchange file. */
+function indexOf(file: File835, id: string): number {
+  return (render835(file).document.interchanges[0]?.segments.findIndex((segment) => segment.id === id) ?? -1) + 1;
+}
+
+/** A file with one value outside the structure's own code set: pyx12 rejects it, the parser holds the set at the value. */
+function invalidCode(b: CaseBuilder, path: string, file: File835, description: string, rejection: OracleRejection, at: (parse: ParseExpectation) => EdiErrorExpectation): void {
+  b.add835(path, file, description, {}, (parse) => heldBy(parse, at(parse)), { valid: false, rejections: [rejection] });
 }
 
 export const VARIANTS: readonly VariantDefinition[] = [
@@ -472,6 +506,118 @@ export const VARIANTS: readonly VariantDefinition[] = [
         creditDebit: 'D',
         providerAdjustments: [plb([{ code: 'WO', reference: 'SYNCCNPRIOR3101', amount: dollars('400.00') }])],
       });
+    },
+  },
+  {
+    id: 'V32',
+    slug: 'cas-six-adjustments',
+    title: 'CAS segments carrying all six adjustments, at claim and line level',
+    build: (b) => {
+      const date = calendarDate(2026, 6, 8);
+      for (const offByOneCent of [false, true]) {
+        // Claim 1: claim-level CAS with six adjustments (the last an unknown CARC) and a line without CAS.
+        const claimCas = sixAdjustments('CO', ['45', '23', '1', '2', '3', 'Z906'], ['20.00', '6.00', '5.00', '4.00', '3.00', '2.00'], offByOneCent);
+        const claimLine = line({ code: '97110', units: '2', charge: dollars('200.00'), paid: dollars('160.00'), adjustments: [], dates: { kind: 'single', date } });
+        const claim1 = therapyClaim(b.world, { caseId: b.info.id, n: 1, plan: 'SYNPLAN-COMM-01', lines: [claimLine], adjustments: [claimCas], paid: dollars('160.00') });
+        // Claim 2: a line whose PR CAS carries six adjustments (the last an unknown CARC): its patient share and observed allowed are all six.
+        const lineCas = sixAdjustments('PR', ['1', '2', '3', '23', '45', 'Z907'], ['10.00', '9.00', '8.00', '7.00', '6.00', '5.00'], offByOneCent);
+        const sharedLine = line({ code: '97140', units: '3', charge: dollars('240.00'), paid: dollars('150.00'), adjustments: [{ group: 'CO', items: [{ reason: '45', amount: dollars('45.00') }] }, lineCas], dates: { kind: 'single', date } });
+        const claim2 = therapyClaim(b.world, { caseId: b.info.id, n: 2, plan: 'SYNPLAN-COMM-01', lines: [sharedLine], paid: dollars('150.00') });
+        const file = wrap(b, [remitFor(b, 'W', [claim1, claim2], offByOneCent ? 2 : 1)], offByOneCent ? 2 : 1);
+        b.add835(
+          offByOneCent ? 'off-by-one-cent.835' : 'balanced.835',
+          file,
+          offByOneCent
+            ? 'The same claims with the sixth adjustment of each CAS (CAS17 and CAS18) one cent larger: both claims and the line are held by -0.01.'
+            : 'A claim-level CAS and a line-level PR CAS each carrying six reason, amount and quantity triples (CAS02 to CAS19), balanced.',
+        );
+      }
+    },
+  },
+  {
+    id: 'V33',
+    slug: 'b6-beside-claim-patient-share',
+    title: 'Claim-level patient share with one line carrying AMT B6 and one not',
+    build: (b) => {
+      const date = calendarDate(2026, 6, 15);
+      const lines = [
+        line({ code: '97110', units: '2', charge: dollars('100.00'), paid: dollars('60.00'), adjustments: [], b6: dollars('80.00'), dates: { kind: 'single', date } }),
+        line({ code: '97140', units: '2', charge: dollars('100.00'), paid: dollars('60.00'), adjustments: [], dates: { kind: 'single', date } }),
+      ];
+      const claim1 = therapyClaim(b.world, {
+        caseId: b.info.id,
+        n: 1,
+        plan: 'SYNPLAN-COMM-01',
+        lines,
+        adjustments: [{ group: 'CO', items: [{ reason: '45', amount: dollars('40.00') }] }, { group: 'PR', items: [{ reason: '2', amount: dollars('40.00') }] }],
+        au: true,
+      });
+      single(b, 'W', [claim1], 'CLP 200.00 paid 120.00 with claim-level CO-45 40.00 and PR-2 40.00; line 1 carries AMT B6 80.00, line 2 none: line 2 is allowed 80.00 (its pro-rata share of the PR), never 100.00.');
+    },
+  },
+  {
+    id: 'V34',
+    slug: 'newline-terminator-blank-line',
+    title: 'A line feed as the segment terminator, with a blank line after IEA',
+    build: (b) => {
+      const newline = { element: '*', component: ':', repetition: '^', segment: '\n' } as const;
+      const remit = remitFor(b, 'X', [randomClaim(b, 1, 'SYNPLAN-COMM-01'), randomClaim(b, 2, 'SYNPLAN-COMM-01')], 1);
+      const file = (n: number): File835 => ({ interchanges: [envelopeOf([remit], { isa13: controlNumber(b.info.id, n), date: remit.payment.date, delimiters: newline })] });
+      b.add835('blank-line.835', file(1), 'ISA106 is a line feed, and one more line feed follows IEA.', { trailingWhitespace: '\n' });
+      b.add835('blank-crlf.835', file(2), 'ISA106 is a line feed, and a carriage return and a line feed follow IEA.', { trailingWhitespace: '\r\n' });
+    },
+  },
+  {
+    id: 'V35',
+    slug: 'invalid-structure-codes',
+    title: "Values outside the 835 structure's own code sets",
+    build: (b) => {
+      const date = calendarDate(2026, 6, 22);
+      const base = (n: number, claim = randomClaim(b, n, 'SYNPLAN-COMM-01', date, 1), extra: Partial<Parameters<typeof remittance>[0]> = {}): Remittance835 => remitFor(b, 'Y', [claim], n, extra);
+      const fileOf = (remit: Remittance835, n: number): File835 => ({ interchanges: [envelopeOf([remit], { isa13: controlNumber(b.info.id, n), date: remit.payment.date })] });
+
+      // CAS01 XX on the line's contractual adjustment (the patient share keeps PR).
+      const casClaim = randomClaim(b, 1, 'SYNPLAN-COMM-01', date, 1);
+      const [casLine] = casClaim.lines;
+      const badCas: Claim = { ...casClaim, lines: casClaim.lines.map((serviceLine) => ({ ...serviceLine, adjustments: serviceLine.adjustments.map((segment) => (segment.group === 'CO' ? { ...segment, group: 'XX' as AdjustmentGroup } : segment)) })) };
+      if (casLine?.adjustments[0]?.group !== 'CO') {
+        throw new Error('V35 expects the line to open with CO-45');
+      }
+      invalidCode(b, 'cas01.835', fileOf(base(1, badCas), 1), 'CAS01 XX, an adjustment group outside CO, OA, PI and PR.', 'segment', (parse) => ({
+        code: 'EDI_SYNTAX',
+        reason: 'invalid_code',
+        segmentIndex: parse.transactions[0]?.claims[0]?.lines[0]?.adjustments[0]?.segmentIndex ?? 0,
+        segmentId: 'CAS',
+        elementPosition: 1,
+      }));
+
+      // CLP02 99, a claim status outside the structure's set.
+      const statusClaim: Claim = { ...randomClaim(b, 2, 'SYNPLAN-COMM-01', date, 1), status: '99' as ClaimStatusCode };
+      invalidCode(b, 'clp02.835', fileOf(base(2, statusClaim), 2), 'CLP02 99, a claim status the structure does not have.', 'element', (parse) => ({
+        code: 'EDI_SYNTAX',
+        reason: 'invalid_code',
+        segmentIndex: parse.transactions[0]?.claims[0]?.segmentIndex ?? 0,
+        segmentId: 'CLP',
+        elementPosition: 2,
+      }));
+
+      // PLB03-01 ZZ, a provider adjustment reason outside the structure's set.
+      const plbRemit = base(3, undefined, { providerAdjustments: [plb([{ code: 'ZZ', reference: 'SYNREF3503', amount: dollars('10.00') }])] });
+      invalidCode(b, 'plb03.835', fileOf(plbRemit, 3), 'PLB03-01 ZZ, a provider adjustment reason the structure does not have.', 'element', (parse) => ({
+        code: 'EDI_SYNTAX',
+        reason: 'invalid_code',
+        segmentIndex: parse.transactions[0]?.plb[0]?.segmentIndex ?? 0,
+        segmentId: 'PLB',
+        elementPosition: 3,
+        componentPosition: 1,
+      }));
+
+      // BPR04 XYZ, a payment method outside ACH, BOP, CHK, FWT and NON.
+      const ach = base(4);
+      const methodRemit: Remittance835 = { ...ach, payment: { ...ach.payment, method: 'XYZ' as Remittance835['payment']['method'] } };
+      const methodFile = fileOf(methodRemit, 4);
+      invalidCode(b, 'bpr04.835', methodFile, 'BPR04 XYZ, a payment method the structure does not have.', 'element', () => ({ code: 'EDI_SYNTAX', reason: 'invalid_code', segmentIndex: indexOf(methodFile, 'BPR'), segmentId: 'BPR', elementPosition: 4 }));
+      b.note('Only CARC and RARC (the external lists a rule release carries) load flagged when unknown; a value outside one of the structure\'s own sets holds its transaction set, as pyx12 rejects it.');
     },
   },
   {

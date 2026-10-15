@@ -338,6 +338,9 @@ describe('intake of a zip', () => {
     expect((await one(id)).status).toBe('quarantined');
     expect(counts(await entriesOf(id))).toEqual({ quarantined: 2 });
     expect(run.logs.find((line) => line.error_code === 'UPLOAD_QUARANTINED')).toMatchObject({ document_id: id });
+    // The executable is recognized by its first bytes and never copied out of the zip.
+    expect(await one(entryDocumentId(id, 0))).toMatchObject({ scan_status: 'flagged', sha256: null });
+    expect(await h.bytes.size(documentObjectKey(world.practiceId, entryDocumentId(id, 0)))).toBeNull();
   });
 
   it('holds nested zips, damaged entries and duplicates on their own, and stores what each is', async () => {
@@ -362,15 +365,22 @@ describe('intake of a zip', () => {
     }
     expect(byIndex.map((entry) => entry.status)).toEqual(['nested_zip', 'unreadable', 'duplicate', 'not_835', 'scanned', 'encrypted']);
     expect(run.queued).toEqual([{ type: 'parse_835', payload: { practice_id: world.practiceId, document_id: entryDocumentId(id, 4) } }]);
+    // Held by its first bytes (not an 835), the PDF is never written; the 835 and the nested zip are.
+    const stored = async (index: number) => (await h.bytes.size(documentObjectKey(world.practiceId, entryDocumentId(id, index)))) !== null;
+    expect([await stored(0), await stored(3), await stored(4)]).toEqual([true, false, true]);
   });
 
   it('refuses a zip with too many entries, a zip bomb and an unreadable zip without creating any entry', async () => {
     const files = (count: number): TestEntry[] => Array.from({ length: count }, (_, at) => ({ name: `f${String(at)}.835`, data: remit() }));
     const h = harness();
     const limited: Harness = { ...h, services: { ...h.services, zipLimits: { ...ZIP_LIMITS, maxEntries: 3 } } };
+    const zeros = Buffer.alloc(1024 * 1024);
     const cases: [Buffer, string][] = [
       [buildZip(files(4)), 'too_many_entries'],
       [buildZip([{ name: 'a.835', data: Buffer.alloc(6000, 0x61) }, { name: 'b.835', data: Buffer.alloc(6000, 0x61), sameDataAs: 0 }]), 'too_compressed'],
+      // Three entries of 1 MiB of zeros each, none above the per-entry ratio floor: the archive expands
+      // over a thousand times its size, so it is refused whole and nothing is written.
+      [buildZip(Array.from({ length: 3 }, (_, at) => ({ name: `zeros-${String(at)}.835`, data: zeros }))), 'too_compressed'],
       [Buffer.from('PK\u0003\u0004 not really a zip', 'latin1'), 'unreadable'],
     ];
     for (const [bytes, status] of cases) {

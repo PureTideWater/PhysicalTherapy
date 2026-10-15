@@ -182,17 +182,16 @@ function b6Of(serviceLine: ServiceLine): Cents | undefined {
 function observedAllowed(claim: Claim): ObservedAllowedExpectation[] {
   const claimShare = patientShareTotal(claim.adjustments);
   const linesCarryShare = claim.lines.some((serviceLine) => serviceLine.adjustments.some((segment) => segment.group === 'PR'));
-  const eligible = claim.lines.map((serviceLine, position) => ({ serviceLine, position })).filter(({ serviceLine }) => b6Of(serviceLine) === undefined);
   const allocate = claimShare !== 0n && !linesCarryShare;
-  const shares = allocate ? allocateProRata(claimShare, eligible.map(({ serviceLine }) => serviceLine.charge)) : [];
-  const shareByPosition = new Map(eligible.map(({ position }, index) => [position, shares[index] ?? ZERO_CENTS]));
+  // Over every line by charge; a line with B6 keeps B6 (its allowed already holds its share), the others take their shares.
+  const shares = allocate ? allocateProRata(claimShare, claim.lines.map((serviceLine) => serviceLine.charge)) : [];
   return claim.lines.map((serviceLine, position) => {
     const b6 = b6Of(serviceLine);
     if (b6 !== undefined) {
       return { cents: centsToString(b6), basis: 'amt_b6', allocatedFromClaim: false };
     }
     if (allocate) {
-      return { cents: centsToString(addCents(serviceLine.paid, shareByPosition.get(position) ?? ZERO_CENTS)), basis: 'paid_plus_pr', allocatedFromClaim: true };
+      return { cents: centsToString(addCents(serviceLine.paid, shares[position] ?? ZERO_CENTS)), basis: 'paid_plus_pr', allocatedFromClaim: true };
     }
     return { cents: centsToString(addCents(serviceLine.paid, patientShareTotal(serviceLine.adjustments))), basis: 'paid_plus_pr', allocatedFromClaim: false };
   });

@@ -1,7 +1,16 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { NULLABLE_PRACTICE_ID_TABLES, PLATFORM_DIRECTORY_TABLES, REVIEWED_PLATFORM_POLICIES, catalogProblems, tenantPolicyExpression, tenantTables } from './catalog';
+import {
+  NULLABLE_PRACTICE_ID_TABLES,
+  PLATFORM_DIRECTORY_TABLES,
+  REVIEWED_PLATFORM_POLICIES,
+  REVIEWED_SCOPE_FUNCTIONS,
+  TENANT_SETTING,
+  catalogProblems,
+  tenantPolicyExpression,
+  tenantTables,
+} from './catalog';
 import { readDatabaseUrl } from './config';
 import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 import { type MigratedDatabase, createMigratedDatabase } from './testing';
@@ -206,6 +215,24 @@ describe('the catalog test', () => {
     expect(await problemsAfter('CREATE FUNCTION throwaway_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$ SELECT 1 $$;')).toEqual([]);
     const owned = await problemsAfter(`CREATE TABLE throwaway_owned (id uuid PRIMARY KEY); RESET ROLE; ALTER TABLE throwaway_owned OWNER TO ${OPERATOR_ROLE};`);
     expect(owned).toEqual(expect.arrayContaining([`the operator role ${OPERATOR_ROLE} owns relation throwaway_owned`]));
+  });
+
+  it('fails on a SECURITY DEFINER function that sets app.practice_ids unless it is reviewed, and on a reviewed one that is gone', async () => {
+    const widening = (body: string) =>
+      problemsAfter(`CREATE FUNCTION throwaway_scope() RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $f$ BEGIN ${body} END; $f$;`);
+    const problem = `function throwaway_scope() is SECURITY DEFINER and sets ${TENANT_SETTING}; review it into REVIEWED_SCOPE_FUNCTIONS or keep the caller's scope`;
+    expect(await widening("PERFORM set_config('app.practice_ids', (SELECT '{' || string_agg(id::text, ',') || '}' FROM practice), true);")).toEqual([problem]);
+    expect(await widening("SET LOCAL app.practice_ids = '{}';")).toEqual([problem]);
+    // Reading the caller's scope is not setting it; an invoker function runs under the caller's own rights.
+    expect(await widening("PERFORM current_setting('app.practice_ids', true);")).toEqual([]);
+    expect(await problemsAfter("CREATE FUNCTION throwaway_scope() RETURNS void LANGUAGE plpgsql AS $f$ BEGIN PERFORM set_config('app.practice_ids', '{}', true); END; $f$;")).toEqual([]);
+    expect(REVIEWED_SCOPE_FUNCTIONS.map((item) => [item.function, item.scope])).toEqual([
+      ['end_support_grant(uuid)', 'narrows'],
+      ['console_contract_queue()', 'counts'],
+    ]);
+    expect(await problemsAfter('DROP FUNCTION console_contract_queue();')).toEqual([
+      `reviewed scope function console_contract_queue() is not a SECURITY DEFINER function that sets ${TENANT_SETTING}; update REVIEWED_SCOPE_FUNCTIONS`,
+    ]);
   });
 
   it('fails when a registered table is missing or does not qualify', async () => {

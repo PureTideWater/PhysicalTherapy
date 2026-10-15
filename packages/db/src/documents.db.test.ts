@@ -10,10 +10,11 @@ import { documentObjectKey } from './schema';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, placeholderDataKeyRef } from './testing';
 
 /**
- * The rules of migration 20261016090000 (source_document, payer, plan) against the application role
- * (PRD 6, Agreements: "no upload without a BAA"; Intake and documents; PRD 8: one row per upload even
- * for duplicates; PRD 10: the practice's own prefix; test matrix PAR-06, PAR-30, SEC-08). The
- * catalog test and the generated cross-tenant tests cover the tenant policies themselves.
+ * The rules of migrations 20261016090000 (source_document, payer, plan) and 20261017090000 (the malware
+ * gate and the uploader) against the application role (PRD 6, Agreements: "no upload without a BAA";
+ * Intake and documents; PRD 8: one row per upload even for duplicates; PRD 10: the practice's own
+ * prefix, "Malware scan result must be clean"; test matrix PAR-06, PAR-28, PAR-30, SEC-08). The catalog
+ * test and the generated cross-tenant tests cover the tenant policies themselves.
  */
 
 let database: MigratedDatabase;
@@ -153,6 +154,84 @@ describe('source_document', () => {
       await expect(asApp(manager, [north.practiceId], `UPDATE source_document SET ${column} = ${column} WHERE id = $1`, [id]), column).rejects.toMatchObject({ code: '42501' });
     }
     expect((await asApp(manager, [north.practiceId], 'UPDATE source_document SET status = $2 WHERE id = $1', [id, 'parse_queued'])).rowCount).toBe(1);
+  });
+
+  it('never records an entry of a zip in another person’s name, whoever inserts it', async () => {
+    const zip = await upload();
+    // The manager (a user, not intake) names the practice administrator as the uploader of an entry of the manager's own zip.
+    await expect(asApp(manager, [north.practiceId], INSERT, [randomUUID(), north.practiceId, north.adminUserId, zip])).rejects.toMatchObject({
+      code: '23514',
+      message: expect.stringMatching(/uploader/),
+    });
+    await expect(withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [randomUUID(), north.practiceId, north.adminUserId, zip]))).rejects.toMatchObject({
+      code: '23514',
+    });
+  });
+
+  it('inserts a document only unscanned and unhashed: an upload awaiting its bytes, an entry received or held', async () => {
+    const insert = (columns: string, values: string, parent: string | null) =>
+      asApp(manager, [north.practiceId], `INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id, ${columns}) VALUES ($1, $2, 'x12_835', 1200, 'application/octet-stream', $3, $4, ${values})`, [
+        randomUUID(),
+        north.practiceId,
+        manager,
+        parent,
+      ]);
+    // A top-level document inserted clean and scanned would skip the malware scan.
+    await expect(insert('scan_status, scan_at, status', "'clean', now(), 'scanned'", null)).rejects.toMatchObject({ code: '42501' });
+    await expect(insert('scan_status, scan_at, status', "'clean', now(), 'stored'", null)).rejects.toMatchObject({ code: '42501' });
+    await expect(insert('status', "'received'", null)).rejects.toMatchObject({ code: '42501' });
+    await expect(insert('sha256', `'${sha()}'`, null)).rejects.toMatchObject({ code: '42501' });
+    const zip = await upload();
+    await withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) =>
+      scope.client.query("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'scanned' WHERE id = $1", [zip]),
+    );
+    // Even under a clean zip, an entry is inserted unscanned: the job records its verdict after.
+    await expect(insert('scan_status, scan_at, status', "'clean', now(), 'received'", zip)).rejects.toMatchObject({ code: '42501' });
+    expect((await insert('status', "'too_large'", zip)).rowCount).toBe(1);
+    expect((await insert('status', "'received'", zip)).rowCount).toBe(1);
+  });
+
+  it('scans and queues for parse only a clean document, never clears a malware finding, and keeps quarantined and duplicate documents so', async () => {
+    const job = (sql: string, values: unknown[]) => withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(sql, values));
+    const pending = await upload();
+    for (const status of ['scanned', 'parse_queued']) {
+      await expect(job('UPDATE source_document SET status = $2 WHERE id = $1', [pending, status]), status).rejects.toMatchObject({ code: '23514', message: expect.stringMatching(/clean/) });
+    }
+    // A failed scan is no verdict: it can still come back clean.
+    await job("UPDATE source_document SET scan_status = 'failed', scan_at = now(), status = 'received' WHERE id = $1", [pending]);
+    await expect(job("UPDATE source_document SET status = 'scanned' WHERE id = $1", [pending])).rejects.toMatchObject({ code: '23514' });
+    await job("UPDATE source_document SET scan_status = 'clean', status = 'scanned' WHERE id = $1", [pending]);
+    for (const finding of ['flagged', 'unscannable']) {
+      const id = await upload();
+      await job("UPDATE source_document SET scan_status = $2, scan_at = now(), status = 'quarantined' WHERE id = $1", [id, finding]);
+      await expect(asApp(manager, [north.practiceId], "UPDATE source_document SET scan_status = 'clean' WHERE id = $1", [id]), finding).rejects.toMatchObject({
+        code: '23514',
+        message: expect.stringMatching(/never cleared/),
+      });
+      await expect(job("UPDATE source_document SET scan_status = 'clean', status = 'scanned' WHERE id = $1", [id]), finding).rejects.toMatchObject({ code: '23514' });
+      await expect(job("UPDATE source_document SET status = 'received' WHERE id = $1", [id]), finding).rejects.toMatchObject({ code: '23514', message: expect.stringMatching(/stays so/) });
+    }
+    // A clean document the sniff finds to be an executable is quarantined, and stays so.
+    const sniffed = await upload();
+    await job("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'received' WHERE id = $1", [sniffed]);
+    await job("UPDATE source_document SET scan_status = 'flagged', status = 'quarantined' WHERE id = $1", [sniffed]);
+    await expect(job("UPDATE source_document SET status = 'stored' WHERE id = $1", [sniffed])).rejects.toMatchObject({ code: '23514' });
+    const duplicate = await upload();
+    await job("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'duplicate' WHERE id = $1", [duplicate]);
+    await expect(job("UPDATE source_document SET status = 'scanned' WHERE id = $1", [duplicate])).rejects.toMatchObject({ code: '23514', message: expect.stringMatching(/stays so/) });
+  });
+
+  it('makes a zip entry clean only when its zip’s malware scan is clean', async () => {
+    const job = (sql: string, values: unknown[]) => withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(sql, values));
+    const zip = await upload();
+    const entry = randomUUID();
+    await job(INSERT, [entry, north.practiceId, manager, zip]);
+    await expect(job("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'received' WHERE id = $1", [entry])).rejects.toMatchObject({
+      code: '23514',
+      message: expect.stringMatching(/zip's malware scan/),
+    });
+    await job("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'scanned' WHERE id = $1", [zip]);
+    await job("UPDATE source_document SET scan_status = 'clean', scan_at = now(), status = 'scanned' WHERE id = $1", [entry]);
   });
 
   it('keeps one first document per practice and bytes; every later one with the same bytes is a duplicate (PAR-06, PAR-30)', async () => {

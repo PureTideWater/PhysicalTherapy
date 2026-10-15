@@ -15,7 +15,23 @@ export class SyntheticSenderError extends Error {
   override readonly name = 'SyntheticSenderError';
 }
 
-/** Throws unless every interchange in `bytes` has the synthetic sender (and every zip entry too). */
+const ISA_LENGTH = 106;
+const WHITESPACE = /[\r\n\t ]/;
+
+function checkIsa(fields: readonly string[], label: string): void {
+  // A header cut inside ISA06 must still be the start of the synthetic sender.
+  const sender = fields[6];
+  if (sender !== undefined && (fields.length > 7 ? sender !== SYNTH_ISA06 : !SYNTH_ISA06.startsWith(sender))) {
+    throw new SyntheticSenderError(`${label}: ISA06 is not ${SYNTH_ISA06.trim()}`);
+  }
+}
+
+/**
+ * Throws unless every interchange in `bytes` has the synthetic sender (and every zip entry too). The file
+ * is walked interchange by interchange, as the parser reads it: each ISA's own element separator and
+ * terminator split the segments that follow it, so a second interchange with other delimiters is checked
+ * too.
+ */
 export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
   const buffer = Buffer.from(bytes);
   if (buffer.length >= 4 && buffer.readUInt32LE(0) === 0x04034b50) {
@@ -31,17 +47,31 @@ export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
   if (!text.startsWith('ISA')) {
     return;
   }
-  const element = text[3] ?? '*';
-  const terminator = text[105] ?? '~';
-  for (const raw of text.split(terminator)) {
-    const segment = raw.replace(/^[\r\n\s]+/, '');
-    const fields = segment.split(element);
-    if (fields[0] === 'ISA' && fields[6] !== SYNTH_ISA06) {
-      throw new SyntheticSenderError(`${label}: ISA06 is not ${SYNTH_ISA06.trim()}`);
+  let element = '';
+  let terminator = '';
+  let position = 0;
+  while (position < text.length) {
+    // No segment begins with whitespace (a blank line, a line break after a terminator).
+    while (position < text.length && WHITESPACE.test(text.charAt(position))) {
+      position += 1;
     }
+    if (text.startsWith('ISA', position)) {
+      element = text.charAt(position + 3);
+      const header = text.slice(position, position + ISA_LENGTH);
+      checkIsa(header.slice(0, ISA_LENGTH - 1).split(element), label);
+      if (header.length < ISA_LENGTH) {
+        return;
+      }
+      terminator = header.charAt(ISA_LENGTH - 1);
+      position += ISA_LENGTH;
+      continue;
+    }
+    const end = text.indexOf(terminator, position);
+    const fields = text.slice(position, end < 0 ? text.length : end).split(element);
     if (fields[0] === 'GS' && fields.length > 2 && fields[2] !== SYNTH_GS02) {
       throw new SyntheticSenderError(`${label}: GS02 is not ${SYNTH_GS02}`);
     }
+    position = end < 0 ? text.length : end + 1;
   }
 }
 

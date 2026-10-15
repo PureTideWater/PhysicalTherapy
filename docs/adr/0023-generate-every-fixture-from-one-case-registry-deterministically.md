@@ -15,8 +15,10 @@ security) need input files now but their outcomes are asserted later; some need 
 ## Decision
 
 - **One registry** (`packages/synth/src/cases/registry.ts`) has an entry for every test-matrix row, checked
-  word for word against `docs/product/test-matrix.md` by a test, plus thirty-one oracle variants (`V01` to `V31`,
-  in `fixtures/synthetic/variants/<id>-<slug>/`). Each entry names the milestone that completes its expected
+  word for word against `docs/product/test-matrix.md` by a test, plus thirty-five oracle variants (`V01` to `V35`,
+  in `fixtures/synthetic/variants/<id>-<slug>/`; V32 to V35 came from the milestone 2 and 3 review: six CAS
+  triples, B6 beside claim-level patient share, a line-feed terminator with a blank line after IEA, and values
+  outside the structure's code sets). Each entry names the milestone that completes its expected
   outcome (`completesIn`), the existing tests that already assert it (`assertedBy`, checked to exist), and
   either generates files or states why it needs none (`noFileReason`). Every case directory holds an
   `expected.json` (`CaseExpectation`, `packages/synth/src/expected/types.ts`).

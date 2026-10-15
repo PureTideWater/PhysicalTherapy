@@ -77,6 +77,12 @@ export function parseText(text: string, codeLists: CodeListProvider = releaseDir
 
 function errorShape(error: EdiError): EdiErrorExpectation {
   const shape: Record<string, unknown> = { code: error.code, segmentIndex: error.segmentIndex, segmentId: error.segmentId, elementPosition: error.elementPosition };
+  if (error.componentPosition !== undefined) {
+    shape.componentPosition = error.componentPosition;
+  }
+  if (error.reason !== undefined) {
+    shape.reason = error.reason;
+  }
   if (error.scope !== undefined) {
     shape.scope = error.scope;
   }
@@ -185,7 +191,7 @@ function transactionShape(remittance: Remittance, heldReasons: readonly EdiError
       category: item.category,
       counted: item.counted,
     })),
-    unknownCodes: remittance.unknownCodes.map((code) => ({ list: code.list as 'carc' | 'rarc', code: code.value, segmentIndex: code.segmentIndex, segmentId: code.segmentId, elementPosition: code.elementPosition })),
+    unknownCodes: remittance.unknownCodes.map((code) => ({ list: code.list, code: code.value, segmentIndex: code.segmentIndex, segmentId: code.segmentId, elementPosition: code.elementPosition })),
   };
 }
 

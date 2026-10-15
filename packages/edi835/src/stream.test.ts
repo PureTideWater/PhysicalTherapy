@@ -123,7 +123,11 @@ describe('deduplication decisions', () => {
     const item = remittance();
     const known = (overrides: Partial<KnownRemittance>): KnownRemittance => ({ id: 'remit-1', key: item.dedupKey, originatorId: item.trace.originatorId, paymentDate: item.payment.date, ...overrides });
     expect(remittanceDecision(item, [])).toEqual({ outcome: 'new' });
-    expect(remittanceDecision(item, [known({})])).toMatchObject({ outcome: 'duplicate_remittance', duplicateOf: 'remit-1', error: { segmentIndex: 5, segmentId: 'TRN', elementPosition: 2 } });
+    expect(remittanceDecision(item, [known({})])).toMatchObject({ outcome: 'duplicate_remittance', duplicateOf: 'remit-1', basis: 'key', error: { segmentIndex: 5, segmentId: 'TRN', elementPosition: 2 } });
+    // The same payment resent under a regenerated envelope (another ISA13, or another sender): zero rows, linked.
+    const otherEnvelope = { ...item.dedupKey, isa13: '000999999', senderId: 'SYNTHOTHER' };
+    expect(remittanceDecision(item, [known({ key: otherEnvelope })])).toMatchObject({ outcome: 'duplicate_remittance', duplicateOf: 'remit-1', basis: 'same_payment', error: { code: 'EDI_DUPLICATE', segmentId: 'TRN' } });
+    expect(remittanceDecision(item, [known({ key: otherEnvelope, paymentDate: '2026-01-02' })])).toEqual({ outcome: 'review_trace_reused', sameTraceAs: 'remit-1', anotherDate: true });
     const otherAmount = { ...item.dedupKey, bpr02Cents: cents(1n) };
     expect(remittanceDecision(item, [known({ key: otherAmount })])).toEqual({ outcome: 'review_trace_reused', sameTraceAs: 'remit-1', anotherDate: false });
     expect(remittanceDecision(item, [known({ key: otherAmount, paymentDate: '2026-01-02' })])).toEqual({ outcome: 'review_trace_reused', sameTraceAs: 'remit-1', anotherDate: true });

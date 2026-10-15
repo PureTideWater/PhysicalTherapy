@@ -16,8 +16,10 @@ import type { DocumentReader } from '../storage/documents';
  * Nothing holds more than one entry's current chunk, whatever the zip's size (docs/adr/0026 has the
  * arithmetic for 2 GiB). Two passes over the central directory:
  *
- * 1. inspectZip: the entry count, overlapping entries and the sum of compressed sizes (the shapes of a
- *    zip bomb that would refuse the whole zip), whether it is really a workbook (xlsx), and each entry's
+ * 1. inspectZip: the entry count, overlapping entries, the sum of compressed sizes and the archive's
+ *    own ratio (the uncompressed bytes it would expand to against its size: many small, highly
+ *    compressible entries are a zip bomb too), each of which refuses the whole zip, whether it is
+ *    really a workbook (xlsx), and each entry's
  *    hold under the limits: an unsafe name (absolute, a drive, a .. segment, a backslash, a NUL) or a
  *    link, encryption, a compression method other than stored or deflate, a stored entry whose sizes
  *    disagree, an entry larger than maxEntryBytes, a ratio beyond maxRatio, or the running total past
@@ -36,7 +38,7 @@ export interface ZipLimits {
   readonly maxEntryBytes: number;
   /** The sum of the entries' uncompressed sizes; entries past it are held. */
   readonly maxTotalBytes: number;
-  /** Uncompressed bytes per compressed byte, for entries above ratioFloorBytes. */
+  /** Uncompressed bytes per compressed byte: for entries above ratioFloorBytes, and for the zip as a whole. */
   readonly maxRatio: number;
   /** Entries this small are not held for their ratio (a short run of spaces compresses well). */
   readonly ratioFloorBytes: number;
@@ -230,10 +232,12 @@ export async function inspectZip(document: DocumentReader, limits: ZipLimits = Z
       }
     }
     // Entries that share or overlap their bytes, or more compressed bytes than the zip holds: a zip
-    // bomb built from overlapping files. Refused whole.
+    // bomb built from overlapping files. Refused whole. So is a zip whose readable entries expand to
+    // more than maxRatio times its own size, however small each entry is (a zip bomb of many entries
+    // under ratioFloorBytes).
     extents.sort((a, b) => a.start - b.start);
     const overlapping = extents.some((extent, at) => at > 0 && extent.start < (extents[at - 1] as { end: number }).end);
-    if (overlapping || compressed > document.sizeBytes) {
+    if (overlapping || compressed > document.sizeBytes || total > document.sizeBytes * limits.maxRatio) {
       return { kind: 'refused', reason: 'too_compressed' };
     }
     return { kind: 'zip', inventory: { fileEntries, spreadsheet: workbook === 2, holds } };

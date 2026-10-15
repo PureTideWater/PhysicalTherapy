@@ -1,4 +1,4 @@
-import { type DocumentStatus, type KeyProvider, type PracticeCipher, documentObjectKey, loadPracticeCipher } from '@tp/db/runtime';
+import { type DocumentStatus, type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, documentObjectKey, loadPracticeCipher } from '@tp/db/runtime';
 import { type CodeListProvider, type ParseReport, isLoadable, parse835Stream } from '@tp/edi835';
 
 import type { JobContext, JobHandler } from '../jobs/handlers';
@@ -14,19 +14,23 @@ import { type ParseReportRow, type TransactionResult, documentStatus, parseRepor
  *
  * 1. The document is read under the job's policies, from its own key under the practice's prefix (the
  *    database generates it; the job refuses anything else) and opened with the practice's key, so a
- *    job never reads another practice's file. A document already reported, or not waiting for parse,
- *    is left as it is: a replayed job has no further effect (JOB-01).
+ *    job never reads another practice's file. A document already reported, not waiting for parse, or
+ *    without a clean malware scan, is left as it is: a replayed job has no further effect (JOB-01).
  * 2. A first pass parses the whole document as a stream for the parser's final report (an envelope
  *    error after a transaction set can still hold it), and checks the bytes are the ones intake
- *    hashed. A second pass loads each transaction set the report leaves loadable, each in its own
- *    transaction, one at a time, so memory stays bounded by one transaction set whatever the file's
- *    size; a held one is never loaded, and never blocks the others or another document.
- * 3. The parse report and the document's receipt status are written together, once.
+ *    hashed.
+ * 3. A second pass, in one database transaction under the practice's policy (PRD 10, step 9), loads
+ *    each transaction set the report leaves loadable as the stream reaches it, one set in memory at a
+ *    time whatever the file's size, and writes the parse report and the document's receipt status
+ *    last. A held set is never loaded and never blocks the others or another document; the document's
+ *    remittances appear together with its report, or not at all.
  *
- * Every attempt resumes: a transaction set an earlier attempt loaded is recognized and not loaded
- * again. A failure on the last of the three attempts marks the document failed (the worker logs the
- * operator alert line and records the run failed, JOB-02), and the Uploads screen offers a retry.
+ * A failed attempt leaves nothing behind, so the next one starts over. A failure on the last of the
+ * three attempts marks the document failed (the worker logs the operator alert line and records the
+ * run failed, JOB-02), and the Uploads screen offers a retry.
  */
+
+type Scope = PracticeScope<ScopeClient>;
 
 export interface ParseServices {
   readonly documents: DocumentStore;
@@ -41,6 +45,7 @@ interface DocumentRow {
   readonly kind: string;
   readonly s3_key: string;
   readonly sha256: string | null;
+  readonly scan_status: string;
   readonly status: DocumentStatus;
   readonly reported: boolean;
 }
@@ -79,8 +84,8 @@ class DocumentParse {
     throw new Error('the parser ended without its report');
   }
 
-  /** Pass two: each loadable transaction set, in its own transaction. */
-  private async load(report: ParseReport): Promise<Map<string, TransactionResult>> {
+  /** Pass two, inside the document's transaction: each loadable transaction set as the stream reaches it. */
+  private async load(scope: Scope, report: ParseReport): Promise<Map<string, TransactionResult>> {
     const results = new Map<string, TransactionResult>();
     const loadable = new Set(report.transactions.filter((outcome) => outcome.loadable).map((outcome) => positionKey(outcome.position)));
     if (loadable.size === 0) {
@@ -95,44 +100,40 @@ class DocumentParse {
       if (!loadable.has(key) || !isLoadable(remittance)) {
         continue;
       }
-      const load = await this.context.transaction((scope) =>
-        loadTransaction({ scope, cipher: this.opened.cipher, practiceId: this.practiceId, documentId: this.opened.row.id }, remittance),
-      );
+      const load = await loadTransaction({ scope, cipher: this.opened.cipher, practiceId: this.practiceId, documentId: this.opened.row.id }, remittance);
       results.set(key, resultOf(load));
     }
     return results;
   }
 
-  private async record(row: ParseReportRow): Promise<void> {
+  private async record(scope: Scope, row: ParseReportRow): Promise<void> {
     const documentId = this.opened.row.id;
-    await this.context.transaction(async (scope) => {
-      await scope.client.query(
-        `INSERT INTO parse_report (practice_id, source_document_id, outcome, transactions, claims, lines, reversals, held, plb_total_cents, loaded_transactions,
-           loaded_claims, loaded_lines, duplicate_transactions, unknown_codes, errors, transaction_outcomes, code_list_release)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-         ON CONFLICT (source_document_id) DO NOTHING`,
-        [
-          this.practiceId,
-          documentId,
-          row.outcome,
-          row.transactions,
-          row.claims,
-          row.lines,
-          row.reversals,
-          row.held,
-          row.plbTotalCents,
-          row.loadedTransactions,
-          row.loadedClaims,
-          row.loadedLines,
-          row.duplicateTransactions,
-          row.unknownCodes,
-          JSON.stringify(row.errors),
-          JSON.stringify(row.transactionOutcomes),
-          row.codeListRelease,
-        ],
-      );
-      await scope.client.query('UPDATE source_document SET status = $2 WHERE id = $1 AND status = ANY ($3::text[])', [documentId, documentStatus(row.outcome), WAITING]);
-    });
+    await scope.client.query(
+      `INSERT INTO parse_report (practice_id, source_document_id, outcome, transactions, claims, lines, reversals, held, plb_total_cents, loaded_transactions,
+         loaded_claims, loaded_lines, duplicate_transactions, unknown_codes, errors, transaction_outcomes, code_list_release)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       ON CONFLICT (source_document_id) DO NOTHING`,
+      [
+        this.practiceId,
+        documentId,
+        row.outcome,
+        row.transactions,
+        row.claims,
+        row.lines,
+        row.reversals,
+        row.held,
+        row.plbTotalCents,
+        row.loadedTransactions,
+        row.loadedClaims,
+        row.loadedLines,
+        row.duplicateTransactions,
+        row.unknownCodes,
+        JSON.stringify(row.errors),
+        JSON.stringify(row.transactionOutcomes),
+        row.codeListRelease,
+      ],
+    );
+    await scope.client.query('UPDATE source_document SET status = $2 WHERE id = $1 AND status = ANY ($3::text[])', [documentId, documentStatus(row.outcome), WAITING]);
   }
 
   async run(): Promise<ParseReportRow> {
@@ -140,9 +141,12 @@ class DocumentParse {
     if (report.documentSha256 !== this.opened.row.sha256) {
       throw new DocumentIntegrityError('the stored document is not the bytes intake hashed; nothing loads from it');
     }
-    const row = parseReportRow(report, await this.load(report));
-    await this.record(row);
-    return row;
+    // One transaction for every set the document loads and its report (PRD 10, step 9).
+    return this.context.transaction(async (scope) => {
+      const row = parseReportRow(report, await this.load(scope, report));
+      await this.record(scope, row);
+      return row;
+    });
   }
 }
 
@@ -150,7 +154,7 @@ async function open(context: JobContext, keys: KeyProvider, practiceId: string, 
   return context.transaction(async (scope) => {
     const row = (
       await scope.client.query<DocumentRow>(
-        `SELECT d.id, d.kind, d.s3_key, d.sha256, d.status, EXISTS (SELECT 1 FROM parse_report p WHERE p.source_document_id = d.id) AS reported
+        `SELECT d.id, d.kind, d.s3_key, d.sha256, d.scan_status, d.status, EXISTS (SELECT 1 FROM parse_report p WHERE p.source_document_id = d.id) AS reported
            FROM source_document d WHERE d.id = $1`,
         [documentId],
       )
@@ -174,6 +178,11 @@ export function parseHandler(services: ParseServices): JobHandler<'parse_835'> {
     const { row } = opened;
     if (row.kind !== 'x12_835' || row.reported || !WAITING.includes(row.status)) {
       context.logger.info('document was not waiting for parse', { document_id: row.id });
+      return;
+    }
+    if (row.scan_status !== 'clean') {
+      // PRD 10, step 2: the malware scan's result must be clean. The database holds the same rule.
+      context.logger.warn('parse refused a document without a clean malware scan', { document_id: row.id, error_code: 'SCAN_NOT_CLEAN' });
       return;
     }
     if (row.s3_key !== documentObjectKey(practiceId, row.id)) {

@@ -47,7 +47,7 @@ async function harness(row: Record<string, unknown>) {
   return { run: () => handler({ practice_id: PRACTICE, document_id: DOCUMENT }, context), queries, lines };
 }
 
-const waiting = { id: DOCUMENT, kind: 'x12_835', s3_key: documentObjectKey(PRACTICE, DOCUMENT), sha256: 'a'.repeat(64), status: 'scanned', reported: false };
+const waiting = { id: DOCUMENT, kind: 'x12_835', s3_key: documentObjectKey(PRACTICE, DOCUMENT), sha256: 'a'.repeat(64), scan_status: 'clean', status: 'scanned', reported: false };
 
 describe('the parse job’s guards', () => {
   it('refuses to read a document from anywhere but its own key under its practice’s prefix', async () => {
@@ -60,6 +60,15 @@ describe('the parse job’s guards', () => {
       const { run, queries, lines } = await harness(row);
       await run();
       expect(lines.map((line) => line.msg)).toEqual(['document was not waiting for parse']);
+      expect(queries.some((text) => text.includes('parse_report (') || text.startsWith('UPDATE'))).toBe(false);
+    }
+  });
+
+  it('never parses a document whose malware scan is not clean (PRD 10, step 2)', async () => {
+    for (const scanStatus of ['pending', 'flagged', 'unscannable', 'failed']) {
+      const { run, queries, lines } = await harness({ ...waiting, scan_status: scanStatus });
+      await run();
+      expect(lines).toEqual([expect.objectContaining({ level: 'warn', msg: 'parse refused a document without a clean malware scan', error_code: 'SCAN_NOT_CLEAN' })]);
       expect(queries.some((text) => text.includes('parse_report (') || text.startsWith('UPDATE'))).toBe(false);
     }
   });

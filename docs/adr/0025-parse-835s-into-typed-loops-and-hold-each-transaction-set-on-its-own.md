@@ -21,7 +21,9 @@ is compared with pyx12.
   at 106); the header must be sixteen fixed-width elements with four distinct delimiters that are not letters,
   digits or spaces. A UTF-8 byte-order mark is skipped and reported; carriage returns, line feeds, tabs and
   spaces between segments are skipped unless they are delimiters, and a carriage return before a line-feed
-  terminator is dropped. Text is decoded as UTF-8 incrementally, so a character split across chunks survives.
+  terminator is dropped. After an IEA they are skipped even when one of them was that interchange's
+  terminator (ISA106 a line feed with a blank line after IEA, variant V34): only text that is not whitespace
+  must be another ISA. Text is decoded as UTF-8 incrementally, so a character split across chunks survives.
   A segment longer than 65,536 characters (`MAX_SEGMENT_LENGTH`; real 835 segments run to a few hundred) is
   EDI_SYNTAX `segment_too_long`, so input without terminators cannot fill memory.
 - **Two kinds of failure.** What breaks the document stops it: input not beginning with ISA, an 837 or 277
@@ -32,8 +34,10 @@ is compared with pyx12.
   being the one missing and the index where it was due), a segment the loop does not allow, one repeated more
   often than its loop allows, a missing required element, a repeated element, an amount that is not a decimal
   with at most two places (through `parseAmount` in @tp/money), an invalid date, a malformed number, units
-  not above zero, a BPR03 other than C or D, a DTM05 other than D8 or RD8. Every EDI_SYNTAX error names its
-  reason (`SYNTAX_REASONS`).
+  not above zero, a BPR03 other than C or D, a DTM05 other than D8 or RD8, a value outside one of the
+  structure's own code sets (`invalid_code` at its element and component: claim status, adjustment group,
+  provider adjustment reason, BPR01, BPR04 and every qualifier). Every EDI_SYNTAX error names its reason
+  (`SYNTAX_REASONS`).
 - **Structure.** Loops come in the 005010X221A1 order (header, 1000A, 1000B, 2000, 2100, 2110, PLB); inside a
   loop the segments may come in any order, since each is unambiguous by its ID and qualifier. Required
   segments, element usage and data types follow pyx12's open-source 835 map (`src/spec.ts`); elements the
@@ -56,7 +60,11 @@ is compared with pyx12.
   adjustment reasons, payment methods and every qualifier) from `X12_835_CODE_SETS`, taken from pyx12's map.
   The release's `claim_status_code` records are the 276/277 claim status codes, which no 835 element uses.
   Tests use the SYNTHETIC release 900001 (`@tp/edi835/testing`), the only one this environment can load. An
-  unknown code loads with an EDI_UNKNOWN_CODE flag at its position, never dropped.
+  unknown CARC or RARC loads with an EDI_UNKNOWN_CODE flag at its position, never dropped (PRD 10's "unknown
+  reason codes"); a value outside one of the structure's own sets is not a reason code but a malformed
+  element, so it holds its transaction set as EDI_SYNTAX `invalid_code`, as pyx12 rejects it (variant V35).
+  Flagging it instead would load an adjustment group that patient share and observed allowed never count,
+  and the report would carry whatever text sat in a qualifier position (a member ID one separator early).
 - **Reversals** are linked inside their transaction set only, so memory stays bounded: a CLP02 22 claim names
   the payer claim control number it reverses (and the earlier claim with it, when there is one); a corrected
   claim names the claim it replaces from REF F8, or from the reversal it follows with the same patient
@@ -66,11 +74,12 @@ is compared with pyx12.
   (sender, payee, ISA13, TRN02, BPR02; the loader adds the practice) and BPR16, `duplicateDocument` and
   `remittanceDecision`. The same key is a duplicate remittance (EDI_DUPLICATE at TRN02, zero rows); a
   different remittance with the payee, TRN02 and TRN03 of a known one loads for review, saying whether BPR16
-  differs (the plan's "same trace on another day"; the plan is silent on the same day, read as review too).
+  differs (the plan's "same trace on another day"); when its BPR02 and BPR16 are the same too it is the same payment
+  under a regenerated envelope and a duplicate, zero rows (ADR 0031).
   The second of two identical remittances in one document is held as EDI_DUPLICATE.
 - **Messages never carry a value from the document** except what is shaped like a segment ID, a code, a count
   or a control number; anything else becomes "(not shown)", and a segment ID that is not one becomes ''.
-- **The oracle.** `pnpm test:oracle` parses every file pyx12 reads (615 checks) with the parser too
+- **The oracle.** `pnpm test:oracle` parses every file pyx12 reads (624 checks) with the parser too
   (`tools/test-oracle/parser.ts` builds the same `tp-oracle-835/1` summary from the parser's events). The two
   summaries must be equal, and the verdicts must match: where pyx12 accepts a file the parser may hold it only
   for what pyx12 does not check (balance, unknown codes); where pyx12 rejects one the parser must find the same

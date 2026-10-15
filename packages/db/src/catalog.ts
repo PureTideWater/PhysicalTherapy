@@ -20,7 +20,9 @@ import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
  *   policies only narrow, and the owner's resolver policies serve SECURITY DEFINER functions.
  * - No table forces nothing halfway: row-level security enabled means forced. A table without it is
  *   global, and the application role may only read it.
- * - Every SECURITY DEFINER function sets its search_path with pg_temp last.
+ * - Every SECURITY DEFINER function sets its search_path with pg_temp last, and one that sets
+ *   app.practice_ids (it runs as the owner, so a scope it widens reads across practices for whoever may
+ *   call it) is one of REVIEWED_SCOPE_FUNCTIONS, each with its reason.
  * - The application and operator roles own nothing; no column is real, double precision, float or
  *   money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
  *
@@ -99,6 +101,34 @@ export const PLATFORM_DIRECTORY_TABLES: Readonly<Record<string, string>> = {
   agreement: 'platform administrators record and read agreements (PRD 3, Personas; ADR 0013)',
   support_grant: 'Data dictionary, support_grant: "Platform administrators; practice sees its own"',
 };
+
+/**
+ * SECURITY DEFINER functions that set app.practice_ids, each reviewed with what it reads and for whom.
+ * Not exemptions from the PHI-table rules: every row they touch is read or written through its tenant
+ * policy. A new such function, or a reviewed one that is gone, is a catalog problem, so no definer
+ * function can widen a transaction's scope unnoticed (docs/adr/0013, 0030 and 0032).
+ */
+export interface ReviewedScopeFunction {
+  /** As regprocedure prints it. */
+  readonly function: string;
+  /** narrows: one practice, for a write the function checks itself; counts: every active practice, counts only. */
+  readonly scope: 'narrows' | 'counts';
+  readonly reason: string;
+}
+
+export const REVIEWED_SCOPE_FUNCTIONS: readonly ReviewedScopeFunction[] = [
+  {
+    function: 'end_support_grant(uuid)',
+    scope: 'narrows',
+    reason: 'PRD 3: a support grant ends when the ticket closes; the update runs in the grant\u2019s one practice and the caller\u2019s scope is restored',
+  },
+  {
+    function: 'console_contract_queue()',
+    scope: 'counts',
+    reason:
+      'PRD 7, Internal console, Specialist queue: per active practice, counts of documents awaiting abstraction, drafts, proposals, sign-offs and open questions, for contract specialists and platform administrators only; it names no document, contract or question (ADR 0030)',
+  },
+];
 
 interface Queryable {
   query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>;
@@ -191,9 +221,11 @@ const OWNED_BY_APP = `
     UNION ALL SELECT 'type', typname::text FROM pg_type WHERE typowner = $1::regrole
   ) owned ORDER BY 1`;
 
-/** SECURITY DEFINER functions in schema public and their settings. */
+/** SECURITY DEFINER functions in schema public, their settings and whether they set app.practice_ids. */
 const DEFINER_FUNCTIONS = `
-  SELECT p.oid::regprocedure::text AS name, coalesce(p.proconfig, '{}') AS config
+  SELECT p.oid::regprocedure::text AS name, coalesce(p.proconfig, '{}') AS config,
+         (p.prosrc ~* $$set_config\\s*\\(\\s*'${TENANT_SETTING.replace('.', '\\.')}'$$ OR p.prosrc ~* $$set\\s+(local\\s+|session\\s+)?${TENANT_SETTING.replace('.', '\\.')}$$
+           OR EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) setting WHERE setting LIKE '${TENANT_SETTING}=%')) AS sets_scope
     FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
    WHERE n.nspname = 'public' AND p.prosecdef
    ORDER BY 1`;
@@ -318,10 +350,19 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     }
   }
 
-  for (const definer of await rows<{ name: string; config: string[] }>(client, DEFINER_FUNCTIONS)) {
+  const definers = await rows<{ name: string; config: string[]; sets_scope: boolean }>(client, DEFINER_FUNCTIONS);
+  for (const definer of definers) {
     const searchPath = definer.config.find((setting) => setting.startsWith('search_path='));
     if (searchPath === undefined || !/(^|[ ,=])pg_temp$/.test(searchPath)) {
       problems.push(`function ${definer.name} is SECURITY DEFINER without pg_temp last in its search_path`);
+    }
+    if (definer.sets_scope && !REVIEWED_SCOPE_FUNCTIONS.some((item) => item.function === definer.name)) {
+      problems.push(`function ${definer.name} is SECURITY DEFINER and sets ${TENANT_SETTING}; review it into REVIEWED_SCOPE_FUNCTIONS or keep the caller's scope`);
+    }
+  }
+  for (const item of REVIEWED_SCOPE_FUNCTIONS) {
+    if (!definers.some((definer) => definer.name === item.function && definer.sets_scope)) {
+      problems.push(`reviewed scope function ${item.function} is not a SECURITY DEFINER function that sets ${TENANT_SETTING}; update REVIEWED_SCOPE_FUNCTIONS`);
     }
   }
 

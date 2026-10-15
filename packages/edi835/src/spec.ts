@@ -3,7 +3,8 @@
  * structure (usage and data type from pyx12's open-source 835 map; nothing copied from the
  * implementation guide). Elements the structure marks not used are null and ignored when present.
  *
- * Kinds: `id` (a code; with `list`, checked against the code lists and flagged when unknown),
+ * Kinds: `id` (a code; with `list`, checked against the code lists: a CARC or RARC flagged when
+ * unknown, a value outside one of the structure's own sets held as EDI_SYNTAX invalid_code),
  * `text`, `money` (an amount: a decimal with at most two places, parsed to cents), `decimal` (a
  * quantity, rate or count kept exactly as text), `units` (a decimal above zero), `date`
  * (CCYYMMDD), `date6` (YYMMDD), `number` (a whole number: control numbers and counts) and

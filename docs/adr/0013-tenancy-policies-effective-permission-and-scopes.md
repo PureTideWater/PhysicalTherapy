@@ -86,7 +86,9 @@ disabled`; practice `active | deleted`, with a data key required unless deleted 
 lists exceptions; there are none". This repository reads that rule as "no PHI table is exempt" (none is: every table
 with a NOT NULL `practice_id` is registered with its forced tenant policy). The two lists catalog.ts keeps classify what
 the data dictionary itself defines rather than exempting PHI tables: the non-PHI tables with a nullable `practice_id`
-below, and the platform administrators' directory policies on PHI tables (ADR 0019, `REVIEWED_PLATFORM_POLICIES`). If
+below, and the platform administrators' directory policies on PHI tables (ADR 0019, `REVIEWED_PLATFORM_POLICIES`). A
+third list, `REVIEWED_SCOPE_FUNCTIONS` (ADR 0032), names every SECURITY DEFINER function that sets `app.practice_ids`
+(one that narrows it to a single practice, and the console queue's counts); any other such function fails. If
 the owner reads the rule as forbidding any list, the dictionary's nullable columns are what has to change. The tables with a nullable `practice_id` are a fixed list with the dictionary's
 reason (`agreement`, `audit_event`); any other nullable `practice_id` fails. The cross-tenant tests are generated from
 the catalog (registry plus every table with `practice_id`) by a row factory that reads columns, foreign keys, check

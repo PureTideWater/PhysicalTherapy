@@ -45,7 +45,7 @@ export const SYNTAX_REASONS = [
   'invalid_number',
   /** Service units that are not above zero. */
   'units_not_positive',
-  /** A code the structure needs to read the transaction (BPR03, DTM05) outside its code set. */
+  /** A code outside the structure's own code set for its element (claim status, adjustment group, a qualifier, ...). */
   'invalid_code',
 ] as const;
 export type SyntaxReason = (typeof SYNTAX_REASONS)[number];

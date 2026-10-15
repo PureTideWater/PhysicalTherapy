@@ -159,6 +159,21 @@ describe('zip expansion', () => {
     expect(empty.entries).toEqual([{ index: 0, hold: 'too_compressed' }]);
   });
 
+  it('refuses a zip of many small, highly compressible entries: the archive as a whole is held to the ratio limit', async () => {
+    // Each entry is exactly the floor (1 MiB of zeros), so none is held for its own ratio; together they
+    // would expand to hundreds of times the zip's size.
+    const zeros = Buffer.alloc(MIB);
+    const bomb = buildZip(Array.from({ length: 300 }, (_, at) => ({ name: `zeros-${String(at)}.835`, data: zeros })));
+    expect(300 * MIB).toBeGreaterThan(bomb.length * ZIP_LIMITS.maxRatio);
+    expect((await expand(bomb)).inspection).toEqual({ kind: 'refused', reason: 'too_compressed' });
+    // The same entries under a ratio the archive keeps are read.
+    const { inspection } = await expand(buildZip(Array.from({ length: 3 }, (_, at) => ({ name: `zeros-${String(at)}.835`, data: zeros }))), { ...ZIP_LIMITS, maxRatio: 10_000 });
+    expect(inspection).toMatchObject({ kind: 'zip', inventory: { fileEntries: 3, holds: new Map() } });
+    // Held entries are never read, so they do not count against the archive.
+    const held = buildZip([{ name: 'bomb.835', data: Buffer.alloc(4 * MIB) }, { name: 'fine.835', data: text('ISA*fine') }]);
+    expect((await expand(held)).inspection).toMatchObject({ kind: 'zip' });
+  });
+
   it('refuses a zip with more file entries than the limit, before reading any of them', async () => {
     const files = (count: number): TestEntry[] => Array.from({ length: count }, (_, at) => ({ name: `f${String(at)}.835`, data: text('x') }));
     const limits = { ...ZIP_LIMITS, maxEntries: 3 };

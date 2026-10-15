@@ -18,6 +18,10 @@ export interface EdiErrorExpectation {
   readonly segmentIndex: number;
   readonly segmentId: string;
   readonly elementPosition: number;
+  /** The component of a composite element, from 1, when the error is about one component. */
+  readonly componentPosition?: number;
+  /** For EDI_SYNTAX: what was wrong (packages/edi835 SYNTAX_REASONS: truncated, invalid_code, ...). */
+  readonly reason?: string;
   /** For EDI_UNBALANCED: what failed to balance. */
   readonly scope?: 'transaction' | 'claim' | 'claim_lines' | 'line';
   /** For EDI_UNBALANCED: the exact difference (see the balance rules in docs/adr/0021). */

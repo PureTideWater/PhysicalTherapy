@@ -74,6 +74,7 @@ describe('checking a segment against its spec', () => {
         { required: false, kind: 'text' },
       ],
     },
+    { required: false, kind: 'id', list: 'carc' },
   ];
 
   it('accepts well-formed elements and gives typed values', () => {
@@ -94,21 +95,21 @@ describe('checking a segment against its spec', () => {
     expect(result.fields.date(3)).toBeNull();
   });
 
-  it('holds a missing required element, a repeated element and every malformed value, and flags unknown codes', () => {
-    const result = check(segment('XYZ', '99', '', '12.345', '', '20261301', '269999', '1..2', '0', '4A', '', 'ZZ::GP'), spec);
-    expect(result.flags).toEqual([
-      ['claim_status', '99', 1, undefined],
-      ['procedure_qualifier', 'ZZ', 11, 1],
-    ]);
+  it('holds a missing required element, a repeated element, every malformed value and a code outside its set, and flags unknown reason codes', () => {
+    const result = check(segment('XYZ', '99', '', '12.345', '', '20261301', '269999', '1..2', '0', '4A', '', 'ZZ::GP', 'Z999'), spec);
+    expect(result.flags).toEqual([['carc', 'Z999', 12, undefined]]);
     expect(result.holds).toEqual([
+      ['invalid_code', 1, undefined],
       ['invalid_amount', 3, undefined],
       ['invalid_date', 5, undefined],
       ['invalid_date', 6, undefined],
       ['invalid_decimal', 7, undefined],
       ['units_not_positive', 8, undefined],
       ['invalid_number', 9, undefined],
+      ['invalid_code', 11, 1],
       ['missing_element', 11, 2],
     ]);
+    expect(check(segment('XYZ', '1', '', '1.00', '', '', '', '', '', '', '', '', '45'), spec)).toMatchObject({ holds: [], flags: [] });
     expect(check(segment('XYZ', '', '', ''), spec).holds).toEqual([
       ['missing_element', 1, undefined],
       ['missing_element', 3, undefined],

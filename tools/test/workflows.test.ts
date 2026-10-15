@@ -73,6 +73,14 @@ describe('workflows', () => {
     expect(steps.filter((step) => step.with?.push === true)).toHaveLength(1);
   });
 
+  it('run the intake test on a 2 GiB zip of 835s weekly against PostgreSQL (the milestone 3 done check)', () => {
+    const large = workflow('large-zip.yml');
+    expect(large.on).toMatchObject({ schedule: [{ cron: expect.any(String) as unknown }], workflow_dispatch: null });
+    const steps = large.jobs['large-zip']?.steps ?? [];
+    const test: (Step & { env?: Record<string, string> }) | undefined = steps.find((step) => step.run?.includes('apps/worker/src/intake/intake.large.db.test.ts') === true);
+    expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
+  });
+
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);

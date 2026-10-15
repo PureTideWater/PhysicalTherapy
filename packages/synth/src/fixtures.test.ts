@@ -132,6 +132,10 @@ describe('the committed fixtures', () => {
       'PAR-25/truncated.835',
       'PAR-26/remit.835',
       'variants/V05-plb-wo-several/remit.835',
+      'variants/V35-invalid-structure-codes/cas01.835',
+      'variants/V35-invalid-structure-codes/clp02.835',
+      'variants/V35-invalid-structure-codes/plb03.835',
+      'variants/V35-invalid-structure-codes/bpr04.835',
     ]);
     expect(zipEntries.length).toBe(501);
   });
@@ -158,7 +162,41 @@ describe('the expected outcomes', () => {
     const held = x12Files(generated)
       .filter((file) => file.x12.parse.transactions.some((transaction) => transaction.status === 'held'))
       .map((file) => `${file.case.dir}/${file.path}`);
-    expect(held).toEqual(['PAR-20/unbalanced-transaction.835', 'PAR-20/unbalanced-claim.835', 'PAR-26/remit.835']);
+    expect(held).toEqual([
+      'PAR-20/unbalanced-transaction.835',
+      'PAR-20/unbalanced-claim.835',
+      'PAR-26/remit.835',
+      'variants/V32-cas-six-adjustments/off-by-one-cent.835',
+      'variants/V35-invalid-structure-codes/cas01.835',
+      'variants/V35-invalid-structure-codes/clp02.835',
+      'variants/V35-invalid-structure-codes/plb03.835',
+      'variants/V35-invalid-structure-codes/bpr04.835',
+    ]);
+  });
+
+  it('carry every CAS triple to the cent: six adjustments at claim and line level, and the sixth one cent off (V32)', () => {
+    const v32 = generated.find((item) => item.id === 'V32')?.expected;
+    const balanced = v32?.files.find((file) => file.path === 'balanced.835')?.x12?.parse.transactions[0];
+    expect(balanced?.status).toBe('loaded');
+    expect(balanced?.claims[0]?.adjustments.map((item) => [item.reason, item.amountCents, item.quantity])).toEqual([
+      ['45', '2000', null],
+      ['23', '600', '1'],
+      ['1', '500', null],
+      ['2', '400', '3'],
+      ['3', '300', null],
+      ['Z906', '200', '5'],
+    ]);
+    expect(balanced?.claims[1]?.lines[0]).toMatchObject({ patientShareCents: '4500', observedAllowed: { cents: '19500', basis: 'paid_plus_pr' } });
+    expect(balanced?.unknownCodes.map((code) => [code.code, code.elementPosition])).toEqual([
+      ['Z906', 17],
+      ['Z907', 17],
+    ]);
+    const off = v32?.files.find((file) => file.path === 'off-by-one-cent.835')?.x12?.parse.transactions[0];
+    expect(off?.heldReasons.map((reason) => [reason.scope, reason.segmentId, reason.differenceCents])).toEqual([
+      ['claim', 'CLP', '-1'],
+      ['claim', 'CLP', '-1'],
+      ['line', 'SVC', '-1'],
+    ]);
   });
 
   it('state PAR-20 differences and positions exactly', () => {

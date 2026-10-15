@@ -29,7 +29,7 @@ pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and mu
 ```
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
-thirty-one oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
+thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
 the twin generator, which runs on real files only in production. `pnpm test:oracle` needs pyx12 for the interpreter it
 runs: CI installs it with pip; locally use a virtualenv outside the source tree (`tools/test-oracle/README.md`).
 The parser, `packages/edi835` (ADR 0025), turns bytes or a stream of chunks into typed loops, events and a report
@@ -41,15 +41,20 @@ Locally the browser PUTs to the web app's own receiver, which seals the bytes in
 `tp-documents` under the system's temporary directory; the worker reads the same one), and the web app queues jobs on
 `QUEUE_DATABASE_URL` (a login that owns pg-boss's schema; `pnpm dev` sets it). In staging and production the target is
 a presigned S3 PUT (`DOCUMENTS_BUCKET`, `DOCUMENTS_KMS_KEY_ID`) and GuardDuty gives the scan's verdict; the worker
-waits up to `SCAN_WAIT_SECONDS` (600) for it. `TP_LARGE_ZIP_MB` sizes the large-zip streaming test (256 MiB by
-default).
+waits up to `SCAN_WAIT_SECONDS` (600) for it. The database holds the malware gate too (ADR 0032): a finding is never
+cleared, only a clean document is scanned or queued for parse, and a zip entry is clean only with its zip. A zip whose
+entries would expand past 100 times its size is refused whole, and an entry its first bytes hold is never written.
+`TP_LARGE_ZIP_MB` sizes the large-zip intake test (`apps/worker/src/intake/intake.large.db.test.ts`, 256 MiB by default;
+the weekly `large-zip` workflow runs 2048).
 
-Parse and load (ADR 0027): the worker's `parse_835` job (`apps/worker/src/parse`) parses each clean 835 twice as a
-stream, once for the parser's final report and once to load each loadable transaction set in its own transaction:
-`remittance`, `claim`, `service_line`, `adjustment`, `provider_adjustment`, `patient_ref` (by pseudonym, identifiers
-encrypted) and the payer and plan rows of the mapping queue. Held sets never load; their reasons and positions are in
+Parse and load (ADRs 0027 and 0031): the worker's `parse_835` job (`apps/worker/src/parse`) parses each clean 835 twice
+as a stream, once for the parser's final report and once to load every loadable transaction set, with the report, in
+one transaction: `remittance`, `claim`, `service_line` (a professional line's place of service from CLP08),
+`adjustment`, `provider_adjustment`, `patient_ref` (by pseudonym of the name and member ID, identifiers encrypted) and
+the payer and plan rows of the mapping queue. A resent payment under a new envelope loads zero rows, like a resent file. Held sets never load; their reasons and positions are in
 `parse_report`, which the upload's receipt and its CSV report show. CARC and RARC are checked against the newest
-published rule release (with none, every code loads flagged unknown). Every practice job's attempts are recorded in
+published rule release (with none, every code loads flagged unknown); a value outside one of the 835 structure's own
+code sets holds its transaction set (EDI_SYNTAX `invalid_code`). Every practice job's attempts are recorded in
 `job_run` for the practice home's last run and its run-failed banner. The Remittances (`/p/<practice>/remittances`) and
 Claims and lines (`/p/<practice>/claims`, the net view by default) screens read them; their PHI columns show only to
 roles that read PHI.

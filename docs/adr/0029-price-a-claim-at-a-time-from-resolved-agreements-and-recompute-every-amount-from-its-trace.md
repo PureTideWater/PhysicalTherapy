@@ -57,7 +57,9 @@ nothing from the network". Several facts shape how:
   rule changes nothing (PRD 2 point 6: units are taken as billed), so a line under `UNKNOWN` prices and its trace records
   the rule.
 - **The place-of-service split is a practice setting** (`placeOfServiceSettings`), the same table the golden claims
-  state as a SYNTHETIC input, until a rule record carries it.
+  state as a SYNTHETIC input, until a rule record carries it. It is stored in the practice's `settings` jsonb under
+  `place_of_service_settings`, which milestone 7's pricing runs read; a line's place of service is CLP08 on a
+  professional claim (ADR 0031).
 - **Windows.** A priced line's dispute deadline runs from the remittance date: a contract's `dispute_window_days`; when
   the contract is silent, the release's `dispute_window` for `commercial_default` and the first-level window
   (`redetermination`); for Medicare Advantage non-contracted lines, the `medicare` redetermination window. The record's

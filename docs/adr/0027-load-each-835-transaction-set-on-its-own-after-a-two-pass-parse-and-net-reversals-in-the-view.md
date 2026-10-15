@@ -29,12 +29,12 @@ rows it becomes), `loader.ts` (writes them inside the job's transaction), `repor
 `job.ts` (the `parse_835` handler). `packages/edi835` stays the pure parser under its 100% branch gate; the database
 belongs to the job that uses it.
 
-**Two passes, one transaction per set.** The job reads the sealed document (from its generated key under the
-practice's prefix, opened with the practice's cipher) twice as a stream. Pass one keeps only the report, whose holds
-are final, and checks its SHA-256 against the hash intake recorded. Pass two loads each set the report leaves loadable,
-in its own `withJobScope` transaction, one set in memory at a time (10,000 claims in about six seconds). The report row
-and the document's receipt status are written last, together. A retried attempt resumes: a set this document already
-loaded (same unique key, same document, same ST02) is recognized and not loaded again (JOB-01).
+**Two passes, one transaction per document** (ADR 0031; it was one per set until the milestone 2 and 3 review). The job
+reads the sealed document (from its generated key under the practice's prefix, opened with the practice's cipher)
+twice as a stream. Pass one keeps only the report, whose holds are final, and checks its SHA-256 against the hash
+intake recorded. Pass two, in one `withJobScope` transaction, loads each set the report leaves loadable as the stream
+reaches it, one set in memory at a time (10,000 claims in about six seconds), then writes the report row and the
+document's receipt status; all commit together. A failed attempt leaves nothing, so a retry starts over (JOB-01).
 
 **Rows only for what loads.** A `remittance` row is written only for a set that loads; its `status` is `loaded`, its
 `balanced` a generated column (`balance_diff_cents = 0`), and a check refuses a loaded row with a difference. Held sets
@@ -55,9 +55,10 @@ different remittance reusing a trace the payer used for this payee loads with `r
 **Keys.** The payer for the mapping queue is identified as sent: `N103:N104` when sent, else `2U:<REF 2U>`, else
 `TRN03:<originator>` (V24's two forms stay two payers). A claim's plan key is `CE:<REF CE>`, else `CLP06:<filing
 indicator>`; `service_line.payer_plan_key` is the plan row's ID (a plan belongs to one payer), indexed with the
-procedure code as the dictionary asks. The payer-independent patient key is the NM1 name, normalized (NFKC, upper case,
-single spaces): `name|last|first|middle|suffix`, else `id|NM108|NM109`, else `pcn|CLP01`; the insured (NM1 IL) gets one
-the same way. `patient_ref.pseudonym` is the practice's keyed HMAC of that key (`LOOKUP_COLUMNS` gains
+procedure code as the dictionary asks. The patient key names no payer: the NM1 name, normalized (NFKC, upper case,
+single spaces), `name|last|first|middle|suffix`, followed by `|member|<member ID>` when one is sent (ADR 0031: two people
+of one name with different member IDs are never one reference), else `id|NM108|NM109`, else `pcn|CLP01`; the insured
+(NM1 IL) gets one the same way. `patient_ref.pseudonym` is the practice's keyed HMAC of that key (`LOOKUP_COLUMNS` gains
 `patient_ref.pseudonym`), so it is stable within the practice and meaningless outside it. The member ID is NM109 when
 NM108 is MI, HN, II or MR (never 34, a Social Security number); the group number is REF 1L, on the insured when there is
 one. An upsert fills a missing member ID or group number and never overwrites one. An 835 carries no date of birth.
@@ -103,8 +104,9 @@ row, encrypted like the identifiers because a person may type anything into it.
 `procedure_qualifier`, `service_date_to` (PAR-23's ranges), `observed_allowed_allocated` (PAR-10's flag) and
 `patient_share_cents`; adjustment `unknown_code` (PAR-21's flag); provider_adjustment `position`, `provider_id`,
 `category` and the generated `counted` (PAR-17, PAR-18); parse_report's outcome, loaded and duplicate counts, PLB
-total, unknown codes, outcomes and code-list release. `place_of_service` stays null: an 835 has no line-level place of
-service, and CLP08 is kept as the claim's facility type.
+total, unknown codes, outcomes and code-list release. `place_of_service` is CLP08 on a professional line (a HCPCS
+procedure and no revenue code; ADR 0031): an 835 has no line-level place of service, and on a professional claim CLP08
+carries it; CLP08 is kept as the claim's facility type too.
 
 ## Alternatives considered
 
@@ -114,7 +116,7 @@ service, and CLP08 is kept as the claim's facility type.
 | One pass, buffering events until the report | Memory would grow with the file, against PRD 10's bound per transaction set; the second pass costs well under a second for 10,000 claims |
 | A `remittance` row for every held set | A truncated download's held row would block the complete download's load under the unique key, and PAR-20 says nothing loads; the report already holds the reason and position |
 | The unique key with the payee (CLAUDE.md's dedup key) | The dictionary names the key; the parser's decision, which uses the payee, still runs inside it |
-| Member ID in the patient key | It is the payer's identifier; the same patient under two payers would be two references |
+| The name alone as the patient key | Merges two patients of one name and drops the second one's member ID, which packets carry (ADR 0031) |
 | Encrypting nothing in `line_note` | A note is free text and can name a patient; encrypting it costs nothing and its key dies with the practice's |
 
 ## Consequences
@@ -122,8 +124,9 @@ service, and CLP08 is kept as the claim's facility type.
 - Every PAR case runs upload, intake, parse and load against a scratch database and is checked against its
   expected.json (`apps/web/src/lib/routes/remittances.db.test.ts`); the loader's dedup, links, replays, concurrency and
   refusals are tested on their own (`apps/worker/src/parse/parse.db.test.ts`), as are the plan and report units.
-- Two patients of one practice with the same name and no other data share a reference; the payer claim control
-  number and patient control number on each claim stay exact. Matching to case lines (PRD 13, milestone 9) uses those.
+- Two patients of one practice with the same name and no member ID share a reference; with different member IDs they
+  are two (ADR 0031). The payer claim control number and patient control number on each claim stay exact. Matching to
+  case lines (PRD 13, milestone 9) uses those.
 - A correction loaded before its original leaves the original's `superseded_by_claim_id` unset; the net view is still
   right, because the original is reversed.
 - Pricing (milestone 5) fills the expected allowed column and the status chips; the mapping screen (this milestone's

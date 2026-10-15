@@ -40,7 +40,9 @@ clean stored contract documents no approved, signed-off or superseded version na
 versions awaiting sign-off, the open questions, and the caller's own open support grant. It reads the rows under their
 tenant policies with every active practice in `app.practice_ids` for its one query and puts the caller's setting back
 before returning (an error aborts the transaction or savepoint, which undoes the setting too); it returns no document,
-contract or question. The specialist opens a practice only under its support grant (ADR 0028), which the console's
+contract or question. The catalog test names it among the reviewed definer functions that set the scope
+(`REVIEWED_SCOPE_FUNCTIONS`, ADR 0032), so no other function can widen it unnoticed. The specialist opens a practice
+only under its support grant (ADR 0028), which the console's
 support form now offers for contract specialists as well as support engineers (`support_grant_role()`).
 
 **Customer and specialist routes are separate**, one permission each: the customer's screens under

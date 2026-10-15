@@ -79,6 +79,23 @@ describe('the tokenizer', () => {
     expect(tokenize([carriage]).segments.map((segment) => segment.elements)).toEqual(plain.map((segment) => segment.elements));
   });
 
+  it('ignores blank lines after an IEA even when a line feed is the segment terminator', () => {
+    const plain = tokenize([syntheticInterchange()]).segments;
+    const newline = syntheticInterchange().replaceAll('~', '\n');
+    for (const tail of ['\n', '\r\n', ' \t\r\n\n']) {
+      const result = tokenize([`${newline}${tail}`]);
+      expect(result.errors, JSON.stringify(tail)).toEqual([]);
+      expect(result.segments.map((segment) => [segment.id, segment.elements])).toEqual(plain.map((segment) => [segment.id, segment.elements]));
+      expect(tokenize([...`${newline}${tail}`]).errors).toEqual([]);
+    }
+    const second = syntheticInterchange(undefined, '000000002').replaceAll('~', '\n');
+    const two = tokenize([`${newline}\r\n\n${second}\n`]);
+    expect(two.errors).toEqual([]);
+    expect(two.segments.filter((segment) => segment.id === 'ISA')).toHaveLength(2);
+    // Text after the blank line that is not whitespace must still be another ISA.
+    expect(tokenize([`${newline}\nGS*HP\n`]).errors.map(position)).toEqual([{ code: 'EDI_SYNTAX', segmentIndex: plain.length + 1, segmentId: 'GS', elementPosition: 0, reason: 'unexpected_segment' }]);
+  });
+
   it('reads each interchange with its own delimiters', () => {
     const second = syntheticInterchange(undefined, '000000002').replaceAll('*', '|').replaceAll(':', '>').replaceAll('~', "'");
     const result = tokenize([`${syntheticInterchange()}\n${second}`]);

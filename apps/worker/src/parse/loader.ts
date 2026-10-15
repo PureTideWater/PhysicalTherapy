@@ -13,9 +13,10 @@ import { type LoadPlan, type PersonIdentity, type PlanRefusal, type PlannedClaim
  * 2. Deduplication, serialized per practice and trace number with a transaction-scoped advisory lock
  *    and backed by the unique key on remittance (PAR-30): a remittance the practice already holds
  *    under (sender, ISA13, TRN02, BPR02) is the same remittance from a second download, so zero rows
- *    load and the receipt links it to the original (PAR-07); one this document itself loaded on an
- *    earlier attempt is already loaded (JOB-01). A different remittance reusing a trace the payer
- *    already used for this payee loads and is surfaced for review against the earlier one (V25).
+ *    load and the receipt links it to the original (PAR-07); so is the same payment (payee, TRN02,
+ *    TRN03, BPR02 and BPR16) resent under a regenerated envelope (docs/adr/0031). A different
+ *    remittance reusing a trace the payer already used for this payee loads and is surfaced for review
+ *    against the earlier one (V25).
  * 3. The payer and each claim's plan into payer and plan, the mapping queue (J6); the patient and the
  *    insured into patient_ref, upserted by pseudonym, names and identifiers encrypted.
  * 4. remittance, claim, service_line, adjustment and provider_adjustment, amounts in integer cents,
@@ -47,8 +48,6 @@ export type TransactionLoad =
   | {
       readonly kind: 'loaded';
       readonly remittanceId: string;
-      /** This document had already loaded it, on an earlier attempt: nothing new was written. */
-      readonly already: boolean;
       readonly claims: number;
       readonly lines: number;
       readonly review: TransactionReview | null;
@@ -245,6 +244,7 @@ class Loader {
         original_units: line.originalUnits,
         service_date: line.serviceDate,
         service_date_to: line.serviceDateTo,
+        place_of_service: line.placeOfService,
         line_allowed_cents: text(line.lineAllowedCents),
         observed_allowed_cents: line.observedAllowedCents.toString(),
         observed_allowed_basis: line.observedAllowedBasis,
@@ -259,15 +259,15 @@ class Loader {
     }
     const { rows: inserted } = await this.query<{ id: string; claim_id: string; line_no: number }>(
       `INSERT INTO service_line (practice_id, claim_id, line_no, procedure_qualifier, procedure_code, modifiers, revenue_code, charge_cents, paid_cents, units,
-         original_units, service_date, service_date_to, line_allowed_cents, observed_allowed_cents, observed_allowed_basis, observed_allowed_allocated,
+         original_units, service_date, service_date_to, place_of_service, line_allowed_cents, observed_allowed_cents, observed_allowed_basis, observed_allowed_allocated,
          patient_share_cents, rendering_npi, payer_plan_key)
        SELECT $1, l.claim_id, l.line_no, l.procedure_qualifier, l.procedure_code, l.modifiers, l.revenue_code, l.charge_cents, l.paid_cents, l.units, l.original_units,
-              l.service_date, l.service_date_to, l.line_allowed_cents, l.observed_allowed_cents, l.observed_allowed_basis, l.observed_allowed_allocated,
+              l.service_date, l.service_date_to, l.place_of_service, l.line_allowed_cents, l.observed_allowed_cents, l.observed_allowed_basis, l.observed_allowed_allocated,
               l.patient_share_cents, l.rendering_npi, l.payer_plan_key
          FROM jsonb_to_recordset($2::jsonb) AS l (claim_id uuid, line_no integer, procedure_qualifier text, procedure_code text, modifiers text[], revenue_code text,
-              charge_cents bigint, paid_cents bigint, units numeric, original_units numeric, service_date date, service_date_to date, line_allowed_cents bigint,
-              observed_allowed_cents bigint, observed_allowed_basis text, observed_allowed_allocated boolean, patient_share_cents bigint, rendering_npi text,
-              payer_plan_key uuid)
+              charge_cents bigint, paid_cents bigint, units numeric, original_units numeric, service_date date, service_date_to date, place_of_service text,
+              line_allowed_cents bigint, observed_allowed_cents bigint, observed_allowed_basis text, observed_allowed_allocated boolean, patient_share_cents bigint,
+              rendering_npi text, payer_plan_key uuid)
        RETURNING id, claim_id, line_no`,
       [this.context.practiceId, JSON.stringify(rows)],
     );
@@ -405,27 +405,25 @@ class Loader {
   }
 
   async load(): Promise<TransactionLoad> {
-    const { practiceId, documentId } = this.context;
+    const { practiceId } = this.context;
     const r = this.plan.remittance;
     // One loader at a time per practice and trace: the duplicate and trace checks below see every
     // remittance committed before them (PAR-30), and the unique key backs them.
     await this.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':remittance:' || $2, 0))", [practiceId, r.trn02]);
     const { rows } = await this.query<KnownRow & Record<string, unknown>>(KNOWN, [practiceId, r.trn02]);
+    // The unique key (the data dictionary's, without the payee) first, then the parser's decision.
     const same = rows.find((row) => row.sender_id === r.senderId && row.isa13 === r.isa13 && row.bpr02_cents === r.bpr02Cents.toString());
-    if (same !== undefined) {
-      if (same.source_document_id === documentId && same.st02 === r.st02) {
-        const lines = this.plan.claims.reduce((sum, claim) => sum + claim.lines.length, 0);
-        return { kind: 'loaded', remittanceId: same.id, already: true, claims: this.plan.claims.length, lines, review: null };
-      }
-      return { kind: 'duplicate', remittanceId: same.id, documentId: same.source_document_id };
+    const decision = remittanceDecision(this.remittance, rows.map(known));
+    const original = same ?? (decision.outcome === 'duplicate_remittance' ? rows.find((row) => row.id === decision.duplicateOf) : undefined);
+    if (original !== undefined) {
+      return { kind: 'duplicate', remittanceId: original.id, documentId: original.source_document_id };
     }
-    return this.write(rows.map(known));
-  }
-
-  private async write(earlier: readonly KnownRemittance[]): Promise<TransactionLoad> {
-    const decision = remittanceDecision(this.remittance, earlier);
     const review: TransactionReview | null =
       decision.outcome === 'review_trace_reused' ? { remittanceId: decision.sameTraceAs, reason: decision.anotherDate ? 'trace_reused_another_date' : 'trace_reused_same_date' } : null;
+    return this.write(review);
+  }
+
+  private async write(review: TransactionReview | null): Promise<TransactionLoad> {
     const payerId = await this.payer();
     const plans = await this.plans(payerId);
     const people = await this.people();
@@ -435,7 +433,7 @@ class Loader {
     await this.insertAdjustments(claimIds, lineIds);
     await this.insertProviderAdjustments(remittanceId);
     await this.link(remittanceId, claimIds);
-    return { kind: 'loaded', remittanceId, already: false, claims: claimIds.size, lines: lineIds.size, review };
+    return { kind: 'loaded', remittanceId, claims: claimIds.size, lines: lineIds.size, review };
   }
 }
 

@@ -43,10 +43,13 @@ writer, the expected outcomes, the Python oracle and the parser all share:
   element 2) for the transaction, CLP04 for a claim, CLP03 for the line charges, SVC03 for a line.
 - **Observed allowed** per line: AMT B6 when sent (`amt_b6`); otherwise SVC03 plus the line's PR
   adjustments (`paid_plus_pr`). When the claim carries PR adjustments and no line does, the claim's PR total
-  is allocated to the lines without B6 in proportion to their charges, each share truncated toward zero and
-  the remaining cents given one at a time to those lines in line order (so a reversal allocates exactly the
-  negation); those lines are flagged `allocatedFromClaim` (the data dictionary's basis stays `paid_plus_pr`,
-  the flag rides beside it). `allocateProRata` in `packages/synth/src/expected/parse.ts` is the reference.
+  is allocated over every line of the claim in proportion to its charge, each share truncated toward zero and
+  the remaining cents given one at a time in line order (so a reversal allocates exactly the negation). A line
+  with B6 keeps B6, which already includes its share of the patient's responsibility; its share is not moved
+  to another line, so lines with and without B6 together never total more than the claim allowed (variant
+  V33). The lines without B6 take their shares and are flagged `allocatedFromClaim` (the data dictionary's
+  basis stays `paid_plus_pr`, the flag rides beside it). `allocateProRata` in
+  `packages/synth/src/expected/parse.ts` is the reference.
 - **Positions.** A segment index counts every segment of the file from 1 (ISA is 1), across interchanges, as
   pyx12 counts them; element positions count from 1. A truncated file reports the segment input ended in and
   the element being read (PAR-25); a wrong SE01 reports SE element 1 with the count expected and found.
@@ -64,6 +67,7 @@ writer, the expected outcomes, the Python oracle and the parser all share:
 | Require every line to balance on its own | Holds PAR-10, which the matrix says loads |
 | Require the line payments to sum to CLP04 | Fails a claim with both claim-level and line-level CAS, which balances under the claim rule |
 | Allocate by paid amount, or largest remainder | Paid can be zero on a line with patient share; largest remainder is harder to state and to replay |
+| Allocate the whole claim PR to the lines without B6 | A B6 line's allowed already holds its share, so the other lines are overstated by that share and the lines total more than the claim allowed (a review finding: 180.00 against 160.00) |
 
 ## Consequences
 

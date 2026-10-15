@@ -168,14 +168,24 @@ describe('loading a balanced remittance (PAR-01)', () => {
     expect(claim?.payer_claim_control_number_hash).toBe(cipher.lookupHash('claim.payer_claim_control_number', 'SYNCCNPAR010001'));
     expect(claim).toMatchObject({ claim_status_code: '1', charge_cents: '16000', paid_cents: '8800', patient_resp_cents: '2200', filing_indicator: '12', facility_type: '11' });
     const [line] = (await owner.query('SELECT * FROM service_line WHERE claim_id = $1', [claim?.id])).rows as Record<string, unknown>[];
-    expect(line).toMatchObject({ procedure_qualifier: 'HC', procedure_code: '97110', modifiers: ['GP'], units: '2.000', observed_allowed_cents: '11000', observed_allowed_basis: 'paid_plus_pr', patient_share_cents: '2200' });
+    expect(line).toMatchObject({
+      procedure_qualifier: 'HC',
+      procedure_code: '97110',
+      modifiers: ['GP'],
+      units: '2.000',
+      // CLP08 of a professional claim is the line's place of service (PRD 11, line facts).
+      place_of_service: '11',
+      observed_allowed_cents: '11000',
+      observed_allowed_basis: 'paid_plus_pr',
+      patient_share_cents: '2200',
+    });
     expect((await owner.query('SELECT group_code, reason_code, amount_cents::text AS amount, position, unknown_code FROM adjustment WHERE claim_id = $1 ORDER BY position', [claim?.id])).rows).toEqual([
       { group_code: 'CO', reason_code: '45', amount: '5000', position: 1, unknown_code: false },
       { group_code: 'PR', reason_code: '2', amount: '2200', position: 2, unknown_code: false },
     ]);
     // The patient: one pseudonymous reference with the name and member ID encrypted.
     const [patient] = (await owner.query('SELECT * FROM patient_ref WHERE id = $1', [claim?.patient_ref_id])).rows as Record<string, string>[];
-    expect(patient?.pseudonym).toBe(cipher.lookupHash('patient_ref.pseudonym', 'name|SYNTHLASTL7MLBP|SYNTHFIRSTH6E||'));
+    expect(patient?.pseudonym).toBe(cipher.lookupHash('patient_ref.pseudonym', 'name|SYNTHLASTL7MLBP|SYNTHFIRSTH6E|||member|SYNMBR39859729'));
     expect(cipher.decrypt('patient_ref.last_name', patient?.last_name ?? '')).toBe('SYNTHLASTL7MLBP');
     expect(cipher.decrypt('patient_ref.member_id', patient?.member_id ?? '')).toBe('SYNMBR39859729');
     // The payer and the plan reach the mapping queue.
@@ -202,20 +212,60 @@ describe('idempotency', () => {
     expect(logs.lines.map((line) => line.msg)).toEqual(['document parsed and loaded', 'document was not waiting for parse']);
   });
 
-  it('resumes an attempt that loaded part of a document: the loaded transaction set is not loaded again', async () => {
-    const content = distinct('PAR-02/remit.835');
-    const id = await stage(content);
+  it('loads a document and its report in one transaction: an attempt that fails after one set leaves nothing behind', async () => {
+    const id = await stage(distinct('PAR-02/remit.835'));
+    // The second transaction set's remittance insert fails, after the first set has loaded.
+    const failing = (lastAttempt: boolean): JobContext => {
+      const base = context(world.practiceId, { lines: [] }, lastAttempt);
+      return {
+        ...base,
+        transaction: (work) =>
+          base.transaction((scope) => {
+            let remittances = 0;
+            const client = new Proxy(scope.client, {
+              get(target, property, receiver) {
+                if (property !== 'query') {
+                  return Reflect.get(target, property, receiver) as unknown;
+                }
+                return (text: string, values?: unknown[]) => {
+                  if (text.includes('INSERT INTO remittance') && ++remittances === 2) {
+                    return Promise.reject(new Error('synthetic failure after the first transaction set'));
+                  }
+                  return target.query(text, values);
+                };
+              },
+            });
+            return work({ ...scope, client });
+          }),
+      };
+    };
+    await expect(parse({ practice_id: world.practiceId, document_id: id }, failing(false))).rejects.toThrow('synthetic failure');
+    expect(await count('remittance', 'source_document_id = $1', [id])).toBe(0);
+    expect(await count('parse_report', 'source_document_id = $1', [id])).toBe(0);
+    expect(await documentStatus(id)).toBe('scanned');
+    // The last attempt fails too: the document is failed, and none of its remittances is anywhere.
+    await expect(parse({ practice_id: world.practiceId, document_id: id }, failing(true))).rejects.toThrow('synthetic failure');
+    expect(await documentStatus(id)).toBe('failed');
+    expect(await count('remittance', 'source_document_id = $1', [id])).toBe(0);
+    // A retried document (intake queues it again) loads both sets, once.
+    await asOwner(owner, [world.practiceId], () => owner.query("UPDATE source_document SET status = 'scanned' WHERE id = $1", [id]));
     await run(id);
-    const remittances = await count('remittance', 'source_document_id = $1', [id]);
-    expect(remittances).toBe(2);
-    // As if the attempt had stopped before its report: the next one finds both sets already loaded.
-    await asOwner(owner, [world.practiceId], async () => {
-      await owner.query('DELETE FROM parse_report WHERE source_document_id = $1', [id]);
-      await owner.query("UPDATE source_document SET status = 'scanned' WHERE id = $1", [id]);
-    });
-    await run(id);
-    expect(await count('remittance', 'source_document_id = $1', [id])).toBe(remittances);
+    expect(await count('remittance', 'source_document_id = $1', [id])).toBe(2);
     expect(await report(id)).toMatchObject({ outcome: 'loaded', loaded_transactions: 2, duplicate_transactions: 0 });
+  });
+
+  it('loads the same payment resent under a regenerated envelope (a new ISA13) as zero rows, linked to the original', async () => {
+    const original = distinct('PAR-07/original.835');
+    const resent = Buffer.from(original.toString('latin1').replaceAll('010070001', '000999999'), 'latin1');
+    const [first, second] = [await stage(original), await stage(resent)];
+    await run(first);
+    await run(second);
+    expect(await count('remittance', 'source_document_id = $1', [second])).toBe(0);
+    expect(await documentStatus(second)).toBe('duplicate');
+    const [loaded] = (await owner.query<{ id: string }>('SELECT id FROM remittance WHERE source_document_id = $1', [first])).rows;
+    expect((await report(second)).transaction_outcomes).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedRemittanceId: loaded?.id, linkedDocumentId: first })]);
+    // The claims are in the net view once.
+    expect(await netClaims([first, second])).toHaveLength(2);
   });
 
   it('loads the same remittance from a second download as zero rows, linked to the original (PAR-07)', async () => {
@@ -405,6 +455,59 @@ describe('what the loader never does', () => {
     await run(id, world, logs);
     expect(logs.lines.map((line) => line.msg)).toEqual(['document was not waiting for parse']);
     expect(await count('parse_report', 'source_document_id = $1', [id])).toBe(0);
+  });
+});
+
+describe('patients', () => {
+  /** One transaction set paying two claims for SYNTHLAST SYNTHFIRST, under the given member IDs. */
+  function twoPatients(trace: string, members: readonly [string, string]): Buffer {
+    const header = SYNTHETIC_BODY.slice(0, SYNTHETIC_BODY.indexOf('LX*1') + 1).map((segment) => segment.replace('*100.00*C*ACH', '*200.00*C*ACH').replace('SYNTRACE0001', trace));
+    const claim = SYNTHETIC_BODY.slice(SYNTHETIC_BODY.indexOf('LX*1') + 1);
+    const claims = members.flatMap((member, index) =>
+      claim.map((segment) => segment.replace('SYNPCN0001', `SYNPCN${trace}${String(index)}`).replace('SYNCCN0001', `SYNCCN${trace}${String(index)}`).replace('MI*SYNMBR0001', `MI*${member}`)),
+    );
+    variations += 1;
+    return Buffer.from(syntheticInterchange([[...header, ...claims]], String(880_000_000 + variations)), 'utf8');
+  }
+
+  async function patientsOf(documentId: string): Promise<{ ref: string; member: string }[]> {
+    const cipher = ciphers.get(world.practiceId) as PracticeCipher;
+    const { rows } = await owner.query<{ ref: string; member_id: string }>(
+      `SELECT p.id AS ref, p.member_id FROM claim c JOIN remittance r ON r.id = c.remittance_id JOIN patient_ref p ON p.id = c.patient_ref_id
+        WHERE r.source_document_id = $1 ORDER BY c.claim_no`,
+      [documentId],
+    );
+    return rows.map((row) => ({ ref: row.ref, member: cipher.decrypt('patient_ref.member_id', row.member_id) }));
+  }
+
+  it('never merges two people of one name whose member IDs differ, and keeps each one’s member ID', async () => {
+    const id = await stage(twoPatients('SYNTWINS01', ['SYNMBRTWIN01', 'SYNMBRTWIN02']));
+    await run(id);
+    const [first, second] = await patientsOf(id);
+    expect(first?.ref).not.toBe(second?.ref);
+    expect([first?.member, second?.member]).toEqual(['SYNMBRTWIN01', 'SYNMBRTWIN02']);
+    // The same person (name and member ID) in a later remittance is the same reference.
+    const later = await stage(twoPatients('SYNTWINS02', ['SYNMBRTWIN02', 'SYNMBRTWIN01']));
+    await run(later);
+    const [again, other] = await patientsOf(later);
+    expect([again?.ref, other?.ref]).toEqual([second?.ref, first?.ref]);
+  });
+});
+
+describe('place of service', () => {
+  it('leaves an institutional line (billed with a revenue code) without one: CLP08 is its facility type', async () => {
+    const id = await stage(distinct('variants/V15-revenue-code-lines/remit.835'));
+    await run(id);
+    const lines = (
+      await owner.query<{ place_of_service: string | null; facility_type: string }>(
+        'SELECT l.place_of_service, c.facility_type FROM service_line l JOIN claim c ON c.id = l.claim_id JOIN remittance r ON r.id = c.remittance_id WHERE r.source_document_id = $1 ORDER BY l.line_no',
+        [id],
+      )
+    ).rows;
+    expect(lines).toEqual([
+      { place_of_service: null, facility_type: '13' },
+      { place_of_service: null, facility_type: '13' },
+    ]);
   });
 });
 

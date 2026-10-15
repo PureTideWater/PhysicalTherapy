@@ -485,28 +485,47 @@ describe('typed loops', () => {
     ]);
   });
 
-  it('flags unknown codes and loads them: CARC, RARC in MIA, MOA and LQ HE, and the structure sets', () => {
+  it('flags unknown reason and remark codes and loads them: CARC, RARC in MIA, MOA and LQ HE', () => {
     const body = [
-      ...replace(SYNTHETIC_BODY, 'CLP', 'CLP*SYNPCN0001*99*150.00*100.00*20.00*12*SYNCCN0001*11*1').slice(0, 15),
+      ...SYNTHETIC_BODY.slice(0, 15),
       'MOA***Z901',
       'SVC*HC:97110:GP*150.00*100.00**2',
       'DTM*472*20260315',
       'CAS*CO*Z45*30.00',
-      'CAS*XX*2*20.00',
+      'CAS*PR*2*20.00',
       'LQ*HE*Z902',
       'LQ*RX*Z903',
     ];
     const { remittance, report } = only(syntheticInterchange([body]));
     expect(report.outcome).toBe('loaded');
     expect(remittance.unknownCodes.map((code) => [code.list, code.value, code.segmentId, code.elementPosition])).toEqual([
-      ['claim_status', '99', 'CLP', 2],
       ['rarc', 'Z901', 'MOA', 3],
       ['carc', 'Z45', 'CAS', 2],
-      ['adjustment_group', 'XX', 'CAS', 1],
       ['rarc', 'Z902', 'LQ', 2],
     ]);
-    expect(report.receipt.unknownCodes).toEqual(['adjustment_group:XX', 'carc:Z45', 'claim_status:99', 'rarc:Z901', 'rarc:Z902']);
+    expect(report.receipt.unknownCodes).toEqual(['carc:Z45', 'rarc:Z901', 'rarc:Z902']);
     expect(holds(only(syntheticInterchange([[...SYNTHETIC_BODY, 'LQ*HE']])).report)).toEqual(['EDI_SYNTAX missing_element at LQ 23.2']);
+  });
+
+  it('holds a value outside one of the structure\'s own code sets at its position, as pyx12 rejects it', () => {
+    const check = (body: readonly string[]) => {
+      const { report } = only(syntheticInterchange([body]));
+      expect(report.receipt.unknownCodes).toEqual([]);
+      return holds(report);
+    };
+    const bpr = SYNTHETIC_BODY[0] ?? '';
+    expect(check(replace(SYNTHETIC_BODY, 'CLP', 'CLP*SYNPCN0001*99*150.00*100.00*20.00*12*SYNCCN0001*11*1'))).toEqual(['EDI_SYNTAX invalid_code at CLP 17.2']);
+    expect(check(SYNTHETIC_BODY.map((segment) => (segment === 'CAS*CO*45*30.00' ? 'CAS*XX*45*30.00' : segment)))).toEqual(['EDI_SYNTAX invalid_code at CAS 21.1']);
+    expect(check(replace(SYNTHETIC_BODY, 'BPR', bpr.replace('BPR*C*', 'BPR*Q*')))).toEqual(['EDI_SYNTAX invalid_code at BPR 4.1']);
+    expect(check(replace(SYNTHETIC_BODY, 'BPR', bpr.replace('*ACH*', '*XYZ*')))).toEqual(['EDI_SYNTAX invalid_code at BPR 4.4']);
+    const plb = [...replace(SYNTHETIC_BODY, 'BPR', bpr.replace('C*100.00', 'C*90.00')), 'PLB*9900000001*20261231*ZZ:SYNREF*10.00'];
+    expect(check(plb)).toEqual(['EDI_SYNTAX invalid_code at PLB 23.3']);
+    expect(only(syntheticInterchange([plb])).report.transactions[0]?.heldReasons[0]?.componentPosition).toBe(1);
+    expect(check(replace(SYNTHETIC_BODY, 'SVC', 'SVC*QQ:97110:GP*150.00*100.00**2'))).toEqual(['EDI_SYNTAX invalid_code at SVC 19.1']);
+    // An identifier that slipped into a qualifier position (a missing separator) is held, never repeated anywhere.
+    const { report } = only(syntheticInterchange([replace(SYNTHETIC_BODY, 'NM1', 'NM1*QC*1*SYNTHLAST*SYNTHFIRST***MI*SYN12345')]));
+    expect(holds(report)).toEqual(['EDI_SYNTAX invalid_code at NM1 18.8']);
+    expect(JSON.stringify({ held: report.transactions[0]?.heldReasons, receipt: report.receipt }, (_key, value: unknown) => (typeof value === 'bigint' ? String(value) : value))).not.toContain('SYN12345');
   });
 });
 
@@ -539,7 +558,7 @@ describe('balancing (docs/adr/0021)', () => {
     expect(check(SYNTHETIC_BODY)).toEqual([]);
   });
 
-  it('reconciles a line without CAS under claim-level CAS by the claim alone, and allocates the claim PR to it', () => {
+  it('reconciles a line without CAS under claim-level CAS by the claim alone, and allocates the claim PR over every line by charge', () => {
     const body = [
       ...SYNTHETIC_BODY.slice(0, 13),
       'CLP*SYNPCN0001*1*200.00*100.00*20.00*12*SYNCCN0001*11*1',
@@ -555,13 +574,33 @@ describe('balancing (docs/adr/0021)', () => {
     expect(report.outcome).toBe('loaded');
     const claim = remittance.claims[0] as Claim;
     expect(claim.lines.map((line) => [line.differenceCents, line.observedAllowed.cents, line.observedAllowed.basis, line.observedAllowed.allocatedFromClaim, line.observedAllowed.allocatedPatientShareCents])).toEqual([
-      [null, cents(9215n), 'paid_plus_pr', true, cents(1715n)],
-      [null, cents(1535n), 'paid_plus_pr', true, cents(285n)],
+      [null, cents(9000n), 'paid_plus_pr', true, cents(1500n)],
+      [null, cents(1500n), 'paid_plus_pr', true, cents(250n)],
       [null, cents(2000n), 'amt_b6', false, null],
     ]);
     expect(claim.serviceFrom).toBeNull();
     expect(claim.lines[0]?.serviceFrom).toBeNull();
     expect(claim.patientShareCents).toBe(cents(2000n));
+  });
+
+  it('never gives the lines without B6 the share a B6 line already holds: the lines total the claim allowed', () => {
+    const body = [
+      ...replace(SYNTHETIC_BODY.slice(0, 13), 'BPR', (SYNTHETIC_BODY[0] ?? '').replace('C*100.00', 'C*120.00')),
+      'CLP*SYNPCN0001*1*200.00*120.00*40.00*12*SYNCCN0001*11*1',
+      'CAS*CO*45*40.00',
+      'CAS*PR*2*40.00',
+      'NM1*QC*1*SYNTHLAST*SYNTHFIRST****MI*SYNMBR0001',
+      'SVC*HC:97110*100.00*60.00**2',
+      'AMT*B6*80.00',
+      'SVC*HC:97140*100.00*60.00**2',
+    ];
+    const { remittance, report } = only(syntheticInterchange([body]));
+    expect(report.outcome).toBe('loaded');
+    const lines = (remittance.claims[0] as Claim).lines.map((line) => [line.observedAllowed.cents, line.observedAllowed.basis, line.observedAllowed.allocatedPatientShareCents]);
+    expect(lines).toEqual([
+      [cents(8000n), 'amt_b6', null],
+      [cents(8000n), 'paid_plus_pr', cents(2000n)],
+    ]);
   });
 
   it('reads a claim without lines (institutional) with claim-level CAS', () => {

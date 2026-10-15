@@ -10,10 +10,15 @@ import type { Cents } from '@tp/money';
  *   else TRN03, each with its qualifier, exactly as sent (a payer whose identifier changes format
  *   between files reaches the queue under both forms; variant V24).
  * - Each claim's plan key: REF CE when sent, else CLP06's filing indicator.
- * - The patient and the insured, each by its payer-independent patient key: the name as sent
- *   (normalized), else the identifier in NM108 and NM109, else the patient control number. The member
- *   ID is the payer's identifier for the person (NM108 MI, HN, II or MR; never a Social Security
- *   number); the group number is REF 1L, held by the insured, or the patient when no insured is sent.
+ * - The patient and the insured, each by its patient key: the name as sent (normalized) with the
+ *   member ID when one is sent, else the identifier in NM108 and NM109, else the patient control
+ *   number. The key names no payer; two people who share a name but carry different member IDs are
+ *   never one reference. The member ID is the payer's identifier for the person (NM108 MI, HN, II or
+ *   MR; never a Social Security number); the group number is REF 1L, held by the insured, or the
+ *   patient when no insured is sent.
+ * - A professional line's place of service: CLP08 when the claim's lines are professional (a HCPCS
+ *   procedure, no revenue code) and CLP08 is a two-digit code; on an institutional claim CLP08 is the
+ *   facility type and the line has no place of service.
  * - Units and quantities stored exactly in numeric(9,3), or the transaction set is refused (held), never
  *   rounded.
  */
@@ -53,6 +58,8 @@ export interface PlannedLine {
   readonly originalUnits: string | null;
   readonly serviceDate: string | null;
   readonly serviceDateTo: string | null;
+  /** CLP08 on a professional line (see placeOfService), else null. */
+  readonly placeOfService: string | null;
   readonly lineAllowedCents: Cents | null;
   readonly observedAllowedCents: Cents;
   readonly observedAllowedBasis: 'amt_b6' | 'paid_plus_pr';
@@ -143,7 +150,7 @@ export function normalizeKeyPart(value: string | null): string {
   return (value ?? '').normalize('NFKC').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
-/** The person's payer-independent key, or null when the NM1 names nobody (no name and no identifier). */
+/** The person's key from the NM1 alone, or null when it names nobody (no name and no identifier). */
 export function personKey(name: Name): string | null {
   const last = normalizeKeyPart(name.lastOrOrganization);
   if (last !== '') {
@@ -182,11 +189,9 @@ export function planKey(claim: Claim): string {
   return claim.planRef === null ? `CLP06:${claim.filingIndicator}` : `CE:${claim.planRef}`;
 }
 
+/** Whether the adjustment's reason code was flagged unknown (an adjustment group outside its set holds the set instead). */
 function isUnknown(unknown: readonly UnknownCode[], adjustment: Adjustment): boolean {
-  return unknown.some(
-    (code) =>
-      code.segmentIndex === adjustment.segmentIndex && (code.elementPosition === adjustment.elementPosition || (code.list === 'adjustment_group' && code.elementPosition === 1)),
-  );
+  return unknown.some((code) => code.segmentIndex === adjustment.segmentIndex && code.elementPosition === adjustment.elementPosition);
 }
 
 function rendering(claim: Claim, line: ServiceLine): string | null {
@@ -198,6 +203,11 @@ function rendering(claim: Claim, line: ServiceLine): string | null {
   return provider?.id ?? null;
 }
 
+/**
+ * The person an NM1 names. A name key carries the member ID when one is sent: a reference holds one
+ * member ID, so two people of one name with different member IDs are two references, and neither's
+ * member ID is ever stored on the other's (packets carry it).
+ */
 function person(name: Name | undefined, memberQualifiers: ReadonlySet<string>, groupNumber: string | null, fallbackKey: string | null): PersonIdentity | null {
   const key = name === undefined ? null : personKey(name);
   const chosen = key ?? fallbackKey;
@@ -205,7 +215,20 @@ function person(name: Name | undefined, memberQualifiers: ReadonlySet<string>, g
     return null;
   }
   const memberId = name !== undefined && name.id !== null && name.idQualifier !== null && memberQualifiers.has(name.idQualifier) ? name.id : null;
-  return { key: chosen, lastName: name?.lastOrOrganization ?? null, firstName: name?.first ?? null, memberId, groupNumber };
+  const keyed = memberId !== null && chosen.startsWith('name|') ? `${chosen}|member|${normalizeKeyPart(memberId)}` : chosen;
+  return { key: keyed, lastName: name?.lastOrOrganization ?? null, firstName: name?.first ?? null, memberId, groupNumber };
+}
+
+const PLACE_OF_SERVICE = /^\d{2}$/;
+
+/**
+ * The place of service of a line (PRD 11, line facts): on a professional claim CLP08 carries it, the
+ * claim's facility code being the place the services were rendered; a line billed with a revenue code
+ * (SVC04, or a revenue code as its procedure) is institutional, where CLP08 is the facility type.
+ */
+export function placeOfService(claim: Pick<Claim, 'facilityCode'>, line: Pick<ServiceLine, 'procedure' | 'revenueCode'>): string | null {
+  const professional = line.procedure.qualifier === 'HC' && line.revenueCode === null;
+  return professional && claim.facilityCode !== null && PLACE_OF_SERVICE.test(claim.facilityCode) ? claim.facilityCode : null;
 }
 
 class Refused extends Error {
@@ -247,6 +270,7 @@ function plannedLine(claim: Claim, line: ServiceLine, unknown: readonly UnknownC
     originalUnits: exact(line.originalUnits, at(7)),
     serviceDate: line.serviceFrom,
     serviceDateTo: line.serviceTo === null || line.serviceTo === line.serviceFrom ? null : line.serviceTo,
+    placeOfService: placeOfService(claim, line),
     lineAllowedCents: line.lineAllowedCents,
     observedAllowedCents: observed.cents,
     observedAllowedBasis: observed.basis,

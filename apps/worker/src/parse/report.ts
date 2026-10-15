@@ -7,8 +7,8 @@ import type { TransactionLoad, TransactionReview } from './loader';
  * parse_report): counts of transaction sets, claims, lines, reversals, the PLB total, the held
  * transaction sets with their reasons and positions, unknown codes, and what each transaction set
  * became. Errors carry codes and positions only (segment index, segment ID, element and component
- * position, the balance difference), never a field's value; an unknown code is listed only when it is
- * shaped like a code. Pure: the parse job writes the row this builds.
+ * position, the balance difference), never a field's value; an unknown code is listed by value only
+ * when it is a CARC or RARC shaped like a code. Pure: the parse job writes the row this builds.
  */
 
 /** What became of one transaction set. */
@@ -70,14 +70,17 @@ export function documentStatus(outcome: ParseReportRow['outcome']): 'loaded' | '
   return outcome === 'partially_held' ? 'held' : outcome;
 }
 
-/** Where a key is a code's text: a CARC, RARC or the structure's own code. */
+/** A CARC or RARC as its lists write one. */
 const CODE = /^[A-Za-z0-9]{1,8}$/;
+/** The external lists whose codes are shown by value; the parser flags no other list (it holds a value outside the structure's own sets). */
+const SHOWN_LISTS: ReadonlySet<string> = new Set(['carc', 'rarc']);
 
-function maskedCode(entry: string): string {
+/** An unknown code as the receipt shows it: the value only for a CARC or RARC shaped like one, else the list alone. */
+export function maskedCode(entry: string): string {
   const at = entry.indexOf(':');
   const list = entry.slice(0, at);
   const code = entry.slice(at + 1);
-  return `${list}:${CODE.test(code) ? code : '(not shown)'}`;
+  return `${list}:${SHOWN_LISTS.has(list) && CODE.test(code) ? code : '(not shown)'}`;
 }
 
 function reported(error: EdiError, transaction?: ReportedError['transaction']): ReportedError {

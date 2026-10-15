@@ -2029,7 +2029,15 @@
               "oracle": {"valid":false,"rejections":["missing_segment"],"summary":null},
               "parse": {
                 "outcome": "held",
-                "documentErrors": [{"code":"EDI_SYNTAX","segmentIndex":21,"segmentId":"SVC","elementPosition":2}],
+                "documentErrors": [
+                  {
+                    "code": "EDI_SYNTAX",
+                    "segmentIndex": 21,
+                    "segmentId": "SVC",
+                    "elementPosition": 2,
+                    "reason": "truncated"
+                  }
+                ],
                 "transactions": [],
                 "receipt": {
                   "transactions": 0,

@@ -64,11 +64,13 @@ how a 2 GB zip is shown to queue per file in bounded memory without a 2 GB fixtu
   `stored`; anything else is held with its reason.
 - **Zips.** Read by random access over the sealed document (yauzl), never extracted to disk. `ZIP_LIMITS`: 50,000
   file entries (one more refuses the zip), 256 MiB per entry, 64 GiB in total, a ratio of 100 to 1 for entries
-  above 1 MiB, and overlapping entries or a compressed sum beyond the zip refuse it as a bomb. Each entry is held
+  above 1 MiB and for the zip as a whole (its readable entries against its size, ADR 0032), and overlapping entries
+  or a compressed sum beyond the zip refuse it as a bomb. Each entry is held
   without being read if its name is unsafe (absolute, a drive, `..`, a backslash, NUL) or a link, if it is
   encrypted, uses another method, or is too large or too compressed. Every other entry streams into its own
   document (`parent_document_id` the zip, ID derived from the zip's ID and the entry's index, so a retry resumes),
-  its size and CRC-32 checked as it inflates, then hashed and sniffed like an upload (a zip inside is held as
+  its size and CRC-32 checked as it inflates, sniffed from its first 4 KiB before it is written (an entry those bytes
+  hold is never copied out of the zip, ADR 0032), then hashed and checked like an upload (a zip inside is held as
   `nested_zip`, never expanded); a bad entry is held and the next one is read (PAR-27). If any entry is malware,
   an executable or a script, the whole upload is quarantined and nothing in it is queued (PAR-28). A workbook is a
   zip too and is stored as a document, never expanded.
@@ -88,9 +90,10 @@ Nothing in the path holds more than a chunk at each step: the seal's queue (a ch
 read-ahead (16 chunks, 1 MiB) and cache (64 chunks, 4 MiB), the inflate window (32 KiB plus zlib's buffers), and
 in S3 one 8 MiB multipart part. That sum, about 14 MiB, does not depend on the zip's size. A 2 GiB zip is 32,768
 chunks (the 32-bit index allows 2^32), 512 KiB of tags; sealed, the zip and its entries take about 4 GiB of
-storage. `zip.large.test.ts` streams a generated zip of `TP_LARGE_ZIP_MB` mebibytes (256 by default) through the
-real path and fails if memory grows by more than 96 MiB. Measured here: 256 MiB in 11 s with a peak of 34 MiB,
-1 GiB in 47 s with 44 MiB; time grows linearly (about 95 s for 2 GiB) and memory does not.
+storage. `intake.large.db.test.ts` (ADR 0032; it replaced the reader-only `zip.large.test.ts`) streams a zip of
+SYNTHETIC 835 entries of `TP_LARGE_ZIP_MB` mebibytes (256 by default) through the intake job against PostgreSQL, one
+document and one parse job per entry, and fails if memory grows by more than 96 MiB. Measured here: 256 MiB in 23 s,
+2 GiB in 189 s; time grows linearly and memory does not. The weekly `large-zip` workflow runs it at 2048.
 
 ## Alternatives considered
 
