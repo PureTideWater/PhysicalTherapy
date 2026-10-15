@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import fc from 'fast-check';
+import { ALLOWED_LOG_FIELDS } from '@tp/observability';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { isTestFile, listSourceFiles, scanRepository, scanSource } from './scan';
@@ -59,6 +60,13 @@ describe('scanSource', () => {
     ['createLogger({ base: { insured_name: n } });', /looks like a name/],
   ])('refuses a forbidden field in %s', (code, expected) => {
     expect(messages(code)).toEqual([expect.stringMatching(expected)]);
+  });
+
+  it('accepts every field on the allowlist, the tenancy and audit IDs included', () => {
+    expect(ALLOWED_LOG_FIELDS).toEqual(expect.arrayContaining(['organization_id', 'grant_id', 'support_grant_id', 'agreement_id', 'audit_event_id', 'restore_drill_id']));
+    for (const field of ALLOWED_LOG_FIELDS) {
+      expect(messages(`logger.info('x', { ${field}: value });`), field).toEqual([]);
+    }
   });
 
   it('refuses a field that is not on the allowlist', () => {

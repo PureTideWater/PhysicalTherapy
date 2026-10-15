@@ -3,14 +3,17 @@ import type { PgBoss } from 'pg-boss';
 
 import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
+import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
 import { JOB_TYPES, type JobType, QUEUE_OPTIONS, parsePayload } from './jobs/registry';
 
-export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work'>;
+export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work' | 'schedule'>;
 
 export interface WorkerOptions {
   readonly boss: QueueClient;
   readonly logger: Logger;
   readonly handlers: JobHandlers;
+  /** The platform jobs (audit copy, restore drill), where this worker holds an operator connection. */
+  readonly platform?: PlatformHandlers;
   readonly heartbeatMs: number;
   /** How long a graceful stop waits for active jobs. */
   readonly shutdownTimeoutMs?: number;
@@ -42,7 +45,22 @@ async function runJob<T extends JobType>(
   await handlers[type](payload, { jobId: job.id, logger: jobLogger });
 }
 
-/** Starts pg-boss, creates every queue, subscribes a handler to each and starts the heartbeat. */
+async function runPlatformJob<T extends PlatformJobType>(type: T, job: { id: string; data: unknown }, handlers: PlatformHandlers, logger: Logger): Promise<void> {
+  let payload;
+  try {
+    payload = parsePlatformPayload(type, job.data);
+  } catch {
+    logger.error('job payload rejected', { job_id: job.id, job_type: type, error_code: 'JOB_PAYLOAD_INVALID' });
+    throw new JobPayloadError(`payload rejected for ${type} job ${job.id}`);
+  }
+  await handlers[type](payload, { jobId: job.id, logger: logger.child({ job_id: job.id, job_type: type }) });
+}
+
+/**
+ * Starts pg-boss, creates every queue, subscribes a handler to each and starts the heartbeat. With
+ * platform handlers it also creates, schedules and works the platform queues (UTC schedules, one job
+ * of each queued or active at a time).
+ */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const { boss, logger, handlers } = options;
   await boss.start();
@@ -55,6 +73,18 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
         await runJob(type, job, handlers, logger);
       }
     });
+  }
+  const { platform } = options;
+  if (platform !== undefined) {
+    for (const type of PLATFORM_JOB_TYPES) {
+      await boss.createQueue(type, QUEUE_OPTIONS);
+      await boss.schedule(type, PLATFORM_SCHEDULES[type], {}, { tz: 'UTC', singletonKey: type });
+      await boss.work(type, { batchSize: 1 }, async (jobs) => {
+        for (const job of jobs) {
+          await runPlatformJob(type, job, platform, logger);
+        }
+      });
+    }
   }
   const heartbeat = startHeartbeat(logger, options.heartbeatMs);
   logger.info('worker started');

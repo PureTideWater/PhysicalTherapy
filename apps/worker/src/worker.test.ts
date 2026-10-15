@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
+import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
 import { JOB_TYPES, QUEUE_OPTIONS } from './jobs/registry';
 import { JobPayloadError, type QueueClient, startWorker } from './worker';
 
@@ -31,6 +32,10 @@ function fakeBoss() {
       calls.push(`work:${name}`);
       handlers.set(name, handler);
       return Promise.resolve(`worker-${name}`);
+    }),
+    schedule: vi.fn((name: string) => {
+      calls.push(`schedule:${name}`);
+      return Promise.resolve();
     }),
   };
   return { boss, handlers, calls, client: boss as unknown as QueueClient };
@@ -137,5 +142,36 @@ describe('startWorker', () => {
     const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     await worker.stop();
     expect(boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 30_000 });
+  });
+
+  it('runs no platform job unless it is given the platform handlers', async () => {
+    const { boss, calls, client } = fakeBoss();
+    const worker = await startWorker({ boss: client, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    expect(boss.schedule).not.toHaveBeenCalled();
+    expect(calls.filter((call) => PLATFORM_JOB_TYPES.some((type) => call.endsWith(`:${type}`)))).toEqual([]);
+    await worker.stop();
+  });
+
+  it('creates, schedules (UTC, one at a time) and works the platform queues when given their handlers', async () => {
+    const { boss, calls, handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const auditCopy = vi.fn<PlatformHandlers['audit_copy']>((_payload, context) => {
+      context.logger.info('copying');
+      return Promise.resolve();
+    });
+    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve() };
+    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
+    for (const type of PLATFORM_JOB_TYPES) {
+      expect(calls).toEqual(expect.arrayContaining([`createQueue:${type}`, `schedule:${type}`, `work:${type}`]));
+      expect(boss.createQueue).toHaveBeenCalledWith(type, QUEUE_OPTIONS);
+      expect(boss.schedule).toHaveBeenCalledWith(type, PLATFORM_SCHEDULES[type], {}, { tz: 'UTC', singletonKey: type });
+    }
+    await handlers.get('audit_copy')?.([{ id: 'job-9', data: { day: '2026-10-14' } }]);
+    expect(auditCopy).toHaveBeenCalledWith({ day: '2026-10-14' }, expect.objectContaining({ jobId: 'job-9' }));
+    expect(lines.find((line) => line.msg === 'copying')).toMatchObject({ job_id: 'job-9', job_type: 'audit_copy' });
+    const refused = handlers.get('restore_drill')?.([{ id: 'job-10', data: { practice_id: PRACTICE } }]);
+    await expect(refused).rejects.toThrow(JobPayloadError);
+    expect(lines.find((line) => line.job_id === 'job-10')).toMatchObject({ error_code: 'JOB_PAYLOAD_INVALID', job_type: 'restore_drill' });
+    await worker.stop();
   });
 });

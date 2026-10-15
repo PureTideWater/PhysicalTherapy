@@ -15,3 +15,12 @@ export {
   allowlistedFields,
   createLogger,
 } from './logger';
+export {
+  type PhiCarrier,
+  type PhiGuardOptions,
+  PhiLeakError,
+  assertNoPhi,
+  jobPayloadPhiFindings,
+  s3KeyPhiFindings,
+  urlPhiFindings,
+} from './phi-guard';

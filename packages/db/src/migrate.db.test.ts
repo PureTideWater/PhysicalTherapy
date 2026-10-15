@@ -2,7 +2,8 @@ import { copyFileSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { getTableConfig } from 'drizzle-orm/pg-core';
+import { is } from 'drizzle-orm';
+import { PgTable, getTableConfig } from 'drizzle-orm/pg-core';
 import pg from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -10,7 +11,7 @@ import { readDatabaseUrl } from './config';
 import { MIGRATIONS_DIR, MigrationError, migrate, readMigrations } from './migrate';
 import { APP_DEV_LOGIN, APP_ROLE, OWNER_ROLE, appDevLoginUrl } from './roles';
 import { randomUUID } from 'node:crypto';
-import { ruleRecord, ruleRelease } from './schema';
+import * as schema from './schema';
 import { withScratchDatabase } from './testing';
 
 const adminUrl = readDatabaseUrl();
@@ -95,11 +96,23 @@ describe('migrate', () => {
         url,
         "SELECT c.relname, pg_get_userbyid(c.relowner) AS owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1",
       );
-      expect(owners).toEqual([
-        { relname: 'rule_record', owner: OWNER_ROLE },
-        { relname: 'rule_release', owner: OWNER_ROLE },
-        { relname: 'schema_migrations', owner: OWNER_ROLE },
-      ]);
+      expect(owners).toEqual(
+        [
+          'agreement',
+          'audit_event',
+          'grant',
+          'membership',
+          'organization',
+          'phi_table_registry',
+          'practice',
+          'restore_drill',
+          'rule_record',
+          'rule_release',
+          'schema_migrations',
+          'support_grant',
+          'user',
+        ].map((relname) => ({ relname, owner: OWNER_ROLE })),
+      );
     });
   });
 
@@ -139,7 +152,8 @@ describe('migrate', () => {
     await withScratchDatabase(adminUrl, (a) =>
       withScratchDatabase(adminUrl, async (b) => {
         const results = await Promise.all([migrate({ databaseUrl: a, devLogin: true }), migrate({ databaseUrl: b, devLogin: true })]);
-        expect(results.map((result) => result.applied.length)).toEqual([1, 1]);
+        const count = readMigrations(MIGRATIONS_DIR).length;
+        expect(results.map((result) => result.applied.length)).toEqual([count, count]);
       }),
     );
   });
@@ -297,12 +311,23 @@ describe('the Drizzle schema', () => {
     PgTimestamp: 'timestamp with time zone',
     PgJsonb: 'jsonb',
     PgDateString: 'date',
+    PgBoolean: 'boolean',
+    PgBigInt64: 'bigint',
   };
+  const tables = Object.values(schema as Record<string, unknown>).filter((value): value is PgTable => is(value, PgTable));
+
+  it('defines every migrated table', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      const migrated = await query<{ tablename: string }>(url, "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> 'schema_migrations' ORDER BY 1");
+      expect(tables.map((table) => getTableConfig(table).name).sort()).toEqual(migrated.map((row) => row.tablename));
+    });
+  });
 
   it('matches the migrated columns, types and nullability', async () => {
     await withScratchDatabase(adminUrl, async (url) => {
       await migrate({ databaseUrl: url });
-      for (const table of [ruleRelease, ruleRecord]) {
+      for (const table of tables) {
         const config = getTableConfig(table);
         const columns = await query<{ column_name: string; data_type: string; is_nullable: string }>(
           url,

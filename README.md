@@ -26,6 +26,14 @@ pnpm db:migrate --dry-run   # apply the pending migrations in one transaction an
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 ```
 
+Tenancy and audit (ADRs 0013 to 0015): every query runs in a scope from `@tp/db` (`withActor`,
+`withPracticeScope`, `withJobScope`, one practice per job), PHI reads go through `readWithAudit`, and `pnpm test:db`
+runs the catalog test and the cross-tenant tests generated from the catalog. The worker runs its platform jobs (the
+nightly audit copy and the monthly restore drill) only when `OPERATOR_DATABASE_URL` names a login that can
+`SET ROLE tp_owner`; locally add `AUDIT_COPY_DIR=<dir>`. The local restore drill uses `pg_dump` and `pg_restore`, which
+must be at least as new as the server (`PG_BIN_DIR` points at them); the database test of that path skips, saying
+why, where they are older.
+
 Global rule content (PRD section 9; [content/sources/README.md](content/sources/README.md) lists the files
 release 1 needs):
 

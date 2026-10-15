@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-rds": "^3.1152.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/edi835": "workspace:*",

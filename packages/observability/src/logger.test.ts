@@ -46,6 +46,38 @@ describe('createLogger', () => {
     }
   });
 
+  it('logs IDs only, whatever a synthetic record hands it (canary, SEC-07)', () => {
+    const { lines, sink } = capture();
+    const ids = { practice_id: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01', claim_id: '9c8b7a65-4321-4fed-8cba-987654321001', job_id: '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701' };
+    const record = {
+      ...ids,
+      patient_name: 'SYNTHETIC TWIN',
+      dob: '1950-01-01',
+      member_id: 'SYN000000001',
+      subscriber_id: 'SYN000000002',
+      payer_claim_control_number: 'SYNICN0001',
+      claim_number: '123456789',
+      document_text: 'CLP*SYNPCN0001*1*100*80~',
+      address: { line1: 'SYNTHETIC STREET' },
+    } as unknown as LogFields;
+    const logger = createLogger({ sink, now: fixedClock, level: 'debug' });
+    logger.debug('canary', record);
+    logger.child(record).info('canary child');
+    for (const line of lines) {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(parsed)) {
+        if (['time', 'level', 'msg'].includes(key)) {
+          continue;
+        }
+        expect(key).toMatch(/_id$/);
+        expect(value).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      }
+      expect(parsed).toMatchObject(ids);
+      expect(line).not.toMatch(/SYN|TWIN|1950|123456789|CLP|STREET/);
+    }
+    expect(lines).toHaveLength(2);
+  });
+
   it('drops nested objects and arrays even under an allowlisted key', () => {
     const fields = { practice_id: { name: 'x' }, job_id: ['a'], case_id: undefined } as unknown as LogFields;
     expect(allowlistedFields(fields)).toEqual({});

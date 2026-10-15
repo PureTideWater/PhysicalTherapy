@@ -3,10 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Structured logging that can only emit fields on the log-field allowlist.",
+  "description": "Structured logging that can only emit fields on the log-field allowlist, and the PHI guard for URLs, S3 keys and job payloads.",
   "exports": {
     ".": "./src/index.ts",
-    "./fields": "./src/fields.ts"
+    "./fields": "./src/fields.ts",
+    "./phi-guard": "./src/phi-guard.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

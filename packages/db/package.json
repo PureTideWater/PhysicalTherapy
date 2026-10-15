@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.1152.0",
     "@tp/observability": "workspace:*",
     "drizzle-orm": "catalog:",
     "pg": "catalog:"
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

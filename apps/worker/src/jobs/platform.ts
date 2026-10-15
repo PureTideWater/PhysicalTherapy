@@ -1,0 +1,98 @@
+import type { Logger } from '@tp/observability';
+import { z } from 'zod';
+
+import { copyAuditDay, previousDay } from '../platform/audit-copy';
+import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
+import type { ObjectStore } from '../storage/object-store';
+
+/**
+ * Platform jobs: work on the platform itself rather than on one practice's data, so they carry no
+ * practice and open no practice scope (docs/adr/0014). They read no PHI: the audit copy reads
+ * audit_event (codes and opaque IDs only) and the restore drill counts rows on a scratch copy. They
+ * run on the operator connection (one that can SET ROLE to the owner), which the worker holds only
+ * where OPERATOR_DATABASE_URL is configured. A practice job (jobs/registry.ts) never runs this way.
+ */
+export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill'] as const;
+export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
+
+const day = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'a calendar day, YYYY-MM-DD');
+
+export const PLATFORM_JOB_PAYLOADS = {
+  /** The day to copy; the scheduled run omits it and copies yesterday (UTC). */
+  audit_copy: z.strictObject({ day: day.optional() }),
+  restore_drill: z.strictObject({}),
+} satisfies Record<PlatformJobType, z.ZodType>;
+
+export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
+
+export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload: unknown): PlatformJobPayload<T> {
+  return PLATFORM_JOB_PAYLOADS[type].parse(payload ?? {}) as PlatformJobPayload<T>;
+}
+
+/**
+ * When each runs, in UTC: the audit copy nightly at 01:20, after the day it copies has closed; the
+ * restore drill on the first Monday of each month at 06:00 (PRD 19 Runbooks, Restore drill).
+ */
+export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
+  audit_copy: '20 1 * * *',
+  restore_drill: 'FREQ=MONTHLY;BYDAY=1MO;BYHOUR=6;BYMINUTE=0;BYSECOND=0',
+};
+
+export interface PlatformContext {
+  readonly jobId: string;
+  readonly logger: Logger;
+}
+
+export type PlatformHandlers = { readonly [T in PlatformJobType]: (payload: PlatformJobPayload<T>, context: PlatformContext) => Promise<void> };
+
+export interface OperatorPool {
+  connect(): Promise<{ query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>; release(destroy?: boolean): void }>;
+}
+
+export interface PlatformDependencies {
+  /** Owner-capable connections to the platform database. */
+  readonly operator: OperatorPool;
+  readonly store: ObjectStore;
+  readonly restorer: SnapshotRestorer;
+  readonly now?: () => Date;
+}
+
+async function withOperator<T>(pool: OperatorPool, use: (client: Awaited<ReturnType<OperatorPool['connect']>>) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  let broken = false;
+  try {
+    return await use(client);
+  } catch (error) {
+    broken = true;
+    throw error;
+  } finally {
+    client.release(broken);
+  }
+}
+
+export function createPlatformHandlers(dependencies: PlatformDependencies): PlatformHandlers {
+  const now = dependencies.now ?? (() => new Date());
+  return {
+    audit_copy: async (payload, context) => {
+      const target = payload.day ?? previousDay(now());
+      const result = await withOperator(dependencies.operator, (client) => copyAuditDay({ client, store: dependencies.store, day: target, now: now() }));
+      if (result.outcome === 'written') {
+        context.logger.info('audit copy written', { job_id: context.jobId });
+      } else {
+        context.logger.info('audit copy already present', { job_id: context.jobId });
+      }
+    },
+    restore_drill: async (_payload, context) => {
+      let result: RestoreDrillResult;
+      try {
+        result = await withOperator(dependencies.operator, (evidence) => runRestoreDrill({ restorer: dependencies.restorer, evidence, now }));
+      } catch (error) {
+        if (error instanceof RestoreDrillFailedError) {
+          context.logger.error('restore drill failed', { job_id: context.jobId, restore_drill_id: error.result.id, error_code: error.result.errorCode });
+        }
+        throw error;
+      }
+      context.logger.info('restore drill passed', { job_id: context.jobId, restore_drill_id: result.id });
+    },
+  };
+}

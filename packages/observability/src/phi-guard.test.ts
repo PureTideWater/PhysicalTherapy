@@ -1,0 +1,118 @@
+import { describe, expect, it } from 'vitest';
+
+import { PhiLeakError, assertNoPhi, jobPayloadPhiFindings, s3KeyPhiFindings, urlPhiFindings } from './phi-guard';
+
+const PRACTICE = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
+const CLAIM = '9c8b7a65-4321-4fed-8cba-123456789012';
+/** A synthetic patient record, as a later milestone's test would hand the guard. */
+const SYNTHETIC = ['SYNTHETIC', 'TWIN', '1950-01-01', 'SYN000000001', 'SYNPCN0001'];
+
+describe('urlPhiFindings (SEC-08)', () => {
+  it.each([
+    `/practices/${PRACTICE}/claims/${CLAIM}`,
+    `https://app.example.test/practices/${PRACTICE}/cases?state=open&owner_id=${CLAIM}`,
+    '/settings/security',
+    `/claims/${CLAIM.toUpperCase()}`,
+  ])('accepts %s', (url) => {
+    expect(urlPhiFindings(url, { known: SYNTHETIC })).toEqual([]);
+  });
+
+  it.each([
+    ['/claims/SYNPCN0001', /path segment 2 is neither an opaque ID nor a lowercase route word/],
+    ['/patients/123456789', /nine or more digits/],
+    ['/patients/123-45-6789', /SSN shape/],
+    ['/patients/twin/1950-01-01', /calendar date/],
+    ['/claims?dob=01%2F02%2F1950', /query parameter dob holds a calendar date/],
+    ['/claims?member=SYN000000001', /synthetic record/],
+    ['/users/someone%40synthetic.test', /email address/],
+    ['/claims?callback=919-555-0100', /phone number/],
+    ['/claims?Patient=x', /query parameter name/],
+    ['/claims#SYNTHETIC', /fragment holds a value of the synthetic record/],
+    ['/patients/synthetic-twin', /synthetic record/],
+  ])('refuses %s', (url, expected) => {
+    expect(urlPhiFindings(url, { known: SYNTHETIC }).join('; ')).toMatch(expected);
+  });
+
+  it('never quotes the value it refused', () => {
+    expect(urlPhiFindings('/claims/SYNPCN0001?member=SYN000000001', { known: SYNTHETIC }).join(' ')).not.toMatch(/SYN/);
+  });
+
+  it('reads a malformed escape as written', () => {
+    expect(urlPhiFindings('/claims/%E0%A4%A')).toEqual(['URL path segment 2 is neither an opaque ID nor a lowercase route word']);
+  });
+});
+
+describe('s3KeyPhiFindings (SEC-08)', () => {
+  it.each([`practices/${PRACTICE}/documents/${CLAIM}`, `practices/${PRACTICE}/packets/${CLAIM}.pdf`, 'audit-events/v1/2026/10/14.jsonl', 'quarantine/v2/a1'])(
+    'accepts %s',
+    (key) => {
+      expect(s3KeyPhiFindings(key, { known: SYNTHETIC })).toEqual([]);
+    },
+  );
+
+  it.each([
+    [`practices/${PRACTICE}/SMITH_JOHN_835.txt`, /segment 3 is not an opaque ID/],
+    [`practices/${PRACTICE}/documents/remit-1950-01-01.835`, /calendar date/],
+    ['uploads/123456789/x', /nine or more digits/],
+    [`practices/${PRACTICE}/synthetic`, /synthetic record/],
+    [`practices/${PRACTICE}/doc.tar.gz`, /segment 3 is not an opaque ID/],
+    ['exports/12345', /segment 2 is not an opaque ID/],
+  ])('refuses %s', (key, expected) => {
+    expect(s3KeyPhiFindings(key, { known: SYNTHETIC }).join('; ')).toMatch(expected);
+  });
+});
+
+describe('jobPayloadPhiFindings (SEC-08)', () => {
+  it.each([{ practice_id: PRACTICE, document_id: CLAIM }, { practice_id: PRACTICE, period: '2026-10' }, { day: '2026-10-14' }, {}])('accepts %j', (payload) => {
+    expect(jobPayloadPhiFindings(payload, { known: SYNTHETIC })).toEqual([]);
+  });
+
+  it.each([
+    [{ practice_id: PRACTICE, patient_name: 'SYNTHETIC TWIN' }, /patient_name is not an ID field/],
+    [{ practice_id: 'SYNPCN0001' }, /practice_id does not hold an opaque UUID/],
+    [{ claim_id: '123456789' }, /nine or more digits/],
+    [{ practice_id: PRACTICE, nested: { name: 'x' } }, /nested is not an ID field/],
+    [{ period: '2026-13' }, /period is not in its fixed format/],
+    [{ day: 20261014 }, /day is not in its fixed format/],
+    [{ day: '1950-01-01' }, /synthetic record/],
+    [[PRACTICE], /an object of opaque IDs/],
+    ['practice', /an object of opaque IDs/],
+    [null, /an object of opaque IDs/],
+  ])('refuses %j', (payload, expected) => {
+    expect(jobPayloadPhiFindings(payload, { known: SYNTHETIC }).join('; ')).toMatch(expected);
+  });
+
+  it('works without a synthetic record', () => {
+    expect(jobPayloadPhiFindings({ practice_id: PRACTICE })).toEqual([]);
+  });
+});
+
+describe('assertNoPhi', () => {
+  it('passes clean values and throws a PhiLeakError naming the carrier and the rules, never the value', () => {
+    expect(() => {
+      assertNoPhi('url', `/practices/${PRACTICE}`);
+    }).not.toThrow();
+    expect(() => {
+      assertNoPhi('s3_key', `practices/${PRACTICE}/documents/${CLAIM}`);
+    }).not.toThrow();
+    expect(() => {
+      assertNoPhi('job_payload', { practice_id: PRACTICE });
+    }).not.toThrow();
+    let caught: unknown;
+    try {
+      assertNoPhi('job_payload', { practice_id: PRACTICE, member_id: 'SYN000000001' }, { known: SYNTHETIC });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(PhiLeakError);
+    expect(caught).toMatchObject({ carrier: 'job_payload', name: 'PhiLeakError' });
+    expect((caught as PhiLeakError).message).toMatch(/^job_payload may carry PHI: /);
+    expect((caught as PhiLeakError).message).not.toContain('SYN000000001');
+    expect(() => {
+      assertNoPhi('url', '/claims/SYNPCN0001');
+    }).toThrow(PhiLeakError);
+    expect(() => {
+      assertNoPhi('s3_key', 'uploads/SMITH.835');
+    }).toThrow(PhiLeakError);
+  });
+});
