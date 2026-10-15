@@ -57,9 +57,20 @@ export const user = pgTable(
     /** Consecutive failed sign-in attempts; ten lock the account (migration 20261015170000). */
     failedSignIns: integer('failed_sign_ins').notNull().default(0),
     lockedAt: timestamp('locked_at', { withTimezone: true }),
+    /** The user's own settings: notification preferences (migration 20261020090000). */
+    settings: jsonb('settings').$type<UserSettings>().notNull().default({}),
   },
   (table) => [uniqueIndex('user_email_unique').on(sql`lower(${table.email})`)],
 );
+
+/**
+ * A user's settings (jsonb; Data dictionary: notification preferences live in the user's settings). The
+ * database admits {} or {"notifications": {"digest_email"?: boolean, "in_app"?: boolean}}, each on
+ * unless turned off.
+ */
+export interface UserSettings {
+  readonly notifications?: { readonly digest_email?: boolean; readonly in_app?: boolean };
+}
 
 /** Practice settings (jsonb): materiality, anomaly threshold, proof level, staff rate. */
 export type PracticeSettings = Readonly<Record<string, unknown>>;

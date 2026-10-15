@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
+import { type NotificationView, listNotifications, unreadNotifications } from '../monitoring/queries';
 import { opaqueId } from './schemas';
 
 /**
@@ -10,8 +11,9 @@ import { opaqueId } from './schemas';
  * and the last run, with a banner when a run failed on its last attempt; JOB-02), the practice
  * record, its agreement chain and, for its administrators, the support (break-glass) grants on it
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
- * here). Every read of the practice record goes through readWithAudit, so a support engineer's view
- * of it appears in that list.
+ * here), and the person's latest in-app notifications from monitoring (docs/adr/0039). Every read of
+ * the practice record goes through readWithAudit, so a support engineer's view of it appears in that
+ * list.
  */
 
 interface PracticeRecord {
@@ -151,6 +153,7 @@ export const practiceHome = practiceRoute({
       access: { via: access.via, roles: access.roles },
       supportGrants,
       freshness: await freshness(scope, practiceId),
+      notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },

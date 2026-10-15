@@ -52,8 +52,10 @@ export interface RunSummary {
   readonly failureCode: string | null;
   readonly createdAt: string;
   readonly completedAt: string | null;
-  /** Who created the run: their email, as the practice's members see it. */
+  /** Who created the run: their email, as the practice's members see it, or the monitoring chain (docs/adr/0039). */
   readonly createdBy: string;
+  /** Whether the monitoring chain created the run (its job, not a person). */
+  readonly monitoring: boolean;
   readonly coverage: RunCoverage | null;
   /** Why a new run of the same period would price differently (complete runs only; MAP-03). */
   readonly rerun: readonly RerunReason[];
@@ -80,6 +82,7 @@ interface RunRow {
   readonly created_at: Date;
   readonly completed_at: Date | null;
   readonly email: string | null;
+  readonly monitoring: boolean;
   readonly coverage: unknown;
   readonly rerun_of_id: string | null;
   readonly accepted_at: Date | null;
@@ -91,7 +94,7 @@ interface RunRow {
 }
 
 const RUN_COLUMNS = `r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status,
-  r.failure_code, r.created_at, r.completed_at, u.email, r.coverage, r.rerun_of_id, r.accepted_at, ua.email AS accepted_email,
+  r.failure_code, r.created_at, r.completed_at, u.email, r.created_by_job_id IS NOT NULL AS monitoring, r.coverage, r.rerun_of_id, r.accepted_at, ua.email AS accepted_email,
   ${RUN_IN_EFFECT('r')} AS in_effect, w.reinstated_release_no, w.withdrawn_at, w.reason AS withdrawal_reason`;
 
 const RUN_FROM = `pricing_run r LEFT JOIN "user" u ON u.id = r.created_by LEFT JOIN "user" ua ON ua.id = r.accepted_by
@@ -110,7 +113,8 @@ async function summaries(scope: Scope, rows: readonly RunRow[]): Promise<RunSumm
       failureCode: row.failure_code,
       createdAt: row.created_at.toISOString(),
       completedAt: row.completed_at?.toISOString() ?? null,
-      createdBy: row.email ?? 'a member of the practice',
+      createdBy: row.monitoring ? 'monitoring (the monthly chain, on new files)' : (row.email ?? 'a member of the practice'),
+      monitoring: row.monitoring,
       coverage: row.coverage === null ? null : parseCoverage(row.coverage),
       rerun: row.status === 'complete' ? await rerunReasons(scope.client, { practiceId: row.practice_id, createdAt: row.created_at, releaseNo: row.release_no }) : [],
       rerunOfId: row.rerun_of_id,

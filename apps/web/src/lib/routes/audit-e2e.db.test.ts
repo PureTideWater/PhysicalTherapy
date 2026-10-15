@@ -13,7 +13,7 @@ import { formatCents, parseCents } from '@tp/money';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type AuditReportContent, CSV_COLUMNS } from '@tp/worker/reports';
-import { ChromiumPdfRenderer, type JobContext, auditReportHandler, intakeHandler, intakeServices, parseHandler, priceHandler, triageHandler } from '@tp/worker/runtime';
+import { ChromiumPdfRenderer, type JobContext, auditReportHandler, intakeHandler, intakeServices, monitorHandler, parseHandler, priceHandler, triageHandler } from '@tp/worker/runtime';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
@@ -213,7 +213,11 @@ function jobContext(lastAttempt = false): JobContext {
   };
 }
 
-/** Runs the queued jobs as the worker would, in order: intake, parse_835, price, triage, audit_report. */
+/**
+ * Runs the queued jobs as the worker would, in order: intake, parse_835, the monitoring chain's planning
+ * step the parse queues (the plans are not mapped yet when the file loads, so it prices nothing: MAP-01),
+ * price, triage, audit_report.
+ */
 async function runQueue(): Promise<string[]> {
   const ran: string[] = [];
   const jobs = intakeServices({ documents: { kind: 'local', dir: documentsDir }, keys: { kind: 'local', masterKey }, scanWaitMs: 1000 });
@@ -234,6 +238,8 @@ async function runQueue(): Promise<string[]> {
         await intakeHandler(jobs)(job.payload as { practice_id: string; document_id: string }, jobContext());
       } else if (job.type === 'parse_835') {
         await parseHandler(jobs)(job.payload as { practice_id: string; document_id: string }, jobContext());
+      } else if (job.type === 'monitor') {
+        await monitorHandler()(job.payload as { practice_id: string; document_id: string }, jobContext());
       } else if (job.type === 'price') {
         await priceHandler()(job.payload as { practice_id: string; pricing_run_id: string }, jobContext());
       } else if (job.type === 'triage') {
@@ -270,7 +276,7 @@ async function send(file: string): Promise<void> {
     ),
   );
   ok(await call(completeUpload, manager, P(), { documentId: document.documentId }));
-  expect(await runQueue()).toEqual(['intake', 'parse_835']);
+  expect(await runQueue()).toEqual(['intake', 'parse_835', 'monitor']);
 }
 
 function as<T>(actorId: string, run: (context: WorkflowContext) => Promise<T>): Promise<T> {

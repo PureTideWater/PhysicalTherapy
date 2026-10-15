@@ -90,6 +90,13 @@ function quote(identifier: string): string {
 /** Columns that name who did what the row records. */
 const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
 
+/**
+ * Nullable actor columns that a row's other constraints require all the same: a pricing run is created
+ * by a person (created_by) or by the monitoring job (created_by_job_id), exactly one; the factory's run
+ * is a person's, so its creator is filled in the first, minimal row too.
+ */
+const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by']);
+
 /** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
 const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
 
@@ -100,6 +107,8 @@ const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.u
  */
 const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'priced_line.unpriced_reason': () => 'NO_MAPPING',
+  // A run has one creator, a person or the monitoring job; the factory's run is a person's.
+  'pricing_run.created_by_job_id': () => null,
   'rule_release.published_at': () => new Date().toISOString(),
   // One open case per pattern: each factory case is its own pattern.
   'case.pattern_key': () => JSON.stringify({ synthetic: randomUUID() }),
@@ -289,7 +298,7 @@ export class RowFactory {
         row[column.name] = await this.roleHolder(client, bound);
         continue;
       }
-      if (column.type === 'uuid' && ACTOR_COLUMN.test(column.name) && (column.notNull || full)) {
+      if (column.type === 'uuid' && ACTOR_COLUMN.test(column.name) && (column.notNull || full || REQUIRED_ACTORS.has(`${table}.${column.name}`))) {
         row[column.name] = world.adminUserId;
         continue;
       }

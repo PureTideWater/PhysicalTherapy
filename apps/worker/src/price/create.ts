@@ -14,7 +14,8 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  * @tp/contracts refuses a run while any of its plans has no mapping at all. The run is recorded queued,
  * pinned to that release and to this engine's version; the caller queues the price job for it. The
  * database refuses the same mismatch itself, and a run in another person's name. A re-run of a complete
- * run (rerun.ts) is recorded the same way.
+ * run (rerun.ts) is recorded the same way. The monitoring chain (../monitor) creates a month's run the
+ * same way in its job's scope: the run is then the job's (created_by_job_id), not a person's.
  */
 
 /** The request is not a run the plan allows (a period backwards, or with no lines). Messages name fields, never values. */
@@ -85,7 +86,8 @@ export interface RunPins {
 }
 
 /**
- * Records the run queued, pinned to the release and to this engine, in the actor's name. The database
+ * Records the run queued, pinned to the release and to this engine, in the actor's name (a person's,
+ * or for a job's scope the job's; the database refuses a job's re-run). The database
  * refuses a release that is not the one in force (RuleReleaseMismatchError here), and a re-run that does
  * not price the period and lines of a complete run of the practice.
  */
@@ -94,10 +96,12 @@ export async function recordRun(scope: PracticeScope<ScopeClient>, pins: RunPins
     // A savepoint, so the database's own refusal leaves the request's transaction usable for its answer.
     await scope.client.query('SAVEPOINT create_pricing_run');
     const values = [pins.practiceId, pins.periodFrom, pins.periodTo, pins.releaseNo, ENGINE_VERSION, scope.actorId];
+    // A job (the monitoring chain) creates a run in its own name, as created_by_job_id; a person in theirs.
+    const creator = scope.kind === 'job' ? 'created_by_job_id' : 'created_by';
     const { rows } =
       pins.rerunOf === null
         ? await scope.client.query<{ id: string }>(
-            `INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by)
+            `INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, ${creator})
              VALUES ($1, $2::date, $3::date, $4, $5, $6) RETURNING id`,
             values,
           )

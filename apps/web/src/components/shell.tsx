@@ -77,9 +77,11 @@ export type ShellSection =
   | 'anomalies'
   | 'cases'
   | 'reports'
+  | 'notifications'
   | 'contracts'
   | 'abstraction'
   | 'devices'
+  | 'notification_preferences'
   | 'organizations'
   | 'support'
   | 'specialist_queue'
@@ -143,6 +145,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             <RailLink href={`/p/${shell.currentPracticeId}/reports`} active={section === 'reports'}>
               Reports
             </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/notifications`} active={section === 'notifications'}>
+              Notifications
+            </RailLink>
           </nav>
         )}
         {platformAdmin || specialist ? (
@@ -171,6 +176,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
         <nav aria-label="Account" className="flex flex-col gap-1">
           <RailLink href="/account/devices" active={section === 'devices'}>
             Devices
+          </RailLink>
+          <RailLink href="/account/notifications" active={section === 'notification_preferences'}>
+            Notification preferences
           </RailLink>
         </nav>
         <div className="mt-auto flex flex-col gap-2">

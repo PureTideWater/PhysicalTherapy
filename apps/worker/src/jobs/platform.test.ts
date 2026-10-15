@@ -6,7 +6,7 @@ import { ZodError } from 'zod';
 import { MemoryMailSender } from '../mail/mail';
 import { RestoreDrillFailedError } from '../platform/restore-drill';
 import type { ObjectStore, PutImmutableRequest } from '../storage/object-store';
-import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, createPlatformHandlers, parsePlatformPayload } from './platform';
+import { NoQueueError, PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, createPlatformHandlers, parsePlatformPayload } from './platform';
 
 function capture() {
   const lines: Record<string, unknown>[] = [];
@@ -17,7 +17,10 @@ const JOB = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
 
 describe('platform job registry', () => {
   it('names the platform jobs and validates their payloads', () => {
-    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices']);
+    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule']);
+    expect(parsePlatformPayload('monitoring_schedule', {})).toEqual({});
+    expect(parsePlatformPayload('monitoring_schedule', { day: '2026-11-01' })).toEqual({ day: '2026-11-01' });
+    expect(() => parsePlatformPayload('monitoring_schedule', { practice_id: JOB })).toThrow(ZodError);
     expect(parsePlatformPayload('support_grant_notices', {})).toEqual({});
     expect(() => parsePlatformPayload('support_grant_notices', { practice_id: JOB })).toThrow(ZodError);
     expect(parsePlatformPayload('audit_copy', {})).toEqual({});
@@ -33,6 +36,12 @@ describe('platform job registry', () => {
     assertNoPhi('job_payload', parsePlatformPayload('audit_copy', { day: '2026-10-14' }));
     assertNoPhi('job_payload', parsePlatformPayload('restore_drill', {}));
     assertNoPhi('job_payload', parsePlatformPayload('support_grant_notices', {}));
+  });
+
+  it('queues the monitoring schedule daily at 05:10 UTC', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-31T06:00:00Z');
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.monitoring_schedule, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-11-01T05:10:00Z'), new Date('2026-11-02T05:10:00Z')]);
   });
 
   it('sends the support-grant notices every minute', () => {
@@ -122,5 +131,61 @@ describe('platform handlers', () => {
     });
     await expect(broken.restore_drill({}, { jobId: JOB, logger })).rejects.toThrow('no operator');
     expect(lines.at(-1)?.msg).toBe('restore drill failed');
+  });
+
+  it('queues each active practice’s own monitor job for the day and digest for the month before, as the operator', async () => {
+    const practices = ['1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02', '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01'];
+    const statements: string[] = [];
+    const { pool, released } = operator((text) => {
+      statements.push(text);
+      return text.includes('operator_active_practice_ids') ? practices.map((id) => ({ id })) : [];
+    });
+    const sent: { name: string; data: unknown; options: unknown }[] = [];
+    const queue = {
+      send: (name: string, data: object | null, options: unknown) => {
+        sent.push({ name, data, options });
+        // The second practice's digest is already queued: the queue refuses its key.
+        return Promise.resolve(sent.length === 4 ? null : `job-${String(sent.length)}`);
+      },
+    } as unknown as NonNullable<Parameters<typeof createPlatformHandlers>[0]['queue']>;
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now: () => new Date('2026-11-01T05:10:00Z'), queue, ...notices });
+    const { lines, logger } = capture();
+    await handlers.monitoring_schedule({}, { jobId: JOB, logger });
+    expect(statements.slice(0, 3)).toEqual(['BEGIN', 'SET LOCAL ROLE tp_operator', "SELECT set_config('app.practice_ids', '{}', true)"]);
+    expect(statements).toContain('COMMIT');
+    expect(sent).toEqual(
+      practices.flatMap((practice) => [
+        { name: 'monitor', data: { practice_id: practice, day: '2026-11-01' }, options: { singletonKey: `monitor:${practice}:2026-11-01` } },
+        { name: 'digest', data: { practice_id: practice, period: '2026-10' }, options: { singletonKey: `digest:${practice}:2026-10` } },
+      ]),
+    );
+    expect(lines.at(-1)).toMatchObject({ msg: 'monitoring schedule queued the practices’ jobs', job_id: JOB });
+    expect(released).toEqual([false]);
+    await handlers.monitoring_schedule({ day: '2027-01-15' }, { jobId: JOB, logger });
+    expect(sent.slice(4).map((item) => item.data)).toEqual(practices.flatMap((practice) => [{ practice_id: practice, day: '2027-01-15' }, { practice_id: practice, period: '2026-12' }]));
+  });
+
+  it('says so when there is no active practice, and refuses to run without a queue', async () => {
+    const { pool } = operator();
+    const queue = { send: () => Promise.resolve('never') } as unknown as NonNullable<Parameters<typeof createPlatformHandlers>[0]['queue']>;
+    const { lines, logger } = capture();
+    await createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, queue, ...notices }).monitoring_schedule({}, { jobId: JOB, logger });
+    expect(lines.at(-1)?.msg).toBe('monitoring schedule found no active practice');
+    await expect(createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices }).monitoring_schedule({}, { jobId: JOB, logger })).rejects.toThrow(NoQueueError);
+  });
+
+  it('rolls the operator’s transaction back when the practices cannot be read', async () => {
+    const statements: string[] = [];
+    const { pool, released } = operator((text) => {
+      statements.push(text);
+      if (text.includes('operator_active_practice_ids')) {
+        throw new Error('permission denied');
+      }
+      return [];
+    });
+    const queue = { send: () => Promise.resolve('never') } as unknown as NonNullable<Parameters<typeof createPlatformHandlers>[0]['queue']>;
+    await expect(createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, queue, ...notices }).monitoring_schedule({}, { jobId: JOB, logger: capture().logger })).rejects.toThrow('permission denied');
+    expect(statements.at(-1)).toBe('ROLLBACK');
+    expect(released).toEqual([true]);
   });
 });

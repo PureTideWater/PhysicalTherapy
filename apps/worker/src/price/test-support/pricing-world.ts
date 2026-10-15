@@ -120,8 +120,19 @@ export class PricingWorld {
     };
   }
 
+  /** The parse_835 job's services over this world's document store and keys (the monitoring chain's tests queue the job). */
+  get parseServices(): { readonly documents: DocumentStore; readonly keys: LocalKeyProvider } {
+    return { documents: this.documents, keys: this.keys };
+  }
+
   /** Parses and loads a SYNTHETIC 835 (a path under fixtures/synthetic) into the practice, as intake and parse_835 leave it. */
   async load(target: Practice, fixture: string): Promise<void> {
+    const id = await this.stage(target, fixture);
+    await this.parse({ practice_id: target.practiceId, document_id: id }, this.jobContext(target.practiceId));
+  }
+
+  /** Stages a SYNTHETIC 835 as intake leaves a clean one, waiting for its parse (scanned); returns its document ID. */
+  async stage(target: Practice, fixture: string): Promise<string> {
     const { owner } = this;
     const content = readFileSync(path.join(FIXTURES, fixture));
     const id = randomUUID();
@@ -137,7 +148,7 @@ export class PricingWorld {
     await asOwner(owner, [target.practiceId], () =>
       owner.query("UPDATE source_document SET sha256 = $2, scan_status = 'clean', scan_at = now(), status = 'scanned' WHERE id = $1", [id, createHash('sha256').update(content).digest('hex')]),
     );
-    await this.parse({ practice_id: target.practiceId, document_id: id }, this.jobContext(target.practiceId));
+    return id;
   }
 
   /** Runs `run` as `actorId` in the practice's request scope, with a resolver over the SYNTHETIC contract documents. */

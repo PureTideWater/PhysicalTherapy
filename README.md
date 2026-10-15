@@ -129,6 +129,26 @@ keep every line and are flagged, and the screens offer a re-run. SYNTHETIC relea
 (`fixtures/synthetic/rules/release-synth-900004`, 900001 with the 97110 work RVU changed, built by
 `tsx tools/release/synthetic.ts`) is PRC-19's "release 2".
 
+Monitoring, digests and notifications (ADR 0039): once an 835 is done, its parse queues the monitoring chain, each step
+a job of one practice keyed by type, practice and subject, three attempts and the operator's alert on the third. `monitor`
+(after the rest of the upload batch has landed: it waits while an 835 is still on its way) creates a run for each month
+of service dates whose newest line no run covers, under the release in force and in the job's own name
+(`pricing_run.created_by_job_id`; a month with an unmapped plan waits); `price` prices it and, for a run the chain created,
+queues `triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
+(milestone 9 fills it in; until then it records that it ran). The operator's daily `monitoring_schedule` (05:10 UTC, where
+`OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day and `digest` for the month before:
+one digest per practice and month, its figures fixed when recorded (new validated variance by payer, cases nearing
+deadline, recoveries posted, coverage against the previous digest, contracts expiring), emailed once to each person who
+keeps it on (`MAIL_FROM` for SES, otherwise `MAIL_OUTBOX_DIR`; fixed sentences, counts, dollar totals and one link) and
+shown at `/p/<practice>/digests/<digest>`. `notification` and `digest` hold counts and totals only: their CHECKs admit
+nothing but integers and integer cents keyed by codes or opaque IDs. People read their own notifications at
+`/p/<practice>/notifications` and set their preferences at `/account/notifications` (in their own `user.settings`).
+The monthly variance summary (`/p/<practice>/reports/monthly?month=<YYYY-MM>`, with its CSV) counts each line of a month
+once, at the furthest stage it has reached, by payer and in all, never adding stages together.
+`apps/worker/src/monitor/monitor.db.test.ts` runs the chain on SYNTHETIC files through the worker loop: replays of every
+step with no duplicate effect (JOB-01), three failures with the alert and the dashboard's run-failed record (JOB-02),
+and the digest's counts and totals with no PHI column read (JOB-03).
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
@@ -203,8 +223,8 @@ practice's materiality and pursuit settings live in `practice.settings` until th
 **Milestone 7 is not complete.** Its engine part, its pricing runs and the re-run diffs under a new release are built
 (ADRs 0034, 0035 and 0037): a re-run under SYNTHETIC release 900004, a "release 2" that changes one relative value,
 lists exactly the two affected lines with their cause (test matrix PRC-19, `apps/worker/src/price/rerun.db.test.ts`),
-and `pnpm release:dry-run` names the run and its two lines. The done check against a real release 2 waits for real
-releases 1 and 2 (milestone 0's note below). The monthly monitoring jobs and their digests are not built, and the golden
+and `pnpm release:dry-run` names the run and its two lines. The monthly monitoring jobs and their digests are built (ADR
+0039). The done check against a real release 2 waits for real releases 1 and 2 (milestone 0's note below), and the golden
 lines wait on the specialist, as milestone 5's do.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
@@ -237,7 +257,7 @@ lists what a person with network access does to finish it.
 | Path | What lives there |
 | --- | --- |
 | `apps/web` | Next.js App Router: UI, route handlers, server actions |
-| `apps/worker` | pg-boss worker: intake, parse, price, triage, audit report, reconcile, digest and export jobs |
+| `apps/worker` | pg-boss worker: intake, parse, monitor, price, triage, audit report, reconcile, digest and export jobs |
 | `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability` |
 | `infra` | AWS CDK app, one stack per environment |
 | `tools` | log lint, content checker, release scripts, CI guards |

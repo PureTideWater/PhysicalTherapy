@@ -8,7 +8,7 @@ import { practice, user } from './tenancy';
 
 /**
  * Pricing runs and priced lines (Data dictionary, Pricing, triage and cases; PRD 8; PRD 11), mirroring
- * migrations/20261018090000_pricing_runs.sql and 20261019150000_reruns_and_release_withdrawal.sql for typed queries. The SQL is the source of truth for the
+ * migrations/20261018090000_pricing_runs.sql, 20261019150000_reruns_and_release_withdrawal.sql and 20261020090000_monitoring_digests_notifications.sql for typed queries. The SQL is the source of truth for the
  * run's states, the pinned release (a rule-release mismatch is refused), the immutability of complete
  * runs and of every priced line (triggers for every role), row-level security and grants; a database
  * test checks that these columns match it. Both are PHI tables: every query runs inside a scope from
@@ -54,9 +54,8 @@ export const pricingRun = pgTable(
       .notNull()
       .references(() => ruleRelease.releaseNo),
     engineVersion: text('engine_version').notNull(),
-    createdBy: uuid('created_by')
-      .notNull()
-      .references(() => user.id),
+    /** The person who created the run; null for a run the monitoring job created (created_by_job_id). */
+    createdBy: uuid('created_by').references(() => user.id),
     status: text('status', { enum: PRICING_RUN_STATUSES }).notNull().default('queued'),
     /** tp-pricing-coverage/1, once complete. */
     coverage: jsonb('coverage').$type<Readonly<Record<string, unknown>>>(),
@@ -71,8 +70,11 @@ export const pricingRun = pgTable(
     /** Who accepted a complete re-run, and when; a re-run is in effect only once accepted. */
     acceptedBy: uuid('accepted_by').references(() => user.id),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    /** The monitor job that created the run (migrations/20261020090000); exactly one of this and created_by is set. */
+    createdByJobId: uuid('created_by_job_id'),
   },
   (table) => [
+    index('pricing_run_by_period').on(table.practiceId, table.periodFrom, table.periodTo),
     index('pricing_run_by_practice').on(table.practiceId, table.createdAt.desc(), table.id),
     index('pricing_run_complete_by_practice')
       .on(table.practiceId, table.completedAt.desc())

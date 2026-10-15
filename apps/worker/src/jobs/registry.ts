@@ -6,12 +6,19 @@ import { z } from 'zod';
  * each clean 835 it finds (docs/adr/0026). `triage` screens a complete pricing run's lines and groups
  * its validated ones into cases; `audit_report` triages a run and generates its audit report (the PDF
  * and the line CSV, docs/adr/0038).
+ *
+ * The monitoring chain (PRD 5, J11; docs/adr/0039): each parse_835 queues `monitor` once its document is
+ * done, which creates a pricing run under the release in force for each service month whose lines no
+ * run covers yet (or, on the daily schedule, for the day) and queues `price` for it; a price job that
+ * completes a run the chain created queues `triage`, and triage queues `reconcile` (the recovery
+ * ledger's step, milestone 9). `digest` sends a practice's monthly digest.
  */
-export const JOB_TYPES = ['intake', 'parse_835', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
+export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
 const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'a calendar month, YYYY-MM');
+const day = z.iso.date();
 
 /**
  * Job payloads carry opaque IDs only, never a name, date of birth, member ID, claim number or
@@ -21,10 +28,13 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'a calendar month, YYY
 export const JOB_PAYLOADS = {
   intake: z.strictObject({ practice_id: id, document_id: id }),
   parse_835: z.strictObject({ practice_id: id, document_id: id }),
+  /** After a document of an upload batch is done (its ID), or on the daily schedule (the day, UTC). */
+  monitor: z.union([z.strictObject({ practice_id: id, document_id: id }), z.strictObject({ practice_id: id, day })]),
   price: z.strictObject({ practice_id: id, pricing_run_id: id }),
   triage: z.strictObject({ practice_id: id, pricing_run_id: id }),
   audit_report: z.strictObject({ practice_id: id, audit_report_id: id }),
-  reconcile: z.strictObject({ practice_id: id, document_id: id }),
+  /** After triage of a run the monitoring chain priced: the ledger's step for that run (milestone 9). */
+  reconcile: z.strictObject({ practice_id: id, pricing_run_id: id }),
   digest: z.strictObject({ practice_id: id, period: month }),
   export: z.strictObject({ practice_id: id, export_job_id: id }),
 } satisfies Record<JobType, z.ZodType<{ practice_id: string }>>;
@@ -35,10 +45,11 @@ export type JobPayload<T extends JobType> = z.infer<(typeof JOB_PAYLOADS)[T]>;
 const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } = {
   intake: (payload) => payload.document_id,
   parse_835: (payload) => payload.document_id,
+  monitor: (payload) => ('document_id' in payload ? payload.document_id : payload.day),
   price: (payload) => payload.pricing_run_id,
   triage: (payload) => payload.pricing_run_id,
   audit_report: (payload) => payload.audit_report_id,
-  reconcile: (payload) => payload.document_id,
+  reconcile: (payload) => payload.pricing_run_id,
   digest: (payload) => payload.period,
   export: (payload) => payload.export_job_id,
 };

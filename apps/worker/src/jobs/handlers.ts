@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db';
 import type { Logger } from '@tp/observability';
 
+import type { EnqueueOptions } from './enqueue';
 import type { JobPayload, JobType } from './registry';
 
 export interface JobContext {
@@ -18,7 +19,7 @@ export interface JobContext {
    * singleton key; null when one with that key is already queued or active. A job never queues work
    * for another practice: a payload naming one is refused.
    */
-  enqueue<T extends JobType>(type: T, payload: JobPayload<T>): Promise<string | null>;
+  enqueue<T extends JobType>(type: T, payload: JobPayload<T>, options?: EnqueueOptions): Promise<string | null>;
   /** Whether this is the job's last attempt (the third): a failure now raises the operator alert. */
   readonly lastAttempt: boolean;
 }
@@ -36,6 +37,7 @@ async function placeholder(_payload: unknown, context: JobContext): Promise<void
 export const placeholderHandlers: JobHandlers = {
   intake: placeholder,
   parse_835: placeholder,
+  monitor: placeholder,
   price: placeholder,
   triage: placeholder,
   audit_report: placeholder,

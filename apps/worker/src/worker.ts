@@ -96,11 +96,11 @@ async function runJob<T extends JobType>(type: T, job: QueuedJob, options: Worke
       jobId: job.id,
       logger: jobLogger,
       transaction: (run) => withJobScope(pool, { jobId: job.id, practiceId }, run),
-      enqueue: (next, nextPayload) => {
+      enqueue: (next, nextPayload, nextOptions) => {
         if (nextPayload.practice_id !== practiceId) {
           return Promise.reject(new CrossPracticeJobError(`a ${type} job queues work for its own practice only`));
         }
-        return enqueue(boss, next, nextPayload);
+        return enqueue(boss, next, nextPayload, nextOptions);
       },
       lastAttempt,
     });

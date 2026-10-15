@@ -33,13 +33,30 @@ export async function enterPassword(page: Page, key: string, password: string = 
   await page.getByRole('button', { name: 'Continue' }).click();
 }
 
-/** Email, password, then the TOTP code (a step ahead when `ahead`, for a second sign-in in the same 30 seconds). */
+/**
+ * Email, password, then the TOTP code (a step ahead when `ahead`, for a second sign-in in the same 30
+ * seconds). A code is accepted once: when a spec running in parallel signed the same persona in during
+ * this step, the code is refused, and the next step's code is entered instead.
+ */
 export async function signInWithTotp(page: Page, key: string, ahead = false): Promise<void> {
   await enterPassword(page, key);
   await expect(page).toHaveURL(/\/sign-in\/mfa$/);
-  await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(Date.now() + (ahead ? 30_000 : 0))));
+  const at = Date.now() + (ahead ? 30_000 : 0);
+  await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at)));
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.waitForURL((url) => url.pathname !== '/sign-in/mfa');
+  const signedIn = page.waitForURL((url) => url.pathname !== '/sign-in/mfa').then(() => true);
+  const refused = refusal(page)
+    .filter({ hasText: 'That did not match' })
+    .waitFor()
+    .then(
+      () => false,
+      () => true,
+    );
+  if (!(await Promise.race([signedIn, refused])) && new URL(page.url()).pathname === '/sign-in/mfa') {
+    await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at + 30_000)));
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  }
+  await signedIn;
 }
 
 /** The form's refusal (the alert component; Next's route announcer is an alert too). */

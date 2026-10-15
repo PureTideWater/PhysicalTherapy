@@ -2,6 +2,7 @@ import { type DocumentStatus, type KeyProvider, type PracticeCipher, type Practi
 import { type CodeListProvider, type ParseReport, isLoadable, parse835Stream } from '@tp/edi835';
 
 import type { JobContext, JobHandler } from '../jobs/handlers';
+import { queueMonitoring } from '../monitor/trigger';
 import type { DocumentStore } from '../storage/documents';
 import { publishedCodeLists } from './code-lists';
 import { loadTransaction } from './loader';
@@ -28,6 +29,11 @@ import { type ParseReportRow, type TransactionResult, documentStatus, parseRepor
  * A failed attempt leaves nothing behind, so the next one starts over. A failure on the last of the
  * three attempts marks the document failed (the worker logs the operator alert line and records the
  * run failed, JOB-02), and the Uploads screen offers a retry.
+ *
+ * Once the document is done (loaded, a duplicate, held, or failed on its last attempt) the job queues
+ * the monitoring chain's next step for its practice (monitor, keyed by the document, after a short wait
+ * for the rest of its batch; docs/adr/0039). A failure to queue it is logged and never fails the parse:
+ * the daily schedule plans the practice again.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -202,8 +208,11 @@ export function parseHandler(services: ParseServices): JobHandler<'parse_835'> {
     } catch (error) {
       if (context.lastAttempt) {
         await context.transaction((scope) => scope.client.query("UPDATE source_document SET status = 'failed' WHERE id = $1 AND status = ANY ($2::text[])", [row.id, WAITING]));
+        // No longer on its way: the rest of its batch is planned without it.
+        await queueMonitoring(context, practiceId, row.id);
       }
       throw error;
     }
+    await queueMonitoring(context, practiceId, row.id);
   };
 }

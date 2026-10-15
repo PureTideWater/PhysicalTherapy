@@ -2,7 +2,8 @@ import { RDSClient } from '@aws-sdk/client-rds';
 import { S3Client } from '@aws-sdk/client-s3';
 import { type DatabasePool, openPool } from '@tp/db';
 
-import type { PlatformConfig } from '../config';
+import type { NotificationConfig, PlatformConfig } from '../config';
+import type { JobSender } from '../jobs/enqueue';
 import { type PlatformHandlers, createPlatformHandlers } from '../jobs/platform';
 import { LocalMailSender, type MailSender, sesMailSender } from '../mail/mail';
 import { LocalObjectStore } from '../storage/local-object-store';
@@ -34,15 +35,22 @@ export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
   });
 }
 
-export function mailSender(config: PlatformConfig): MailSender {
+export function mailSender(config: Pick<NotificationConfig, 'mail'>): MailSender {
   return config.mail.kind === 'ses' ? sesMailSender(config.mail.from) : new LocalMailSender(config.mail.dir);
 }
 
-/** The platform handlers and the operator pool they use (closed by the caller on shutdown). */
-export function platformRuntime(config: PlatformConfig): { handlers: PlatformHandlers; operator: DatabasePool } {
+/** The platform handlers and the operator pool they use (closed by the caller on shutdown); the queue takes the monitoring schedule's jobs. */
+export function platformRuntime(config: PlatformConfig, queue?: JobSender): { handlers: PlatformHandlers; operator: DatabasePool } {
   const operator = openPool(config.operatorDatabaseUrl, 2);
   return {
     operator,
-    handlers: createPlatformHandlers({ operator, store: auditStore(config), restorer: snapshotRestorer(config), mail: mailSender(config), appOrigin: config.appOrigin }),
+    handlers: createPlatformHandlers({
+      operator,
+      store: auditStore(config),
+      restorer: snapshotRestorer(config),
+      mail: mailSender(config),
+      appOrigin: config.appOrigin,
+      ...(queue === undefined ? {} : { queue }),
+    }),
   };
 }

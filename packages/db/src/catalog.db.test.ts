@@ -2,6 +2,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  CENTS_FIGURE_COLUMNS,
   NULLABLE_PRACTICE_ID_TABLES,
   PLATFORM_DIRECTORY_TABLES,
   REVIEWED_PLATFORM_POLICIES,
@@ -77,10 +78,12 @@ describe('the catalog test', () => {
       { table_name: 'contract_calendar_event', policy_name: 'contract_calendar_event_tenant' },
       { table_name: 'contract_question', policy_name: 'contract_question_tenant' },
       { table_name: 'contract_version', policy_name: 'contract_version_tenant' },
+      { table_name: 'digest', policy_name: 'digest_tenant' },
       { table_name: 'grant', policy_name: 'grant_tenant' },
       { table_name: 'job_run', policy_name: 'job_run_tenant' },
       { table_name: 'line_note', policy_name: 'line_note_tenant' },
       { table_name: 'line_status', policy_name: 'line_status_tenant' },
+      { table_name: 'notification', policy_name: 'notification_tenant' },
       { table_name: 'parse_report', policy_name: 'parse_report_tenant' },
       { table_name: 'patient_ref', policy_name: 'patient_ref_tenant' },
       { table_name: 'payer', policy_name: 'payer_tenant' },
@@ -111,10 +114,12 @@ describe('the catalog test', () => {
       { table: 'contract_calendar_event', tenantColumn: 'practice_id' },
       { table: 'contract_question', tenantColumn: 'practice_id' },
       { table: 'contract_version', tenantColumn: 'practice_id' },
+      { table: 'digest', tenantColumn: 'practice_id' },
       { table: 'grant', tenantColumn: 'practice_id' },
       { table: 'job_run', tenantColumn: 'practice_id' },
       { table: 'line_note', tenantColumn: 'practice_id' },
       { table: 'line_status', tenantColumn: 'practice_id' },
+      { table: 'notification', tenantColumn: 'practice_id' },
       { table: 'parse_report', tenantColumn: 'practice_id' },
       { table: 'patient_ref', tenantColumn: 'practice_id' },
       { table: 'payer', tenantColumn: 'practice_id' },
@@ -277,6 +282,16 @@ describe('the catalog test', () => {
       'column throwaway_global.paid_cents is integer; money columns (_cents) are bigint',
       'column throwaway_global.ratio is real[]; amounts are bigint cents and rates numeric(14,6), never a float',
       'column throwaway_global.score is double precision; amounts are bigint cents and rates numeric(14,6), never a float',
+    ]);
+  });
+
+  it('admits a jsonb totals column only where it is reviewed and its CHECK admits integer cents alone', async () => {
+    expect(Object.keys(CENTS_FIGURE_COLUMNS).sort()).toEqual(['digest.totals_cents', 'notification.totals_cents']);
+    expect(await problemsAfter('ALTER TABLE digest DROP CONSTRAINT digest_totals_only;')).toEqual([
+      'column digest.totals_cents is jsonb; a reviewed totals column is jsonb with a CHECK of figures_are_cents(totals_cents)',
+    ]);
+    expect(await problemsAfter('CREATE TABLE throwaway_figures (id uuid PRIMARY KEY, totals_cents jsonb CHECK (figures_are_cents(totals_cents)));')).toEqual([
+      'column throwaway_figures.totals_cents is jsonb; money columns (_cents) are bigint',
     ]);
   });
 

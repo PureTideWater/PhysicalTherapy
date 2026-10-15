@@ -7,6 +7,7 @@
  */
 export * from './authz';
 export {
+  CENTS_FIGURE_COLUMNS,
   type CatalogOptions,
   NULLABLE_PRACTICE_ID_TABLES,
   PLATFORM_DIRECTORY_TABLES,

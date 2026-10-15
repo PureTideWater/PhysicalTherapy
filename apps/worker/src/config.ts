@@ -169,6 +169,26 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
   } else {
     throw new WorkerConfigError(production ? `RESTORE_DRILL_MODE is rds ${IN_PRODUCTION}` : 'RESTORE_DRILL_MODE is rds or local');
   }
+  return { operatorDatabaseUrl, auditStore, restoreDrill, ...readNotificationConfig(env) };
+}
+
+/** Where email goes from and the application it links to: the platform's notices and the practices' digests. */
+export interface NotificationConfig {
+  readonly mail: MailConfig;
+  readonly appOrigin: string;
+}
+
+/**
+ * Email through SES from MAIL_FROM or, in development, to a local outbox directory (MAIL_OUTBOX_DIR,
+ * by default under the system's temporary directory), linking to APP_ORIGIN. With NODE_ENV=production
+ * SES and an https APP_ORIGIN are required and the outbox refused. The support-grant notices (platform
+ * jobs) and the monthly digests (practice jobs, docs/adr/0039) both send this way.
+ */
+export function readNotificationConfig(env: Env = process.env): NotificationConfig {
+  const production = isProduction(env);
+  if (production) {
+    refused(env, 'MAIL_OUTBOX_DIR', `${IN_PRODUCTION} (it selects a local implementation)`);
+  }
   const from = production ? required(env, 'MAIL_FROM', IN_PRODUCTION) : value(env, 'MAIL_FROM');
   const outbox = value(env, 'MAIL_OUTBOX_DIR');
   if (from !== undefined && outbox !== undefined) {
@@ -188,7 +208,7 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
   if (production && appOrigin.protocol !== 'https:') {
     throw new WorkerConfigError(`APP_ORIGIN is an https URL ${IN_PRODUCTION}`);
   }
-  return { operatorDatabaseUrl, auditStore, restoreDrill, mail, appOrigin: appOrigin.origin };
+  return { mail, appOrigin: appOrigin.origin };
 }
 
 export type DocumentStoreConfig = { readonly kind: 's3'; readonly bucket: string } | { readonly kind: 'local'; readonly dir: string };

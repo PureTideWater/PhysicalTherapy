@@ -4,7 +4,7 @@ import path from 'node:path';
 import { developmentMasterKey } from '@tp/db';
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_HEARTBEAT_SECONDS, WorkerConfigError, readIntakeConfig, readPlatformConfig, readWorkerConfig } from './config';
+import { DEFAULT_HEARTBEAT_SECONDS, WorkerConfigError, readIntakeConfig, readNotificationConfig, readPlatformConfig, readWorkerConfig } from './config';
 
 const DATABASE_URL = 'postgres://u:p@localhost:5432/d';
 
@@ -130,6 +130,23 @@ describe('readPlatformConfig', () => {
     ['a plain-http origin', { APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
   ])('refuses %s in production', (_name, change, message) => {
     expect(() => readPlatformConfig({ ...PRODUCTION, ...change })).toThrow(message);
+  });
+});
+
+describe('readNotificationConfig', () => {
+  it('sends the practices’ digests the way the platform sends its notices, with or without an operator connection', () => {
+    expect(readNotificationConfig({})).toEqual({ mail: { kind: 'local', dir: expect.stringMatching(/tp-mail-outbox$/) as unknown }, appOrigin: 'http://localhost:3000' });
+    expect(readNotificationConfig({ MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/p' })).toEqual({ mail: { kind: 'ses', from: 'digests@synthetic.test' }, appOrigin: 'https://app.synthetic.test' });
+    expect(readNotificationConfig({ NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test' }).mail).toEqual({ kind: 'ses', from: 'digests@synthetic.test' });
+  });
+
+  it.each([
+    [{ NODE_ENV: 'production', APP_ORIGIN: 'https://app.synthetic.test' }, /MAIL_FROM is required when NODE_ENV is production/],
+    [{ NODE_ENV: 'production', MAIL_FROM: 'd@synthetic.test', MAIL_OUTBOX_DIR: '/var/tp/mail', APP_ORIGIN: 'https://app.synthetic.test' }, /MAIL_OUTBOX_DIR is refused when NODE_ENV is production/],
+    [{ NODE_ENV: 'production', MAIL_FROM: 'd@synthetic.test', APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
+    [{ MAIL_FROM: 'd@synthetic.test', MAIL_OUTBOX_DIR: 'm' }, /at most one of MAIL_FROM and MAIL_OUTBOX_DIR/],
+  ])('refuses %j', (env, message) => {
+    expect(() => readNotificationConfig(env)).toThrow(message);
   });
 });
 

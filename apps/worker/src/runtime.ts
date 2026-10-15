@@ -1,10 +1,18 @@
 /**
  * The worker as a library (@tp/worker/runtime), for the end-to-end suite, which runs it beside the web
  * app against the same local document directory and database, and for the web app's database tests:
- * the worker loop, the intake job, the parse_835 job (the parser and the loader), the price job, the
- * triage job and the audit report job as they run in production, wired to their local implementations.
+ * the worker loop, the intake job, the parse_835 job (the parser and the loader), the monitoring chain
+ * (monitor, price, triage, reconcile), the digest job and the audit report job as they run in
+ * production, wired to their local implementations.
  */
-export { type IntakeConfig, readIntakeConfig } from './config';
+export { type IntakeConfig, type NotificationConfig, readIntakeConfig, readNotificationConfig } from './config';
+export { type DigestServices, digestHandler, digestLink, digestMessage, prepareDigest } from './digest/job';
+export { DIGEST_QUERIES, digestFigures } from './digest/figures';
+export { LocalMailSender, type MailMessage, type MailSender, MemoryMailSender } from './mail/mail';
+export { createdByMonitoring, notifyRun, runFigures } from './monitor/chain';
+export { monitorHandler } from './monitor/job';
+export { BATCH_WINDOW_MINUTES, MONITOR_DELAY_SECONDS, type MonitorPlan, planMonitoring } from './monitor/plan';
+export { reconcileHandler } from './reconcile/job';
 export { type JobContext, type JobHandlers, placeholderHandlers } from './jobs/handlers';
 export { type JobRunEnd, type JobRunRecorder, type JobRunStart, databaseJobRuns } from './jobs/runs';
 export { type IntakeServices, intakeHandler } from './intake/intake';

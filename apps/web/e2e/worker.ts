@@ -17,7 +17,11 @@ import { PgBoss } from 'pg-boss';
 
 import { E2E_DOCUMENTS_DIR, e2eDatabaseUrl } from './env';
 
-/** The worker, as main.ts wires it in development, for the length of a test. */
+/**
+ * The worker, as main.ts wires it in development, for the length of a test, except the monitoring
+ * chain's own steps (monitor, reconcile, digest; docs/adr/0039), which stay placeholders here: each
+ * spec's pricing runs are the ones it creates, and the database tests run the chain on synthetic files.
+ */
 export async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
   const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 4);
   const boss = new PgBoss(e2eDatabaseUrl());

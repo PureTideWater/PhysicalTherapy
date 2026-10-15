@@ -178,7 +178,7 @@ describe('startWorker', () => {
       pool,
       logger,
       handlers: { ...placeholderHandlers, price: failing },
-      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing },
+      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing },
       heartbeatMs: 60_000,
     });
     const job = (retryCount: number) => ({ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
@@ -315,7 +315,7 @@ describe('startWorker', () => {
       context.logger.info('copying');
       return Promise.resolve();
     });
-    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve(), support_grant_notices: () => Promise.resolve() };
+    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve(), support_grant_notices: () => Promise.resolve(), monitoring_schedule: () => Promise.resolve() };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
       expect(calls).toEqual(expect.arrayContaining([`createQueue:${type}`, `schedule:${type}`, `work:${type}`]));

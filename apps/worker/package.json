@@ -3,14 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The Node worker: pg-boss jobs (parse, price, triage, reconcile, digest, export).",
+  "description": "The Node worker: pg-boss jobs (parse, monitor, price, triage, reconcile, digest, export).",
   "exports": {
     "./jobs": "./src/jobs/public.ts",
     "./documents": "./src/storage/documents.ts",
     "./pricing": "./src/price/public.ts",
     "./reports": "./src/report/public.ts",
+    "./digests": "./src/digest/public.ts",
     "./runtime": "./src/runtime.ts",
-    "./testing": "./src/price/test-support/pricing-world.ts"
+    "./testing": "./src/price/test-support/pricing-world.ts",
+    "./testing/triage": "./src/triage/test-support/triage-world.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

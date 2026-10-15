@@ -39,6 +39,17 @@ export default async function ReportsPage(props: Props) {
           attestation.
         </p>
       </div>
+      <Card role="region" aria-label="Monthly variance summary">
+        <CardHeader>
+          <CardTitle>Monthly variance summary</CardTitle>
+          <CardDescription>A month&apos;s lines by stage and payer, counts and totals, never one stage added to another; with the monthly digests.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link className="text-sm underline" href={`${path}/monthly`}>
+            Open the monthly summary
+          </Link>
+        </CardContent>
+      </Card>
       {canGenerate ? (
         <Card role="region" aria-label="Generate an audit report">
           <CardHeader>

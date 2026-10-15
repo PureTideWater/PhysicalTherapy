@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { roleNames, utc, utcDate } from '../../../components/format';
+import { NotificationText } from '../../../components/monitoring/display';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { practiceHome } from '../../../lib/routes/practice';
@@ -27,12 +28,64 @@ const AGREEMENT_NAMES: Readonly<Record<string, string>> = {
 const JOB_NAMES: Readonly<Record<string, string>> = {
   intake: 'Intake of an upload',
   parse_835: 'Parse and load of an 835',
+  monitor: 'Monitoring of new files',
   price: 'Pricing run',
   triage: 'Triage',
+  audit_report: 'Audit report',
   reconcile: 'Reconciliation',
-  digest: 'Digest',
+  digest: 'Monthly digest',
   export: 'Export',
 };
+
+/** Where to go next after a job failed three times: the screen that shows what it was doing, or the operator's replay. */
+function failedNextStep(practiceId: string, jobType: string) {
+  switch (jobType) {
+    case 'intake':
+    case 'parse_835':
+      return (
+        <>
+          Retry it from the upload’s receipt on the{' '}
+          <Link className="underline" href={`/p/${practiceId}/uploads`}>
+            Uploads
+          </Link>{' '}
+          screen.
+        </>
+      );
+    case 'monitor':
+    case 'price':
+      return (
+        <>
+          The month is planned again on the next upload or the next morning; its runs are on the{' '}
+          <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
+            Pricing runs
+          </Link>{' '}
+          screen.
+        </>
+      );
+    case 'triage':
+      return (
+        <>
+          Triage the run again from the{' '}
+          <Link className="underline" href={`/p/${practiceId}/cases`}>
+            Cases
+          </Link>{' '}
+          screen.
+        </>
+      );
+    case 'audit_report':
+      return (
+        <>
+          Request the report again from the{' '}
+          <Link className="underline" href={`/p/${practiceId}/reports`}>
+            Reports
+          </Link>{' '}
+          screen.
+        </>
+      );
+    default:
+      return <>The operator replays it with the same key; nothing it did is repeated.</>;
+  }
+}
 
 const OUTCOME_NAMES: Readonly<Record<string, string>> = {
   running: 'Running',
@@ -52,7 +105,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, notifications } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -66,11 +119,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           <AlertTitle>Last run failed</AlertTitle>
           <AlertDescription>
             {JOB_NAMES[freshness.failedRun.jobType] ?? freshness.failedRun.jobType} failed three times on {utc(freshness.failedRun.finishedAt)}. The operator has been alerted (job reference{' '}
-            <span className="font-mono">{freshness.failedRun.jobId.slice(0, 8)}</span>). Retry it from the upload’s receipt on the{' '}
-            <Link className="underline" href={`/p/${practice.id}/uploads`}>
-              Uploads
-            </Link>{' '}
-            screen.
+            <span className="font-mono">{freshness.failedRun.jobId.slice(0, 8)}</span>). {failedNextStep(practice.id, freshness.failedRun.jobType)}
           </AlertDescription>
         </Alert>
       )}
@@ -115,6 +164,28 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                 Claims and lines
               </Link>
             </div>
+          </CardContent>
+        </Card>
+      )}
+      {notifications.latest.length === 0 ? null : (
+        <Card role="region" aria-label="Notifications">
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+            <CardDescription>
+              {notifications.unread === 0 ? 'Nothing new.' : `${String(notifications.unread)} new.`} What monitoring found, as counts and dollar totals.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="flex flex-col gap-2 text-sm">
+              {notifications.latest.map((notification) => (
+                <li key={notification.id} data-kind={notification.kind}>
+                  <NotificationText practiceId={practice.id} notification={notification} />
+                </li>
+              ))}
+            </ul>
+            <Link className="mt-3 inline-block text-sm underline" href={`/p/${practice.id}/notifications`}>
+              All notifications
+            </Link>
           </CardContent>
         </Card>
       )}

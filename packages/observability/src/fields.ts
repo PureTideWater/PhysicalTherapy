@@ -27,6 +27,7 @@ export const ALLOWED_LOG_FIELDS = [
   'service_line_id',
   'pricing_run_id',
   'audit_report_id',
+  'digest_id',
   'case_id',
   'packet_id',
   'packet_version_id',

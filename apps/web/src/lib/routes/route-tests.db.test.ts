@@ -39,6 +39,7 @@ import { seedContractWorld } from './test-support/contract-world';
 import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 import { seedTriage, seedTriageLine } from './test-support/triage-world';
+import { seedMonitoring } from './test-support/monitoring-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -341,6 +342,7 @@ async function buildWorld(name: string): Promise<World> {
     managerId: manager,
     reviewerId,
   });
+  const monitoring = await seedMonitoring({ owner, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, pricingRunId, payerId: loaded.payerId });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -362,6 +364,7 @@ async function buildWorld(name: string): Promise<World> {
     pricingRunId,
     rerunId,
     ...triage,
+    ...monitoring,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

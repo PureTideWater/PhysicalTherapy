@@ -53,6 +53,17 @@ export const NULLABLE_PRACTICE_ID_TABLES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * jsonb columns of integer-cent totals by code, each with the data dictionary's reason: the one kind of
+ * _cents column that is not a bigint. Each must be jsonb with a CHECK calling figures_are_cents() on
+ * it, which admits only integer cents as text keyed by codes or opaque IDs (never a float, never text),
+ * so a money column stays exact and nothing but a total fits (migration 20261020090000).
+ */
+export const CENTS_FIGURE_COLUMNS: Readonly<Record<string, string>> = {
+  'digest.totals_cents': 'Data dictionary, Operations: digest "counts jsonb, totals_cents jsonb"; PRD 8: counts and totals only',
+  'notification.totals_cents': 'Data dictionary, Operations: notification "counts jsonb, totals_cents jsonb"; PRD 8: counts and totals only',
+};
+
+/**
  * Permissive policies on registered tables that do not carry the tenant expression, each reviewed with
  * the data dictionary's or the plan's reason. Every one admits platform administrators only, and only
  * to directory records; a stale entry (a policy that no longer exists) is a problem too.
@@ -207,11 +218,15 @@ interface ColumnRow {
   readonly column_name: string;
   readonly type: string;
   readonly base_type: string;
+  /** Whether a CHECK constraint of the table calls figures_are_cents() on exactly this column. */
+  readonly cents_figures: boolean;
 }
 
 const COLUMNS = `
   SELECT c.relname AS table_name, a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS type,
-         CASE WHEN t.typtype = 'd' THEN format_type(t.typbasetype, t.typtypmod) ELSE format_type(a.atttypid, a.atttypmod) END AS base_type
+         CASE WHEN t.typtype = 'd' THEN format_type(t.typbasetype, t.typtypmod) ELSE format_type(a.atttypid, a.atttypmod) END AS base_type,
+         EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conrelid = c.oid AND con.contype = 'c' AND con.conkey = ARRAY[a.attnum]
+                    AND pg_get_constraintdef(con.oid) = 'CHECK (figures_are_cents(' || quote_ident(a.attname) || '))') AS cents_figures
     FROM pg_attribute a
     JOIN pg_class c ON c.oid = a.attrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -377,8 +392,13 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     if (FLOAT_TYPES.test(column.type) || FLOAT_TYPES.test(column.base_type)) {
       problems.push(`${where} is ${column.type}; amounts are bigint cents and rates numeric(14,6), never a float`);
     }
-    if (column.column_name.endsWith('_cents') && column.base_type !== 'bigint') {
-      problems.push(`${where} is ${column.type}; money columns (_cents) are bigint`);
+    const figures = CENTS_FIGURE_COLUMNS[`${column.table_name}.${column.column_name}`] !== undefined;
+    if (column.column_name.endsWith('_cents') && column.base_type !== 'bigint' && !(figures && column.base_type === 'jsonb' && column.cents_figures)) {
+      problems.push(
+        figures
+          ? `${where} is ${column.type}; a reviewed totals column is jsonb with a CHECK of figures_are_cents(${column.column_name})`
+          : `${where} is ${column.type}; money columns (_cents) are bigint`,
+      );
     }
     if ((column.column_name === 'rate' || column.column_name.endsWith('_rate')) && column.base_type !== 'numeric(14,6)') {
       problems.push(`${where} is ${column.type}; rate columns are numeric(14,6)`);

@@ -165,6 +165,8 @@ export interface SampleRefs {
   readonly auditReportPdfSha256: string;
   readonly auditReportCsvSha256: string;
   readonly attestedReportId: string;
+  /** A sent monthly digest of the practice; the administrator holds a notification of it and of the pricing run (docs/adr/0039). */
+  readonly digestId: string;
 }
 
 export interface RouteSample {

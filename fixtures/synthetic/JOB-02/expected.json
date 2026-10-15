@@ -5,9 +5,14 @@
   "assertion": "Alert raised; dashboard shows last run failed",
   "synthetic": true,
   "completesIn": 7,
-  "assertedBy": ["apps/worker/src/worker.test.ts","infra/test/monitoring.test.ts"],
+  "assertedBy": [
+    "apps/worker/src/worker.test.ts",
+    "apps/worker/src/monitor/monitor.db.test.ts",
+    "apps/web/src/lib/routes/monitoring-routes.db.test.ts",
+    "infra/test/monitoring.test.ts"
+  ],
   "codeListRelease": null,
-  "noFileReason": "Job failures are injected in the worker tests; the dashboard that shows the last run arrives with milestone 7.",
+  "noFileReason": "Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.",
   "files": [],
   "generated": [],
   "uploads": [],

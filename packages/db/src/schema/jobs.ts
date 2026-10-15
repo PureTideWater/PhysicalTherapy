@@ -4,7 +4,7 @@ import { practice } from './tenancy';
 
 /**
  * job_run (Data dictionary, Operations: job and job_run), mirroring
- * migrations/20261016121000_job_runs.sql: one row per practice job, written by the worker in the job's
+ * migrations/20261016121000_job_runs.sql (job types as of 20261020090000): one row per practice job, written by the worker in the job's
  * own scope as each attempt starts and ends, which the practice dashboard reads for its last run
  * (test matrix JOB-02). Codes and opaque IDs only.
  */
@@ -12,7 +12,7 @@ import { practice } from './tenancy';
 export const JOB_RUN_OUTCOMES = ['running', 'retrying', 'succeeded', 'failed'] as const;
 export type JobRunOutcome = (typeof JOB_RUN_OUTCOMES)[number];
 
-export const JOB_RUN_TYPES = ['intake', 'parse_835', 'price', 'triage', 'reconcile', 'digest', 'export'] as const;
+export const JOB_RUN_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
 
 export const jobRun = pgTable(
   'job_run',

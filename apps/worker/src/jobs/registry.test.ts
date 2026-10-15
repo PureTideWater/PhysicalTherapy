@@ -13,17 +13,18 @@ const SUBJECT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 const examples: { readonly [T in JobType]: JobPayload<T> } = {
   intake: { practice_id: PRACTICE, document_id: SUBJECT },
   parse_835: { practice_id: PRACTICE, document_id: SUBJECT },
+  monitor: { practice_id: PRACTICE, document_id: SUBJECT },
   price: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   triage: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   audit_report: { practice_id: PRACTICE, audit_report_id: SUBJECT },
-  reconcile: { practice_id: PRACTICE, document_id: SUBJECT },
+  reconcile: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   digest: { practice_id: PRACTICE, period: '2026-10' },
   export: { practice_id: PRACTICE, export_job_id: SUBJECT },
 };
 
 describe('job registry', () => {
-  it('registers the six job types of PRD section 15, intake, which queues parse_835, and the audit report', () => {
-    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export']);
+  it('registers the six job types of PRD section 15, intake, which queues parse_835, the monitoring chain’s planning step and the audit report', () => {
+    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export']);
     expect(Object.keys(JOB_PAYLOADS).sort()).toEqual([...JOB_TYPES].sort());
   });
 
@@ -46,6 +47,14 @@ describe('job registry', () => {
     expect(() => parsePayload(type, rest)).toThrow(ZodError);
   });
 
+  it('takes a monitoring job after a document or for a day of the schedule, never both and never neither', () => {
+    expect(parsePayload('monitor', { practice_id: PRACTICE, day: '2026-10-15' })).toEqual({ practice_id: PRACTICE, day: '2026-10-15' });
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, document_id: SUBJECT, day: '2026-10-15' })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE })).toThrow(ZodError);
+    expect(() => parsePayload('monitor', { practice_id: PRACTICE, day: '2026-02-30' })).toThrow(ZodError);
+    expect(singletonKey('monitor', { practice_id: PRACTICE, day: '2026-10-15' })).toBe(`monitor:${PRACTICE}:2026-10-15`);
+  });
+
   it('refuses identifiers that are not UUIDs and periods that are not months', () => {
     expect(() => parsePayload('parse_835', { practice_id: PRACTICE, document_id: 'SYNPCN0001' })).toThrow(ZodError);
     expect(() => parsePayload('digest', { practice_id: PRACTICE, period: '2026-13' })).toThrow(ZodError);
@@ -57,6 +66,7 @@ describe('singletonKey', () => {
   it.each([
     ['intake', `intake:${PRACTICE}:${SUBJECT}`],
     ['parse_835', `parse_835:${PRACTICE}:${SUBJECT}`],
+    ['monitor', `monitor:${PRACTICE}:${SUBJECT}`],
     ['price', `price:${PRACTICE}:${SUBJECT}`],
     ['triage', `triage:${PRACTICE}:${SUBJECT}`],
     ['audit_report', `audit_report:${PRACTICE}:${SUBJECT}`],
@@ -87,7 +97,7 @@ describe('singletonKey', () => {
         case 'price':
           return singletonKey(item.type, { practice_id: item.practice, pricing_run_id: item.subject });
         case 'reconcile':
-          return singletonKey(item.type, { practice_id: item.practice, document_id: item.subject });
+          return singletonKey(item.type, { practice_id: item.practice, pricing_run_id: item.subject });
         case 'digest':
           return singletonKey(item.type, { practice_id: item.practice, period: item.subject });
       }
