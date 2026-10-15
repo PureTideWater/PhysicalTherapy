@@ -1,8 +1,8 @@
 # tools/test-oracle: the 835 oracle
 
 `pnpm test:oracle` has pyx12 read every synthetic 835 fixture and fails on any disagreement with what the
-fixture's `expected.json` says (PRD section 18; docs/adr/0022). Part B of milestone 2 adds the comparison
-with packages/edi835 on the same files.
+fixture's `expected.json` says (PRD section 18; docs/adr/0022), then has packages/edi835 parse the same files
+and fails on any disagreement between the two readings (docs/adr/0025).
 
 ## Running it
 
@@ -34,6 +34,20 @@ X12 zip entry (`files[].zip.entries[].oracle`) and generated file (`generated[]`
 
 It also fails when an X12 file under `fixtures/synthetic` is declared by no expected.json, or when a
 generated file is missing.
+
+Then `parser.ts` parses every one of the same files with packages/edi835 (the SYNTHETIC release 900001's code
+lists) and builds the parser's summary in the same format from its typed events alone. For every file:
+
+- where pyx12 produced a summary, the parser's must equal it field for field: every control number, count,
+  BPR, TRN, party, claim, CAS total, reference, date, amount, line, remark, PLB item and balance, to the cent;
+  where pyx12 could not read the file, the parser must not have read it either;
+- where pyx12 accepts the file, the parser may hold it only for what pyx12 does not check (balance, unknown
+  CARC and RARC); a structural hold (EDI_SYNTAX, EDI_NOT_835, EDI_CONTROL_MISMATCH) fails;
+- where pyx12 rejects it, the parser must find the same kind of problem (`not_835` an EDI_NOT_835,
+  `missing_segment` a document EDI_SYNTAX, `control_count` an EDI_CONTROL_MISMATCH) and hold something,
+  unless the fixture's expected parse outcome is `loaded` (V05's repeated PLB and PAR-23's DTM 472 RD8, which
+  the parser reads and pyx12 rejects);
+- the parser's outcome must be the fixture's expected parse outcome, where it states one.
 
 ## oracle.py output (format `tp-oracle-run/1`)
 

@@ -1,16 +1,22 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+
+import { parse835 } from '@tp/edi835';
+import { releaseDirectoryCodeLists } from '@tp/edi835/testing';
+import { type ZipEntry, readZip } from '@tp/synth';
 
 import { repositoryRoot } from '../content-files';
 import { type OracleResult, collectChecks, disagreements } from './compare';
 import { findOracleFixtures } from './fixtures';
+import { parserDisagreements } from './parser';
 
 /**
  * `pnpm test:oracle`: pyx12 reads every synthetic 835 fixture (PRD section 18, the 835 oracle) and
  * must agree with what the fixture's expected.json says: valid or rejected for the stated reasons,
- * and, where the file can be read, the same normalized summary (segments, amounts, balances). Every
- * disagreement fails. Part B of milestone 2 adds the comparison with packages/edi835.
+ * and, where the file can be read, the same normalized summary (segments, amounts, balances). Then
+ * packages/edi835 parses every one of the same files, and its reading must equal pyx12's summary to the
+ * cent and its verdict match pyx12's (tools/test-oracle/parser.ts). Every disagreement fails.
  *
  * The interpreter is TP_ORACLE_PYTHON, or python3; it runs isolated (-I) and needs pyx12 installed
  * (CI: pip install pyx12; locally a virtualenv outside the source tree, tools/test-oracle/README.md).
@@ -52,14 +58,36 @@ if (run.error || run.status !== 0) {
 } else {
   const output = JSON.parse(run.stdout) as { pyx12: string; results: OracleResult[] };
   const byFile = new Map(output.results.map((result) => [result.file, result]));
+  const codeLists = releaseDirectoryCodeLists();
+  const zips = new Map<string, ZipEntry[]>();
+  const bytesOf = (spec: string): Uint8Array => {
+    const [file = '', entry] = spec.split('!');
+    if (entry === undefined) {
+      return readFileSync(path.join(syntheticRoot, file));
+    }
+    const entries = zips.get(file) ?? readZip(readFileSync(path.join(syntheticRoot, file)));
+    zips.set(file, entries);
+    const found = entries.find((item) => item.name === entry);
+    if (found === undefined) {
+      throw new Error(`${spec}: no such zip entry`);
+    }
+    return found.bytes;
+  };
+  let parsed = 0;
   for (const check of present) {
-    problems.push(...disagreements(check, byFile.get(check.spec)));
+    const result = byFile.get(check.spec);
+    problems.push(...disagreements(check, result));
+    if (result !== undefined) {
+      problems.push(...parserDisagreements(check, result, parse835(bytesOf(check.spec), { codeLists })));
+      parsed += 1;
+    }
   }
   if (problems.length === 0) {
     const rejected = present.filter((check) => !check.expectation.valid).length;
     process.stdout.write(
       `test:oracle: pyx12 ${output.pyx12} agrees with all ${String(present.length)} synthetic 835 fixtures (${String(present.length - rejected)} valid with identical summaries, ${String(rejected)} malformed and rejected as expected).\n`,
     );
+    process.stdout.write(`test:oracle: packages/edi835 parsed the same ${String(parsed)} and agrees with pyx12 on every segment, amount and balance of every summary, and on every verdict.\n`);
   }
 }
 for (const problem of problems) {

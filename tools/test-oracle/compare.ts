@@ -27,6 +27,8 @@ export interface OracleCheck {
   readonly expectation: OracleExpectation;
   /** Generated at test time (pnpm synth --large) rather than committed. */
   readonly generated?: boolean;
+  /** The parse outcome the fixture states for packages/edi835, when it states one. */
+  readonly parseOutcome?: string;
 }
 
 /** Where two JSON values differ, as "path: expected X, found Y" lines (at most `limit`). */
@@ -97,8 +99,14 @@ export function disagreements(check: OracleCheck, result: OracleResult | undefin
 interface ExpectedFile {
   readonly path: string;
   readonly kind: string;
-  readonly x12?: { readonly oracle: OracleExpectation };
-  readonly zip?: { readonly entries: readonly { readonly name: string; readonly kind: string; readonly oracle?: OracleExpectation }[] };
+  readonly x12?: { readonly oracle: OracleExpectation; readonly parse?: { readonly outcome: string } };
+  readonly zip?: {
+    readonly entries: readonly { readonly name: string; readonly kind: string; readonly oracle?: OracleExpectation; readonly x12?: { readonly parse?: { readonly outcome: string } } }[];
+  };
+}
+
+function withOutcome(check: OracleCheck, parseOutcome: string | undefined): OracleCheck {
+  return parseOutcome === undefined ? check : { ...check, parseOutcome };
 }
 
 /** Every oracle check the fixtures under `root` (fixtures/synthetic) declare in their expected.json. */
@@ -118,11 +126,11 @@ export function collectChecks(root: string): { checks: OracleCheck[]; declared: 
       const relative = `${caseDir}/${entry.path}`;
       if (entry.kind === 'x12' && entry.x12) {
         declared.add(relative);
-        checks.push({ spec: relative, expectation: entry.x12.oracle });
+        checks.push(withOutcome({ spec: relative, expectation: entry.x12.oracle }, entry.x12.parse?.outcome));
       }
       for (const zipEntry of entry.zip?.entries ?? []) {
         if (zipEntry.kind === 'x12' && zipEntry.oracle) {
-          checks.push({ spec: `${relative}!${zipEntry.name}`, expectation: zipEntry.oracle });
+          checks.push(withOutcome({ spec: `${relative}!${zipEntry.name}`, expectation: zipEntry.oracle }, zipEntry.x12?.parse?.outcome));
         }
       }
     }

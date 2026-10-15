@@ -9,9 +9,11 @@
   },
   "dependencies": {
     "@tp/db": "workspace:*",
+    "@tp/edi835": "workspace:*",
     "@tp/money": "workspace:*",
     "@tp/observability": "workspace:*",
     "@tp/rules": "workspace:*",
+    "@tp/synth": "workspace:*",
     "pg": "catalog:",
     "typescript": "catalog:",
     "zod": "catalog:"
