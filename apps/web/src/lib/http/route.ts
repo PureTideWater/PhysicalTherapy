@@ -132,6 +132,10 @@ export interface SampleRefs {
   /** A source document of the practice awaiting its upload, and a local upload token for it. */
   readonly documentId: string;
   readonly uploadToken: string;
+  /** A loaded remittance of the practice, one of its claims and that claim's service line. */
+  readonly remittanceId: string;
+  readonly claimId: string;
+  readonly serviceLineId: string;
 }
 
 export interface RouteSample {

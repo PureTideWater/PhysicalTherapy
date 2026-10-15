@@ -104,9 +104,13 @@ function formInput(form: FormData): Record<string, string> {
   return input;
 }
 
-/** Runs a mutation's route from a form. Success redirects (Post/Redirect/Get); a refusal returns the form's state. */
-export async function runAction(route: Route<MutationResult>, form: FormData): Promise<ActionState> {
-  const outcome = await route.invoke(await nextRequest({}, formInput(form)), services());
+/**
+ * Runs a mutation's route from a form. Success redirects (Post/Redirect/Get); a refusal returns the
+ * form's state. A practice action names its practice and records in `params` (opaque IDs the form
+ * carries), which its route checks like a page's.
+ */
+export async function runAction(route: Route<MutationResult>, form: FormData, params: Record<string, unknown> = {}): Promise<ActionState> {
+  const outcome = await route.invoke(await nextRequest(params, formInput(form)), services());
   const signIn = signInFor(outcome);
   if (signIn !== undefined) {
     redirect(signIn);

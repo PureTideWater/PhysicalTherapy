@@ -6,7 +6,8 @@ import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
 import { enqueue } from './jobs/enqueue';
-import { JOB_TYPES, type JobType, QUEUE_OPTIONS, parsePayload, queueOptions } from './jobs/registry';
+import { JOB_TYPES, type JobType, QUEUE_OPTIONS, jobSubject, parsePayload, queueOptions, singletonKey } from './jobs/registry';
+import type { JobRunEnd, JobRunRecorder } from './jobs/runs';
 
 export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work' | 'schedule' | 'send'>;
 
@@ -18,6 +19,8 @@ export interface WorkerOptions {
   readonly pool: ScopePool<ScopeClient>;
   /** The platform jobs (audit copy, restore drill), where this worker holds an operator connection. */
   readonly platform?: PlatformHandlers;
+  /** Where each practice job's attempts are recorded for the practice's dashboard (job_run, JOB-02). */
+  readonly runs?: JobRunRecorder;
   readonly heartbeatMs: number;
   /** How long a graceful stop waits for active jobs. */
   readonly shutdownTimeoutMs?: number;
@@ -63,7 +66,17 @@ async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => 
   }
 }
 
-async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobHandlers, logger: Logger, pool: ScopePool<ScopeClient>, boss: QueueClient): Promise<void> {
+/** Records how an attempt ended; a failure to record is logged and never fails the job or hides its error. */
+async function recordEnd(runs: JobRunRecorder | undefined, logger: Logger, end: JobRunEnd): Promise<void> {
+  try {
+    await runs?.finished(end);
+  } catch {
+    logger.warn('job run not recorded', { job_id: end.jobId, error_code: 'JOB_RUN_NOT_RECORDED' });
+  }
+}
+
+async function runJob<T extends JobType>(type: T, job: QueuedJob, options: WorkerOptions): Promise<void> {
+  const { handlers, logger, pool, boss, runs } = options;
   let payload;
   try {
     payload = parsePayload(type, job.data);
@@ -76,18 +89,26 @@ async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobH
   // One practice per job (PRD 3; SEC-06): every transaction the handler opens is scoped to exactly the
   // payload's practice, as the job's service actor; the handler is never handed a raw connection.
   const practiceId = payload.practice_id;
-  await handlers[type](payload, {
-    jobId: job.id,
-    logger: jobLogger,
-    transaction: (run) => withJobScope(pool, { jobId: job.id, practiceId }, run),
-    enqueue: (next, nextPayload) => {
-      if (nextPayload.practice_id !== practiceId) {
-        return Promise.reject(new CrossPracticeJobError(`a ${type} job queues work for its own practice only`));
-      }
-      return enqueue(boss, next, nextPayload);
-    },
-    lastAttempt: (job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit,
-  });
+  const lastAttempt = (job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit;
+  await runs?.started({ jobId: job.id, practiceId, type, singletonKey: singletonKey(type, payload), subject: jobSubject(type, payload), attempt: (job.retryCount ?? 0) + 1 });
+  try {
+    await handlers[type](payload, {
+      jobId: job.id,
+      logger: jobLogger,
+      transaction: (run) => withJobScope(pool, { jobId: job.id, practiceId }, run),
+      enqueue: (next, nextPayload) => {
+        if (nextPayload.practice_id !== practiceId) {
+          return Promise.reject(new CrossPracticeJobError(`a ${type} job queues work for its own practice only`));
+        }
+        return enqueue(boss, next, nextPayload);
+      },
+      lastAttempt,
+    });
+  } catch (error) {
+    await recordEnd(runs, jobLogger, { jobId: job.id, practiceId, outcome: lastAttempt ? 'failed' : 'retrying', errorCode: 'JOB_FAILED' });
+    throw error;
+  }
+  await recordEnd(runs, jobLogger, { jobId: job.id, practiceId, outcome: 'succeeded', errorCode: null });
 }
 
 async function runPlatformJob<T extends PlatformJobType>(type: T, job: QueuedJob, handlers: PlatformHandlers, logger: Logger): Promise<void> {
@@ -107,7 +128,7 @@ async function runPlatformJob<T extends PlatformJobType>(type: T, job: QueuedJob
  * of each queued or active at a time).
  */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
-  const { boss, logger, handlers } = options;
+  const { boss, logger } = options;
   await boss.start();
   for (const type of JOB_TYPES) {
     await boss.createQueue(type, queueOptions(type));
@@ -115,7 +136,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   for (const type of JOB_TYPES) {
     await boss.work(type, { batchSize: 1 }, async (jobs) => {
       for (const job of jobs) {
-        await attempt(type, job, logger, () => runJob(type, job, handlers, logger, options.pool, boss));
+        await attempt(type, job, logger, () => runJob(type, job, options));
       }
     });
   }

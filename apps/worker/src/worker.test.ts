@@ -5,6 +5,7 @@ import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
 import { JOB_TYPES, QUEUE_OPTIONS, queueOptions } from './jobs/registry';
+import type { JobRunRecorder } from './jobs/runs';
 import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
@@ -187,6 +188,56 @@ describe('startWorker', () => {
       expect.objectContaining({ level: 'error', job_id: 'job-drill', job_type: 'restore_drill', error_code: 'JOB_FAILED' }),
     ]);
     expect(QUEUE_OPTIONS.retryLimit + 1).toBe(3);
+    await worker.stop();
+  });
+
+  it('records each attempt of a practice job: running, then retrying, failed on the last, or succeeded (JOB-02)', async () => {
+    const { handlers, client } = fakeBoss();
+    const events: unknown[] = [];
+    const runs: JobRunRecorder = {
+      started: (run) => {
+        events.push({ started: run });
+        return Promise.resolve();
+      },
+      finished: (run) => {
+        events.push({ finished: run });
+        return Promise.resolve();
+      },
+    };
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger: capture().logger,
+      runs,
+      handlers: { ...placeholderHandlers, price: () => Promise.reject(new Error('synthetic failure')) },
+      heartbeatMs: 60_000,
+    });
+    const job = (retryCount: number) => ({ id: 'job-9', retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
+    for (const retryCount of [0, 1, 2]) {
+      await expect(handlers.get('price')?.([job(retryCount)])).rejects.toThrow('synthetic failure');
+    }
+    await handlers.get('parse_835')?.([{ id: 'job-10', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    const started = (attempt: number, type: string, id: string) => ({ started: { jobId: id, practiceId: PRACTICE, type, singletonKey: `${type}:${PRACTICE}:${DOCUMENT}`, subject: DOCUMENT, attempt } });
+    expect(events).toEqual([
+      started(1, 'price', 'job-9'),
+      { finished: { jobId: 'job-9', practiceId: PRACTICE, outcome: 'retrying', errorCode: 'JOB_FAILED' } },
+      started(2, 'price', 'job-9'),
+      { finished: { jobId: 'job-9', practiceId: PRACTICE, outcome: 'retrying', errorCode: 'JOB_FAILED' } },
+      started(3, 'price', 'job-9'),
+      { finished: { jobId: 'job-9', practiceId: PRACTICE, outcome: 'failed', errorCode: 'JOB_FAILED' } },
+      started(1, 'parse_835', 'job-10'),
+      { finished: { jobId: 'job-10', practiceId: PRACTICE, outcome: 'succeeded', errorCode: null } },
+    ]);
+    await worker.stop();
+  });
+
+  it('logs a run it cannot record and keeps the job’s own outcome', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const runs: JobRunRecorder = { started: () => Promise.resolve(), finished: () => Promise.reject(new Error('database down')) };
+    const worker = await startWorker({ boss: client, pool, logger, runs, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    await handlers.get('parse_835')?.([{ id: 'job-11', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    expect(lines.find((line) => line.msg === 'job run not recorded')).toMatchObject({ job_id: 'job-11', error_code: 'JOB_RUN_NOT_RECORDED' });
     await worker.stop();
   });
 

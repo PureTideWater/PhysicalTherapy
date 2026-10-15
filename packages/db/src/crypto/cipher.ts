@@ -10,9 +10,9 @@ import { DATA_KEY_BYTES, DataKeyError, requirePractice } from './key-provider';
  *   ciphertext to its practice and column, so a value copied into another practice's row, or into
  *   another column, does not decrypt.
  * - lookupHash: a deterministic keyed hash (HMAC-SHA-256) for the one indexed lookup the data
- *   dictionary names, claim (practice_id, payer_claim_control_number). Equal values hash equally within
- *   a practice and column, and differently across practices, so the index never reveals a value or
- *   links practices.
+ *   dictionary names, claim (practice_id, payer_claim_control_number), and for patient_ref's
+ *   pseudonym. Equal values hash equally within a practice and column, and differently across
+ *   practices, so the index never reveals a value or links practices.
  *
  * - encryptObject/decryptObject: the bytes of a practice's stored objects (documents, packets,
  *   exports in S3), AES-256-GCM under a third derived key, bound to the practice and the object's key,
@@ -28,7 +28,10 @@ import { DATA_KEY_BYTES, DataKeyError, requirePractice } from './key-provider';
  * All three keys are derived from the data key with HKDF, so destroying the data key destroys them too.
  */
 
-/** Every column the data dictionary marks (enc). */
+/**
+ * Every column the data dictionary marks (enc), and the free-text note a person may write on a service
+ * line, which can hold anything they type (docs/adr/0027).
+ */
 export const ENCRYPTED_COLUMNS = [
   'claim.patient_control_number',
   'claim.payer_claim_control_number',
@@ -38,11 +41,15 @@ export const ENCRYPTED_COLUMNS = [
   'patient_ref.member_id',
   'patient_ref.group_number',
   'posting_row.claim_reference',
+  'line_note.note',
 ] as const;
 export type EncryptedColumn = (typeof ENCRYPTED_COLUMNS)[number];
 
-/** The encrypted columns with an indexed lookup on their deterministic hash. */
-export const LOOKUP_COLUMNS = ['claim.payer_claim_control_number'] as const;
+/**
+ * The keyed hashes: the encrypted column with an indexed lookup on its deterministic hash, and
+ * patient_ref's pseudonym, the "stable hash" of the payer-independent patient key (docs/adr/0027).
+ */
+export const LOOKUP_COLUMNS = ['claim.payer_claim_control_number', 'patient_ref.pseudonym'] as const;
 export type LookupColumn = (typeof LOOKUP_COLUMNS)[number];
 
 const PREFIX = 'enc:v1:';

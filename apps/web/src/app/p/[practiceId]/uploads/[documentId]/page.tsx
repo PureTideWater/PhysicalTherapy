@@ -6,11 +6,22 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/receipts';
 import { loadPage } from '../../../../../lib/http/next';
 import { uploadDocumentPage } from '../../../../../lib/routes/uploads';
-import { KIND_NAMES, formatBytes, utcMinute } from '../../../../../lib/uploads/receipt-labels';
+import { KIND_NAMES, type ParsedTransaction, centsText, errorPosition, errorText, formatBytes, shortId, utcMinute } from '../../../../../lib/uploads/receipt-labels';
 
 export const metadata: Metadata = { title: 'Upload receipt' };
 
-/** One upload's receipt; for a zip, the batch receipt with a receipt per file in it (PAR-27). */
+const OUTCOME_NAMES: Readonly<Record<ParsedTransaction['outcome'], string>> = {
+  loaded: 'Loaded',
+  loaded_for_review: 'Loaded, for review: its trace was used before',
+  duplicate_remittance: 'Already loaded from another file',
+  held: 'Held',
+};
+
+/**
+ * One upload's receipt; for a zip, the batch receipt with a receipt per file in it (PAR-27); for a
+ * parsed 835, its parse report: what each transaction set became, and every error with its segment
+ * and position (milestone 3: "a held file shows its segment and position").
+ */
 export default async function UploadDocumentPage(props: { readonly params: Promise<{ practiceId: string; documentId: string }> }) {
   const page = await loadPage(uploadDocumentPage, props);
   if (page.kind === 'forbidden') {
@@ -60,6 +71,94 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
           </a>
         </CardContent>
       </Card>
+      {receipt.parse === null ? null : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Parse report</CardTitle>
+            <CardDescription>
+              {receipt.parse.transactions === 1 ? '1 transaction set' : `${String(receipt.parse.transactions)} transaction sets`}, {receipt.parse.claims} claims, {receipt.parse.lines} lines,{' '}
+              {receipt.parse.reversals} reversals; provider adjustments ${centsText(receipt.parse.plbTotalCents)}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {receipt.parse.transactionOutcomes.length === 0 ? null : (
+              <table className="w-full text-left text-sm" aria-label="Transaction sets">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 font-medium">Transaction set</th>
+                    <th className="py-1 font-medium">Outcome</th>
+                    <th className="py-1 text-right font-medium">Claims</th>
+                    <th className="py-1 text-right font-medium">Lines</th>
+                    <th className="py-1 font-medium">Remittance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receipt.parse.transactionOutcomes.map((item) => {
+                    const remittance = item.remittanceId ?? item.linkedRemittanceId;
+                    return (
+                      <tr key={`${String(item.interchange)}:${String(item.group)}:${String(item.transaction)}`} className="border-t" data-outcome={item.outcome}>
+                        <td className="py-1 pr-3 font-mono text-xs">
+                          ST02 {item.st02} (segment {item.segmentIndex})
+                        </td>
+                        <td className="py-1 pr-3">
+                          {OUTCOME_NAMES[item.outcome]}
+                          {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
+                        </td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{item.claims}</td>
+                        <td className="py-1 pr-3 text-right tabular-nums">{item.lines}</td>
+                        <td className="py-1 font-mono text-xs">
+                          {remittance === null ? (
+                            '—'
+                          ) : (
+                            <Link className="underline" href={`/p/${practiceId}/remittances/${remittance}`}>
+                              {shortId(remittance)}
+                            </Link>
+                          )}
+                          {item.linkedDocumentId === null ? null : (
+                            <>
+                              {' '}
+                              from file{' '}
+                              <Link className="underline" href={`/p/${practiceId}/uploads/${item.linkedDocumentId}`}>
+                                {shortId(item.linkedDocumentId)}
+                              </Link>
+                            </>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            {receipt.parse.errors.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No errors.</p>
+            ) : (
+              <table className="w-full text-left text-sm" aria-label="Errors">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 font-medium">Code</th>
+                    <th className="py-1 font-medium">Where</th>
+                    <th className="py-1 font-medium">What</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receipt.parse.errors.map((error, index) => (
+                    <tr key={index} className="border-t" data-code={error.code}>
+                      <td className="py-1 pr-3 font-mono text-xs">{error.code}</td>
+                      <td className="py-1 pr-3">
+                        {errorPosition(error)}
+                        {error.transaction === undefined ? '' : ` (ST02 ${error.transaction.st02})`}
+                      </td>
+                      <td className="py-1">{errorText(error)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {receipt.parse.unknownCodes.length === 0 ? null : <p className="text-sm">Unknown codes, loaded with a flag: {receipt.parse.unknownCodes.join(', ')}</p>}
+          </CardContent>
+        </Card>
+      )}
       {receipt.entries === null ? null : (
         <div className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold">Files in this zip</h2>

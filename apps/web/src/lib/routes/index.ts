@@ -5,6 +5,7 @@ import type { Route } from '../http/route';
 import { ACCOUNT_ROUTES } from './account';
 import { CONSOLE_ROUTES } from './console';
 import { PRACTICE_ROUTES } from './practice';
+import { REMITTANCE_ROUTES } from './remittances';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { UPLOAD_ROUTES } from './uploads';
 
@@ -27,7 +28,7 @@ export const homePage = selfRoute({
   sample: { params: () => ({}) },
 });
 
-export const ROUTES: readonly Route[] = [homePage, ...SIGN_IN_ROUTES, ...ACCOUNT_ROUTES, ...PRACTICE_ROUTES, ...UPLOAD_ROUTES, ...CONSOLE_ROUTES];
+export const ROUTES: readonly Route[] = [homePage, ...SIGN_IN_ROUTES, ...ACCOUNT_ROUTES, ...PRACTICE_ROUTES, ...UPLOAD_ROUTES, ...REMITTANCE_ROUTES, ...CONSOLE_ROUTES];
 
 export function routeById(id: string): Route | undefined {
   return ROUTES.find((route) => route.id === id);

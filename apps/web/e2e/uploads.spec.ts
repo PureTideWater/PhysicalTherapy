@@ -2,49 +2,25 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
-import { appDevLoginUrl, developmentMasterKey, openPool } from '@tp/db';
-import { assertNoPhi, createLogger } from '@tp/observability';
-import { type RunningWorker, intakeHandler, intakeServices, parseQueuedHandler, placeholderHandlers, startWorker } from '@tp/worker/runtime';
-import { PgBoss } from 'pg-boss';
+import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail } from '../scripts/synthetic-personas';
-import { E2E_DOCUMENTS_DIR, e2eDatabaseUrl } from './env';
 import { practiceId, signInWithTotp, withDatabase } from './helpers';
+import { startLocalWorker } from './worker';
 
 /**
- * The Uploads screen in the browser (PRD 5, J1 and J4; PRD 7, Uploads; PRD 10, Pipeline steps 1 and
- * 2): a billing manager drops a synthetic 835 and a zip, the browser PUTs them to the local receiver,
+ * The Uploads screen in the browser (PRD 5, J1 and J4; PRD 7, Uploads; PRD 10, Pipeline steps 1 to
+ * 10): a billing manager drops a synthetic 835 and a zip, the browser PUTs them to the local receiver,
  * the worker (run here beside the server, on the same database and document directory) takes them
- * in, and the receipts show them scanned and queued for parse; a viewer sees the permission state; a
- * practice without its BAA shows uploads disabled with the reason. Synthetic data only.
+ * in, parses and loads them, and the receipts show them loaded, the zip's bad file held with its
+ * segment and position; a viewer sees the permission state; a practice without its BAA shows uploads
+ * disabled with the reason. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 
-/** The worker, as main.ts wires it in development, for the length of a test. */
-async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
-  const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 2);
-  const boss = new PgBoss(e2eDatabaseUrl());
-  boss.on('error', () => undefined);
-  const services = intakeServices({ documents: { kind: 'local', dir: E2E_DOCUMENTS_DIR }, keys: { kind: 'local', masterKey: developmentMasterKey() }, scanWaitMs: 10_000 });
-  const worker = await startWorker({
-    boss,
-    pool,
-    logger: createLogger({ sink: () => undefined }),
-    handlers: { ...placeholderHandlers, intake: intakeHandler(services), parse_835: parseQueuedHandler },
-    heartbeatMs: 60_000,
-    shutdownTimeoutMs: 5_000,
-  });
-  return {
-    worker,
-    close: async () => {
-      await worker.stop();
-      await pool.end();
-    },
-  };
-}
-
-test('a billing manager uploads an 835 and a zip; the worker takes them in and the receipts follow (J4)', async ({ page }) => {
+test('a billing manager uploads an 835 and a zip; the worker takes them in and loads them, and the receipts follow (J4)', async ({ page }) => {
+  test.setTimeout(240_000);
   await signInWithTotp(page, 'billing-manager');
   const north = await practiceId('north');
   const response = await page.goto(`/p/${north}/uploads`);
@@ -63,9 +39,9 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and t
     const batch = page.getByRole('region', { name: 'This batch' });
     await expect(batch.getByText('remit.835')).toBeVisible();
     await expect(batch.getByRole('status')).toContainText('2 of 2 sent', { timeout: 30_000 });
-    await expect(batch.getByRole('status')).toContainText('2 of 2 taken in', { timeout: 60_000 });
-    await expect(batch.getByText('The malware scan is clean; queued for parse.')).toBeVisible();
-    await expect(batch.getByText(/Each file in the zip has its own receipt: 500 files, 500 queued for parse, 0 held/)).toBeVisible();
+    await expect(batch.getByRole('status')).toContainText('2 of 2 taken in', { timeout: 180_000 });
+    await expect(batch.getByText('Loaded 1 remittance, 1 claim and 1 line.')).toBeVisible();
+    await expect(batch.getByText(/Each file in the zip has its own receipt: 500 files, 499 loaded, 1 held/)).toBeVisible();
   } finally {
     await local.close();
   }
@@ -83,7 +59,7 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and t
   expect(stored).toHaveLength(2);
   expect(stored).toEqual(
     expect.arrayContaining([
-      { status: 'parse_queued', uploaded_by: personaEmail('billing-manager') },
+      { status: 'loaded', uploaded_by: personaEmail('billing-manager') },
       { status: 'expanded', uploaded_by: personaEmail('billing-manager') },
     ]),
   );
@@ -94,6 +70,10 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and t
   const download = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download the report (CSV)' }).click();
   expect((await download).suggestedFilename()).toMatch(/^receipt-[0-9a-f-]{36}\.csv$/);
+  // The held file shows its segment and position (milestone 3).
+  const held = page.getByRole('row').filter({ hasText: 'Held' }).first();
+  await held.getByRole('link').first().click();
+  await expect(page.getByRole('table', { name: 'Errors' })).toContainText(/EDI_SYNTAX.*segment \d+ \([A-Z0-9]+\), element \d+/);
 });
 
 test('a viewer reads the receipts but cannot upload: the permission state says who can', async ({ page }) => {

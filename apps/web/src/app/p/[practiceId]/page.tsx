@@ -1,4 +1,4 @@
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -24,17 +24,35 @@ const AGREEMENT_NAMES: Readonly<Record<string, string>> = {
   dpa: 'Data processing agreement',
 };
 
+const JOB_NAMES: Readonly<Record<string, string>> = {
+  intake: 'Intake of an upload',
+  parse_835: 'Parse and load of an 835',
+  price: 'Pricing run',
+  triage: 'Triage',
+  reconcile: 'Reconciliation',
+  digest: 'Digest',
+  export: 'Export',
+};
+
+const OUTCOME_NAMES: Readonly<Record<string, string>> = {
+  running: 'Running',
+  retrying: 'Failed; retrying',
+  succeeded: 'Succeeded',
+  failed: 'Failed three times',
+};
+
 /**
  * The practice workspace home (a PHI route: MFA, the 30-minute idle limit, private no-store, the
- * practice record read through readWithAudit). The workspace screens of PRD 7 (dashboard, uploads,
- * remittances...) arrive with their milestones.
+ * practice record read through readWithAudit): data freshness (the last file and the last run, and a
+ * banner with the job reference when a run failed on its last attempt; test matrix JOB-02), the
+ * practice record and its agreements. The rest of the dashboard of PRD 7 arrives with its milestones.
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants } = page.data;
+  const { practice, agreements, access, supportGrants, freshness } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -43,10 +61,63 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
-      <EmptyState
-        title="No remittances or contracts loaded yet"
-        nextStep="The practice's workspace fills as its billing team uploads 835 files and contracts. Uploads open once the agreement chain below is on file."
-      />
+      {freshness.failedRun === null ? null : (
+        <Alert variant="destructive" data-job={freshness.failedRun.jobId}>
+          <AlertTitle>Last run failed</AlertTitle>
+          <AlertDescription>
+            {JOB_NAMES[freshness.failedRun.jobType] ?? freshness.failedRun.jobType} failed three times on {utc(freshness.failedRun.finishedAt)}. The operator has been alerted (job reference{' '}
+            <span className="font-mono">{freshness.failedRun.jobId.slice(0, 8)}</span>). Retry it from the upload’s receipt on the{' '}
+            <Link className="underline" href={`/p/${practice.id}/uploads`}>
+              Uploads
+            </Link>{' '}
+            screen.
+          </AlertDescription>
+        </Alert>
+      )}
+      {freshness.lastFileAt === null ? (
+        <EmptyState
+          title="Upload your first 835 files"
+          nextStep="The practice's workspace fills as its billing team uploads 835 files and contracts. Uploads open once the agreement chain below is on file."
+        />
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Data freshness</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+              <dt className="text-muted-foreground">Last file</dt>
+              <dd>
+                {utc(freshness.lastFileAt)}{' '}
+                <Link className="underline" href={`/p/${practice.id}/uploads`}>
+                  (uploads)
+                </Link>
+              </dd>
+              <dt className="text-muted-foreground">Last run</dt>
+              <dd>
+                {freshness.lastRun === null ? (
+                  '—'
+                ) : (
+                  <>
+                    {JOB_NAMES[freshness.lastRun.jobType] ?? freshness.lastRun.jobType}, {utc(freshness.lastRun.finishedAt ?? freshness.lastRun.startedAt)}:{' '}
+                    <Badge variant={freshness.lastRun.outcome === 'failed' ? 'destructive' : freshness.lastRun.outcome === 'succeeded' ? 'default' : 'secondary'} data-outcome={freshness.lastRun.outcome}>
+                      {OUTCOME_NAMES[freshness.lastRun.outcome] ?? freshness.lastRun.outcome}
+                    </Badge>
+                  </>
+                )}
+              </dd>
+            </dl>
+            <div className="mt-4 flex gap-4 text-sm">
+              <Link className="underline" href={`/p/${practice.id}/remittances`}>
+                Remittances
+              </Link>
+              <Link className="underline" href={`/p/${practice.id}/claims`}>
+                Claims and lines
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Practice record</CardTitle>

@@ -49,7 +49,7 @@ function RailLink({ href, children, active }: { readonly href: string; readonly 
   );
 }
 
-export type ShellSection = 'practice' | 'uploads' | 'devices' | 'organizations' | 'support' | 'home';
+export type ShellSection = 'practice' | 'uploads' | 'remittances' | 'claims' | 'devices' | 'organizations' | 'support' | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
   if (shell === undefined) {
@@ -67,6 +67,12 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             </RailLink>
             <RailLink href={`/p/${shell.currentPracticeId}/uploads`} active={section === 'uploads'}>
               Uploads
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/remittances`} active={section === 'remittances'}>
+              Remittances
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/claims`} active={section === 'claims'}>
+              Claims and lines
             </RailLink>
           </nav>
         )}

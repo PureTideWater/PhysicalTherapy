@@ -6,9 +6,10 @@ import { PgBoss } from 'pg-boss';
 
 import { type IntakeConfig, type PlatformConfig, type WorkerConfig, WorkerConfigError, readIntakeConfig, readPlatformConfig, readWorkerConfig } from './config';
 import { type JobHandlers, placeholderHandlers } from './jobs/handlers';
+import { databaseJobRuns } from './jobs/runs';
 import { intakeHandler } from './intake/intake';
-import { parseQueuedHandler } from './intake/parse';
 import { intakeServices } from './intake/wiring';
+import { parseHandler } from './parse/job';
 import { platformRuntime } from './platform/wiring';
 import { installShutdownHandlers } from './shutdown';
 import { startWorker } from './worker';
@@ -45,10 +46,19 @@ if (config !== undefined && intake !== undefined) {
     }
     // Practice jobs: the application login, each transaction scoped to the job's one practice.
     const pool = openPool(config.databaseUrl, 4);
-    // Intake takes uploads in and queues parse_835, which marks each 835 queued for parse until the
-    // parser and the loader arrive; the other jobs arrive with their milestones.
-    const handlers: JobHandlers = { ...placeholderHandlers, intake: intakeHandler(intakeServices(intake)), parse_835: parseQueuedHandler };
-    const worker = await startWorker({ boss, logger, handlers, pool, heartbeatMs: config.heartbeatMs, ...(runtime === undefined ? {} : { platform: runtime.handlers }) });
+    // Intake takes uploads in and queues parse_835 per clean 835, which parses and loads it; the other
+    // jobs arrive with their milestones. Every practice job's attempts are recorded in job_run.
+    const services = intakeServices(intake);
+    const handlers: JobHandlers = { ...placeholderHandlers, intake: intakeHandler(services), parse_835: parseHandler(services) };
+    const worker = await startWorker({
+      boss,
+      logger,
+      handlers,
+      pool,
+      runs: databaseJobRuns(pool),
+      heartbeatMs: config.heartbeatMs,
+      ...(runtime === undefined ? {} : { platform: runtime.handlers }),
+    });
     installShutdownHandlers(worker, logger);
   } catch {
     logger.error('worker failed to start', { error_code: 'WORKER_START_FAILED' });

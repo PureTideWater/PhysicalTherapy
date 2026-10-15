@@ -9,7 +9,7 @@ import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClien
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, placeholderDataKeyRef } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
-import { type JobContext, intakeHandler, intakeServices, parseQueuedHandler } from '@tp/worker/runtime';
+import { type JobContext, intakeHandler, intakeServices, parseHandler } from '@tp/worker/runtime';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
@@ -166,7 +166,7 @@ async function upload(bytes: Buffer, contentType = 'application/octet-stream'): 
   return document.documentId;
 }
 
-/** Runs every queued job, as the worker would: intake, then the parse jobs it queues. */
+/** Runs every queued job, as the worker would: intake, then the parse jobs it queues, which parse and load. */
 async function runQueue(): Promise<void> {
   const worker = intakeServices({ documents: { kind: 'local', dir: documentsDir }, keys: { kind: 'local', masterKey }, scanWaitMs: 1000 });
   for (let job = queue.jobs.shift(); job !== undefined; job = queue.jobs.shift()) {
@@ -182,7 +182,7 @@ async function runQueue(): Promise<void> {
     if (job.type === 'intake') {
       await intakeHandler(worker)(payload, context);
     } else if (job.type === 'parse_835') {
-      await parseQueuedHandler(payload, context);
+      await parseHandler(worker)(payload, context);
     }
   }
 }
@@ -270,7 +270,7 @@ describe('the local receiver', () => {
 });
 
 describe('completing, intake and receipts', () => {
-  it('queues intake once the bytes have arrived, and takes the 835 in: scanned, then queued for parse (PRD 10, steps 1 and 2)', async () => {
+  it('queues intake once the bytes have arrived, and takes the 835 in: scanned, parsed and loaded (PRD 10, steps 1 to 10)', async () => {
     const bytes = readFileSync(path.join(FIXTURES, 'PAR-01/remit.835'));
     const [document] = ok(await call(requestUploads, manager, practice(), { files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: bytes.length }] })).documents;
     if (document === undefined) {
@@ -291,7 +291,12 @@ describe('completing, intake and receipts', () => {
     ok(await call(completeUpload, manager, practice(), { documentId: document.documentId }));
     expect(queue.jobs).toHaveLength(1);
     await runQueue();
-    expect(await receipt(document.documentId)).toMatchObject({ status: 'parse_queued', scanStatus: 'clean', sha256: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(await receipt(document.documentId)).toMatchObject({
+      status: 'loaded',
+      scanStatus: 'clean',
+      sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+      parse: { outcome: 'loaded', transactions: 1, loaded: { transactions: 1, claims: 1, lines: 1 } },
+    });
   });
 
   it('records a second upload of the same bytes as a duplicate of the first, naming it (PAR-06)', async () => {
@@ -300,7 +305,7 @@ describe('completing, intake and receipts', () => {
     const second = await upload(bytes);
     await runQueue();
     expect(await receipt(second)).toMatchObject({ status: 'duplicate', duplicateOf: { documentId: first } });
-    expect((await receipt(first)).status).toBe('parse_queued');
+    expect((await receipt(first)).status).toBe('loaded');
   });
 
   it('expands a zip into a receipt per file and a batch receipt, with a report that lists every file (PAR-27)', async () => {
@@ -308,7 +313,8 @@ describe('completing, intake and receipts', () => {
     const id = await upload(zip, 'application/zip');
     await runQueue();
     const batch = await receipt(id);
-    expect(batch).toMatchObject({ status: 'expanded', entries: { total: 500, byStatus: { parse_queued: 500 } } });
+    // 499 load; the truncated one is held (PAR-27).
+    expect(batch).toMatchObject({ status: 'expanded', entries: { total: 500, byStatus: { loaded: 499, held: 1 } } });
     const entries = ok(await call(uploadReceipts, manager, { ...practice(), parent_id: id, page: '2' }));
     expect(entries).toMatchObject({ page: 2, pages: 20, total: 500 });
     expect(entries.receipts).toHaveLength(25);
@@ -319,11 +325,15 @@ describe('completing, intake and receipts', () => {
       assertNoPhi('s3_key', report.download.filename);
     }).not.toThrow();
     const lines = report.download.body.trim().split('\r\n');
-    expect(lines[0]).toBe('document_id,parent_document_id,kind,stage,status,reason,size_bytes,sha256,received_at,duplicate_of');
-    expect(lines).toHaveLength(502);
-    expect(lines[1]?.startsWith(`${id},,x12_835,expanded,expanded,`)).toBe(true);
+    expect(lines[0]?.startsWith('record,document_id,parent_document_id,kind,stage,status,reason,size_bytes,sha256,received_at,duplicate_of,transactions,')).toBe(true);
+    expect(lines[1]?.startsWith(`document,${id},,x12_835,expanded,expanded,`)).toBe(true);
+    // A line per file, a line per transaction set, and the held file's error with its position.
+    expect(lines.filter((line) => line.startsWith('document,'))).toHaveLength(501);
+    expect(lines.filter((line) => line.startsWith('transaction,'))).toHaveLength(499);
+    expect(lines.filter((line) => line.startsWith('error,') && line.includes(',EDI_SYNTAX,'))).toHaveLength(1);
     expect(report.download.body).not.toContain('SYNTHETIC PAYER');
-  });
+    // 500 intake-expanded files parsed and loaded one after another, as one worker would.
+  }, 120_000);
 
   it('quarantines a zip holding a renamed executable, and shows it in the receipts (PAR-28)', async () => {
     const id = await upload(readFileSync(path.join(FIXTURES, 'PAR-28/upload.zip')), 'application/zip');

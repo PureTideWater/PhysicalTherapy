@@ -98,21 +98,30 @@ describe('migrate', () => {
       );
       expect(owners).toEqual(
         [
+          'adjustment',
           'agreement',
           'audit_event',
+          'claim',
           'grant',
+          'job_run',
+          'line_note',
           'membership',
           'mutation_request',
           'organization',
+          'parse_report',
+          'patient_ref',
           'payer',
           'phi_table_registry',
           'plan',
           'practice',
+          'provider_adjustment',
+          'remittance',
           'restore_drill',
           'role_permission',
           'rule_record',
           'rule_release',
           'schema_migrations',
+          'service_line',
           'source_document',
           'support_grant',
           'user',
@@ -320,6 +329,8 @@ describe('the Drizzle schema', () => {
     PgDateString: 'date',
     PgBoolean: 'boolean',
     PgBigInt64: 'bigint',
+    PgNumeric: 'numeric',
+    PgArray: 'ARRAY',
   };
   const tables = Object.values(schema as Record<string, unknown>).filter((value): value is PgTable => is(value, PgTable));
 

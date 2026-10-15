@@ -10,10 +10,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
 import type { JobPayload, JobType } from '../jobs/registry';
+import { parseHandler } from '../parse/job';
 import { DocumentStore, type SealedBytes } from '../storage/documents';
 import { type IntakeServices, entryDocumentId, intakeHandler } from './intake';
 import { LocalLanding } from './landing';
-import { parseQueuedHandler } from './parse';
 import { LocalScanService, ScanPendingError, type ScanService } from './scan';
 import { EICAR } from './sniff';
 import { MemorySealedBytes } from './test-support/memory-bytes';
@@ -154,7 +154,7 @@ const entriesOf = (zipId: string) => rows('parent_document_id = $1', [zipId]);
 const counts = (found: readonly Row[]) => Object.fromEntries([...new Set(found.map((row) => row.status))].map((status) => [status, found.filter((row) => row.status === status).length]));
 
 describe('intake of a single file', () => {
-  it('scans a clean 835, records its hash, and queues parse_835 by the document; the parse job marks it queued for parse', async () => {
+  it('scans a clean 835, records its hash, and queues parse_835 by the document, which loads it', async () => {
     const h = harness();
     const bytes = remit();
     const id = await upload(h, bytes);
@@ -169,12 +169,13 @@ describe('intake of a single file', () => {
     expect(() => {
       assertNoPhi('s3_key', documentObjectKey(world.practiceId, id));
     }).not.toThrow();
-    // The parse job (until the parser arrives) marks the 835 queued for parse; a replay changes nothing.
+    // The parse job loads it; a replay changes nothing (src/parse/parse.db.test.ts covers the loader).
     const parse: Run = { queued: [], logs: [] };
-    await parseQueuedHandler({ practice_id: world.practiceId, document_id: id }, context(world.practiceId, parse));
-    expect((await one(id)).status).toBe('parse_queued');
-    await parseQueuedHandler({ practice_id: world.practiceId, document_id: id }, context(world.practiceId, parse));
-    expect(parse.logs.map((line) => line.msg)).toEqual(['document queued for parse', 'document was not waiting to be queued for parse']);
+    const parser = parseHandler({ documents: h.services.documents, keys });
+    await parser({ practice_id: world.practiceId, document_id: id }, context(world.practiceId, parse));
+    expect((await one(id)).status).toBe('loaded');
+    await parser({ practice_id: world.practiceId, document_id: id }, context(world.practiceId, parse));
+    expect(parse.logs.map((line) => line.msg)).toEqual(['document parsed and loaded', 'document was not waiting for parse']);
     // Intake again: the document is decided, nothing more happens.
     expect((await intake(h, id)).queued).toEqual([]);
   });

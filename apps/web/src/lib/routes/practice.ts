@@ -1,4 +1,4 @@
-import { readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -6,7 +6,8 @@ import { NotFoundError } from '../http/route';
 import { opaqueId } from './schemas';
 
 /**
- * The practice workspace (PRD 7, Customer workspace). In this milestone its home shows the practice
+ * The practice workspace (PRD 7, Customer workspace). Its home shows data freshness (the last file
+ * and the last run, with a banner when a run failed on its last attempt; JOB-02), the practice
  * record, its agreement chain and, for its administrators, the support (break-glass) grants on it
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
  * here). Every read of the practice record goes through readWithAudit, so a support engineer's view
@@ -56,6 +57,57 @@ interface SupportGrantRow {
   readonly open: boolean;
 }
 
+/** A practice job's run (job_run), as the dashboard shows it: codes and the job's opaque reference. */
+export interface JobRunSummary {
+  readonly jobId: string;
+  readonly jobType: string;
+  readonly outcome: 'running' | 'retrying' | 'succeeded' | 'failed';
+  readonly attempts: number;
+  readonly startedAt: Date;
+  readonly finishedAt: Date | null;
+}
+
+export interface Freshness {
+  /** When the practice's last file was uploaded. */
+  readonly lastFileAt: Date | null;
+  /** The practice's most recent job run. */
+  readonly lastRun: JobRunSummary | null;
+  /**
+   * The most recent run that failed on its last attempt and has not succeeded since (a retry of the
+   * same job key that succeeded clears it): the dashboard's run-failed banner (test matrix JOB-02).
+   */
+  readonly failedRun: JobRunSummary | null;
+}
+
+const JOB_RUN_COLUMNS = 'job_id, job_type, outcome, attempts, started_at, finished_at';
+
+interface JobRunRow {
+  readonly job_id: string;
+  readonly job_type: string;
+  readonly outcome: JobRunSummary['outcome'];
+  readonly attempts: number;
+  readonly started_at: Date;
+  readonly finished_at: Date | null;
+}
+
+function jobRun(row: JobRunRow | undefined): JobRunSummary | null {
+  return row === undefined ? null : { jobId: row.job_id, jobType: row.job_type, outcome: row.outcome, attempts: row.attempts, startedAt: row.started_at, finishedAt: row.finished_at };
+}
+
+/** Data freshness and the last run's status (PRD 7, Practice dashboard). */
+export async function freshness(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<Freshness> {
+  const file = await scope.client.query<{ at: Date | null }>('SELECT max(created_at) AS at FROM source_document WHERE practice_id = $1 AND parent_document_id IS NULL', [practiceId]);
+  const last = await scope.client.query<JobRunRow>(`SELECT ${JOB_RUN_COLUMNS} FROM job_run WHERE practice_id = $1 ORDER BY started_at DESC, id DESC LIMIT 1`, [practiceId]);
+  const failed = await scope.client.query<JobRunRow>(
+    `SELECT ${JOB_RUN_COLUMNS} FROM job_run f
+      WHERE f.practice_id = $1 AND f.outcome = 'failed'
+        AND NOT EXISTS (SELECT 1 FROM job_run s WHERE s.practice_id = f.practice_id AND s.singleton_key = f.singleton_key AND s.outcome = 'succeeded' AND s.started_at > f.started_at)
+      ORDER BY f.finished_at DESC, f.id DESC LIMIT 1`,
+    [practiceId],
+  );
+  return { lastFileAt: file.rows[0]?.at ?? null, lastRun: jobRun(last.rows[0]), failedRun: jobRun(failed.rows[0]) };
+}
+
 function supportGrant(row: SupportGrantRow): SupportGrantSummary {
   return { id: row.id, ticket: row.ticket, reason: row.reason, createdAt: row.created_at, expiresAt: row.expires_at, notifiedAt: row.notified_at, open: row.open };
 }
@@ -98,6 +150,7 @@ export const practiceHome = practiceRoute({
       ),
       access: { via: access.via, roles: access.roles },
       supportGrants,
+      freshness: await freshness(scope, practiceId),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },

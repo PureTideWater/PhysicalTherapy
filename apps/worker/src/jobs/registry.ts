@@ -39,13 +39,18 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   export: (payload) => payload.export_job_id,
 };
 
+/** The job's idempotency subject inside its practice (job_run.idempotency_key). */
+export function jobSubject<T extends JobType>(type: T, payload: JobPayload<T>): string {
+  return SUBJECTS[type](payload);
+}
+
 /**
  * The pg-boss singleton key: job type, practice and subject. With the `exclusive` queue policy a
  * second job with the same key is refused while the first is queued or active, so a replayed
  * request has no duplicate effect.
  */
 export function singletonKey<T extends JobType>(type: T, payload: JobPayload<T>): string {
-  return `${type}:${payload.practice_id}:${SUBJECTS[type](payload)}`;
+  return `${type}:${payload.practice_id}:${jobSubject(type, payload)}`;
 }
 
 /** Validates a payload for a job type; throws a ZodError on anything else. */

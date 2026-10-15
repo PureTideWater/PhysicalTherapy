@@ -1,6 +1,6 @@
 import { type DocumentKind, type DocumentStatus, type PracticeScope, type ScanStatus, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 
-import { type EntryCounts, type Receipt, receiptState } from './receipt-labels';
+import { type EntryCounts, type ParseSummary, type ParsedError, type ParsedTransaction, type Receipt, errorPosition, receiptState } from './receipt-labels';
 
 /**
  * Receipts from source_document, read under the practice's policies and through readWithAudit (every
@@ -23,16 +23,35 @@ interface Row {
   readonly sha256: string | null;
   readonly duplicate_of: string | null;
   readonly duplicate_of_at: Date | null;
+  readonly parse_outcome: ParseSummary['outcome'] | null;
+  readonly parse_transactions: number | null;
+  readonly parse_claims: number | null;
+  readonly parse_lines: number | null;
+  readonly parse_reversals: number | null;
+  readonly parse_held: number | null;
+  readonly parse_plb_total_cents: string | null;
+  readonly parse_loaded_transactions: number | null;
+  readonly parse_loaded_claims: number | null;
+  readonly parse_loaded_lines: number | null;
+  readonly parse_duplicates: number | null;
+  readonly parse_unknown_codes: string[] | null;
+  readonly parse_errors: ParsedError[] | null;
+  readonly parse_transaction_outcomes: ParsedTransaction[] | null;
 }
 
 const COLUMNS = `d.id, d.practice_id, d.parent_document_id, d.kind, d.size_bytes::text AS size_bytes, d.created_at, d.status, d.scan_status, d.sha256,
-  first.id AS duplicate_of, first.created_at AS duplicate_of_at`;
+  first.id AS duplicate_of, first.created_at AS duplicate_of_at,
+  pr.outcome AS parse_outcome, pr.transactions AS parse_transactions, pr.claims AS parse_claims, pr.lines AS parse_lines, pr.reversals AS parse_reversals,
+  pr.held AS parse_held, pr.plb_total_cents::text AS parse_plb_total_cents, pr.loaded_transactions AS parse_loaded_transactions,
+  pr.loaded_claims AS parse_loaded_claims, pr.loaded_lines AS parse_loaded_lines, pr.duplicate_transactions AS parse_duplicates,
+  pr.unknown_codes AS parse_unknown_codes, pr.errors AS parse_errors, pr.transaction_outcomes AS parse_transaction_outcomes`;
 
 const FIRST_OF_BYTES = `LEFT JOIN LATERAL (
     SELECT f.id, f.created_at FROM source_document f
      WHERE d.status = 'duplicate' AND f.practice_id = d.practice_id AND f.sha256 = d.sha256 AND f.status <> 'duplicate'
      ORDER BY f.created_at, f.id LIMIT 1
-  ) first ON true`;
+  ) first ON true
+  LEFT JOIN parse_report pr ON pr.source_document_id = d.id`;
 
 async function entryCounts(scope: PracticeScope<ScopeClient>, ids: readonly string[]): Promise<Map<string, EntryCounts>> {
   const counts = new Map<string, EntryCounts>();
@@ -50,6 +69,26 @@ async function entryCounts(scope: PracticeScope<ScopeClient>, ids: readonly stri
   return counts;
 }
 
+function parseOf(row: Row): ParseSummary | null {
+  if (row.parse_outcome === null) {
+    return null;
+  }
+  return {
+    outcome: row.parse_outcome,
+    transactions: row.parse_transactions ?? 0,
+    claims: row.parse_claims ?? 0,
+    lines: row.parse_lines ?? 0,
+    reversals: row.parse_reversals ?? 0,
+    held: row.parse_held ?? 0,
+    plbTotalCents: row.parse_plb_total_cents ?? '0',
+    loaded: { transactions: row.parse_loaded_transactions ?? 0, claims: row.parse_loaded_claims ?? 0, lines: row.parse_loaded_lines ?? 0 },
+    duplicates: row.parse_duplicates ?? 0,
+    unknownCodes: row.parse_unknown_codes ?? [],
+    errors: row.parse_errors ?? [],
+    transactionOutcomes: row.parse_transaction_outcomes ?? [],
+  };
+}
+
 function receipt(row: Row, counts: Map<string, EntryCounts>): Receipt {
   return {
     documentId: row.id,
@@ -62,6 +101,7 @@ function receipt(row: Row, counts: Map<string, EntryCounts>): Receipt {
     sha256: row.sha256,
     duplicateOf: row.duplicate_of === null || row.duplicate_of_at === null ? null : { documentId: row.duplicate_of, receivedAt: row.duplicate_of_at.toISOString() },
     entries: counts.get(row.id) ?? null,
+    parse: parseOf(row),
   };
 }
 
@@ -132,15 +172,123 @@ export async function receiptOf(scope: PracticeScope<ScopeClient>, practiceId: s
   return found;
 }
 
-const CSV_HEADER = ['document_id', 'parent_document_id', 'kind', 'stage', 'status', 'reason', 'size_bytes', 'sha256', 'received_at', 'duplicate_of'];
+const CSV_HEADER = [
+  'record',
+  'document_id',
+  'parent_document_id',
+  'kind',
+  'stage',
+  'status',
+  'reason',
+  'size_bytes',
+  'sha256',
+  'received_at',
+  'duplicate_of',
+  'transactions',
+  'claims',
+  'lines',
+  'reversals',
+  'plb_total_cents',
+  'held_transactions',
+  'loaded_transactions',
+  'loaded_claims',
+  'loaded_lines',
+  'unknown_codes',
+  'st02',
+  'outcome',
+  'remittance_id',
+  'linked_remittance_id',
+  'linked_document_id',
+  'error_code',
+  'error_reason',
+  'segment_index',
+  'segment_id',
+  'element_position',
+  'component_position',
+  'difference_cents',
+  'position',
+] as const;
 
 function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
 }
 
+type CsvRow = Partial<Record<(typeof CSV_HEADER)[number], string | number | null | undefined>>;
+
+function csvLine(row: CsvRow): string {
+  return CSV_HEADER.map((column) => csvField(String(row[column] ?? ''))).join(',');
+}
+
+/** A document's lines of the report: the document, each transaction set, each error with its position. */
+function reportLines(item: Receipt): string[] {
+  const state = receiptState(item);
+  const parse = item.parse;
+  const document = csvLine({
+    record: 'document',
+    document_id: item.documentId,
+    parent_document_id: item.parentDocumentId,
+    kind: item.kind,
+    stage: state.stage,
+    status: item.status,
+    reason: state.detail,
+    size_bytes: item.sizeBytes,
+    sha256: item.sha256,
+    received_at: item.receivedAt,
+    duplicate_of: item.duplicateOf?.documentId,
+    transactions: parse?.transactions,
+    claims: parse?.claims,
+    lines: parse?.lines,
+    reversals: parse?.reversals,
+    plb_total_cents: parse?.plbTotalCents,
+    held_transactions: parse?.held,
+    loaded_transactions: parse?.loaded.transactions,
+    loaded_claims: parse?.loaded.claims,
+    loaded_lines: parse?.loaded.lines,
+    unknown_codes: parse?.unknownCodes.join(' '),
+  });
+  if (parse === null) {
+    return [document];
+  }
+  const transactions = parse.transactionOutcomes.map((outcome) =>
+    csvLine({
+      record: 'transaction',
+      document_id: item.documentId,
+      st02: outcome.st02,
+      outcome: outcome.outcome,
+      remittance_id: outcome.remittanceId,
+      linked_remittance_id: outcome.linkedRemittanceId,
+      linked_document_id: outcome.linkedDocumentId,
+      claims: outcome.claims,
+      lines: outcome.lines,
+      error_code: outcome.reasons.join(' '),
+      segment_index: outcome.segmentIndex,
+      segment_id: 'ST',
+    }),
+  );
+  const errors = parse.errors.map((error) =>
+    csvLine({
+      record: 'error',
+      document_id: item.documentId,
+      st02: error.transaction?.st02,
+      error_code: error.code,
+      error_reason: error.reason ?? error.scope ?? error.list,
+      segment_index: error.segmentIndex,
+      segment_id: error.segmentId,
+      element_position: error.elementPosition,
+      component_position: error.componentPosition,
+      difference_cents: error.differenceCents,
+      position: errorPosition(error),
+    }),
+  );
+  return [document, ...transactions, ...errors];
+}
+
 /**
- * The receipt as CSV: the document, and for a zip one line per entry in its order in the zip (the batch
- * receipt, PAR-27). Codes, opaque IDs, hashes and fixed reasons only. Undefined when no such document.
+ * The receipt as CSV, the parser's error report (PRD 5, J4; PRD 10, step 10): the document, and for a
+ * zip one block per entry in its order in the zip (the batch receipt, PAR-27). Each document's block
+ * is its line, a line per transaction set (what it loaded or why it is held, and the remittance it
+ * loaded or duplicates) and a line per error with its segment index, segment ID and element position.
+ * Codes, counts, opaque IDs, hashes and fixed reasons only. Undefined when no such document.
  */
 export async function receiptReport(scope: PracticeScope<ScopeClient>, practiceId: string, documentId: string, requestId: string): Promise<string | undefined> {
   const receipts = await audited(
@@ -155,11 +303,5 @@ export async function receiptReport(scope: PracticeScope<ScopeClient>, practiceI
   if (receipts[0]?.documentId !== documentId) {
     return undefined;
   }
-  const lines = receipts.map((item) => {
-    const state = receiptState(item);
-    return [item.documentId, item.parentDocumentId ?? '', item.kind, state.stage, item.status, state.detail, item.sizeBytes, item.sha256 ?? '', item.receivedAt, item.duplicateOf?.documentId ?? '']
-      .map(csvField)
-      .join(',');
-  });
-  return `${[CSV_HEADER.join(','), ...lines].join('\r\n')}\r\n`;
+  return `${[CSV_HEADER.join(','), ...receipts.flatMap(reportLines)].join('\r\n')}\r\n`;
 }

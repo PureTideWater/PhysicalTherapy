@@ -57,21 +57,39 @@ describe('the catalog test', () => {
   it('covers the tenancy tables, the registry and the nullable exceptions the data dictionary names', async () => {
     const registered = await client.query<{ table_name: string; policy_name: string }>('SELECT table_name, policy_name FROM phi_table_registry ORDER BY 1');
     expect(registered.rows).toEqual([
+      { table_name: 'adjustment', policy_name: 'adjustment_tenant' },
+      { table_name: 'claim', policy_name: 'claim_tenant' },
       { table_name: 'grant', policy_name: 'grant_tenant' },
+      { table_name: 'job_run', policy_name: 'job_run_tenant' },
+      { table_name: 'line_note', policy_name: 'line_note_tenant' },
+      { table_name: 'parse_report', policy_name: 'parse_report_tenant' },
+      { table_name: 'patient_ref', policy_name: 'patient_ref_tenant' },
       { table_name: 'payer', policy_name: 'payer_tenant' },
       { table_name: 'plan', policy_name: 'plan_tenant' },
       { table_name: 'practice', policy_name: 'practice_tenant' },
+      { table_name: 'provider_adjustment', policy_name: 'provider_adjustment_tenant' },
+      { table_name: 'remittance', policy_name: 'remittance_tenant' },
+      { table_name: 'service_line', policy_name: 'service_line_tenant' },
       { table_name: 'source_document', policy_name: 'source_document_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
     ]);
     expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event']);
     expect(await tenantTables(client)).toEqual([
+      { table: 'adjustment', tenantColumn: 'practice_id' },
       { table: 'agreement', tenantColumn: 'practice_id' },
       { table: 'audit_event', tenantColumn: 'practice_id' },
+      { table: 'claim', tenantColumn: 'practice_id' },
       { table: 'grant', tenantColumn: 'practice_id' },
+      { table: 'job_run', tenantColumn: 'practice_id' },
+      { table: 'line_note', tenantColumn: 'practice_id' },
+      { table: 'parse_report', tenantColumn: 'practice_id' },
+      { table: 'patient_ref', tenantColumn: 'practice_id' },
       { table: 'payer', tenantColumn: 'practice_id' },
       { table: 'plan', tenantColumn: 'practice_id' },
       { table: 'practice', tenantColumn: 'id' },
+      { table: 'provider_adjustment', tenantColumn: 'practice_id' },
+      { table: 'remittance', tenantColumn: 'practice_id' },
+      { table: 'service_line', tenantColumn: 'practice_id' },
       { table: 'source_document', tenantColumn: 'practice_id' },
       { table: 'support_grant', tenantColumn: 'practice_id' },
     ]);

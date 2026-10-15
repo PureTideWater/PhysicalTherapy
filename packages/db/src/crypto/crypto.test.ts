@@ -138,6 +138,9 @@ describe('PracticeCipher', () => {
     expect(new PracticeCipher(PRACTICE_A, key).lookupHash('claim.payer_claim_control_number', SYNTHETIC_PCN)).toBe(hash);
     expect(cipher.lookupHash('claim.payer_claim_control_number', 'SYNPCN0002')).not.toBe(hash);
     expect(new PracticeCipher(PRACTICE_B, randomBytes(32)).lookupHash('claim.payer_claim_control_number', SYNTHETIC_PCN)).not.toBe(hash);
+    // The pseudonym of the same text is a different hash: each column hashes on its own.
+    expect(cipher.lookupHash('patient_ref.pseudonym', SYNTHETIC_PCN)).not.toBe(hash);
+    expect(cipher.lookupHash('patient_ref.pseudonym', SYNTHETIC_PCN)).toBe(new PracticeCipher(PRACTICE_A, key).lookupHash('patient_ref.pseudonym', SYNTHETIC_PCN));
   });
 
   it('refuses a key that is not 32 bytes and a practice that is not a UUID', () => {

@@ -44,6 +44,16 @@ a presigned S3 PUT (`DOCUMENTS_BUCKET`, `DOCUMENTS_KMS_KEY_ID`) and GuardDuty gi
 waits up to `SCAN_WAIT_SECONDS` (600) for it. `TP_LARGE_ZIP_MB` sizes the large-zip streaming test (256 MiB by
 default).
 
+Parse and load (ADR 0027): the worker's `parse_835` job (`apps/worker/src/parse`) parses each clean 835 twice as a
+stream, once for the parser's final report and once to load each loadable transaction set in its own transaction:
+`remittance`, `claim`, `service_line`, `adjustment`, `provider_adjustment`, `patient_ref` (by pseudonym, identifiers
+encrypted) and the payer and plan rows of the mapping queue. Held sets never load; their reasons and positions are in
+`parse_report`, which the upload's receipt and its CSV report show. CARC and RARC are checked against the newest
+published rule release (with none, every code loads flagged unknown). Every practice job's attempts are recorded in
+`job_run` for the practice home's last run and its run-failed banner. The Remittances (`/p/<practice>/remittances`) and
+Claims and lines (`/p/<practice>/claims`, the net view by default) screens read them; their PHI columns show only to
+roles that read PHI.
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data

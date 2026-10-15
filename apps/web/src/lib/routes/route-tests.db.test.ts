@@ -5,7 +5,20 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type MembershipRole, PERSONAS, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, rolesPermit, tenantTables } from '@tp/db';
+import {
+  type DatabaseClient,
+  type DatabasePool,
+  LocalKeyProvider,
+  type MembershipRole,
+  PERSONAS,
+  type PracticeCipher,
+  databaseClient,
+  openPool,
+  provisionPracticeKey,
+  readDatabaseUrl,
+  rolesPermit,
+  tenantTables,
+} from '@tp/db';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
@@ -21,6 +34,7 @@ import { MemoryQueue } from '../uploads/queue';
 import { LocalUploadTargets } from '../uploads/targets';
 import { inviteMember } from './console';
 import { ROUTES } from './index';
+import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -136,6 +150,64 @@ async function lockedUser(organizationId: string): Promise<string> {
   return id;
 }
 
+/**
+ * A loaded remittance with one claim, one line and its adjustments, as the 835 loader writes them
+ * (identifiers encrypted with the practice's key), for the Remittances and Claims and lines routes.
+ */
+async function seedRemittance(practiceId: string, cipher: PracticeCipher, uploader: string): Promise<{ remittanceId: string; claimId: string; serviceLineId: string }> {
+  return asOwner(
+    owner,
+    [practiceId],
+    async () => {
+      const one = async (sql: string, values: unknown[]) => ((await owner.query<{ id: string }>(sql, values)).rows[0] as { id: string }).id;
+      const document = await one(
+        "INSERT INTO source_document (practice_id, kind, size_bytes, content_type, uploaded_by, sha256, scan_status, scan_at, status) VALUES ($1, 'x12_835', 1200, 'application/octet-stream', $2, $3, 'clean', now(), 'loaded') RETURNING id",
+        [practiceId, uploader, randomBytes(32).toString('hex')],
+      );
+      const payer = await one("INSERT INTO payer (practice_id, payer_id_raw, name_raw) VALUES ($1, '2U:SYNPAYERROUTE', 'SYNTHETIC PAYER ROUTE') RETURNING id", [practiceId]);
+      const plan = await one("INSERT INTO plan (practice_id, payer_id, plan_key) VALUES ($1, $2, 'CE:SYNPLAN-ROUTE') RETURNING id", [practiceId, payer]);
+      const patient = await one('INSERT INTO patient_ref (practice_id, pseudonym, last_name, first_name) VALUES ($1, $2, $3, $4) RETURNING id', [
+        practiceId,
+        cipher.lookupHash('patient_ref.pseudonym', 'name|SYNTHLASTROUTE|SYNTHFIRSTROUTE||'),
+        cipher.encrypt('patient_ref.last_name', 'SYNTHLASTROUTE'),
+        cipher.encrypt('patient_ref.first_name', 'SYNTHFIRSTROUTE'),
+      ]);
+      const remittanceId = await one(
+        `INSERT INTO remittance (practice_id, source_document_id, sender_id, receiver_id, isa13, gs06, st02, trn02, trn03, bpr02_cents, bpr_credit_debit, bpr_method, bpr16_date,
+           payer_name, payer_id, payee_npi, payee_id_qualifier, claim_count, plb_total_cents)
+         VALUES ($1, $2, 'SYNTHSENDER', 'SYNTHRECEIVER', '000000001', '1', '0001', 'SYNEFTROUTE0001', '1SYN00000R', 8800, 'C', 'ACH', '2026-04-06', 'SYNTHETIC PAYER ROUTE', $3, '9900000001', 'XX', 1, 0)
+         RETURNING id`,
+        [practiceId, document, payer],
+      );
+      const claimId = await one(
+        `INSERT INTO claim (practice_id, remittance_id, claim_no, patient_control_number, payer_claim_control_number, payer_claim_control_number_hash, claim_status_code,
+           charge_cents, paid_cents, patient_resp_cents, filing_indicator, patient_ref_id, service_from, service_to)
+         VALUES ($1, $2, 1, $3, $4, $5, '1', 16000, 8800, 2200, '12', $6, '2026-03-15', '2026-03-15') RETURNING id`,
+        [
+          practiceId,
+          remittanceId,
+          cipher.encrypt('claim.patient_control_number', 'SYNPCNROUTE0001'),
+          cipher.encrypt('claim.payer_claim_control_number', SAMPLE_PAYER_CLAIM_CONTROL_NUMBER),
+          cipher.lookupHash('claim.payer_claim_control_number', SAMPLE_PAYER_CLAIM_CONTROL_NUMBER),
+          patient,
+        ],
+      );
+      const serviceLineId = await one(
+        `INSERT INTO service_line (practice_id, claim_id, line_no, procedure_qualifier, procedure_code, modifiers, charge_cents, paid_cents, units, service_date,
+           observed_allowed_cents, observed_allowed_basis, patient_share_cents, payer_plan_key)
+         VALUES ($1, $2, 1, 'HC', '97110', '{GP}', 16000, 8800, 2, '2026-03-15', 11000, 'paid_plus_pr', 2200, $3) RETURNING id`,
+        [practiceId, claimId, plan],
+      );
+      await owner.query(
+        "INSERT INTO adjustment (practice_id, claim_id, service_line_id, group_code, reason_code, amount_cents, position) VALUES ($1, $2, $3, 'CO', '45', 5000, 1), ($1, $2, $3, 'PR', '2', 2200, 2)",
+        [practiceId, claimId, serviceLineId],
+      );
+      return { remittanceId, claimId, serviceLineId };
+    },
+    uploader,
+  );
+}
+
 /** A practice with every persona: its group's members, a firm with a grant, the internal roles and a support grant. */
 async function buildWorld(name: string): Promise<World> {
   const tenant = await createTenantWorld(owner, name);
@@ -204,6 +276,7 @@ async function buildWorld(name: string): Promise<World> {
   );
   const target = await services.uploads.target({ practiceId: tenant.practiceId, documentId, sizeBytes: 1200, contentType: 'application/octet-stream' }, new Date());
   const uploadToken = new URL(target.url).searchParams.get('token') ?? '';
+  const loaded = await seedRemittance(tenant.practiceId, key.cipher, tenant.adminUserId);
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -220,6 +293,7 @@ async function buildWorld(name: string): Promise<World> {
     internalOrganizationId: internalId,
     documentId,
     uploadToken,
+    ...loaded,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }
