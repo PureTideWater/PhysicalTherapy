@@ -1,9 +1,9 @@
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { NULLABLE_PRACTICE_ID_TABLES, catalogProblems, tenantPolicyExpression, tenantTables } from './catalog';
+import { NULLABLE_PRACTICE_ID_TABLES, PLATFORM_DIRECTORY_TABLES, REVIEWED_PLATFORM_POLICIES, catalogProblems, tenantPolicyExpression, tenantTables } from './catalog';
 import { readDatabaseUrl } from './config';
-import { APP_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 import { type MigratedDatabase, createMigratedDatabase } from './testing';
 
 /**
@@ -118,6 +118,58 @@ describe('the catalog test', () => {
     ]);
     const narrowed = await problemsAfter(COMPLETE.replace('ON throwaway_phi USING', `ON throwaway_phi TO ${APP_ROLE} USING`));
     expect(narrowed).toEqual([expect.stringMatching(/policy throwaway_phi_tenant must be PERMISSIVE, FOR ALL, TO PUBLIC/)]);
+  });
+
+  it('fails when a second permissive policy on a PHI table ignores app.practice_ids, whatever its role', async () => {
+    // The leak the review proved: the registered policy is exact, but permissive policies add up.
+    expect(await problemsAfter(`${COMPLETE} CREATE POLICY throwaway_leak ON throwaway_phi FOR SELECT TO ${APP_ROLE} USING (app_actor_id() IS NOT NULL);`)).toEqual([
+      `registered table throwaway_phi: permissive policy throwaway_leak for ${APP_ROLE} ignores app.practice_ids; permissive policies add up, so it admits rows of every practice`,
+    ]);
+    expect(await problemsAfter(`${COMPLETE} CREATE POLICY throwaway_platform ON throwaway_phi USING ((SELECT app_actor_is_platform_admin()));`)).toEqual([
+      'registered table throwaway_phi: permissive policy throwaway_platform for public ignores app.practice_ids; permissive policies add up, so it admits rows of every practice',
+    ]);
+    expect(await problemsAfter(`${COMPLETE} CREATE POLICY throwaway_operator ON throwaway_phi FOR INSERT TO ${OPERATOR_ROLE} WITH CHECK (true);`)).toEqual([
+      `registered table throwaway_phi: permissive policy throwaway_operator for ${OPERATOR_ROLE} ignores app.practice_ids; permissive policies add up, so it admits rows of every practice`,
+    ]);
+  });
+
+  it('accepts other permissive policies that keep the tenant expression, restrictive ones, and the owner’s', async () => {
+    expect(
+      await problemsAfter(`${COMPLETE}
+        CREATE POLICY throwaway_narrower ON throwaway_phi FOR SELECT TO ${APP_ROLE} USING (${TENANT} AND note <> '');
+        CREATE POLICY throwaway_restrictive ON throwaway_phi AS RESTRICTIVE FOR SELECT TO ${APP_ROLE} USING (note <> '');
+        CREATE POLICY throwaway_resolver ON throwaway_phi FOR SELECT TO ${OWNER_ROLE} USING (true);`),
+    ).toEqual([]);
+  });
+
+  it('knows the reviewed platform policies, admits nothing else through them, and fails when one goes stale', async () => {
+    expect(REVIEWED_PLATFORM_POLICIES.map((item) => `${item.table}.${item.policy}:${item.command}`)).toEqual([
+      'practice.practice_platform_admin_insert:a',
+      'support_grant.support_grant_platform_administrators_read:r',
+      'support_grant.support_grant_platform_administrators_insert:a',
+    ]);
+    expect(REVIEWED_PLATFORM_POLICIES.every((item) => item.admits === 'platform_admin' && item.reason.length > 20)).toBe(true);
+    expect(Object.keys(PLATFORM_DIRECTORY_TABLES).sort()).toEqual(['agreement', 'support_grant']);
+    expect(await problemsAfter('DROP POLICY support_grant_platform_administrators_read ON support_grant;')).toEqual([
+      'reviewed policy support_grant.support_grant_platform_administrators_read does not exist as a permissive policy for that command; update REVIEWED_PLATFORM_POLICIES',
+    ]);
+    // A reviewed name widened to every command is a new policy, not the reviewed one.
+    const widened = await problemsAfter(
+      'DROP POLICY support_grant_platform_administrators_read ON support_grant; CREATE POLICY support_grant_platform_administrators_read ON support_grant TO tp_app USING ((SELECT app_actor_is_platform_admin()));',
+    );
+    expect(widened).toEqual(expect.arrayContaining([expect.stringMatching(/permissive policy support_grant_platform_administrators_read for tp_app ignores app.practice_ids/)]));
+  });
+
+  it('fails on a SECURITY DEFINER function that does not search pg_temp last, and on anything the operator role owns', async () => {
+    expect(await problemsAfter('CREATE FUNCTION throwaway_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$ SELECT 1 $$;')).toEqual([
+      'function throwaway_definer() is SECURITY DEFINER without pg_temp last in its search_path',
+    ]);
+    expect(await problemsAfter('CREATE FUNCTION throwaway_definer() RETURNS int LANGUAGE sql SECURITY DEFINER AS $$ SELECT 1 $$;')).toEqual([
+      'function throwaway_definer() is SECURITY DEFINER without pg_temp last in its search_path',
+    ]);
+    expect(await problemsAfter('CREATE FUNCTION throwaway_definer() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$ SELECT 1 $$;')).toEqual([]);
+    const owned = await problemsAfter(`CREATE TABLE throwaway_owned (id uuid PRIMARY KEY); RESET ROLE; ALTER TABLE throwaway_owned OWNER TO ${OPERATOR_ROLE};`);
+    expect(owned).toEqual(expect.arrayContaining([`the operator role ${OPERATOR_ROLE} owns relation throwaway_owned`]));
   });
 
   it('fails when a registered table is missing or does not qualify', async () => {

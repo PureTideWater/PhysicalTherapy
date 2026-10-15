@@ -4,10 +4,10 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type PracticeScope, withJobScope, withPracticeScope } from './authz';
-import { tenantTables } from './catalog';
+import { PLATFORM_DIRECTORY_TABLES, REVIEWED_PLATFORM_POLICIES, tenantTables } from './catalog';
 import { readDatabaseUrl } from './config';
 import { APP_ROLE } from './roles';
-import { type MigratedDatabase, type Row, RowFactory, type TenantWorld, createMigratedDatabase, createTenantWorld } from './testing';
+import { type MigratedDatabase, type Row, RowFactory, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from './testing';
 
 /**
  * Cross-tenant negative tests generated from the schema (test matrix SEC-02; .claude/rules:
@@ -17,6 +17,13 @@ import { type MigratedDatabase, type Row, RowFactory, type TenantWorld, createMi
  * of A's rows, update and delete zero of them, and be refused an INSERT of a new row for A. Each
  * check runs three ways: a request's scope (withPracticeScope asking for A and B), a job's scope
  * (withJobScope for B), and app.practice_ids set by hand, which tests the policies alone.
+ *
+ * The INSERT probe differs from an accepted row in its practice only: its actor and approver columns
+ * name the acting user, the identical row is accepted with its own practice in scope (the control),
+ * and refused with only practice B in scope. And the people who reach no practice at all (a platform
+ * administrator, a contract specialist, a support engineer without a support grant, a firm user
+ * without a grant) read, change and delete none of A's rows either, except the directory reads the
+ * catalog names for platform administrators (PLATFORM_DIRECTORY_TABLES).
  */
 
 const database: MigratedDatabase = await createMigratedDatabase(readDatabaseUrl());
@@ -29,11 +36,23 @@ let worldA: TenantWorld;
 let worldB: TenantWorld;
 let app: pg.Pool;
 
+/** People who reach no practice: each must see nothing of practice A. */
+type Outsider = 'platform_admin' | 'contract_specialist' | 'support' | 'firm_principal';
+const OUTSIDERS: readonly Outsider[] = ['platform_admin', 'contract_specialist', 'support', 'firm_principal'];
+const outsiders = new Map<Outsider, string>();
+
 beforeAll(async () => {
   factory = await RowFactory.load(owner);
   worldA = await createTenantWorld(owner, 'A');
   worldB = await createTenantWorld(owner, 'B');
   app = new pg.Pool({ connectionString: database.appUrl, max: 4 });
+  const internal = await createOrganization(owner, 'internal', 'cross-tenant');
+  const firm = await createOrganization(owner, 'firm', 'cross-tenant');
+  for (const role of OUTSIDERS) {
+    const person = await createUser(owner, { hardwareKeyRequired: role !== 'firm_principal' });
+    await addMembership(owner, role === 'firm_principal' ? firm : internal, person, role);
+    outsiders.set(role, person);
+  }
 });
 
 afterAll(async () => {
@@ -168,6 +187,70 @@ describe.each(TABLES)('$table', ({ table, tenantColumn }) => {
     await asPracticeB(mode, async (client) => {
       const sql = `INSERT INTO ${quoted} (${columns.map((column) => `"${column}"`).join(', ')}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(', ')})`;
       await refused(client.query(sql, Object.values(probe.values)), byPolicy);
+    });
+  });
+
+  it('accepts the probe row with its own practice in scope, and refuses the identical row with only practice B in scope', async () => {
+    // The probe's actor and approver columns name practice A's administrator, who acts here: only the
+    // scope differs between the two attempts, so the refusal is the tenant policy's.
+    const probe = await factory.build(owner, table, worldA);
+    const columns = Object.keys(probe.values);
+    const sql = `INSERT INTO ${quoted} (${columns.map((column) => `"${column}"`).join(', ')}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(', ')})`;
+    const attempt = async (actorId: string, practiceIds: readonly unknown[]) => {
+      const client = await app.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.practice_ids', $1, true), set_config('app.actor_id', $2, true)", [`{${practiceIds.join(',')}}`, actorId]);
+        return await client.query(sql, Object.values(probe.values));
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+    };
+    const own = [probe.values[tenantColumn]];
+    // Rows only platform administrators create (the reviewed insert policies): the control is theirs.
+    const platformOnly = REVIEWED_PLATFORM_POLICIES.some((item) => item.table === table && item.command === 'a' && table !== 'practice');
+    if (platformOnly) {
+      await refused(attempt(worldA.adminUserId, own), true);
+      await expect(attempt(outsiders.get('platform_admin') ?? '', own)).resolves.toMatchObject({ rowCount: 1 });
+      return;
+    }
+    await expect(attempt(worldA.adminUserId, own)).resolves.toMatchObject({ rowCount: 1 });
+    await refused(attempt(worldA.adminUserId, [worldB.practiceId]), true);
+  });
+
+  describe.each(OUTSIDERS)('as a %s, who reaches no practice', (role) => {
+    const actor = () => outsiders.get(role) ?? '';
+    const directory = role === 'platform_admin' && PLATFORM_DIRECTORY_TABLES[table] !== undefined;
+
+    it(directory ? 'reads A’s directory rows by design, and nothing else of A' : 'reads none of A’s rows', async () => {
+      await withPracticeScope(app, { actorId: actor(), practiceIds: [worldA.practiceId, worldB.practiceId] }, async (scope) => {
+        expect(scope.practiceIds).toEqual([]);
+        const seen = (await scope.client.query<Row>(`SELECT ${key} AS id FROM ${quoted} WHERE ${key} = ANY ($1)`, [idsA()])).rows.map((row) => row.id);
+        expect(seen.sort()).toEqual(directory ? idsA().map(String).sort() : []);
+      });
+    });
+
+    it('updates and deletes none of A’s rows', async () => {
+      const [column] = await privileged(table, 'UPDATE');
+      const deletable = await hasDelete(table);
+      await withPracticeScope(app, { actorId: actor(), practiceIds: [worldA.practiceId] }, async (scope) => {
+        // Each probe in its own savepoint, so a refusal does not end the transaction for the next.
+        await scope.client.query('SAVEPOINT probe');
+        if (column === undefined) {
+          await refused(scope.client.query(`UPDATE ${quoted} SET ${key} = ${key} WHERE ${key} = ANY ($1)`, [idsA()]), false);
+        } else {
+          expect((await scope.client.query(`UPDATE ${quoted} SET ${column} = ${column} WHERE ${key} = ANY ($1)`, [idsA()])).rowCount).toBe(0);
+        }
+        await scope.client.query('ROLLBACK TO SAVEPOINT probe');
+        const removal = scope.client.query(`DELETE FROM ${quoted} WHERE ${key} = ANY ($1)`, [idsA()]);
+        if (deletable) {
+          expect((await removal).rowCount).toBe(0);
+        } else {
+          await refused(removal, false);
+        }
+        await scope.client.query('ROLLBACK TO SAVEPOINT probe');
+      });
     });
   });
 

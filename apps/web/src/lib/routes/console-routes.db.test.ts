@@ -13,7 +13,7 @@ import { SESSION_COOKIE, openSession, resolveSession } from '../auth/sessions';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
-import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, inviteMember, organizationPage, recordAgreement, supportPage, unlockUser } from './console';
+import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, organizationPage, recordAgreement, supportPage, unlockUser } from './console';
 import { practiceHome, supportAccessPage } from './practice';
 
 /**
@@ -106,6 +106,13 @@ describe('organizations and practices', () => {
     }
     const organizationId = created.data.objectId;
     expect(created.data.redirect).toBe(`/console/organizations/${organizationId}`);
+    // A practice always has an administrator (PRD 3): until the group's is invited, there is no practice.
+    expect(await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '27601' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'input', message: "invite the practice group's administrator before creating or moving its practice: a practice always has an administrator" }],
+    });
+    const invited = await run(inviteMember, admin.token, { organizationId, email: 'console-group-admin@synthetic.test', role: 'practice_admin' });
+    expect(invited.status).toBe('ok');
     const practice = await run(createPractice, admin.token, { organizationId, name: 'SYNTHETIC CONSOLE PRACTICE', npi: '', zip: '27601' });
     if (practice.status !== 'ok' || practice.data.objectId === undefined) {
       throw new Error(`expected a new practice, got ${practice.status}`);
@@ -116,13 +123,20 @@ describe('organizations and practices', () => {
     // The wrapped key opens with the key provider, for this practice only.
     await expect(openPracticeCipher(keys, practiceId, rows[0]?.data_key_ref ?? null)).resolves.toBeDefined();
     await expect(openPracticeCipher(keys, randomUUID(), rows[0]?.data_key_ref ?? null)).rejects.toThrow();
-    const audit = await owner.query("SELECT action, object_id, practice_id FROM audit_event WHERE actor_id = $1 AND action <> 'sign_in' ORDER BY at", [admin.id]);
+    const audit = await owner.query("SELECT action, object_type, purpose, object_id, practice_id FROM audit_event WHERE actor_id = $1 AND action <> 'sign_in' ORDER BY at, action", [admin.id]);
+    const membershipId = invited.status === 'ok' ? invited.data.objectId : undefined;
     expect(audit.rows).toEqual([
-      { action: 'organization_created', object_id: organizationId, practice_id: null },
-      { action: 'practice_created', object_id: practiceId, practice_id: null },
+      { action: 'organization_created', object_type: 'organization', purpose: null, object_id: organizationId, practice_id: null },
+      { action: 'membership_created', object_type: 'membership', purpose: null, object_id: membershipId, practice_id: null },
+      // An administrator role given is a role escalation, recorded by the database for the weekly review.
+      { action: 'security_event', object_type: 'membership', purpose: 'role_escalation', object_id: membershipId, practice_id: null },
+      { action: 'practice_created', object_type: 'practice', purpose: null, object_id: practiceId, practice_id: null },
     ]);
     const page = await run(organizationPage, admin.token, undefined, { organizationId });
-    expect(page).toMatchObject({ status: 'ok', data: { organization: { kind: 'group' }, practices: [{ id: practiceId, name: 'SYNTHETIC CONSOLE PRACTICE' }], members: [], agreements: [], grants: [] } });
+    expect(page).toMatchObject({
+      status: 'ok',
+      data: { organization: { kind: 'group' }, practices: [{ id: practiceId, name: 'SYNTHETIC CONSOLE PRACTICE' }], members: [{ email: 'console-group-admin@synthetic.test', role: 'practice_admin' }], agreements: [], grants: [] },
+    });
   });
 
   it('refuses a practice owned by a firm, with the database’s rule as the reason', async () => {
@@ -158,6 +172,35 @@ describe('members', () => {
     const email = `staff-${randomUUID()}@synthetic.test`;
     expect((await run(inviteMember, admin.token, { organizationId: admin.internalId, email, role: 'support' })).status).toBe('ok');
     expect((await owner.query('SELECT hardware_key_required FROM "user" WHERE email = $1', [email])).rows).toEqual([{ hardware_key_required: true }]);
+  });
+
+  it('never adds the platform administrator, or any internal user, to a customer organization, nor a customer to the internal one (PRD 3)', async () => {
+    const emailOf = async (userId: string) => (await owner.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [userId])).rows[0]?.email ?? '';
+    const firmId = await createOrganization(owner, 'firm', 'invite firm');
+    const before = invitations.length;
+    for (const organizationId of [world.organizationId, firmId]) {
+      const role = organizationId === firmId ? 'firm_principal' : 'practice_admin';
+      expect(await run(inviteMember, admin.token, { organizationId, email: await emailOf(admin.id), role })).toEqual({
+        status: 'invalid',
+        issues: [{ field: 'email', message: 'you cannot add yourself to an organization' }],
+      });
+      for (const internalRole of ['support', 'contract_specialist', 'reviewer', 'platform_admin'] as const) {
+        const staff = await createUser(owner, { hardwareKeyRequired: true });
+        await addMembership(owner, admin.internalId, staff, internalRole);
+        expect(await run(inviteMember, admin.token, { organizationId, email: await emailOf(staff), role })).toEqual({
+          status: 'invalid',
+          issues: [{ field: 'email', message: 'an internal user cannot join a practice group or a firm; support access is a support grant' }],
+        });
+      }
+    }
+    expect(await run(inviteMember, admin.token, { organizationId: admin.internalId, email: await emailOf(world.adminUserId), role: 'support' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }],
+    });
+    // Refused before the identity provider was asked for anything.
+    expect(invitations).toHaveLength(before);
+    // The practice stays out of the platform administrator's reach.
+    expect(await run(practiceHome, admin.token, undefined, { practiceId: world.practiceId })).toEqual({ status: 'not_found' });
   });
 
   it('refuses an email that belongs to another identity', async () => {
@@ -257,6 +300,28 @@ describe('support grants (PRD 5, J15)', () => {
     expect(await run(supportAccessPage, adminToken, undefined, { practiceId: world.practiceId, supportGrantId: randomUUID() })).toEqual({ status: 'not_found' });
     // The engineer cannot read the practice's access log.
     expect(await run(supportAccessPage, engineerToken, undefined, { practiceId: world.practiceId, supportGrantId: grantId })).toMatchObject({ status: 'forbidden' });
+  });
+
+  it('ends an open grant at once when its ticket closes: the engineer loses the practice on the next request', async () => {
+    const engineer = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, admin.internalId, engineer, 'support');
+    const created = await run(createSupportGrant, admin.token, { practiceId: world.practiceId, userId: engineer, ticket: 'SYN-8', reason: 'SYNTHETIC SUPPORT REASON' });
+    if (created.status !== 'ok' || created.data.objectId === undefined) {
+      throw new Error(`expected a support grant, got ${created.status}`);
+    }
+    const supportGrantId = created.data.objectId;
+    const engineerToken = await sessionFor(engineer, 'webauthn');
+    expect((await run(practiceHome, engineerToken, undefined, { practiceId: world.practiceId })).status).toBe('ok');
+    expect(await run(endSupportGrant, admin.token, { supportGrantId })).toMatchObject({ status: 'ok', data: { redirect: '/console/support' } });
+    expect(await run(practiceHome, engineerToken, undefined, { practiceId: world.practiceId })).toEqual({ status: 'not_found' });
+    expect(await run(endSupportGrant, admin.token, { supportGrantId })).toEqual({ status: 'not_found' });
+    const events = await owner.query<{ action: string; purpose: string | null }>("SELECT action, purpose FROM audit_event WHERE object_id = $1 AND action IN ('security_event', 'support_grant_ended') ORDER BY at, action", [supportGrantId]);
+    expect(events.rows).toEqual([
+      { action: 'security_event', purpose: 'support_grant_opened' },
+      { action: 'security_event', purpose: 'grant_change' },
+      { action: 'support_grant_ended', purpose: null },
+    ]);
+    expect(await run(supportPage, admin.token)).toMatchObject({ status: 'ok', data: { grants: expect.arrayContaining([expect.objectContaining({ id: supportGrantId, open: false })]) } });
   });
 
   it('lets the platform administrator read no practice data at all', async () => {

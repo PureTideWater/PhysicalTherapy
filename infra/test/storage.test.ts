@@ -65,6 +65,23 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
     }
   });
 
+  it('never lets anyone overwrite a key of the documents, packets or audit copies (write-once objects)', () => {
+    for (const id of [idOf(stack.storage.documents), ...writeOnce]) {
+      const policy = policies.find((p) => JSON.stringify(p.Bucket) === JSON.stringify(ref(id)));
+      const statements = (policy?.PolicyDocument as { Statement: CfnStatement[] }).Statement;
+      expect(statements, id).toContainEqual({
+        Sid: 'WriteOnceKeys',
+        Effect: 'Deny',
+        Principal: { AWS: '*' },
+        Action: 's3:PutObject',
+        Resource: { 'Fn::Join': ['', [getAtt(id, 'Arn'), '/*']] },
+        Condition: { Null: { 's3:if-none-match': 'true' }, Bool: { 's3:ObjectCreationOperation': 'true' } },
+      });
+    }
+    const trail = policies.find((p) => JSON.stringify(p.Bucket) === JSON.stringify(ref(idOf(stack.accountSecurity.trailBucket))));
+    expect(JSON.stringify(trail)).not.toContain('WriteOnceKeys');
+  });
+
   it('locks packets and audit copies for seven years by default', () => {
     const mode = environmentSettings(environment).objectLockMode;
     expect(mode).toBe(environment === 'production' ? 'COMPLIANCE' : 'GOVERNANCE');

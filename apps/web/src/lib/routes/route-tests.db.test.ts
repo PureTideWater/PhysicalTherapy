@@ -11,6 +11,7 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route, RouteRequest, SampleRefs } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { inviteMember } from './console';
 import { ROUTES } from './index';
 
 /**
@@ -26,7 +27,9 @@ import { ROUTES } from './index';
  *   matrix allows the route's permission and the actor reaches the practice;
  * - a mutation replayed with its request key: does nothing;
  * - every persona of another practice, aimed at this practice's records or mixing them into its own
- *   request: never answered with any of this practice's records, and nothing of this practice changes.
+ *   request: never answered with any of this practice's records, and nothing of this practice changes;
+ * - for practice routes, every internal role: never made a member of the practice's group (not through
+ *   the console, not by the owner), so the route stays not found without a support grant (PRD 3).
  */
 
 const adminUrl = readDatabaseUrl();
@@ -372,6 +375,42 @@ describe.each(authenticated.map((route) => [route.id, route] as const))('%s', (_
       expect(after).toBe(before);
     },
   );
+});
+
+const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'support'] as const;
+
+describe.each(ROUTES.filter((route) => route.access.kind === 'practice').map((route) => [route.id, route] as const))('%s (internal roles)', (_id, route) => {
+  let worldA: World;
+  let worldB: World;
+
+  beforeAll(async () => {
+    worldA = await buildWorld(`A internal ${route.id}`);
+    worldB = await buildWorld(`B internal ${route.id}`);
+  }, 60_000);
+
+  it.each(INTERNAL_ROLES)('never makes the internal %s a member of the practice’s group, so the route stays not found', async (role) => {
+    // Another world's staff, who hold no support grant on this practice.
+    const staff = worldB.actors.find((actor) => actor.persona.kind === 'internal' && actor.persona.role === role) as Actor;
+    const inviter = worldA.actors.find((actor) => actor.persona.role === 'platform_admin') as Actor;
+    const email = (await owner.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [staff.userId])).rows[0]?.email ?? '';
+    const adminSession = await signIn(inviter);
+    for (const memberRole of ['practice_admin', 'viewer'] as const) {
+      const invited = await inviteMember.invoke(
+        {
+          cookies: new MemoryJar({ [SESSION_COOKIE]: adminSession.token }),
+          params: {},
+          input: { requestKey: randomUUID(), organizationId: worldA.refs.organizationId, email, role: memberRole },
+          requestId: `test-${randomUUID()}`,
+          userAgent: null,
+        },
+        services,
+      );
+      expect(invited.status, `${role} invited as ${memberRole}`).toBe('invalid');
+    }
+    await expect(addMembership(owner, worldA.refs.organizationId, staff.userId, 'practice_admin')).rejects.toMatchObject({ code: '23514' });
+    const session = await signIn(staff);
+    expect((await call(route, session, { ...worldA.refs, actorDeviceId: session.deviceId })).status).toBe('not_found');
+  });
 });
 
 describe.each(publicRoutes.map((route) => [route.id, route] as const))('%s (public)', (_id, route) => {

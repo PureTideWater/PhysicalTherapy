@@ -1,3 +1,4 @@
+import { type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
 import type { Logger } from '@tp/observability';
 import type { PgBoss } from 'pg-boss';
 
@@ -12,6 +13,8 @@ export interface WorkerOptions {
   readonly boss: QueueClient;
   readonly logger: Logger;
   readonly handlers: JobHandlers;
+  /** The application login's pool: practice jobs reach the database only through withJobScope on it. */
+  readonly pool: ScopePool<ScopeClient>;
   /** The platform jobs (audit copy, restore drill), where this worker holds an operator connection. */
   readonly platform?: PlatformHandlers;
   readonly heartbeatMs: number;
@@ -27,12 +30,34 @@ export class JobPayloadError extends Error {
   override readonly name = 'JobPayloadError';
 }
 
-async function runJob<T extends JobType>(
-  type: T,
-  job: { id: string; data: unknown },
-  handlers: JobHandlers,
-  logger: Logger,
-): Promise<void> {
+/**
+ * The line a job's last failed attempt logs (test matrix JOB-02: "three failures: alert raised"). The
+ * worker log group's metric filter counts it and the operator alarm fires on it (infra/lib/jobs.ts);
+ * the earlier attempts' failures are retried without an alert.
+ */
+export const JOB_FAILED_MESSAGE = 'job failed on its last attempt';
+
+interface QueuedJob {
+  readonly id: string;
+  readonly data: unknown;
+  /** How many times pg-boss has retried the job; the attempt is retryCount + 1. */
+  readonly retryCount?: number;
+}
+
+/** Runs one attempt, logging the job's final failure (its third attempt) for the operator alarm. */
+async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    if ((job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit) {
+      // The text is JOB_FAILED_MESSAGE, written out for the log lint (fixed text only); worker.test.ts holds them equal.
+      logger.error('job failed on its last attempt', { job_id: job.id, job_type: type, error_code: 'JOB_FAILED' });
+    }
+    throw error;
+  }
+}
+
+async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobHandlers, logger: Logger, pool: ScopePool<ScopeClient>): Promise<void> {
   let payload;
   try {
     payload = parsePayload(type, job.data);
@@ -42,10 +67,17 @@ async function runJob<T extends JobType>(
     throw new JobPayloadError(`payload rejected for ${type} job ${job.id}`);
   }
   const jobLogger = logger.child({ job_id: job.id, job_type: type, practice_id: payload.practice_id });
-  await handlers[type](payload, { jobId: job.id, logger: jobLogger });
+  // One practice per job (PRD 3; SEC-06): every transaction the handler opens is scoped to exactly the
+  // payload's practice, as the job's service actor; the handler is never handed a raw connection.
+  const practiceId = payload.practice_id;
+  await handlers[type](payload, {
+    jobId: job.id,
+    logger: jobLogger,
+    transaction: (run) => withJobScope(pool, { jobId: job.id, practiceId }, run),
+  });
 }
 
-async function runPlatformJob<T extends PlatformJobType>(type: T, job: { id: string; data: unknown }, handlers: PlatformHandlers, logger: Logger): Promise<void> {
+async function runPlatformJob<T extends PlatformJobType>(type: T, job: QueuedJob, handlers: PlatformHandlers, logger: Logger): Promise<void> {
   let payload;
   try {
     payload = parsePlatformPayload(type, job.data);
@@ -70,7 +102,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   for (const type of JOB_TYPES) {
     await boss.work(type, { batchSize: 1 }, async (jobs) => {
       for (const job of jobs) {
-        await runJob(type, job, handlers, logger);
+        await attempt(type, job, logger, () => runJob(type, job, handlers, logger, options.pool));
       }
     });
   }
@@ -81,7 +113,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
       await boss.schedule(type, PLATFORM_SCHEDULES[type], {}, { tz: 'UTC', singletonKey: type });
       await boss.work(type, { batchSize: 1 }, async (jobs) => {
         for (const job of jobs) {
-          await runPlatformJob(type, job, platform, logger);
+          await attempt(type, job, logger, () => runPlatformJob(type, job, platform, logger));
         }
       });
     }

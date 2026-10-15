@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import pg from 'pg';
 
-import { APP_ROLE, OWNER_ROLE, bootstrapRoles } from './roles';
+import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE, bootstrapRoles } from './roles';
 
 /**
  * The forward-only migration runner (`pnpm db:migrate`). Migrations are hand-written SQL files in
@@ -91,7 +91,7 @@ export interface MigrateResult {
   readonly dryRun: boolean;
 }
 
-/** Objects in schema public that the owner role does not own, and anything the application role owns. */
+/** Objects in schema public that the owner role does not own, and anything the application or operator role owns. */
 const OWNERSHIP_PROBLEMS = `
   SELECT kind || ' ' || name || ' is owned by ' || owner AS problem FROM (
     SELECT 'relation' AS kind, c.relname::text AS name, pg_get_userbyid(c.relowner)::text AS owner
@@ -105,12 +105,12 @@ const OWNERSHIP_PROBLEMS = `
   ) objects
   WHERE owner <> $1
   UNION ALL
-  SELECT 'the application role ' || $2 || ' owns ' || count(*) || ' object(s)' FROM (
-    SELECT 1 FROM pg_class WHERE relowner = $2::regrole
-    UNION ALL SELECT 1 FROM pg_proc WHERE proowner = $2::regrole
-    UNION ALL SELECT 1 FROM pg_namespace WHERE nspowner = $2::regrole
-    UNION ALL SELECT 1 FROM pg_type WHERE typowner = $2::regrole
-  ) owned HAVING count(*) > 0
+  SELECT 'the ' || (CASE WHEN role = $2::text THEN 'application' ELSE 'operator' END) || ' role ' || role || ' owns ' || count(*) || ' object(s)' FROM (
+    SELECT pg_get_userbyid(relowner)::text AS role FROM pg_class WHERE relowner IN ($2::text::regrole, $3::text::regrole)
+    UNION ALL SELECT pg_get_userbyid(proowner)::text FROM pg_proc WHERE proowner IN ($2::text::regrole, $3::text::regrole)
+    UNION ALL SELECT pg_get_userbyid(nspowner)::text FROM pg_namespace WHERE nspowner IN ($2::text::regrole, $3::text::regrole)
+    UNION ALL SELECT pg_get_userbyid(typowner)::text FROM pg_type WHERE typowner IN ($2::text::regrole, $3::text::regrole)
+  ) owned GROUP BY role
   ORDER BY 1`;
 
 /** Runs one migration's SQL as the owner inside the open transaction, then checks role and ownership. */
@@ -121,9 +121,9 @@ async function applyMigration(client: pg.Client, migration: Migration): Promise<
   if (role.rows[0]?.role !== OWNER_ROLE) {
     throw new Error(`it left the session as ${role.rows[0]?.role ?? 'an unknown role'}; migrations run as ${OWNER_ROLE} and never change role`);
   }
-  const ownership = await client.query<{ problem: string }>(OWNERSHIP_PROBLEMS, [OWNER_ROLE, APP_ROLE]);
+  const ownership = await client.query<{ problem: string }>(OWNERSHIP_PROBLEMS, [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE]);
   if (ownership.rows.length > 0) {
-    throw new Error(`every object belongs to ${OWNER_ROLE} and none to ${APP_ROLE}, but ${ownership.rows.map((row) => row.problem).join('; ')}`);
+    throw new Error(`every object belongs to ${OWNER_ROLE} and none to ${APP_ROLE} or ${OPERATOR_ROLE}, but ${ownership.rows.map((row) => row.problem).join('; ')}`);
   }
   await client.query('INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)', [migration.name, migration.checksum]);
 }

@@ -1,6 +1,6 @@
 # 0015. Encrypt the (enc) columns with a per-practice data key wrapped by KMS, look them up by a keyed hash, and destroy the key to delete
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (a practice has its own KMS data key; churn ends in key destruction), 5 (J14), 8 (patient_ref),
@@ -49,6 +49,8 @@ which for these columns means destroying the key. The tables arrive in milestone
 ## Consequences
 
 - Every (enc) column is `text` holding `enc:v1:...`, and its lookup hash, where one exists, a separate indexed column.
+- The same data key also seals every object the practice stores in S3 (ADR 0018), under a third derived key, so destroying
+  it makes the practice's objects unreadable too.
 - Each request or job that touches (enc) columns makes one KMS Decrypt per practice.
 - Key rotation (PRD 19, yearly) rotates the customer-managed key; KMS keeps old key material, so wrapped data keys stay
   valid without re-wrapping. Re-keying a practice (a new data key) is a re-encryption job when needed.

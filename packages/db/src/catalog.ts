@@ -1,4 +1,4 @@
-import { APP_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 
 /**
  * The catalog test (PRD 8 Invariants; PRD 16 Tenant isolation; test matrix SEC-01), as a function so
@@ -13,10 +13,22 @@ import { APP_ROLE, OWNER_ROLE } from './roles';
  *   row-level security, and its registered policy is permissive, for every command and every role,
  *   with USING and WITH CHECK both exactly practice_id = ANY (current_setting('app.practice_ids',
  *   true)::uuid[]).
+ * - On a registered table, every other permissive policy for a role other than the owner keeps the
+ *   tenant expression (alone, or first in a conjunction), because permissive policies add up: one
+ *   that ignores app.practice_ids would let its role read or write every practice's rows. The only
+ *   other permissive policies are REVIEWED_PLATFORM_POLICIES, each with its reason; restrictive
+ *   policies only narrow, and the owner's resolver policies serve SECURITY DEFINER functions.
  * - No table forces nothing halfway: row-level security enabled means forced. A table without it is
  *   global, and the application role may only read it.
- * - The application role owns nothing; no column is real, double precision, float or money; money
- *   columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
+ * - Every SECURITY DEFINER function sets its search_path with pg_temp last.
+ * - The application and operator roles own nothing; no column is real, double precision, float or
+ *   money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
+ *
+ * The two lists below are not exemptions from the PHI-table rules (.claude/rules/privacy-and-tenant.md:
+ * "The catalog test lists exceptions; there are none"): no PHI table is exempt from practice_id NOT
+ * NULL, the registry or a forced tenant policy. They classify what the data dictionary itself defines
+ * (two non-PHI tables whose practice_id is nullable; the platform administrators' directory reads).
+ * docs/adr/0013 records the reading for the owner to confirm.
  */
 
 export const TENANT_TABLE = 'practice';
@@ -36,6 +48,56 @@ export function tenantPolicyExpression(column: string): string {
 export const NULLABLE_PRACTICE_ID_TABLES: Readonly<Record<string, string>> = {
   agreement: 'an agreement with an organization as a whole (terms, a firm’s own BAA) names no practice',
   audit_event: 'events outside any practice (sign-ins, administration) have no practice; no PHI by design',
+};
+
+/**
+ * Permissive policies on registered tables that do not carry the tenant expression, each reviewed with
+ * the data dictionary's or the plan's reason. Every one admits platform administrators only, and only
+ * to directory records; a stale entry (a policy that no longer exists) is a problem too.
+ */
+export interface ReviewedPolicy {
+  readonly table: string;
+  readonly policy: string;
+  /** Who the policy admits beyond the practice's scope. */
+  readonly admits: 'platform_admin';
+  /** The commands it admits: r SELECT, a INSERT. */
+  readonly command: 'r' | 'a';
+  readonly reason: string;
+}
+
+export const REVIEWED_PLATFORM_POLICIES: readonly ReviewedPolicy[] = [
+  {
+    table: 'practice',
+    policy: 'practice_platform_admin_insert',
+    admits: 'platform_admin',
+    command: 'a',
+    reason: 'PRD 5, J1: the platform administrator creates the practice (insert only; no practice row is read through it)',
+  },
+  {
+    table: 'support_grant',
+    policy: 'support_grant_platform_administrators_read',
+    admits: 'platform_admin',
+    command: 'r',
+    reason: 'Data dictionary, support_grant: "Platform administrators; practice sees its own" (ticket, reason, dates; no PHI)',
+  },
+  {
+    table: 'support_grant',
+    policy: 'support_grant_platform_administrators_insert',
+    admits: 'platform_admin',
+    command: 'a',
+    reason: 'PRD 3 and PRD 5, J15: a platform administrator opens the break-glass grant from a ticket',
+  },
+];
+
+/**
+ * Tenant tables a platform administrator reads without any practice in scope, by design: the
+ * directory records the console manages (Data dictionary: agreements are read by their parties, and
+ * platform administrators record them; support grants are the platform administrators'). Never a PHI
+ * record; the generated cross-tenant tests expect these reads and no other.
+ */
+export const PLATFORM_DIRECTORY_TABLES: Readonly<Record<string, string>> = {
+  agreement: 'platform administrators record and read agreements (PRD 3, Personas; ADR 0013)',
+  support_grant: 'Data dictionary, support_grant: "Platform administrators; practice sees its own"',
 };
 
 interface Queryable {
@@ -87,6 +149,8 @@ interface PolicyRow {
   readonly command: string;
   readonly permissive: boolean;
   readonly every_role: boolean;
+  /** The roles it applies to; 'public' for every role. */
+  readonly roles: readonly string[];
   readonly using_expression: string | null;
   readonly check_expression: string | null;
 }
@@ -94,6 +158,7 @@ interface PolicyRow {
 const POLICIES = `
   SELECT c.relname AS table_name, pol.polname AS name, pol.polcmd::text AS command, pol.polpermissive AS permissive,
          pol.polroles = '{0}'::oid[] AS every_role,
+         ARRAY(SELECT CASE WHEN r = 0 THEN 'public' ELSE pg_get_userbyid(r)::text END FROM unnest(pol.polroles) r ORDER BY 1) AS roles,
          pg_get_expr(pol.polqual, pol.polrelid) AS using_expression,
          pg_get_expr(pol.polwithcheck, pol.polrelid) AS check_expression
     FROM pg_policy pol
@@ -126,17 +191,38 @@ const OWNED_BY_APP = `
     UNION ALL SELECT 'type', typname::text FROM pg_type WHERE typowner = $1::regrole
   ) owned ORDER BY 1`;
 
+/** SECURITY DEFINER functions in schema public and their settings. */
+const DEFINER_FUNCTIONS = `
+  SELECT p.oid::regprocedure::text AS name, coalesce(p.proconfig, '{}') AS config
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prosecdef
+   ORDER BY 1`;
+
+/** Whether an expression keeps the tenant expression: exactly, or as the first term of a conjunction. */
+function keepsTenant(expression: string | null, expected: string): boolean {
+  return expression !== null && (expression === expected || expression.startsWith(`(${expected} AND `));
+}
+
+/** Whether a policy's expressions (those its command uses) all keep the tenant expression. */
+function policyKeepsTenant(policy: PolicyRow, expected: string): boolean {
+  const reads = policy.command === 'a' ? true : keepsTenant(policy.using_expression, expected);
+  const writes = policy.command === 'r' || policy.command === 'd' ? true : policy.check_expression === null ? policy.command !== 'a' && reads : keepsTenant(policy.check_expression, expected);
+  return reads && writes;
+}
+
 const FLOAT_TYPES = /^(real|double precision|float\d*|money)(\[\])*$/;
 
 export interface CatalogOptions {
   readonly appRole?: string;
   readonly ownerRole?: string;
+  readonly operatorRole?: string;
 }
 
 /** Every way the database breaks the invariants above, as sentences naming tables and columns only. */
 export async function catalogProblems(client: Queryable, options: CatalogOptions = {}): Promise<string[]> {
   const appRole = options.appRole ?? APP_ROLE;
   const ownerRole = options.ownerRole ?? OWNER_ROLE;
+  const operatorRole = options.operatorRole ?? OPERATOR_ROLE;
   const problems: string[] = [];
   const tables = await rows<TableRow>(client, TABLES, [appRole]);
   const byName = new Map(tables.map((table) => [table.name, table]));
@@ -217,6 +303,26 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     if (!policy.permissive || policy.command !== '*' || !policy.every_role || policy.using_expression !== expected || policy.check_expression !== expected) {
       problems.push(`${where}: policy ${entry.policy_name} must be PERMISSIVE, FOR ALL, TO PUBLIC, USING and WITH CHECK ${expected}`);
     }
+    for (const other of policies.filter((candidate) => candidate.table_name === entry.table_name && candidate.permissive && candidate.name !== entry.policy_name)) {
+      const ownerOnly = other.roles.length === 1 && other.roles[0] === ownerRole;
+      const reviewed = REVIEWED_PLATFORM_POLICIES.some((item) => item.table === entry.table_name && item.policy === other.name && item.command === other.command);
+      if (!ownerOnly && !reviewed && !policyKeepsTenant(other, expected)) {
+        problems.push(`${where}: permissive policy ${other.name} for ${other.roles.join(', ')} ignores ${TENANT_SETTING}; permissive policies add up, so it admits rows of every practice`);
+      }
+    }
+  }
+
+  for (const item of REVIEWED_PLATFORM_POLICIES) {
+    if (!policies.some((candidate) => candidate.table_name === item.table && candidate.name === item.policy && candidate.permissive && candidate.command === item.command)) {
+      problems.push(`reviewed policy ${item.table}.${item.policy} does not exist as a permissive policy for that command; update REVIEWED_PLATFORM_POLICIES`);
+    }
+  }
+
+  for (const definer of await rows<{ name: string; config: string[] }>(client, DEFINER_FUNCTIONS)) {
+    const searchPath = definer.config.find((setting) => setting.startsWith('search_path='));
+    if (searchPath === undefined || !/(^|[ ,=])pg_temp$/.test(searchPath)) {
+      problems.push(`function ${definer.name} is SECURITY DEFINER without pg_temp last in its search_path`);
+    }
   }
 
   for (const column of await rows<ColumnRow>(client, COLUMNS)) {
@@ -232,13 +338,18 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     }
   }
 
-  const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [appRole]);
-  if (roleExists[0]?.exists === true) {
-    for (const owned of await rows<{ object: string }>(client, OWNED_BY_APP, [appRole])) {
-      problems.push(`the application role ${appRole} owns ${owned.object}`);
+  for (const [label, role] of [
+    ['application', appRole],
+    ['operator', operatorRole],
+  ] as const) {
+    const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [role]);
+    if (roleExists[0]?.exists === true) {
+      for (const owned of await rows<{ object: string }>(client, OWNED_BY_APP, [role])) {
+        problems.push(`the ${label} role ${role} owns ${owned.object}`);
+      }
+    } else {
+      problems.push(`the ${label} role ${role} does not exist`);
     }
-  } else {
-    problems.push(`the application role ${appRole} does not exist`);
   }
   return problems;
 }

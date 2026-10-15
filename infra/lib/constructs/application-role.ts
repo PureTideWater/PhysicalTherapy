@@ -8,7 +8,6 @@ export interface ApplicationRoleProps {
   readonly key: kms.IKey;
   readonly documents: s3.IBucket;
   readonly packets: s3.IBucket;
-  readonly auditCopies: s3.IBucket;
   readonly appSecret: secretsmanager.ISecret;
 }
 
@@ -19,13 +18,16 @@ export interface ApplicationRoleProps {
  *
  * - Per-practice data keys (PRD 15 and 16): GenerateDataKey and Decrypt on the environment key
  *   directly only when the encryption context is exactly one pair, `practice_id`. A call without a
- *   context, or with any other key beside it, is refused.
- * - S3 server-side encryption: the same two actions only when S3 calls KMS on the role's behalf for
- *   one of the three buckets (SSE-KMS under the environment key).
- * - Documents: read and write objects and read their scan tags. Packets and audit copies: write and
- *   read; no delete and no Object Lock bypass on any bucket.
- * - The application login's secret, decrypted only through Secrets Manager. The owner login's
- *   secret is not readable by the application.
+ *   context, or with any other key beside it, is refused. The application seals every stored object
+ *   with a key derived from its practice's data key before it reaches S3 (docs/adr/0018), so this is
+ *   also what makes a practice's objects readable, and destroying the data key makes them unreadable.
+ * - S3 server-side encryption beneath that: the same two actions only when S3 calls KMS on the role's
+ *   behalf for the documents and packets buckets (SSE-KMS under the environment key).
+ * - Documents: read and write objects (writes only to new keys, which the bucket policy enforces) and
+ *   read their scan tags. Packets: write and read. No delete and no Object Lock bypass on any bucket.
+ *   The audit copies are the operator role's (OperatorRole), not the application's.
+ * - The application login's secret, decrypted only through Secrets Manager. The owner and operator
+ *   logins' secrets are not readable by the application.
  */
 export class ApplicationRole extends Construct {
   readonly role: iam.Role;
@@ -33,10 +35,10 @@ export class ApplicationRole extends Construct {
   constructor(scope: Construct, id: string, props: ApplicationRoleProps) {
     super(scope, id);
     const stack = Stack.of(this);
-    const buckets = [props.documents, props.packets, props.auditCopies];
+    const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, audit copies, application login',
+      description: 'Web and worker tasks: practice data keys, documents, packets, application login',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -67,9 +69,9 @@ export class ApplicationRole extends Construct {
         resources: [props.documents.arnForObjects('*')],
       }),
       new iam.PolicyStatement({
-        sid: 'PacketsAndAuditCopies',
+        sid: 'Packets',
         actions: ['s3:GetObject', 's3:GetObjectVersion', 's3:PutObject'],
-        resources: [props.packets.arnForObjects('*'), props.auditCopies.arnForObjects('*')],
+        resources: [props.packets.arnForObjects('*')],
       }),
       new iam.PolicyStatement({
         sid: 'ApplicationLogin',

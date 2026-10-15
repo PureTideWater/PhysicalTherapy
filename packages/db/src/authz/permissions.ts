@@ -80,8 +80,9 @@ export const STRUCTURAL_RULES: Readonly<Record<StructuralRule, string>> = {
   grant_in_force:
     'a firm reaches a practice only through a grant in force: effective_practice_access() ignores an expired, revoked or not yet started grant on the next transaction',
   support_grant_required:
-    'internal roles have no standing access: the internal organization owns no practice and receives no grant, so only a support grant reaches PHI',
-  support_grant_expiry: 'a support grant reaches its practice for at most four hours and then nothing, on the next transaction',
+    'internal roles have no standing access: the internal organization owns no practice and receives no grant, no internal user holds a group or firm membership (nor grants one to themselves), and the effective-permission function ignores customer routes of internal users, so only a support grant reaches PHI',
+  support_grant_expiry:
+    'a support grant reaches its practice for at most four hours, or until it is ended when the ticket closes, and then nothing, on the next transaction',
   two_person_approval: 'the drafter of a packet never holds packet.approve_own_draft; the single-user 24-hour delay is the packet workflow’s (milestone 8)',
 };
 

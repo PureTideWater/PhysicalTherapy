@@ -26,12 +26,14 @@ export const PASSWORD_MIN_LENGTH = 12;
  *   email only.
  * - Password policy: at least 12 characters with all four character classes; temporary passwords
  *   expire after three days.
- * - Threat protection (advanced security) is enforced, which needs the Plus feature plan.
+ * - The Essentials feature plan, which has passkeys and the choice-based sign-in. Threat protection
+ *   (advanced security) needs the Plus plan; the plan does not ask for it, so it is the owner's call
+ *   with its cost (docs/adr/0012), not built in.
  * - Deletion protection follows the environment (production on); the pool is retained if the
  *   stack is deleted.
  *
  * Lockout after ten failures, the 30-minute idle limit and the device list are application rules
- * (sessions.md); Cognito's own lockout and threat protection sit beneath them.
+ * (sessions.md); Cognito's own lockout sits beneath them.
  */
 export class Identity extends Construct {
   readonly userPool: cognito.UserPool;
@@ -58,8 +60,7 @@ export class Identity extends Construct {
         tempPasswordValidity: Duration.days(3),
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
-      featurePlan: cognito.FeaturePlan.PLUS,
-      standardThreatProtectionMode: cognito.StandardThreatProtectionMode.FULL_FUNCTION,
+      featurePlan: cognito.FeaturePlan.ESSENTIALS,
       deletionProtection: props.deletionProtection,
       removalPolicy: RemovalPolicy.RETAIN,
     });

@@ -22,7 +22,7 @@ export function auditStore(config: PlatformConfig): ObjectStore {
 export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
   const drill = config.restoreDrill;
   if (drill.kind === 'local') {
-    return new PgDumpRestorer({ sourceUrl: config.operatorDatabaseUrl, adminUrl: config.operatorDatabaseUrl, workDir: drill.workDir, ...(drill.binDir === undefined ? {} : { binDir: drill.binDir }) });
+    return new PgDumpRestorer({ sourceUrl: drill.adminUrl, adminUrl: drill.adminUrl, workDir: drill.workDir, ...(drill.binDir === undefined ? {} : { binDir: drill.binDir }) });
   }
   return new RdsSnapshotRestorer({
     client: new RDSClient({}),
@@ -31,14 +31,6 @@ export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
     instanceClass: drill.instanceClass,
     subnetGroupName: drill.subnetGroupName,
     securityGroupIds: drill.securityGroupIds,
-    databaseUrl: ({ address, port }) => {
-      const url = new URL(`postgres://${address}:${String(port)}/`);
-      url.username = drill.databaseUser;
-      url.password = drill.databasePassword;
-      url.pathname = `/${drill.databaseName}`;
-      url.searchParams.set('sslmode', 'require');
-      return url.toString();
-    },
   });
 }
 

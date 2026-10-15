@@ -9,14 +9,15 @@ import { utc } from '../../../components/format';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { SUPPORT_GRANT_HOURS, supportPage } from '../../../lib/routes/console';
-import { createSupportGrantAction } from '../actions';
+import { createSupportGrantAction, endSupportGrantAction } from '../actions';
 
 export const metadata: Metadata = { title: 'Support' };
 
 /**
  * Support (PRD 7; PRD 5, J15): open support grants with their expiry and the number of records read,
  * and a new break-glass grant from a ticket. The practice's administrators are notified when it
- * opens and when it ends, with the list of records read; only they see which records.
+ * opens and when it ends, with the list of records read; only they see which records. An open grant
+ * can be ended at once when its ticket closes (PRD 3: support never retains access after the ticket).
  */
 export default async function SupportPage() {
   const page = await loadPage(supportPage, {});
@@ -66,6 +67,9 @@ export default async function SupportPage() {
               <th className="py-1 font-medium">Expires</th>
               <th className="py-1 font-medium">Reads</th>
               <th className="py-1 font-medium">Expiry notice</th>
+              <th className="py-1 font-medium">
+                <span className="sr-only">End</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -81,6 +85,14 @@ export default async function SupportPage() {
                 <td className="py-1">{utc(grant.expiresAt)}</td>
                 <td className="py-1">{grant.reads}</td>
                 <td className="py-1">{utc(grant.notifiedAt)}</td>
+                <td className="py-1">
+                  {grant.open ? (
+                    <ActionForm action={endSupportGrantAction} submit="End now" variant="outline" className="flex items-center gap-2">
+                      <input type="hidden" name="requestKey" value={randomUUID()} />
+                      <input type="hidden" name="supportGrantId" value={grant.id} />
+                    </ActionForm>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

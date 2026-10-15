@@ -183,6 +183,35 @@ describe('the structural "must not" rules', () => {
       const admin = await internalUser('platform_admin');
       expect(await withActor(app, admin, (scope) => scope.allowedPracticeIds())).toEqual([]);
       expect(await permitted(admin, world.practiceId, 'practice.open')).toBe(false);
+      // No internal user joins the practice's group or a firm, by any path: not by the owner, not by an
+      // administrator of the group, not by a platform administrator for anyone, and nobody for themselves.
+      for (const role of ['platform_admin', 'support', 'contract_specialist', 'reviewer'] as const) {
+        const staff = role === 'platform_admin' ? admin : await internalUser(role);
+        await expect(addMembership(owner, world.organizationId, staff, 'practice_admin')).rejects.toMatchObject({ code: '23514' });
+        await expect(addMembership(owner, await createOrganization(owner, 'firm', 'firm'), staff, 'firm_principal')).rejects.toMatchObject({ code: '23514' });
+        for (const inviter of [world.adminUserId, admin]) {
+          await expect(
+            withActor(app, inviter, (scope) => scope.client.query("INSERT INTO membership (organization_id, user_id, role) VALUES ($1, $2, 'viewer')", [world.organizationId, staff])),
+          ).rejects.toMatchObject({ code: expect.stringMatching(/^(42501|23514)$/) });
+        }
+        expect(await permitted(staff, world.practiceId, 'phi.read')).toBe(false);
+      }
+      // Defence in depth: were such a membership there (built past the trigger, as the superuser), the
+      // effective-permission function would still give the internal user nothing.
+      await owner.query('BEGIN');
+      try {
+        await owner.query('ALTER TABLE membership DISABLE TRIGGER membership_rules');
+        await owner.query("INSERT INTO membership (organization_id, user_id, role) VALUES ($1, $2, 'practice_admin')", [world.organizationId, admin]);
+        await owner.query('ALTER TABLE membership ENABLE TRIGGER membership_rules');
+        await owner.query("SELECT set_config('app.actor_id', $1, true)", [admin]);
+        const { rows } = await owner.query(
+          "SELECT (SELECT count(*)::int FROM effective_practice_access()) AS routes, app_actor_permitted($1, 'phi.read') AS phi, app_actor_permitted($1, 'grant.approve') AS approve, app_actor_permitted($1, 'access_log.read') AS log",
+          [world.practiceId],
+        );
+        expect(rows).toEqual([{ routes: 0, phi: false, approve: false, log: false }]);
+      } finally {
+        await owner.query('ROLLBACK');
+      }
     },
     support_grant_expiry: async () => {
       const engineer = await internalUser('support');
@@ -193,6 +222,17 @@ describe('the structural "must not" rules', () => {
           [world.practiceId, engineer],
         ),
       );
+      expect(await permitted(engineer, world.practiceId, 'phi.read')).toBe(false);
+      // And when the ticket closes early, the grant ends at once (by a platform administrator or the engineer).
+      const open = randomUUID();
+      await asOwner(owner, [world.practiceId], () =>
+        owner.query(
+          `INSERT INTO support_grant (id, practice_id, user_id, ticket, reason, created_at, expires_at) VALUES ($1, $2, $3, 'T-10', 'SYNTHETIC', now() - interval '1 hour', now() + interval '3 hours')`,
+          [open, world.practiceId, engineer],
+        ),
+      );
+      expect(await permitted(engineer, world.practiceId, 'phi.read')).toBe(true);
+      expect((await withActor(app, engineer, (scope) => scope.client.query<{ ended: boolean }>('SELECT end_support_grant($1) AS ended', [open]))).rows).toEqual([{ ended: true }]);
       expect(await permitted(engineer, world.practiceId, 'phi.read')).toBe(false);
     },
     two_person_approval: async () => {

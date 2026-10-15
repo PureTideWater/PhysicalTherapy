@@ -1,4 +1,4 @@
-import { OWNER_ROLE, catalogProblems, databaseClient } from '@tp/db';
+import { OPERATOR_ROLE, OWNER_ROLE, catalogProblems, databaseClient } from '@tp/db';
 
 /**
  * The monthly restore drill (PRD 16, Backups and restore; PRD 19 Runbooks, Restore drill; test matrix
@@ -7,8 +7,10 @@ import { OWNER_ROLE, catalogProblems, databaseClient } from '@tp/db';
  *
  * How a snapshot is restored is behind SnapshotRestorer: RDS in staging and production
  * (RdsSnapshotRestorer), pg_dump and pg_restore into a scratch database locally (PgDumpRestorer).
- * Rows are counted as the owner role with every practice in scope, so the count is exact on any
- * instance without a role that bypasses row-level security; nothing but counts is read.
+ * Rows are counted on the scratch copy as its owner role with every practice in scope, so the count
+ * is exact on any instance without a role that bypasses row-level security; nothing but counts is
+ * read, and the copy is destroyed afterwards. The evidence row is written to the source as the
+ * operator role (tp_operator), which owns nothing: the owner login is used on the scratch copy only.
  */
 
 export interface RestoredInstance {
@@ -58,7 +60,7 @@ interface Connection extends EvidenceClient {
 
 export interface RestoreDrillOptions {
   readonly restorer: SnapshotRestorer;
-  /** An owner-capable connection to the database the evidence row is written to (the source). */
+  /** An operator connection to the database the evidence row is written to (the source). */
   readonly evidence: EvidenceClient;
   readonly now?: () => Date;
   /** How to reach the restored instance; a pg Client by default. */
@@ -90,7 +92,7 @@ const RECORD = `INSERT INTO restore_drill (snapshot_ref, target_ref, started_at,
 async function record(evidence: EvidenceClient, result: Omit<RestoreDrillResult, 'id'>, startedAt: Date, completedAt: Date): Promise<string> {
   await evidence.query('BEGIN');
   try {
-    await evidence.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+    await evidence.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
     const { rows } = await evidence.query(RECORD, [
       result.snapshotRef,
       result.targetRef,

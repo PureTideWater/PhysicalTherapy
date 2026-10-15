@@ -58,11 +58,11 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     }
   });
 
-  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs and ECR, and an S3 gateway', () => {
+  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR, the RDS API and the SES API, and an S3 gateway', () => {
     const endpoints = resourcesOf(template, 'AWS::EC2::VPCEndpoint');
     const interfaces = endpoints.filter(([, e]) => propertiesOf(e).VpcEndpointType === 'Interface');
     expect(interfaces.map(([, e]) => endpointService(e)).sort()).toEqual(
-      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'kms', 'logs', 'secretsmanager'].sort(),
+      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'email', 'kms', 'logs', 'rds', 'secretsmanager'].sort(),
     );
     const appSubnetRefs = idsIn('app').map(ref);
     for (const [id, endpoint] of interfaces) {
@@ -96,10 +96,10 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     const ingress = resourcesOf(template, 'AWS::EC2::SecurityGroupIngress')
       .map(([, rule]) => propertiesOf(rule))
       .filter((rule) => JSON.stringify(rule.GroupId) === JSON.stringify(databaseGroup));
-    const clients = [stack.network.webSecurityGroup, stack.network.workerSecurityGroup].map((group) =>
+    const clients = [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup].map((group) =>
       getAtt(logicalIdOf(stack, group), 'GroupId'),
     );
-    expect(ingress).toHaveLength(3);
+    expect(ingress).toHaveLength(4);
     for (const rule of ingress) {
       expect(rule).toMatchObject({ IpProtocol: 'tcp', FromPort: 5432, ToPort: 5432 });
       expect(rule.SourceSecurityGroupId).toBeDefined();
@@ -121,8 +121,8 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     }
   });
 
-  it('limits the web and worker groups to HTTPS and PostgreSQL egress', () => {
-    for (const group of [stack.network.webSecurityGroup, stack.network.workerSecurityGroup]) {
+  it('limits the web, worker and operator groups to HTTPS and PostgreSQL egress', () => {
+    for (const group of [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup]) {
       const id = logicalIdOf(stack, group);
       const resource = resourceById(template, 'AWS::EC2::SecurityGroup', id);
       expect(propertiesOf(resource).SecurityGroupEgress).toEqual([

@@ -1,4 +1,4 @@
-import { readDatabaseUrl } from '@tp/db';
+import { openPool, readDatabaseUrl } from '@tp/db';
 import { withScratchDatabase } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { PgBoss } from 'pg-boss';
@@ -46,16 +46,22 @@ describe('worker against PostgreSQL', () => {
       const seen = new Promise<string>((resolve) => {
         resolveSeen = resolve;
       });
+      const pool = openPool(url, 1);
       const worker = await startWorker({
         boss,
+        pool,
         logger: silent,
         heartbeatMs: 60_000,
         handlers: {
           ...placeholderHandlers,
-          digest: (payload, context) => {
+          digest: async (payload, context) => {
             expect(payload).toEqual({ practice_id: PRACTICE, period: '2026-10' });
+            // The job's transaction holds exactly its practice and the job as the actor.
+            const settings = await context.transaction(async (scope) =>
+              (await scope.client.query<{ practices: string; actor: string }>("SELECT current_setting('app.practice_ids') AS practices, current_setting('app.actor_id') AS actor")).rows[0],
+            );
+            expect(settings).toEqual({ practices: `{${PRACTICE}}`, actor: context.jobId });
             resolveSeen(context.jobId);
-            return Promise.resolve();
           },
         },
       });
@@ -64,6 +70,7 @@ describe('worker against PostgreSQL', () => {
         expect(await seen).toBe(id);
       } finally {
         await worker.stop();
+        await pool.end();
       }
     });
   }, 30_000);

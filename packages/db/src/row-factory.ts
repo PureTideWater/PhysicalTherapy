@@ -4,7 +4,7 @@ import fc from 'fast-check';
 
 import { TENANT_TABLE } from './catalog';
 import { OWNER_ROLE } from './roles';
-import { type OwnerClient, type TenantWorld, asOwner, worldRefs } from './tenant-world';
+import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrganization, createUser, worldRefs } from './tenant-world';
 
 /**
  * A generic row factory driven by PostgreSQL's catalog, for the generated cross-tenant tests ("add
@@ -12,9 +12,12 @@ import { type OwnerClient, type TenantWorld, asOwner, worldRefs } from './tenant
  * is the world's practice; a foreign key points at the world's practice, organization, user or
  * agreement, or at a row the factory creates first in the same world; an enum takes its first label;
  * a check of the form `col IN (...)` takes its first value and `col ~ 'pattern'` a sample matching
- * the pattern; anything else gets a synthetic value of its type. It first fills only NOT NULL columns
- * without defaults, and if a constraint refuses that row, fills every column it can. Rows are written
- * as the owner role inside the world's practice scope.
+ * the pattern; anything else gets a synthetic value of its type. A column that names the row's actor
+ * (actor_id, *_by, *_by_user_id) is the world's administrator, who is also the actor the rows are
+ * written as, so a cross-tenant probe differs from an accepted row in its practice only. A user column
+ * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it. It first fills only NOT NULL
+ * columns without defaults, and if a constraint refuses that row, fills every column it can. Rows are
+ * written as the owner role inside the world's practice scope.
  *
  * A table the factory cannot fill raises a RowFactoryError naming the table and constraint, which is
  * the cue to extend the factory, not to skip the table.
@@ -82,6 +85,12 @@ function quote(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
+/** Columns that name who did what the row records. */
+const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
+
+/** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
+const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
+
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
 const LITERAL = /'((?:[^']|'')*)'::[\w ]+/g;
 const MATCHES = /^CHECK \(\("?(\w+)"? ~ '((?:[^']|'')*)'::text\)\)$/;
@@ -89,6 +98,7 @@ const PRINTABLE = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
 
 export class RowFactory {
   private sequence = 0;
+  private readonly roleHolders = new Map<string, string>();
 
   private constructor(private readonly tables: ReadonlyMap<string, TableInfo>) {}
 
@@ -214,6 +224,18 @@ export class RowFactory {
     throw new RowFactoryError(`${table}: no generated row satisfied its constraints (${failure instanceof Error ? failure.message : 'unknown error'})`);
   }
 
+  /** A user who holds `role` (an internal role), created once per factory. */
+  private async roleHolder(client: OwnerClient, role: 'support'): Promise<string> {
+    let holder = this.roleHolders.get(role);
+    if (holder === undefined) {
+      const organization = await createOrganization(client, 'internal', `row factory ${role}`);
+      holder = await createUser(client, { hardwareKeyRequired: true });
+      await addMembership(client, organization, holder, role);
+      this.roleHolders.set(role, holder);
+    }
+    return holder;
+  }
+
   private async values(client: OwnerClient, table: string, world: TenantWorld, full: boolean, depth: number): Promise<Row> {
     const info = this.info(table);
     const refs = worldRefs(world);
@@ -229,6 +251,15 @@ export class RowFactory {
       }
       if (column.name === 'practice_id') {
         row.practice_id = world.practiceId;
+        continue;
+      }
+      const bound = ROLE_BOUND_USERS[`${table}.${column.name}`];
+      if (bound !== undefined) {
+        row[column.name] = await this.roleHolder(client, bound);
+        continue;
+      }
+      if (column.type === 'uuid' && ACTOR_COLUMN.test(column.name) && (column.notNull || full)) {
+        row[column.name] = world.adminUserId;
         continue;
       }
       const foreignKey = info.foreignKeys.get(column.name);

@@ -1,6 +1,6 @@
 # 0017. Run every route through one wrapper and one registry, and hold the persona matrix as data in code and in the database
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (personas, authorization in code), 5 (J15), 6 (Organizations, practices, grants; Agreements; Admin
@@ -56,7 +56,9 @@ permission: `console_practices`, `console_grants` and `console_support_grants` (
 never which records). Practices are created with their data key (ADR 0015); invitations go through the identity provider
 (ADR 0016); agreements are recorded by reference and SHA-256 with version, signer and date.
 
-**Support notices** (J15) are a platform job, `support_grant_notices`, every minute on the operator connection (ADR 0014):
+**Support notices** (J15) are a platform job, `support_grant_notices`, every minute on the operator connection (ADR 0014;
+since ADR 0019 as `tp_operator`, through three functions, one practice per notice, and the application role can neither
+mark a grant notified nor write a notice event; a support grant can also be ended early from the console):
 it emails the practice's administrators when a grant opens and when it ends, links and counts only, each notice once
 (an advisory lock and a recheck), recording the opening notice as an audit event and the closing one as
 `support_grant.notified_at` too. The link opens the grant's page in the practice workspace, which lists every record read

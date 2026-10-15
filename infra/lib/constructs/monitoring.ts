@@ -13,6 +13,7 @@ import {
 import { Construct } from 'constructs';
 
 import type { EnvironmentName } from '../environments';
+import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS } from '../jobs';
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   HEARTBEAT_MESSAGE,
@@ -44,11 +45,16 @@ export interface MonitoringProps {
  * custom metric HEARTBEAT_METRIC; the alarm fires when two consecutive one-minute periods have no
  * heartbeat, missing data counting as missed, and tells the operator when beats resume. Until the
  * worker runs (milestone 11) the alarm is, correctly, in ALARM.
+ *
+ * A second metric filter counts the line a job logs when it fails its last (third) attempt, the
+ * restore drill and the audit copy included (infra/lib/jobs.ts; test matrix JOB-02); its alarm tells
+ * the operator within one period. Earlier attempts' failures are retried and raise nothing.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
   readonly workerLogGroup: logs.LogGroup;
   readonly heartbeatAlarm: cloudwatch.Alarm;
+  readonly jobFailedAlarm: cloudwatch.Alarm;
 
   constructor(scope: Construct, id: string, props: MonitoringProps) {
     super(scope, id);
@@ -130,5 +136,22 @@ export class Monitoring extends Construct {
     const notify = new cloudwatchActions.SnsAction(this.operatorTopic);
     this.heartbeatAlarm.addAlarmAction(notify);
     this.heartbeatAlarm.addOkAction(notify);
+
+    const failures = this.workerLogGroup.addMetricFilter('JobFailedOnLastAttempt', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_FAILED_MESSAGE),
+      metricNamespace: JOB_FAILED_METRIC.namespace,
+      metricName: JOB_FAILED_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    this.jobFailedAlarm = new cloudwatch.Alarm(this, 'JobFailedOnLastAttempt', {
+      alarmDescription: `A ${props.environmentName} job (the restore drill and the audit copy included) failed its third and last attempt.`,
+      metric: failures.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.jobFailedAlarm.addAlarmAction(notify);
   }
 }

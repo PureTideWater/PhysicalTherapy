@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type CognitoClient, CognitoAuthProvider, type IdTokenVerifier } from './cognito-provider';
+import { type CognitoClient, CognitoAuthProvider, type IdTokenVerifier, MfaNotProvenError } from './cognito-provider';
 import type { AuthStep } from './provider';
 
 /**
@@ -102,10 +102,26 @@ describe('CognitoAuthProvider: password, TOTP and new passwords', () => {
   it('refuses a challenge it does not answer, and tokens it cannot verify', async () => {
     const odd = make({ InitiateAuthCommand: { ChallengeName: 'SMS_OTP', Session: 's' } });
     await expect(odd.provider.signIn('person@synthetic.test', 'x')).rejects.toThrow('does not answer');
-    const bad = make({ InitiateAuthCommand: { AuthenticationResult: { IdToken: 'forged', AccessToken: 'a' } } });
-    await expect(bad.provider.signIn('person@synthetic.test', 'x')).rejects.toThrow('JwtInvalidSignatureError');
-    const none = make({ InitiateAuthCommand: { AuthenticationResult: {} } });
-    await expect(none.provider.signIn('person@synthetic.test', 'x')).rejects.toThrow('no tokens');
+    const mfa = { InitiateAuthCommand: { ChallengeName: 'SOFTWARE_TOKEN_MFA', Session: 's1' } };
+    const bad = make({ ...mfa, RespondToAuthChallengeCommand: { AuthenticationResult: { IdToken: 'forged', AccessToken: 'a' } } });
+    await expect(bad.provider.answerTotp(challengeOf(await bad.provider.signIn('person@synthetic.test', 'x')), '123456')).rejects.toThrow('JwtInvalidSignatureError');
+    const none = make({ ...mfa, RespondToAuthChallengeCommand: { AuthenticationResult: {} } });
+    await expect(none.provider.answerTotp(challengeOf(await none.provider.signIn('person@synthetic.test', 'x')), '123456')).rejects.toThrow('no tokens');
+  });
+
+  it('never takes tokens for a password alone as a sign-in: the second factor must have answered a challenge (PRD 6)', async () => {
+    // A pool that stopped requiring MFA would hand out tokens for the password: refused, and the refresh token revoked.
+    const passwordOnly = make({ InitiateAuthCommand: TOKENS, RevokeTokenCommand: {} });
+    await expect(passwordOnly.provider.signIn('person@synthetic.test', 'Synthetic-Pass-2026')).rejects.toThrow(MfaNotProvenError);
+    expect(passwordOnly.sent.map((entry) => entry.command)).toEqual(['InitiateAuthCommand', 'RevokeTokenCommand']);
+    expect(passwordOnly.sent[1]?.input).toEqual({ ClientId: 'syntheticclient', Token: 'refresh-token' });
+    // The same after a new password, even when revoking fails; and with no refresh token, nothing to revoke.
+    const newPassword = make({ InitiateAuthCommand: { ChallengeName: 'NEW_PASSWORD_REQUIRED', Session: 's1' }, RespondToAuthChallengeCommand: TOKENS, RevokeTokenCommand: named('InternalErrorException') });
+    const step = await newPassword.provider.signIn('person@synthetic.test', 'Temporary-Pass-1');
+    await expect(newPassword.provider.setNewPassword(challengeOf(step), 'Chosen-Pass-2026')).rejects.toThrow(MfaNotProvenError);
+    const noRefresh = make({ InitiateAuthCommand: { AuthenticationResult: { IdToken: 'id-token', AccessToken: 'a' } } });
+    await expect(noRefresh.provider.signIn('person@synthetic.test', 'x')).rejects.toThrow(/without a second factor/);
+    expect(noRefresh.sent.map((entry) => entry.command)).toEqual(['InitiateAuthCommand']);
   });
 
   it('sets a new password after a temporary one, checking the policy first', async () => {

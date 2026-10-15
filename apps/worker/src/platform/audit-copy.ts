@@ -1,4 +1,4 @@
-import { OWNER_ROLE, retainUntil } from '@tp/db';
+import { OPERATOR_ROLE, retainUntil } from '@tp/db';
 
 import type { ObjectStore, PutOutcome } from '../storage/object-store';
 import { sha256Hex } from '../storage/object-store';
@@ -11,8 +11,8 @@ import { sha256Hex } from '../storage/object-store';
  * Idempotent per day: a closed day's rows never change (audit_event is append-only and its `at` is
  * set by the database), so a re-run produces the same bytes and the store answers "unchanged"; a
  * copy that differs from its day is refused by the store, which is the alarm. A day is copied only
- * once it is over. The copy reads through the owner role (the operator path), whose policy reads the
- * whole log; audit_event holds codes and opaque IDs only, never PHI.
+ * once it is over. The copy reads as the operator role (tp_operator), whose one policy on audit_event
+ * reads the whole log and which owns nothing; audit_event holds codes and opaque IDs only, never PHI.
  */
 
 export const AUDIT_COPY_CONTENT_TYPE = 'application/x-ndjson';
@@ -70,7 +70,7 @@ export interface AuditCopyResult {
 }
 
 export interface AuditCopyOptions {
-  /** An owner-capable connection (it can SET ROLE to the owner). */
+  /** An operator connection (a login that can SET ROLE to tp_operator). */
   readonly client: OperatorClient;
   readonly store: ObjectStore;
   readonly day: string;
@@ -89,7 +89,7 @@ export async function copyAuditDay(options: AuditCopyOptions): Promise<AuditCopy
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   let lines: string[];
   try {
-    await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+    await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
     lines = ((await client.query(DAY_ROWS, [options.day])).rows as { line: string }[]).map((row) => row.line);
   } finally {
     await client.query('ROLLBACK');

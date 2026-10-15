@@ -7,6 +7,8 @@ const monorepoRoot = path.resolve(import.meta.dirname, '../..');
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // No generated agent-instruction file (AGENTS.md): CLAUDE.md and .claude/ are the repository's.
+  agentRules: false,
   // A self-contained server for the container image (apps/web/Dockerfile).
   output: 'standalone',
   outputFileTracingRoot: monorepoRoot,

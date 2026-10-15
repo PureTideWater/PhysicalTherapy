@@ -144,6 +144,39 @@ describe('PracticeCipher', () => {
     expect(() => new PracticeCipher(PRACTICE_A, randomBytes(31))).toThrow(DataKeyError);
     expect(() => new PracticeCipher('practice', key)).toThrow(DataKeyError);
   });
+
+  it('seals object bytes under the practice’s key and the object’s key, freshly each time (property)', () => {
+    fc.assert(
+      fc.property(fc.uint8Array({ maxLength: 512 }), fc.stringMatching(/^[a-z0-9/._-]{1,40}$/), (body, objectKey) => {
+        const sealed = cipher.encryptObject(objectKey, body);
+        expect(sealed.subarray(0, 4).toString('ascii')).toBe('TPO1');
+        expect(sealed.length).toBe(body.length + 4 + 12 + 16);
+        expect(cipher.decryptObject(objectKey, sealed).equals(Buffer.from(body))).toBe(true);
+        expect(cipher.encryptObject(objectKey, body).equals(sealed)).toBe(false);
+      }),
+    );
+  });
+
+  it('never stores an object’s bytes in the clear, and binds them to their practice, key and data key', () => {
+    const body = Buffer.from(`ISA*00*SYNTHSENDER*${SYNTHETIC_PCN}~`, 'utf8');
+    const sealed = cipher.encryptObject('documents/0b6e2a7c', body);
+    expect(sealed.includes(Buffer.from(SYNTHETIC_PCN))).toBe(false);
+    expect(() => cipher.decryptObject('documents/9a8b7c6d', sealed)).toThrow(CiphertextError);
+    expect(() => new PracticeCipher(PRACTICE_B, key).decryptObject('documents/0b6e2a7c', sealed)).toThrow(CiphertextError);
+    expect(() => new PracticeCipher(PRACTICE_A, randomBytes(32)).decryptObject('documents/0b6e2a7c', sealed)).toThrow(CiphertextError);
+    // Object sealing uses its own derived key: a field ciphertext's key does not open it.
+    expect(cipher.decrypt('patient_ref.last_name', cipher.encrypt('patient_ref.last_name', 'SYNTHETIC'))).toBe('SYNTHETIC');
+  });
+
+  it('refuses tampered, truncated, foreign and keyless objects', () => {
+    const sealed = cipher.encryptObject('packets/1', Buffer.from('SYNTHETIC PACKET'));
+    const tampered = Buffer.from(sealed);
+    tampered[20] = (tampered[20] ?? 0) ^ 1;
+    expect(() => cipher.decryptObject('packets/1', tampered)).toThrow(/does not decrypt/);
+    expect(() => cipher.decryptObject('packets/1', sealed.subarray(0, 20))).toThrow(/not a sealed TPO1 object/);
+    expect(() => cipher.decryptObject('packets/1', Buffer.from('%PDF-1.7 not sealed at all, long enough to pass'))).toThrow(/not a sealed TPO1 object/);
+    expect(() => cipher.encryptObject('', Buffer.from('x'))).toThrow(CiphertextError);
+  });
 });
 
 describe('practice keys', () => {

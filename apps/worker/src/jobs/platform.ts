@@ -11,10 +11,11 @@ import type { ObjectStore } from '../storage/object-store';
  * Platform jobs: work on the platform itself rather than on one practice's data, so they carry no
  * practice in their payload (docs/adr/0014). They read no PHI: the audit copy reads audit_event
  * (codes and opaque IDs only), the restore drill counts rows on a scratch copy, and the support-grant
- * notices read support grants, counts of reads and the administrators' email addresses (docs/adr/0017),
- * opening each practice's scope only to record its notice. They
- * run on the operator connection (one that can SET ROLE to the owner), which the worker holds only
- * where OPERATOR_DATABASE_URL is configured. A practice job (jobs/registry.ts) never runs this way.
+ * notices read IDs, counts of reads and the administrators' email addresses (docs/adr/0017) through
+ * three narrow functions, one practice per transaction. They run on the operator connection, every
+ * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
+ * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
+ * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
  */
 export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices'] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
@@ -58,7 +59,7 @@ export interface OperatorPool {
 }
 
 export interface PlatformDependencies {
-  /** Owner-capable connections to the platform database. */
+  /** Operator connections to the platform database (a login that can SET ROLE to tp_operator). */
   readonly operator: OperatorPool;
   readonly store: ObjectStore;
   readonly restorer: SnapshotRestorer;

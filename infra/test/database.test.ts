@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_LOGIN, OWNER_LOGIN } from '../lib/constructs/database';
+import { APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN, restoreDrillInstanceId } from '../lib/constructs/database';
 import { ENVIRONMENTS } from '../lib/environments';
 import { PASSWORD_EXCLUDED_CHARACTERS } from '../lib/retention';
 import { getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourcesOf, synthesized, transformsOf } from './synth';
@@ -34,9 +34,9 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
     expect(properties.DBParameterGroupName).toEqual(ref(id));
   });
 
-  it('keeps the owner and application logins in two secrets under the environment key', () => {
+  it('keeps the owner, application and operator logins in three secrets under the environment key', () => {
     const secrets = resourcesOf(template, 'AWS::SecretsManager::Secret').map(([, secret]) => propertiesOf(secret));
-    expect(secrets).toHaveLength(2);
+    expect(secrets).toHaveLength(3);
     const templates = secrets.map((secret) => {
       const generate = secret.GenerateSecretString as { SecretStringTemplate: unknown; GenerateStringKey: string; ExcludeCharacters: string };
       expect(generate.GenerateStringKey).toBe('password');
@@ -45,17 +45,25 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
       return JSON.stringify(generate.SecretStringTemplate);
     });
     const usernames = templates.map((text) => /\\"username\\":\\"([a-z_]+)\\"/.exec(text)?.[1]).sort();
-    expect(usernames).toEqual([APP_LOGIN, OWNER_LOGIN].sort());
+    expect(usernames).toEqual([APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN].sort());
     expect(properties.MasterUsername).toBe(OWNER_LOGIN);
-    // The application login's secret names the owner secret, which its alternating-users rotation logs in with.
+    // The application and operator logins' secrets name the owner secret, which their alternating-users rotation logs in with.
     const owner = logicalIdOf(stack, stack.database.ownerSecret);
     expect(templates.find((text) => text.includes(APP_LOGIN))).toContain(`"masterarn\\":\\"",{"Ref":"${owner}"}`);
+    expect(templates.find((text) => text.includes(OPERATOR_LOGIN))).toContain(`"masterarn\\":\\"",{"Ref":"${owner}"}`);
   });
 
-  it('rotates the owner login by itself and the application login with alternating users, every 30 days', () => {
+  it('names one scratch instance for the restore drill, per environment', () => {
+    expect(stack.database.restoreDrillInstanceId).toBe(restoreDrillInstanceId(environment));
+    expect(restoreDrillInstanceId(environment)).toBe(`tp-${environment}-restore-drill`);
+  });
+
+  it('rotates the owner login by itself and the application and operator logins with alternating users, every 30 days', () => {
     const schedules = resourcesOf(template, 'AWS::SecretsManager::RotationSchedule').map(([, schedule]) => propertiesOf(schedule));
+    expect(schedules).toHaveLength(3);
     const owner = logicalIdOf(stack, stack.database.ownerSecret);
     const app = logicalIdOf(stack, stack.database.appSecret);
+    const operator = logicalIdOf(stack, stack.database.operatorSecret);
     const bySecret = (id: string) => schedules.find((schedule) => JSON.stringify(schedule.SecretId) === JSON.stringify(ref(id)));
     const rotationGroup = { 'Fn::GetAtt': [expect.stringMatching(/^DatabaseRotationSecurityGroup/), 'GroupId'] };
 
@@ -68,11 +76,13 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
       },
     });
     expect(bySecret(owner)?.RotateImmediatelyOnUpdate).toBeUndefined();
-    expect(bySecret(app)).toMatchObject({
-      RotationRules: { ScheduleExpression: 'rate(30 days)' },
-      RotateImmediatelyOnUpdate: false,
-      HostedRotationLambda: { RotationType: 'PostgreSQLMultiUser', MasterSecretArn: ref(owner), VpcSecurityGroupIds: rotationGroup },
-    });
+    for (const login of [app, operator]) {
+      expect(bySecret(login)).toMatchObject({
+        RotationRules: { ScheduleExpression: 'rate(30 days)' },
+        RotateImmediatelyOnUpdate: false,
+        HostedRotationLambda: { RotationType: 'PostgreSQLMultiUser', MasterSecretArn: ref(owner), VpcSecurityGroupIds: rotationGroup },
+      });
+    }
     expect(transformsOf(template)).toContain('AWS::SecretsManager-2024-09-16');
   });
 

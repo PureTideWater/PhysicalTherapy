@@ -48,14 +48,16 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     ]);
   });
 
-  it('uses the key otherwise only through S3 for its three buckets and Secrets Manager for its own login', () => {
+  it('uses the key otherwise only through S3 for the documents and packets and Secrets Manager for its own login', () => {
     const viaService = kmsStatements.filter((statement) => statement.Condition?.StringEquals?.['kms:ViaService'] !== undefined);
     expect(viaService.map((statement) => statement.Sid).sort()).toEqual(['ApplicationLoginDecrypt', 'BucketEncryptionThroughS3']);
     const s3 = viaService.find((statement) => statement.Sid === 'BucketEncryptionThroughS3');
     const contexts = JSON.stringify(s3?.Condition?.ArnLike?.['kms:EncryptionContext:aws:s3:arn']);
-    for (const bucket of [stack.storage.documents, stack.storage.packets, stack.storage.auditCopies]) {
+    for (const bucket of [stack.storage.documents, stack.storage.packets]) {
       expect(contexts).toContain(logicalIdOf(stack, bucket));
     }
+    // The audit copies are the operator role's; the trail is CloudTrail's.
+    expect(contexts).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
     expect(contexts).not.toContain(logicalIdOf(stack, stack.accountSecurity.trailBucket));
     const secrets = viaService.find((statement) => statement.Sid === 'ApplicationLoginDecrypt');
     expect(actionsOf(secrets as CfnStatement)).toEqual(['kms:Decrypt']);
@@ -70,10 +72,12 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     }
   });
 
-  it('reads its own login and never the owner login', () => {
+  it('reads its own login and never the owner or operator login, nor the audit copies', () => {
     const text = JSON.stringify(statements);
     expect(text).toContain(logicalIdOf(stack, stack.database.appSecret));
     expect(text).not.toContain(logicalIdOf(stack, stack.database.ownerSecret));
+    expect(text).not.toContain(logicalIdOf(stack, stack.database.operatorSecret));
+    expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {

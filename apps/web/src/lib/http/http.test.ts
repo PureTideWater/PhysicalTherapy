@@ -172,12 +172,27 @@ describe('the web configuration', () => {
   });
 
   it('requires every implementation choice explicitly in production', () => {
+    const e2e = { ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' };
     expect(() => readWebConfig({ ...base, NODE_ENV: 'production' })).toThrow(new ConfigError('TP_AUTH_PROVIDER is required in production'));
-    expect(() => readWebConfig({ ...base, NODE_ENV: 'production', TP_AUTH_PROVIDER: 'dev' })).toThrow('TP_KEY_PROVIDER is required in production');
-    expect(() => readWebConfig({ ...base, NODE_ENV: 'production', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local' })).toThrow('AUTH_COOKIE_SECRET is required in production');
-    expect(() => readWebConfig({ ...base, NODE_ENV: 'production', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key })).toThrow('TP_LOCAL_MASTER_KEY is required in production');
-    const local = readWebConfig({ ...base, NODE_ENV: 'production', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, TP_DEV_AUTH_DIR: '/tmp/x' });
+    expect(() => readWebConfig({ ...e2e, TP_AUTH_PROVIDER: 'dev' })).toThrow('TP_KEY_PROVIDER is required in production');
+    expect(() => readWebConfig({ ...e2e, TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local' })).toThrow('AUTH_COOKIE_SECRET is required in production');
+    expect(() => readWebConfig({ ...e2e, TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key })).toThrow('TP_LOCAL_MASTER_KEY is required in production');
+    const local = readWebConfig({ ...e2e, TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key, TP_DEV_AUTH_DIR: '/tmp/x' });
     expect(local).toMatchObject({ production: true, auth: { kind: 'dev', directory: '/tmp/x' } });
+  });
+
+  it('refuses the local identity and key providers in production unless the e2e suite says it is running', () => {
+    const production = { ...base, NODE_ENV: 'production', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key };
+    const cognito = { TP_AUTH_PROVIDER: 'cognito', COGNITO_USER_POOL_ID: 'us-east-1_Synthetic', COGNITO_CLIENT_ID: 'syntheticclient' };
+    expect(() => readWebConfig({ ...production, TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'kms', KMS_KEY_ID: 'alias/tp' })).toThrow(
+      new ConfigError('TP_AUTH_PROVIDER=dev is refused in production (Cognito only, outside the e2e suite)'),
+    );
+    expect(() => readWebConfig({ ...production, ...cognito, TP_KEY_PROVIDER: 'local' })).toThrow(new ConfigError('TP_KEY_PROVIDER=local is refused in production (KMS only, outside the e2e suite)'));
+    expect(() => readWebConfig({ ...production, ...cognito, TP_KEY_PROVIDER: 'local', TP_ALLOW_LOCAL_PROVIDERS: 'yes' })).toThrow(new ConfigError('invalid settings: TP_ALLOW_LOCAL_PROVIDERS'));
+    expect(readWebConfig({ ...production, ...cognito, TP_KEY_PROVIDER: 'local', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' }).keys.kind).toBe('local');
+    // playwright.config.ts is the one place that says so.
+    const playwright = readFileSync(path.resolve(import.meta.dirname, '../../../playwright.config.ts'), 'utf8');
+    expect(playwright).toContain("TP_ALLOW_LOCAL_PROVIDERS: 'e2e'");
   });
 
   it('reads Cognito and KMS settings', () => {

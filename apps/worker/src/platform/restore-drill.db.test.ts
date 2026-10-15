@@ -11,15 +11,71 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPlatformHandlers } from '../jobs/platform';
 import { MemoryMailSender } from '../mail/mail';
 import { PgDumpRestorer } from './pg-dump-restorer';
-import { RestoreDrillFailedError, countRows, runRestoreDrill } from './restore-drill';
+import { type EvidenceClient, RestoreDrillFailedError, type RestoredInstance, type SnapshotRestorer, countRows, runRestoreDrill } from './restore-drill';
+
+/**
+ * A restorer for this test only: the "snapshot" is a server-side copy of the source database
+ * (CREATE DATABASE ... TEMPLATE), which works with client tools of any version. The source must have
+ * no other connections while it is copied, so its sessions are closed first.
+ */
+class TemplateRestorer implements SnapshotRestorer {
+  constructor(private readonly options: { readonly adminUrl: string; readonly source: string }) {}
+
+  async restoreLatest(): Promise<RestoredInstance> {
+    const scratch = `tp_restore_${randomUUID().replaceAll('-', '')}`;
+    const admin = databaseClient(this.options.adminUrl);
+    await admin.connect();
+    try {
+      await admin.query('SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()', [this.options.source]);
+      await admin.query(`CREATE DATABASE ${scratch} TEMPLATE ${this.options.source}`);
+    } finally {
+      await admin.end();
+    }
+    const url = new URL(this.options.adminUrl);
+    url.pathname = `/${scratch}`;
+    return {
+      snapshotRef: `template:${this.options.source}`,
+      targetRef: `database:${scratch}`,
+      databaseUrl: url.toString(),
+      destroy: async () => {
+        const dropper = databaseClient(this.options.adminUrl);
+        await dropper.connect();
+        try {
+          await dropper.query(`DROP DATABASE IF EXISTS ${scratch} WITH (FORCE)`);
+        } finally {
+          await dropper.end();
+        }
+      },
+    };
+  }
+}
+
+/** An evidence connection opened on first use: the copy above closes the source's sessions first. */
+function lazyEvidence(url: string): EvidenceClient & { end(): Promise<void> } {
+  let client: DatabaseClient | undefined;
+  return {
+    query: async (text, values) => {
+      if (client === undefined) {
+        client = databaseClient(url);
+        await client.connect();
+      }
+      return client.query(text, values);
+    },
+    end: async () => {
+      await client?.end();
+    },
+  };
+}
 
 /**
  * The restore drill against PostgreSQL (test matrix SEC-13): the latest snapshot is restored to a
  * scratch database, the row counts and the catalog test pass on it, the evidence row is written, and
  * the scratch copy is destroyed. The local restorer needs pg_dump and pg_restore at least as new as
- * the server; where they are older (a newer server than the installed client tools), the drill
- * through them is skipped with that reason and the drill's own logic is still tested with a
- * restorer that hands over an already-migrated copy.
+ * the server; where they are older (a newer server than the installed client tools, as on a CI
+ * runner against the postgres:18 service), the drill through them is skipped with that reason. A
+ * restore of the source itself still runs everywhere: a server-side copy (CREATE DATABASE ...
+ * TEMPLATE, which needs no client tools) restores the source, and the row counts and the catalog test
+ * must pass on it.
  */
 
 const adminUrl = readDatabaseUrl();
@@ -93,8 +149,37 @@ describe('the restore_drill job handler', () => {
 describe('countRows', () => {
   it('counts every table exactly, PHI tables included, as the owner with every practice in scope', async () => {
     const counts = await countRows(owner);
-    expect(counts).toMatchObject({ practice: 2, organization: 2, user: 2, membership: 2, agreement: 2, audit_event: 1, grant: 0, phi_table_registry: 3 });
+    // audit_event: the one written above, and the security event each practice administrator's membership raised.
+    expect(counts).toMatchObject({ practice: 2, organization: 2, user: 2, membership: 2, agreement: 2, audit_event: 3, grant: 0, phi_table_registry: 3 });
     expect(counts.schema_migrations).toBeGreaterThan(0);
+  });
+});
+
+describe('the restore drill on a server-side copy of the source (any client tools)', () => {
+  it('restores the source, passes the row counts and the catalog test on the copy, records the evidence and destroys the copy', async () => {
+    const copySource = await createMigratedDatabase(adminUrl);
+    const seed = databaseClient(copySource.url);
+    await seed.connect();
+    const world = await createTenantWorld(seed, 'copied');
+    await createTenantWorld(seed, 'copied too');
+    await asOwner(seed, [world.practiceId], () =>
+      seed.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, practice_id) VALUES ($1, 'user', 'grant_created', 'grant', $2)", [world.adminUserId, world.practiceId]),
+    );
+    const before = await countRows(seed);
+    await seed.end();
+    const evidenceClient = lazyEvidence(copySource.url);
+    try {
+      const result = await runRestoreDrill({ restorer: new TemplateRestorer({ adminUrl, source: copySource.name }), evidence: evidenceClient });
+      expect(result).toMatchObject({ outcome: 'passed', catalogProblems: [], errorCode: null, snapshotRef: `template:${copySource.name}` });
+      expect(result.rowCounts).toEqual(before);
+      expect(result.rowCounts).toMatchObject({ practice: 2, organization: 2, user: 2, membership: 2, agreement: 2 });
+      expect(await databaseExists(result.targetRef.replace('database:', ''))).toBe(false);
+      const { rows } = await evidenceClient.query('SELECT outcome, row_counts FROM restore_drill WHERE id = $1', [result.id]);
+      expect(rows).toEqual([{ outcome: 'passed', row_counts: before }]);
+    } finally {
+      await evidenceClient.end();
+      await copySource.drop();
+    }
   });
 });
 

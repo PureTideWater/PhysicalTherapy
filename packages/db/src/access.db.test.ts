@@ -38,7 +38,9 @@ beforeAll(async () => {
   world = await createTenantWorld(owner, 'A');
   tables = await tenantTables(owner);
   // A support grant and an audit event in practice A, so every tenant table has a row to hide.
-  const support = await createUser(owner);
+  // A support engineer (the database refuses a support grant to anyone else).
+  const support = await createUser(owner, { hardwareKeyRequired: true });
+  await addMembership(owner, await createOrganization(owner, 'internal', 'support'), support, 'support');
   await asOwner(owner, [world.practiceId], async () => {
     await owner.query("INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'T-1', 'SYNTHETIC TICKET', now() + interval '1 hour')", [
       world.practiceId,
@@ -289,7 +291,7 @@ describe('internal roles and support grants (SEC-05)', () => {
     expect(await visibleRows(engineer)).toEqual(nothing());
   });
 
-  it('refuses a support grant longer than four hours, and a support grant for someone without the support role reaches nothing', async () => {
+  it('refuses a support grant longer than four hours, and a support grant for someone without the support role', async () => {
     const engineer = await internalUser('support');
     await expect(
       asOwner(owner, [world.practiceId], () =>
@@ -300,7 +302,7 @@ describe('internal roles and support grants (SEC-05)', () => {
       ),
     ).rejects.toMatchObject({ code: '23514' });
     const specialist = await internalUser('contract_specialist');
-    await supportGrant(specialist, null);
+    await expect(supportGrant(specialist, null)).rejects.toMatchObject({ code: '23514' });
     expect(await allowed(specialist)).toEqual([]);
   });
 
@@ -340,14 +342,18 @@ describe('a practice always keeps a practice administrator', () => {
     expect(await allowed(successor)).toEqual([local.practiceId]);
   });
 
-  it('allows a practice that has not yet had an administrator (its administrator is invited)', async () => {
+  it('has an administrator from its creation: the group’s administrator is invited first (J1), and invited counts', async () => {
     const group = await createOrganization(owner, 'group');
     const practiceId = randomUUID();
-    await asOwner(owner, [practiceId], () =>
-      owner.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC NEW PRACTICE', 'local:v1:AAAA')", [practiceId, group]),
-    );
+    const create = () =>
+      asOwner(owner, [practiceId], () =>
+        owner.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC NEW PRACTICE', 'local:v1:AAAA')", [practiceId, group]),
+      );
+    await expect(create()).rejects.toThrow(/a practice always has an administrator/);
     const invited = await createUser(owner, { status: 'invited', mfaEnrolled: false });
     await addMembership(owner, group, invited, 'practice_admin');
+    await create();
+    // Invited is not yet signed in with MFA: the practice is not reachable until then.
     expect(await allowed(invited)).toEqual([]);
   });
 
@@ -355,7 +361,7 @@ describe('a practice always keeps a practice administrator', () => {
     const local = await createTenantWorld(owner, 'move');
     const empty = await createOrganization(owner, 'group');
     await expect(asOwner(owner, [local.practiceId], () => owner.query('UPDATE practice SET organization_id = $2 WHERE id = $1', [local.practiceId, empty]))).rejects.toThrow(
-      /at least one practice administrator/,
+      /a practice always has an administrator|at least one practice administrator/,
     );
   });
 });
@@ -396,10 +402,12 @@ describe('organizations and roles', () => {
     await expect(join(other.organizationId)).rejects.toMatchObject({ code: '42501' });
   });
 
-  it('lets a user accept their own invitation but not change their status otherwise', async () => {
+  it('lets a user accept their own invitation but not change their status otherwise, nor record their own MFA', async () => {
     const person = await createUser(owner, { status: 'invited', mfaEnrolled: false });
     const update = (sql: string) => withActor(app, person, (scope) => scope.client.query(sql, [person]));
-    await expect(update("UPDATE \"user\" SET status = 'active', mfa_enrolled = true WHERE id = $1")).resolves.toMatchObject({ rowCount: 1 });
+    // MFA enrollment is recorded only by the sign-in that opened a session (record_sign_in_with_mfa()).
+    await expect(update('UPDATE "user" SET mfa_enrolled = true WHERE id = $1')).rejects.toMatchObject({ code: '42501' });
+    await expect(update("UPDATE \"user\" SET status = 'active' WHERE id = $1")).resolves.toMatchObject({ rowCount: 1 });
     await expect(update("UPDATE \"user\" SET status = 'invited' WHERE id = $1")).rejects.toThrow(/only a platform administrator/);
     await expect(update('UPDATE "user" SET hardware_key_required = true WHERE id = $1')).rejects.toThrow(/only a platform administrator/);
   });

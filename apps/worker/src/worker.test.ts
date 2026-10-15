@@ -5,12 +5,12 @@ import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
 import { JOB_TYPES, QUEUE_OPTIONS } from './jobs/registry';
-import { JobPayloadError, type QueueClient, startWorker } from './worker';
+import { JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 
-type Handler = (jobs: { id: string; data: unknown }[]) => Promise<unknown>;
+type Handler = (jobs: { id: string; data: unknown; retryCount?: number }[]) => Promise<unknown>;
 
 function fakeBoss() {
   const handlers = new Map<string, Handler>();
@@ -41,6 +41,24 @@ function fakeBoss() {
   return { boss, handlers, calls, client: boss as unknown as QueueClient };
 }
 
+/** A pool whose one connection records what it is sent. */
+function fakePool() {
+  const queries: { text: string; values?: unknown[] }[] = [];
+  const pool = {
+    connect: () =>
+      Promise.resolve({
+        query: (text: string, values?: unknown[]) => {
+          queries.push({ text, values });
+          return Promise.resolve({ rows: [], rowCount: 0, command: '', oid: 0, fields: [] });
+        },
+        release: () => undefined,
+      }),
+  };
+  return { queries, pool };
+}
+
+const { pool } = fakePool();
+
 function capture() {
   const lines: Record<string, unknown>[] = [];
   const logger = createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
@@ -55,7 +73,7 @@ describe('startWorker', () => {
   it('starts pg-boss, creates every queue with the shared options, then subscribes to each', async () => {
     const { boss, calls, client } = fakeBoss();
     const { logger } = capture();
-    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     expect(calls).toEqual([
       'start',
       ...JOB_TYPES.map((type) => `createQueue:${type}`),
@@ -77,6 +95,7 @@ describe('startWorker', () => {
     });
     const worker = await startWorker({
       boss: client,
+      pool,
       logger,
       handlers: { ...placeholderHandlers, parse_835: parse },
       heartbeatMs: 60_000,
@@ -91,10 +110,60 @@ describe('startWorker', () => {
     await worker.stop();
   });
 
+  it('opens every database transaction of a practice job in the scope of exactly its practice, as the job', async () => {
+    const { handlers, client } = fakeBoss();
+    const recorder = fakePool();
+    const jobId = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
+    const worker = await startWorker({
+      boss: client,
+      pool: recorder.pool,
+      logger: capture().logger,
+      handlers: {
+        ...placeholderHandlers,
+        digest: async (_payload, context) => {
+          const seen = await context.transaction((scope) => Promise.resolve({ kind: scope.kind, practices: scope.practiceIds, actor: scope.actorId, actorKind: scope.actorKind }));
+          expect(seen).toEqual({ kind: 'job', practices: [PRACTICE], actor: jobId, actorKind: 'service' });
+        },
+      },
+      heartbeatMs: 60_000,
+    });
+    await handlers.get('digest')?.([{ id: jobId, data: { practice_id: PRACTICE, period: '2026-10' } }]);
+    expect(recorder.queries.map((query) => query.text)).toEqual(['BEGIN', expect.stringContaining("set_config('app.practice_ids', ARRAY[$2::uuid]::text, true)"), 'COMMIT']);
+    expect(recorder.queries[1]?.values).toEqual([jobId, PRACTICE]);
+    await worker.stop();
+  });
+
+  it('logs the final failure of a job for the operator alarm, and only on its third attempt', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const failing = () => Promise.reject(new Error('synthetic failure'));
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger,
+      handlers: { ...placeholderHandlers, price: failing },
+      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing },
+      heartbeatMs: 60_000,
+    });
+    const job = (retryCount: number) => ({ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
+    for (const retryCount of [0, 1]) {
+      await expect(handlers.get('price')?.([job(retryCount)])).rejects.toThrow('synthetic failure');
+    }
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
+    await expect(handlers.get('price')?.([job(QUEUE_OPTIONS.retryLimit)])).rejects.toThrow('synthetic failure');
+    await expect(handlers.get('restore_drill')?.([{ id: 'job-drill', retryCount: QUEUE_OPTIONS.retryLimit, data: {} }])).rejects.toThrow('synthetic failure');
+    expect(lines.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([
+      expect.objectContaining({ level: 'error', job_id: 'job-2', job_type: 'price', error_code: 'JOB_FAILED' }),
+      expect.objectContaining({ level: 'error', job_id: 'job-drill', job_type: 'restore_drill', error_code: 'JOB_FAILED' }),
+    ]);
+    expect(QUEUE_OPTIONS.retryLimit + 1).toBe(3);
+    await worker.stop();
+  });
+
   it('fails a job whose payload is invalid without echoing the payload', async () => {
     const { handlers, client } = fakeBoss();
     const { lines, logger } = capture();
-    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     const job = { id: 'job-2', data: { practice_id: PRACTICE, document_id: DOCUMENT, member_id: 'SYN000000001' } };
     const run = handlers.get('parse_835')?.([job]);
     await expect(run).rejects.toThrow(JobPayloadError);
@@ -108,7 +177,7 @@ describe('startWorker', () => {
   it('runs the placeholder handlers to completion', async () => {
     const { handlers, client } = fakeBoss();
     const { lines, logger } = capture();
-    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     await handlers.get('digest')?.([{ id: 'job-3', data: { practice_id: PRACTICE, period: '2026-10' } }]);
     expect(lines.some((line) => line.job_type === 'digest' && line.job_id === 'job-3')).toBe(true);
     await worker.stop();
@@ -120,6 +189,7 @@ describe('startWorker', () => {
     const { lines, logger } = capture();
     const worker = await startWorker({
       boss: client,
+      pool,
       logger,
       handlers: placeholderHandlers,
       heartbeatMs: 1_000,
@@ -139,14 +209,14 @@ describe('startWorker', () => {
   it('waits thirty seconds for active jobs by default', async () => {
     const { boss, client } = fakeBoss();
     const { logger } = capture();
-    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     await worker.stop();
     expect(boss.stop).toHaveBeenCalledWith({ graceful: true, timeout: 30_000 });
   });
 
   it('runs no platform job unless it is given the platform handlers', async () => {
     const { boss, calls, client } = fakeBoss();
-    const worker = await startWorker({ boss: client, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
     expect(boss.schedule).not.toHaveBeenCalled();
     expect(calls.filter((call) => PLATFORM_JOB_TYPES.some((type) => call.endsWith(`:${type}`)))).toEqual([]);
     await worker.stop();
@@ -160,7 +230,7 @@ describe('startWorker', () => {
       return Promise.resolve();
     });
     const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve(), support_grant_notices: () => Promise.resolve() };
-    const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
+    const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
       expect(calls).toEqual(expect.arrayContaining([`createQueue:${type}`, `schedule:${type}`, `work:${type}`]));
       expect(boss.createQueue).toHaveBeenCalledWith(type, QUEUE_OPTIONS);

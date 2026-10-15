@@ -9,7 +9,10 @@ export * from './authz';
 export {
   type CatalogOptions,
   NULLABLE_PRACTICE_ID_TABLES,
+  PLATFORM_DIRECTORY_TABLES,
   REGISTRY_TABLE,
+  REVIEWED_PLATFORM_POLICIES,
+  type ReviewedPolicy,
   TENANT_SETTING,
   TENANT_TABLE,
   catalogProblems,

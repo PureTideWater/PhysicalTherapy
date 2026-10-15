@@ -7,8 +7,10 @@ import { z } from 'zod';
 /**
  * The web server's settings, from the environment. In production every setting that picks an
  * implementation is required and has no default (the identity provider, the key provider, the cookie
- * sealing key), so a deployment can never fall back to the local ones by omission. Development
- * defaults are local and synthetic.
+ * sealing key), so a deployment can never fall back to the local ones by omission, and the local
+ * identity and key providers are refused outright: a production build runs them only for the e2e
+ * suite, which says so with TP_ALLOW_LOCAL_PROVIDERS=e2e (set by playwright.config.ts alone).
+ * Development defaults are local and synthetic.
  */
 
 const base64Key = z
@@ -27,6 +29,7 @@ const schema = z.object({
   COGNITO_USER_POOL_ID: z.string().regex(/^[a-z]{2}-[a-z]+-\d_[A-Za-z0-9]+$/).optional(),
   COGNITO_CLIENT_ID: z.string().regex(/^[a-z0-9]+$/).optional(),
   TP_KEY_PROVIDER: z.enum(['local', 'kms']).optional(),
+  TP_ALLOW_LOCAL_PROVIDERS: z.literal('e2e').optional(),
   TP_LOCAL_MASTER_KEY: base64Key.optional(),
   KMS_KEY_ID: z.string().min(1).optional(),
 });
@@ -84,6 +87,14 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
   };
   const authKind = production ? needed(settings.TP_AUTH_PROVIDER, 'TP_AUTH_PROVIDER') : (settings.TP_AUTH_PROVIDER ?? 'dev');
   const keyKind = production ? needed(settings.TP_KEY_PROVIDER, 'TP_KEY_PROVIDER') : (settings.TP_KEY_PROVIDER ?? 'local');
+  if (production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e') {
+    if (authKind === 'dev') {
+      throw new ConfigError('TP_AUTH_PROVIDER=dev is refused in production (Cognito only, outside the e2e suite)');
+    }
+    if (keyKind === 'local') {
+      throw new ConfigError('TP_KEY_PROVIDER=local is refused in production (KMS only, outside the e2e suite)');
+    }
+  }
   const cookieSecret = production ? needed(settings.AUTH_COOKIE_SECRET, 'AUTH_COOKIE_SECRET') : (settings.AUTH_COOKIE_SECRET ?? developmentCookieSecret());
 
   let auth: AuthProviderSettings;

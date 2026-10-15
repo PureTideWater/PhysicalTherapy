@@ -8,6 +8,7 @@ import { EnvironmentKey } from './constructs/environment-key';
 import { Identity } from './constructs/identity';
 import { Monitoring, type OperatorEndpoints } from './constructs/monitoring';
 import { Network } from './constructs/network';
+import { OperatorRole } from './constructs/operator-role';
 import { PullRequestDiffRole } from './constructs/pull-request-diff-role';
 import { Storage } from './constructs/storage';
 import { type EnvironmentName, type EnvironmentSettings, GITHUB_REPOSITORY, environmentSettings } from './environments';
@@ -36,6 +37,7 @@ export class PlatformStack extends Stack {
   readonly monitoring: Monitoring;
   readonly accountSecurity: AccountSecurity;
   readonly application: ApplicationRole;
+  readonly operator: OperatorRole;
   readonly pullRequestDiff?: PullRequestDiffRole;
 
   constructor(scope: Construct, id: string, props: PlatformStackProps) {
@@ -50,7 +52,7 @@ export class PlatformStack extends Stack {
     const key = this.key.key;
     this.network = new Network(this, 'Network', { cidr: this.settings.vpcCidr });
     this.storage = new Storage(this, 'Storage', { key, objectLockMode: this.settings.objectLockMode });
-    this.database = new Database(this, 'Database', { network: this.network, key, settings: this.settings.database });
+    this.database = new Database(this, 'Database', { network: this.network, key, settings: this.settings.database, environmentName });
     this.identity = new Identity(this, 'Identity', { deletionProtection: this.settings.protectFromDeletion });
     this.monitoring = new Monitoring(this, 'Monitoring', { environmentName, key, operator: props.operator ?? {} });
     this.accountSecurity = new AccountSecurity(this, 'AccountSecurity', {
@@ -63,8 +65,14 @@ export class PlatformStack extends Stack {
       key,
       documents: this.storage.documents,
       packets: this.storage.packets,
-      auditCopies: this.storage.auditCopies,
       appSecret: this.database.appSecret,
+    });
+    this.operator = new OperatorRole(this, 'Operator', {
+      key,
+      auditCopies: this.storage.auditCopies,
+      operatorSecret: this.database.operatorSecret,
+      database: this.database.instance,
+      restoreDrillInstanceId: this.database.restoreDrillInstanceId,
     });
     if (this.settings.pullRequestDiffRole) {
       this.pullRequestDiff = new PullRequestDiffRole(this, 'PullRequestDiff', { repository: GITHUB_REPOSITORY });
@@ -80,18 +88,26 @@ export class PlatformStack extends Stack {
       VpcId: this.network.vpc.vpcId,
       WebSecurityGroupId: this.network.webSecurityGroup.securityGroupId,
       WorkerSecurityGroupId: this.network.workerSecurityGroup.securityGroupId,
+      OperatorSecurityGroupId: this.network.operatorSecurityGroup.securityGroupId,
       DocumentsBucket: this.storage.documents.bucketName,
       PacketsBucket: this.storage.packets.bucketName,
       AuditCopiesBucket: this.storage.auditCopies.bucketName,
+      AuditCopyLockMode: this.settings.objectLockMode,
       DatabaseEndpoint: this.database.instance.dbInstanceEndpointAddress,
+      DatabaseInstanceId: this.database.instance.instanceIdentifier,
+      DatabaseSubnetGroup: this.database.subnetGroup.subnetGroupName,
+      DatabaseSecurityGroupId: this.database.securityGroup.securityGroupId,
+      RestoreDrillInstanceId: this.database.restoreDrillInstanceId,
       OwnerLoginSecretArn: this.database.ownerSecret.secretArn,
       AppLoginSecretArn: this.database.appSecret.secretArn,
+      OperatorLoginSecretArn: this.database.operatorSecret.secretArn,
       UserPoolId: this.identity.userPool.userPoolId,
       WebClientId: this.identity.webClient.userPoolClientId,
       OperatorTopicArn: this.monitoring.operatorTopic.topicArn,
       WorkerLogGroup: this.monitoring.workerLogGroup.logGroupName,
       WorkerHeartbeatSeconds: String(HEARTBEAT_INTERVAL_SECONDS),
       ApplicationRoleArn: this.application.role.roleArn,
+      OperatorRoleArn: this.operator.role.roleArn,
     };
     if (this.pullRequestDiff !== undefined) {
       values.PullRequestDiffRoleArn = this.pullRequestDiff.role.roleArn;

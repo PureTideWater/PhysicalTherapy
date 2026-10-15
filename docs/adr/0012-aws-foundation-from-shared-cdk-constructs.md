@@ -1,6 +1,6 @@
 # 0012. Build every environment's AWS foundation from the same CDK constructs, tested by template assertions
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md) and [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (provider and data path), 15 (stack, environments, cost), 16 (encryption, network, backups and
@@ -35,18 +35,24 @@ template differ from the deployed one, so behaviors that matter are explicit pro
 
 **Network.** Subnet groups `edge` (public, no public addresses assigned, empty until the load balancer),
 `app` (web, worker, rotation functions, endpoints) and `data` (RDS), the last two isolated: no NAT gateway and no
-route out of the VPC. Interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR API and
-ECR Docker, with private DNS, admitting HTTPS from the VPC only; an S3 gateway endpoint on the app route tables.
-Web and worker security groups exist now with HTTPS egress only; the database admits PostgreSQL from them and from
-the rotation functions, by security group, never by address.
+route out of the VPC. Interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR API, ECR
+Docker, the RDS API (the restore drill) and the SES API (the support notices; ADR 0019), with private DNS, admitting
+HTTPS from the VPC only; an S3 gateway endpoint on the app route tables. Web, worker and operator security groups
+exist now with HTTPS egress only; the database admits PostgreSQL from them and from the rotation functions, by
+security group, never by address.
 
 **One key per environment.** A customer-managed key with yearly rotation encrypts every data store in the stack:
-the database, the four buckets (SSE-KMS with bucket keys), both secrets, the alert topic, the worker log group and
+the database, the four buckets (SSE-KMS with bucket keys), the three secrets, the alert topic, the worker log group and
 the CloudTrail files. Services that cannot hold an IAM policy are added to the key policy with conditions where the
 service supports them (CloudTrail by trail ARN, CloudWatch Logs by log group). The application's task role may call
 `GenerateDataKey` and `Decrypt` directly only when the encryption context is exactly `practice_id`
 (`ForAllValues:StringEquals` on `kms:EncryptionContextKeys` plus `Null: false`, so an empty context is refused); its
-other uses of the key are through S3 for its three buckets and through Secrets Manager for its own login secret.
+other uses of the key are through S3 for the documents and packets buckets and through Secrets Manager for its own
+login secret. Every object the application stores is also sealed with a key derived from its practice's data key
+(ADR 0018), so the per-practice key is the application's layer and SSE-KMS the one beneath it. The platform jobs have
+their own task role, `OperatorRole` (ADR 0019): the operator login's secret, the audit copies (write once with
+retention, `ListBucket` so a missing key answers 404), the RDS restore, modify, describe, tag and delete calls on the
+one scratch instance `tp-<env>-restore-drill`, KMS grants through RDS for AWS resources only, and SES.
 These are IAM conditions rather than KMS grants: KMS grants are runtime objects CloudFormation does not manage,
 and conditions are declarative and asserted in tests. No `grant*` helper is used for the role, because the bucket
 helpers add the key without conditions.
@@ -58,14 +64,16 @@ Production uses COMPLIANCE mode (write-once for everyone); staging and dev hold 
 GOVERNANCE, the same retention with a permissioned bypass, so a synthetic environment can be cleared. Every bucket
 blocks public access, refuses requests that are not TLS 1.2 or later, disables ACLs and is retained when the stack
 is deleted. Bucket names are generated; object keys are the application's opaque IDs (the key layout and its
-SEC-08 test belong to milestone 3's upload path).
+SEC-08 test belong to milestone 3's upload path). The three application buckets refuse, for every principal, an
+object-creating PUT without `If-None-Match`, so no key is ever overwritten (ADR 0018).
 
 **Database.** PostgreSQL 18 (the major version CI tests), `rds.force_ssl` and TLS 1.2 minimum, gp3 with storage
 autoscaling, 35 days of automated backups (point-in-time recovery and the daily snapshot) kept after the instance
 is deleted, a final snapshot on removal. No PostgreSQL logs are exported to CloudWatch: an error log can carry the
-values of a failing statement. Two logins in two secrets: `tp_owner_login` is the RDS master user (the owner login
-of ADR 0009, which `SET ROLE tp_owner`s), `tp_app_login` the application login the role bootstrap creates as a member
-of `tp_app`. Both rotate every 30 days through Secrets Manager's hosted PostgreSQL functions in the app subnets. The
+values of a failing statement. Three logins in three secrets: `tp_owner_login` is the RDS master user (the owner login
+of ADR 0009, which `SET ROLE tp_owner`s; migrations only), `tp_app_login` the application login the role bootstrap creates as a member
+of `tp_app`, and `tp_operator_login` the platform jobs' login, a member of `tp_operator` (ADR 0019), with the same
+alternating-users rotation as the application login. All rotate every 30 days through Secrets Manager's hosted PostgreSQL functions in the app subnets. The
 owner rotates itself; the application login uses alternating users (the function creates `tp_app_login_clone` and
 grants it `tp_app_login`, so the clone inherits `tp_app` through it), and its first rotation waits for the schedule
 because the login does not exist until the bootstrap creates it. The application role can read only its own
@@ -73,8 +81,9 @@ secret.
 
 **Identity.** MFA required for every user with TOTP as the second factor (no SMS); passkeys (WebAuthn) allowed as a
 sign-in factor with user verification required, which Cognito treats as multi-factor; the application requires a
-passkey for internal roles. No self sign-up. Twelve-character passwords with all four classes. Threat protection
-enforced, which needs the Plus plan. One web client with SRP and choice-based sign-in, no secret, no OAuth or hosted
+passkey for internal roles. No self sign-up. Twelve-character passwords with all four classes. The Essentials feature
+plan, which has passkeys and choice-based sign-in; the Plus plan's threat protection is not asked for by the plan and is
+priced per user, so it is the owner's decision (ADR 0019), not built in. One web client with SRP and choice-based sign-in, no secret, no OAuth or hosted
 UI, revocable tokens. Lifetimes from `sessions.md`: refresh token 12 hours (the absolute session), access and ID
 tokens 15 minutes (half the 30-minute idle limit), sign-in session 3 minutes. Device tracking stays off, because a
 remembered device skips MFA; the device list and the ten-failure lockout are application rules. The passkey
@@ -85,7 +94,9 @@ the worker's log group (`/tp/<env>/worker`, created now and encrypted) counts th
 `TherapyPlatform/Worker` `Heartbeat`; the alarm fires on two consecutive empty 60-second periods with missing data
 treated as breaching, and notifies the operator topic on alarm and on recovery. That is exactly two missed beats only
 when the worker beats every 60 seconds, so the deployed worker runs with `WORKER_HEARTBEAT_SECONDS=60` (the stack
-outputs the value; the worker's own default of 30 would alarm only after four misses). Operator subscriptions come
+outputs the value, and the worker's own default is 60 too, ADR 0019). A second metric filter counts the line a job
+logs when it fails its third and last attempt, the restore drill and the audit copy included, and its alarm notifies
+the operator within five minutes (JOB-02). Operator subscriptions come
 from deploy-time context (`tp:operatorEmail`, `tp:operatorSms`), never from the repository. A multi-region
 CloudTrail with log file validation; a GuardDuty detector with S3 data-event and RDS login monitoring; Malware
 Protection for S3 on the documents bucket, tagging each object with its result; GuardDuty findings of severity 4 or

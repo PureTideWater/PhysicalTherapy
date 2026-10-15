@@ -1,6 +1,6 @@
 # 0013. Enforce tenancy in PostgreSQL: forced policies on every tenancy table, effective permission in SQL, and one transaction API
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (the model, personas, authorization in code, lifecycle events), 6 (organizations, practices,
@@ -33,9 +33,9 @@ force row-level security too, with the policies the data dictionary's Policy col
 | user | self, platform administrators and administrators of the user's organizations read; administrators invite (status `invited`, no MFA); self and platform administrators update, and only a platform administrator changes status or the hardware-key rule (a user may accept: invited to active) | all |
 | membership | the member and the organization's administrators read; administrators insert and update | all |
 | practice | tenant policy; platform administrators create (J1); restrictive: only its practice administrators update | read (the resolver) |
-| agreement | parties read (the organization's members, the practice in scope, platform administrators); administrators record; immutable | all |
+| agreement | parties read (the organization's members, the members of the practice's own group, platform administrators; ADR 0019); recorded by `agreement.sign` holders for their own group or by `agreement.record` holders; immutable | all |
 | grant | tenant policy; restrictive: read by its practice's administrators and the grantee's members, insert approved by and update revoked by a practice administrator of the practice | read (the resolver) |
-| support_grant | tenant policy (the practice sees its own); platform administrators read and create (restrictive: only they create) | read (the resolver) |
+| support_grant | tenant policy, narrowed to the practice's own group (the practice sees its own); platform administrators read and create (restrictive: only they create); never updated by the application role (ADR 0019) | read (the resolver) |
 
 "Organization administrators" are practice administrators of a group, firm principals of a firm and platform
 administrators of the internal organization. Policies call SECURITY DEFINER helpers owned by `tp_owner`
@@ -73,14 +73,21 @@ never changes.
 **"A practice always has an administrator"** is enforced at commit (deferred constraint triggers): once a practice's
 owning group has an open, non-disabled practice-admin membership, no change to memberships, users or the practice's
 owner may leave it with none, so an administrator hands the role over in one transaction. A practice whose
-administrator is still invited (none yet active) is allowed, because J1 creates the practice first. Memberships with a
+administrator is still invited (none yet active) is allowed, because J1 creates the practice before anyone accepts;
+since ADR 0019 that invited administrator must exist from the practice's creation (checked at commit), and a practice
+has an owning group until it is deleted. Memberships with a
 future `ends_at` do not count toward the invariant, since time alone would end them.
 
 **Statuses the dictionary leaves open:** organization `active | suspended | closed`; user `invited | active |
 disabled`; practice `active | deleted`, with a data key required unless deleted (ADR 0015).
 
 **Catalog and generated tests.** `catalogProblems()` (`packages/db/src/catalog.ts`) is the catalog test as a function
-(also run by the restore drill). The tables with a nullable `practice_id` are a fixed list with the dictionary's
+(also run by the restore drill). Open for the owner: `.claude/rules/privacy-and-tenant.md` says "The catalog test
+lists exceptions; there are none". This repository reads that rule as "no PHI table is exempt" (none is: every table
+with a NOT NULL `practice_id` is registered with its forced tenant policy). The two lists catalog.ts keeps classify what
+the data dictionary itself defines rather than exempting PHI tables: the non-PHI tables with a nullable `practice_id`
+below, and the platform administrators' directory policies on PHI tables (ADR 0019, `REVIEWED_PLATFORM_POLICIES`). If
+the owner reads the rule as forbidding any list, the dictionary's nullable columns are what has to change. The tables with a nullable `practice_id` are a fixed list with the dictionary's
 reason (`agreement`, `audit_event`); any other nullable `practice_id` fails. The cross-tenant tests are generated from
 the catalog (registry plus every table with `practice_id`) by a row factory that reads columns, foreign keys, check
 constraints and enums; each table is probed through a request scope, a job scope and a hand-set scope.

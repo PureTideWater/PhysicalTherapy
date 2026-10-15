@@ -26,13 +26,18 @@ pnpm db:migrate --dry-run   # apply the pending migrations in one transaction an
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 ```
 
-Tenancy and audit (ADRs 0013 to 0015): every query runs in a scope from `@tp/db` (`withActor`,
-`withPracticeScope`, `withJobScope`, one practice per job), PHI reads go through `readWithAudit`, and `pnpm test:db`
-runs the catalog test and the cross-tenant tests generated from the catalog. The worker runs its platform jobs (the
-nightly audit copy and the monthly restore drill) only when `OPERATOR_DATABASE_URL` names a login that can
-`SET ROLE tp_owner`; locally add `AUDIT_COPY_DIR=<dir>`. The local restore drill uses `pg_dump` and `pg_restore`, which
-must be at least as new as the server (`PG_BIN_DIR` points at them); the database test of that path skips, saying
-why, where they are older.
+Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
+`withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
+context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
+key (`PracticeObjectStore`), and `pnpm test:db` runs the catalog test and the cross-tenant tests generated from the
+catalog. The worker runs its platform jobs (the nightly audit copy, the monthly restore drill and the support notices)
+only when `OPERATOR_DATABASE_URL` names a login that can `SET ROLE tp_operator` (every platform transaction runs as that
+role, which owns nothing); locally add `AUDIT_COPY_DIR=<dir>`, and the local restore drill dumps and restores with
+`RESTORE_DRILL_ADMIN_URL` (a superuser; it defaults to the operator URL). It uses `pg_dump` and `pg_restore`, which
+must be at least as new as the server (`PG_BIN_DIR` points at them); that database test skips, saying why, where they
+are older, and a server-side copy of the source is restored and checked instead, whatever the tools. With
+`NODE_ENV=production` the worker refuses every local implementation (S3 with `AUDIT_COPY_LOCK_MODE`, RDS, SES and an
+https `APP_ORIGIN` are required), and so does the web app for its identity and key providers.
 
 Sign-in and authorization (ADRs 0016 and 0017): `pnpm db:migrate --dev-login && pnpm db:seed` creates the synthetic
 organizations, practices, agreements and one person for every persona (`apps/web/scripts/synthetic-personas.ts`; each
@@ -43,7 +48,8 @@ production; `TP_DEV_AUTH_DIR` is its directory, and invitations' temporary passw
 `TP_KEY_PROVIDER` and `APP_ORIGIN`. Internal roles register a hardware key on their first sign-in and use it from then on.
 Every page, server action and route handler runs a route registered in `apps/web/src/lib/routes`; `pnpm test:db` generates
 the session, MFA, role and cross-tenant tests for each. The worker's `support_grant_notices` platform job emails practice
-administrators about support access (`MAIL_FROM` for SES, otherwise the `MAIL_OUTBOX_DIR` directory).
+administrators about support access (`MAIL_FROM` for SES, otherwise the `MAIL_OUTBOX_DIR` directory). The production
+build runs with the local providers only for the e2e suite, which sets `TP_ALLOW_LOCAL_PROVIDERS=e2e`.
 
 Global rule content (PRD section 9; [content/sources/README.md](content/sources/README.md) lists the files
 release 1 needs):
@@ -55,6 +61,23 @@ pnpm release:assemble <n>          # drafts at L2 or higher -> content/outgoing/
 pnpm release:dry-run <n>           # what release n changes, and the pricing runs it would change
 pnpm release:load <n> [--dir <d>]  # load a published release (or a directory outside fixtures/) into DATABASE_URL
 ```
+
+**Milestone 1 is not complete.** Its done check includes "the restore job runs on staging", and nothing can be deployed
+from the environment the repository was built in (no AWS credentials, and the compute arrives in milestone 11). The
+repository holds what the drill needs there (ADR 0019): the `OperatorRole` task role, the operator login's secret, the
+RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A person with staging credentials finishes it:
+
+1. `cdk deploy tp-staging`, then run `pnpm db:migrate` against the staging database as `tp_owner_login`, and create
+   `tp_app_login` and `tp_operator_login` from their secrets as members of `tp_app` and `tp_operator`.
+2. Run the worker image as a one-off ECS task in the `app` subnets with the `OperatorSecurityGroupId` security group
+   and the `OperatorRoleArn` task role, `NODE_ENV=production`, `OPERATOR_DATABASE_URL` from the operator login,
+   `AUDIT_COPY_BUCKET` and `AUDIT_COPY_LOCK_MODE` from the stack outputs, `MAIL_FROM` (a verified SES identity),
+   `APP_ORIGIN`, `RESTORE_DRILL_MODE=rds`, `RESTORE_DRILL_SOURCE_INSTANCE` (`DatabaseInstanceId`),
+   `RESTORE_DRILL_SCRATCH_INSTANCE` (`RestoreDrillInstanceId`), `RESTORE_DRILL_INSTANCE_CLASS`,
+   `RESTORE_DRILL_SUBNET_GROUP` (`DatabaseSubnetGroup`), `RESTORE_DRILL_SECURITY_GROUPS` (`DatabaseSecurityGroupId`),
+   and `NODE_EXTRA_CA_CERTS` pointing at the RDS certificate bundle, then send it a `restore_drill` job.
+3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
+   and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
 
 **Milestone 0 is not complete.** Its done check ("release 1 loads into an empty database") needs the 2026 CMS
 and X12 files, which cannot be downloaded from the environment the repository was built in (cms.gov, x12.org

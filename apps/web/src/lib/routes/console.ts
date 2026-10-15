@@ -237,7 +237,7 @@ export const inviteMember = platformRoute({
   params: z.object({}),
   input: z.object({ organizationId: opaqueId, email: z.string().trim().toLowerCase().pipe(z.email('an email address')), role: z.enum(MEMBERSHIP_ROLES) }),
   audit: { action: 'membership_created', objectType: 'membership' },
-  handle: async ({ scope, input, services }): Promise<MutationResult> => {
+  handle: async ({ scope, input, services, actor }): Promise<MutationResult> => {
     const organization = (await scope.client.query<{ kind: 'group' | 'firm' | 'internal' }>('SELECT kind FROM organization WHERE id = $1', [input.organizationId])).rows[0];
     if (organization === undefined) {
       throw new NotFoundError();
@@ -245,7 +245,28 @@ export const inviteMember = platformRoute({
     if (!ROLES_BY_KIND[organization.kind].includes(input.role)) {
       throw new InputError([{ field: 'role', message: `a role a ${organization.kind} organization holds` }]);
     }
-    const known = (await scope.client.query<{ id: string; cognito_sub: string }>('SELECT id, cognito_sub FROM "user" WHERE lower(email) = $1', [input.email])).rows[0];
+    const known = (
+      await scope.client.query<{ id: string; cognito_sub: string; internal: boolean; customer: boolean }>(
+        `SELECT u.id, u.cognito_sub,
+                EXISTS (SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id
+                         WHERE m.user_id = u.id AND o.kind = 'internal' AND (m.ends_at IS NULL OR m.ends_at > now())) AS internal,
+                EXISTS (SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id
+                         WHERE m.user_id = u.id AND o.kind IN ('group', 'firm') AND (m.ends_at IS NULL OR m.ends_at > now())) AS customer
+           FROM "user" u WHERE lower(u.email) = $1`,
+        [input.email],
+      )
+    ).rows[0];
+    // Internal roles have no standing access to PHI (PRD 3): nobody joins a customer organization by
+    // their own hand, and no internal user does at all (the database refuses both as well).
+    if (known?.id === actor.userId) {
+      throw new InputError([{ field: 'email', message: 'you cannot add yourself to an organization' }]);
+    }
+    if (known?.internal === true && organization.kind !== 'internal') {
+      throw new InputError([{ field: 'email', message: 'an internal user cannot join a practice group or a firm; support access is a support grant' }]);
+    }
+    if (known?.customer === true && organization.kind === 'internal') {
+      throw new InputError([{ field: 'email', message: 'a member of a practice group or a firm cannot hold an internal role' }]);
+    }
     // The provider's account: created with a temporary password it delivers (an invitation), or found.
     const { sub } = await services.provider.ensureUser(input.email);
     let userId = known?.id;
@@ -480,4 +501,37 @@ export const createSupportGrant = platformRoute({
   sample: { params: () => ({}), input: (refs) => ({ practiceId: refs.practiceId, userId: refs.supportEngineerId, ticket: 'SYN-100', reason: 'SYNTHETIC SUPPORT REASON' }) },
 });
 
-export const CONSOLE_ROUTES = [organizationsPage, createOrganization, organizationPage, createPractice, inviteMember, endMembership, unlockUser, recordAgreement, supportPage, createSupportGrant] as const;
+export const endSupportGrant = platformRoute({
+  id: 'console.end_support_grant',
+  kind: 'action',
+  path: '/console/support',
+  phi: false,
+  permission: 'support_grant.create',
+  params: z.object({}),
+  input: z.object({ supportGrantId: opaqueId }),
+  audit: { action: 'support_grant_ended', objectType: 'support_grant' },
+  // PRD 3: support must not retain access after the ticket closes. The grant ends now (end_support_grant()
+  // checks the actor again and records the security event); the closing notice follows as usual.
+  handle: async ({ scope, input }): Promise<MutationResult> => {
+    const ended = (await scope.client.query<{ ended: boolean }>('SELECT end_support_grant($1) AS ended', [input.supportGrantId])).rows[0]?.ended === true;
+    if (!ended) {
+      throw new NotFoundError();
+    }
+    return { objectId: input.supportGrantId, redirect: '/console/support' };
+  },
+  sample: { params: () => ({}), input: (refs) => ({ supportGrantId: refs.supportGrantId }) },
+});
+
+export const CONSOLE_ROUTES = [
+  organizationsPage,
+  createOrganization,
+  organizationPage,
+  createPractice,
+  inviteMember,
+  endMembership,
+  unlockUser,
+  recordAgreement,
+  supportPage,
+  createSupportGrant,
+  endSupportGrant,
+] as const;

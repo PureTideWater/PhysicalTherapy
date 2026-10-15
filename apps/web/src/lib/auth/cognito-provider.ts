@@ -71,6 +71,14 @@ interface Grant {
   readonly r?: string;
 }
 
+/** Cognito issued tokens to a request that answered no second factor. */
+export class MfaNotProvenError extends Error {
+  override readonly name = 'MfaNotProvenError';
+  constructor() {
+    super('Cognito issued tokens without a second factor; the user pool must require MFA, and no session was opened');
+  }
+}
+
 function errorName(error: unknown): string {
   return typeof error === 'object' && error !== null && 'name' in error && typeof error.name === 'string' ? error.name : '';
 }
@@ -111,7 +119,16 @@ export class CognitoAuthProvider implements AuthProvider {
 
   constructor(private readonly options: CognitoProviderOptions) {}
 
-  private async identity(result: AuthenticationResultType, method: MfaMethod): Promise<AuthStep> {
+  private async identity(result: AuthenticationResultType, method: MfaMethod | null): Promise<AuthStep> {
+    if (method === null) {
+      // Tokens for a password alone (InitiateAuth with PASSWORD, or NEW_PASSWORD_REQUIRED answered):
+      // the pool did not ask for a second factor, so no session may come of it (PRD 6: no PHI route
+      // without MFA). The tokens are revoked and the sign-in fails loudly; the pool's MFA is misconfigured.
+      if (result.RefreshToken !== undefined) {
+        await this.options.client.send(new RevokeTokenCommand({ ClientId: this.options.clientId, Token: result.RefreshToken })).catch(() => undefined);
+      }
+      throw new MfaNotProvenError();
+    }
     if (result.IdToken === undefined || result.AccessToken === undefined) {
       throw new Error('Cognito returned no tokens');
     }
@@ -120,11 +137,15 @@ export class CognitoAuthProvider implements AuthProvider {
     return { kind: 'authenticated', identity: { sub: payload.sub, email, method }, grant: JSON.stringify({ a: result.AccessToken, r: result.RefreshToken } satisfies Grant) };
   }
 
-  /** What Cognito asked next, as a step; `method` names the factor that completes it. */
+  /**
+   * What Cognito asked next, as a step. `method` names the second factor the answered challenge was
+   * (SOFTWARE_TOKEN_MFA or MFA_SETUP: totp; WEB_AUTHN: webauthn), or null when the request answered no
+   * second factor at all, in which case tokens are refused.
+   */
   private async next(
     response: { ChallengeName?: string; Session?: string; ChallengeParameters?: Record<string, string>; AuthenticationResult?: AuthenticationResultType },
     email: string,
-    method: MfaMethod,
+    method: MfaMethod | null,
   ): Promise<AuthStep> {
     if (response.AuthenticationResult !== undefined) {
       return this.identity(response.AuthenticationResult, method);
@@ -141,7 +162,7 @@ export class CognitoAuthProvider implements AuthProvider {
     return { kind: next, challenge };
   }
 
-  private async respond(challenge: string, name: string, responses: Record<string, string>, method: MfaMethod, stage: FailureStage): Promise<AuthStep> {
+  private async respond(challenge: string, name: string, responses: Record<string, string>, method: MfaMethod | null, stage: FailureStage): Promise<AuthStep> {
     const opened = parseChallenge(challenge);
     if (opened === undefined) {
       return { kind: 'expired' };
@@ -167,7 +188,7 @@ export class CognitoAuthProvider implements AuthProvider {
       const response = await this.options.client.send(
         new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: email, PREFERRED_CHALLENGE: 'PASSWORD', PASSWORD: password } }),
       );
-      return await this.next(response, email, 'totp');
+      return await this.next(response, email, null);
     } catch (error) {
       if (REJECTED.has(errorName(error))) {
         return { kind: 'rejected', stage: 'password' };
@@ -182,7 +203,7 @@ export class CognitoAuthProvider implements AuthProvider {
       return { kind: 'invalid_password', problems };
     }
     try {
-      return await this.respond(challenge, 'NEW_PASSWORD_REQUIRED', { NEW_PASSWORD: newPassword }, 'totp', 'password');
+      return await this.respond(challenge, 'NEW_PASSWORD_REQUIRED', { NEW_PASSWORD: newPassword }, null, 'password');
     } catch (error) {
       if (errorName(error) === 'InvalidPasswordException') {
         return { kind: 'invalid_password', problems: ['a password the user pool accepts'] };

@@ -49,6 +49,8 @@ export default defineConfig({
       E2E_ADMIN_URL: e2eAdminUrl(),
       DATABASE_URL: appLoginUrl(),
       APP_ORIGIN: E2E_ORIGIN,
+      // The production build with the local providers, which only the e2e suite may ask for.
+      TP_ALLOW_LOCAL_PROVIDERS: 'e2e',
       TP_AUTH_PROVIDER: 'dev',
       TP_DEV_AUTH_DIR: E2E_DEV_AUTH_DIR,
       TP_KEY_PROVIDER: 'local',

@@ -6,6 +6,9 @@
  *   switches to it with SET ROLE, so whatever it creates is owned by tp_owner.
  * - `tp_app` is the application role: NOSUPERUSER, NOBYPASSRLS, owns nothing, cannot log in. Logins
  *   are members of it.
+ * - `tp_operator` is the platform jobs' role (the nightly audit copy, the restore drill's evidence
+ *   and the support notices): NOSUPERUSER, NOBYPASSRLS, owns nothing, cannot log in. It reads the
+ *   audit log and calls the operator functions; the owner stays with migrations (docs/adr/0014).
  * - `tp_app_dev` is a login for the application role in dev and test only, with a fixed local
  *   password. It is created only when asked (`pnpm db:migrate --dev-login`); production logins come
  *   from Secrets Manager.
@@ -18,6 +21,7 @@
  */
 export const OWNER_ROLE = 'tp_owner';
 export const APP_ROLE = 'tp_app';
+export const OPERATOR_ROLE = 'tp_operator';
 export const APP_DEV_LOGIN = 'tp_app_dev';
 /** Local only: the dev and test login's password. Never used outside a developer machine or CI. */
 export const APP_DEV_PASSWORD = 'tp_app_dev';
@@ -44,6 +48,7 @@ const NOTHING = { rolsuper: false, rolcreatedb: false, rolcreaterole: false, rol
 export const WANTED_ROLES: Readonly<Record<string, RoleAttributes>> = {
   [OWNER_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [APP_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
+  [OPERATOR_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [APP_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
 };
 
@@ -82,9 +87,9 @@ EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
 END $$`;
 }
 
-/** The roles the bootstrap creates, in order: the owner, the application role and, when asked, the dev login. */
+/** The roles the bootstrap creates, in order: the owner, the application and operator roles and, when asked, the dev login. */
 export function managedRoles(options: { readonly devLogin: boolean }): string[] {
-  return [OWNER_ROLE, APP_ROLE, ...(options.devLogin ? [APP_DEV_LOGIN] : [])];
+  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, ...(options.devLogin ? [APP_DEV_LOGIN] : [])];
 }
 
 /** CREATE ROLE for one managed role; a role that already exists is left for roleAlteration. */
@@ -106,10 +111,13 @@ export function grantStatements(options: { readonly devLogin: boolean }): string
     EXECUTE format('GRANT ${OWNER_ROLE} TO %I', current_user);
   END IF;
 END $$`,
-    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}', current_database()); END $$`,
+    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}, ${OPERATOR_ROLE}', current_database()); END $$`,
+    // No temporary tables for anyone but the database's owner and superusers: a temporary table could
+    // otherwise stand in for a real one in a function that does not search pg_temp last.
+    `DO $$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); END $$`,
     'REVOKE CREATE ON SCHEMA public FROM PUBLIC',
     `GRANT USAGE, CREATE ON SCHEMA public TO ${OWNER_ROLE}`,
-    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}`,
+    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}`,
   ];
   if (options.devLogin) {
     statements.push(`DO $$ BEGIN

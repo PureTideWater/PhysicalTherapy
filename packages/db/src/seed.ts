@@ -63,6 +63,13 @@ export async function seedSyntheticTenancy(client: OwnerClient, people: readonly
   if (existing.length > 0) {
     throw new SeedError('this database is already seeded; seed a fresh one');
   }
+  // Every group needs its active practice administrator before its practices exist (PRD 3: a practice
+  // always has an administrator), and the group's approves the firm's grant.
+  for (const group of ['group', 'other_group'] as const) {
+    if (!people.some((candidate) => candidate.organization === group && candidate.role === 'practice_admin' && !candidate.invited)) {
+      throw new SeedError(`the ${group} needs an active practice administrator`);
+    }
+  }
   const organizations = Object.fromEntries(Object.keys(NAMES).map((key) => [key, randomUUID()])) as Record<SeedOrganization, string>;
   const users: Record<string, string> = {};
   await asOwner(client, [], async () => {

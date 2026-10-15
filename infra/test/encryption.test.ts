@@ -4,8 +4,11 @@ import { ENVIRONMENTS } from '../lib/environments';
 import { allResources, getAtt, keyId, onlyResource, propertiesOf, resourcesOf, templateFor } from './synth';
 
 /**
- * PRD 16, encryption: "RDS encryption; S3 server-side encryption ... under a customer-managed KMS
- * key; key rotation yearly". Evidence: these CDK assertions.
+ * PRD 16, encryption: "RDS encryption; S3 server-side encryption with per-practice data keys under a
+ * customer-managed KMS key; key rotation yearly". Evidence: these CDK assertions. The per-practice
+ * layer is the application's (docs/adr/0018): every object it stores is sealed with a key derived
+ * from its practice's data key, which only KMS with that practice's encryption context unwraps
+ * (application-role.test.ts); S3's SSE-KMS under the environment key is the layer beneath.
  */
 
 /** Every resource type in the stacks that stores data at rest, and where it names its key. */
@@ -65,8 +68,8 @@ describe.each(ENVIRONMENTS)('%s: encryption at rest', (environment) => {
         checked += 1;
       }
     }
-    // Four buckets, one database, two secrets, one topic, one log group, one trail.
-    expect(checked).toBe(10);
+    // Four buckets, one database, three secrets (owner, application, operator), one topic, one log group, one trail.
+    expect(checked).toBe(11);
   });
 
   it('has no data store outside that list', () => {

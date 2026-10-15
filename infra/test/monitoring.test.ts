@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 
 import { ENVIRONMENTS } from '../lib/environments';
 import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, workerLogGroupName } from '../lib/heartbeat';
-import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, synthesized } from './synth';
+import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS } from '../lib/jobs';
+import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
 describe('the heartbeat contract with the worker', () => {
   it('matches the line apps/worker logs for each beat', () => {
@@ -16,6 +17,15 @@ describe('the heartbeat contract with the worker', () => {
   it('alarms after exactly two missed beats of one minute each', () => {
     expect(MISSED_HEARTBEATS_TO_ALARM).toBe(2);
     expect(HEARTBEAT_INTERVAL_SECONDS).toBe(60);
+  });
+});
+
+describe('the job-failure contract with the worker (JOB-02)', () => {
+  it('matches the line apps/worker logs when a job fails its last attempt', () => {
+    const worker = readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/worker.ts'), 'utf8');
+    expect(worker).toContain(`export const JOB_FAILED_MESSAGE = '${JOB_FAILED_MESSAGE}';`);
+    // Three attempts in all: two retries after the first (apps/worker/src/jobs/registry.ts).
+    expect(readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/jobs/registry.ts'), 'utf8')).toContain('retryLimit: 2,');
   });
 });
 
@@ -34,8 +44,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     expect(id).toBe(logicalIdOf(stack, stack.monitoring.workerLogGroup));
   });
 
+  const filters = resourcesOf(template, 'AWS::Logs::MetricFilter');
+  const filterFor = (metricName: string) =>
+    filters.find(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))?.[1] ?? { Type: '' };
+  const heartbeatAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.heartbeatAlarm));
+  const jobAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.jobFailedAlarm));
+
+  it('has the heartbeat and job-failure metric filters and alarms, and no other', () => {
+    expect(filters).toHaveLength(2);
+    expect(resourcesOf(template, 'AWS::CloudWatch::Alarm')).toHaveLength(2);
+  });
+
   it('counts each heartbeat line as the custom heartbeat metric', () => {
-    const [, filter] = onlyResource(template, 'AWS::Logs::MetricFilter');
+    const filter = filterFor(HEARTBEAT_METRIC.metricName);
     expect(propertiesOf(filter)).toEqual({
       LogGroupName: ref(logicalIdOf(stack, stack.monitoring.workerLogGroup)),
       FilterPattern: `{ $.msg = "${HEARTBEAT_MESSAGE}" }`,
@@ -46,7 +67,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   });
 
   it('alarms when two consecutive heartbeat periods are empty, missing data counting as missed', () => {
-    const [, alarm] = onlyResource(template, 'AWS::CloudWatch::Alarm');
+    const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm)).toMatchObject({
       Namespace: HEARTBEAT_METRIC.namespace,
       MetricName: HEARTBEAT_METRIC.metricName,
@@ -62,10 +83,30 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   });
 
   it('sends the alarm and its recovery to the operator topic', () => {
-    const [, alarm] = onlyResource(template, 'AWS::CloudWatch::Alarm');
+    const alarm = heartbeatAlarm;
     expect(propertiesOf(alarm).AlarmActions).toEqual([topic]);
     expect(propertiesOf(alarm).OKActions).toEqual([topic]);
     expect(propertiesOf(alarm).AlarmDescription).toBe(`The ${environment} worker missed 2 consecutive heartbeats.`);
+  });
+
+  it('counts each job that fails its last attempt, and tells the operator within five minutes (JOB-02, the restore drill included)', () => {
+    expect(propertiesOf(filterFor(JOB_FAILED_METRIC.metricName))).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.workerLogGroup)),
+      FilterPattern: `{ $.msg = "${JOB_FAILED_MESSAGE}" }`,
+      MetricTransformations: [{ MetricNamespace: JOB_FAILED_METRIC.namespace, MetricName: JOB_FAILED_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    expect(propertiesOf(jobAlarm)).toMatchObject({
+      Namespace: JOB_FAILED_METRIC.namespace,
+      MetricName: JOB_FAILED_METRIC.metricName,
+      Statistic: 'Sum',
+      Period: JOB_FAILED_PERIOD_SECONDS,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+    expect(String(propertiesOf(jobAlarm).AlarmDescription)).toMatch(/restore drill/);
   });
 
   it('encrypts the operator topic, refuses plain HTTP and admits only this account\'s alarms', () => {

@@ -1,7 +1,7 @@
 'use server';
 
 import { type ActionState, runAction } from '../../lib/http/next';
-import { createOrganization, createPractice, createSupportGrant, endMembership, inviteMember, recordAgreement, unlockUser } from '../../lib/routes/console';
+import { createOrganization, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, recordAgreement, unlockUser } from '../../lib/routes/console';
 
 /** Server actions for the internal console; each runs its registered route (src/lib/routes/console.ts). */
 
@@ -31,4 +31,8 @@ export async function recordAgreementAction(_state: ActionState, form: FormData)
 
 export async function createSupportGrantAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(createSupportGrant, form);
+}
+
+export async function endSupportGrantAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(endSupportGrant, form);
 }

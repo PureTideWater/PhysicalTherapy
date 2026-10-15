@@ -6,8 +6,8 @@ import { practiceId, registerKeyAndSignIn, signInWithTotp, withDatabase } from '
 /**
  * Internal roles and support access (PRD 3; PRD 5, J15; test matrix SEC-05): an internal role signs
  * in with a hardware key only (a virtual WebAuthn authenticator stands in for it), the platform
- * administrator creates a break-glass grant from a ticket in the console and reads no practice
- * without one, and a support grant ends at four hours.
+ * administrator creates a break-glass grant from a ticket in the console, ends it when the ticket
+ * closes, and reads no practice without one; and a support grant ends at four hours.
  */
 
 test('makes an internal role use a hardware key, and lets the platform administrator open a break-glass grant from a ticket', async ({ page, browser }) => {
@@ -35,6 +35,13 @@ test('makes an internal role use a hardware key, and lets the platform administr
   await registerKeyAndSignIn(engineer, 'support');
   await expect(engineer).toHaveURL(new RegExp(`/p/${north}$`));
   await expect(engineer.getByText('a support grant (break-glass, four hours)')).toBeVisible();
+
+  // The ticket closes early: the platform administrator ends the grant, and the engineer's next request finds nothing.
+  await row.getByRole('button', { name: 'End now' }).click();
+  await expect(page.locator('tr[data-ticket="SYN-E2E-1"]')).toContainText('Ended');
+  const after = await engineer.goto(`/p/${north}`);
+  expect(after?.status()).toBe(404);
+  await expect(engineer.getByText(SYNTHETIC_PRACTICES.north)).toHaveCount(0);
   await engineer.close();
 
   // Password and TOTP alone open nothing for an internal role that has a key.

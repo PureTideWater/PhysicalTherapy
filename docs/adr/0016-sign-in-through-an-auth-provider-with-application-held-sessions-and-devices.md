@@ -1,6 +1,6 @@
 # 0016. Sign in through an identity provider interface, and keep sessions, devices and the lockout in the application's database
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (authorization in code, lifecycle events), 5 (J1, J2, J16), 6 (Identity and sessions), 7 (Sign-in and
@@ -41,7 +41,13 @@ expiring) into a five-minute HttpOnly cookie.
   it is refused. Every request checks again that the session's second factor was a hardware key.
 - *Security events* (audit `security_event`): a failed-MFA burst is the third failed second factor within fifteen minutes;
   a lock; a sign-in from a new device for a user who had devices before (a first device is no signal). The weekly review
-  reads `audit_event WHERE action = 'security_event'`.
+  reads `audit_event WHERE action = 'security_event'`. Since ADR 0019 the database writes every security event itself
+  (the new-device one from a trigger on `user_device`), adds grant changes and role escalations, and the application
+  role can write none; MFA enrollment is recorded only by `record_sign_in_with_mfa()`; a session or device once ended
+  or revoked stays so; and the Cognito provider turns tokens into a session only after an answered MFA challenge.
+- *Where the device list lives.* PRD 7 lists the device list and its revocation under "Sign-in and MFA"; they are at
+  `/account/devices`, the signed-in user's own page, because a device list needs an authenticated user and the sign-in
+  steps before MFA must not show one (they would reveal a person's devices to anyone with their password).
 
 **Sessions and devices are tables** (`user_session`, `user_device`; migration 20261015170000), because the provider
 cannot hold them: device tracking is off (ADR 0012), access tokens cannot be revoked for offline verification, and the

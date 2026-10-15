@@ -34,19 +34,20 @@ afterAll(async () => {
   await database.drop();
 });
 
-/** A platform administrator creates a practice with a fresh data key; its administrator joins. */
+/** A platform administrator creates a practice with a fresh data key, once its administrator is invited. */
 async function practiceWithKey(): Promise<{ practiceId: string; adminUserId: string }> {
   const internal = await createOrganization(owner, 'internal');
   const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
   await addMembership(owner, internal, platformAdmin, 'platform_admin');
   const group = await createOrganization(owner, 'group');
+  // The group's administrator first: a practice always has one (PRD 3).
+  const adminUserId = await createUser(owner);
+  await addMembership(owner, group, adminUserId, 'practice_admin');
   const practiceId = randomUUID();
   const { dataKeyRef } = await provisionPracticeKey(provider, practiceId);
   await withActor(app, platformAdmin, (scope) =>
     scope.client.query("INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, 'SYNTHETIC KEYED PRACTICE', $3)", [practiceId, group, dataKeyRef]),
   );
-  const adminUserId = await createUser(owner);
-  await addMembership(owner, group, adminUserId, 'practice_admin');
   return { practiceId, adminUserId };
 }
 

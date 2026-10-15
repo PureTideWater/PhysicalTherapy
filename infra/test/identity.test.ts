@@ -57,9 +57,9 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(PASSWORD_MIN_LENGTH).toBeGreaterThanOrEqual(12);
   });
 
-  it('enforces threat protection (advanced security) on the Plus plan', () => {
-    expect(poolProperties.UserPoolTier).toBe('PLUS');
-    expect(poolProperties.UserPoolAddOns).toEqual({ AdvancedSecurityMode: 'ENFORCED' });
+  it('runs on the Essentials plan (passkeys, choice-based sign-in) without the Plus plan’s threat protection, which the plan does not ask for', () => {
+    expect(poolProperties.UserPoolTier).toBe('ESSENTIALS');
+    expect(poolProperties.UserPoolAddOns).toBeUndefined();
   });
 
   it('signs in by email, recovers by email only, and is deletion-protected in production', () => {

@@ -19,21 +19,27 @@ const ORIGIN = 'http://localhost:3000';
 let database: MigratedDatabase;
 let owner: DatabaseClient;
 let operator: DatabasePool;
+let app: DatabasePool;
 let world: TenantWorld;
 let engineer: string;
+let platformAdmin: string;
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
   owner = databaseClient(database.url);
   await owner.connect();
   operator = openPool(database.url, 3);
+  app = openPool(database.appUrl, 2);
   world = await createTenantWorld(owner, 'notices');
   const internal = await createOrganization(owner, 'internal');
   engineer = await createUser(owner, { hardwareKeyRequired: true });
   await addMembership(owner, internal, engineer, 'support');
+  platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
+  await addMembership(owner, internal, platformAdmin, 'platform_admin');
 });
 
 afterAll(async () => {
+  await app.end();
   await operator.end();
   await owner.end();
   await database.drop();
@@ -61,14 +67,38 @@ async function read(practiceId: string, grantId: string): Promise<void> {
   );
 }
 
-/** A practice whose group has no administrator yet (PRD 5, J1: the practice exists before its administrator accepts). */
+/**
+ * A practice with nobody to tell. The database keeps an administrator for every practice from its
+ * creation (migration 20261015180000), so this state is built past that rule, as the superuser, to
+ * test the job's defence for it.
+ */
 async function practiceWithoutAdministrator(): Promise<string> {
   const organizationId = await createOrganization(owner, 'group', 'no administrator');
   const practiceId = randomUUID();
-  await asOwner(owner, [practiceId], () =>
-    owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [practiceId, organizationId, 'SYNTHETIC PRACTICE WITHOUT ADMINISTRATOR', placeholderDataKeyRef()]),
-  );
+  await owner.query('BEGIN');
+  try {
+    await owner.query('ALTER TABLE practice DISABLE TRIGGER practice_has_administrator');
+    await owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [practiceId, organizationId, 'SYNTHETIC PRACTICE WITHOUT ADMINISTRATOR', placeholderDataKeyRef()]);
+    await owner.query('ALTER TABLE practice ENABLE TRIGGER practice_has_administrator');
+    await owner.query('COMMIT');
+  } catch (error) {
+    await owner.query('ROLLBACK');
+    throw error;
+  }
   return practiceId;
+}
+
+/** Runs `sql` as the application role for `actorId`, with `practiceIds` in scope; rolled back. */
+async function asApp(actorId: string, practiceIds: readonly string[], sql: string, values: unknown[] = []): Promise<unknown> {
+  const client = await app.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [actorId, `{${practiceIds.join(',')}}`]);
+    return await client.query(sql, values);
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
 }
 
 async function run(mail: MemoryMailSender) {
@@ -135,6 +165,71 @@ describe('support-grant notices', () => {
     expect(await run(mail)).toMatchObject({ undeliverable: 1 });
     expect(mail.sent).toEqual([]);
     expect(await run(mail)).toMatchObject({ undeliverable: 0 });
+  });
+
+  it('cannot be suppressed by the application role: no one marks a grant notified or forges a notice (SEC-05)', async () => {
+    const grant = await supportGrant(world.practiceId, 5);
+    const firm = await createOrganization(owner, 'firm', 'notices firm');
+    const analyst = await createUser(owner);
+    await addMembership(owner, firm, analyst, 'firm_analyst');
+    for (const actor of [engineer, analyst, platformAdmin, world.adminUserId]) {
+      await expect(asApp(actor, [world.practiceId], 'UPDATE support_grant SET notified_at = now() WHERE id = $1', [grant])).rejects.toMatchObject({ code: '42501' });
+      for (const kind of ['user', 'system']) {
+        await expect(
+          asApp(
+            actor,
+            [world.practiceId],
+            "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose) VALUES ($1, $2, 'notice_sent', 'support_grant', $3, $4, $3, 'support_grant_opened')",
+            [actor, kind, grant, world.practiceId],
+          ),
+        ).rejects.toMatchObject({ code: '42501' });
+      }
+      await expect(
+        asApp(actor, [], "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'system', 'security_event', 'user', $1, 'synthetic')", [actor]),
+      ).rejects.toMatchObject({ code: '42501' });
+    }
+    // A notice_sent event the system did not write does not count: the job still sends both notices.
+    await asOwner(owner, [world.practiceId], () =>
+      owner.query(
+        "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose) VALUES ($1, 'user', 'notice_sent', 'support_grant', $2, $3, $2, 'support_grant_opened')",
+        [engineer, grant, world.practiceId],
+      ),
+    );
+    const mail = new MemoryMailSender();
+    await run(mail);
+    expect(mail.sent.filter((message) => message.links[0]?.endsWith(grant) === true).map((message) => message.subject).sort()).toEqual([
+      'Support access opened for your practice',
+      'Support access to your practice has ended',
+    ]);
+  });
+
+  it('handles each notice in a transaction scoped to exactly its practice, as an operator role that reads nothing else', async () => {
+    const grant = await supportGrant(world.practiceId, 0);
+    const client = await operator.connect();
+    try {
+      for (const scope of ['{}', `{${world.practiceId},${randomUUID()}}`]) {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE tp_operator');
+        await client.query("SELECT set_config('app.practice_ids', $1, true)", [scope]);
+        await expect(client.query("SELECT * FROM operator_record_support_notice($1, 'support_grant_opened', 'job')", [grant])).rejects.toMatchObject({ code: '42501' });
+        await client.query('ROLLBACK');
+      }
+      for (const table of ['practice', 'support_grant', 'user', 'membership', 'grant', 'agreement']) {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE tp_operator');
+        await client.query("SELECT set_config('app.practice_ids', $1, true)", [`{${world.practiceId}}`]);
+        await expect(client.query(`SELECT 1 FROM "${table}" LIMIT 1`)).rejects.toMatchObject({ code: '42501' });
+        await client.query('ROLLBACK');
+      }
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE tp_operator');
+      await client.query("SELECT set_config('app.practice_ids', '{}', true)");
+      await expect(client.query('UPDATE audit_event SET purpose = purpose')).rejects.toMatchObject({ code: '42501' });
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
+    await run(new MemoryMailSender());
   });
 
   it('runs as the support_grant_notices job, logging IDs only', async () => {

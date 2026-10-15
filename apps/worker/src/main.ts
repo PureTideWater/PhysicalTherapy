@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { openPool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { PgBoss } from 'pg-boss';
 
@@ -28,7 +29,7 @@ try {
 
 if (config !== undefined) {
   try {
-    const boss = new PgBoss(config.databaseUrl);
+    const boss = new PgBoss(config.queueDatabaseUrl);
     boss.on('error', () => {
       // pg-boss errors are logged by code only; their text can carry SQL and connection details.
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
@@ -37,7 +38,9 @@ if (config !== undefined) {
     if (runtime === undefined) {
       logger.info('platform jobs not configured on this worker');
     }
-    const worker = await startWorker({ boss, logger, handlers: placeholderHandlers, heartbeatMs: config.heartbeatMs, ...(runtime === undefined ? {} : { platform: runtime.handlers }) });
+    // Practice jobs: the application login, each transaction scoped to the job's one practice.
+    const pool = openPool(config.databaseUrl, 4);
+    const worker = await startWorker({ boss, logger, handlers: placeholderHandlers, pool, heartbeatMs: config.heartbeatMs, ...(runtime === undefined ? {} : { platform: runtime.handlers }) });
     installShutdownHandlers(worker, logger);
   } catch {
     logger.error('worker failed to start', { error_code: 'WORKER_START_FAILED' });

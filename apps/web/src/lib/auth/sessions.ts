@@ -9,7 +9,7 @@ import { deviceLabel, newToken, tokenHash } from './tokens';
  * an ended session is refused on the very next request. Sign-in, sign-out, session ends and device
  * revocations are audit events (sign-out and revocation recorded by their routes); a sign-in from a
  * new device, for a user who had devices before, is a security event for the weekly review (PRD 5,
- * J16).
+ * J16), written by the database's trigger on user_device so no code path can skip it.
  */
 
 export const SESSION_LIMITS = { absoluteHours: 12, idleMinutes: 30 } as const;
@@ -76,12 +76,12 @@ export function openSession(pool: ScopePool<ScopeClient>, request: OpenSessionRe
     );
     const sessionId = session.rows[0]?.id ?? '';
     await client.query('SELECT sign_in_succeeded($1)', [request.userId]);
-    // Accepting an invitation (PRD 5, J2): the first sign-in with MFA makes the user active.
-    await client.query(`UPDATE "user" SET status = 'active', mfa_enrolled = true WHERE id = $1 AND (status = 'invited' OR NOT mfa_enrolled)`, [request.userId]);
+    // Accepting an invitation (PRD 5, J2): the first sign-in with MFA makes the user active. Only this
+    // database function records MFA enrollment, and only for a session this transaction opened.
+    await client.query('SELECT record_sign_in_with_mfa()');
     await recordAuditEvent(scope, { action: 'sign_in', objectType: 'user_session', objectId: sessionId, purpose: request.method, requestId: request.requestId });
-    if (newDevice) {
-      await recordAuditEvent(scope, { action: 'security_event', objectType: 'user_device', objectId: device.id, purpose: 'new_device_sign_in', requestId: request.requestId });
-    }
+    // A new device for a user who had devices before is a security event, which the database records
+    // itself when the device row is inserted (migration 20261015180000).
     return { sessionId, sessionToken, deviceId: device.id, deviceToken, newDevice, expiresAt: new Date(session.rows[0]?.expires_at ?? 0) };
   });
 }

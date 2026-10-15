@@ -21,9 +21,10 @@ test('signs in with a password and a TOTP code, into a private, no-store practic
   await expect(page.getByText(SYNTHETIC_PRACTICES.other)).toHaveCount(0);
   const response = await page.goto(`/p/${north}`);
   expect(response?.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
-  // Another group's practice is not there for this user.
+  // Another group's practice is not there for this user, and the response says so: a 404, not a 200.
   const other = await practiceId('other');
-  await page.goto(`/p/${other}`);
+  const notFound = await page.goto(`/p/${other}`);
+  expect(notFound?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'Not found' })).toBeVisible();
   await expect(page.getByText(SYNTHETIC_PRACTICES.other)).toHaveCount(0);
   // The sign-in is in the audit log.
@@ -71,12 +72,23 @@ test('expires a session idle for more than 30 minutes on a PHI screen (SEC-15)',
       [personaEmail('idle')],
     ),
   );
-  await page.reload();
+  const reloaded = await page.reload();
   await expect(page).toHaveURL(/\/sign-in\?reason=idle$/);
   await expect(page.getByText('You were signed out after 30 minutes without activity')).toBeVisible();
+  // Refused at the HTTP layer too: a redirect status, not a page streamed with 200 (sessions.md: "the
+  // next request is refused").
+  expect((await reloaded?.request().redirectedFrom()?.response())?.status()).toBe(307);
   // The session stays ended: the next request is refused too.
-  await page.goto(`/p/${north}`);
-  await expect(page).toHaveURL(/\/sign-in\?reason=ended$/);
+  const again = await page.request.get(`/p/${north}`, { maxRedirects: 0 });
+  expect([again.status(), again.headers().location]).toEqual([307, expect.stringMatching(/\/sign-in\?reason=ended$/)]);
+});
+
+test('refuses a request without a session with a redirect status before any page is sent', async ({ request }) => {
+  const north = await practiceId('north');
+  const response = await request.get(`/p/${north}`, { maxRedirects: 0 });
+  expect(response.status()).toBe(307);
+  expect(response.headers().location).toMatch(/\/sign-in$/);
+  expect(await response.text()).not.toContain(SYNTHETIC_PRACTICES.north);
 });
 
 test('lists the devices signed in from and revokes one, ending its session', async ({ page }) => {

@@ -8,6 +8,9 @@ export const SUBNET_GROUPS = { edge: 'edge', app: 'app', data: 'data' } as const
  * Interface endpoints, so the private subnets reach AWS without an internet path (PRD 16, network:
  * "VPC endpoints for S3, KMS, Bedrock"; Bedrock through a VPC endpoint, PRD 14 and 15). ECR's API
  * and Docker endpoints let the tasks pull images; the layers come through the S3 gateway endpoint.
+ * The RDS API is for the monthly restore drill (it restores a snapshot to a scratch instance and
+ * deletes it, PRD 16 Backups and restore), and the SES API for the support-access notices (PRD 5,
+ * J15); both are platform jobs on the operator role.
  */
 export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEndpointAwsService])[] = [
   ['Kms', ec2.InterfaceVpcEndpointAwsService.KMS],
@@ -16,6 +19,8 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
   ['CloudWatchLogs', ec2.InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS],
   ['EcrApi', ec2.InterfaceVpcEndpointAwsService.ECR],
   ['EcrDocker', ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER],
+  ['RdsApi', ec2.InterfaceVpcEndpointAwsService.RDS],
+  ['SesApi', ec2.InterfaceVpcEndpointAwsService.EMAIL],
 ];
 
 /**
@@ -25,9 +30,10 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
  * NAT gateway: every AWS service the private subnets use has an endpoint. The default security
  * group is stripped of its rules.
  *
- * The web and worker security groups exist now so the database and the endpoints can admit them;
- * the Fargate services attach to them in milestone 11. Their egress is HTTPS only (the endpoints
- * and S3), plus PostgreSQL to the database, which the Database construct adds.
+ * The web, worker and operator security groups exist now so the database and the endpoints can admit
+ * them; the Fargate services attach to them in milestone 11 (the operator group carries the platform
+ * jobs: the audit copy, the restore drill and the support notices). Their egress is HTTPS only (the
+ * endpoints and S3), plus PostgreSQL to the database, which the Database construct adds.
  */
 export class Network extends Construct {
   readonly vpc: ec2.Vpc;
@@ -36,6 +42,7 @@ export class Network extends Construct {
   readonly endpointSecurityGroup: ec2.SecurityGroup;
   readonly webSecurityGroup: ec2.SecurityGroup;
   readonly workerSecurityGroup: ec2.SecurityGroup;
+  readonly operatorSecurityGroup: ec2.SecurityGroup;
 
   constructor(scope: Construct, id: string, props: { readonly cidr: string }) {
     super(scope, id);
@@ -72,6 +79,7 @@ export class Network extends Construct {
 
     this.webSecurityGroup = appTierSecurityGroup(this, 'WebSecurityGroup', this.vpc, 'Web tasks (milestone 11)');
     this.workerSecurityGroup = appTierSecurityGroup(this, 'WorkerSecurityGroup', this.vpc, 'Worker tasks (milestone 11)');
+    this.operatorSecurityGroup = appTierSecurityGroup(this, 'OperatorSecurityGroup', this.vpc, 'Platform jobs: audit copy, restore drill, support notices (milestone 11)');
   }
 }
 

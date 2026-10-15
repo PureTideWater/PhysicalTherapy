@@ -14,7 +14,12 @@ import { DATA_KEY_BYTES, DataKeyError, requirePractice } from './key-provider';
  *   a practice and column, and differently across practices, so the index never reveals a value or
  *   links practices.
  *
- * Both keys are derived from the data key with HKDF, so destroying the data key destroys them too.
+ * - encryptObject/decryptObject: the bytes of a practice's stored objects (documents, packets,
+ *   exports in S3), AES-256-GCM under a third derived key, bound to the practice and the object's key,
+ *   so an object copied to another key or another practice's cipher does not decrypt
+ *   (docs/adr/0018: S3 keeps its own SSE-KMS layer beneath this one).
+ *
+ * All three keys are derived from the data key with HKDF, so destroying the data key destroys them too.
  */
 
 /** Every column the data dictionary marks (enc). */
@@ -37,6 +42,8 @@ export type LookupColumn = (typeof LOOKUP_COLUMNS)[number];
 const PREFIX = 'enc:v1:';
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+/** The first bytes of every sealed object: format and version. */
+const OBJECT_MAGIC = Buffer.from('TPO1', 'ascii');
 
 /** A value did not decrypt: tampered, from another practice or column, or not a ciphertext at all. */
 export class CiphertextError extends Error {
@@ -50,6 +57,7 @@ function derive(dataKey: Buffer, info: string): Buffer {
 export class PracticeCipher {
   private readonly encryptionKey: Buffer;
   private readonly lookupKey: Buffer;
+  private readonly objectKey: Buffer;
 
   constructor(
     readonly practiceId: string,
@@ -62,6 +70,7 @@ export class PracticeCipher {
     const key = Buffer.from(dataKey);
     this.encryptionKey = derive(key, 'tp field encryption v1');
     this.lookupKey = derive(key, 'tp lookup hash v1');
+    this.objectKey = derive(key, 'tp object encryption v1');
   }
 
   private aad(column: EncryptedColumn): Buffer {
@@ -91,6 +100,38 @@ export class PracticeCipher {
       return Buffer.concat([decipher.update(sealed.subarray(IV_BYTES, sealed.length - TAG_BYTES)), decipher.final()]).toString('utf8');
     } catch {
       throw new CiphertextError('the ciphertext does not decrypt under this practice’s key for this column');
+    }
+  }
+
+  private objectAad(objectKey: string): Buffer {
+    if (objectKey === '') {
+      throw new CiphertextError('an object is sealed under its key');
+    }
+    return Buffer.from(`${this.practiceId}:object:${objectKey}`, 'utf8');
+  }
+
+  /** Seals an object's bytes for storage under `objectKey`: magic, nonce, ciphertext, tag. */
+  encryptObject(objectKey: string, body: Uint8Array): Buffer {
+    const iv = randomBytes(IV_BYTES);
+    const cipher = createCipheriv('aes-256-gcm', this.objectKey, iv);
+    cipher.setAAD(this.objectAad(objectKey));
+    return Buffer.concat([OBJECT_MAGIC, iv, cipher.update(body), cipher.final(), cipher.getAuthTag()]);
+  }
+
+  /** Opens what encryptObject sealed under the same key for this practice; anything else is refused. */
+  decryptObject(objectKey: string, sealed: Uint8Array): Buffer {
+    const bytes = Buffer.from(sealed);
+    if (bytes.length < OBJECT_MAGIC.length + IV_BYTES + TAG_BYTES || !bytes.subarray(0, OBJECT_MAGIC.length).equals(OBJECT_MAGIC)) {
+      throw new CiphertextError('the object is not a sealed TPO1 object');
+    }
+    const iv = bytes.subarray(OBJECT_MAGIC.length, OBJECT_MAGIC.length + IV_BYTES);
+    const decipher = createDecipheriv('aes-256-gcm', this.objectKey, iv);
+    decipher.setAAD(this.objectAad(objectKey));
+    decipher.setAuthTag(bytes.subarray(bytes.length - TAG_BYTES));
+    try {
+      return Buffer.concat([decipher.update(bytes.subarray(OBJECT_MAGIC.length + IV_BYTES, bytes.length - TAG_BYTES)), decipher.final()]);
+    } catch {
+      throw new CiphertextError('the object does not decrypt under this practice’s key for this object key');
     }
   }
 

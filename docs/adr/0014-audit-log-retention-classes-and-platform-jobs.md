@@ -1,6 +1,6 @@
 # 0014. Keep the audit log append-only with codes only, copy it nightly to write-once storage, drill restores monthly, and state retention as metadata
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 6 (audit log, data lifecycle, observability), 8 (audit_event), 15 (files), 16 (audit log, backups
@@ -33,8 +33,9 @@ with payloads that carry no practice (`audit_copy` an optional day; the drill no
 options (a failing drill fails its job, so the third failure alerts like any other), and UTC schedules: the copy at
 01:20 nightly, the drill at 06:00 on the first Monday of each month (an RRULE, as the runbook states it). They read no
 PHI: the copy reads `audit_event`; the drill counts rows on a scratch copy. They run on an operator connection
-(`OPERATOR_DATABASE_URL`, a login that can `SET ROLE tp_owner`, ADR 0009's "worker job with an owner-capable
-connection"); a worker without it runs no platform job. In AWS that login is `tp_owner_login` (ADR 0012), which the
+(`OPERATOR_DATABASE_URL`; since ADR 0019 every platform transaction runs as `tp_operator`, a role that owns nothing,
+reads the audit log and calls the notice functions, and the owner login is used only on the restore drill's scratch
+copy); a worker without it runs no platform job. Before ADR 0019 that login was `tp_owner_login` (ADR 0012), which the
 application task role cannot read, so the platform jobs run where that secret is granted (the compute of milestone 11).
 
 **Audit copy.** One object per closed UTC day, `audit-events/v1/<yyyy>/<mm>/<dd>.jsonl` (opaque, passes the SEC-08 key
@@ -72,7 +73,8 @@ uses it (day end plus seven years), and the intake and deletion workflows will r
 
 ## Consequences
 
-- PRD 16's "alarms on failure" rides on the job's three attempts and the operator alert (JOB-02) when the job tables
+- PRD 16's "alarms on failure": since ADR 0019 a job's third failed attempt logs a line the worker log group's metric
+  filter counts, and its alarm tells the operator (JOB-02). Before that, the alert waited for the job tables
   land; the evidence row exists for every attempt.
 - The CI database is PostgreSQL 18 while the runner's client tools may be older; the pg_dump drill test then skips and
   says why, and the drill's own logic is still tested with restorers that hand over prepared copies. Installing
