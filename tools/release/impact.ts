@@ -2,6 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { type RuleRecord, canonicalJson, compareText, recordLabel } from '@tp/rules';
+import type { RuleRelease } from '@tp/pricing';
 import { readRelease } from '@tp/rules/content';
 
 import { ReleaseToolError } from './commands';
@@ -9,7 +10,7 @@ import { ReleaseToolError } from './commands';
 /**
  * What a release changes against the one before it, and which pricing runs that touches (PRD
  * section 9, step 4: "a re-run of any earlier run under the new release produces a diff of changed
- * lines before anyone accepts it").
+ * lines before anyone accepts it"; the load-release skill, step 3).
  */
 
 export interface TypeChanges {
@@ -20,27 +21,32 @@ export interface TypeChanges {
   readonly changed: number;
 }
 
-/** A pricing run that would price differently under the new release. */
+/** A complete pricing run that would price some of its lines differently under the new release. */
 export interface AffectedRun {
   readonly runId: string;
   readonly practiceId: string;
+  /** The release the run is pinned to. */
   readonly releaseNo: number;
+  /** The run's lines priced in memory, and how many of them the new release prices differently. */
+  readonly lines: number;
   readonly changedLines: number;
 }
 
+/** What a run source found: how many complete runs it priced in memory, and the ones that would change. */
+export interface RunsImpact {
+  readonly runsChecked: number;
+  readonly affected: readonly AffectedRun[];
+}
+
 /**
- * Where pricing runs come from. Pricing runs arrive with the engine (milestones 5 and 7); until then
- * there are none, and the only source says so.
+ * Where the pricing runs a dry run checks come from: the database it names (dry-run.ts), or none when
+ * a release is assembled (RELEASE.md cannot depend on a database; the dry run's list goes in the pull
+ * request).
  */
 export interface PricingRunSource {
   readonly description: string;
-  affectedRuns(changes: readonly TypeChanges[]): readonly AffectedRun[];
+  affectedRuns(release: RuleRelease): Promise<RunsImpact>;
 }
-
-export const NO_PRICING_RUNS: PricingRunSource = {
-  description: 'No pricing runs exist yet (pricing runs arrive with the engine in milestones 5 and 7)',
-  affectedRuns: () => [],
-};
 
 /** Record changes by type between two releases (`previous` null for the first release). */
 export function diffRecords(previous: readonly RuleRecord[] | null, next: readonly RuleRecord[]): TypeChanges[] {
@@ -85,7 +91,8 @@ export function previousReleaseNumber(root: string, release: number): number | n
 /** The directory of release `n`: published (content/releases) first, then prepared (content/outgoing). */
 export function releaseDirectory(root: string, release: number): string {
   for (const parent of ['content/releases', 'content/outgoing']) {
-    const dir = path.join(root, parent, String(release));
+    // The content checkout is read at run time; the web server's bundler must not trace it.
+    const dir = path.join(/*turbopackIgnore: true*/ root, parent, String(release));
     if (existsSync(dir)) {
       return dir;
     }
@@ -102,8 +109,17 @@ export function releaseRecords(dir: string): RuleRecord[] {
   return contents.records.map((located) => located.record);
 }
 
-/** The impact of `next` as release `release`: the lines RELEASE.md and the dry run print. */
-export function impactLines(root: string, release: number, next: readonly RuleRecord[], runs: PricingRunSource = NO_PRICING_RUNS): string[] {
+/** The records of a release directory with its manifest's SHA-256, refusing one that does not verify. */
+export function releaseContents(dir: string, release: number): RuleRelease {
+  const contents = readRelease(dir);
+  if (contents.problems.length > 0) {
+    throw new ReleaseToolError([`${dir} does not verify:`, ...contents.problems.slice(0, 20).map((problem) => `  ${problem}`)].join('\n'));
+  }
+  return { releaseNo: release, manifestSha256: contents.manifestSha256, records: contents.records.map((located) => located.record) };
+}
+
+/** What `next` as release `release` changes against the release before it, by record type. */
+export function recordChangeLines(root: string, release: number, next: readonly RuleRecord[]): string[] {
   const previous = previousReleaseNumber(root, release);
   const changes = diffRecords(previous === null ? null : releaseRecords(releaseDirectory(root, previous)), next);
   const lines = [
@@ -117,11 +133,27 @@ export function impactLines(root: string, release: number, next: readonly RuleRe
   if (previous !== null && changes.length === 0) {
     lines.push('- no record changes');
   }
-  const affected = runs.affectedRuns(changes);
-  if (affected.length === 0) {
-    lines.push('', `${runs.description}, so no run's lines would change.`);
-  } else {
-    lines.push('', 'Runs whose lines would change:', ...affected.map((run) => `- run ${run.runId} (practice ${run.practiceId}, release ${String(run.releaseNo)}): ${String(run.changedLines)} line(s)`));
-  }
   return lines;
+}
+
+/** The impact RELEASE.md records: the record changes, and where the runs whose lines would change are listed. */
+export function impactLines(root: string, release: number, next: readonly RuleRecord[]): string[] {
+  return [
+    ...recordChangeLines(root, release, next),
+    '',
+    `The pricing runs whose lines would change are listed by \`pnpm release:dry-run ${String(release)}\` against the staging snapshot, in the pull request (the load-release skill).`,
+  ];
+}
+
+/** The dry run's list of runs: each run whose lines would change, with how many of its lines. */
+export function runImpactLines(source: PricingRunSource, impact: RunsImpact): string[] {
+  if (impact.affected.length === 0) {
+    return [`${source.description}: ${String(impact.runsChecked)} complete run(s) priced in memory, and no run's lines would change.`];
+  }
+  return [
+    `${source.description}: ${String(impact.runsChecked)} complete run(s) priced in memory. Runs whose lines would change:`,
+    ...impact.affected.map(
+      (run) => `- run ${run.runId} (practice ${run.practiceId}, release ${String(run.releaseNo)}): ${String(run.changedLines)} of ${String(run.lines)} line(s)`,
+    ),
+  ];
 }

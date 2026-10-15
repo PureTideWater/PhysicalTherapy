@@ -9,7 +9,7 @@ import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { loadRelease } from '@tp/rules/loader';
+import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 
 import type { JobContext } from '../../jobs/handlers';
 import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
@@ -30,6 +30,9 @@ import { priceHandler } from '../job';
 export const FIXTURES = path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic');
 export const RELEASE = 900001;
 const RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900001');
+/** The SYNTHETIC "release 2" of the re-run tests: release 900001 with the 97110 work RVU changed (PRC-19). */
+export const RERUN_RELEASE = 900004;
+const RERUN_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900004');
 
 /** The SYNTHETIC place-of-service split and default rounding of a practice's settings. */
 export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' };
@@ -212,6 +215,16 @@ export class PricingWorld {
 
   async mapped(target: Practice, planId: string, kind: 'contract' | 'no_agreement' | 'ma_noncontracted', effectiveFrom: string, contractVersionId: string | null = null): Promise<string> {
     return (await this.as(target, target.manager, (context) => mapPlan(context, { practiceId: target.practiceId, planId, kind, contractVersionId, effectiveFrom }))).mappingId;
+  }
+
+  /** Loads SYNTHETIC release 900004 into the scratch database (once): from then on it is the release in force. */
+  async loadRerunRelease(): Promise<void> {
+    await loadRelease(this.owner, RERUN_RELEASE_DIR, { release: RERUN_RELEASE, allowSyntheticFixtureForTests: true });
+  }
+
+  /** A content rollback of the release in force, as `pnpm release:rollback` records it (the owner role). */
+  async withdraw(releaseNo: number, reason = 'SYNTHETIC rollback in a test'): Promise<void> {
+    await withdrawRelease(this.owner, { release: releaseNo, reason });
   }
 
   async createRun(target: Practice, periodFrom: string, periodTo: string, releaseNo = RELEASE, actorId = target.manager): Promise<string> {

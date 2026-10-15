@@ -1,0 +1,30 @@
+{
+  "release": 900004,
+  "files": {
+    "RELEASE.md": "a1f5d4a23d7855d573a17ec7309481e9079ae6a73b71be0d657fac62601401d1",
+    "assistant_modifier/2026/records.json": "dbc3b079875e1c724860daa99c293166b11061a896e9c7f4dec2eaa4604edbd5",
+    "assistant_modifier/2026/records.second-pass.json": "ec247196e82c1ace63d530864550f419c9d4725c9f7885731c434b2d02ecfdd6",
+    "carc/2026/CARC_SYNTHETIC.json": "4ba6e4867463ed65f41b8aef6c39fefb8f4a8c17fb6ee60c4f2d5ef1f551f4d6",
+    "claim_status_code/2026/CLAIM_STATUS_SYNTHETIC.json": "384c3d476a84181fade6d6b591ecd6122517b39314defd68e5d0db4fc5873544",
+    "conversion_factor/2026/conversion-factor-SYNTHETIC-pass-1.json": "9e02328359908f974ee4f694498f50b7f8cac7ddd8dd26dbbdac1388df89daf2",
+    "denial_category/2026/records.json": "87784c18e473d6c0cb2331d00aad73de587705fe4a7b902389b11b04897b0462",
+    "denial_category/2026/records.second-pass.json": "dedd515ecf591252a40e4ca8dbcaf708954852d296eb47c212c1cf9f6d2ca641",
+    "dispute_window/2026/records.json": "6bc19e493e5b472e7ea06b85232a7f549f39c6e1d4071cae6a4ac6848ca6d2da",
+    "dispute_window/2026/records.second-pass.json": "a8c0bf0202c893e2195034228d403a70c59d6063aa19feb45f27c153d2da9306",
+    "locality_map/2026/ZIP5_SYNTHETIC.json": "b661c0ee50b0eafa37f20e866feb2377d675b58da7242a5d9eae44eacdde761b",
+    "mppr_rate/2026/MPPR_SYNTHETIC.json": "f856ad37c7581fb9787a3f862861f3b4fbc9f6a579f7bec892f9f3f45a14dbae",
+    "mppr_rate/2026/records.json": "d4b342e1e9c781d7ffba5c5a5625c336eb5a997f6f64b5e70b4fe5b567accd30",
+    "mppr_rate/2026/records.second-pass.json": "77c8f8c42dfe1bea2f0e51a7c72bc0744c3167134ee2faa19bfcecbb838a8524",
+    "ncci_mue/2026/NCCI_MUE_SYNTHETIC.json": "47296a97c4da4006cbbbe1aecea47119c8650a84985c9e2bf14b0e7dd5e8d1a0",
+    "ncci_ptp/2026/NCCI_PTP_SYNTHETIC.json": "bd770567a6531918f67a2286705a48ee28f6fc992e2e1b93649f9af0ba632548",
+    "pfs_gpci/2026/GPCI_SYNTHETIC.json": "5ced0ed0ccd3290267fb3d5547d79ba45192a73b4a8dc2555020d8d791cd6cce",
+    "pfs_rvu/2026/PPRRVU_SYNTHETIC_900004.json": "511118a3665ccc09db438faa49c1f35dcda9595eeef52ab751dd43285323863f",
+    "rarc/2026/RARC_SYNTHETIC.json": "da223acfe33d5e64d600dfc19b2c6d482b52f9130f6ae62f03fb97a234cc41cd",
+    "sequestration/2026/records.json": "21d75bc85474bd4fbb941e2551cf3631bc3585ccbc6614e73aafff5bab282e3b",
+    "sequestration/2026/records.second-pass.json": "0c3227a83d2641866d288537b2ce77eb778d92d5b0f03adb8ee641b327dfb602",
+    "state_prompt_pay/2026/records.json": "80f7c539acd807d7e9c5a829ccecf18ced104fef6153d134565e648946825f45",
+    "state_prompt_pay/2026/records.second-pass.json": "77feef037a7049c507cc67b49875e9b30e809667d74564e052be3a47667941b5",
+    "therapy_threshold/2026/records.json": "b088e343429e811d3e2afc78fd85128bb5e906a02361876bc1b46e03bd7eb4a2",
+    "therapy_threshold/2026/records.second-pass.json": "1dab4745ad7497bcb306f1867b8ecd0b29da5ec7150a362f6615e8e9d88ea422"
+  }
+}

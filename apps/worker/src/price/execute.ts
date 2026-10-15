@@ -65,11 +65,14 @@ interface RunRow {
   readonly engine_version: string;
   readonly status: 'queued' | 'running' | 'complete' | 'failed';
   readonly created_at: Date;
+  /** Lines loaded after this are not the run's: its creation, or for a re-run the original's (text, to the microsecond). */
+  readonly cut_off: string;
 }
 
 async function lockRun(client: ScopeClient, practiceId: string, pricingRunId: string): Promise<RunRow | undefined> {
   const { rows } = await client.query<RunRow>(
-    `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, created_at
+    `SELECT id, practice_id, period_from::text AS period_from, period_to::text AS period_to, release_no, engine_version, status, created_at,
+            coalesce(lines_loaded_by, created_at)::text AS cut_off
        FROM pricing_run WHERE id = $1 AND practice_id = $2 FOR UPDATE`,
     [pricingRunId, practiceId],
   );
@@ -184,7 +187,8 @@ export async function executePricingRun(context: PricingJobContext, practiceId: 
     if (run === undefined || run.status !== 'running') {
       return run === undefined ? { outcome: 'missing' } : { outcome: 'already_finished', status: run.status === 'complete' ? 'complete' : 'failed' };
     }
-    const lines: RunScope = { practiceId, periodFrom: run.period_from, periodTo: run.period_to, loadedBy: run.created_at };
+    // A re-run prices the lines its original priced: the original's cut-off, not its own creation.
+    const lines: RunScope = { practiceId, periodFrom: run.period_from, periodTo: run.period_to, loadedBy: run.cut_off };
     const request = { practiceId, requestId: context.jobId, purpose: 'pricing' };
     const records = await loadAgreementRecords(scope, request);
     try {

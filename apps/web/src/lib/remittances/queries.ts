@@ -1,5 +1,6 @@
 import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 
+import { ELIGIBLE_RUN, IN_EFFECT_SINCE } from '../pricing/queries';
 import { stageOf } from '../pricing/view';
 
 /**
@@ -468,12 +469,15 @@ interface ClaimLineRow {
   readonly unpriced_reason: string | null;
 }
 
-/** The line's result in the latest complete pricing run that priced it (PRD 7, Claims and lines: expected allowed, status). */
+/**
+ * The line's result in the pricing run that priced it and took effect last (PRD 7, Claims and lines:
+ * expected allowed, status): a complete first run, or a re-run once accepted (docs/adr/0037).
+ */
 const LATEST_PRICING = `LEFT JOIN LATERAL (
     SELECT p.pricing_run_id, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason
       FROM priced_line p JOIN pricing_run pr ON pr.id = p.pricing_run_id
-     WHERE p.practice_id = l.practice_id AND p.service_line_id = l.id AND pr.status = 'complete'
-     ORDER BY pr.completed_at DESC, pr.id DESC
+     WHERE p.practice_id = l.practice_id AND p.service_line_id = l.id AND ${ELIGIBLE_RUN('pr')}
+     ORDER BY ${IN_EFFECT_SINCE('pr')} DESC, pr.id DESC
      LIMIT 1
   ) priced ON true`;
 

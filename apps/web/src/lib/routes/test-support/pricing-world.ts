@@ -6,12 +6,13 @@ import { type DatabaseClient, type DatabasePool, withJobScope, withPracticeScope
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
 import { priceHandler } from '@tp/worker/runtime';
-import { createPricingRun } from '@tp/worker/pricing';
+import { createPricingRun, createRerun } from '@tp/worker/pricing';
 
 /**
  * Test support: a complete pricing run of a route-test world's practice, made the way the plan makes
  * one (the billing manager maps the plan to the signed-off version and creates the run; the price job
- * executes it in the practice's job scope) under SYNTHETIC release 900001. Synthetic data only.
+ * executes it in the practice's job scope) under SYNTHETIC release 900001, and a complete re-run of it
+ * that no one has accepted (docs/adr/0037). Synthetic data only.
  */
 
 const RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../../../fixtures/synthetic/rules/release-synth-900001');
@@ -33,7 +34,27 @@ export interface PricingWorldOptions {
   readonly managerId: string;
 }
 
-export async function seedPricingRun(options: PricingWorldOptions): Promise<string> {
+/** A complete run of the practice, and a complete re-run of it that no one has accepted. */
+export interface SeededRuns {
+  readonly pricingRunId: string;
+  readonly rerunId: string;
+}
+
+async function execute(app: DatabasePool, practiceId: string, pricingRunId: string): Promise<void> {
+  const jobId = randomUUID();
+  await priceHandler()(
+    { practice_id: practiceId, pricing_run_id: pricingRunId },
+    {
+      jobId,
+      logger: createLogger({ sink: () => undefined }),
+      transaction: (work) => withJobScope(app, { jobId, practiceId }, work),
+      enqueue: () => Promise.resolve(null),
+      lastAttempt: false,
+    },
+  );
+}
+
+export async function seedPricingRun(options: PricingWorldOptions): Promise<SeededRuns> {
   const { owner, app, practiceId, managerId } = options;
   await owner.query("UPDATE practice SET zip = '00011', settings = settings || $2::jsonb WHERE id = $1", [
     practiceId,
@@ -43,20 +64,14 @@ export async function seedPricingRun(options: PricingWorldOptions): Promise<stri
     await mapPlan({ scope, requestId: `seed-${randomUUID()}` }, { practiceId, planId: options.planId, kind: 'contract', contractVersionId: options.signedOffVersionId, effectiveFrom: '2026-01-01' });
     return createPricingRun(scope, { practiceId, periodFrom: '2026-03-01', periodTo: '2026-03-31', releaseNo: ROUTE_RELEASE, requestId: `seed-${randomUUID()}` });
   });
-  const jobId = randomUUID();
-  await priceHandler()(
-    { practice_id: practiceId, pricing_run_id: created.pricingRunId },
-    {
-      jobId,
-      logger: createLogger({ sink: () => undefined }),
-      transaction: (work) => withJobScope(app, { jobId, practiceId }, work),
-      enqueue: () => Promise.resolve(null),
-      lastAttempt: false,
-    },
+  await execute(app, practiceId, created.pricingRunId);
+  const rerun = await withPracticeScope(app, { actorId: managerId, practiceIds: [practiceId] }, (scope) =>
+    createRerun(scope, { practiceId, pricingRunId: created.pricingRunId, releaseNo: ROUTE_RELEASE, requestId: `seed-${randomUUID()}` }),
   );
-  const { rows } = await owner.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1', [created.pricingRunId]);
-  if (rows[0]?.status !== 'complete') {
-    throw new Error('the seeded pricing run did not complete');
+  await execute(app, practiceId, rerun.pricingRunId);
+  const { rows } = await owner.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = ANY ($1::uuid[])', [[created.pricingRunId, rerun.pricingRunId]]);
+  if (rows.length !== 2 || rows.some((row) => row.status !== 'complete')) {
+    throw new Error('the seeded pricing runs did not complete');
   }
-  return created.pricingRunId;
+  return { pricingRunId: created.pricingRunId, rerunId: rerun.pricingRunId };
 }

@@ -8,7 +8,8 @@
     "./jobs": "./src/jobs/public.ts",
     "./documents": "./src/storage/documents.ts",
     "./pricing": "./src/price/public.ts",
-    "./runtime": "./src/runtime.ts"
+    "./runtime": "./src/runtime.ts",
+    "./testing": "./src/price/test-support/pricing-world.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

@@ -4,17 +4,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type RuleRecord, serializeRecords, sha256 } from '@tp/rules';
+import { readRelease } from '@tp/rules/content';
 import { exampleRecord } from '@tp/rules/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { repositoryRoot } from '../content-files';
+import { listFiles, repositoryRoot } from '../content-files';
 import { checkContent } from '../verify-content/check';
 import { assembleRelease } from './assemble';
 import { ReleaseToolError, parseReleaseNumber } from './commands';
 import { dryRun } from './dry-run';
-import { diffRecords, impactLines, releaseDirectory } from './impact';
+import { type AffectedRun, type PricingRunSource, diffRecords, impactLines, recordChangeLines, releaseContents, releaseDirectory, runImpactLines } from './impact';
 import { loadDirectoryRefusal } from './load-directory';
-import { SYNTHETIC_RELEASE_DIR, renderSyntheticRelease } from './synthetic';
+import { previousPublishedRelease } from './rollback';
+import { RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR, renderRerunRelease, renderSyntheticRelease } from './synthetic';
 
 let root = '';
 
@@ -119,7 +121,7 @@ describe('release:assemble', () => {
     expect(notes).toContain('Every draft in content/drafts is in this release.');
     expect(notes).toContain('- L2 by A. Reviewer on 2026-10-20: `therapy_threshold`');
     expect(notes).toContain('Release 1 is the first release: every record is new.');
-    expect(notes).toContain("No pricing runs exist yet (pricing runs arrive with the engine in milestones 5 and 7), so no run's lines would change.");
+    expect(notes).toContain('The pricing runs whose lines would change are listed by `pnpm release:dry-run 1` against the staging snapshot, in the pull request (the load-release skill).');
     expect(result.manifestSha256).toBe(sha256(readFileSync(path.join(dir, 'MANIFEST.json'))));
     expect(checkContent(root).problems).toEqual([]);
     const verifier = spawnSync('bash', [path.join(repositoryRoot, 'tools/verify-release-manifest.sh'), dir], { encoding: 'utf8' });
@@ -144,35 +146,69 @@ describe('release:assemble', () => {
   });
 });
 
+/** A run source that reports what it is given, for the lines the dry run prints. */
+function reportingRuns(affected: AffectedRun[] = [], runsChecked = affected.length): PricingRunSource & { readonly asked: number[] } {
+  const asked: number[] = [];
+  return {
+    asked,
+    description: 'Pricing runs in the test',
+    affectedRuns: (release) => {
+      asked.push(release.releaseNo);
+      return Promise.resolve({ runsChecked, affected });
+    },
+  };
+}
+
 describe('release:dry-run', () => {
-  it('reports the first release and that no pricing runs exist', () => {
+  it('reports the first release, and that no run would change', async () => {
     writeDrafts([draft('L2')]);
     assembleRelease({ root, release: 1, today: '2026-10-21' });
-    expect(dryRun(root, 1)).toEqual([
+    const runs = reportingRuns([], 3);
+    expect(await dryRun({ root, release: 1, runs })).toEqual([
       'release:dry-run 1: 1 records.',
       'Release 1 is the first release: every record is new.',
       '- therapy_threshold: 1 added, 0 removed, 0 changed',
       '',
-      "No pricing runs exist yet (pricing runs arrive with the engine in milestones 5 and 7), so no run's lines would change.",
+      "Pricing runs in the test: 3 complete run(s) priced in memory, and no run's lines would change.",
     ]);
+    expect(runs.asked).toEqual([1]);
   });
 
-  it('lists what changed against the previous release', () => {
+  it('lists what changed against the previous release, and the runs whose lines would change with how many', async () => {
     writeDrafts([draft('L2'), draft('L2', { key: { discipline: 'OT' } })]);
     assembleRelease({ root, release: 1, today: '2026-10-21' });
     writeDrafts([draft('L2', { effective_to: '2026-06-30' })]);
     assembleRelease({ root, release: 2, today: '2026-10-22' });
-    expect(dryRun(root, 2).slice(0, 3)).toEqual(['release:dry-run 2: 1 records.', 'Against release 1:', '- therapy_threshold: 0 added, 1 removed, 1 changed']);
-    expect(readFileSync(path.join(root, 'content/outgoing/2/RELEASE.md'), 'utf8')).toContain('- therapy_threshold: 0 added, 1 removed, 1 changed');
+    const runs = reportingRuns([{ runId: 'run-a', practiceId: 'practice-a', releaseNo: 1, lines: 4, changedLines: 2 }], 5);
+    expect(await dryRun({ root, release: 2, runs })).toEqual([
+      'release:dry-run 2: 1 records.',
+      'Against release 1:',
+      '- therapy_threshold: 0 added, 1 removed, 1 changed',
+      '',
+      'Pricing runs in the test: 5 complete run(s) priced in memory. Runs whose lines would change:',
+      '- run run-a (practice practice-a, release 1): 2 of 4 line(s)',
+    ]);
+    const notes = readFileSync(path.join(root, 'content/outgoing/2/RELEASE.md'), 'utf8');
+    expect(notes).toContain('- therapy_threshold: 0 added, 1 removed, 1 changed');
+    expect(notes).toContain('The pricing runs whose lines would change are listed by `pnpm release:dry-run 2` against the staging snapshot, in the pull request (the load-release skill).');
   });
 
-  it('refuses a release that exists nowhere', () => {
-    expect(() => dryRun(root, 7)).toThrow(ReleaseToolError);
+  it('reads a release from the directory it is given', async () => {
+    writeDrafts([draft('L2')]);
+    assembleRelease({ root, release: 1, today: '2026-10-21' });
+    renameSync(path.join(root, 'content/outgoing/1'), path.join(root, 'elsewhere'));
+    expect((await dryRun({ root, release: 1, runs: reportingRuns(), dir: path.join(root, 'elsewhere') }))[0]).toBe('release:dry-run 1: 1 records.');
+  });
+
+  it('refuses a release that exists nowhere, or does not verify', async () => {
+    await expect(dryRun({ root, release: 7, runs: reportingRuns() })).rejects.toThrow(ReleaseToolError);
     expect(() => releaseDirectory(root, 7)).toThrow('release 7 is neither in content/releases nor in content/outgoing');
+    mkdirSync(path.join(root, 'content/outgoing/8'), { recursive: true });
+    expect(() => releaseContents(path.join(root, 'content/outgoing/8'), 8)).toThrow(/does not verify:\n {2}MANIFEST.json is missing/);
   });
 });
 
-describe('diffRecords and impactLines', () => {
+describe('diffRecords and the impact lines', () => {
   const pt = draft('L2');
   const ot = draft('L2', { key: { discipline: 'OT' } });
 
@@ -187,22 +223,52 @@ describe('diffRecords and impactLines', () => {
     expect(diffRecords(null, [pt])).toEqual([{ recordType: 'therapy_threshold', added: 1, removed: 0, changed: 0 }]);
   });
 
-  it('compares with the release before, and lists the runs a source reports', () => {
+  it('compares with the release before, and says where the affected runs are listed', () => {
     writeDrafts([pt, ot]);
     assembleRelease({ root, release: 1, today: '2026-10-21' });
-    const runs = {
-      description: 'unused',
-      affectedRuns: () => [{ runId: 'run-a', practiceId: 'practice-a', releaseNo: 1, changedLines: 3 }],
-    };
-    expect(impactLines(root, 2, [pt], runs)).toEqual([
+    expect(impactLines(root, 2, [pt])).toEqual([
       'Against release 1:',
       '- therapy_threshold: 0 added, 1 removed, 0 changed',
       '',
-      'Runs whose lines would change:',
-      '- run run-a (practice practice-a, release 1): 3 line(s)',
+      'The pricing runs whose lines would change are listed by `pnpm release:dry-run 2` against the staging snapshot, in the pull request (the load-release skill).',
     ]);
-    expect(impactLines(root, 2, [pt, ot])).toContain('- no record changes');
+    expect(recordChangeLines(root, 2, [pt, ot])).toEqual(['Against release 1:', '- no record changes']);
   });
+
+  it('lists each affected run with its changed and priced lines', () => {
+    const runs = reportingRuns();
+    expect(runImpactLines(runs, { runsChecked: 0, affected: [] })).toEqual(["Pricing runs in the test: 0 complete run(s) priced in memory, and no run's lines would change."]);
+    expect(
+      runImpactLines(runs, {
+        runsChecked: 2,
+        affected: [
+          { runId: 'a', practiceId: 'p', releaseNo: 1, lines: 10, changedLines: 1 },
+          { runId: 'b', practiceId: 'q', releaseNo: 2, lines: 3, changedLines: 3 },
+        ],
+      }),
+    ).toEqual(['Pricing runs in the test: 2 complete run(s) priced in memory. Runs whose lines would change:', '- run a (practice p, release 1): 1 of 10 line(s)', '- run b (practice q, release 2): 3 of 3 line(s)']);
+  });
+});
+
+describe('release:rollback', () => {
+  it('finds the published release before the one withdrawn', () => {
+    expect(previousPublishedRelease(root, 3)).toBeNull();
+    for (const name of ['1', '2', '5', 'README.md', '02']) {
+      mkdirSync(path.join(root, 'content/releases', name), { recursive: true });
+    }
+    expect(previousPublishedRelease(root, 3)).toBe(2);
+    expect(previousPublishedRelease(root, 6)).toBe(5);
+    expect(previousPublishedRelease(root, 1)).toBeNull();
+  });
+
+  it('needs a reason, and only rollback takes one', () => {
+    const run = (args: string[]) => spawnSync('pnpm', ['-s', ...args], { cwd: repositoryRoot, encoding: 'utf8', env: { ...process.env, DATABASE_URL: 'postgres://nobody:nothing@127.0.0.1:9/none' } });
+    for (const args of [['release:rollback', '2'], ['release:dry-run', '2', '--reason', 'a wrong value'], ['release:rollback', '900001', '--reason', 'a wrong value']]) {
+      const result = run(args);
+      expect(result.status, args.join(' ')).toBe(2);
+      expect(result.stderr).toContain('release:rollback needs --reason <text>');
+    }
+  }, 60_000);
 });
 
 describe('parseReleaseNumber', () => {
@@ -243,10 +309,29 @@ describe('release:load directories', () => {
   });
 });
 
-describe('the synthetic release fixture', () => {
-  it('is exactly what tools/release/synthetic.ts builds from fixtures/synthetic/cms', () => {
-    for (const [file, text] of renderSyntheticRelease()) {
-      expect(readFileSync(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR, file), 'utf8'), file).toBe(text);
+describe('the synthetic release fixtures', () => {
+  it('are exactly what tools/release/synthetic.ts builds from fixtures/synthetic/cms', () => {
+    for (const [dir, files] of [
+      [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
+      [RERUN_RELEASE_DIR, renderRerunRelease()],
+    ] as const) {
+      for (const [file, text] of files) {
+        expect(readFileSync(path.join(repositoryRoot, dir, file), 'utf8'), file).toBe(text);
+      }
     }
+  });
+
+  it('give release 900004 one changed record against 900001, the 97110 relative value, and it passes the content checker', () => {
+    const first = readRelease(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR)).records.map((located) => located.record);
+    const second = readRelease(path.join(repositoryRoot, RERUN_RELEASE_DIR)).records.map((located) => located.record);
+    expect(diffRecords(first, second)).toEqual([{ recordType: 'pfs_rvu', added: 0, removed: 0, changed: 1 }]);
+    const changed = second.filter((record) => {
+      const before = first.find((other) => other.record_type === record.record_type && JSON.stringify(other.key) === JSON.stringify(record.key));
+      return JSON.stringify(before?.value) !== JSON.stringify(record.value);
+    });
+    expect(changed.map((record) => [record.key, (record.value as { work_rvu: string }).work_rvu])).toEqual([[{ hcpcs: '97110', modifier: '' }, '0.41']]);
+    expect(checkContent(repositoryRoot, [RERUN_RELEASE_DIR]).problems).toEqual([]);
+    // Every file of 900004 is built, so none may be left over beside them.
+    expect(listFiles(repositoryRoot, RERUN_RELEASE_DIR).map((file) => path.relative(RERUN_RELEASE_DIR, file).split(path.sep).join('/')).sort()).toEqual([...renderRerunRelease().keys()].sort());
   });
 });

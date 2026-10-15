@@ -128,6 +128,12 @@ export const REVIEWED_SCOPE_FUNCTIONS: readonly ReviewedScopeFunction[] = [
     reason:
       'PRD 7, Internal console, Specialist queue: per active practice, counts of documents awaiting abstraction, drafts, proposals, sign-offs and open questions, for contract specialists and platform administrators only; it names no document, contract or question (ADR 0030)',
   },
+  {
+    function: 'console_release_runs()',
+    scope: 'counts',
+    reason:
+      'PRD 7, Internal console, Rule releases: per release and active practice, counts of complete runs, runs in effect, re-runs, accepted re-runs and the lines re-runs priced differently, for platform administrators only; it names no run, line or claim (ADR 0037)',
+  },
 ];
 
 interface Queryable {

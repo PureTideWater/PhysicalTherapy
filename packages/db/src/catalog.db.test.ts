@@ -233,6 +233,7 @@ describe('the catalog test', () => {
     expect(REVIEWED_SCOPE_FUNCTIONS.map((item) => [item.function, item.scope])).toEqual([
       ['end_support_grant(uuid)', 'narrows'],
       ['console_contract_queue()', 'counts'],
+      ['console_release_runs()', 'counts'],
     ]);
     expect(await problemsAfter('DROP FUNCTION console_contract_queue();')).toEqual([
       `reviewed scope function console_contract_queue() is not a SECURITY DEFINER function that sets ${TENANT_SETTING}; update REVIEWED_SCOPE_FUNCTIONS`,

@@ -3,7 +3,7 @@ import { type CodeListProvider, inCodeSet } from '@tp/edi835';
 
 /**
  * The code lists a parse checks against (PRD 10, step 6: "code sets valid against the loaded code
- * lists"): CARC and RARC from the newest published rule release's carc and rarc records, each active
+ * lists"): CARC and RARC from the rule release in force's carc and rarc records, each active
  * between its effective dates, and the structure's own sets from @tp/edi835. Global rule content has
  * no practice_id and the application role reads it; nothing here is the practice's.
  *
@@ -30,9 +30,12 @@ export function codeListsOf(release: number | null, windows: ReadonlyMap<string,
   };
 }
 
-/** The code lists of the newest published rule release, read inside the job's scope. */
+/**
+ * The code lists of the rule release in force (the newest published one that no content rollback
+ * withdrew: current_rule_release()), read inside the job's scope.
+ */
 export async function publishedCodeLists(scope: PracticeScope<ScopeClient>): Promise<CodeListProvider> {
-  const latest = await scope.client.query<{ release_no: number }>('SELECT release_no FROM rule_release WHERE published_at IS NOT NULL ORDER BY release_no DESC LIMIT 1');
+  const latest = await scope.client.query<{ release_no: number | null }>('SELECT current_rule_release() AS release_no');
   const release = latest.rows[0]?.release_no ?? null;
   const windows = new Map<string, Window[]>();
   if (release !== null) {

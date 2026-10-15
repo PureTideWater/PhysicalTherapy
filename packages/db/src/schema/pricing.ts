@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, date, index, integer, jsonb, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { type AnyPgColumn, bigint, date, index, integer, jsonb, numeric, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { contractVersion, payerPlanMapping, rateRecord } from './contracts';
 import { serviceLine } from './remittances';
@@ -8,7 +8,7 @@ import { practice, user } from './tenancy';
 
 /**
  * Pricing runs and priced lines (Data dictionary, Pricing, triage and cases; PRD 8; PRD 11), mirroring
- * migrations/20261018090000_pricing_runs.sql for typed queries. The SQL is the source of truth for the
+ * migrations/20261018090000_pricing_runs.sql and 20261019150000_reruns_and_release_withdrawal.sql for typed queries. The SQL is the source of truth for the
  * run's states, the pinned release (a rule-release mismatch is refused), the immutability of complete
  * runs and of every priced line (triggers for every role), row-level security and grants; a database
  * test checks that these columns match it. Both are PHI tables: every query runs inside a scope from
@@ -64,12 +64,22 @@ export const pricingRun = pgTable(
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** The complete run of the practice this one prices again (a re-run; migrations/20261019150000). */
+    rerunOfId: uuid('rerun_of_id').references((): AnyPgColumn => pricingRun.id),
+    /** A re-run's cut-off: the original's, so the two price the same lines. Null for a first run. */
+    linesLoadedBy: timestamp('lines_loaded_by', { withTimezone: true }),
+    /** Who accepted a complete re-run, and when; a re-run is in effect only once accepted. */
+    acceptedBy: uuid('accepted_by').references(() => user.id),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
   },
   (table) => [
     index('pricing_run_by_practice').on(table.practiceId, table.createdAt.desc(), table.id),
     index('pricing_run_complete_by_practice')
       .on(table.practiceId, table.completedAt.desc())
       .where(sql`status = 'complete'`),
+    index('pricing_run_reruns')
+      .on(table.practiceId, table.rerunOfId)
+      .where(sql`rerun_of_id IS NOT NULL`),
   ],
 );
 

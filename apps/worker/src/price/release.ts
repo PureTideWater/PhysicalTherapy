@@ -8,7 +8,7 @@ import type { RuleRecord } from '@tp/rules';
  * read-only to the application role, immutable once published.
  */
 
-/** The run asked for a release that is not the newest published one (or none is published). */
+/** The run asked for a release that is not the one in force (or none is published). */
 export class RuleReleaseMismatchError extends Error {
   override readonly name = 'RuleReleaseMismatchError';
 
@@ -25,10 +25,30 @@ export class RuleReleaseMismatchError extends Error {
   }
 }
 
-/** The newest published rule release, or null when none is published (a development database). */
+/**
+ * The rule release in force: the newest published release that no content rollback withdrew
+ * (current_rule_release(), the same function the database's own check reads), or null when none is
+ * published (a development database).
+ */
 export async function currentReleaseNo(client: ScopeClient): Promise<number | null> {
-  const { rows } = await client.query<{ release_no: number | null }>('SELECT max(release_no) AS release_no FROM rule_release WHERE published_at IS NOT NULL');
+  const { rows } = await client.query<{ release_no: number | null }>('SELECT current_rule_release() AS release_no');
   return rows[0]?.release_no ?? null;
+}
+
+/** A content rollback (PRD 18, Releases): the release withdrawn, the one in force again, why and when. */
+export interface ReleaseWithdrawal {
+  readonly releaseNo: number;
+  readonly reinstatedReleaseNo: number;
+  readonly reason: string;
+  readonly withdrawnAt: Date;
+}
+
+/** Every withdrawal, newest first: runs pinned to a withdrawn release are flagged by it, never changed. */
+export async function releaseWithdrawals(client: ScopeClient): Promise<ReleaseWithdrawal[]> {
+  const { rows } = await client.query<{ release_no: number; reinstated_release_no: number; reason: string; withdrawn_at: Date }>(
+    'SELECT release_no, reinstated_release_no, reason, withdrawn_at FROM rule_release_withdrawal ORDER BY release_no DESC',
+  );
+  return rows.map((row) => ({ releaseNo: row.release_no, reinstatedReleaseNo: row.reinstated_release_no, reason: row.reason, withdrawnAt: row.withdrawn_at }));
 }
 
 /** A published release's number and manifest hash. */

@@ -5,7 +5,11 @@
   "assertion": "Diff lists exactly the affected lines",
   "synthetic": true,
   "completesIn": 7,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/price/rerun.db.test.ts",
+    "tools/release/dry-run.db.test.ts",
+    "apps/web/src/lib/routes/reruns-routes.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

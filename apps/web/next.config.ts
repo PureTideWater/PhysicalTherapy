@@ -23,6 +23,7 @@ const config: NextConfig = {
     '@tp/packets',
     '@tp/pricing',
     '@tp/rules',
+    '@tp/tools',
     '@tp/triage',
     '@tp/ui',
     '@tp/worker',

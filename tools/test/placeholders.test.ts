@@ -73,8 +73,8 @@ describe('test:golden wrapper', () => {
 });
 
 describe('release commands', () => {
-  it('names the three release scripts', () => {
-    expect(RELEASE_COMMANDS).toEqual(['assemble', 'dry-run', 'load']);
+  it('names the four release scripts', () => {
+    expect(RELEASE_COMMANDS).toEqual(['assemble', 'dry-run', 'load', 'rollback']);
     expect(isReleaseCommand('dry-run')).toBe(true);
     expect(isReleaseCommand('publish')).toBe(false);
     expect(isReleaseCommand(undefined)).toBe(false);

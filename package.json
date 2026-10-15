@@ -25,6 +25,7 @@
     "release:assemble": "tsx tools/release/index.ts assemble",
     "release:dry-run": "tsx tools/release/index.ts dry-run",
     "release:load": "tsx tools/release/index.ts load",
+    "release:rollback": "tsx tools/release/index.ts rollback",
     "cdk:diff": "pnpm --filter @tp/infra cdk:diff",
     "licenses:check": "tsx tools/check-licenses/index.ts",
     "stryker": "stryker"

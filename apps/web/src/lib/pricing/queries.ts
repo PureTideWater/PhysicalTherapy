@@ -8,9 +8,27 @@ import { type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from 
  * practice's policies, and every run and priced line returned is an audited read (readWithAudit).
  * Amounts are integer cents as text. A run never changes once complete, so what these show of one is
  * what it priced.
+ *
+ * Which run is in effect (docs/adr/0037): a complete first run of its period is, from when it
+ * completes; a re-run only once a person accepts it, from then on ("nothing is accepted until a
+ * person accepts the new run"). For a period, the run in effect is the eligible run that took effect
+ * last; Claims and lines read, for each line, the eligible run that priced it last, and Coverage the
+ * eligible run that took effect last.
  */
 
 type Scope = PracticeScope<ScopeClient>;
+
+/** A run that can be in effect: complete, and a first run or an accepted re-run. */
+export const ELIGIBLE_RUN = (alias: string) => `(${alias}.status = 'complete' AND (${alias}.rerun_of_id IS NULL OR ${alias}.accepted_at IS NOT NULL))`;
+
+/** When an eligible run took effect: an accepted re-run when it was accepted, a first run when it completed. */
+export const IN_EFFECT_SINCE = (alias: string) => `coalesce(${alias}.accepted_at, ${alias}.completed_at)`;
+
+/** The run in effect for its period: eligible, and no eligible run of the same period took effect after it. */
+export const RUN_IN_EFFECT = (alias: string) => `(${ELIGIBLE_RUN(alias)} AND NOT EXISTS (
+    SELECT 1 FROM pricing_run later
+     WHERE later.practice_id = ${alias}.practice_id AND later.period_from = ${alias}.period_from AND later.period_to = ${alias}.period_to
+       AND ${ELIGIBLE_RUN('later')} AND (${IN_EFFECT_SINCE('later')}, later.id) > (${IN_EFFECT_SINCE(alias)}, ${alias}.id)))`;
 
 export const RUNS_PER_PAGE = 20;
 export const RUN_LINES_PER_PAGE = 50;
@@ -39,6 +57,15 @@ export interface RunSummary {
   readonly coverage: RunCoverage | null;
   /** Why a new run of the same period would price differently (complete runs only; MAP-03). */
   readonly rerun: readonly RerunReason[];
+  /** The complete run this one prices again, for a re-run. */
+  readonly rerunOfId: string | null;
+  /** When a person accepted this re-run, and who; null until then (and for a first run). */
+  readonly acceptedAt: string | null;
+  readonly acceptedBy: string | null;
+  /** Whether it is the run in effect for its period. */
+  readonly inEffect: boolean;
+  /** The content rollback that withdrew the run's release: the run is flagged, never changed. */
+  readonly withdrawal: { readonly reinstatedReleaseNo: number; readonly withdrawnAt: string; readonly reason: string } | null;
 }
 
 interface RunRow {
@@ -54,10 +81,21 @@ interface RunRow {
   readonly completed_at: Date | null;
   readonly email: string | null;
   readonly coverage: unknown;
+  readonly rerun_of_id: string | null;
+  readonly accepted_at: Date | null;
+  readonly accepted_email: string | null;
+  readonly in_effect: boolean;
+  readonly reinstated_release_no: number | null;
+  readonly withdrawn_at: Date | null;
+  readonly withdrawal_reason: string | null;
 }
 
 const RUN_COLUMNS = `r.id, r.practice_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.engine_version, r.status,
-  r.failure_code, r.created_at, r.completed_at, u.email, r.coverage`;
+  r.failure_code, r.created_at, r.completed_at, u.email, r.coverage, r.rerun_of_id, r.accepted_at, ua.email AS accepted_email,
+  ${RUN_IN_EFFECT('r')} AS in_effect, w.reinstated_release_no, w.withdrawn_at, w.reason AS withdrawal_reason`;
+
+const RUN_FROM = `pricing_run r LEFT JOIN "user" u ON u.id = r.created_by LEFT JOIN "user" ua ON ua.id = r.accepted_by
+  LEFT JOIN rule_release_withdrawal w ON w.release_no = r.release_no`;
 
 async function summaries(scope: Scope, rows: readonly RunRow[]): Promise<RunSummary[]> {
   const result: RunSummary[] = [];
@@ -75,6 +113,14 @@ async function summaries(scope: Scope, rows: readonly RunRow[]): Promise<RunSumm
       createdBy: row.email ?? 'a member of the practice',
       coverage: row.coverage === null ? null : parseCoverage(row.coverage),
       rerun: row.status === 'complete' ? await rerunReasons(scope.client, { practiceId: row.practice_id, createdAt: row.created_at, releaseNo: row.release_no }) : [],
+      rerunOfId: row.rerun_of_id,
+      acceptedAt: row.accepted_at?.toISOString() ?? null,
+      acceptedBy: row.accepted_at === null ? null : (row.accepted_email ?? 'a member of the practice'),
+      inEffect: row.in_effect,
+      withdrawal:
+        row.reinstated_release_no === null || row.withdrawn_at === null
+          ? null
+          : { reinstatedReleaseNo: row.reinstated_release_no, withdrawnAt: row.withdrawn_at.toISOString(), reason: row.withdrawal_reason ?? '' },
     });
   }
   return result;
@@ -84,7 +130,7 @@ async function readRuns(scope: Scope, requestId: string, where: string, values: 
   return readWithAudit(
     scope,
     { objectType: 'pricing_run', purpose: 'pricing_runs', requestId },
-    async (client) => (await client.query<RunRow>(`SELECT ${RUN_COLUMNS} FROM pricing_run r LEFT JOIN "user" u ON u.id = r.created_by WHERE ${where} ${tail}`, values)).rows,
+    async (client) => (await client.query<RunRow>(`SELECT ${RUN_COLUMNS} FROM ${RUN_FROM} WHERE ${where} ${tail}`, values)).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
 }
@@ -111,10 +157,49 @@ export async function runSummary(scope: Scope, practiceId: string, runId: string
   return row === undefined ? undefined : (await summaries(scope, [row]))[0];
 }
 
-/** The practice's latest complete run, or undefined before the first completes. */
-export async function latestCompleteRun(scope: Scope, practiceId: string, requestId: string): Promise<RunSummary | undefined> {
-  const [row] = await readRuns(scope, requestId, "r.practice_id = $1 AND r.status = 'complete'", [practiceId], 'ORDER BY r.completed_at DESC, r.id DESC LIMIT 1');
+/** The practice's run that took effect last (a complete first run, or an accepted re-run), or undefined before one completes. */
+export async function latestRunInEffect(scope: Scope, practiceId: string, requestId: string): Promise<RunSummary | undefined> {
+  const [row] = await readRuns(scope, requestId, `r.practice_id = $1 AND ${ELIGIBLE_RUN('r')}`, [practiceId], `ORDER BY ${IN_EFFECT_SINCE('r')} DESC, r.id DESC LIMIT 1`);
   return row === undefined ? undefined : (await summaries(scope, [row]))[0];
+}
+
+/** The runs that price a run again, newest first. */
+export async function rerunsOf(scope: Scope, practiceId: string, runId: string, requestId: string): Promise<RunSummary[]> {
+  return summaries(scope, await readRuns(scope, requestId, 'r.practice_id = $1 AND r.rerun_of_id = $2', [practiceId, runId], 'ORDER BY r.created_at DESC, r.id'));
+}
+
+/** A complete run, for choosing two to compare. */
+export interface RunOption {
+  readonly id: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+  readonly releaseNo: number;
+  readonly completedAt: string;
+  readonly rerunOfId: string | null;
+  readonly inEffect: boolean;
+}
+
+/** The practice's complete runs (the newest 200), newest first. */
+export async function completeRunOptions(scope: Scope, practiceId: string): Promise<RunOption[]> {
+  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string; release_no: number; completed_at: Date; rerun_of_id: string | null; in_effect: boolean }>(
+    `SELECT r.id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.completed_at, r.rerun_of_id, ${RUN_IN_EFFECT('r')} AS in_effect
+       FROM pricing_run r WHERE r.practice_id = $1 AND r.status = 'complete' ORDER BY r.completed_at DESC, r.id LIMIT 200`,
+    [practiceId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    periodFrom: row.period_from,
+    periodTo: row.period_to,
+    releaseNo: row.release_no,
+    completedAt: row.completed_at.toISOString(),
+    rerunOfId: row.rerun_of_id,
+    inEffect: row.in_effect,
+  }));
+}
+
+/** The practice's runs in effect, one per period (each an audited read), latest period first. */
+export async function runsInEffect(scope: Scope, practiceId: string, requestId: string): Promise<RunSummary[]> {
+  return summaries(scope, await readRuns(scope, requestId, `r.practice_id = $1 AND ${RUN_IN_EFFECT('r')}`, [practiceId], 'ORDER BY r.period_from DESC, r.period_to DESC, r.id'));
 }
 
 export async function runCount(scope: Scope, practiceId: string): Promise<number> {
@@ -249,7 +334,7 @@ export interface PricedLineView {
   readonly unpricedReason: UnpricedReason | null;
   readonly adjustmentsApplied: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
   readonly windowEndsOn: string | null;
-  /** The stored trace (tp-pricing-trace/1), for roles that read PHI; null for the others. */
+  /** The stored trace (tp-pricing-trace/2), for roles that read PHI; null for the others. */
   readonly trace: unknown;
 }
 
@@ -261,6 +346,8 @@ export interface LineRunOption {
   readonly releaseNo: number;
   readonly completedAt: string;
   readonly unpricedReason: UnpricedReason | null;
+  /** A re-run no one has accepted yet: not in effect. */
+  readonly awaitingAcceptance: boolean;
 }
 
 interface PricedLineRow {
@@ -288,9 +375,10 @@ interface PricedLineRow {
 }
 
 /**
- * The line as a complete run priced it: the run asked for, or the latest complete run that priced the
- * line. Undefined when no complete run (or not that run) priced it. The trace is read only for roles
- * that read PHI (it carries the line's service and remittance dates).
+ * The line as a complete run priced it: the run asked for, or else the eligible run (a first run or an
+ * accepted re-run) that priced it and took effect last. Undefined when no such run (or not that run)
+ * priced it. The trace is read only for roles that read PHI (it carries the line's service and
+ * remittance dates).
  */
 export async function pricedLineOf(scope: Scope, practiceId: string, serviceLineId: string, runId: string | null, withTrace: boolean, requestId: string): Promise<PricedLineView | undefined> {
   const [row] = await readWithAudit(
@@ -307,8 +395,8 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
              FROM priced_line p
              JOIN pricing_run r ON r.id = p.pricing_run_id
              JOIN rule_release rr ON rr.release_no = r.release_no
-            WHERE p.practice_id = $1 AND p.service_line_id = $2 AND r.status = 'complete' AND ($3::uuid IS NULL OR r.id = $3::uuid)
-            ORDER BY r.completed_at DESC, r.id DESC
+            WHERE p.practice_id = $1 AND p.service_line_id = $2 AND r.status = 'complete' AND ($3::uuid IS NOT NULL OR ${ELIGIBLE_RUN('r')}) AND ($3::uuid IS NULL OR r.id = $3::uuid)
+            ORDER BY ${IN_EFFECT_SINCE('r')} DESC, r.id DESC
             LIMIT 1`,
           [practiceId, serviceLineId, runId, withTrace],
         )
@@ -346,12 +434,21 @@ export async function pricedLineOf(scope: Scope, practiceId: string, serviceLine
 
 /** The complete runs that priced the line, newest first. */
 export async function lineRuns(scope: Scope, practiceId: string, serviceLineId: string): Promise<LineRunOption[]> {
-  const { rows } = await scope.client.query<{ run_id: string; period_from: string; period_to: string; release_no: number; completed_at: Date; unpriced_reason: UnpricedReason | null }>(
-    `SELECT r.id AS run_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.completed_at, p.unpriced_reason
+  const { rows } = await scope.client.query<{ run_id: string; period_from: string; period_to: string; release_no: number; completed_at: Date; unpriced_reason: UnpricedReason | null; awaiting: boolean }>(
+    `SELECT r.id AS run_id, r.period_from::text AS period_from, r.period_to::text AS period_to, r.release_no, r.completed_at, p.unpriced_reason,
+            NOT ${ELIGIBLE_RUN('r')} AS awaiting
        FROM priced_line p JOIN pricing_run r ON r.id = p.pricing_run_id
       WHERE p.practice_id = $1 AND p.service_line_id = $2 AND r.status = 'complete'
       ORDER BY r.completed_at DESC, r.id DESC LIMIT 50`,
     [practiceId, serviceLineId],
   );
-  return rows.map((row) => ({ runId: row.run_id, periodFrom: row.period_from, periodTo: row.period_to, releaseNo: row.release_no, completedAt: row.completed_at.toISOString(), unpricedReason: row.unpriced_reason }));
+  return rows.map((row) => ({
+    runId: row.run_id,
+    periodFrom: row.period_from,
+    periodTo: row.period_to,
+    releaseNo: row.release_no,
+    completedAt: row.completed_at.toISOString(),
+    unpricedReason: row.unpriced_reason,
+    awaitingAcceptance: row.awaiting,
+  }));
 }

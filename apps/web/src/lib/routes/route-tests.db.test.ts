@@ -36,6 +36,7 @@ import { inviteMember } from './console';
 import { ROUTES } from './index';
 import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
 import { seedContractWorld } from './test-support/contract-world';
+import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 
 /**
@@ -65,6 +66,7 @@ let tables: { table: string; tenantColumn: string }[];
 const keys = LocalKeyProvider.random();
 const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-route-tests-'));
 const documents = new DocumentStore(new LocalSealedBytes(documentsDir));
+const content = scratchContentRoot();
 
 beforeAll(async () => {
   database = await createMigratedDatabase(adminUrl);
@@ -89,6 +91,7 @@ beforeAll(async () => {
     uploads: new LocalUploadTargets('http://localhost:3100', documents, sealer),
     queue: new MemoryQueue(),
     documents,
+    contentRoot: content.root,
   });
   tables = await tenantTables(owner);
 }, 60_000);
@@ -98,6 +101,7 @@ afterAll(async () => {
   await owner.end();
   await database.drop();
   rmSync(documentsDir, { recursive: true, force: true });
+  content.remove();
 });
 
 class MemoryJar implements CookieJar {
@@ -308,7 +312,7 @@ async function buildWorld(name: string): Promise<World> {
     specialistId,
   });
   const manager = actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'billing_manager')?.userId ?? '';
-  const pricingRunId = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
+  const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -328,6 +332,7 @@ async function buildWorld(name: string): Promise<World> {
     ...loaded,
     ...contracts,
     pricingRunId,
+    rerunId,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

@@ -16,14 +16,19 @@ import { roleNames } from './format';
  */
 /**
  * Where a practice opens for the actor: a contract specialist reaches a practice only under a support
- * grant, to abstract its contracts (docs/adr/0028), so the specialist's link opens that work.
+ * grant, to abstract its contracts (docs/adr/0028), so the specialist's link opens that work; a
+ * reimbursement reviewer reaches it the same way to review its audit reports (docs/adr/0038).
  */
 export function practiceHref(shell: Shell, practiceId: string): string {
-  return specialistOnly(shell) ? `/p/${practiceId}/abstraction` : `/p/${practiceId}`;
+  return specialistOnly(shell) ? `/p/${practiceId}/abstraction` : reviewerOnly(shell) ? `/p/${practiceId}/reports` : `/p/${practiceId}`;
 }
 
 function specialistOnly(shell: Shell): boolean {
   return shell.platformRoles.includes('contract_specialist') && !shell.platformRoles.includes('support');
+}
+
+function reviewerOnly(shell: Shell): boolean {
+  return shell.platformRoles.includes('reviewer') && !shell.platformRoles.includes('support');
 }
 
 function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
@@ -69,12 +74,16 @@ export type ShellSection =
   | 'mapping'
   | 'coverage'
   | 'pricing_runs'
+  | 'anomalies'
+  | 'cases'
+  | 'reports'
   | 'contracts'
   | 'abstraction'
   | 'devices'
   | 'organizations'
   | 'support'
   | 'specialist_queue'
+  | 'rule_releases'
   | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
@@ -91,6 +100,12 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           <nav aria-label="Practice" className="flex flex-col gap-1">
             <RailLink href={`/p/${shell.currentPracticeId}/abstraction`} active={section === 'abstraction'}>
               Contract abstraction
+            </RailLink>
+          </nav>
+        ) : reviewerOnly(shell) ? (
+          <nav aria-label="Practice" className="flex flex-col gap-1">
+            <RailLink href={`/p/${shell.currentPracticeId}/reports`} active={section === 'reports'}>
+              Reports
             </RailLink>
           </nav>
         ) : (
@@ -119,6 +134,15 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             <RailLink href={`/p/${shell.currentPracticeId}/pricing-runs`} active={section === 'pricing_runs'}>
               Pricing runs
             </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/anomalies`} active={section === 'anomalies'}>
+              Anomalies
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/cases`} active={section === 'cases'}>
+              Cases
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/reports`} active={section === 'reports'}>
+              Reports
+            </RailLink>
           </nav>
         )}
         {platformAdmin || specialist ? (
@@ -131,6 +155,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
                 </RailLink>
                 <RailLink href="/console/support" active={section === 'support'}>
                   Support
+                </RailLink>
+                <RailLink href="/console/rule-releases" active={section === 'rule_releases'}>
+                  Rule releases
                 </RailLink>
               </>
             ) : null}

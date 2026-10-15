@@ -128,6 +128,7 @@ describe('migrate', () => {
           'role_permission',
           'rule_record',
           'rule_release',
+          'rule_release_withdrawal',
           'schema_migrations',
           'service_line',
           'source_document',

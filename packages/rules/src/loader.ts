@@ -167,3 +167,69 @@ export async function loadRelease(client: SqlClient, dir: string, options: LoadO
     }
   }
 }
+
+export interface WithdrawOptions {
+  /** The release in force, to withdraw. */
+  readonly release: number;
+  /** What the content had wrong, in one printable line of 8 to 500 characters (never PHI). */
+  readonly reason: string;
+}
+
+export interface WithdrawResult {
+  readonly releaseNo: number;
+  /** The newest published release below it, in force again. */
+  readonly reinstatedReleaseNo: number;
+}
+
+const WITHDRAW_LOCK = 0;
+const REASON = /^[ -~]{8,500}$/;
+
+/**
+ * A content rollback (PRD 18, Releases: "a content rollback by loading the previous release, with runs
+ * pinned to the withdrawn release flagged rather than changed"; docs/adr/0037). Records, as the owner
+ * role, that the release in force is withdrawn: the newest published release below it is in force
+ * again, so runs created from now on pin it, and the runs pinned to the withdrawn release are flagged
+ * by the withdrawal row. Nothing else changes: the withdrawn release, its records and every run and
+ * priced line stay as they were. Refused, writing nothing, unless the release is the one in force and
+ * an earlier published release is loaded (the caller loads it first); the database refuses the same.
+ */
+export async function withdrawRelease(client: SqlClient, options: WithdrawOptions): Promise<WithdrawResult> {
+  if (!REASON.test(options.reason)) {
+    throw new ReleaseLoadError('a withdrawal gives its reason in one printable line of 8 to 500 characters');
+  }
+  await client.query('BEGIN');
+  let open = true;
+  try {
+    // One loader or rollback at a time.
+    await client.query('SELECT pg_advisory_xact_lock($1, $2)', [LOAD_LOCK_CLASS, WITHDRAW_LOCK]);
+    const current = ((await client.query('SELECT current_rule_release() AS release_no')).rows[0] as { release_no: number | null } | undefined)?.release_no ?? null;
+    if (current !== options.release) {
+      throw new ReleaseLoadError(
+        current === null
+          ? `release ${String(options.release)} is not in force: no rule release is published`
+          : `release ${String(options.release)} is not in force (release ${String(current)} is); only the release in force is withdrawn`,
+      );
+    }
+    const previous = (
+      (
+        await client.query(
+          `SELECT max(r.release_no) AS release_no FROM rule_release r
+            WHERE r.release_no < $1 AND r.published_at IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)`,
+          [options.release],
+        )
+      ).rows[0] as { release_no: number | null } | undefined
+    )?.release_no ?? null;
+    if (previous === null) {
+      throw new ReleaseLoadError(`no published release before ${String(options.release)} is loaded; load the previous release, then withdraw this one`);
+    }
+    await client.query('INSERT INTO rule_release_withdrawal (release_no, reinstated_release_no, reason) VALUES ($1, $2, $3)', [options.release, previous, options.reason]);
+    await client.query('COMMIT');
+    open = false;
+    return { releaseNo: options.release, reinstatedReleaseNo: previous };
+  } finally {
+    if (open) {
+      await client.query('ROLLBACK');
+    }
+  }
+}

@@ -110,6 +110,25 @@ shows its coverage, unpriced reasons, contract versions, variance by payer patte
 the latest complete run. `apps/worker/src/price/price.large.db.test.ts` prices 100,000 lines (`TP_LARGE_PRICING_LINES`)
 end to end in 55.2 seconds on the development container, against PRD 11's two minutes.
 
+Re-runs, diffs and content rollback (ADR 0037): a complete run is priced again from its page under the release in force
+(`createRerun`, `@tp/worker/pricing`): the same practice, period and lines (the original's cut-off), never changing the
+original. A re-run's page shows its diff (`compareRuns`): exactly the lines whose expected allowed, unpriced reason or
+adjustments differ, both sides, and each line's cause read from the two traces (a rule record whose value changed, a
+contract version, a mapping, the claim, the settings, the engine, or another line of the claim). Any two complete runs
+compare at `/p/<practice>/pricing-runs/compare?before=<run>&after=<run>`. A re-run is in effect only once a billing
+manager or firm principal accepts it (`acceptRun`; the database checks the role and refuses everything else on a
+complete run); Claims and lines, Coverage and the line trace read the run in effect. The release note
+(`/p/<practice>/releases?release=<n>`) shows what a release changed against the one before, the practice's runs in
+effect pinned to another release, how many of a run's lines the release in force would change (priced in memory) and
+a re-run button. The console's Rule releases (`/console/rule-releases`, platform administrators) shows the published
+releases, their notes and record changes, the affected runs per practice as counts, and, from the content checkout the
+server is given (`CONTENT_ROOT`; the repository in development), the drafts, the checker's result and "Prepare release
+<n>" (`release:assemble`); publishing stays with CI. A content rollback withdraws the release in force
+(`rule_release_withdrawal`; `current_rule_release()` is the newest published release not withdrawn): runs pinned to it
+keep every line and are flagged, and the screens offer a re-run. SYNTHETIC release 900004
+(`fixtures/synthetic/rules/release-synth-900004`, 900001 with the 97110 work RVU changed, built by
+`tsx tools/release/synthetic.ts`) is PRC-19's "release 2".
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
@@ -144,8 +163,9 @@ release 1 needs):
 pnpm rules:import --type <type> --year <year> --file <path> --url <url>   # a public CMS or X12 file -> L1 drafts
 pnpm verify-content [dir...]       # the content checker: drafts and releases, or a fixture release
 pnpm release:assemble <n>          # drafts at L2 or higher -> content/outgoing/<n> with RELEASE.md and MANIFEST.json
-pnpm release:dry-run <n>           # what release n changes, and the pricing runs it would change
+pnpm release:dry-run <n>           # what release n changes, and how many lines of each complete run in DATABASE_URL it would change
 pnpm release:load <n> [--dir <d>]  # load a published release (or a directory outside fixtures/) into DATABASE_URL
+pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in force, loading the published release before it if needed
 ```
 
 **Milestone 1 is not complete.** Its done check includes "the restore job runs on staging", and nothing can be deployed
@@ -165,10 +185,12 @@ RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A pe
 3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
 
-**Milestone 7 is not complete.** Its engine part and its pricing runs are built (ADRs 0034 and 0035); the re-run diffs
-under a new release, the monthly monitoring jobs and their digests are not, and its done check ("a re-run under
-release 2 lists exactly the changed lines") needs them and a release 2. Its golden lines wait on the specialist, as
-milestone 5's do.
+**Milestone 7 is not complete.** Its engine part, its pricing runs and the re-run diffs under a new release are built
+(ADRs 0034, 0035 and 0037): a re-run under SYNTHETIC release 900004, a "release 2" that changes one relative value,
+lists exactly the two affected lines with their cause (test matrix PRC-19, `apps/worker/src/price/rerun.db.test.ts`),
+and `pnpm release:dry-run` names the run and its two lines. The done check against a real release 2 waits for real
+releases 1 and 2 (milestone 0's note below). The monthly monitoring jobs and their digests are not built, and the golden
+lines wait on the specialist, as milestone 5's do.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
 cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (326 lines in 150 claims, 207 of

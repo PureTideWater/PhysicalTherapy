@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -37,6 +38,7 @@ const schema = z.object({
   DOCUMENTS_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/).optional(),
   DOCUMENTS_KMS_KEY_ID: z.string().min(1).optional(),
   DOCUMENTS_DIR: z.string().min(1).optional(),
+  CONTENT_ROOT: z.string().min(1).optional(),
 });
 
 export type AuthProviderSettings =
@@ -47,6 +49,16 @@ export type KeyProviderSettings = { readonly kind: 'local'; readonly masterKey: 
 
 /** Where uploads land: the documents bucket (presigned PUTs under SSE-KMS) or a local directory. */
 export type DocumentSettings = { readonly kind: 's3'; readonly bucket: string; readonly kmsKeyId: string } | { readonly kind: 'local'; readonly dir: string };
+
+/** Development only: the repository the server runs from (apps/web or the root), when it holds content/drafts. */
+export function defaultContentRoot(cwd: string = process.cwd()): string | null {
+  for (const candidate of [cwd, path.resolve(cwd, '../..')]) {
+    if (existsSync(path.join(candidate, 'content', 'drafts'))) {
+      return candidate;
+    }
+  }
+  return null;
+}
 
 /** Development only: where uploads land locally, shared with the worker (its DOCUMENTS_DIR default). */
 export function defaultDocumentsDirectory(): string {
@@ -66,6 +78,13 @@ export interface WebConfig {
   /** pg-boss's login, which the web app queues jobs with; DATABASE_URL unless QUEUE_DATABASE_URL is set. */
   readonly queueDatabaseUrl: string;
   readonly documents: DocumentSettings;
+  /**
+   * The checkout whose content/ the internal console's Rule releases screen reads, checks and prepares
+   * the next release in (CONTENT_ROOT; in development, the repository the server runs from). Null when
+   * the server has none, as in production unless a checkout is mounted: the screen then says to use
+   * the release commands (docs/adr/0037).
+   */
+  readonly contentRoot: string | null;
 }
 
 export class ConfigError extends Error {
@@ -152,5 +171,6 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     keys,
     queueDatabaseUrl: settings.QUEUE_DATABASE_URL ?? settings.DATABASE_URL,
     documents,
+    contentRoot: settings.CONTENT_ROOT ?? (production ? null : defaultContentRoot()),
   };
 }

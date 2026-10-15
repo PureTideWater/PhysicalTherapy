@@ -44,6 +44,8 @@ export interface Services {
    * documents bucket.
    */
   readonly documents: DocumentStore;
+  /** The checkout the console's Rule releases screen works in; null when the server has none (WebConfig.contentRoot). */
+  readonly contentRoot: string | null;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -86,6 +88,8 @@ export interface ServiceParts {
   readonly queue?: JobQueue;
   /** Tests that read documents give their own (the store their uploads land in). */
   readonly documents?: DocumentStore;
+  /** Tests of the Rule releases screen give a scratch checkout; otherwise none. */
+  readonly contentRoot?: string | null;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -108,6 +112,7 @@ export function createServices(parts: ServiceParts): Services {
     uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,
     documents,
+    contentRoot: parts.contentRoot ?? null,
   };
 }
 
@@ -126,6 +131,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     uploads: documents.kind === 's3' ? new S3UploadTargets({ client: presigningClient(), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : new LocalUploadTargets(config.origin, store, sealer),
     queue: new PgBossQueue(config.queueDatabaseUrl, logger),
     documents: store,
+    contentRoot: config.contentRoot,
   });
 }
 

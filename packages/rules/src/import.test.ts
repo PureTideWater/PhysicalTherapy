@@ -35,6 +35,7 @@ function request(overrides: Partial<ImportRequest>): ImportRequest {
 /** The record type each synthetic CMS- and X12-format fixture is laid out for. */
 const FIXTURE_TYPES: Readonly<Record<string, ImportableType>> = {
   'PPRRVU_SYNTHETIC.csv': 'pfs_rvu',
+  'PPRRVU_SYNTHETIC_900004.csv': 'pfs_rvu',
   'GPCI_SYNTHETIC.csv': 'pfs_gpci',
   'ZIP5_SYNTHETIC.txt': 'locality_map',
   'conversion-factor-SYNTHETIC-pass-1.csv': 'conversion_factor',

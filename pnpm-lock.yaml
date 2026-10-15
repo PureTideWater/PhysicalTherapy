@@ -140,6 +140,9 @@ importers:
       '@tp/rules':
         specifier: workspace:*
         version: link:../../packages/rules
+      '@tp/tools':
+        specifier: workspace:*
+        version: link:../../tools
       '@tp/triage':
         specifier: workspace:*
         version: link:../../packages/triage
@@ -659,6 +662,9 @@ importers:
       '@tp/synth':
         specifier: workspace:*
         version: link:../packages/synth
+      '@tp/worker':
+        specifier: workspace:*
+        version: link:../apps/worker
       pg:
         specifier: 'catalog:'
         version: 8.23.1

@@ -155,6 +155,8 @@ export interface SampleRefs {
   readonly withdrawableQuestionId: string;
   /** A complete pricing run of the practice that priced the service line above. */
   readonly pricingRunId: string;
+  /** A complete re-run of that run, not yet accepted (docs/adr/0037). */
+  readonly rerunId: string;
 }
 
 export interface RouteSample {

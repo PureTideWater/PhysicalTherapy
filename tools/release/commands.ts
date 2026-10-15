@@ -1,12 +1,13 @@
 import { isSyntheticReleaseNumber } from '@tp/rules';
 
 /**
- * The release commands of the load-release skill and PRD section 9: assemble builds
+ * The release commands of the load-release skill and PRD sections 9 and 18: assemble builds
  * content/outgoing/<n> with RELEASE.md and MANIFEST.json from verified drafts; dry-run lists the
- * runs whose lines would change; load writes a release into the global tables. None of them ever
- * writes content/releases (CI publishes on merge).
+ * runs whose lines would change; load writes a release into the global tables; rollback withdraws the
+ * release in force and puts the one before it back in force. None of them ever writes content/releases
+ * (CI publishes on merge).
  */
-export const RELEASE_COMMANDS = ['assemble', 'dry-run', 'load'] as const;
+export const RELEASE_COMMANDS = ['assemble', 'dry-run', 'load', 'rollback'] as const;
 export type ReleaseCommand = (typeof RELEASE_COMMANDS)[number];
 
 export function isReleaseCommand(value: string | undefined): value is ReleaseCommand {

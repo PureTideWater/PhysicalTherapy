@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { OWNER_ROLE, readDatabaseUrl } from '@tp/db';
+import { OWNER_ROLE, openPool, readDatabaseUrl } from '@tp/db';
 import { FIRST_SYNTHETIC_RELEASE } from '@tp/rules';
 import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
 import pg from 'pg';
@@ -12,14 +12,16 @@ import { assembleRelease } from './assemble';
 import { RELEASE_COMMANDS, ReleaseToolError, isReleaseCommand, parseReleaseNumber } from './commands';
 import { dryRun } from './dry-run';
 import { loadDirectoryRefusal } from './load-directory';
+import { rollbackRelease } from './rollback';
 
 /**
  * pnpm release:assemble <n>                  content/drafts at L2+ -> content/outgoing/<n> (L1 drafts listed, left out)
- * pnpm release:dry-run <n>                   what release n changes, and which runs it would change
+ * pnpm release:dry-run <n>                   what release n changes, and how many lines of each complete run in DATABASE_URL it would change
  * pnpm release:load <n> [--dir <directory>]  load content/releases/<n> (or a directory) into DATABASE_URL
+ * pnpm release:rollback <n> --reason <text>  withdraw release n in DATABASE_URL, loading the published release before it if needed
  */
 const USAGE = [
-  `usage: pnpm release:<${RELEASE_COMMANDS.join('|')}> <release-number>   (release:load also takes --dir <directory>)`,
+  `usage: pnpm release:<${RELEASE_COMMANDS.join('|')}> <release-number>   (release:load also takes --dir <directory>; release:rollback needs --reason <text>)`,
   `Release numbers run from 1 to ${String(FIRST_SYNTHETIC_RELEASE - 1)}; ${String(FIRST_SYNTHETIC_RELEASE)} and above are reserved for SYNTHETIC fixture releases.`,
 ].join('\n');
 
@@ -29,14 +31,20 @@ function fail(message: string, code = 1): never {
 }
 
 const [command, ...rest] = process.argv.slice(2);
-let parsed: { positionals: string[]; values: { dir?: string } };
+let parsed: { positionals: string[]; values: { dir?: string; reason?: string } };
 try {
-  parsed = parseArgs({ args: rest, options: { dir: { type: 'string' } }, allowPositionals: true, strict: true });
+  parsed = parseArgs({ args: rest, options: { dir: { type: 'string' }, reason: { type: 'string' } }, allowPositionals: true, strict: true });
 } catch {
   fail(USAGE, 2);
 }
 const release = parseReleaseNumber(parsed.positionals[0]);
-if (!isReleaseCommand(command) || release === undefined || parsed.positionals.length !== 1 || (command !== 'load' && parsed.values.dir !== undefined)) {
+if (
+  !isReleaseCommand(command) ||
+  release === undefined ||
+  parsed.positionals.length !== 1 ||
+  (command !== 'load' && parsed.values.dir !== undefined) ||
+  (command === 'rollback') !== (parsed.values.reason !== undefined)
+) {
   fail(USAGE, 2);
 }
 
@@ -65,6 +73,25 @@ async function load(releaseNo: number, dirOption: string | undefined): Promise<v
   }
 }
 
+async function rollback(releaseNo: number, reason: string): Promise<void> {
+  const client = new pg.Client({ connectionString: readDatabaseUrl() });
+  await client.connect();
+  try {
+    await client.query(`SET ROLE ${OWNER_ROLE}`);
+    const result = await rollbackRelease(client, { root: repositoryRoot, release: releaseNo, reason });
+    process.stdout.write(
+      [
+        ...(result.loaded === null ? [] : [`release:rollback: release ${String(result.loaded)} loaded from content/releases.`]),
+        `release:rollback: release ${String(result.releaseNo)} withdrawn; release ${String(result.reinstatedReleaseNo)} is in force again.`,
+        `Runs pinned to release ${String(result.releaseNo)} keep every line and are flagged; the Pricing runs screen offers to price them again under release ${String(result.reinstatedReleaseNo)}.`,
+        '',
+      ].join('\n'),
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 try {
   if (command === 'assemble') {
     const result = assembleRelease({ root: repositoryRoot, release, today: new Date().toISOString().slice(0, 10) });
@@ -77,7 +104,16 @@ try {
       ].join('\n'),
     );
   } else if (command === 'dry-run') {
-    process.stdout.write(`${dryRun(repositoryRoot, release).join('\n')}\n`);
+    // The worker's pricing modules load only for the dry run, so the other commands start quickly.
+    const { databaseRuns } = await import('./database-runs');
+    const pool = openPool(readDatabaseUrl(), 2);
+    try {
+      process.stdout.write(`${(await dryRun({ root: repositoryRoot, release, runs: databaseRuns(pool) })).join('\n')}\n`);
+    } finally {
+      await pool.end();
+    }
+  } else if (command === 'rollback') {
+    await rollback(release, parsed.values.reason ?? '');
   } else {
     await load(release, parsed.values.dir);
   }

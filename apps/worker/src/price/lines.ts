@@ -17,8 +17,11 @@ export interface RunScope {
   /** First and last service dates, both included. */
   readonly periodFrom: string;
   readonly periodTo: string;
-  /** Lines loaded after this instant (the run's creation) are not the run's. */
-  readonly loadedBy: Date;
+  /**
+   * Lines loaded after this instant are not the run's: its creation, or for a re-run the original's
+   * (as text it keeps the database's microseconds).
+   */
+  readonly loadedBy: Date | string;
 }
 
 const RUN_LINES = `
@@ -102,13 +105,14 @@ export const FIRST_CLAIM = '00000000-0000-0000-0000-000000000000';
 
 /**
  * A page of the run's claims, in claim ID order after `afterClaimId`, each with its lines in the
- * period in line order. Every claim returned is an audited read (purpose pricing) in the job's scope.
+ * period in line order. Every claim returned is an audited read (purpose pricing, or release_impact for
+ * a dry run's in-memory pricing) in the scope.
  * Units come back as billed, without trailing zeros (SVC05 absent is one unit, its 835 default).
  */
-export async function claimPage(scope: PracticeScope<ScopeClient>, run: RunScope, afterClaimId: string, limit: number, requestId: string): Promise<StoredClaim[]> {
+export async function claimPage(scope: PracticeScope<ScopeClient>, run: RunScope, afterClaimId: string, limit: number, requestId: string, purpose = 'pricing'): Promise<StoredClaim[]> {
   const rows = await readWithAudit(
     scope,
-    { objectType: 'claim', purpose: 'pricing', requestId },
+    { objectType: 'claim', purpose, requestId },
     async (client) =>
       (
         await client.query<ClaimRow>(

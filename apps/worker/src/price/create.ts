@@ -13,7 +13,8 @@ import { RuleReleaseMismatchError, currentReleaseNo } from './release';
  * release asked for must be the newest published one, the period must hold lines, and the guard of
  * @tp/contracts refuses a run while any of its plans has no mapping at all. The run is recorded queued,
  * pinned to that release and to this engine's version; the caller queues the price job for it. The
- * database refuses the same mismatch itself, and a run in another person's name.
+ * database refuses the same mismatch itself, and a run in another person's name. A re-run of a complete
+ * run (rerun.ts) is recorded the same way.
  */
 
 /** The request is not a run the plan allows (a period backwards, or with no lines). Messages name fields, never values. */
@@ -70,24 +71,53 @@ export async function createPricingRun(scope: PracticeScope<ScopeClient>, input:
   }
   // MAP-01: refused while any plan of the run's lines has no mapping (PricingRefusedError).
   await assertPracticePricingAllowed(scope, { practiceId: input.practiceId, requestId: input.requestId, purpose: 'pricing' }, plans);
+  return recordRun(scope, { practiceId: input.practiceId, periodFrom: input.periodFrom, periodTo: input.periodTo, releaseNo: input.releaseNo, rerunOf: null });
+}
+
+/** What a new run row pins: its practice, period, release, and for a re-run the run and cut-off it prices again. */
+export interface RunPins {
+  readonly practiceId: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+  readonly releaseNo: number;
+  /** For a re-run, the complete run it prices again; the database copies that run's cut-off. */
+  readonly rerunOf: string | null;
+}
+
+/**
+ * Records the run queued, pinned to the release and to this engine, in the actor's name. The database
+ * refuses a release that is not the one in force (RuleReleaseMismatchError here), and a re-run that does
+ * not price the period and lines of a complete run of the practice.
+ */
+export async function recordRun(scope: PracticeScope<ScopeClient>, pins: RunPins): Promise<CreatedPricingRun> {
   try {
     // A savepoint, so the database's own refusal leaves the request's transaction usable for its answer.
     await scope.client.query('SAVEPOINT create_pricing_run');
-    const { rows } = await scope.client.query<{ id: string }>(
-      `INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by)
-       VALUES ($1, $2::date, $3::date, $4, $5, $6) RETURNING id`,
-      [input.practiceId, input.periodFrom, input.periodTo, input.releaseNo, ENGINE_VERSION, scope.actorId],
-    );
+    const values = [pins.practiceId, pins.periodFrom, pins.periodTo, pins.releaseNo, ENGINE_VERSION, scope.actorId];
+    const { rows } =
+      pins.rerunOf === null
+        ? await scope.client.query<{ id: string }>(
+            `INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by)
+             VALUES ($1, $2::date, $3::date, $4, $5, $6) RETURNING id`,
+            values,
+          )
+        : // A re-run's cut-off is copied from the run it prices again by the statement itself, to the microsecond.
+          await scope.client.query<{ id: string }>(
+            `INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by, rerun_of_id, lines_loaded_by)
+             SELECT $1, $2::date, $3::date, $4, $5, $6, o.id, coalesce(o.lines_loaded_by, o.created_at) FROM pricing_run o WHERE o.id = $7
+             RETURNING id`,
+            [...values, pins.rerunOf],
+          );
     await scope.client.query('RELEASE SAVEPOINT create_pricing_run');
     const id = rows[0]?.id;
     if (id === undefined) {
       throw new Error('the pricing run was not recorded');
     }
-    return { pricingRunId: id, releaseNo: input.releaseNo, engineVersion: ENGINE_VERSION };
+    return { pricingRunId: id, releaseNo: pins.releaseNo, engineVersion: ENGINE_VERSION };
   } catch (error) {
     if (isMismatch(error)) {
       await scope.client.query('ROLLBACK TO SAVEPOINT create_pricing_run');
-      throw new RuleReleaseMismatchError(input.releaseNo, await currentReleaseNo(scope.client));
+      throw new RuleReleaseMismatchError(pins.releaseNo, await currentReleaseNo(scope.client));
     }
     throw error;
   }

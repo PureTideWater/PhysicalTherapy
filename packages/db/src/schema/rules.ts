@@ -39,6 +39,25 @@ export const ruleRecord = pgTable(
   ],
 );
 
+/**
+ * A content rollback (migrations/20261019150000_reruns_and_release_withdrawal.sql; PRD 18, Releases): the
+ * release in force withdrawn and the newest published release below it in force again. Runs pinned to
+ * the withdrawn release are flagged by this row, never changed. Permanent once written.
+ */
+export const ruleReleaseWithdrawal = pgTable('rule_release_withdrawal', {
+  releaseNo: integer('release_no')
+    .primaryKey()
+    .references(() => ruleRelease.releaseNo),
+  reinstatedReleaseNo: integer('reinstated_release_no')
+    .notNull()
+    .references(() => ruleRelease.releaseNo),
+  reason: text('reason').notNull(),
+  withdrawnAt: timestamp('withdrawn_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Rows as selected. */
 export type RuleReleaseRow = typeof ruleRelease.$inferSelect;
 export type RuleRecordRow = typeof ruleRecord.$inferSelect;
+export type RuleReleaseWithdrawalRow = typeof ruleReleaseWithdrawal.$inferSelect;

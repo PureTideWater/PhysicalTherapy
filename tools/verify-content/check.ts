@@ -90,7 +90,8 @@ export function defaultContentSets(root: string): { sets: ContentSet[]; problems
   for (const parent of RELEASE_PARENTS) {
     let entries;
     try {
-      entries = readdirSync(path.join(root, parent), { withFileTypes: true });
+      // The content checkout is read at run time; the web server's bundler must not trace it.
+      entries = readdirSync(path.join(/*turbopackIgnore: true*/ root, parent), { withFileTypes: true });
     } catch {
       continue;
     }

@@ -2,7 +2,7 @@ import type { RerunReason, RunCoverage } from '@tp/worker/pricing';
 import { Badge } from '@tp/ui';
 import Link from 'next/link';
 
-import type { RunNames, RunStatus } from '../../lib/pricing/queries';
+import type { RunNames, RunStatus, RunSummary } from '../../lib/pricing/queries';
 import { shareOf } from '../../lib/pricing/view';
 import { Money } from '../remittances/display';
 
@@ -36,9 +36,43 @@ export const FAILURE_TEXT: Readonly<Record<string, string>> = {
 
 export const RERUN_TEXT: Readonly<Record<RerunReason, string>> = {
   mapping_changed: 'a plan’s mapping changed',
-  release_published: 'a newer rule release is published',
+  release_published: 'a newer rule release is in force',
+  release_withdrawn: 'its rule release was withdrawn',
   version_signed_off: 'a contract version was signed off',
 };
+
+/**
+ * Where a complete run stands (docs/adr/0037): in effect for its period, a re-run waiting for a person to
+ * accept it, a run another one took over from, and whether its rule release was withdrawn (flagged, never
+ * changed).
+ */
+export function RunStateBadges({ run }: { readonly run: RunSummary }) {
+  if (run.status !== 'complete') {
+    return null;
+  }
+  return (
+    <>
+      {run.inEffect ? (
+        <Badge variant="outline" data-state="in-effect">
+          In effect
+        </Badge>
+      ) : run.rerunOfId !== null && run.acceptedAt === null ? (
+        <Badge variant="secondary" data-state="awaiting-acceptance">
+          Re-run awaiting acceptance
+        </Badge>
+      ) : (
+        <Badge variant="secondary" data-state="superseded">
+          Not in effect
+        </Badge>
+      )}
+      {run.withdrawal === null ? null : (
+        <Badge variant="destructive" data-state="release-withdrawn">
+          Release {run.releaseNo} withdrawn
+        </Badge>
+      )}
+    </>
+  );
+}
 
 /** Priced lines and billed dollars as a share of the run's. */
 export function CoverageShares({ coverage }: { readonly coverage: RunCoverage }) {

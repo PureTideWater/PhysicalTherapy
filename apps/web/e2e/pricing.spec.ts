@@ -14,8 +14,10 @@ import { startLocalWorker } from './worker';
  * SYNTHETIC release prepare.ts loads, and the price job (the worker run here beside the server)
  * prices it. The run shows complete with its coverage and its variance by payer pattern; a line opens
  * its trace, every step in order with the rule records it read; the line's claim shows its expected
- * allowed; Coverage shows the run's shares. In the other group's practice, whose February no other
- * spec loads lines into. Synthetic data only.
+ * allowed; Coverage shows the run's shares. Then the run is re-run (docs/adr/0037): the re-run's page
+ * shows its diff (nothing changed under the same release and mapping), Coverage keeps reading the
+ * first run until the re-run is accepted, and the release note lists release 900001 in force. In the
+ * other group's practice, whose February no other spec loads lines into. Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -116,5 +118,45 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
     for (const value of KNOWN) {
       await expect(page.locator('main')).not.toContainText(value);
     }
+  });
+
+  await test.step('the run is re-run; its diff shows before anyone accepts it, and Coverage reads it only once accepted', async () => {
+    await page.goto(`/p/${other}/pricing-runs`);
+    const firstRun = page.getByRole('list', { name: 'Pricing runs' }).getByRole('listitem').first();
+    const firstId = (await firstRun.getAttribute('data-run')) ?? '';
+    await firstRun.getByRole('link', { name: '2026-02-01 to 2026-02-28' }).click();
+    const local = await startLocalWorker();
+    try {
+      await page.getByRole('button', { name: 'Re-run under release 900001' }).click();
+      await expect(page.getByRole('region', { name: 'Re-run' })).toBeVisible();
+      await expect(async () => {
+        await page.reload();
+        await expect(page.locator('[data-state="diff-summary"]')).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 90_000 });
+    } finally {
+      await local.close();
+    }
+    const rerunUrl = page.url();
+    await expect(page.locator('[data-state="diff-summary"]')).toContainText('0 of 3 lines both runs priced are priced differently');
+    await expect(page.locator('[data-state="no-changes"]')).toBeVisible();
+    await expect(page.locator('[data-state="awaiting-acceptance"]')).toBeVisible();
+    // Until a person accepts the re-run, Coverage reads the first run.
+    await page.goto(`/p/${other}/coverage`);
+    await expect(page.getByRole('region', { name: 'Priced share' })).toContainText('Priced: 3 of 3 lines');
+    await page.goto(`/p/${other}/pricing-runs/compare?before=${firstId}&after=${rerunUrl.split('/').at(-1) ?? ''}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Compare two runs' })).toBeVisible();
+    await page.getByRole('button', { name: 'Accept the second run' }).click();
+    await expect(page.locator('[data-state="accepted"]')).toBeVisible();
+    await expect(page.locator('[data-state="in-effect"]')).toBeVisible();
+    expect(() => {
+      assertNoPhi('url', page.url(), { known: KNOWN });
+    }).not.toThrow();
+  });
+
+  await test.step('the release note shows release 900001 in force', async () => {
+    await page.goto(`/p/${other}/releases`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Rule release notes' })).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Release 900001' })).toContainText('In force: runs created now pin it.');
+    await expect(page.getByRole('region', { name: 'Runs it would change' })).toContainText('No run in effect is pinned to another release.');
   });
 });

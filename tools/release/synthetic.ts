@@ -96,11 +96,63 @@ export function renderSyntheticRelease(root: string = repositoryRoot): Map<strin
   return generated;
 }
 
-if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  for (const [file, text] of renderSyntheticRelease()) {
-    const target = path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR, file);
-    mkdirSync(path.dirname(target), { recursive: true });
-    writeFileSync(target, text);
+/**
+ * The SYNTHETIC "release 2" of the re-run tests (test matrix PRC-19; docs/adr/0037): every file of
+ * release 900001 unchanged but its relative values, parsed by the same parser from
+ * fixtures/synthetic/cms/PPRRVU_SYNTHETIC_900004.csv, which differs from PPRRVU_SYNTHETIC.csv in one
+ * value only: the 97110 work RVU, 0.31 in 900001 and 0.41 here. Its other relative-value records keep
+ * their values and windows under a new source hash, as a re-sourced CMS file's would.
+ */
+export const RERUN_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900004';
+export const RERUN_RELEASE_NUMBER = 900_004;
+const RERUN_RVU = { type: 'pfs_rvu' as const, file: 'PPRRVU_SYNTHETIC_900004.csv', replaces: 'pfs_rvu/2026/PPRRVU_SYNTHETIC.json' };
+
+/** Every file of release 900004, from release 900001 on disk and the changed relative-value file. */
+export function renderRerunRelease(root: string = repositoryRoot): Map<string, string> {
+  const first = path.join(root, SYNTHETIC_RELEASE_DIR);
+  const generated = new Map<string, string>();
+  const records: RuleRecord[] = [];
+  const carried = listContentFiles(first)
+    .map((file) => file.path)
+    .filter((file) => file !== MANIFEST_FILE && file !== RELEASE_NOTES_FILE && file !== RERUN_RVU.replaces);
+  for (const file of carried) {
+    generated.set(file, readFileSync(path.join(first, file), 'utf8'));
+    if (isRecordFile(file)) {
+      records.push(...readRecordFile(path.join(first, file), file).records.map((located) => located.record));
+    }
   }
-  process.stdout.write(`synthetic release written to ${SYNTHETIC_RELEASE_DIR}\n`);
+  const rvu = parsedRecordFile(root, RERUN_RVU.type, RERUN_RVU.file);
+  generated.set(rvu.path, serializeRecords(rvu.records));
+  records.push(...rvu.records);
+  generated.set(
+    RELEASE_NOTES_FILE,
+    releaseNotes({
+      title: `SYNTHETIC test release ${String(RERUN_RELEASE_NUMBER)}`,
+      summary: [
+        `Built ${BUILT_ON} by \`tsx tools/release/synthetic.ts\`: every file of release 900001 unchanged but its relative values, re-parsed`,
+        'from fixtures/synthetic/cms/PPRRVU_SYNTHETIC_900004.csv, where the 97110 work RVU is 0.41 instead of 0.31 and nothing else',
+        'differs. The "release 2" of the re-run tests (PRC-19). Invented values for tests: never published, never loaded outside a',
+        'scratch test database, never used to price a real line.',
+      ].join('\n'),
+      records,
+      impact: ['SYNTHETIC fixture: loaded only into scratch test databases; the re-run tests price under it there.'],
+    }),
+  );
+  const hashes = new Map<string, string>([...generated.entries()].map(([file, text]): [string, string] => [file, sha256(text)]));
+  generated.set(MANIFEST_FILE, serializeManifest(buildManifest(RERUN_RELEASE_NUMBER, hashes)));
+  return generated;
+}
+
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  for (const [dir, files] of [
+    [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
+    [RERUN_RELEASE_DIR, renderRerunRelease()],
+  ] as const) {
+    for (const [file, text] of files) {
+      const target = path.join(repositoryRoot, dir, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, text);
+    }
+    process.stdout.write(`synthetic release written to ${dir}\n`);
+  }
 }

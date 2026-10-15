@@ -25,6 +25,7 @@
     "@tp/packets": "workspace:*",
     "@tp/pricing": "workspace:*",
     "@tp/rules": "workspace:*",
+    "@tp/tools": "workspace:*",
     "@tp/triage": "workspace:*",
     "@tp/ui": "workspace:*",
     "@tp/worker": "workspace:*",

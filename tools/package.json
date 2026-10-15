@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Repository tooling: the log lint, content checker, release scripts and CI guards.",
+  "exports": {
+    "./workspace": "./release/workspace.ts"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
@@ -16,6 +19,7 @@
     "@tp/pricing": "workspace:*",
     "@tp/rules": "workspace:*",
     "@tp/synth": "workspace:*",
+    "@tp/worker": "workspace:*",
     "pg": "catalog:",
     "typescript": "catalog:",
     "zod": "catalog:"

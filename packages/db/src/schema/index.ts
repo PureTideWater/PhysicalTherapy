@@ -117,7 +117,7 @@ export {
   pricedLine,
   pricingRun,
 } from './pricing';
-export { type RuleRecordRow, type RuleReleaseRow, ruleRecord, ruleRelease } from './rules';
+export { type RuleRecordRow, type RuleReleaseRow, type RuleReleaseWithdrawalRow, ruleRecord, ruleRelease, ruleReleaseWithdrawal } from './rules';
 export {
   AGREEMENT_KINDS,
   type AgreementRow,

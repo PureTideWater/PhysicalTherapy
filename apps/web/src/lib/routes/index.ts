@@ -10,7 +10,9 @@ import { COVERAGE_ROUTES } from './coverage';
 import { MAPPING_ROUTES } from './mapping';
 import { PRACTICE_ROUTES } from './practice';
 import { PRICING_ROUTES } from './pricing';
+import { RELEASE_ROUTES } from './releases';
 import { REMITTANCE_ROUTES } from './remittances';
+import { RULE_RELEASE_ROUTES } from './rule-releases';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { UPLOAD_ROUTES } from './uploads';
 
@@ -43,9 +45,11 @@ export const ROUTES: readonly Route[] = [
   ...MAPPING_ROUTES,
   ...COVERAGE_ROUTES,
   ...PRICING_ROUTES,
+  ...RELEASE_ROUTES,
   ...CONTRACT_ROUTES,
   ...ABSTRACTION_ROUTES,
   ...CONSOLE_ROUTES,
+  ...RULE_RELEASE_ROUTES,
 ];
 
 export function routeById(id: string): Route | undefined {
