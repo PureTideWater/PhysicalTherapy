@@ -504,12 +504,18 @@ importers:
 
   packages/pricing:
     dependencies:
+      '@tp/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@tp/money':
         specifier: workspace:*
         version: link:../money
       '@tp/rules':
         specifier: workspace:*
         version: link:../rules
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -623,6 +629,9 @@ importers:
 
   tools:
     dependencies:
+      '@tp/contracts':
+        specifier: workspace:*
+        version: link:../packages/contracts
       '@tp/db':
         specifier: workspace:*
         version: link:../packages/db
@@ -635,6 +644,9 @@ importers:
       '@tp/observability':
         specifier: workspace:*
         version: link:../packages/observability
+      '@tp/pricing':
+        specifier: workspace:*
+        version: link:../packages/pricing
       '@tp/rules':
         specifier: workspace:*
         version: link:../packages/rules

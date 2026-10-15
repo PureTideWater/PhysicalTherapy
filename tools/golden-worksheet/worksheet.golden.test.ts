@@ -9,7 +9,7 @@ import { repositoryRoot } from '../content-files';
 /**
  * The pricing oracle (PRD section 18; fixtures/golden/README.md). Every golden claim is recomputed by
  * the independent worksheet, and any difference from the committed expected results or worksheet
- * fails. Milestone 5 adds the engine's comparison beside this one. With `pnpm test:golden --report`
+ * fails. The engine's comparison is engine.golden.test.ts, beside this one. With `pnpm test:golden --report`
  * (TP_GOLDEN_REPORT), the differences are written to fixtures/golden/.report; fixtures are never
  * touched.
  */
@@ -105,7 +105,7 @@ function writeReport(directory: string, report: CheckReport, unverified: number)
     '# Golden differences: committed golden files against the independent worksheet',
     '',
     `${String(report.cases)} claim(s), ${String(report.lines)} line(s), ${String(report.differences.length)} difference(s). ${String(unverified)} claim(s) not yet verified by the reimbursement specialist.`,
-    'The engine comparison is added in milestone 5. Nothing under fixtures/golden was changed; a golden line changes only by hand, with the specialist.',
+    'The engine comparison is in engine.md beside this file. Nothing under fixtures/golden was changed; a golden line changes only by hand, with the specialist.',
     '',
     ...(rows.length === 0 ? ['No differences.'] : ['| File | Case | Line | Field | Golden | Worksheet |', '| --- | --- | --- | --- | --- | --- |', ...rows]),
     '',

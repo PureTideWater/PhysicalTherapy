@@ -63,6 +63,14 @@ PDFs, `TextractPageReader` behind `ScannedPageReader` for scans) and `agreementR
 and signed-off versions and the approval and sign-off checks. A contract specialist reaches a practice under a support
 grant, as a support engineer does.
 
+Pricing (ADRs 0020 and 0029): `packages/pricing` is the expected-payment engine, phase one (Medicare Advantage
+non-contracted and percent-of-Medicare terms). `price({ claim, release, settings, asOf })` is pure: the claim's line facts,
+each with the agreement `agreementResolver` gave it, a release indexed by `indexRelease`, the practice settings (billing
+ZIP, default rounding, the place-of-service split) and the triage date in; one priced or unpriced line out per input line,
+each with its JSON trace (`tp-pricing-trace/1`), which `recompute(trace)` reproduces without the engine or a database.
+`pnpm test:golden` prices every golden claim with the engine and compares it with `fixtures/golden` beside the worksheet
+(`--report` adds `fixtures/golden/.report/engine.{json,md}`); `@tp/pricing/testing` builds SYNTHETIC inputs for tests.
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data

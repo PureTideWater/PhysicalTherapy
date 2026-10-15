@@ -8,10 +8,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/edi835": "workspace:*",
     "@tp/money": "workspace:*",
     "@tp/observability": "workspace:*",
+    "@tp/pricing": "workspace:*",
     "@tp/rules": "workspace:*",
     "@tp/synth": "workspace:*",
     "pg": "catalog:",
