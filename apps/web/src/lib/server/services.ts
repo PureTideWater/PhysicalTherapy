@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
-import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
+import { S3Client } from '@aws-sdk/client-s3';
+import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
@@ -37,6 +38,12 @@ export interface Services {
   readonly uploads: UploadTargets;
   /** The worker's queue, for the jobs requests start (intake when an upload completes). */
   readonly queue: JobQueue;
+  /**
+   * The practices' sealed documents, read in a request to show and cite a contract's pages (opened
+   * with the practice's cipher; docs/adr/0018): the same directory the local receiver writes, or the
+   * documents bucket.
+   */
+  readonly documents: DocumentStore;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -77,6 +84,8 @@ export interface ServiceParts {
   readonly uploads?: UploadTargets;
   /** Tests that queue give their own; otherwise queueing fails, so nothing is ever dropped silently. */
   readonly queue?: JobQueue;
+  /** Tests that read documents give their own (the store their uploads land in). */
+  readonly documents?: DocumentStore;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -84,12 +93,9 @@ const NO_QUEUE: JobQueue = {
   enqueue: () => Promise.reject(new Error('no job queue is configured for these services')),
 };
 
-function localUploads(origin: string, directory: string, sealer: Sealer): UploadTargets {
-  return new LocalUploadTargets(origin, new DocumentStore(new LocalSealedBytes(directory)), sealer);
-}
-
 export function createServices(parts: ServiceParts): Services {
   const logger = parts.logger ?? createLogger();
+  const documents = parts.documents ?? new DocumentStore(new LocalSealedBytes(path.join(tmpdir(), `tp-documents-${randomUUID()}`)));
   return {
     origin: parts.origin,
     pool: parts.pool,
@@ -99,8 +105,9 @@ export function createServices(parts: ServiceParts): Services {
     logger,
     signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger }),
     now: parts.now ?? (() => new Date()),
-    uploads: parts.uploads ?? localUploads(parts.origin, path.join(tmpdir(), `tp-documents-${randomUUID()}`), parts.sealer),
+    uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,
+    documents,
   };
 }
 
@@ -108,6 +115,7 @@ export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
+  const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool: openPool(config.databaseUrl, 10),
@@ -115,8 +123,9 @@ export function servicesFromConfig(config: WebConfig): Services {
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
     logger,
-    uploads: documents.kind === 's3' ? new S3UploadTargets({ client: presigningClient(), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : localUploads(config.origin, documents.dir, sealer),
+    uploads: documents.kind === 's3' ? new S3UploadTargets({ client: presigningClient(), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : new LocalUploadTargets(config.origin, store, sealer),
     queue: new PgBossQueue(config.queueDatabaseUrl, logger),
+    documents: store,
   });
 }
 

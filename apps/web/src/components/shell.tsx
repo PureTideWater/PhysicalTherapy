@@ -14,6 +14,18 @@ import { roleNames } from './format';
  * request), the workspace and account links, the internal console for platform administrators, and
  * sign-out. Rendered by each page from its own route's result, never from a cached layout.
  */
+/**
+ * Where a practice opens for the actor: a contract specialist reaches a practice only under a support
+ * grant, to abstract its contracts (docs/adr/0028), so the specialist's link opens that work.
+ */
+export function practiceHref(shell: Shell, practiceId: string): string {
+  return specialistOnly(shell) ? `/p/${practiceId}/abstraction` : `/p/${practiceId}`;
+}
+
+function specialistOnly(shell: Shell): boolean {
+  return shell.platformRoles.includes('contract_specialist') && !shell.platformRoles.includes('support');
+}
+
 function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
   const current = shell.practices.find((practice) => practice.practiceId === shell.currentPracticeId);
   if (shell.practices.length === 0) {
@@ -28,7 +40,7 @@ function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
         {shell.practices.map((practice) => (
           <li key={practice.practiceId}>
             <Link
-              href={`/p/${practice.practiceId}`}
+              href={practiceHref(shell, practice.practiceId)}
               aria-current={practice.practiceId === shell.currentPracticeId ? 'page' : undefined}
               className={cn('block px-3 py-1.5 text-sm hover:bg-accent', practice.practiceId === shell.currentPracticeId && 'font-semibold')}
             >
@@ -49,18 +61,38 @@ function RailLink({ href, children, active }: { readonly href: string; readonly 
   );
 }
 
-export type ShellSection = 'practice' | 'uploads' | 'remittances' | 'claims' | 'devices' | 'organizations' | 'support' | 'home';
+export type ShellSection =
+  | 'practice'
+  | 'uploads'
+  | 'remittances'
+  | 'claims'
+  | 'mapping'
+  | 'coverage'
+  | 'contracts'
+  | 'abstraction'
+  | 'devices'
+  | 'organizations'
+  | 'support'
+  | 'specialist_queue'
+  | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
   if (shell === undefined) {
     return <main className="mx-auto max-w-3xl p-10">{children}</main>;
   }
   const platformAdmin = shell.platformRoles.includes('platform_admin');
+  const specialist = shell.platformRoles.includes('contract_specialist');
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-64 shrink-0 flex-col gap-4 border-r bg-sidebar p-4 text-sidebar-foreground" aria-label="Navigation">
         <PracticeSwitcher shell={shell} />
-        {shell.currentPracticeId === null ? null : (
+        {shell.currentPracticeId === null ? null : specialistOnly(shell) ? (
+          <nav aria-label="Practice" className="flex flex-col gap-1">
+            <RailLink href={`/p/${shell.currentPracticeId}/abstraction`} active={section === 'abstraction'}>
+              Contract abstraction
+            </RailLink>
+          </nav>
+        ) : (
           <nav aria-label="Practice" className="flex flex-col gap-1">
             <RailLink href={`/p/${shell.currentPracticeId}`} active={section === 'practice'}>
               Practice home
@@ -74,17 +106,35 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             <RailLink href={`/p/${shell.currentPracticeId}/claims`} active={section === 'claims'}>
               Claims and lines
             </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/mapping`} active={section === 'mapping'}>
+              Payer and plan mapping
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/contracts`} active={section === 'contracts'}>
+              Contracts
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/coverage`} active={section === 'coverage'}>
+              Coverage
+            </RailLink>
           </nav>
         )}
-        {platformAdmin ? (
+        {platformAdmin || specialist ? (
           <nav aria-label="Internal console" className="flex flex-col gap-1">
             <p className="px-3 text-xs font-semibold uppercase text-muted-foreground">Internal console</p>
-            <RailLink href="/console/organizations" active={section === 'organizations'}>
-              Organizations and practices
-            </RailLink>
-            <RailLink href="/console/support" active={section === 'support'}>
-              Support
-            </RailLink>
+            {platformAdmin ? (
+              <>
+                <RailLink href="/console/organizations" active={section === 'organizations'}>
+                  Organizations and practices
+                </RailLink>
+                <RailLink href="/console/support" active={section === 'support'}>
+                  Support
+                </RailLink>
+              </>
+            ) : null}
+            {specialist ? (
+              <RailLink href="/console/specialist-queue" active={section === 'specialist_queue'}>
+                Specialist queue
+              </RailLink>
+            ) : null}
           </nav>
         ) : null}
         <nav aria-label="Account" className="flex flex-col gap-1">

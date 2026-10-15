@@ -5,9 +5,13 @@ import { urlPhiFindings } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
 import type { Route } from '../http/route';
+import * as abstraction from './abstraction';
 import * as account from './account';
 import * as consoleRoutes from './console';
+import * as contracts from './contracts';
+import * as coverage from './coverage';
 import * as registry from './index';
+import * as mapping from './mapping';
 import * as practice from './practice';
 import * as remittances from './remittances';
 import * as signIn from './sign-in';
@@ -29,7 +33,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [account, consoleRoutes, practice, remittances, signIn, uploads, registry].flatMap((module) =>
+  [abstraction, account, consoleRoutes, contracts, coverage, mapping, practice, remittances, signIn, uploads, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );

@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { type AnyPgColumn, date, index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
-import { payer, plan } from './documents';
+import { payer, plan, sourceDocument } from './documents';
 import { practice, user } from './tenancy';
 
 /**
@@ -169,8 +169,54 @@ export const payerPlanMapping = pgTable(
   ],
 );
 
+/** What a specialist's question to the practice needs (migration 20261016200000; docs/adr/0030). */
+export const QUESTION_TOPICS = ['missing_pages', 'missing_schedule', 'undefined_method', 'scope', 'timed_units', 'windows', 'other'] as const;
+export type QuestionTopic = (typeof QUESTION_TOPICS)[number];
+export const QUESTION_STATUSES = ['open', 'answered', 'withdrawn'] as const;
+export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
+
+/**
+ * A contract specialist's question to the practice about one of its contracts (PRD 7, Contracts and
+ * Specialist queue). The question and the answer are encrypted with the practice's data key (free
+ * text); a question changes once, when it is answered or withdrawn.
+ */
+export const contractQuestion = pgTable(
+  'contract_question',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    practiceId: uuid('practice_id')
+      .notNull()
+      .references(() => practice.id),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id),
+    contractVersionId: uuid('contract_version_id').references(() => contractVersion.id),
+    sourceDocumentId: uuid('source_document_id').references(() => sourceDocument.id),
+    topic: text('topic', { enum: QUESTION_TOPICS }).notNull(),
+    /** (enc) */
+    question: text('question').notNull(),
+    askedBy: uuid('asked_by')
+      .notNull()
+      .references(() => user.id),
+    status: text('status', { enum: QUESTION_STATUSES }).notNull().default('open'),
+    /** (enc) */
+    answer: text('answer'),
+    closedBy: uuid('closed_by').references(() => user.id),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index('contract_question_by_contract').on(table.practiceId, table.contractId, table.status),
+    index('contract_question_open')
+      .on(table.practiceId, table.createdAt)
+      .where(sql`status = 'open'`),
+  ],
+);
+
 export type ContractRow = typeof contract.$inferSelect;
 export type ContractVersionRow = typeof contractVersion.$inferSelect;
 export type RateRecordRow = typeof rateRecord.$inferSelect;
 export type ContractCalendarEventRow = typeof contractCalendarEvent.$inferSelect;
 export type PayerPlanMappingRow = typeof payerPlanMapping.$inferSelect;
+export type ContractQuestionRow = typeof contractQuestion.$inferSelect;

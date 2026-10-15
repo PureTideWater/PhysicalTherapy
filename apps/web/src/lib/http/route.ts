@@ -136,6 +136,23 @@ export interface SampleRefs {
   readonly remittanceId: string;
   readonly claimId: string;
   readonly serviceLineId: string;
+  /** The line's payer and plan (unmapped in a fresh world). */
+  readonly payerId: string;
+  readonly planId: string;
+  /** A clean, stored contract document every version below names, and one no version names. */
+  readonly contractDocumentId: string;
+  readonly untaggedDocumentId: string;
+  /** Contracts with the payer: one signed off, one approved awaiting sign-off, one ready for approval, one being abstracted. */
+  readonly signedOffContractId: string;
+  readonly signedOffVersionId: string;
+  readonly approvedVersionId: string;
+  readonly readyVersionId: string;
+  readonly draftVersionId: string;
+  /** An unverified rate record of the draft. */
+  readonly draftRateRecordId: string;
+  /** Open questions about the signed-off contract: one to answer, one to withdraw. */
+  readonly questionId: string;
+  readonly withdrawableQuestionId: string;
 }
 
 export interface RouteSample {

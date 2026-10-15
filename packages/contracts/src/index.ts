@@ -97,6 +97,7 @@ export {
   amendVersion,
   approveRateRecordField,
   approveVersion,
+  attachDocument,
   checkEvidence,
   correctMapping,
   createContract,

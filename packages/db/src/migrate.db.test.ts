@@ -104,6 +104,7 @@ describe('migrate', () => {
           'claim',
           'contract',
           'contract_calendar_event',
+          'contract_question',
           'contract_version',
           'grant',
           'job_run',

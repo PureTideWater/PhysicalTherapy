@@ -7,11 +7,15 @@ import { homePage } from '../lib/routes';
 
 /**
  * Where a signed-in user starts: their first practice (PRD 7: one practice at a time, with the
- * switcher for groups and firms), or the internal console for a platform administrator. Without a
- * session, sign-in.
+ * switcher for groups and firms), the specialist queue for a contract specialist (who reaches a
+ * practice only under a support grant), or the internal console for a platform administrator.
+ * Without a session, sign-in.
  */
 export default async function Home() {
   const page = await loadPage(homePage, {});
+  if (page.shell?.platformRoles.includes('contract_specialist') === true) {
+    redirect('/console/specialist-queue');
+  }
   const first = page.shell?.practices[0];
   if (first !== undefined) {
     redirect(`/p/${first.practiceId}`);

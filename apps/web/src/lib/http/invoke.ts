@@ -1,3 +1,4 @@
+import { ContractWorkflowError } from '@tp/contracts';
 import {
   type ActorScope,
   type AnyScope,
@@ -181,6 +182,14 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
   }
   if (error instanceof InputError) {
     return { status: 'invalid', issues: error.issues };
+  }
+  if (error instanceof ContractWorkflowError) {
+    // The contract workflow's refusals (packages/contracts): what the request names is not there, or
+    // the domain refuses it, with the rule's own words (never a value).
+    if (error.reason === 'not_found') {
+      return { status: 'not_found' };
+    }
+    return { status: 'invalid', issues: error.issues.length > 0 ? error.issues : [{ field: 'input', message: error.message }] };
   }
   if (error instanceof PermissionDeniedError) {
     const shell = kind === 'page' ? await withActor(services.pool, actor.userId, (scope) => shellFor(scope, practiceId)) : undefined;

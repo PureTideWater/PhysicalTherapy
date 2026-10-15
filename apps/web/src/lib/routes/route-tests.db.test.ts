@@ -35,6 +35,7 @@ import { LocalUploadTargets } from '../uploads/targets';
 import { inviteMember } from './console';
 import { ROUTES } from './index';
 import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
+import { seedContractWorld } from './test-support/contract-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -45,8 +46,8 @@ import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
  * - no session, an idle session (30 minutes), a session past 12 hours: refused;
  * - a user without MFA: refused; an internal role signed in without a hardware key: refused;
  * - every persona (each customer role of the practice's group, each firm role through a grant, each
- *   internal role, the support engineer through a support grant): allowed exactly when the persona
- *   matrix allows the route's permission and the actor reaches the practice;
+ *   internal role, the support engineer and the contract specialist through support grants): allowed
+ *   exactly when the persona matrix allows the route's permission and the actor reaches the practice;
  * - a mutation replayed with its request key: does nothing;
  * - every persona of another practice, aimed at this practice's records or mixing them into its own
  *   request: never answered with any of this practice's records, and nothing of this practice changes;
@@ -62,6 +63,7 @@ let services: Services;
 let tables: { table: string; tenantColumn: string }[];
 const keys = LocalKeyProvider.random();
 const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-route-tests-'));
+const documents = new DocumentStore(new LocalSealedBytes(documentsDir));
 
 beforeAll(async () => {
   database = await createMigratedDatabase(adminUrl);
@@ -82,8 +84,9 @@ beforeAll(async () => {
     keys,
     sealer,
     logger: createLogger({ sink: () => undefined }),
-    uploads: new LocalUploadTargets('http://localhost:3100', new DocumentStore(new LocalSealedBytes(documentsDir)), sealer),
+    uploads: new LocalUploadTargets('http://localhost:3100', documents, sealer),
     queue: new MemoryQueue(),
+    documents,
   });
   tables = await tenantTables(owner);
 }, 60_000);
@@ -154,7 +157,7 @@ async function lockedUser(organizationId: string): Promise<string> {
  * A loaded remittance with one claim, one line and its adjustments, as the 835 loader writes them
  * (identifiers encrypted with the practice's key), for the Remittances and Claims and lines routes.
  */
-async function seedRemittance(practiceId: string, cipher: PracticeCipher, uploader: string): Promise<{ remittanceId: string; claimId: string; serviceLineId: string }> {
+async function seedRemittance(practiceId: string, cipher: PracticeCipher, uploader: string): Promise<{ remittanceId: string; claimId: string; serviceLineId: string; payerId: string; planId: string }> {
   return asOwner(
     owner,
     [practiceId],
@@ -202,19 +205,24 @@ async function seedRemittance(practiceId: string, cipher: PracticeCipher, upload
         "INSERT INTO adjustment (practice_id, claim_id, service_line_id, group_code, reason_code, amount_cents, position) VALUES ($1, $2, $3, 'CO', '45', 5000, 1), ($1, $2, $3, 'PR', '2', 2200, 2)",
         [practiceId, claimId, serviceLineId],
       );
-      return { remittanceId, claimId, serviceLineId };
+      return { remittanceId, claimId, serviceLineId, payerId: payer, planId: plan };
     },
     uploader,
   );
 }
 
-/** A practice with every persona: its group's members, a firm with a grant, the internal roles and a support grant. */
+/**
+ * A practice with every persona: its group's members, a firm with a grant, the internal roles, and
+ * support grants for the support engineer and the contract specialist (docs/adr/0028); a loaded
+ * remittance; and contracts at every state the contract screens show.
+ */
 async function buildWorld(name: string): Promise<World> {
   const tenant = await createTenantWorld(owner, name);
   const actors: Actor[] = [];
   const firmId = await createOrganization(owner, 'firm', `${name} firm`);
   const internalId = await createOrganization(owner, 'internal', `${name} internal`);
   let supportEngineerId = '';
+  let specialistId = '';
   let memberUserId = '';
   let membershipId = '';
   for (const persona of PERSONA_LIST) {
@@ -230,10 +238,15 @@ async function buildWorld(name: string): Promise<World> {
     if (persona.kind === 'internal' && persona.role === 'support') {
       supportEngineerId = userId;
     }
+    if (persona.kind === 'internal' && persona.role === 'contract_specialist') {
+      specialistId = userId;
+    }
+    // Under a support grant a support engineer holds support, a contract specialist contract_specialist.
+    const granted = persona.kind === 'internal' && (persona.role === 'support' || persona.role === 'contract_specialist');
     actors.push({
       persona,
       userId,
-      practiceRoles: persona.kind === 'internal' ? (persona.role === 'support' ? ['support'] : []) : [persona.role],
+      practiceRoles: persona.kind === 'internal' ? (granted ? [persona.role] : []) : [persona.role],
       platformRoles: internal ? [persona.role] : [],
     });
   }
@@ -256,6 +269,10 @@ async function buildWorld(name: string): Promise<World> {
       tenant.practiceId,
       supportEngineerId,
     ]);
+    await owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'SYN-2', 'SYNTHETIC ABSTRACTION', now() + interval '4 hours')`, [
+      tenant.practiceId,
+      specialistId,
+    ]);
     await owner.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose) VALUES ($1, 'user', 'read', 'practice', $2, $2, $3, 'workspace')", [
       supportEngineerId,
       tenant.practiceId,
@@ -277,6 +294,16 @@ async function buildWorld(name: string): Promise<World> {
   const target = await services.uploads.target({ practiceId: tenant.practiceId, documentId, sizeBytes: 1200, contentType: 'application/octet-stream' }, new Date());
   const uploadToken = new URL(target.url).searchParams.get('token') ?? '';
   const loaded = await seedRemittance(tenant.practiceId, key.cipher, tenant.adminUserId);
+  const contracts = await seedContractWorld({
+    owner,
+    app,
+    documents,
+    cipher: key.cipher,
+    practiceId: tenant.practiceId,
+    payerId: loaded.payerId,
+    customerId: tenant.adminUserId,
+    specialistId,
+  });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -294,6 +321,7 @@ async function buildWorld(name: string): Promise<World> {
     documentId,
     uploadToken,
     ...loaded,
+    ...contracts,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

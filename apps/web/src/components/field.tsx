@@ -1,9 +1,9 @@
 import { Input, Label } from '@tp/ui';
 import type { ComponentProps } from 'react';
 
-/** A labelled input (PRD 6, Cross-cutting: labels on every control). */
-export function Field({ label, name, hint, ...props }: { readonly label: string; readonly name: string; readonly hint?: string } & ComponentProps<'input'>) {
-  const id = `field-${name}`;
+/** A labelled input (PRD 6, Cross-cutting: labels on every control). A page with several forms gives each field its own id. */
+export function Field({ label, name, hint, id: given, ...props }: { readonly label: string; readonly name: string; readonly hint?: string } & ComponentProps<'input'>) {
+  const id = given ?? `field-${name}`;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -22,13 +22,15 @@ export function SelectField({
   name,
   options,
   required,
+  id: given,
 }: {
   readonly label: string;
   readonly name: string;
   readonly options: readonly { readonly value: string; readonly label: string }[];
   readonly required?: boolean;
+  readonly id?: string;
 }) {
-  const id = `field-${name}`;
+  const id = given ?? `field-${name}`;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>

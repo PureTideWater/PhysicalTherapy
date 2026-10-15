@@ -22,7 +22,7 @@ test('makes an internal role use a hardware key, and lets the platform administr
 
   await page.goto('/console/support');
   await page.getByLabel('Practice').selectOption({ label: SYNTHETIC_PRACTICES.north });
-  await page.getByLabel('Support engineer').selectOption({ label: personaEmail('support') });
+  await page.getByLabel('Support engineer').selectOption({ label: `${personaEmail('support')} (Support engineer)` });
   await page.getByLabel('Ticket').fill('SYN-E2E-1');
   await page.getByLabel('Reason').fill('SYNTHETIC E2E REASON');
   await page.getByRole('button', { name: 'Create support grant' }).click();
@@ -55,7 +55,8 @@ test('makes an internal role use a hardware key, and lets the platform administr
 
 test('shows an internal role without the permission the permission state', async ({ page }) => {
   await registerKeyAndSignIn(page, 'contract-specialist');
-  await expect(page.getByText('No practice to open')).toBeVisible();
+  // A contract specialist starts at the specialist queue, which reaches no practice without a grant.
+  await expect(page.getByRole('heading', { level: 1, name: 'Specialist queue' })).toBeVisible();
   await page.goto('/console/support');
   await expect(page.getByText('Not available to your role')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Create support grant' })).toHaveCount(0);

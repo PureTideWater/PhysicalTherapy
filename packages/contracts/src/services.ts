@@ -314,6 +314,31 @@ export async function updateDraftVersion(context: WorkflowContext, input: z.inpu
   await recordAuditEvent(context.scope, { action: 'contract_version_edited', objectType: 'contract_version', objectId: request.versionId, practiceId: request.practiceId, requestId: context.requestId });
 }
 
+const attachInput = z.strictObject({ practiceId: uuid, versionId: uuid, documentId: uuid });
+
+/**
+ * Adds an uploaded document to a draft or proposed version (J5: the customer tags an exhibit or an
+ * amendment's pages to the contract being abstracted, and the specialist abstracts from it too). Like
+ * tagging, it is the uploader's or the specialist's; the database checks the document is a clean
+ * contract, exhibit or payer letter of the practice. A document already named changes nothing.
+ */
+export async function attachDocument(context: WorkflowContext, input: z.input<typeof attachInput>): Promise<{ readonly attached: boolean }> {
+  const request = parse(attachInput, input);
+  requireAnyPracticePermission(context.scope, request.practiceId, ['file.upload', 'rate_record.edit']);
+  const version = await versionById(context, request.practiceId, request.versionId);
+  requireEditable(version);
+  if (version.sourceDocumentIds.includes(request.documentId)) {
+    return { attached: false };
+  }
+  await context.scope.client.query('UPDATE contract_version SET source_document_ids = source_document_ids || $3::uuid WHERE id = $1 AND practice_id = $2', [
+    request.versionId,
+    request.practiceId,
+    request.documentId,
+  ]);
+  await recordAuditEvent(context.scope, { action: 'contract_document_attached', objectType: 'contract_version', objectId: request.versionId, practiceId: request.practiceId, requestId: context.requestId });
+  return { attached: true };
+}
+
 // ---------------------------------------------------------------------------------------------------
 // Rate records
 

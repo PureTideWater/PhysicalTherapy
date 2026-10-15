@@ -1,6 +1,7 @@
 'use client';
 
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
+import { useRouter } from 'next/navigation';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
@@ -31,12 +32,27 @@ interface BatchFile {
   readonly error?: string;
 }
 
+/** A kind of document the drop zone takes, with the types it may be declared as. */
+export interface UploadKind {
+  readonly kind: string;
+  readonly label: string;
+  readonly contentTypes: readonly string[];
+}
+
 export interface UploaderProps {
   readonly practiceId: string;
   readonly canUpload: boolean;
   readonly roleNames: string;
   readonly gate: { readonly open: boolean; readonly reason: string | null };
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
+  /** The kinds a person chooses between (contracts, exhibits, payer letters); 835s when absent. */
+  readonly kinds?: readonly UploadKind[];
+  readonly heading?: string;
+  readonly description?: string;
+  /** Who uploads, for the permission state. */
+  readonly uploaders?: string;
+  /** Whether the practice's receipts are listed below the drop zone. */
+  readonly showReceipts?: boolean;
 }
 
 const ZIP_TYPES = new Set(['application/zip', 'application/x-zip-compressed']);
@@ -98,7 +114,9 @@ function put(file: File, target: UploadTarget, onProgress: (share: number) => vo
 }
 
 export function Uploader(props: UploaderProps) {
-  const { practiceId, canUpload, gate, limits } = props;
+  const { practiceId, canUpload, gate, limits, kinds } = props;
+  const router = useRouter();
+  const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
   const [batch, setBatch] = useState<BatchFile[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -151,7 +169,7 @@ export function Uploader(props: UploaderProps) {
       let answer: { documents: { documentId: string; upload: UploadTarget }[] };
       try {
         answer = await post(`/p/${practiceId}/uploads/request`, {
-          files: chosen.map((file) => ({ kind: 'x12_835', contentType: declaredType(file, limits.contentTypes), sizeBytes: file.size })),
+          files: chosen.map((file) => ({ kind: kind.kind, contentType: declaredType(file, kind.contentTypes), sizeBytes: file.size })),
         });
       } catch (error) {
         setProblems([(error as Error).message]);
@@ -168,7 +186,7 @@ export function Uploader(props: UploaderProps) {
       });
       await Promise.all(workers);
     },
-    [limits, practiceId, send],
+    [kind, limits, practiceId, send],
   );
 
   const retry = useCallback(
@@ -198,6 +216,13 @@ export function Uploader(props: UploaderProps) {
     const receipt = receipts.get(id);
     return receipt === undefined || !receiptState(receipt).settled;
   });
+  // Once a batch of chosen kinds has settled, the page's own lists (documents to tag) are reloaded.
+  const settledAll = kinds !== undefined && sentIds.length > 0 && !pending;
+  useEffect(() => {
+    if (settledAll) {
+      router.refresh();
+    }
+  }, [router, settledAll]);
   useEffect(() => {
     if (!pending) {
       return undefined;
@@ -233,11 +258,7 @@ export function Uploader(props: UploaderProps) {
   return (
     <div className="flex flex-col gap-6">
       {!canUpload ? (
-        <PermissionState
-          role={props.roleNames}
-          cannot="upload files"
-          nextStep="Billing managers, analysts and firm principals upload; you can read the receipts below."
-        />
+        <PermissionState role={props.roleNames} cannot="upload files" nextStep={props.uploaders ?? 'Billing managers, analysts and firm principals upload; you can read the receipts below.'} />
       ) : !gate.open ? (
         <Alert data-state="disabled" role="note">
           <AlertTitle>Uploads are not open yet</AlertTitle>
@@ -256,10 +277,32 @@ export function Uploader(props: UploaderProps) {
           onDrop={onDrop}
           className={`flex flex-col items-start gap-3 rounded-xl border-2 border-dashed p-8 ${dragging ? 'border-primary bg-accent' : ''}`}
         >
-          <h2 className="text-base font-semibold">Drop 835 files here</h2>
+          <h2 className="text-base font-semibold">{props.heading ?? 'Drop 835 files here'}</h2>
           <p className="max-w-prose text-sm text-muted-foreground">
-            Single files, a batch of up to {limits.maxFiles}, or a zip of them, up to {formatBytes(limits.maxBytes)} each. Each file is scanned for malware before anything reads it.
+            {props.description ?? `Single files, a batch of up to ${String(limits.maxFiles)}, or a zip of them, up to ${formatBytes(limits.maxBytes)} each.`} Each file is scanned for malware
+            before anything reads it.
           </p>
+          {kinds === undefined ? null : (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="upload-kind" className="text-sm font-medium">
+                Kind of document
+              </label>
+              <select
+                id="upload-kind"
+                value={kind.kind}
+                onChange={(event) => {
+                  setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
+                }}
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                {kinds.map((candidate) => (
+                  <option key={candidate.kind} value={candidate.kind}>
+                    {candidate.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <input
             ref={input}
             id="upload-files"
@@ -331,10 +374,12 @@ export function Uploader(props: UploaderProps) {
           </CardContent>
         </Card>
       )}
-      <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Receipts</h2>
-        <ReceiptList practiceId={practiceId} canUpload={canUpload} refreshKey={refreshKey} title="Receipts" />
-      </div>
+      {props.showReceipts === false ? null : (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">Receipts</h2>
+          <ReceiptList practiceId={practiceId} canUpload={canUpload} refreshKey={refreshKey} title="Receipts" />
+        </div>
+      )}
     </div>
   );
 }

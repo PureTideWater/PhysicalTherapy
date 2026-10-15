@@ -16,6 +16,7 @@ import {
   amendVersion,
   approveRateRecordField,
   approveVersion,
+  attachDocument,
   checkEvidence,
   correctMapping,
   createContract,
@@ -331,6 +332,22 @@ describe('the workflow from a tagged document to a signed-off version', () => {
     });
     await as(specialist, (context) => updateDraftVersion(context, { practiceId: north.practiceId, versionId: created.versionId, sourceDocumentIds: [contractDoc, exhibitDoc] }));
     expect((await versionRow(created.versionId)).source_document_ids).toEqual([contractDoc, exhibitDoc]);
+  });
+
+  it('adds a tagged document to a draft as whoever uploads files, once, and never to an approved version', async () => {
+    const created = await draft('2034-01-01', null, undefined, [contractDoc]);
+    const attach = (actor: string, versionId: string, documentId: string) => as(actor, (context) => attachDocument(context, { practiceId: north.practiceId, versionId, documentId }));
+    expect(await errorOf(attach(viewer, created.versionId, exhibitDoc))).toBeInstanceOf(PermissionDeniedError);
+    expect(await attach(manager, created.versionId, exhibitDoc)).toEqual({ attached: true });
+    expect(await attach(specialist, created.versionId, exhibitDoc)).toEqual({ attached: false });
+    expect((await versionRow(created.versionId)).source_document_ids).toEqual([contractDoc, exhibitDoc]);
+    const unscanned = await document('exhibit', [['SYNTHETIC UNSCANNED EXHIBIT']], 'pending');
+    expect(await errorOf(attach(manager, created.versionId, unscanned))).toMatchObject({ code: '23514' });
+    const [id] = await addRecords(created.versionId, [{ terms: FIXED_97110, quote: QUOTE_97110 }]);
+    await approveAll([id ?? '']);
+    await as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: created.versionId }));
+    expect(await errorOf(attach(manager, created.versionId, amendmentDoc))).toMatchObject({ reason: 'invalid' });
+    expect(await errorOf(attach(manager, randomUUID(), amendmentDoc))).toMatchObject({ reason: 'not_found' });
   });
 });
 

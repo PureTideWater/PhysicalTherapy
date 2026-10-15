@@ -5,8 +5,11 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
 /**
  * The synthetic people `pnpm db:seed` creates for development and the e2e tests: one for every
  * persona of PRD 3, plus a few the e2e tests use alone (an invited user without MFA, one to lock out,
- * one to let sit idle, a second support engineer, and a billing manager and a viewer for the
- * remittances journey, whose sign-ins never share a TOTP step with another spec's). Their passwords
+ * one to let sit idle, a second support engineer, a billing manager and a viewer for the remittances
+ * journey, a billing manager for the mapping journey, and a billing manager, a platform administrator
+ * and a contract specialist for the contracts journey, whose sign-ins never share a TOTP step or a
+ * hardware key with another spec's; the two billing managers belong to the other group, so their
+ * uploads land in its practice and never in the rows another spec counts). Their passwords
  * and TOTP secrets are derived from their keys here rather than written down, and exist only in the
  * local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -51,6 +54,10 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'devices', organization: 'group', role: 'viewer' },
   { key: 'remittances-manager', organization: 'group', role: 'billing_manager' },
   { key: 'remittances-viewer', organization: 'group', role: 'viewer' },
+  { key: 'mapping-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'contracts-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'contracts-admin', organization: 'internal', role: 'platform_admin' },
+  { key: 'contracts-specialist', organization: 'internal', role: 'contract_specialist' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

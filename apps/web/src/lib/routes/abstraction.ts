@@ -1,0 +1,422 @@
+import {
+  ContractWorkflowError,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  amendVersion,
+  approveRateRecordField,
+  approveVersion,
+  removeRateRecord,
+  supersedeVersion,
+  updateDraftVersion,
+} from '@tp/contracts';
+import { type PracticeScope, QUESTION_TOPICS, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
+import { z } from 'zod';
+
+import {
+  type ContractOption,
+  type DocumentSummary,
+  type Paged,
+  type QuestionView,
+  type VersionSummary,
+  contractOptions,
+  listContractDocuments,
+  listQuestions,
+  versionsInProgress,
+} from '../contracts/contract-queries';
+import { EVIDENCE_PROBLEM_TEXT, exclusiveEnd } from '../contracts/display';
+import { evidenceFor } from '../contracts/evidence';
+import { type VersionReview, versionReview } from '../contracts/review';
+import { tagDocument, tagInput } from '../contracts/tagging';
+import { termsFromForm } from '../contracts/terms-form';
+import { practiceRoute } from '../http/invoke';
+import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { type PayerOption, payerOptions } from '../remittances/queries';
+import type { Services } from '../server/services';
+import { pageSelection } from './contracts';
+import { opaqueId, optionalText, requiredText } from './schemas';
+
+/**
+ * The contract specialist's workspace inside a practice (PRD 5, J5: "in v0 the specialist abstracts it
+ * by hand into rate records with page references"; PRD 7, Rate record review: "specialist approves
+ * field by field ... an unresolved field blocks publication"; PRD 7, Specialist queue: "abstract,
+ * verify, approve, ask"; test matrix CON-01 to CON-05). A contract specialist reaches a practice only
+ * under a support grant, where they hold the contract_specialist role and nothing else (docs/adr/0028):
+ * every route here needs rate_record.edit, which only that role holds in a practice; approving a field
+ * and a version also need the platform permission rate_record.approve, which packages/contracts and the
+ * database check. The specialist enters each rate record by hand with its document, page and quote;
+ * the citation is checked against the page before it is stored, and again before each approval.
+ */
+
+const page = z.coerce.number().int().min(1).max(100_000).default(1);
+const date = z.iso.date('a date (YYYY-MM-DD)');
+/** A number of days, or blank when the contract is silent. */
+const days = z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), z.coerce.number().int('whole days').min(1).max(3650).optional());
+
+/** The workflow's context in this request, with the practice's documents to resolve citations against. */
+async function workflow(scope: PracticeScope<ScopeClient>, services: Services, practiceId: string, requestId: string): Promise<WorkflowContext> {
+  const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
+  return { scope, requestId, evidence: evidenceFor(scope, services.documents, cipher, practiceId, requestId) };
+}
+
+/** A line of the synthetic contract every route-test world holds (route-tests.db.test.ts). */
+export const SAMPLE_QUOTE = '97140 Manual therapy $30.50 per unit';
+
+/** A citation that does not resolve becomes the problem in words, beside the field it belongs to. */
+async function citing<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof ContractWorkflowError && error.evidenceProblem !== undefined) {
+      throw new InputError([{ field: 'quote', message: `${EVIDENCE_PROBLEM_TEXT[error.evidenceProblem]}; check the document, the page number and the quote` }]);
+    }
+    throw error;
+  }
+}
+
+const versionPath = (practiceId: string, versionId: string, record?: string) => `/p/${practiceId}/abstraction/versions/${versionId}${record === undefined ? '' : `?record=${record}`}`;
+
+export interface AbstractionPageData {
+  readonly practiceId: string;
+  readonly documents: Paged<DocumentSummary>;
+  readonly versions: readonly VersionSummary[];
+  readonly questions: readonly QuestionView[];
+  readonly payers: readonly PayerOption[];
+  readonly contracts: readonly ContractOption[];
+}
+
+export const abstractionPage = practiceRoute({
+  id: 'practice.abstraction',
+  kind: 'page',
+  path: '/p/[practiceId]/abstraction',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId, page }),
+  handle: async ({ scope, practiceId, params, request, services }): Promise<AbstractionPageData> => {
+    const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
+    return {
+      practiceId,
+      documents: await listContractDocuments(scope, practiceId, 'awaiting_abstraction', params.page, request.requestId),
+      versions: await versionsInProgress(scope, practiceId, request.requestId),
+      questions: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true }),
+      payers: await payerOptions(scope, practiceId),
+      contracts: await contractOptions(scope, practiceId, request.requestId),
+    };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+export interface AbstractionVersionPageData {
+  readonly practiceId: string;
+  readonly review: VersionReview;
+  readonly questions: readonly QuestionView[];
+}
+
+export const abstractionVersionPage = practiceRoute({
+  id: 'practice.abstraction.version',
+  kind: 'page',
+  path: '/p/[practiceId]/abstraction/versions/[versionId]',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId, versionId: opaqueId, ...pageSelection }),
+  handle: async ({ scope, practiceId, params, request, services }): Promise<AbstractionVersionPageData> => {
+    const review = await versionReview(scope, services, practiceId, params.versionId, request.requestId, {
+      ...(params.record === undefined ? {} : { record: params.record }),
+      ...(params.document === undefined ? {} : { document: params.document }),
+      ...(params.page === undefined ? {} : { page: params.page }),
+    });
+    if (review === undefined) {
+      throw new NotFoundError();
+    }
+    const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
+    return { practiceId, review, questions: await listQuestions(scope, practiceId, cipher, request.requestId, { contractId: review.version.contractId, openOnly: false }) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, versionId: refs.draftVersionId }) },
+});
+
+export const startAbstraction = practiceRoute({
+  id: 'practice.abstraction.tag',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/tag',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: tagInput,
+  audit: { action: 'contract_document_tagged', objectType: 'source_document' },
+  handle: ({ scope, practiceId, input, request }): Promise<MutationResult> =>
+    tagDocument({ scope, requestId: request.requestId }, practiceId, input, (versionId) => versionPath(practiceId, versionId)),
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    input: (refs) => ({ documentId: refs.untaggedDocumentId, payerId: refs.payerId, title: 'SYNTHETIC ABSTRACTED AGREEMENT', effectiveFrom: '2026-01-01' }),
+  },
+});
+
+export const updateVersionAction = practiceRoute({
+  id: 'practice.abstraction.update_version',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/update',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ versionId: opaqueId, effectiveFrom: date, lastDay: optionalText(date), timelyFilingDays: days, disputeWindowDays: days, noticeDays: days }),
+  audit: { action: 'contract_version_edit_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    if (input.lastDay !== undefined && input.lastDay < input.effectiveFrom) {
+      throw new InputError([{ field: 'lastDay', message: 'on or after the date the version starts' }]);
+    }
+    await updateDraftVersion(
+      { scope, requestId: request.requestId },
+      {
+        practiceId,
+        versionId: input.versionId,
+        effectiveFrom: input.effectiveFrom,
+        effectiveTo: exclusiveEnd(input.lastDay),
+        timelyFilingDays: input.timelyFilingDays ?? null,
+        disputeWindowDays: input.disputeWindowDays ?? null,
+        noticeDays: input.noticeDays ?? null,
+      },
+    );
+    return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    input: (refs) => ({ versionId: refs.draftVersionId, effectiveFrom: '2026-01-01', timelyFilingDays: '180', disputeWindowDays: '120', noticeDays: '90' }),
+  },
+});
+
+const text = (max: number) => optionalText(z.string().max(max));
+
+export const addRateRecordAction = practiceRoute({
+  id: 'practice.abstraction.add_record',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/records/add',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({
+    versionId: opaqueId,
+    method: z.string().max(40),
+    codes: requiredText(4000),
+    modifierSets: text(400),
+    placesOfService: text(400),
+    scopeFrom: text(10),
+    scopeLastDay: text(10),
+    amount: text(20),
+    percentage: text(20),
+    yearBasis: text(10),
+    lockedYear: text(4),
+    localityBasis: text(10),
+    carrier: text(5),
+    locality: text(2),
+    conversionFactor: text(40),
+    scheduleMethod: text(40),
+    applyMppr: text(5),
+    applyAssistantReduction: text(5),
+    applySequestration: text(5),
+    applyNcci: text(5),
+    timedUnitsRule: text(40),
+    rounding: text(40),
+    documentId: opaqueId,
+    page: z.coerce.number().int().min(1).max(999_999),
+    quote: requiredText(2000),
+  }),
+  audit: { action: 'rate_record_entered', objectType: 'rate_record' },
+  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+    const built = termsFromForm(input);
+    if (!built.ok) {
+      throw new InputError(built.issues);
+    }
+    const { rateRecordId } = await citing(async () =>
+      addRateRecord(await workflow(scope, services, practiceId, request.requestId), {
+        practiceId,
+        versionId: input.versionId,
+        terms: built.terms,
+        citation: { documentId: input.documentId, page: input.page, quote: input.quote },
+      }),
+    );
+    return { objectId: rateRecordId, redirect: versionPath(practiceId, input.versionId, rateRecordId) };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    input: (refs) => ({
+      versionId: refs.draftVersionId,
+      method: 'FIXED_SCHEDULE',
+      codes: '97140',
+      amount: '30.50',
+      documentId: refs.contractDocumentId,
+      page: '2',
+      quote: SAMPLE_QUOTE,
+    }),
+  },
+});
+
+export const removeRateRecordAction = practiceRoute({
+  id: 'practice.abstraction.remove_record',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/records/remove',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ rateRecordId: opaqueId, versionId: opaqueId }),
+  audit: { action: 'rate_record_removal_requested', objectType: 'rate_record' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    await removeRateRecord({ scope, requestId: request.requestId }, { practiceId, rateRecordId: input.rateRecordId });
+    return { objectId: input.rateRecordId, redirect: versionPath(practiceId, input.versionId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ rateRecordId: refs.draftRateRecordId, versionId: refs.draftVersionId }) },
+});
+
+export const approveFieldAction = practiceRoute({
+  id: 'practice.abstraction.approve_field',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/records/approve-field',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ rateRecordId: opaqueId, versionId: opaqueId, field: z.enum(RATE_RECORD_FIELDS) }),
+  audit: { action: 'rate_record_field_approval_requested', objectType: 'rate_record' },
+  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+    const result = await approveRateRecordField(await workflow(scope, services, practiceId, request.requestId), { practiceId, rateRecordId: input.rateRecordId, field: input.field });
+    if (result.evidence !== null && !result.evidence.resolved) {
+      // Every field is approved, but the record is not verified: its citation does not resolve (CON-05).
+      throw new InputError([{ field: 'quote', message: `${EVIDENCE_PROBLEM_TEXT[result.evidence.problem]}; the record stays unverified until its citation resolves` }]);
+    }
+    return { objectId: input.rateRecordId, redirect: versionPath(practiceId, input.versionId, input.rateRecordId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ rateRecordId: refs.draftRateRecordId, versionId: refs.draftVersionId, field: 'scope' }) },
+});
+
+export const approveVersionAction = practiceRoute({
+  id: 'practice.abstraction.approve_version',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/approve',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ versionId: opaqueId }),
+  audit: { action: 'contract_version_approval_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
+    await approveVersion(await workflow(scope, services, practiceId, request.requestId), { practiceId, versionId: input.versionId });
+    return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.readyVersionId }) },
+});
+
+const successorInput = z.object({ versionId: opaqueId, effectiveFrom: optionalText(date), lastDay: optionalText(date), documentId: optionalText(opaqueId) });
+
+export const amendVersionAction = practiceRoute({
+  id: 'practice.abstraction.amend',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/amend',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: successorInput,
+  audit: { action: 'contract_amendment_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    if (input.effectiveFrom === undefined) {
+      throw new InputError([{ field: 'effectiveFrom', message: 'the date the amendment takes effect' }]);
+    }
+    const created = await amendVersion(
+      { scope, requestId: request.requestId },
+      { practiceId, versionId: input.versionId, effectiveFrom: input.effectiveFrom, effectiveTo: exclusiveEnd(input.lastDay), sourceDocumentIds: input.documentId === undefined ? [] : [input.documentId] },
+    );
+    return { objectId: created.versionId, redirect: versionPath(practiceId, created.versionId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.signedOffVersionId, effectiveFrom: '2026-07-01' }) },
+});
+
+export const supersedeVersionAction = practiceRoute({
+  id: 'practice.abstraction.supersede',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/versions/supersede',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: successorInput,
+  audit: { action: 'contract_correction_requested', objectType: 'contract_version' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    const created = await supersedeVersion(
+      { scope, requestId: request.requestId },
+      {
+        practiceId,
+        versionId: input.versionId,
+        ...(input.effectiveFrom === undefined ? {} : { effectiveFrom: input.effectiveFrom }),
+        ...(input.lastDay === undefined ? {} : { effectiveTo: exclusiveEnd(input.lastDay) }),
+        sourceDocumentIds: input.documentId === undefined ? [] : [input.documentId],
+      },
+    );
+    return { objectId: created.versionId, redirect: versionPath(practiceId, created.versionId) };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.signedOffVersionId }) },
+});
+
+export const askQuestionAction = practiceRoute({
+  id: 'practice.abstraction.ask',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/questions/ask',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ contractId: opaqueId, versionId: optionalText(opaqueId), documentId: optionalText(opaqueId), topic: z.enum(QUESTION_TOPICS), question: requiredText(2000) }),
+  audit: { action: 'contract_question_asked', objectType: 'contract_question' },
+  handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
+    const contract = await scope.client.query('SELECT 1 FROM contract WHERE id = $1 AND practice_id = $2', [input.contractId, practiceId]);
+    if (contract.rowCount === 0) {
+      throw new NotFoundError();
+    }
+    const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
+    const { rows } = await scope.client.query<{ id: string }>(
+      `INSERT INTO contract_question (practice_id, contract_id, contract_version_id, source_document_id, topic, question, asked_by)
+       VALUES ($1, $2, $3, $4, $5, $6, app_actor_id()) RETURNING id`,
+      [practiceId, input.contractId, input.versionId ?? null, input.documentId ?? null, input.topic, cipher.encrypt('contract_question.question', input.question)],
+    );
+    const questionId = rows[0]?.id ?? '';
+    return { objectId: questionId, redirect: input.versionId === undefined ? `/p/${practiceId}/abstraction` : versionPath(practiceId, input.versionId) };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    input: (refs) => ({ contractId: refs.signedOffContractId, topic: 'missing_schedule', question: 'SYNTHETIC QUESTION: please send exhibit B' }),
+  },
+});
+
+export const withdrawQuestionAction = practiceRoute({
+  id: 'practice.abstraction.withdraw',
+  kind: 'action',
+  path: '/p/[practiceId]/abstraction/questions/withdraw',
+  phi: true,
+  permission: 'rate_record.edit',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({ questionId: opaqueId }),
+  audit: { action: 'contract_question_withdrawn', objectType: 'contract_question' },
+  handle: async ({ scope, practiceId, input }): Promise<MutationResult> => {
+    const { rowCount } = await scope.client.query("UPDATE contract_question SET status = 'withdrawn', closed_by = app_actor_id(), closed_at = now() WHERE id = $1 AND practice_id = $2 AND status = 'open'", [
+      input.questionId,
+      practiceId,
+    ]);
+    if (rowCount === 0) {
+      const exists = await scope.client.query('SELECT 1 FROM contract_question WHERE id = $1 AND practice_id = $2', [input.questionId, practiceId]);
+      if (exists.rowCount === 0) {
+        throw new NotFoundError();
+      }
+      throw new InputError([{ field: 'questionId', message: 'the question is already answered or withdrawn' }]);
+    }
+    return { objectId: input.questionId, redirect: `/p/${practiceId}/abstraction` };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ questionId: refs.withdrawableQuestionId }) },
+});
+
+export const ABSTRACTION_ROUTES = [
+  abstractionPage,
+  abstractionVersionPage,
+  startAbstraction,
+  updateVersionAction,
+  addRateRecordAction,
+  removeRateRecordAction,
+  approveFieldAction,
+  approveVersionAction,
+  amendVersionAction,
+  supersedeVersionAction,
+  askQuestionAction,
+  withdrawQuestionAction,
+] as const;

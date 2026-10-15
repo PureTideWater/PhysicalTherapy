@@ -50,12 +50,12 @@ async function uploadedDocument(scope: PracticeScope<ScopeClient>, practiceId: s
 }
 
 /** Whether the practice's BAA is on file (PRD 6: "no upload without a BAA"), asked of the database. */
-async function baaOnFile(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<boolean> {
+export async function baaOnFile(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<boolean> {
   const { rows } = await scope.client.query<{ open: boolean }>('SELECT practice_baa_on_file($1) AS open', [practiceId]);
   return rows[0]?.open === true;
 }
 
-const NO_BAA = 'Uploads open once the practice’s business associate agreement is on file. A platform administrator records it when it is signed.';
+export const NO_BAA = 'Uploads open once the practice’s business associate agreement is on file. A platform administrator records it when it is signed.';
 
 export interface UploadGate {
   readonly open: boolean;

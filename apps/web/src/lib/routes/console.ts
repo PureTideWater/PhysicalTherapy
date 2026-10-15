@@ -397,6 +397,8 @@ export interface ConsoleSupportGrant {
   readonly practiceId: string;
   readonly practiceName: string;
   readonly engineerEmail: string;
+  /** The grantee's internal role: a support engineer, or a contract specialist (docs/adr/0028). */
+  readonly granteeRole: 'support' | 'contract_specialist' | null;
   readonly ticket: string;
   readonly reason: string;
   readonly createdAt: Date;
@@ -427,14 +429,18 @@ export const supportPage = platformRoute({
       open: boolean;
     }>("SELECT *, (now() < expires_at AND now() < created_at + interval '4 hours') AS open FROM console_support_grants() LIMIT 100");
     const practices = await scope.client.query<{ practice_id: string; name: string; status: string }>('SELECT practice_id, name, status FROM console_practices(NULL)');
-    const engineers = await scope.client.query<{ id: string; email: string }>(
-      `SELECT DISTINCT u.id, u.email FROM membership m JOIN "user" u ON u.id = m.user_id JOIN organization o ON o.id = m.organization_id
-        WHERE o.kind = 'internal' AND m.role = 'support' AND (m.ends_at IS NULL OR m.ends_at > now()) AND u.status = 'active'
-        ORDER BY u.email`,
+    // Who a support grant can go to: support engineers and contract specialists (support_grant_role()).
+    const engineers = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' }>(
+      `SELECT u.id, u.email, support_grant_role(u.id) AS role FROM "user" u
+        WHERE support_grant_role(u.id) IS NOT NULL
+        ORDER BY support_grant_role(u.id) DESC, u.email`,
     );
-    const emails = await scope.client.query<{ id: string; email: string }>('SELECT id, email FROM "user" WHERE id = ANY ($1::uuid[])', [grants.rows.map((row) => row.user_id)]);
+    const emails = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' | null }>('SELECT id, email, support_grant_role(id) AS role FROM "user" WHERE id = ANY ($1::uuid[])', [
+      grants.rows.map((row) => row.user_id),
+    ]);
     const practiceName = new Map(practices.rows.map((row) => [row.practice_id, row.name]));
     const emailOf = new Map(emails.rows.map((row) => [row.id, row.email]));
+    const roleOf = new Map(emails.rows.map((row) => [row.id, row.role]));
     return {
       grants: grants.rows.map(
         (row): ConsoleSupportGrant => ({
@@ -442,6 +448,7 @@ export const supportPage = platformRoute({
           practiceId: row.practice_id,
           practiceName: practiceName.get(row.practice_id) ?? '',
           engineerEmail: emailOf.get(row.user_id) ?? '',
+          granteeRole: roleOf.get(row.user_id) ?? null,
           ticket: row.ticket,
           reason: row.reason,
           createdAt: row.created_at,
@@ -479,13 +486,10 @@ export const createSupportGrant = platformRoute({
   }),
   audit: { action: 'support_grant_created', objectType: 'support_grant' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const engineer = await scope.client.query(
-      `SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id JOIN "user" u ON u.id = m.user_id
-        WHERE m.user_id = $1 AND m.role = 'support' AND o.kind = 'internal' AND (m.ends_at IS NULL OR m.ends_at > now()) AND u.status = 'active'`,
-      [input.userId],
-    );
-    if (engineer.rowCount === 0) {
-      throw new InputError([{ field: 'userId', message: 'a support engineer with a current support role' }]);
+    // A support engineer, or a contract specialist who abstracts the practice's contracts (docs/adr/0028).
+    const grantee = await scope.client.query<{ role: string | null }>('SELECT support_grant_role($1) AS role', [input.userId]);
+    if ((grantee.rows[0]?.role ?? null) === null) {
+      throw new InputError([{ field: 'userId', message: 'a support engineer or a contract specialist with a current role' }]);
     }
     const practice = await scope.client.query("SELECT 1 FROM console_practices(NULL) WHERE practice_id = $1 AND status = 'active'", [input.practiceId]);
     if (practice.rowCount === 0) {
@@ -522,6 +526,79 @@ export const endSupportGrant = platformRoute({
   sample: { params: () => ({}), input: (refs) => ({ supportGrantId: refs.supportGrantId }) },
 });
 
+export interface QueuePractice {
+  readonly practiceId: string;
+  readonly name: string;
+  readonly documentsAwaiting: number;
+  readonly drafts: number;
+  readonly proposalsAwaiting: number;
+  readonly awaitingSignOff: number;
+  readonly openQuestions: number;
+  /** When the caller's own open support grant on the practice ends; null without one. */
+  readonly grantEndsAt: Date | null;
+}
+
+export const QUEUE_PRACTICES_PER_PAGE = 25;
+
+/**
+ * The internal console's specialist queue (PRD 7, Internal console: "documents awaiting abstraction,
+ * proposals awaiting verification, questions to customers ... abstract, verify, approve, ask"): per
+ * practice, counts only (console_contract_queue(): no document, contract or question is read here),
+ * and whether the specialist's own support grant to the practice is open, which is the only way into
+ * its records (docs/adr/0028). Proposals stay empty until the model gateway proposes abstractions
+ * (milestone 10). Practices with nothing waiting are left out unless asked for.
+ */
+export const specialistQueuePage = platformRoute({
+  id: 'console.specialist_queue',
+  kind: 'page',
+  path: '/console/specialist-queue',
+  phi: false,
+  permission: 'contract.review',
+  params: z.object({ all: z.enum(['1']).optional().catch(undefined), page: z.coerce.number().int().min(1).max(100_000).default(1) }),
+  handle: async ({ scope, params }) => {
+    const { rows } = await scope.client.query<{
+      practice_id: string;
+      name: string;
+      documents_awaiting: string;
+      drafts: string;
+      proposals_awaiting: string;
+      awaiting_sign_off: string;
+      open_questions: string;
+      support_grant_ends_at: Date | null;
+    }>('SELECT * FROM console_contract_queue()');
+    const all = rows.map(
+      (row): QueuePractice => ({
+        practiceId: row.practice_id,
+        name: row.name,
+        documentsAwaiting: Number.parseInt(row.documents_awaiting, 10),
+        drafts: Number.parseInt(row.drafts, 10),
+        proposalsAwaiting: Number.parseInt(row.proposals_awaiting, 10),
+        awaitingSignOff: Number.parseInt(row.awaiting_sign_off, 10),
+        openQuestions: Number.parseInt(row.open_questions, 10),
+        grantEndsAt: row.support_grant_ends_at,
+      }),
+    );
+    const working = (practice: QueuePractice) =>
+      practice.documentsAwaiting + practice.drafts + practice.proposalsAwaiting + practice.awaitingSignOff + practice.openQuestions > 0 || practice.grantEndsAt !== null;
+    const shown = params.all === '1' ? all : all.filter(working);
+    const pages = Math.max(1, Math.ceil(shown.length / QUEUE_PRACTICES_PER_PAGE));
+    const current = Math.min(params.page, pages);
+    return {
+      showAll: params.all === '1',
+      practices: shown.slice((current - 1) * QUEUE_PRACTICES_PER_PAGE, current * QUEUE_PRACTICES_PER_PAGE),
+      totals: {
+        documentsAwaiting: all.reduce((sum, practice) => sum + practice.documentsAwaiting, 0),
+        proposalsAwaiting: all.reduce((sum, practice) => sum + practice.proposalsAwaiting, 0),
+        openQuestions: all.reduce((sum, practice) => sum + practice.openQuestions, 0),
+      },
+      page: current,
+      pages,
+      total: shown.length,
+    };
+  },
+  sample: { params: () => ({}) },
+});
+
 export const CONSOLE_ROUTES = [
   organizationsPage,
   createOrganization,
@@ -534,4 +611,5 @@ export const CONSOLE_ROUTES = [
   supportPage,
   createSupportGrant,
   endSupportGrant,
+  specialistQueuePage,
 ] as const;

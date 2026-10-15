@@ -63,6 +63,16 @@ PDFs, `TextractPageReader` behind `ScannedPageReader` for scans) and `agreementR
 and signed-off versions and the approval and sign-off checks. A contract specialist reaches a practice under a support
 grant, as a support engineer does.
 
+Mapping, coverage and contract screens (ADR 0030): Payer and plan mapping (`/p/<practice>/mapping`, unmapped plans and
+their dollars first; a plan's page shows its mapping history and how its lines resolve now), Coverage
+(`/p/<practice>/coverage`: zero priced until pricing runs, the unpriced reasons and remedies of the rules reference, the
+dollars waiting on mappings, the request-to-payer letter as a text download) and Contracts (`/p/<practice>/contracts`:
+tag an uploaded contract, exhibit or payer letter to its payer, the calendar, sign-off and answers to the specialist's
+questions) are the customer's. The contract specialist abstracts, approves field by field and asks questions under
+`/p/<practice>/abstraction`, opened under a support grant from the console's Specialist queue
+(`/console/specialist-queue`), which counts each practice's work without reading a record. Questions live in
+`contract_question` (encrypted with the practice's key).
+
 Pricing (ADRs 0020 and 0029): `packages/pricing` is the expected-payment engine, phase one (Medicare Advantage
 non-contracted and percent-of-Medicare terms). `price({ claim, release, settings, asOf })` is pure: the claim's line facts,
 each with the agreement `agreementResolver` gave it, a release indexed by `indexRelease`, the practice settings (billing

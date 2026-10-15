@@ -1,4 +1,7 @@
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+// pdf.js runs its worker in this thread from the module that registers itself here
+// (globalThis.pdfjsWorker), so a bundled server (the web app) never loads pdf.worker.mjs from a path.
+import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 
 /**
  * The text of each page of a text PDF, read with pdf.js (Mozilla's PDF reader, running without a

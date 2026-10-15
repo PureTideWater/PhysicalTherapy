@@ -67,7 +67,24 @@ export function basisName(basis: string | null, allocated: boolean): string {
 }
 
 /** Previous and next links that keep every filter in the URL (PRD 7: filters in the URL). */
-export function Pager({ path, query, page, pages, total, noun }: { readonly path: string; readonly query: Readonly<Record<string, string | undefined>>; readonly page: number; readonly pages: number; readonly total: number; readonly noun: string }) {
+export function Pager({
+  path,
+  query,
+  page,
+  pages,
+  total,
+  noun,
+  param = 'page',
+}: {
+  readonly path: string;
+  readonly query: Readonly<Record<string, string | undefined>>;
+  readonly page: number;
+  readonly pages: number;
+  readonly total: number;
+  readonly noun: string;
+  /** The URL parameter that carries the page (a screen with two lists pages each its own way). */
+  readonly param?: string;
+}) {
   if (pages <= 1) {
     return null;
   }
@@ -78,7 +95,7 @@ export function Pager({ path, query, page, pages, total, noun }: { readonly path
         params.set(key, value);
       }
     }
-    params.set('page', String(target));
+    params.set(param, String(target));
     return `${path}?${params.toString()}`;
   };
   return (

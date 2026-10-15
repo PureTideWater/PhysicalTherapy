@@ -29,8 +29,9 @@ import { DATA_KEY_BYTES, DataKeyError, requirePractice } from './key-provider';
  */
 
 /**
- * Every column the data dictionary marks (enc), and the free-text note a person may write on a service
- * line, which can hold anything they type (docs/adr/0027).
+ * Every column the data dictionary marks (enc), and the free text people write that can hold anything
+ * they type: a note on a service line (docs/adr/0027), and a contract specialist's question to the
+ * practice and its answer (docs/adr/0030).
  */
 export const ENCRYPTED_COLUMNS = [
   'claim.patient_control_number',
@@ -42,6 +43,8 @@ export const ENCRYPTED_COLUMNS = [
   'patient_ref.group_number',
   'posting_row.claim_reference',
   'line_note.note',
+  'contract_question.question',
+  'contract_question.answer',
 ] as const;
 export type EncryptedColumn = (typeof ENCRYPTED_COLUMNS)[number];
 
