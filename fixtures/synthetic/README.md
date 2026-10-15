@@ -7,14 +7,34 @@ values, and `rules/release-synth-900001/` is the SYNTHETIC release built from th
 (see `cms/README.md`). SYNTHETIC releases are numbered from 900000, a range real releases never use; they load
 only into scratch test databases, through the loader's test-only option, never through `pnpm release:load`.
 
-- Generate a case from the test matrix with `pnpm synth --case <id>` (for example `PAR-08`), or all of them
-  with `pnpm synth --all`. Each case lives in `fixtures/synthetic/<case>/` with its generated files and an
-  `expected.json` holding the outcome its test asserts (the `/synth-fixture` skill).
+## Layout
+
+- `<case>/` for every row of `docs/product/test-matrix.md` (PAR-01 to MOD-06), and `variants/<id>-<slug>/` for
+  thirty-one more 835s the oracle reads (V01 to V31: many payers and claims, reversals, every PLB code, zero and
+  negative checks, payment methods, claims with no lines, modifiers, decimal units, service periods, unknown
+  codes, line endings, a byte-order mark, trimmed amounts, every segment the writer supports).
+- Each directory holds its generated files and `expected.json`: the case's matrix row, the milestone that
+  completes it (`completesIn`), tests that already assert it (`assertedBy`), and for each file its SHA-256, size
+  and kind; for an 835 the oracle's expectation (`x12.oracle`: valid, rejection categories, the normalized
+  summary) and the parser and loader's (`x12.parse`: outcome, held reasons with segment index and element
+  position, every claim and line with its amounts, adjustments, observed allowed and basis, reversal links,
+  PLB items, unknown codes, the receipt); upload sequences with their dedup outcomes (`uploads`); scenario
+  inputs that are not files (`scenario`) and outcomes a later milestone asserts (`outcome`). Cases that need no
+  file say why (`noFileReason`). The types are `CaseExpectation` in `packages/synth/src/expected/types.ts`.
+- `PAR-29/generated/` holds the 10,000-claim file when a test or `pnpm synth --large` writes it; git ignores
+  it, and `PAR-29/expected.json` records its size, hash and counts.
+
+## Rules
+
+- Regenerate with `pnpm synth --all`, or one case with `pnpm synth --case <id>` (`PAR-08`, `V01`). Generation
+  is deterministic and a test requires the committed files to be byte-identical to a fresh generation, so a
+  change to a generator lands with its regenerated fixtures (the `/synth-fixture` skill).
 - Every X12 file carries the interchange sender `SYNTHSENDER` in ISA06 (padded to fifteen characters) and
-  `SYNTH` in GS02. The fixture hook refuses any X12 content with another sender.
-- Dates are shifted and identifiers invented. Synthetic numeric reference data (RVUs, GPCIs, conversion
-  factors, rates) says SYNTHETIC in its source metadata and is never presented as CMS data.
+  `SYNTH` in GS02; the writer refuses anything else, and so does the fixture hook.
+- Dates are invented and identifiers made up (NPIs start with 99, which no real NPI does). Synthetic numeric
+  reference data (RVUs, GPCIs, conversion factors, rates) says SYNTHETIC in its source metadata and is never
+  presented as CMS data.
 - A fixture is never derived from a real file except through the twin generator, which runs inside the
-  production boundary; only the twin leaves.
-- CI parses every X12 fixture here with both `packages/edi835` and pyx12 (`pnpm test:oracle`); any
-  disagreement fails the build.
+  production boundary; only the twin leaves (docs/adr/0024).
+- CI parses every X12 fixture here with pyx12 (`pnpm test:oracle`, docs/adr/0022) and, from milestone 2 part B,
+  with `packages/edi835`; any disagreement fails the build.

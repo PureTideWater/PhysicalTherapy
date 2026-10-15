@@ -1,0 +1,17 @@
+{
+  "case": "SEC-03",
+  "module": "SEC",
+  "title": "Firm user after grant expiry",
+  "assertion": "Denied on the next request",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/access.db.test.ts","apps/web/src/lib/routes/revocation.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Grant expiry is a database and route property.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

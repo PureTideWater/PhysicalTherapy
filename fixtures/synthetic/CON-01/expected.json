@@ -1,0 +1,51 @@
+{
+  "case": "CON-01",
+  "module": "CON",
+  "title": "Two versions with overlapping windows",
+  "assertion": "Refused",
+  "synthetic": true,
+  "completesIn": 4,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "version-1.txt",
+      "sha256": "d5cb255ade736be44164506cee9159287001ec135d5e5d1140a71fb3d2ba6577",
+      "bytes": 731,
+      "kind": "text",
+      "description": "Version 1, effective 2026-01-01 through 2026-12-31 (text; pages separated by form feeds)."
+    },
+    {
+      "path": "version-1.pdf",
+      "sha256": "97122f3d618506c7830ad4313726f272743b41e16b8c2f3169204ff73ea2a3da",
+      "bytes": 1968,
+      "kind": "pdf",
+      "description": "Version 1, effective 2026-01-01 through 2026-12-31 (PDF, the same pages)."
+    },
+    {
+      "path": "version-2.txt",
+      "sha256": "b2b541687bb7305dd87028e4ad963a89387383c51d2f5b36ec40fc87a358799d",
+      "bytes": 731,
+      "kind": "text",
+      "description": "Version 2, effective 2026-07-01 through 2027-06-30 (text; pages separated by form feeds)."
+    },
+    {
+      "path": "version-2.pdf",
+      "sha256": "d8a7f146992bfbe7ef99989c11c8a618d6d210019521dacacbee270b5c15461a",
+      "bytes": 1968,
+      "kind": "pdf",
+      "description": "Version 2, effective 2026-07-01 through 2027-06-30 (PDF, the same pages)."
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": {
+    "versions": [
+      {"file":"version-1.pdf","effectiveFrom":"2026-01-01","effectiveTo":"2026-12-31"},
+      {"file":"version-2.pdf","effectiveFrom":"2026-07-01","effectiveTo":"2027-06-30"}
+    ]
+  },
+  "outcome": {"secondVersion":"refused: its window overlaps version 1 from 2026-07-01 to 2026-12-31"},
+  "notes": []
+}

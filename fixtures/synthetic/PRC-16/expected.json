@@ -1,0 +1,17 @@
+{
+  "case": "PRC-16",
+  "module": "PRC",
+  "title": "Trace recompute",
+  "assertion": "Equals stored amount for every golden line",
+  "synthetic": true,
+  "completesIn": 5,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "Recomputes the trace of every golden line in fixtures/golden; no fixture of its own.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

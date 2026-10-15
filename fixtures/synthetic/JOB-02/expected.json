@@ -1,0 +1,17 @@
+{
+  "case": "JOB-02",
+  "module": "JOB",
+  "title": "Three failures",
+  "assertion": "Alert raised; dashboard shows last run failed",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": ["apps/worker/src/worker.test.ts","infra/test/monitoring.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Job failures are injected in the worker tests; the dashboard that shows the last run arrives with milestone 7.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

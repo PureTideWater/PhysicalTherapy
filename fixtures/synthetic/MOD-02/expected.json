@@ -1,0 +1,39 @@
+{
+  "case": "MOD-02",
+  "module": "MOD",
+  "title": "Proposal with a date not in its quote",
+  "assertion": "Field rejected",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "agreement.txt",
+      "sha256": "648924ff08630b425a03dbcd5afed3430e499ff8d0332d81e82c6ead4a07a29f",
+      "bytes": 709,
+      "kind": "text",
+      "description": "A percent-of-Medicare agreement (text; pages separated by form feeds)."
+    },
+    {
+      "path": "agreement.pdf",
+      "sha256": "5e49684b8e63f5044c1d72450da0dbb240b0babfcda12fdd16ae46b00b209254",
+      "bytes": 1935,
+      "kind": "pdf",
+      "description": "A percent-of-Medicare agreement (PDF, the same pages)."
+    },
+    {
+      "path": "proposal.json",
+      "sha256": "9e6655f8af05dc11ce55c74353b49e16a9c6fd7f17a933dc5de80a294dc43010",
+      "bytes": 492,
+      "kind": "json",
+      "description": "A recorded SYNTHETIC proposal whose effective_to date (2027-12-31) is not in its quote."
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": {"rejected":["effective_to"],"accepted":["percentage"]},
+  "notes": []
+}

@@ -1,0 +1,17 @@
+{
+  "case": "SEC-14",
+  "module": "SEC",
+  "title": "Fixture with a non-synthetic sender",
+  "assertion": "Hook refuses the write",
+  "synthetic": true,
+  "completesIn": 2,
+  "assertedBy": ["packages/synth/src/fixture-guard.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The test builds a non-synthetic interchange in memory and hands it to the hook; it is never written as a file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

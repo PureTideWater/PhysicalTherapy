@@ -1,0 +1,166 @@
+{
+  "case": "PAR-28",
+  "module": "PAR",
+  "title": "Renamed executable in a zip",
+  "assertion": "Quarantined; nothing parsed",
+  "synthetic": true,
+  "completesIn": 3,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "upload.zip",
+      "sha256": "d7164ca8ba8d323fdb360012a50197f6e6b298d314490851b4d01e9cb241ff3d",
+      "bytes": 1904,
+      "kind": "zip",
+      "description": "A zip holding a renamed executable (remit-001.835 starts with the ELF magic number) beside a valid 835.",
+      "zip": {
+        "entries": [
+          {
+            "name": "remit-001.835",
+            "sha256": "4ea916bfd4dd53cab1e6c321d56ef52493d5593107c2b81a7a96c93973516361",
+            "bytes": 784,
+            "kind": "executable",
+            "outcome": "quarantined"
+          },
+          {
+            "name": "remit-002.835",
+            "sha256": "946775870a66337193cfb77d4aaf02e8fa0914569ae23714dc6afde1775545a3",
+            "bytes": 894,
+            "kind": "x12",
+            "outcome": "quarantined",
+            "oracle": {
+              "valid": true,
+              "rejections": [],
+              "summary": {
+                "format": "tp-oracle-835/1",
+                "bom": false,
+                "interchanges": [
+                  {
+                    "isa06": "SYNTHSENDER",
+                    "isa08": "SYNTHRECEIVER",
+                    "isa09": "260330",
+                    "isa12": "00501",
+                    "isa13": "010280002",
+                    "isa15": "T",
+                    "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                    "iea01": "1",
+                    "iea02": "010280002",
+                    "groups": [
+                      {
+                        "gs01": "HP",
+                        "gs02": "SYNTH",
+                        "gs03": "SYNTHRCV",
+                        "gs04": "2026-03-30",
+                        "gs06": "10280002",
+                        "gs08": "005010X221A1",
+                        "ge01": "1",
+                        "ge02": "10280002",
+                        "transactions": [
+                          {
+                            "st01": "835",
+                            "st02": "0001",
+                            "se01": "23",
+                            "se02": "0001",
+                            "segmentCount": 23,
+                            "bpr": {
+                              "handling": "C",
+                              "amountCents": "3696",
+                              "creditDebit": "C",
+                              "method": "ACH",
+                              "format": "CCP",
+                              "date": "2026-03-30"
+                            },
+                            "trn": {"trace":"SYNEFTPAR28002","originator":"1SYN00000A","supplemental":null},
+                            "currency": null,
+                            "refs": [],
+                            "productionDate": "2026-03-29",
+                            "payer": {
+                              "name": "SYNTHETIC PAYER A",
+                              "idQualifier": null,
+                              "id": null,
+                              "refs": [["2U","SYNPAYERA"]]
+                            },
+                            "payee": {
+                              "name": "SYNTHETIC THERAPY GROUP 01",
+                              "idQualifier": "XX",
+                              "id": "9991506616",
+                              "refs": [["TJ","991702053"]]
+                            },
+                            "claims": [
+                              {
+                                "lx": "1",
+                                "clp01": "SYNPCNPAR28002",
+                                "clp02": "1",
+                                "chargeCents": "7000",
+                                "paidCents": "3696",
+                                "patientResponsibilityCents": "924",
+                                "clp06": "12",
+                                "clp07": "SYNCCNPAR280002",
+                                "clp08": "11",
+                                "clp09": "1",
+                                "cas": {},
+                                "refs": [["CE","SYNPLAN-COMM-01"]],
+                                "dates": [],
+                                "amounts": [],
+                                "lines": [
+                                  {
+                                    "procedure": "HC:97110",
+                                    "chargeCents": "7000",
+                                    "paidCents": "3696",
+                                    "revenueCode": null,
+                                    "units": "1",
+                                    "originalProcedure": null,
+                                    "originalUnits": null,
+                                    "dates": [
+                                      {
+                                        "qualifier": "472",
+                                        "date": "2026-03-09",
+                                        "format": null,
+                                        "period": null
+                                      }
+                                    ],
+                                    "cas": {"CO-45":"2380","PR-2":"924"},
+                                    "refs": [],
+                                    "amounts": [],
+                                    "remarks": [],
+                                    "differenceCents": "0"
+                                  }
+                                ],
+                                "balance": {
+                                  "claimDifferenceCents": "0",
+                                  "lineChargeDifferenceCents": "0",
+                                  "balanced": true
+                                }
+                              }
+                            ],
+                            "plb": [],
+                            "balance": {
+                              "claimsPaidCents": "3696",
+                              "plbTotalCents": "0",
+                              "paymentCents": "3696",
+                              "differenceCents": "0",
+                              "balanced": true,
+                              "claimsBalanced": true
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "batch": {"entries":2,"parsed":0,"held":0,"quarantined":2,"zipQuarantined":true}
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": ["The whole upload is quarantined: the valid 835 beside the executable is not parsed either."]
+}

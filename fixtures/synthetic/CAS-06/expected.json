@@ -1,0 +1,17 @@
+{
+  "case": "CAS-06",
+  "module": "CAS",
+  "title": "Write-off with reason",
+  "assertion": "Leaves actionable total; stays visible",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "Writes off a line of a case built from the CAS-03 fixture; no file of its own.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,17 @@
+{
+  "case": "MOD-03",
+  "module": "MOD",
+  "title": "Narrative evaluation set of 300",
+  "assertion": "Zero critical errors",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "The 300-case narrative evaluation set is generated in milestone 10 from the packet facts milestone 8 defines; nothing can be generated before that format exists.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,17 @@
+{
+  "case": "SEC-02",
+  "module": "SEC",
+  "title": "Cross-tenant read and write on every table",
+  "assertion": "Zero rows; refused",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/cross-tenant.db.test.ts","apps/web/src/lib/routes/route-tests.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Cross-tenant tests are generated from the schema catalog and the route registry.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

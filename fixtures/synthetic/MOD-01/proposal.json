@@ -1,0 +1,15 @@
+{
+  "synthetic": true,
+  "purpose": "proposeContractTerms",
+  "document": "agreement.pdf",
+  "fields": [
+    {
+      "field": "effective_from",
+      "value": "2026-01-01",
+      "page": 1,
+      "quote": "This version is effective 2026-01-01 and continues until amended."
+    },
+    {"field":"rate.97110","value":"43.10","page":3,"quote":"97110  $43.10 per unit"},
+    {"field":"rate.97140","value":"39.90","page":3,"quote":"97140  $39.90 per unit"}
+  ]
+}

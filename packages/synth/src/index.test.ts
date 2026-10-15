@@ -22,6 +22,8 @@ describe('parseSynthArgs', () => {
   it('accepts --case with a test-matrix ID in either form', () => {
     expect(parseSynthArgs(['--case', 'PAR-08'])).toEqual({ kind: 'case', caseId: 'PAR-08' });
     expect(parseSynthArgs(['--case=LED-06'])).toEqual({ kind: 'case', caseId: 'LED-06' });
+    expect(parseSynthArgs(['--case', 'V01'])).toEqual({ kind: 'case', caseId: 'V01' });
+    expect(parseSynthArgs(['--large'])).toEqual({ kind: 'large' });
   });
 
   it.each([
@@ -32,6 +34,9 @@ describe('parseSynthArgs', () => {
     [['--case', 'PAR-001']],
     [['--everything']],
     [['PAR-01']],
+    [['--case', 'V1']],
+    [['--large', '--all']],
+    [['--case', 'v01']],
   ])('refuses %j', (argv) => {
     expect(() => parseSynthArgs(argv)).toThrow(SynthUsageError);
   });

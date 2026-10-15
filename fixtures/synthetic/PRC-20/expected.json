@@ -1,0 +1,17 @@
+{
+  "case": "PRC-20",
+  "module": "PRC",
+  "title": "100,000 lines",
+  "assertion": "Under two minutes on one vCPU",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "The 100,000 lines are generated in memory by the performance test; nothing is committed.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

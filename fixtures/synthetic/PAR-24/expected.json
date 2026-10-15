@@ -1,0 +1,86 @@
+{
+  "case": "PAR-24",
+  "module": "PAR",
+  "title": "A 277 uploaded as an 835",
+  "assertion": "`EDI_NOT_835`; held",
+  "synthetic": true,
+  "completesIn": 2,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "claim-status-277.835",
+      "sha256": "fbe02e3b96319fab8895eee2de64d2f2b1e05f849d78106d5854a2bc49b20297",
+      "bytes": 447,
+      "kind": "x12",
+      "description": "A 277 interchange uploaded with an .835 name.",
+      "x12": {
+        "oracle": {"valid":false,"rejections":["not_835"],"summary":null},
+        "parse": {
+          "outcome": "held",
+          "documentErrors": [
+            {
+              "code": "EDI_NOT_835",
+              "segmentIndex": 3,
+              "segmentId": "ST",
+              "elementPosition": 1,
+              "expected": "835",
+              "found": "277"
+            }
+          ],
+          "transactions": [],
+          "receipt": {
+            "transactions": 0,
+            "claims": 0,
+            "lines": 0,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":0,"claims":0,"lines":0}
+          }
+        }
+      }
+    },
+    {
+      "path": "claim-837.835",
+      "sha256": "bb8947ddf56b539bb09de40904e0321a3b1a34a216b2de5ece853a77ac6e26b5",
+      "bytes": 415,
+      "kind": "x12",
+      "description": "A 837 interchange uploaded with an .835 name.",
+      "x12": {
+        "oracle": {"valid":false,"rejections":["not_835"],"summary":null},
+        "parse": {
+          "outcome": "held",
+          "documentErrors": [
+            {
+              "code": "EDI_NOT_835",
+              "segmentIndex": 3,
+              "segmentId": "ST",
+              "elementPosition": 1,
+              "expected": "835",
+              "found": "837"
+            }
+          ],
+          "transactions": [],
+          "receipt": {
+            "transactions": 0,
+            "claims": 0,
+            "lines": 0,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":0,"claims":0,"lines":0}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": ["PAR-24 names the 277; PRD section 10 also lists an 837 uploaded by mistake, so both are here."]
+}

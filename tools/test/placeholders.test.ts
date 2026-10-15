@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { isX12Interchange, listFiles, repositoryRoot } from '../content-files';
 import { RELEASE_COMMANDS, isReleaseCommand } from '../release/commands';
 import { GOLDEN_REPORT_PATH, goldenInvocation } from '../test-golden';
+import { collectChecks } from '../test-oracle/compare';
 import { findOracleFixtures } from '../test-oracle/fixtures';
 
 let root = '';
@@ -37,7 +38,7 @@ describe('listFiles', () => {
   });
 });
 
-describe('test:oracle placeholder', () => {
+describe('test:oracle fixtures', () => {
   it('recognizes X12 interchanges, with or without a byte-order mark', () => {
     write('fixtures/synthetic/PAR-01/file.835', 'ISA*00*          *00*          *ZZ*SYNTHSENDER    *');
     write('fixtures/synthetic/PAR-05/file.835', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('ISA*00*')]));
@@ -50,8 +51,11 @@ describe('test:oracle placeholder', () => {
     ]);
   });
 
-  it('finds no fixtures in this repository yet', () => {
-    expect(findOracleFixtures(repositoryRoot)).toEqual([]);
+  it('finds this repository\'s fixtures, each declared by an expected.json the oracle reads', () => {
+    const fixtures = findOracleFixtures(repositoryRoot);
+    const { declared } = collectChecks(path.join(repositoryRoot, 'fixtures', 'synthetic'));
+    expect(fixtures.length).toBeGreaterThanOrEqual(50);
+    expect(fixtures.map((file) => path.relative(path.join('fixtures', 'synthetic'), file).split(path.sep).join('/')).filter((file) => !declared.has(file))).toEqual([]);
   });
 });
 

@@ -1,0 +1,17 @@
+{
+  "case": "SEC-13",
+  "module": "SEC",
+  "title": "Restore from snapshot",
+  "assertion": "Row counts and catalog test pass on the restored instance",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/worker/src/platform/restore-drill.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The restore drill restores a database and counts its rows.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,17 @@
+{
+  "case": "MOD-06",
+  "module": "MOD",
+  "title": "Kill switch on",
+  "assertion": "Product works on hand-entered records",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "The kill switch is a feature flag; the product runs on hand-entered records; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

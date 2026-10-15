@@ -1,0 +1,17 @@
+{
+  "case": "CON-04",
+  "module": "CON",
+  "title": "Rate record without a page reference",
+  "assertion": "Cannot be approved",
+  "synthetic": true,
+  "completesIn": 4,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "A rate record without a page reference is entered by hand against any version; no document of its own is involved.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

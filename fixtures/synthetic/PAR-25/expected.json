@@ -1,0 +1,43 @@
+{
+  "case": "PAR-25",
+  "module": "PAR",
+  "title": "Truncated file",
+  "assertion": "`EDI_SYNTAX` with position; held",
+  "synthetic": true,
+  "completesIn": 2,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "truncated.835",
+      "sha256": "b1820aab3a4853d8db784e3f4baa2bdc1c99ca139ba6ec698b7af4cdcb7dfbfd",
+      "bytes": 956,
+      "kind": "x12",
+      "description": "A remittance cut off inside the last claim's CLP03: no terminator, no SE, GE or IEA.",
+      "x12": {
+        "oracle": {"valid":false,"rejections":["missing_segment"],"summary":null},
+        "parse": {
+          "outcome": "held",
+          "documentErrors": [{"code":"EDI_SYNTAX","segmentIndex":29,"segmentId":"CLP","elementPosition":3}],
+          "transactions": [],
+          "receipt": {
+            "transactions": 0,
+            "claims": 0,
+            "lines": 0,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":0,"claims":0,"lines":0}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

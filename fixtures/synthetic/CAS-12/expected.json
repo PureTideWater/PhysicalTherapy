@@ -1,0 +1,17 @@
+{
+  "case": "CAS-12",
+  "module": "CAS",
+  "title": "Export",
+  "assertion": "PDF and CSV hashes stored; shown in submission log",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "Exports any approved packet; the PDF and CSV are outputs, not fixtures.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

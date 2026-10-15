@@ -1,0 +1,39 @@
+{
+  "case": "MOD-01",
+  "module": "MOD",
+  "title": "Contract proposal quotes verify",
+  "assertion": "All quotes are substrings of the page",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "agreement.txt",
+      "sha256": "09b2257ba9eaf2fb1dce4eb91a4e8092c31a9dcf4a88ac259938461aca5b7e66",
+      "bytes": 878,
+      "kind": "text",
+      "description": "A fee-schedule agreement for the model to read (text; pages separated by form feeds)."
+    },
+    {
+      "path": "agreement.pdf",
+      "sha256": "72a6a6776de61351b0828a347008ba6f5f48e0ecff437e3bafc1d2c89722f251",
+      "bytes": 2432,
+      "kind": "pdf",
+      "description": "A fee-schedule agreement for the model to read (PDF, the same pages)."
+    },
+    {
+      "path": "proposal.json",
+      "sha256": "7e44367b24cd57dd1f5fc74c7529aa9cfe838a3cb0c01656119a98f425a9b00f",
+      "bytes": 457,
+      "kind": "json",
+      "description": "A recorded SYNTHETIC proposal whose every quote appears on its page."
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": {"verifier":"every quote is a substring of its page"},
+  "notes": []
+}

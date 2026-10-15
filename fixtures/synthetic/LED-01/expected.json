@@ -1,0 +1,17 @@
+{
+  "case": "LED-01",
+  "module": "LED",
+  "title": "Packet submitted",
+  "assertion": "No entry",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "A packet marked submitted: an action that must create no entry; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

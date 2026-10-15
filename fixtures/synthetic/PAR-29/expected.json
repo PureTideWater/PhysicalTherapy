@@ -1,0 +1,60 @@
+{
+  "case": "PAR-29",
+  "module": "PAR",
+  "title": "10,000-claim file",
+  "assertion": "Parses within target; memory bounded",
+  "synthetic": true,
+  "completesIn": 2,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": "The 10000-claim file is generated when a test needs it, by writeLargeFixture() from @tp/synth, into fixtures/synthetic/PAR-29/generated/remit-10000-claims.835 (ignored by git); its size, hash and counts are recorded here.",
+  "files": [],
+  "generated": [
+    {
+      "path": "PAR-29/generated/remit-10000-claims.835",
+      "sha256": "6fd925202aa65dbc223ee1aaf7bb2d9851c00b5af8aae804a197b6f71f9e8893",
+      "bytes": 3624961,
+      "description": "10000 claims in 20 transaction sets of one interchange, a line feed after every segment.",
+      "oracle": {
+        "valid": true,
+        "rejections": [],
+        "summary": null,
+        "summarySha256": "88e36ecc91be731e11432f99f8a51eab421b03efc1ad93b69ca5ff89df6a17ac"
+      }
+    }
+  ],
+  "uploads": [],
+  "scenario": {
+    "claims": 10000,
+    "lines": 19980,
+    "transactions": 20,
+    "paidCents": "167692903",
+    "perTransaction": [
+      {"st02":"0001","claims":500,"lines":999,"bpr02Cents":"8420433"},
+      {"st02":"0002","claims":500,"lines":999,"bpr02Cents":"8395288"},
+      {"st02":"0003","claims":500,"lines":999,"bpr02Cents":"8354548"},
+      {"st02":"0004","claims":500,"lines":999,"bpr02Cents":"8478265"},
+      {"st02":"0005","claims":500,"lines":999,"bpr02Cents":"8259987"},
+      {"st02":"0006","claims":500,"lines":999,"bpr02Cents":"8356495"},
+      {"st02":"0007","claims":500,"lines":999,"bpr02Cents":"8351632"},
+      {"st02":"0008","claims":500,"lines":999,"bpr02Cents":"8362257"},
+      {"st02":"0009","claims":500,"lines":999,"bpr02Cents":"8446055"},
+      {"st02":"0010","claims":500,"lines":999,"bpr02Cents":"8348546"},
+      {"st02":"0011","claims":500,"lines":999,"bpr02Cents":"8407845"},
+      {"st02":"0012","claims":500,"lines":999,"bpr02Cents":"8443171"},
+      {"st02":"0013","claims":500,"lines":999,"bpr02Cents":"8417040"},
+      {"st02":"0014","claims":500,"lines":999,"bpr02Cents":"8337456"},
+      {"st02":"0015","claims":500,"lines":999,"bpr02Cents":"8453920"},
+      {"st02":"0016","claims":500,"lines":999,"bpr02Cents":"8488728"},
+      {"st02":"0017","claims":500,"lines":999,"bpr02Cents":"8457291"},
+      {"st02":"0018","claims":500,"lines":999,"bpr02Cents":"8323623"},
+      {"st02":"0019","claims":500,"lines":999,"bpr02Cents":"8293535"},
+      {"st02":"0020","claims":500,"lines":999,"bpr02Cents":"8296788"}
+    ]
+  },
+  "outcome": {
+    "parse": "all 10000 claims load, balanced",
+    "target": "10,000 claims a minute on one worker vCPU (PRD section 10); memory bounded per transaction set"
+  },
+  "notes": []
+}

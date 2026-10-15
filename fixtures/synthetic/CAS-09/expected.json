@@ -1,0 +1,17 @@
+{
+  "case": "CAS-09",
+  "module": "CAS",
+  "title": "Drafter attempts approval",
+  "assertion": "Refused",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "The drafter of any packet attempts its approval: an action, no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

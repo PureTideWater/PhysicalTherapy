@@ -1,0 +1,188 @@
+{
+  "case": "V11",
+  "module": "PAR",
+  "title": "No claims: a recoupment netted to zero by a forward balance",
+  "assertion": "Parses; pyx12 reads the same segments, amounts and balances",
+  "synthetic": true,
+  "completesIn": 2,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "remit.835",
+      "sha256": "2be08950191d419acb0c9a2a5d92bc1432b55a716b6582aaea634036e31d820a",
+      "bytes": 611,
+      "kind": "x12",
+      "description": "No LX loop at all: PLB WO 40.00 and FB -40.00, BPR02 0.00.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260517",
+                "isa12": "00501",
+                "isa13": "100110001",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "100110001",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-05-17",
+                    "gs06": "100110001",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "100110001",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "14",
+                        "se02": "0001",
+                        "segmentCount": 14,
+                        "bpr": {
+                          "handling": "H",
+                          "amountCents": "0",
+                          "creditDebit": "C",
+                          "method": "NON",
+                          "format": null,
+                          "date": "2026-05-17"
+                        },
+                        "trn": {"trace":"SYNEFTV11001","originator":"1SYN00000D","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": null,
+                        "payer": {
+                          "name": "SYNTHETIC PAYER D",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERD"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9952262480",
+                          "refs": [["TJ","992503595"]]
+                        },
+                        "claims": [],
+                        "plb": [
+                          {
+                            "provider": "9900000001",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "WO",
+                            "reference": "SYNCCNPRIOR1101",
+                            "amountCents": "4000"
+                          },
+                          {
+                            "provider": "9900000001",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "FB",
+                            "reference": "SYNFWDBAL1101",
+                            "amountCents": "-4000"
+                          }
+                        ],
+                        "balance": {
+                          "claimsPaidCents": "0",
+                          "plbTotalCents": "0",
+                          "paymentCents": "0",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "100110001",
+              "gs06": "100110001",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9952262480",
+                "isa13": "100110001",
+                "trn02": "SYNEFTV11001",
+                "bpr02Cents": "0"
+              },
+              "bprMethod": "NON",
+              "bprHandling": "H",
+              "bpr16Date": "2026-05-17",
+              "payerName": "SYNTHETIC PAYER D",
+              "payerIds": [["2U","SYNPAYERD"],["TRN03","1SYN00000D"]],
+              "balance": {
+                "claimsPaidCents": "0",
+                "plbTotalCents": "0",
+                "paymentCents": "0",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":0,"lines":0,"reversals":0,"plbItems":2},
+              "claims": [],
+              "plb": [
+                {
+                  "segmentIndex": 15,
+                  "providerId": "9900000001",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "WO",
+                  "reference": "SYNCCNPRIOR1101",
+                  "amountCents": "4000",
+                  "category": "recoupment",
+                  "counted": true
+                },
+                {
+                  "segmentIndex": 15,
+                  "providerId": "9900000001",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "FB",
+                  "reference": "SYNFWDBAL1101",
+                  "amountCents": "-4000",
+                  "category": "forward_balance",
+                  "counted": false
+                }
+              ],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 0,
+            "lines": 0,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":0,"lines":0}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

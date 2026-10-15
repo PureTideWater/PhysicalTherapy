@@ -1,0 +1,17 @@
+{
+  "case": "LED-10",
+  "module": "LED",
+  "title": "Direct UPDATE or DELETE by the app role",
+  "assertion": "Fails",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [],
+  "codeListRelease": null,
+  "noFileReason": "A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

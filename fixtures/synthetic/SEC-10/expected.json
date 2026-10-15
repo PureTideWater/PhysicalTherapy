@@ -1,0 +1,17 @@
+{
+  "case": "SEC-10",
+  "module": "SEC",
+  "title": "Audit row update or delete",
+  "assertion": "Refused",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/audit.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Audit triggers are a database property.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

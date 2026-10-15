@@ -1,0 +1,462 @@
+{
+  "case": "PRC-13",
+  "module": "PRC",
+  "title": "Rounding at a half cent under each rule",
+  "assertion": "Expected per rule; unrounded kept",
+  "synthetic": true,
+  "completesIn": 5,
+  "assertedBy": [],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "remit.835",
+      "sha256": "28c8487f031804ea6db1eef8f67dc33122b6245c8c75172f130c4099a7ff5868",
+      "bytes": 1435,
+      "kind": "x12",
+      "description": "The same 97110 line in three plans whose rate records round differently.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260324",
+                "isa12": "00501",
+                "isa13": "040130001",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "040130001",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-03-24",
+                    "gs06": "40130001",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "40130001",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "39",
+                        "se02": "0001",
+                        "segmentCount": 39,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "12867",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-03-24"
+                        },
+                        "trn": {"trace":"SYNEFTPRC13001","originator":"1SYN00000P","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-03-23",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER P",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERP"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9974095249",
+                          "refs": [["TJ","990383220"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNPRC13001",
+                            "clp02": "1",
+                            "chargeCents": "8400",
+                            "paidCents": "4570",
+                            "patientResponsibilityCents": "1142",
+                            "clp06": "12",
+                            "clp07": "SYNCCNPRC130001",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-ROUND-1"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "8400",
+                                "paidCents": "4570",
+                                "revenueCode": null,
+                                "units": "1",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-02-16",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"2688","PR-2":"1142"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNPRC13002",
+                            "clp02": "1",
+                            "chargeCents": "8200",
+                            "paidCents": "4527",
+                            "patientResponsibilityCents": "1131",
+                            "clp06": "12",
+                            "clp07": "SYNCCNPRC130002",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-ROUND-2"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "8200",
+                                "paidCents": "4527",
+                                "revenueCode": null,
+                                "units": "1",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-02-16",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"2542","PR-2":"1131"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          },
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNPRC13003",
+                            "clp02": "1",
+                            "chargeCents": "7600",
+                            "paidCents": "3770",
+                            "patientResponsibilityCents": "942",
+                            "clp06": "12",
+                            "clp07": "SYNCCNPRC130003",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-ROUND-3"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "7600",
+                                "paidCents": "3770",
+                                "revenueCode": null,
+                                "units": "1",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-02-16",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"2888","PR-2":"942"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [],
+                        "balance": {
+                          "claimsPaidCents": "12867",
+                          "plbTotalCents": "0",
+                          "paymentCents": "12867",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "040130001",
+              "gs06": "40130001",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9974095249",
+                "isa13": "040130001",
+                "trn02": "SYNEFTPRC13001",
+                "bpr02Cents": "12867"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-03-24",
+              "payerName": "SYNTHETIC PAYER P",
+              "payerIds": [["2U","SYNPAYERP"],["TRN03","1SYN00000P"]],
+              "balance": {
+                "claimsPaidCents": "12867",
+                "plbTotalCents": "0",
+                "paymentCents": "12867",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":3,"lines":3,"reversals":0,"plbItems":0},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNPRC13001",
+                  "payerClaimControlNumber": "SYNCCNPRC130001",
+                  "status": "1",
+                  "chargeCents": "8400",
+                  "paidCents": "4570",
+                  "patientResponsibilityCents": "1142",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-ROUND-1",
+                  "serviceFrom": "2026-02-16",
+                  "serviceTo": "2026-02-16",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 21,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "8400",
+                      "paidCents": "4570",
+                      "units": "1",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-02-16",
+                      "serviceTo": "2026-02-16",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"5712","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "1142",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "2688",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 23
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "1142",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 24
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 1,
+                  "segmentIndex": 25,
+                  "patientControlNumber": "SYNPCNPRC13002",
+                  "payerClaimControlNumber": "SYNCCNPRC130002",
+                  "status": "1",
+                  "chargeCents": "8200",
+                  "paidCents": "4527",
+                  "patientResponsibilityCents": "1131",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-ROUND-2",
+                  "serviceFrom": "2026-02-16",
+                  "serviceTo": "2026-02-16",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 29,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "8200",
+                      "paidCents": "4527",
+                      "units": "1",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-02-16",
+                      "serviceTo": "2026-02-16",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"5658","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "1131",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "2542",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 31
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "1131",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 32
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "index": 2,
+                  "segmentIndex": 33,
+                  "patientControlNumber": "SYNPCNPRC13003",
+                  "payerClaimControlNumber": "SYNCCNPRC130003",
+                  "status": "1",
+                  "chargeCents": "7600",
+                  "paidCents": "3770",
+                  "patientResponsibilityCents": "942",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-ROUND-3",
+                  "serviceFrom": "2026-02-16",
+                  "serviceTo": "2026-02-16",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 37,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "7600",
+                      "paidCents": "3770",
+                      "units": "1",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-02-16",
+                      "serviceTo": "2026-02-16",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"4712","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "942",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "2888",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 39
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "942",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 40
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 3,
+            "lines": 3,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":3,"lines":3}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": {
+    "release": 900001,
+    "plans": [
+      {"plan":"SYNPLAN-ROUND-1","rounding":"HALF_UP_CENT"},
+      {"plan":"SYNPLAN-ROUND-2","rounding":"HALF_EVEN_CENT"},
+      {"plan":"SYNPLAN-ROUND-3","rounding":"TRUNCATE"}
+    ],
+    "note": "the rate that lands each line on a half cent is the golden worksheet's"
+  },
+  "outcome": {"expected":"per rule, with the unrounded value kept; golden lines state the cents"},
+  "notes": []
+}

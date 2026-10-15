@@ -1,0 +1,19 @@
+SYNTHETIC CONTRACT EXHIBIT - INVENTED TERMS - NOT A REAL AGREEMENT
+SYNTHETIC Payer C agreement, version 1
+Page 1 of 2
+
+Article 1. Parties and term
+
+This SYNTHETIC agreement is between SYNTHETIC PAYER C ("Payer") and SYNTHETIC THERAPY GROUP 01 ("Provider").
+Version 1.
+This version is effective 2026-01-01 through 2026-12-31.
+Provider shall submit claims within 180 days of the date of service.
+Provider may dispute a payment within 120 days of the remittance date.
+
+SYNTHETIC CONTRACT EXHIBIT - INVENTED TERMS - NOT A REAL AGREEMENT
+SYNTHETIC Payer C agreement, version 1
+Page 2 of 2
+
+Article 2. Compensation
+
+Payer shall reimburse Covered Services at 110% of the Medicare Physician Fee Schedule in effect on the date of service.

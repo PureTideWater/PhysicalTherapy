@@ -24,7 +24,14 @@ pnpm dev             # Postgres and MinIO in Docker, then the web app and the wo
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
+pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
+pnpm test:oracle     # pyx12 reads every synthetic 835 (TP_ORACLE_PYTHON: an interpreter with pyx12)
 ```
+
+Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
+thirty-one oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
+the twin generator, which runs on real files only in production. `pnpm test:oracle` needs pyx12 for the interpreter it
+runs: CI installs it with pip; locally use a virtualenv outside the source tree (`tools/test-oracle/README.md`).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
