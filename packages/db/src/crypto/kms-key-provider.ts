@@ -1,4 +1,4 @@
-import { DecryptCommand, GenerateDataKeyCommand, type KMSClient } from '@aws-sdk/client-kms';
+import { DecryptCommand, GenerateDataKeyCommand, KMSClient } from '@aws-sdk/client-kms';
 
 import { DATA_KEY_BYTES, type DataKey, DataKeyError, type KeyProvider, requirePractice, unwrapRef, wrappedRef } from './key-provider';
 
@@ -37,4 +37,9 @@ export class KmsKeyProvider implements KeyProvider {
     }
     return Buffer.from(output.Plaintext);
   }
+}
+
+/** The provider with the SDK's own client (region and credentials from the environment), for the web and worker processes. */
+export function createKmsKeyProvider(keyId: string): KmsKeyProvider {
+  return new KmsKeyProvider({ client: new KMSClient({}), keyId });
 }

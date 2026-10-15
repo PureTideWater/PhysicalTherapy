@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 /**
  * Tenancy and access tables (Data dictionary, Tenancy and access), mirroring
@@ -54,6 +54,9 @@ export const user = pgTable(
     status: text('status', { enum: USER_STATUSES }).notNull().default('invited'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Consecutive failed sign-in attempts; ten lock the account (migration 20261015170000). */
+    failedSignIns: integer('failed_sign_ins').notNull().default(0),
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
   },
   (table) => [uniqueIndex('user_email_unique').on(sql`lower(${table.email})`)],
 );

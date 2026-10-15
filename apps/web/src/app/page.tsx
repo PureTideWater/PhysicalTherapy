@@ -1,15 +1,31 @@
 import { EmptyState } from '@tp/ui';
+import { redirect } from 'next/navigation';
+
+import { AppShell } from '../components/shell';
+import { loadPage } from '../lib/http/next';
+import { homePage } from '../lib/routes';
 
 /**
- * The application shell (milestone 0): the App Router, Tailwind and the shared shadcn/ui components
- * from @tp/ui. Each screen of PRD section 7 is added in the milestone that builds its behaviour, and
- * security headers and error pages in milestone 11 (docs/adr/0011-web-shell-before-its-screens.md).
+ * Where a signed-in user starts: their first practice (PRD 7: one practice at a time, with the
+ * switcher for groups and firms), or the internal console for a platform administrator. Without a
+ * session, sign-in.
  */
-export default function Home() {
+export default async function Home() {
+  const page = await loadPage(homePage, {});
+  const first = page.shell?.practices[0];
+  if (first !== undefined) {
+    redirect(`/p/${first.practiceId}`);
+  }
+  if (page.shell?.platformRoles.includes('platform_admin') === true) {
+    redirect('/console/organizations');
+  }
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-10">
+    <AppShell shell={page.shell} section="home">
       <h1 className="text-2xl font-semibold tracking-tight">Therapy contract-payment platform</h1>
-      <EmptyState title="Nothing to show yet" nextStep="The workspace screens arrive with the milestones that build them." />
-    </main>
+      <EmptyState
+        title="No practice to open"
+        nextStep="You have no current access to a practice. A practice administrator approves access for your organization; support access comes from a ticket. Ask your administrator."
+      />
+    </AppShell>
   );
 }

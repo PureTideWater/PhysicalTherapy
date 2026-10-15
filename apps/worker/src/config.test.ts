@@ -37,6 +37,8 @@ describe('readPlatformConfig', () => {
       operatorDatabaseUrl: OPERATOR_DATABASE_URL,
       auditStore: { kind: 'local', dir: '/var/tp/audit' },
       restoreDrill: { kind: 'local', workDir: '/var/tp/drill', binDir: '/usr/lib/postgresql/18/bin' },
+      mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox') },
+      appOrigin: 'http://localhost:3000',
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a' })?.restoreDrill).toEqual({ kind: 'local', workDir: expect.stringContaining('tp-restore-drill') });
   });
@@ -69,11 +71,24 @@ describe('readPlatformConfig', () => {
         databasePassword: 'synthetic-secret',
         databaseName: 'tp',
       },
+      mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox') },
+      appOrigin: 'http://localhost:3000',
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_BUCKET: 'b', AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'b', lockMode: 'GOVERNANCE' });
   });
 
+  it('sends notices through SES from MAIL_FROM or to MAIL_OUTBOX_DIR, linking to APP_ORIGIN', () => {
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', MAIL_FROM: 'notices@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/x' })).toMatchObject({
+      mail: { kind: 'ses', from: 'notices@synthetic.test' },
+      appOrigin: 'https://app.synthetic.test',
+    });
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', MAIL_OUTBOX_DIR: '/var/tp/mail' })?.mail).toEqual({ kind: 'local', dir: '/var/tp/mail' });
+  });
+
   it.each([
+    [{ AUDIT_COPY_DIR: 'a', MAIL_FROM: 'n@synthetic.test', MAIL_OUTBOX_DIR: 'm' }, /at most one of MAIL_FROM and MAIL_OUTBOX_DIR/],
+    [{ AUDIT_COPY_DIR: 'a', MAIL_FROM: 'not an address' }, /MAIL_FROM is an email address/],
+    [{ AUDIT_COPY_DIR: 'a', APP_ORIGIN: 'not a url' }, /APP_ORIGIN is the application's URL/],
     [{ AUDIT_COPY_DIR: 'a', AUDIT_COPY_BUCKET: 'b' }, /exactly one of AUDIT_COPY_BUCKET and AUDIT_COPY_DIR/],
     [{}, /exactly one of AUDIT_COPY_BUCKET and AUDIT_COPY_DIR/],
     [{ AUDIT_COPY_BUCKET: 'b', AUDIT_COPY_LOCK_MODE: 'compliance' }, /AUDIT_COPY_LOCK_MODE is COMPLIANCE or GOVERNANCE/],

@@ -6,6 +6,7 @@
   "description": "Drizzle schema, forward-only SQL migrations, database roles, RLS policies and catalog tests.",
   "exports": {
     ".": "./src/index.ts",
+    "./runtime": "./src/runtime.ts",
     "./testing": "./src/testing.ts"
   },
   "scripts": {

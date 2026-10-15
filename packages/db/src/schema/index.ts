@@ -10,6 +10,21 @@ export {
   auditEvent,
   restoreDrill,
 } from './operations';
+export {
+  MFA_METHODS,
+  type MfaMethod,
+  type MutationRequestRow,
+  PERMISSION_EFFECTS,
+  type RolePermissionRow,
+  SESSION_END_REASONS,
+  type SessionEndReason,
+  type UserDeviceRow,
+  type UserSessionRow,
+  mutationRequest,
+  rolePermission,
+  userDevice,
+  userSession,
+} from './identity';
 export { type RuleRecordRow, type RuleReleaseRow, ruleRecord, ruleRelease } from './rules';
 export {
   AGREEMENT_KINDS,

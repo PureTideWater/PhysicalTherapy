@@ -48,12 +48,17 @@ export type RestoreDrillConfig =
     }
   | { readonly kind: 'local'; readonly workDir: string; readonly binDir?: string };
 
-/** The platform jobs' settings (docs/adr/0014), or null when this worker runs none. */
+export type MailConfig = { readonly kind: 'ses'; readonly from: string } | { readonly kind: 'local'; readonly dir: string };
+
+/** The platform jobs' settings (docs/adr/0014 and 0017), or null when this worker runs none. */
 export interface PlatformConfig {
   /** A login that can SET ROLE to the owner; locally also CREATE DATABASE (the restore drill). */
   readonly operatorDatabaseUrl: string;
   readonly auditStore: AuditStoreConfig;
   readonly restoreDrill: RestoreDrillConfig;
+  /** The support-grant notices: where they are sent from, and the application they link to. */
+  readonly mail: MailConfig;
+  readonly appOrigin: string;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -77,7 +82,9 @@ function required(env: Env, name: string, why: string): string {
  * AUDIT_COPY_KMS_KEY_ID) or, in development, a directory
  * (AUDIT_COPY_DIR). The restore drill restores RDS snapshots (RESTORE_DRILL_MODE=rds with the
  * RESTORE_DRILL_* settings) or, by default, pg_dump and pg_restore on the operator's server
- * (RESTORE_DRILL_WORK_DIR, optionally PG_BIN_DIR).
+ * (RESTORE_DRILL_WORK_DIR, optionally PG_BIN_DIR). The support-grant notices go through SES from
+ * MAIL_FROM or, by default, to a local outbox directory (MAIL_OUTBOX_DIR), and link to APP_ORIGIN
+ * (default http://localhost:3000).
  */
 export function readPlatformConfig(env: Env = process.env): PlatformConfig | null {
   const operatorDatabaseUrl = value(env, 'OPERATOR_DATABASE_URL');
@@ -120,5 +127,21 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
   } else {
     throw new WorkerConfigError('RESTORE_DRILL_MODE is rds or local');
   }
-  return { operatorDatabaseUrl, auditStore, restoreDrill };
+  const from = value(env, 'MAIL_FROM');
+  const outbox = value(env, 'MAIL_OUTBOX_DIR');
+  if (from !== undefined && outbox !== undefined) {
+    throw new WorkerConfigError('at most one of MAIL_FROM and MAIL_OUTBOX_DIR is set');
+  }
+  if (from !== undefined && !/^[^@\s]+@[^@\s]+$/.test(from)) {
+    throw new WorkerConfigError('MAIL_FROM is an email address');
+  }
+  const mail: MailConfig = from !== undefined ? { kind: 'ses', from } : { kind: 'local', dir: outbox ?? path.join(tmpdir(), 'tp-mail-outbox') };
+  const origin = value(env, 'APP_ORIGIN') ?? 'http://localhost:3000';
+  let appOrigin: string;
+  try {
+    appOrigin = new URL(origin).origin;
+  } catch {
+    throw new WorkerConfigError('APP_ORIGIN is the application\'s URL');
+  }
+  return { operatorDatabaseUrl, auditStore, restoreDrill, mail, appOrigin };
 }

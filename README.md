@@ -34,6 +34,17 @@ nightly audit copy and the monthly restore drill) only when `OPERATOR_DATABASE_U
 must be at least as new as the server (`PG_BIN_DIR` points at them); the database test of that path skips, saying
 why, where they are older.
 
+Sign-in and authorization (ADRs 0016 and 0017): `pnpm db:migrate --dev-login && pnpm db:seed` creates the synthetic
+organizations, practices, agreements and one person for every persona (`apps/web/scripts/synthetic-personas.ts`; each
+signs in as `<key>@synthetic.test` with the password `Synthetic-<key>-Pass-2026!` and the TOTP code `personaTotpCode(key)`
+gives). The web server then signs in through the local identity provider (`TP_AUTH_PROVIDER=dev`, the default outside
+production; `TP_DEV_AUTH_DIR` is its directory, and invitations' temporary passwords land in its `outbox`), or Cognito
+(`TP_AUTH_PROVIDER=cognito`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`). Production also needs `AUTH_COOKIE_SECRET`,
+`TP_KEY_PROVIDER` and `APP_ORIGIN`. Internal roles register a hardware key on their first sign-in and use it from then on.
+Every page, server action and route handler runs a route registered in `apps/web/src/lib/routes`; `pnpm test:db` generates
+the session, MFA, role and cross-tenant tests for each. The worker's `support_grant_notices` platform job emails practice
+administrators about support access (`MAIL_FROM` for SES, otherwise the `MAIL_OUTBOX_DIR` directory).
+
 Global rule content (PRD section 9; [content/sources/README.md](content/sources/README.md) lists the files
 release 1 needs):
 

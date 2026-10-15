@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { CiphertextError, ENCRYPTED_COLUMNS, PracticeCipher } from './cipher';
 import { DataKeyError, LocalKeyProvider, unwrapRef } from './key-provider';
-import { KmsKeyProvider } from './kms-key-provider';
+import { KmsKeyProvider, createKmsKeyProvider } from './kms-key-provider';
 import { DataKeyDestroyedError, openPracticeCipher, provisionPracticeKey } from './practice-keys';
 
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -42,6 +42,10 @@ describe('LocalKeyProvider', () => {
 });
 
 describe('KmsKeyProvider (mocked client)', () => {
+  it('can be built with the SDK’s own client', () => {
+    expect(createKmsKeyProvider('alias/tp-test')).toBeInstanceOf(KmsKeyProvider);
+  });
+
   const plaintext = randomBytes(32);
   const blob = randomBytes(184);
 

@@ -1,15 +1,24 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 
 import { chromium, defineConfig, devices } from '@playwright/test';
 
-const port = 3100;
-const baseURL = `http://127.0.0.1:${port}`;
+import { E2E_DEV_AUTH_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
+import { developmentMasterKey } from './src/lib/server/config';
 
 /**
  * Playwright's own Chromium is used where it is installed (PLAYWRIGHT_BROWSERS_PATH). Where it is
  * not, such as a hosted CI runner, the system Google Chrome is used instead of downloading one.
  */
 const bundledChromium = existsSync(chromium.executablePath());
+
+/** The application role's dev login on the e2e database (packages/db/src/roles.ts, tp_app_dev). */
+function appLoginUrl(): string {
+  const url = new URL(e2eDatabaseUrl());
+  url.username = 'tp_app_dev';
+  url.password = 'tp_app_dev';
+  return url.toString();
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -18,7 +27,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL,
+    baseURL: E2E_ORIGIN,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -27,13 +36,25 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], ...(bundledChromium ? {} : { channel: 'chrome' }) },
     },
   ],
-  // The smoke test runs against a production build, the server the container image runs.
+  // The production build, as the container runs it, against a database prepared and seeded for this
+  // run (e2e/prepare.ts) and the local identity provider. Synthetic data only.
   webServer: {
-    command: `pnpm run build && PORT=${String(port)} bash scripts/start-standalone.sh`,
-    url: `${baseURL}/`,
+    command: `../../node_modules/.bin/tsx e2e/prepare.ts && pnpm run build && PORT=${String(E2E_PORT)} bash scripts/start-standalone.sh`,
+    url: `http://127.0.0.1:${String(E2E_PORT)}/sign-in`,
     timeout: 300_000,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     stdout: 'ignore',
     stderr: 'pipe',
+    env: {
+      E2E_ADMIN_URL: e2eAdminUrl(),
+      DATABASE_URL: appLoginUrl(),
+      APP_ORIGIN: E2E_ORIGIN,
+      TP_AUTH_PROVIDER: 'dev',
+      TP_DEV_AUTH_DIR: E2E_DEV_AUTH_DIR,
+      TP_KEY_PROVIDER: 'local',
+      // The development master key the seed wrapped the practices' data keys with (src/lib/server/config.ts).
+      TP_LOCAL_MASTER_KEY: developmentMasterKey().toString('base64'),
+      AUTH_COOKIE_SECRET: randomBytes(32).toString('base64'),
+    },
   },
 });

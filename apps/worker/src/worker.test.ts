@@ -159,7 +159,7 @@ describe('startWorker', () => {
       context.logger.info('copying');
       return Promise.resolve();
     });
-    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve() };
+    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve(), support_grant_notices: () => Promise.resolve() };
     const worker = await startWorker({ boss: client, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
       expect(calls).toEqual(expect.arrayContaining([`createQueue:${type}`, `schedule:${type}`, `work:${type}`]));

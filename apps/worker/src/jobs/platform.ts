@@ -2,17 +2,21 @@ import type { Logger } from '@tp/observability';
 import { z } from 'zod';
 
 import { copyAuditDay, previousDay } from '../platform/audit-copy';
+import type { MailSender } from '../mail/mail';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
+import { sendSupportGrantNotices } from '../platform/support-notices';
 import type { ObjectStore } from '../storage/object-store';
 
 /**
  * Platform jobs: work on the platform itself rather than on one practice's data, so they carry no
- * practice and open no practice scope (docs/adr/0014). They read no PHI: the audit copy reads
- * audit_event (codes and opaque IDs only) and the restore drill counts rows on a scratch copy. They
+ * practice in their payload (docs/adr/0014). They read no PHI: the audit copy reads audit_event
+ * (codes and opaque IDs only), the restore drill counts rows on a scratch copy, and the support-grant
+ * notices read support grants, counts of reads and the administrators' email addresses (docs/adr/0017),
+ * opening each practice's scope only to record its notice. They
  * run on the operator connection (one that can SET ROLE to the owner), which the worker holds only
  * where OPERATOR_DATABASE_URL is configured. A practice job (jobs/registry.ts) never runs this way.
  */
-export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill'] as const;
+export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices'] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
 const day = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'a calendar day, YYYY-MM-DD');
@@ -21,6 +25,7 @@ export const PLATFORM_JOB_PAYLOADS = {
   /** The day to copy; the scheduled run omits it and copies yesterday (UTC). */
   audit_copy: z.strictObject({ day: day.optional() }),
   restore_drill: z.strictObject({}),
+  support_grant_notices: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -31,11 +36,14 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
 
 /**
  * When each runs, in UTC: the audit copy nightly at 01:20, after the day it copies has closed; the
- * restore drill on the first Monday of each month at 06:00 (PRD 19 Runbooks, Restore drill).
+ * restore drill on the first Monday of each month at 06:00 (PRD 19 Runbooks, Restore drill); the
+ * support-grant notices every minute, so a notice goes out within a minute of a grant opening or
+ * ending.
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
   restore_drill: 'FREQ=MONTHLY;BYDAY=1MO;BYHOUR=6;BYMINUTE=0;BYSECOND=0',
+  support_grant_notices: '* * * * *',
 };
 
 export interface PlatformContext {
@@ -54,6 +62,10 @@ export interface PlatformDependencies {
   readonly operator: OperatorPool;
   readonly store: ObjectStore;
   readonly restorer: SnapshotRestorer;
+  /** Notices to practice administrators (links only). */
+  readonly mail: MailSender;
+  /** The application's origin, for the notices' links. */
+  readonly appOrigin: string;
   readonly now?: () => Date;
 }
 
@@ -93,6 +105,16 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
         throw error;
       }
       context.logger.info('restore drill passed', { job_id: context.jobId, restore_drill_id: result.id });
+    },
+    support_grant_notices: async (_payload, context) => {
+      const result = await withOperator(dependencies.operator, (client) => sendSupportGrantNotices({ client, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId }));
+      if (result.undeliverable > 0) {
+        // A practice with no administrator to tell: the operator follows up (PRD 19, Break-glass access).
+        context.logger.error('support grant notice had no practice administrator to send to', { job_id: context.jobId, error_code: 'NOTICE_UNDELIVERABLE' });
+      }
+      if (result.opened + result.closed > 0) {
+        context.logger.info('support grant notices sent', { job_id: context.jobId });
+      }
     },
   };
 }

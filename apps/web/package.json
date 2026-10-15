@@ -12,6 +12,9 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1152.0",
+    "@simplewebauthn/browser": "^14.0.0",
+    "@simplewebauthn/server": "^14.0.3",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/ledger": "workspace:*",
@@ -22,9 +25,12 @@
     "@tp/rules": "workspace:*",
     "@tp/triage": "workspace:*",
     "@tp/ui": "workspace:*",
+    "aws-jwt-verify": "^5.2.1",
     "next": "^16.4.1",
+    "otpauth": "^9.5.2",
     "react": "catalog:",
-    "react-dom": "catalog:"
+    "react-dom": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@playwright/test": "1.56.1",

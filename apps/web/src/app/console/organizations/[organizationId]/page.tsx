@@ -1,0 +1,223 @@
+import { randomUUID } from 'node:crypto';
+
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import type { Metadata } from 'next';
+
+import { ActionForm } from '../../../../components/action-form';
+import { Field, SelectField } from '../../../../components/field';
+import { roleName, roleNames, utcDate } from '../../../../components/format';
+import { AppShell, Forbidden } from '../../../../components/shell';
+import { loadPage } from '../../../../lib/http/next';
+import { organizationPage } from '../../../../lib/routes/console';
+import { createPracticeAction, endMembershipAction, inviteMemberAction, recordAgreementAction, unlockUserAction } from '../../actions';
+
+export const metadata: Metadata = { title: 'Organization' };
+
+const AGREEMENT_KINDS = [
+  { value: 'baa', label: 'Business associate agreement' },
+  { value: 'engagement', label: 'Engagement letter' },
+  { value: 'terms', label: 'Terms' },
+  { value: 'data_rights', label: 'Data-rights addendum' },
+  { value: 'dpa', label: 'Data processing agreement' },
+] as const;
+
+/**
+ * One organization in the internal console (PRD 7): its practices, members, agreements and grants,
+ * and the v0 actions (create a practice, invite a member, end a membership, unlock an account,
+ * record an agreement). Directory records only; no practice's data is read here.
+ */
+export default async function OrganizationPage(props: { readonly params: Promise<{ organizationId: string }> }) {
+  const page = await loadPage(organizationPage, props);
+  if (page.kind === 'forbidden') {
+    return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
+  }
+  const { organization, roles, practices, members, agreements, grants } = page.data;
+  const practiceName = new Map(practices.map((practice) => [practice.id, practice.name]));
+  return (
+    <AppShell shell={page.shell} section="organizations">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">{organization.name}</h1>
+        <p className="text-sm text-muted-foreground">
+          {organization.kind} · {organization.status} · created {utcDate(organization.createdAt)}
+        </p>
+      </div>
+
+      {organization.kind === 'group' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Practices</CardTitle>
+            <CardDescription>One practice per billing entity. Each is created with its own data key.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {practices.length === 0 ? (
+              <EmptyState title="No practices yet" nextStep="Create the group's first practice, then invite its practice administrator." />
+            ) : (
+              <ul className="flex flex-col gap-1 text-sm" aria-label="Practices">
+                {practices.map((practice) => (
+                  <li key={practice.id}>
+                    {practice.name} <span className="text-muted-foreground">· {practice.status}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <ActionForm action={createPracticeAction} submit="Create practice" className="grid max-w-xl gap-3">
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <input type="hidden" name="organizationId" value={organization.id} />
+              <Field label="Practice name" name="name" required maxLength={200} />
+              <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
+              <Field label="Tax ID, last four (optional)" name="taxIdLast4" inputMode="numeric" pattern="[0-9]{4}" />
+              <Field label="ZIP (optional)" name="zip" inputMode="numeric" pattern="[0-9]{5}" />
+            </ActionForm>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Members</CardTitle>
+          <CardDescription>One role per membership. Ending a membership revokes the user's sessions at once.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {members.length === 0 ? (
+            <EmptyState title="No members yet" nextStep={organization.kind === 'group' ? 'Invite the practice administrator.' : 'Invite the first member.'} />
+          ) : (
+            <table className="w-full text-left text-sm" aria-label="Members">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 font-medium">Email</th>
+                  <th className="py-1 font-medium">Role</th>
+                  <th className="py-1 font-medium">Account</th>
+                  <th className="py-1 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((member) => (
+                  <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
+                    <td className="py-1">{member.email}</td>
+                    <td className="py-1">{roleName(member.role)}</td>
+                    <td className="flex flex-wrap gap-1 py-1">
+                      <Badge variant="outline">{member.userStatus}</Badge>
+                      {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
+                      {member.locked ? <Badge variant="destructive">locked</Badge> : null}
+                      {member.current ? null : <Badge variant="secondary">ended {utcDate(member.endsAt ?? new Date())}</Badge>}
+                    </td>
+                    <td className="flex flex-wrap gap-2 py-1">
+                      {member.locked ? (
+                        <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
+                          <input type="hidden" name="requestKey" value={randomUUID()} />
+                          <input type="hidden" name="organizationId" value={organization.id} />
+                          <input type="hidden" name="userId" value={member.userId} />
+                        </ActionForm>
+                      ) : null}
+                      {member.current ? (
+                        <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
+                          <input type="hidden" name="requestKey" value={randomUUID()} />
+                          <input type="hidden" name="membershipId" value={member.membershipId} />
+                        </ActionForm>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <ActionForm action={inviteMemberAction} submit="Send invitation" className="grid max-w-xl gap-3">
+            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <input type="hidden" name="organizationId" value={organization.id} />
+            <Field label="Email" name="email" type="email" required />
+            <SelectField label="Role" name="role" options={roles.map((role) => ({ value: role, label: roleName(role) }))} />
+          </ActionForm>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Agreements</CardTitle>
+          <CardDescription>Signed documents, stored by reference and SHA-256 with version, signer and date. A grant cannot exist without one.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {agreements.length === 0 ? (
+            <EmptyState title="No agreements yet" nextStep="Record the signed BAA and engagement letter from the e-signature vendor." />
+          ) : (
+            <table className="w-full text-left text-sm" aria-label="Agreements">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 font-medium">Kind</th>
+                  <th className="py-1 font-medium">Practice</th>
+                  <th className="py-1 font-medium">Version</th>
+                  <th className="py-1 font-medium">Signer</th>
+                  <th className="py-1 font-medium">Signed</th>
+                  <th className="py-1 font-medium">Reference</th>
+                  <th className="py-1 font-medium">SHA-256</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agreements.map((agreement) => (
+                  <tr key={agreement.id} className="border-t">
+                    <td className="py-1">{AGREEMENT_KINDS.find((kind) => kind.value === agreement.kind)?.label ?? agreement.kind}</td>
+                    <td className="py-1">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
+                    <td className="py-1">{agreement.version}</td>
+                    <td className="py-1">{agreement.signer}</td>
+                    <td className="py-1">{utcDate(agreement.signedAt)}</td>
+                    <td className="py-1 font-mono text-xs">{agreement.documentRef}</td>
+                    <td className="py-1 font-mono text-xs" title={agreement.sha256}>
+                      {agreement.sha256.slice(0, 12)}…
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <ActionForm action={recordAgreementAction} submit="Record agreement" className="grid max-w-xl gap-3">
+            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <input type="hidden" name="organizationId" value={organization.id} />
+            <SelectField label="Kind" name="kind" options={AGREEMENT_KINDS} />
+            <SelectField label="Practice" name="practiceId" options={[{ value: '', label: 'Whole organization' }, ...practices.map((practice) => ({ value: practice.id, label: practice.name }))]} />
+            <Field label="Version" name="version" required maxLength={40} />
+            <Field label="Signer" name="signer" required maxLength={200} />
+            <Field label="Signed on" name="signedOn" type="date" required />
+            <Field label="Document reference" name="documentRef" required hint="The e-signature vendor's envelope or document reference." />
+            <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document's SHA-256, 64 hexadecimal characters." />
+          </ActionForm>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Grants</CardTitle>
+          <CardDescription>Access to a practice for another organization: scope, dates, the agreement it rests on. Practice administrators approve and revoke them.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {grants.length === 0 ? (
+            <EmptyState title="No grants" nextStep="A practice administrator approves a firm's grant from the practice's settings." />
+          ) : (
+            <table className="w-full text-left text-sm" aria-label="Grants">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 font-medium">Grantee</th>
+                  <th className="py-1 font-medium">Practice</th>
+                  <th className="py-1 font-medium">Roles admitted</th>
+                  <th className="py-1 font-medium">From</th>
+                  <th className="py-1 font-medium">Until</th>
+                  <th className="py-1 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grants.map((grant) => (
+                  <tr key={grant.id} className="border-t">
+                    <td className="py-1">{grant.granteeName}</td>
+                    <td className="py-1">{grant.practiceName}</td>
+                    <td className="py-1">{roleNames(grant.roles)}</td>
+                    <td className="py-1">{utcDate(grant.startsAt)}</td>
+                    <td className="py-1">{utcDate(grant.endsAt)}</td>
+                    <td className="py-1">{grant.revokedAt === null ? (new Date(grant.endsAt) > new Date() ? 'in force' : 'expired') : `revoked ${utcDate(grant.revokedAt)}`}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+    </AppShell>
+  );
+}

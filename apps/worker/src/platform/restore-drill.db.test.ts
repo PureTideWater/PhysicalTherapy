@@ -9,6 +9,7 @@ import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createPlatformHandlers } from '../jobs/platform';
+import { MemoryMailSender } from '../mail/mail';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RestoreDrillFailedError, countRows, runRestoreDrill } from './restore-drill';
 
@@ -76,6 +77,8 @@ describe('the restore_drill job handler', () => {
         operator,
         store: { putImmutable: () => Promise.reject(new Error('unused')), head: () => Promise.resolve(null) },
         restorer: { restoreLatest: () => Promise.resolve({ snapshotRef: 'synthetic', targetRef: `database:${copy.name}`, databaseUrl: copy.url, destroy: () => copy.drop() }) },
+        mail: new MemoryMailSender(),
+        appOrigin: 'http://localhost:3000',
       });
       const jobId = randomUUID();
       await handlers.restore_drill({}, { jobId, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) });

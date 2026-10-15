@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 
+import { appDevLoginUrl } from '@tp/db';
+
 import { repositoryRoot } from './content-files';
 
 /** The local Postgres from docker-compose.yml. Synthetic data only, ever. */
@@ -7,7 +9,9 @@ const LOCAL_DATABASE_URL = 'postgres://postgres:test@localhost:5432/postgres';
 
 /**
  * `pnpm dev`: starts Postgres 18 and MinIO with Docker Compose, then the web app and the worker.
- * Without Docker it says so and starts the apps anyway against whatever DATABASE_URL points at.
+ * Without Docker it says so and starts the apps anyway against whatever DATABASE_URL points at. The
+ * web app connects as the application role's dev login (`pnpm db:migrate --dev-login` creates it), so
+ * row-level security binds it in development as in production; the worker keeps DATABASE_URL.
  */
 const compose = spawnSync('docker', ['compose', 'up', '--detach', '--wait'], { cwd: repositoryRoot, stdio: 'inherit' });
 if (compose.status !== 0) {
@@ -16,14 +20,20 @@ if (compose.status !== 0) {
   );
 }
 
-const apps = spawn('pnpm', ['--parallel', '--filter', '@tp/web', '--filter', '@tp/worker', 'run', 'dev'], {
-  cwd: repositoryRoot,
-  stdio: 'inherit',
-  env: { DATABASE_URL: LOCAL_DATABASE_URL, ...process.env },
-});
+const databaseUrl = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
+const apps = [
+  spawn('pnpm', ['--filter', '@tp/web', 'run', 'dev'], { cwd: repositoryRoot, stdio: 'inherit', env: { ...process.env, DATABASE_URL: appDevLoginUrl(databaseUrl) } }),
+  spawn('pnpm', ['--filter', '@tp/worker', 'run', 'dev'], { cwd: repositoryRoot, stdio: 'inherit', env: { ...process.env, DATABASE_URL: databaseUrl } }),
+];
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => apps.kill(signal));
+  process.on(signal, () => {
+    for (const app of apps) {
+      app.kill(signal);
+    }
+  });
 }
-apps.on('exit', (code) => {
-  process.exitCode = code ?? 0;
-});
+for (const app of apps) {
+  app.on('exit', (code) => {
+    process.exitCode = Math.max(Number(process.exitCode ?? 0), code ?? 0);
+  });
+}

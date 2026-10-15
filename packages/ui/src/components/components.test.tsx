@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Separator, cn } from '../index';
+import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Separator, cn } from '../index';
 
 describe('cn', () => {
   it('lets a later Tailwind utility override an earlier one', () => {
@@ -60,5 +60,23 @@ describe('Card, Badge and Separator', () => {
 
   it('hides a decorative separator from assistive technology', () => {
     expect(renderToStaticMarkup(<Separator />)).toContain('role="none"');
+  });
+});
+
+describe('Input and Label', () => {
+  it('renders a text input by default, and a label for it', () => {
+    const html = renderToStaticMarkup(
+      <>
+        <Label htmlFor="email">Email</Label>
+        <Input id="email" name="email" aria-invalid />
+      </>,
+    );
+    expect(html).toContain('<label data-slot="label"');
+    expect(html).toContain('for="email"');
+    expect(html).toMatch(/<input type="text" data-slot="input" class="[^"]*border-input[^"]*" id="email" aria-invalid="true" name="email"\/>/);
+  });
+
+  it('keeps the type it is given', () => {
+    expect(renderToStaticMarkup(<Input type="password" />)).toContain('type="password"');
   });
 });

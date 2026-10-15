@@ -4,6 +4,7 @@ import { type DatabasePool, openPool } from '@tp/db';
 
 import type { PlatformConfig } from '../config';
 import { type PlatformHandlers, createPlatformHandlers } from '../jobs/platform';
+import { LocalMailSender, type MailSender, sesMailSender } from '../mail/mail';
 import { LocalObjectStore } from '../storage/local-object-store';
 import type { ObjectStore } from '../storage/object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
@@ -41,8 +42,15 @@ export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
   });
 }
 
+export function mailSender(config: PlatformConfig): MailSender {
+  return config.mail.kind === 'ses' ? sesMailSender(config.mail.from) : new LocalMailSender(config.mail.dir);
+}
+
 /** The platform handlers and the operator pool they use (closed by the caller on shutdown). */
 export function platformRuntime(config: PlatformConfig): { handlers: PlatformHandlers; operator: DatabasePool } {
   const operator = openPool(config.operatorDatabaseUrl, 2);
-  return { operator, handlers: createPlatformHandlers({ operator, store: auditStore(config), restorer: snapshotRestorer(config) }) };
+  return {
+    operator,
+    handlers: createPlatformHandlers({ operator, store: auditStore(config), restorer: snapshotRestorer(config), mail: mailSender(config), appOrigin: config.appOrigin }),
+  };
 }

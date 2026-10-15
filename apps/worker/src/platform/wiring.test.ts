@@ -5,12 +5,15 @@ import { LocalObjectStore } from '../storage/local-object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
-import { auditStore, platformRuntime, snapshotRestorer } from './wiring';
+import { LocalMailSender, SesMailSender } from '../mail/mail';
+import { auditStore, mailSender, platformRuntime, snapshotRestorer } from './wiring';
 
 const local: PlatformConfig = {
   operatorDatabaseUrl: 'postgres://owner:synthetic@localhost:5432/tp',
   auditStore: { kind: 'local', dir: '/tmp/tp-audit' },
   restoreDrill: { kind: 'local', workDir: '/tmp/tp-drill', binDir: '/usr/lib/postgresql/18/bin' },
+  mail: { kind: 'local', dir: '/tmp/tp-mail' },
+  appOrigin: 'http://localhost:3000',
 };
 
 const deployed: PlatformConfig = {
@@ -27,6 +30,8 @@ const deployed: PlatformConfig = {
     databasePassword: 'p@ss/word',
     databaseName: 'tp',
   },
+  mail: { kind: 'ses', from: 'notices@synthetic.test' },
+  appOrigin: 'https://app.synthetic.test',
 };
 
 describe('platform wiring', () => {
@@ -53,9 +58,14 @@ describe('platform wiring', () => {
     ]);
   });
 
-  it('builds both handlers over one small operator pool', async () => {
+  it('sends notices through SES when deployed and to a local outbox in development', () => {
+    expect(mailSender(deployed)).toBeInstanceOf(SesMailSender);
+    expect(mailSender(local)).toBeInstanceOf(LocalMailSender);
+  });
+
+  it('builds every handler over one small operator pool', async () => {
     const runtime = platformRuntime(local);
-    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'restore_drill']);
+    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices']);
     expect(runtime.operator.options.max).toBe(2);
     await runtime.operator.end();
   });
