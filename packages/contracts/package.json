@@ -1,0 +1,23 @@
+{
+  "name": "@tp/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Contract versions, rate records and the specialist workflow (milestone 4).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/db": "workspace:*",
+    "@tp/money": "workspace:*",
+    "@tp/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

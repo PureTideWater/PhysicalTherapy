@@ -1,0 +1,22 @@
+{
+  "name": "@tp/money",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Integer-cent amounts (bigint) and decimal rates; the only arithmetic path for money.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "decimal.js": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

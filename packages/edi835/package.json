@@ -1,0 +1,22 @@
+{
+  "name": "@tp/edi835",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The X12 835 parser and loader events (milestone 2).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*",
+    "@tp/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

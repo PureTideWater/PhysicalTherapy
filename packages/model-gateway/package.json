@@ -1,0 +1,22 @@
+{
+  "name": "@tp/model-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The only code that calls a model: purpose-typed calls, prompts, verifiers (milestone 10).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/db": "workspace:*",
+    "@tp/observability": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

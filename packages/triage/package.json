@@ -1,0 +1,23 @@
+{
+  "name": "@tp/triage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Anomaly cohorts, status transitions and case grouping (milestone 6).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*",
+    "@tp/pricing": "workspace:*",
+    "@tp/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

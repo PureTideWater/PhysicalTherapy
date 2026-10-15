@@ -1,0 +1,23 @@
+{
+  "name": "@tp/pricing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The expected-payment engine: pure functions over line facts, rate records and a release (milestone 5).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*",
+    "@tp/rules": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

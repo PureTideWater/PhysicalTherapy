@@ -1,0 +1,10 @@
+# Secret scanning (CI's gitleaks step; PRD section 16). The default rules apply in full; the only
+# exception is the lockfile, whose integrity hashes look like high-entropy secrets.
+title = "therapy-platform gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Dependency integrity hashes"
+paths = ['''(^|/)pnpm-lock\.yaml$''']

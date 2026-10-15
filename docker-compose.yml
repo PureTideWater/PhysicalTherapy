@@ -1,0 +1,40 @@
+# Local services for `pnpm dev` (PRD section 15, the dev environment): PostgreSQL 18, the version CI
+# uses, and MinIO standing in for S3. Synthetic data only. Nothing in the test suites needs Docker;
+# database tests run against whatever DATABASE_URL points at.
+name: therapy-platform
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: tpdev
+      MINIO_ROOT_PASSWORD: tpdev-local-only
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  postgres-data:
+  minio-data:

@@ -1,0 +1,21 @@
+{
+  "name": "@tp/rules",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Rule releases, code lists and the content checker.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

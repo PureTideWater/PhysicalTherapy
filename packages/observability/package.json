@@ -1,0 +1,19 @@
+{
+  "name": "@tp/observability",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Structured logging that can only emit fields on the log-field allowlist.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fields": "./src/fields.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

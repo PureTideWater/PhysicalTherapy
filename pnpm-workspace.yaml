@@ -1,0 +1,25 @@
+packages:
+  - apps/*
+  - packages/*
+  - infra
+  - tools
+
+# One version of each shared tool across the workspace; packages refer to these as "catalog:".
+catalog:
+  "@types/node": ^24.19.2
+  "@types/pg": ^8.23.1
+  "@types/react": ^19.3.0
+  "@types/react-dom": ^19.3.0
+  decimal.js: ^10.6.0
+  fast-check: ^4.10.2
+  pg: ^8.23.1
+  react: ^19.3.1
+  react-dom: ^19.3.1
+  tsx: ^4.23.15
+  typescript: ^6.0.3
+  vitest: ^5.0.4
+  zod: ^4.6.7
+
+# pnpm 10 runs no dependency lifecycle scripts unless they are listed here.
+onlyBuiltDependencies:
+  - esbuild

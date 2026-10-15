@@ -1,0 +1,35 @@
+{
+  "name": "@tp/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Node worker: pg-boss jobs (parse, price, triage, reconcile, digest, export).",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsx build.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/contracts": "workspace:*",
+    "@tp/db": "workspace:*",
+    "@tp/edi835": "workspace:*",
+    "@tp/ledger": "workspace:*",
+    "@tp/model-gateway": "workspace:*",
+    "@tp/money": "workspace:*",
+    "@tp/observability": "workspace:*",
+    "@tp/packets": "workspace:*",
+    "@tp/pricing": "workspace:*",
+    "@tp/rules": "workspace:*",
+    "@tp/triage": "workspace:*",
+    "pg-boss": "^12.38.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "esbuild": "^0.28.2",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

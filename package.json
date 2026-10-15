@@ -1,0 +1,47 @@
+{
+  "name": "therapy-platform",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx tools/dev.ts",
+    "build": "pnpm -r --filter @tp/web --filter @tp/worker build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "lint:logs": "tsx tools/lint-logs/index.ts",
+    "test": "vitest run --project unit --coverage",
+    "test:db": "vitest run --project db",
+    "test:golden": "tsx tools/test-golden.ts",
+    "test:oracle": "tsx tools/test-oracle/index.ts",
+    "test:e2e": "pnpm --filter @tp/web test:e2e",
+    "verify-content": "tsx tools/verify-content/index.ts",
+    "synth": "tsx packages/synth/src/cli.ts",
+    "db:migrate": "tsx packages/db/src/cli/migrate.ts",
+    "db:seed": "tsx packages/db/src/cli/seed.ts",
+    "release:prepare": "tsx tools/release/index.ts prepare",
+    "release:dry-run": "tsx tools/release/index.ts dry-run",
+    "release:load": "tsx tools/release/index.ts load",
+    "cdk:diff": "pnpm --filter @tp/infra cdk:diff",
+    "stryker": "stryker"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@next/eslint-plugin-next": "^16.4.1",
+    "@stryker-mutator/api": "^10.0.0",
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "^5.0.4",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "fast-check": "^4.10.2",
+    "globals": "^17.13.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^5.0.4"
+  }
+}

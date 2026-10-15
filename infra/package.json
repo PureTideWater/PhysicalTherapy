@@ -1,0 +1,24 @@
+{
+  "name": "@tp/infra",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AWS CDK (TypeScript): one stack per environment. Network, data, compute and security arrive with milestone 1.",
+  "scripts": {
+    "synth": "cdk synth --quiet",
+    "cdk:diff": "tsx scripts/cdk-diff.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.273.0",
+    "constructs": "^10.8.1"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-sts": "^3.1152.0",
+    "@types/node": "catalog:",
+    "aws-cdk": "^2.1145.0",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
