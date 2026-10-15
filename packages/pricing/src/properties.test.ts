@@ -5,14 +5,18 @@ import { describe, expect, it } from 'vitest';
 
 import { addDays } from './dates';
 import { price } from './engine';
-import { PHASE_ONE_REASONS } from './reasons';
+import { UNPRICED_REASONS } from './reasons';
 import { recompute } from './recompute';
 import {
+  type AdjustmentOption,
   SYNTHETIC_RELEASES,
   contractAgreement,
+  fixedTerms,
+  lesserOfTerms,
   lineFacts,
   maAgreement,
   mappingRecord,
+  perVisitTerms,
   percentTerms,
   practiceSettings,
   pricingInput,
@@ -25,16 +29,20 @@ import type { AgreementInput, LineFacts, LinePricing, PricedLine, PricingInput }
 
 /**
  * The properties PRD 11 names ("Properties the tests assert"), over generated claims priced under the
- * SYNTHETIC release 900002 (2025 and 2026 fee schedules): expected allowed is non-negative and finite;
- * doubling units doubles the base (PRC-17, percent of Medicare; fixed schedules arrive in milestone 7);
- * turning a flag off never lowers the amount (PRC-18); the one rounding moves the amount by less than
- * a cent; the trace recomputes; the engine is deterministic; every phase-one reason comes from at
- * least one fixture; and the dispute deadline is never before the date it is measured from, while
- * passing it never changes the amount.
+ * SYNTHETIC release 900002 (2025 and 2026 fee schedules), with Medicare Advantage terms or contract terms of
+ * every method that prices, every flag on or off, and a contract adjustment or none: expected allowed is
+ * non-negative and finite; doubling units doubles the base for fixed and percent methods (PRC-17); turning a
+ * flag off never lowers the amount (PRC-18); a per-visit claim's total does not depend on the order or the
+ * numbers of its lines; a lesser-of base never exceeds the schedule or the charge; the one rounding moves the
+ * amount by less than a cent; the trace recomputes; the engine is deterministic; every reason comes from at
+ * least one fixture; and the dispute deadline is never before the date it is measured from, while passing it
+ * never changes the amount.
  */
 const release = syntheticRelease(900002);
 const CODES = ['97110', '97112', '97116', '97140', '97530', '97161', '97026', '97035', 'G0283', '97750'] as const;
-const FLAGS = ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration'] as const;
+const FLAGS = ['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration', 'apply_ncci'] as const;
+const METHODS = ['PERCENT_OF_MEDICARE', 'FIXED_SCHEDULE', 'LESSER_OF_FIXED', 'LESSER_OF_PERCENT', 'PER_VISIT'] as const;
+type GeneratedMethod = (typeof METHODS)[number];
 
 /** Decimal text with up to four places from an integer count of ten-thousandths (1 is 0.0001). */
 const percentText = (tenThousandths: number) => `${String(Math.floor(tenThousandths / 10000))}.${String(tenThousandths % 10000).padStart(4, '0')}`;
@@ -42,13 +50,24 @@ const percentText = (tenThousandths: number) => `${String(Math.floor(tenThousand
 const generatedLine = fc.record({
   procedureCode: fc.constantFrom(...CODES),
   units: fc.integer({ min: 1, max: 4 }),
-  modifiers: fc.subarray(['GP', 'CQ', 'CO', '59'] as const),
+  modifiers: fc.subarray(['GP', 'CQ', 'CO', '59', 'XS'] as const),
   placeOfService: fc.constantFrom('11', '22'),
   share: fc.bigInt({ min: 0n, max: 15000n }),
+  charge: fc.bigInt({ min: 0n, max: 30000n }),
   day: fc.integer({ min: 0, max: 2 }),
 });
 
+const generatedAdjustment: fc.Arbitrary<AdjustmentOption | undefined> = fc.option(
+  fc.oneof(
+    fc.record({ kind: fc.constant('PERCENT' as const), percent: fc.integer({ min: 1, max: 2_000_000 }).map(percentText) }),
+    fc.record({ kind: fc.constant('CAP' as const), capCents: fc.bigInt({ min: 0n, max: 20000n }) }),
+  ),
+  { nil: undefined },
+);
+
 const generatedTerms = fc.record({
+  method: fc.constantFrom(...METHODS),
+  amount: fc.bigInt({ min: 0n, max: 20000n }),
   percentage: fc.integer({ min: 1, max: 3_000_000 }).map(percentText),
   yearBasis: fc.constantFrom('CURRENT' as const, 'LOCKED:2025' as const),
   conversionFactor: fc.constantFrom('non_qualifying_apm' as const, 'qualifying_apm' as const),
@@ -60,41 +79,69 @@ const generatedTerms = fc.record({
     timed_units_rule: fc.constantFrom('MEDICARE_POOLED' as const, 'PER_CODE' as const, 'UNKNOWN' as const),
   }),
   rounding: fc.constantFrom(null, ...ROUNDING_RULES),
+  adjustment: generatedAdjustment,
 });
 
 type GeneratedLine = typeof generatedLine extends fc.Arbitrary<infer T> ? T : never;
 type GeneratedTerms = typeof generatedTerms extends fc.Arbitrary<infer T> ? T : never;
 
-const generatedClaim = fc.record({
-  lines: fc.array(generatedLine, { minLength: 1, maxLength: 6 }),
-  /** Null prices the claim as Medicare Advantage non-contracted. */
-  terms: fc.option(generatedTerms, { nil: null }),
-  defaultRounding: fc.constantFrom(null, ...ROUNDING_RULES),
-});
+const claimOf = (terms: fc.Arbitrary<GeneratedTerms | null>) =>
+  fc.record({
+    lines: fc.array(generatedLine, { minLength: 1, maxLength: 6 }),
+    /** Null prices the claim as Medicare Advantage non-contracted. */
+    terms,
+    defaultRounding: fc.constantFrom(null, ...ROUNDING_RULES),
+  });
+const generatedClaim = claimOf(fc.option(generatedTerms, { nil: null }));
 
 type GeneratedClaim = typeof generatedClaim extends fc.Arbitrary<infer T> ? T : never;
 
+/** Generated terms of one method. */
+const termsWith = (...methods: GeneratedMethod[]) => generatedTerms.chain((terms) => fc.constantFrom(...methods).map((method) => ({ ...terms, method })));
+
+/** The rate-record terms the generated terms describe; the reduction only where a fee schedule has a practice-expense part. */
 function termsOf(terms: GeneratedTerms): RateRecordTerms {
-  return percentTerms({ percentage: terms.percentage, yearBasis: terms.yearBasis, conversionFactor: terms.conversionFactor, flags: terms.flags, rounding: terms.rounding, codes: [...CODES] });
+  const percent = { percentage: terms.percentage, yearBasis: terms.yearBasis, conversionFactor: terms.conversionFactor };
+  const options = { flags: { ...terms.flags, apply_mppr: terms.flags.apply_mppr && terms.method === 'PERCENT_OF_MEDICARE' }, rounding: terms.rounding, codes: [...CODES], adjustment: terms.adjustment };
+  switch (terms.method) {
+    case 'PERCENT_OF_MEDICARE':
+      return percentTerms({ ...percent, ...options });
+    case 'FIXED_SCHEDULE':
+      return fixedTerms(terms.amount, options);
+    case 'LESSER_OF_FIXED':
+      return lesserOfTerms({ fixedCents: terms.amount }, options);
+    case 'LESSER_OF_PERCENT':
+      return lesserOfTerms(percent, options);
+    case 'PER_VISIT':
+      return perVisitTerms(terms.amount, options);
+  }
 }
 
-function factsOf(line: GeneratedLine, index: number, agreement: AgreementInput, units = line.units): LineFacts {
+function factsOf(line: GeneratedLine, index: number, agreement: AgreementInput, units = line.units, lineNo = index + 1): LineFacts {
   return lineFacts({
-    lineNo: index + 1,
+    lineNo,
     procedureCode: line.procedureCode,
     units: String(units),
     modifiers: [...line.modifiers],
     placeOfService: line.placeOfService,
     serviceDate: addDays('2026-03-10', line.day),
+    chargeCents: line.charge as Cents,
     patientShareAdjustments: line.share === 0n ? [] : [{ groupCode: 'PR', reasonCode: '2', amountCents: line.share as Cents }],
     agreement,
   });
 }
 
-function inputOf(claim: GeneratedClaim, options: { readonly terms?: RateRecordTerms; readonly unitsTimes?: number } = {}): PricingInput {
+interface InputOptions {
+  readonly terms?: RateRecordTerms;
+  readonly unitsTimes?: number;
+  /** The line numbers to give the lines, in their order (a permutation of 1..n). */
+  readonly lineNos?: readonly number[];
+}
+
+function inputOf(claim: GeneratedClaim, options: InputOptions = {}): PricingInput {
   const terms = options.terms ?? (claim.terms === null ? null : termsOf(claim.terms));
   const agreement = terms === null ? maAgreement() : contractAgreement({ terms });
-  const lines = claim.lines.map((line, index) => factsOf(line, index, agreement, line.units * (options.unitsTimes ?? 1)));
+  const lines = claim.lines.map((line, index) => factsOf(line, index, agreement, line.units * (options.unitsTimes ?? 1), options.lineNos?.[index] ?? index + 1));
   return pricingInput(release, lines, { settings: practiceSettings({ defaultRounding: claim.defaultRounding }) });
 }
 
@@ -120,41 +167,103 @@ describe('properties of the engine (PRD 11)', () => {
     expect(count).toBeGreaterThan(300);
   });
 
-  it('doubling the units doubles the base, line by line (PRC-17)', () => {
+  it('doubling the units doubles the base, line by line, for fixed and percent methods (PRC-17)', () => {
+    let doubled = 0;
     fc.assert(
-      fc.property(generatedClaim, (claim) => {
+      fc.property(claimOf(fc.option(termsWith('PERCENT_OF_MEDICARE', 'FIXED_SCHEDULE'), { nil: null })), (claim) => {
         const once = price(inputOf(claim));
         const twice = price(inputOf(claim, { unitsTimes: 2 }));
-        expect(twice.map((line) => line.outcome)).toEqual(once.map((line) => line.outcome));
         once.forEach((line, index) => {
-          const doubled = twice[index];
-          if (line.outcome === 'priced' && doubled?.outcome === 'priced') {
-            expect(doubled.baseCents.equals(line.baseCents.times(decimal(2n)))).toBe(true);
+          const other = twice[index];
+          if (line.outcome === 'priced' && other?.outcome === 'priced') {
+            doubled += 1;
+            expect(other.baseCents.equals(line.baseCents.times(decimal(2n)))).toBe(true);
+          } else if (line.outcome !== other?.outcome) {
+            // Doubling can only push a line over its medically unlikely edit.
+            expect(line.outcome === 'priced' && other?.outcome === 'unpriced' && other.reason).toBe('MUE_EXCEEDED');
           }
         });
       }),
       { numRuns: 200 },
     );
+    expect(doubled).toBeGreaterThan(100);
   });
 
-  it('turning an adjustment flag off never lowers the amount (PRC-18)', () => {
+  it('turning a flag off never lowers the amount, line by line for the Medicare adjustments and claim-wide for NCCI, nor unprices a line (PRC-18)', () => {
     fc.assert(
       fc.property(generatedClaim, generatedTerms, fc.constantFrom(...FLAGS), (claim, terms, flag) => {
         const on = termsOf({ ...terms, flags: { ...terms.flags, [flag]: true } });
         const off = termsOf({ ...terms, flags: { ...terms.flags, [flag]: false } });
         const withFlag = price(inputOf(claim, { terms: on }));
         const without = price(inputOf(claim, { terms: off }));
+        let totalOn = decimal(0n);
+        let totalOff = decimal(0n);
         withFlag.forEach((line, index) => {
           const other = without[index];
-          expect(other?.outcome).toBe(line.outcome);
-          if (line.outcome === 'priced' && other?.outcome === 'priced') {
+          if (line.outcome === 'priced') {
+            expect(other?.outcome, `${flag} line ${String(line.lineNo)}`).toBe('priced');
+            totalOn = totalOn.plus(line.expectedUnroundedCents);
+          } else if (other?.outcome !== 'unpriced' || other.reason !== line.reason) {
+            // Only the medically unlikely edit, which NCCI turns on, gives a line a reason it would not have with the flag off.
+            expect([flag, line.reason]).toEqual(['apply_ncci', 'MUE_EXCEEDED']);
+          }
+          if (other?.outcome === 'priced') {
+            totalOff = totalOff.plus(other.expectedUnroundedCents);
+          }
+          // Line by line for the Medicare adjustments. NCCI changes no amount but can stop a line, which then holds
+          // neither the day's whole unit nor the visit (QUESTIONS Q42, Q44): for it the claim's total is compared.
+          if (flag !== 'apply_ncci' && line.outcome === 'priced' && other?.outcome === 'priced') {
             expect(other.expectedUnroundedCents.greaterThanOrEqualTo(line.expectedUnroundedCents), `${flag} line ${String(line.lineNo)}`).toBe(true);
             expect(other.expectedAllowedCents >= line.expectedAllowedCents).toBe(true);
           }
         });
+        // Turning NCCI off can move a per-visit amount back to a line its MUE stopped, whose patient share or
+        // modifiers differ, so the claim's total can fall by a sequestration or assistant difference (QUESTIONS Q44).
+        if (!(on.method === 'PER_VISIT' && flag === 'apply_ncci')) {
+          expect(totalOff.greaterThanOrEqualTo(totalOn), flag).toBe(true);
+        }
       }),
-      { numRuns: 300 },
+      { numRuns: 400 },
     );
+  });
+
+  it('a per-visit claim’s total does not depend on the order of its lines or their numbers, one amount per date', () => {
+    const visitClaim = claimOf(termsWith('PER_VISIT').map((terms) => ({ ...terms, flags: { ...terms.flags, apply_assistant_reduction: false, apply_sequestration: false } })));
+    fc.assert(
+      fc.property(
+        visitClaim.chain((claim) => fc.tuple(fc.constant(claim), fc.shuffledSubarray(claim.lines.map((_, index) => index + 1), { minLength: claim.lines.length, maxLength: claim.lines.length }))),
+        ([claim, lineNos]) => {
+          const total = (results: readonly LinePricing[]) => priced(results).reduce((sum, line) => sum.plus(line.expectedUnroundedCents), decimal(0n)).toString();
+          const listed = price(inputOf(claim));
+          const reversed = price({ ...inputOf(claim), claim: { ...inputOf(claim).claim, lines: [...inputOf(claim).claim.lines].reverse() } });
+          expect(json(reversed)).toBe(json(listed));
+          expect(total(price(inputOf(claim, { lineNos })))).toBe(total(listed));
+          // At most one line of each date carries a visit.
+          const dates = priced(listed).filter((line) => !line.baseCents.isZero()).map((line) => line.trace.line.service_date);
+          expect(new Set(dates).size).toBe(dates.length);
+        },
+      ),
+      { numRuns: 200 },
+    );
+  });
+
+  it('a lesser-of base never exceeds the schedule for the units or the line charge, and is one of them', () => {
+    let lines = 0;
+    fc.assert(
+      fc.property(claimOf(termsWith('LESSER_OF_FIXED', 'LESSER_OF_PERCENT')), (claim) => {
+        for (const line of priced(price(inputOf(claim)))) {
+          lines += 1;
+          const units = line.trace.steps.units;
+          const schedule = decimal(units?.schedule_cents ?? 'x');
+          const charge = decimal(units?.charge_cents ?? 'x');
+          expect(line.baseCents.lessThanOrEqualTo(schedule) && line.baseCents.lessThanOrEqualTo(charge)).toBe(true);
+          expect(line.baseCents.equals(schedule) || line.baseCents.equals(charge)).toBe(true);
+          expect(charge.equals(decimal(line.trace.line.charge_cents))).toBe(true);
+        }
+      }),
+      { numRuns: 200 },
+    );
+    expect(lines).toBeGreaterThan(100);
   });
 
   it('every trace recomputes to its line’s result (PRC-16)', () => {
@@ -257,7 +366,7 @@ describe('properties of the dispute window (PRD 11 step 8)', () => {
   });
 });
 
-describe('the reasons phase one produces', () => {
+describe('the reasons the engine produces', () => {
   const base = readRuleRelease(SYNTHETIC_RELEASES[900001]);
   const noLocality = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'locality_map'));
   const contract = mappingRecord({ kind: 'contract', contractVersionId: 'cv-synth-1' });
@@ -270,17 +379,18 @@ describe('the reasons phase one produces', () => {
     ['NO_PFS_VALUE', pricingInput(release, [lineFacts({ procedureCode: '97750' })])],
     ['UNSUPPORTED_METHOD', pricingInput(release, [lineFacts({ agreement: contractAgreement({ terms: { ...percentTerms(), method: 'UNSUPPORTED', parameters: {} } }) })])],
     ['UNITS_RULE_UNKNOWN', pricingInput(release, [lineFacts({ agreement: contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: 'UNKNOWN' } }) }) })])],
+    ['MUE_EXCEEDED', pricingInput(release, [lineFacts({ units: '8' })])],
     ['SECONDARY_PAYER', pricingInput(release, [lineFacts()], { claim: { claimStatusCode: '2' } })],
     ['REVERSED_CLAIM', pricingInput(release, [lineFacts()], { claim: { claimStatusCode: '22' } })],
     ['ENGINE_ERROR', pricingInput(noLocality, [lineFacts()])],
   ];
 
-  it('gives each phase-one reason for at least one fixture, and no reason of milestone 7', () => {
+  it('gives every reason of the closed list for at least one fixture', () => {
     const produced = fixtures.map(([expected, input]) => {
       const [result] = price(input);
       expect(result?.outcome === 'unpriced' && result.reason, expected).toBe(expected);
       return expected;
     });
-    expect([...produced].sort()).toEqual([...PHASE_ONE_REASONS].sort());
+    expect([...produced].sort()).toEqual([...UNPRICED_REASONS].sort());
   });
 });

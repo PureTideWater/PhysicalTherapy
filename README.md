@@ -83,13 +83,16 @@ questions) are the customer's. The contract specialist abstracts, approves field
 (`/console/specialist-queue`), which counts each practice's work without reading a record. Questions live in
 `contract_question` (encrypted with the practice's key).
 
-Pricing (ADRs 0020 and 0029): `packages/pricing` is the expected-payment engine, phase one (Medicare Advantage
-non-contracted and percent-of-Medicare terms). `price({ claim, release, settings, asOf })` is pure: the claim's line facts,
+Pricing (ADRs 0020, 0029 and 0034): `packages/pricing` is the expected-payment engine (Medicare Advantage
+non-contracted lines and every contract method: fixed schedule, percent of Medicare, lesser of the schedule and the
+line charge, per visit; the NCCI medically unlikely edit stops a line `MUE_EXCEEDED`, a procedure-to-procedure edit
+raises an `NCCI_PTP` review flag that never changes the price, and a rate record may define its own percentage or cap,
+applied last). `price({ claim, release, settings, asOf })` is pure: the claim's line facts,
 each with the agreement `agreementResolver` gave it, a release indexed by `indexRelease`, the practice settings (billing
 ZIP, default rounding, the place-of-service split) and the triage date in; one priced or unpriced line out per input line,
-each with its JSON trace (`tp-pricing-trace/1`), which `recompute(trace)` reproduces without the engine or a database.
+each with its JSON trace (`tp-pricing-trace/2`), which `recompute(trace)` reproduces without the engine or a database.
 `pnpm test:golden` prices every golden claim with the engine and compares it with `fixtures/golden` beside the worksheet,
-the variance and the dispute window included (`--report` adds `fixtures/golden/.report/engine.{json,md}`);
+the review flags, the variance and the dispute window included (`--report` adds `fixtures/golden/.report/engine.{json,md}`);
 `@tp/pricing/testing` builds SYNTHETIC inputs for tests. Claim status 19 prices, 20 and 21 are `SECONDARY_PAYER`, 23
 and 25 stop for review (`ENGINE_ERROR` `claim_status_not_priced`, which pages no one); a rate record whose
 timed-units rule is `UNKNOWN` leaves its lines `UNITS_RULE_UNKNOWN` (ADR 0033).
@@ -148,7 +151,8 @@ RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A pe
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
-cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (119 lines in 64 claims) was
+cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (326 lines in 150 claims, 207 of
+them milestone 7's across five fixture payers, whose done check needs the specialist too) was
 computed by the independent worksheet, not by the specialist, and says `"specialist_verified": false`: the engine
 matching them to the cent shows that two readings of the plan agree, not that either is right. A specialist finishes it
 by answering every question in `fixtures/golden/QUESTIONS.md` (and ADR 0029's), checking each claim's worksheet, and

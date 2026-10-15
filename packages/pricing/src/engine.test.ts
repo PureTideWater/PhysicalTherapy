@@ -10,10 +10,13 @@ import {
   MA_TERMS,
   SYNTHETIC_RELEASES,
   contractAgreement,
+  fixedTerms,
   keyOf,
+  lesserOfTerms,
   lineFacts,
   maAgreement,
   mappingRecord,
+  perVisitTerms,
   percentTerms,
   practiceSettings,
   pricingInput,
@@ -156,23 +159,59 @@ describe('step 2, the base amount by method', () => {
     expect(result.trace.terms?.percent_of_medicare).toBeNull();
   });
 
-  it('refuses the methods of milestone 7 and a contract-named locality with ENGINE_ERROR, never a guess', () => {
+  it('stops the reduction asked of a term without a fee schedule for review, and refuses a contract-named locality, never a guess', () => {
     const methods = [
       { method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' } },
       { method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '3200' }, charge_basis: 'LINE_CHARGE' } },
+      { method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100', year_basis: 'CURRENT', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'non_qualifying_apm' }, charge_basis: 'LINE_CHARGE' } },
       { method: 'PER_VISIT', parameters: { amount_cents: '9000' } },
     ];
     for (const entered of methods) {
-      const terms = parseRateTerms({ scope: { codes: ['97110'] }, ...entered }, true);
-      expect(reasonOf(priceOne({ agreement: contractAgreement({ terms }) }))).toBe('ENGINE_ERROR method_not_in_phase_one');
+      const terms = parseRateTerms({ scope: { codes: ['97110'] }, ...entered, flags: { apply_mppr: true, timed_units_rule: 'PER_CODE' } }, true);
+      const result = unpricedLine(priceOne({ agreement: contractAgreement({ terms }) }));
+      expect(reasonOf(result), entered.method).toBe('ENGINE_ERROR mppr_needs_fee_schedule');
+      expect(result.trace.outcome).toMatchObject({ step: 'method' });
+      expect(pagesOperator('mppr_needs_fee_schedule')).toBe(false);
     }
-    const named = parseRateTerms(
-      { scope: { codes: ['97110'] }, method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '100', year_basis: 'CURRENT', locality_basis: { kind: 'NAMED', carrier: '99999', locality: '01' }, conversion_factor: 'non_qualifying_apm' } },
-      true,
-    );
+    const locality = { kind: 'NAMED', carrier: '99999', locality: '01' };
+    const named = parseRateTerms({ scope: { codes: ['97110'] }, method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '100', year_basis: 'CURRENT', locality_basis: locality, conversion_factor: 'non_qualifying_apm' } }, true);
     const result = unpricedLine(priceOne({ agreement: contractAgreement({ terms: named }) }));
     expect(reasonOf(result)).toBe('ENGINE_ERROR locality_basis_not_in_phase_one');
     expect(result.trace.outcome).toMatchObject({ step: 'method' });
+    const lesserNamed = parseRateTerms(
+      { scope: { codes: ['97110'] }, method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100', year_basis: 'CURRENT', locality_basis: locality, conversion_factor: 'non_qualifying_apm' }, charge_basis: 'LINE_CHARGE' } },
+      true,
+    );
+    expect(reasonOf(priceOne({ agreement: contractAgreement({ terms: lesserNamed }) }))).toBe('ENGINE_ERROR locality_basis_not_in_phase_one');
+  });
+
+  it('prices a fixed schedule at its amount per unit times the units (PRC-05)', () => {
+    const line = pricedLine(priceOne({ units: '2', agreement: contractAgreement({ terms: fixedTerms(3250n) }) }));
+    expect([line.method, line.baseCents.toString(), line.expectedAllowedCents]).toEqual(['FIXED_SCHEDULE', '6500', 6500n]);
+    expect(line.trace.steps.fee_schedule).toBeNull();
+    expect(line.trace.steps.units).toMatchObject({ unit_cents: '3250', schedule_cents: '6500', charge_cents: null, base_cents: '6500' });
+    expect(line.trace.terms).toMatchObject({ method: 'FIXED_SCHEDULE', fixed_amount_cents: '3250', percent_of_medicare: null, lesser_of: null, contract_adjustment: null });
+  });
+
+  it('prices the lesser of the schedule for the units billed and the line charge (PRC-06)', () => {
+    const fixed = contractAgreement({ terms: lesserOfTerms({ fixedCents: 3400n }) });
+    const cases: readonly [bigint, string, string][] = [
+      [6000n, '6000', 'the charge is lower'],
+      [7000n, '6800', 'the schedule is lower'],
+      [6800n, '6800', 'they are equal'],
+    ];
+    for (const [charge, base, label] of cases) {
+      const line = pricedLine(priceOne({ units: '2', chargeCents: cents(charge), agreement: fixed }));
+      expect(line.baseCents.toString(), label).toBe(base);
+      expect(line.trace.steps.units).toMatchObject({ schedule_cents: '6800', charge_cents: charge.toString(), base_cents: base });
+    }
+    const percent = contractAgreement({ terms: lesserOfTerms({ percentage: '125' }, { codes: ['97530', '97750'] }) });
+    // 125% of 97530's 2700 is 3375, above a 3000 charge.
+    const line = pricedLine(priceOne({ procedureCode: '97530', chargeCents: cents(3000n), agreement: percent }));
+    expect([line.method, line.baseCents.toString()]).toEqual(['LESSER_OF', '3000']);
+    expect(line.trace.steps.fee_schedule?.unit_cents?.total).toBe('3375');
+    expect(line.trace.terms).toMatchObject({ lesser_of: { schedule_method: 'PERCENT_OF_MEDICARE', charge_basis: 'LINE_CHARGE' }, fixed_amount_cents: null });
+    expect(reasonOf(priceOne({ procedureCode: '97750', agreement: percent }))).toBe('NO_PFS_VALUE no_rvu_in_basis_year');
   });
 
   it('uses the conversion factor the record names (PRC-08)', () => {
@@ -268,13 +307,127 @@ describe('step 3, units', () => {
     const line = unpricedLine(first);
     expect(reasonOf(line)).toBe('UNITS_RULE_UNKNOWN');
     expect(line.trace.outcome).toMatchObject({ step: 'units' });
-    expect(line.trace.steps.units).toEqual({ units: '2', timed_units_rule: 'UNKNOWN', base_cents: '4224' });
+    expect(line.trace.steps.units).toEqual({
+      units: '2',
+      timed_units_rule: 'UNKNOWN',
+      mue: { checked: false, record: null, value: null },
+      unit_cents: '2112',
+      schedule_cents: '4224',
+      charge_cents: null,
+      base_cents: '4224',
+    });
     expect(line.trace.steps.adjustments).toEqual([]);
     // 97110's PE (1349) is below 97140's (1596) anyway; the 97140 unit is the day's only ranked unit.
     expect(pricedLine(second).trace.steps.adjustments[0]).toMatchObject({ name: 'mppr', ranking: [{ rank: 1, line_no: 2, unit: 1 }], reductions: [] });
     for (const rule of ['MEDICARE_POOLED', 'PER_CODE'] as const) {
       expect(reasonOf(priceOne({ agreement: contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: rule } }) }) })), rule).toBe('priced');
     }
+  });
+});
+
+describe('step 3, the per-visit amount', () => {
+  const visit = contractAgreement({ terms: perVisitTerms(8800n, { codes: ['97110', '97112', '97116', '97140', '97530'], flags: { apply_ncci: true } }) });
+  const group = contractAgreement({ terms: perVisitTerms(3000n, { codes: ['97150'] }), rateRecordId: 'rr-synth-group' });
+
+  it('places it once per claim and date on the first included line; the others expect zero, whatever their units (PRC-07)', () => {
+    const results = price(
+      pricingInput(release, [
+        lineFacts({ lineNo: 1, units: '2', agreement: visit }),
+        lineFacts({ lineNo: 2, procedureCode: '97112', agreement: visit }),
+        lineFacts({ lineNo: 3, procedureCode: '97116', agreement: visit }),
+        lineFacts({ lineNo: 4, serviceDate: '2026-03-12', agreement: visit }),
+        lineFacts({ lineNo: 5, procedureCode: '97150', agreement: group }),
+      ]),
+    );
+    expect(results.map((result) => pricedLine(result).baseCents.toString())).toEqual(['8800', '0', '0', '8800', '3000']);
+    expect(results.map((result) => pricedLine(result).method)).toEqual(['PER_VISIT', 'PER_VISIT', 'PER_VISIT', 'PER_VISIT', 'PER_VISIT']);
+    expect(pricedLine(results[1]).trace.steps.per_visit).toEqual({ service_date: '2026-03-10', amount_cents: '8800', visit_line_nos: [1, 2, 3], carrier_line_no: 1, base_cents: '0' });
+    expect(pricedLine(results[0]).trace.steps.units).toMatchObject({ unit_cents: '8800', schedule_cents: null, charge_cents: null, base_cents: null });
+  });
+
+  it('follows line numbers, not the order the lines arrive in, and passes the visit on when the first line stops', () => {
+    const arrived = price(pricingInput(release, [lineFacts({ lineNo: 3, procedureCode: '97140', agreement: visit }), lineFacts({ lineNo: 1, procedureCode: '97530', agreement: visit }), lineFacts({ lineNo: 2, agreement: visit })]));
+    expect(arrived.map((result) => [result.lineNo, pricedLine(result).baseCents.toString()])).toEqual([
+      [1, '8800'],
+      [2, '0'],
+      [3, '0'],
+    ]);
+    // Six units of 97530 exceed its SYNTHETIC MUE of 5: the visit falls to line 2.
+    const stopped = price(pricingInput(release, [lineFacts({ lineNo: 1, procedureCode: '97530', units: '6', agreement: visit }), lineFacts({ lineNo: 2, agreement: visit }), lineFacts({ lineNo: 3, procedureCode: '97112', agreement: visit })]));
+    expect(stopped.map(reasonOf)).toEqual(['MUE_EXCEEDED', 'priced', 'priced']);
+    expect([pricedLine(stopped[1]).baseCents.toString(), pricedLine(stopped[2]).baseCents.toString()]).toEqual(['8800', '0']);
+  });
+
+  it('is stopped like any line by an unknown timed-units rule (QUESTIONS Q40)', () => {
+    const unknown = contractAgreement({ terms: perVisitTerms(5150n, { codes: ['97164'], flags: { timed_units_rule: 'UNKNOWN' } }) });
+    expect(reasonOf(priceOne({ procedureCode: '97164', agreement: unknown }))).toBe('UNITS_RULE_UNKNOWN');
+  });
+});
+
+describe('step 3, the NCCI edits', () => {
+  const ncci = (codes: readonly string[]) => contractAgreement({ terms: fixedTerms(3000n, { codes, flags: { apply_ncci: true } }) });
+  const plain = (codes: readonly string[]) => contractAgreement({ terms: fixedTerms(3000n, { codes }) });
+
+  it('stops units above the MUE with NCCI on for review, not priced down; at the MUE, without a record or with NCCI off they price (PRC-10)', () => {
+    const over = unpricedLine(priceOne({ units: '8', agreement: ncci(['97110']) }));
+    expect(reasonOf(over)).toBe('MUE_EXCEEDED');
+    expect(over.trace.outcome).toMatchObject({ step: 'units' });
+    expect(over.trace.steps.units?.mue).toMatchObject({ checked: true, value: 7 });
+    expect(reasonOf(priceOne({ units: '7', agreement: ncci(['97110']) }))).toBe('priced');
+    expect(reasonOf(priceOne({ units: '8', agreement: plain(['97110']) }))).toBe('priced');
+    const none = pricedLine(priceOne({ procedureCode: '97750', units: '9', agreement: ncci(['97750']) }));
+    expect(none.trace.steps.units?.mue).toEqual({ checked: true, record: null, value: null });
+    // Before the timed-units rule.
+    const unknown = contractAgreement({ terms: fixedTerms(3000n, { flags: { apply_ncci: true, timed_units_rule: 'UNKNOWN' } }) });
+    expect(reasonOf(priceOne({ units: '8', agreement: unknown }))).toBe('MUE_EXCEEDED');
+    // Medicare Advantage non-contracted lines have NCCI on.
+    expect(reasonOf(priceOne({ units: '8' }))).toBe('MUE_EXCEEDED');
+  });
+
+  it('flags 97530 billed with 97140 on the day without a 59 or X modifier, and never changes the price (PRC-11)', () => {
+    const agreement = ncci(['97140', '97530']);
+    const [first, second] = price(pricingInput(release, [lineFacts({ procedureCode: '97140', agreement }), lineFacts({ lineNo: 2, procedureCode: '97530', agreement })]));
+    expect(pricedLine(first).reviewFlags).toEqual([]);
+    const flagged = pricedLine(second);
+    expect(flagged.reviewFlags).toEqual([{ flag: 'NCCI_PTP', column1LineNo: 1, column1Code: '97140', column2Code: '97530' }]);
+    expect(flagged.expectedAllowedCents).toBe(3000n);
+    expect(flagged.trace.steps.ncci_ptp?.edits).toEqual([expect.objectContaining({ column1_line_no: 1, column1_code: '97140', column1_modifiers: ['GP'], modifier_indicator: '1', bypassed: false })]);
+    expect(flagged.trace.outcome).toMatchObject({ review_flags: [{ flag: 'NCCI_PTP', column1_line_no: 1 }] });
+  });
+
+  it('lets 59 or an X modifier on either line bypass an indicator-1 edit, and no modifier bypass indicators 0 and 9', () => {
+    const flags = (lines: readonly Partial<LineFacts>[], agreement: ReturnType<typeof ncci>) =>
+      price(pricingInput(release, lines.map((line, index) => lineFacts({ lineNo: index + 1, agreement, ...line })))).map((result) => pricedLine(result).reviewFlags.map((flag) => flag.column1LineNo));
+    const pair = ncci(['97140', '97530']);
+    expect(flags([{ procedureCode: '97140', modifiers: ['GP', '59'] }, { procedureCode: '97530' }], pair)).toEqual([[], []]);
+    expect(flags([{ procedureCode: '97140' }, { procedureCode: '97530', modifiers: ['GP', 'XS'] }], pair)).toEqual([[], []]);
+    expect(flags([{ procedureCode: '97140' }, { procedureCode: '97530', modifiers: ['GP', 'KX'] }], pair)).toEqual([[], [1]]);
+    // 97164/97110, indicator 0, ends 2026-06-30; 97035/97026, indicator 9.
+    const zero = ncci(['97164', '97110']);
+    expect(flags([{ procedureCode: '97164' }, { procedureCode: '97110', modifiers: ['GP', '59'], serviceDate: '2026-06-30' }].map((line) => ({ serviceDate: '2026-06-30', ...line })), zero)).toEqual([[], [1]]);
+    expect(flags([{ procedureCode: '97164' }, { procedureCode: '97110', modifiers: ['GP', '59'] }].map((line) => ({ serviceDate: '2026-07-01', ...line })), zero)).toEqual([[], []]);
+    expect(flags([{ procedureCode: '97035' }, { procedureCode: '97026', modifiers: ['GP', 'XU'] }], ncci(['97035', '97026']))).toEqual([[], [1]]);
+  });
+
+  it('counts a billed column-1 line whatever its outcome, checks only lines whose own terms have NCCI on, and lists the edits in line order', () => {
+    const stopped = price(
+      pricingInput(release, [
+        lineFacts({ lineNo: 1, procedureCode: '97140', units: '7', agreement: ncci(['97140', '97530', '97116']) }),
+        lineFacts({ lineNo: 2, procedureCode: '97116', agreement: ncci(['97140', '97530', '97116']) }),
+        lineFacts({ lineNo: 3, procedureCode: '97530', agreement: ncci(['97140', '97530', '97116']) }),
+        lineFacts({ lineNo: 4, procedureCode: '97116', agreement: plain(['97116']) }),
+        lineFacts({ lineNo: 5, procedureCode: '97116', serviceDate: '2026-03-11', agreement: ncci(['97116']) }),
+      ]),
+    );
+    expect(reasonOf(stopped[0] as LinePricing)).toBe('MUE_EXCEEDED');
+    expect(pricedLine(stopped[1]).reviewFlags.map((flag) => flag.column1LineNo)).toEqual([3]);
+    expect(pricedLine(stopped[2]).reviewFlags.map((flag) => flag.column1LineNo)).toEqual([1]);
+    expect(pricedLine(stopped[3]).reviewFlags).toEqual([]);
+    expect(pricedLine(stopped[3]).trace.steps.ncci_ptp).toBeNull();
+    expect(pricedLine(stopped[4]).reviewFlags).toEqual([]);
+    // Medicare Advantage non-contracted lines too (G01's pair).
+    const ma = price(pricingInput(release, [lineFacts({ lineNo: 2, procedureCode: '97530' }), lineFacts({ lineNo: 1, procedureCode: '97140' })]));
+    expect(ma.map((result) => pricedLine(result).reviewFlags.length)).toEqual([0, 1]);
   });
 });
 
@@ -426,6 +579,41 @@ describe('step 4c, sequestration', () => {
   });
 });
 
+describe('step 4d, the contract-specific adjustment', () => {
+  it('pays the record’s percentage of the amount after the Medicare adjustments', () => {
+    const terms = fixedTerms(3250n, { flags: { apply_assistant_reduction: true, apply_sequestration: true }, adjustment: { kind: 'PERCENT', percent: '92.5' } });
+    const line = pricedLine(priceOne({ modifiers: ['GP', 'CQ'], agreement: contractAgreement({ terms }) }));
+    // 3250 x 77% = 2502.5; less 3% = 2427.425; x 92.5% = 2245.368125.
+    expect(line.adjustments.map((item) => [item.name, item.afterCents.toString()])).toEqual([
+      ['assistant_reduction', '2502.5'],
+      ['sequestration', '2427.425'],
+      ['contract_adjustment', '2245.368125'],
+    ]);
+    expect(line.expectedAllowedCents).toBe(2245n);
+    expect(line.trace.steps.adjustments[2]).toEqual({ name: 'contract_adjustment', before_cents: '2427.425', after_cents: '2245.368125', kind: 'PERCENT', percent: '92.5', cap_cents: null });
+    expect(line.trace.terms?.contract_adjustment).toEqual({ kind: 'PERCENT', percent: '92.5' });
+  });
+
+  it('holds the line to the record’s cap, and leaves an amount under it alone', () => {
+    const capped = contractAgreement({ terms: fixedTerms(3433n, { adjustment: { kind: 'CAP', capCents: 6000n } }) });
+    const over = pricedLine(priceOne({ units: '2', agreement: capped }));
+    expect([over.baseCents.toString(), over.expectedAllowedCents]).toEqual(['6866', 6000n]);
+    expect(over.trace.steps.adjustments[0]).toEqual({ name: 'contract_adjustment', before_cents: '6866', after_cents: '6000', kind: 'CAP', percent: null, cap_cents: '6000' });
+    expect(pricedLine(priceOne({ agreement: capped })).expectedAllowedCents).toBe(3433n);
+    const percent = pricedLine(priceOne({ agreement: contractAgreement({ terms: percentTerms({ adjustment: { kind: 'CAP', capCents: 2000n } }) }) }));
+    expect(percent.expectedAllowedCents).toBe(2000n);
+    const visit = pricedLine(priceOne({ agreement: contractAgreement({ terms: perVisitTerms(3000n, { adjustment: { kind: 'CAP', capCents: 2500n } }) }) }));
+    expect(visit.expectedAllowedCents).toBe(2500n);
+    const lesser = pricedLine(priceOne({ chargeCents: cents(5000n), agreement: contractAgreement({ terms: lesserOfTerms({ fixedCents: 3400n }, { adjustment: { kind: 'PERCENT', percent: '98' } }) }) }));
+    expect(lesser.expectedUnroundedCents.toString()).toBe('3332');
+  });
+
+  it('leaves no entry when the record defines none', () => {
+    expect(pricedLine(priceOne({ agreement: contractAgreement({ terms: fixedTerms(3250n) }) })).adjustments).toEqual([]);
+    expect(pricedLine(priceOne({})).adjustments.map((item) => item.name)).toEqual(['mppr', 'assistant_reduction', 'sequestration']);
+  });
+});
+
 describe('step 5, the claim', () => {
   it('works a secondary or tertiary claim through, forwarded or not, then stops it with SECONDARY_PAYER', () => {
     for (const status of ['2', '3', '20', '21']) {
@@ -453,7 +641,7 @@ describe('step 5, the claim', () => {
       expect(reasonOf(line), status).toBe('ENGINE_ERROR claim_status_not_priced');
       expect(line.detail !== null && line.reason === 'ENGINE_ERROR' && pagesOperator(line.detail as never)).toBe(false);
     }
-    expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced']);
+    expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced', 'mppr_needs_fee_schedule']);
     expect(reasonOf(priceOne({}, { claim: { claimStatusCode: '24' } }))).toBe('ENGINE_ERROR claim_status_unknown');
     expect(pagesOperator('claim_status_unknown')).toBe(true);
     expect(reasonOf(priceOne({}, { claim: { reversed: true, corrected: true } }))).toBe('ENGINE_ERROR reversed_and_corrected');
@@ -575,11 +763,23 @@ describe('the trace', () => {
     expect(trace.steps.fee_schedule?.rvu?.record).toMatchObject({ record_type: 'pfs_rvu', key: { hcpcs: '97110', modifier: '' } });
     expect(trace.steps.fee_schedule?.rvu?.record.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(trace.steps.adjustments.map((item) => item.name)).toEqual(['mppr', 'assistant_reduction', 'sequestration']);
-    expect(trace.outcome).toEqual({ result: 'priced', expected_allowed_cents: line.expectedAllowedCents.toString(), expected_unrounded_cents: line.expectedUnroundedCents.toString() });
+    expect(trace.outcome).toEqual({ result: 'priced', expected_allowed_cents: line.expectedAllowedCents.toString(), expected_unrounded_cents: line.expectedUnroundedCents.toString(), review_flags: [] });
+    expect(trace.steps.units?.mue).toMatchObject({ checked: true, value: 7, record: { record_type: 'ncci_mue', key: { hcpcs: '97110' } } });
+    expect(trace.steps.ncci_ptp).toEqual({ edits: [] });
+    expect(trace.steps.per_visit).toBeNull();
   });
 
-  it('is plain JSON for every outcome', () => {
-    const lines = [lineFacts({ lineNo: 1 }), lineFacts({ lineNo: 2, agreement: { outcome: 'NO_MAPPING' } }), lineFacts({ lineNo: 3, units: 'x' }), lineFacts({ lineNo: 4, procedureCode: '97750' })];
+  it('is plain JSON for every outcome and method', () => {
+    const lines = [
+      lineFacts({ lineNo: 1 }),
+      lineFacts({ lineNo: 2, agreement: { outcome: 'NO_MAPPING' } }),
+      lineFacts({ lineNo: 3, units: 'x' }),
+      lineFacts({ lineNo: 4, procedureCode: '97750' }),
+      lineFacts({ lineNo: 5, agreement: contractAgreement({ terms: fixedTerms(100n, { adjustment: { kind: 'CAP', capCents: 50n } }) }) }),
+      lineFacts({ lineNo: 6, agreement: contractAgreement({ terms: perVisitTerms(100n) }) }),
+      lineFacts({ lineNo: 7, agreement: contractAgreement({ terms: lesserOfTerms({ percentage: '110' }) }) }),
+      lineFacts({ lineNo: 8, agreement: contractAgreement({ terms: { ...percentTerms(), method: 'UNSUPPORTED', parameters: {} } }) }),
+    ];
     for (const result of price(pricingInput(release, lines))) {
       expect(parseTrace(JSON.parse(JSON.stringify(result.trace)))).toEqual(result.trace);
     }

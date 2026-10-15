@@ -1,6 +1,7 @@
 /**
- * @tp/pricing: the expected-payment engine (PRD section 11; milestone 5 is phase one, milestone 7
- * adds the fixed-schedule, lesser-of and per-visit methods, NCCI and MUE). Pure functions over line
+ * @tp/pricing: the expected-payment engine (PRD section 11; milestone 5 built phase one, milestone 7
+ * phase two: the fixed-schedule, lesser-of and per-visit methods, the NCCI procedure-to-procedure and
+ * medically unlikely edits, and contract-specific adjustments). Pure functions over line
  * facts with their claim, each line's agreement as @tp/contracts' pure resolver gave it, a rule
  * release and practice settings. No database, network, clock or locale inside: the only runtime
  * imports are @tp/money, @tp/rules (record types and hashing) and zod (the trace schema); the
@@ -13,10 +14,8 @@ export {
   ENGINE_ERROR_DETAILS,
   type EngineErrorDetail,
   EngineInputError,
-  LATER_REASONS,
   NO_PFS_VALUE_DETAILS,
   type NoPfsValueDetail,
-  PHASE_ONE_REASONS,
   REVIEW_DETAILS,
   UNPRICED_REASONS,
   type UnpricedReason,
@@ -50,6 +49,10 @@ export {
   type PricedLine,
   type PricingInput,
   type PricingTerms,
+  PRICED_METHODS,
+  type PricedMethod,
+  REVIEW_FLAGS,
+  type ReviewFlag,
   type UnpricedLine,
   type WindowStatus,
 } from './types';

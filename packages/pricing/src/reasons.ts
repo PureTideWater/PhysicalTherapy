@@ -20,29 +20,6 @@ export const UNPRICED_REASONS = [
 export type UnpricedReason = (typeof UNPRICED_REASONS)[number];
 
 /**
- * The reasons phase one of the engine (milestone 5) produces. MUE_EXCEEDED is in the type so a stored
- * line can carry it, and is produced from milestone 7 with the NCCI edits. UNITS_RULE_UNKNOWN is
- * phase one's: a line whose terms do not say how the payer counts timed units is reviewed, not priced,
- * until minute logs are imported (PRD 20).
- */
-export const PHASE_ONE_REASONS = [
-  'NO_MAPPING',
-  'NO_AGREEMENT',
-  'AMBIGUOUS_RATE',
-  'NO_RATE_FOR_CODE',
-  'DATE_OUTSIDE_VERSIONS',
-  'NO_PFS_VALUE',
-  'UNSUPPORTED_METHOD',
-  'UNITS_RULE_UNKNOWN',
-  'SECONDARY_PAYER',
-  'REVERSED_CLAIM',
-  'ENGINE_ERROR',
-] as const satisfies readonly UnpricedReason[];
-
-/** Reasons in the closed list that phase one never produces (milestone 7). */
-export const LATER_REASONS = ['MUE_EXCEEDED'] as const satisfies readonly UnpricedReason[];
-
-/**
  * Why a line is ENGINE_ERROR, as a fixed code (never free text, so no identifier or document text can
  * reach a trace, a log or an operator alert through it).
  */
@@ -51,9 +28,13 @@ export const ENGINE_ERROR_DETAILS = [
   'agreement_unresolved',
   /** The resolution named a contract version that is not signed off (CON-07). */
   'version_not_signed_off',
-  /** FIXED_SCHEDULE, LESSER_OF and PER_VISIT are priced from milestone 7, with their golden lines. */
-  'method_not_in_phase_one',
-  /** A contract-named locality is priced once it has golden lines; phase one prices the practice's locality. */
+  /**
+   * apply_mppr on a FIXED_SCHEDULE, LESSER_OF or PER_VISIT term: the reduction cuts a fee-schedule
+   * practice-expense part, which such an amount does not have (fixtures/golden/QUESTIONS.md, Q39). For
+   * review, not an operator alert (REVIEW_DETAILS).
+   */
+  'mppr_needs_fee_schedule',
+  /** A contract-named locality is priced once it has golden lines; the engine prices the practice's locality. */
   'locality_basis_not_in_phase_one',
   /** The line's place of service is not in the facility settings. */
   'place_of_service_unmapped',
@@ -63,7 +44,7 @@ export const ENGINE_ERROR_DETAILS = [
   'no_gpci',
   /** No conversion_factor record of the named applicability in the basis year. */
   'no_conversion_factor',
-  /** Units are not a whole number of at least one (phase one prices whole units). */
+  /** Units are not a whole number of at least one (the engine prices whole units; QUESTIONS Q26). */
   'units_not_whole',
   /** More units on one line than MAX_UNITS: malformed input, never ranked or priced. */
   'units_above_limit',
@@ -104,7 +85,7 @@ export type EngineErrorDetail = (typeof ENGINE_ERROR_DETAILS)[number];
  * reviewed, and the operator is not paged for it. Every other detail is an operator alert (the
  * remedy the closed list gives ENGINE_ERROR); milestone 7's pricing runs raise it.
  */
-export const REVIEW_DETAILS = ['claim_status_not_priced'] as const satisfies readonly EngineErrorDetail[];
+export const REVIEW_DETAILS = ['claim_status_not_priced', 'mppr_needs_fee_schedule'] as const satisfies readonly EngineErrorDetail[];
 
 /** Whether an unpriced line's ENGINE_ERROR detail pages the operator. */
 export function pagesOperator(detail: EngineErrorDetail): boolean {

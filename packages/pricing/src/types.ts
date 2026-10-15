@@ -94,9 +94,28 @@ export interface PricingInput {
   readonly asOf: IsoDate;
 }
 
-/** The adjustments of PRD 11 step 4, in the order they apply. */
-export const ADJUSTMENT_NAMES = ['mppr', 'assistant_reduction', 'sequestration'] as const;
+/** The adjustments of PRD 11 step 4, in the order they apply: the flagged Medicare ones, then the rate record's own. */
+export const ADJUSTMENT_NAMES = ['mppr', 'assistant_reduction', 'sequestration', 'contract_adjustment'] as const;
 export type AdjustmentName = (typeof ADJUSTMENT_NAMES)[number];
+
+/** The methods that price a line (UNSUPPORTED stops it with UNSUPPORTED_METHOD). */
+export const PRICED_METHODS = ['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE', 'LESSER_OF', 'PER_VISIT'] as const;
+export type PricedMethod = (typeof PRICED_METHODS)[number];
+
+/**
+ * A review flag on a priced line: something a person looks at, which never changes the amount. NCCI_PTP: an NCCI
+ * procedure-to-procedure edit in force on the date pairs this line's code (column 2) with another line's code
+ * (column 1), and no 59 or X modifier bypasses it (PRD 2 point 6; test matrix PRC-11).
+ */
+export const REVIEW_FLAGS = ['NCCI_PTP'] as const;
+export interface ReviewFlag {
+  readonly flag: (typeof REVIEW_FLAGS)[number];
+  /** The line whose code is in column 1 of the edit. */
+  readonly column1LineNo: number;
+  readonly column1Code: string;
+  /** This line's code. */
+  readonly column2Code: string;
+}
 
 /** One flagged adjustment with the amount before and after it (an adjustment that changes nothing still appears). */
 export interface AppliedAdjustment {
@@ -126,16 +145,21 @@ export interface DisputeWindow {
 export interface PricedLine {
   readonly outcome: 'priced';
   readonly lineNo: number;
-  readonly method: 'PERCENT_OF_MEDICARE';
+  readonly method: PricedMethod;
   readonly terms: PricingTerms;
   /** Whole cents after the one rounding. */
   readonly expectedAllowedCents: Cents;
   /** The exact amount before that rounding, kept beside it. */
   readonly expectedUnroundedCents: UnroundedCents;
   readonly rounding: RoundingRule;
-  /** After units (step 3), before any adjustment. */
+  /**
+   * After units (step 3), before any adjustment: the amount per unit times the units, the lesser of that and the
+   * line charge (LESSER_OF), or the visit amount on the first included line and zero on the others (PER_VISIT).
+   */
   readonly baseCents: UnroundedCents;
   readonly adjustments: readonly AppliedAdjustment[];
+  /** The review flags of the line's edits, in column-1 line order; never a change to the amount. */
+  readonly reviewFlags: readonly ReviewFlag[];
   /** The sum of the line's PR adjustments, reported beside the expected amount. */
   readonly patientShareCents: Cents;
   readonly observedAllowedCents: Cents;

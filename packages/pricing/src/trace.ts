@@ -12,10 +12,10 @@ import { ENGINE_ERROR_DETAILS, NO_PFS_VALUE_DETAILS, UNPRICED_REASONS } from './
  * line. Amounts are cents as decimal text (integer text where whole); percentages, relative values
  * and indices are decimal text as the release wrote them; dates are YYYY-MM-DD.
  */
-export const TRACE_FORMAT = 'tp-pricing-trace/1';
+export const TRACE_FORMAT = 'tp-pricing-trace/2';
 
 /** The engine's version, recorded in every trace and in `pricing_run.engine_version`. */
-export const ENGINE_VERSION = 'phase-one/2';
+export const ENGINE_VERSION = 'phase-two/1';
 
 const decimalText = z.string().regex(/^-?\d+(?:\.\d+)?$/, 'must be decimal text');
 const centsText = z.string().regex(/^(?:0|-?[1-9]\d*)$/, 'must be whole cents as integer text');
@@ -90,7 +90,7 @@ const flags = z.strictObject({
 
 const terms = z.strictObject({
   method: z.string(),
-  /** Set for PERCENT_OF_MEDICARE terms. */
+  /** The fee schedule a PERCENT_OF_MEDICARE term, or a LESSER_OF term's percent schedule, prices from. */
   percent_of_medicare: z
     .strictObject({
       percentage: decimalText,
@@ -98,6 +98,14 @@ const terms = z.strictObject({
       locality_basis: z.union([z.strictObject({ kind: z.literal('PRACTICE') }), z.strictObject({ kind: z.literal('NAMED'), carrier: z.string(), locality: z.string() })]),
       conversion_factor: z.string(),
     })
+    .nullable(),
+  /** The amount per unit of a FIXED_SCHEDULE term or a LESSER_OF term's fixed schedule, or per visit of a PER_VISIT term. */
+  fixed_amount_cents: centsText.nullable(),
+  /** Set for LESSER_OF terms: which schedule they compare with the charge, and the charge they compare. */
+  lesser_of: z.strictObject({ schedule_method: z.enum(['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE']), charge_basis: z.literal('LINE_CHARGE') }).nullable(),
+  /** The rate record's own adjustment (PRD 11 step 4), applied after the Medicare ones. */
+  contract_adjustment: z
+    .discriminatedUnion('kind', [z.strictObject({ kind: z.literal('PERCENT'), percent: decimalText }), z.strictObject({ kind: z.literal('CAP'), cap_cents: centsText })])
     .nullable(),
   flags,
   rounding: rounding.nullable(),
@@ -126,7 +134,47 @@ const units = z.strictObject({
   units: decimalText,
   /** Units are taken as billed (PRD 2 point 6); UNKNOWN stops the line with UNITS_RULE_UNKNOWN (PRD 20). */
   timed_units_rule: z.string(),
+  /**
+   * The medically unlikely edit: checked when apply_ncci is on, against the code's ncci_mue record in force on the
+   * service date (none: no limit). Units above the value stop the line with MUE_EXCEEDED, never priced down.
+   */
+  mue: z.strictObject({ checked: z.boolean(), record: recordRef.nullable(), value: z.number().int().nullable() }),
+  /** The amount per unit (per visit for PER_VISIT): the fee schedule's at the percentage, or the fixed amount. */
+  unit_cents: decimalText,
+  /** The schedule's amount for the units billed; null for PER_VISIT, which units do not multiply. */
+  schedule_cents: decimalText.nullable(),
+  /** The line charge a LESSER_OF term compares the schedule with; null for the other methods. */
+  charge_cents: centsText.nullable(),
+  /** The base; null for PER_VISIT, whose base the per-visit step sets. */
+  base_cents: decimalText.nullable(),
+});
+
+/** PER_VISIT: the visit amount once per claim, date and rate record, carried by the lowest line number of the visit. */
+const perVisit = z.strictObject({
+  service_date: dateText,
+  amount_cents: centsText,
+  /** The lines priced so far under the record on the date, this one among them. */
+  visit_line_nos: z.array(z.number().int()),
+  carrier_line_no: z.number().int(),
   base_cents: decimalText,
+});
+
+/**
+ * The NCCI procedure-to-procedure edits with this line's code in column 2 and the code of another line of the claim
+ * and date in column 1, in that line's order; each stands (a review flag) unless its modifier indicator is 1 and a
+ * 59 or X modifier is on either line. Null when apply_ncci is off or the line stopped before the edits.
+ */
+const procedureToProcedure = z.strictObject({
+  edits: z.array(
+    z.strictObject({
+      column1_line_no: z.number().int(),
+      column1_code: z.string(),
+      column1_modifiers: z.array(z.string()),
+      record: recordRef,
+      modifier_indicator: z.string(),
+      bypassed: z.boolean(),
+    }),
+  ),
 });
 
 const rankedUnit = z.strictObject({ rank: z.number().int(), line_no: z.number().int(), unit: z.number().int(), pe_cents: decimalText });
@@ -174,6 +222,17 @@ const sequestration = z.strictObject({
   cut_cents: decimalText,
 });
 
+const contractAdjustment = z.strictObject({
+  name: z.literal('contract_adjustment'),
+  before_cents: decimalText,
+  after_cents: decimalText,
+  kind: z.enum(['PERCENT', 'CAP']),
+  /** PERCENT: the percentage of the amount paid. */
+  percent: decimalText.nullable(),
+  /** CAP: the most the line is paid. */
+  cap_cents: centsText.nullable(),
+});
+
 const roundingStep = z.strictObject({
   rule: rounding,
   origin: z.enum(['rate_record', 'practice_default', 'engine_default']),
@@ -194,7 +253,13 @@ const windowStep = z.strictObject({
 });
 
 const outcome = z.discriminatedUnion('result', [
-  z.strictObject({ result: z.literal('priced'), expected_allowed_cents: centsText, expected_unrounded_cents: decimalText }),
+  z.strictObject({
+    result: z.literal('priced'),
+    expected_allowed_cents: centsText,
+    expected_unrounded_cents: decimalText,
+    /** The review flags reported with the amount (the edits that stand). */
+    review_flags: z.array(z.strictObject({ flag: z.literal('NCCI_PTP'), column1_line_no: z.number().int() })),
+  }),
   z.strictObject({
     result: z.literal('unpriced'),
     reason: z.enum(UNPRICED_REASONS),
@@ -217,7 +282,9 @@ export const pricingTraceSchema = z.strictObject({
   steps: z.strictObject({
     fee_schedule: feeSchedule.nullable(),
     units: units.nullable(),
-    adjustments: z.array(z.discriminatedUnion('name', [mppr, assistant, sequestration])),
+    per_visit: perVisit.nullable(),
+    ncci_ptp: procedureToProcedure.nullable(),
+    adjustments: z.array(z.discriminatedUnion('name', [mppr, assistant, sequestration, contractAdjustment])),
     patient_share_cents: centsText.nullable(),
     rounding: roundingStep.nullable(),
     variance_cents: centsText.nullable(),
@@ -234,6 +301,11 @@ export type TraceAdjustment = PricingTrace['steps']['adjustments'][number];
 export type TraceMppr = z.infer<typeof mppr>;
 export type TraceAssistant = z.infer<typeof assistant>;
 export type TraceSequestration = z.infer<typeof sequestration>;
+export type TraceContractAdjustment = z.infer<typeof contractAdjustment>;
+export type TraceTerms = z.infer<typeof terms>;
+export type TraceUnits = z.infer<typeof units>;
+export type TracePerVisit = z.infer<typeof perVisit>;
+export type TraceProcedureToProcedure = z.infer<typeof procedureToProcedure>;
 export type TraceWindow = z.infer<typeof windowStep>;
 export type TraceOutcome = z.infer<typeof outcome>;
 export type TraceStep = Extract<TraceOutcome, { result: 'unpriced' }>['step'];

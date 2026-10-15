@@ -19,16 +19,18 @@ import { readRelease } from '@tp/rules/content';
 import { repositoryRoot } from '../content-files';
 
 /**
- * Runs the engine on the golden claims (fixtures/golden/README.md, "Consuming the format in milestone
- * 5"). Each claim's inputs become the engine's inputs the way production builds them: the release is
+ * Runs the engine on the golden claims (fixtures/golden/README.md, "Consuming the format"). Each
+ * claim's inputs become the engine's inputs the way production builds them: the release is
  * read from its directory and its manifest hash checked; the mappings, contract versions and rate
  * records become the records @tp/contracts loads, and its pure resolver resolves each line; the line
  * facts, claim context (its remittance date), the version windows, the triage date and practice
  * settings are copied across. The golden format writes windows inclusively and a rate record's codes as
  * null for any code; the contract records are half-open and leave codes out for any code, so an
  * inclusive end becomes the next day's exclusive end and a null code list is left out (the general
- * term the product stores, ADR 0033). Nothing here computes an amount; the comparison is field by
- * field against the golden expected results, the variance and the dispute window included.
+ * term the product stores, ADR 0033); a rate record's `contract_adjustment` of null is left out (a
+ * record without one, as the product stores it). Nothing here computes an amount; the comparison is
+ * field by field against the golden expected results, the review flags, the variance and the dispute
+ * window included.
  */
 
 export const GOLDEN_CLAIMS_DIR = 'fixtures/golden/claims';
@@ -42,8 +44,8 @@ interface GoldenRateRecord {
     readonly effective_from: string;
     readonly effective_to: string | null;
   };
-  readonly method: 'PERCENT_OF_MEDICARE' | 'UNSUPPORTED';
-  readonly parameters: { readonly percentage?: string; readonly year_basis?: string; readonly locality_basis?: string; readonly conversion_factor?: string };
+  readonly method: 'FIXED_SCHEDULE' | 'PERCENT_OF_MEDICARE' | 'LESSER_OF' | 'PER_VISIT' | 'UNSUPPORTED';
+  readonly parameters: GoldenParameters;
   readonly flags: {
     readonly apply_mppr: boolean;
     readonly apply_assistant_reduction: boolean;
@@ -52,6 +54,23 @@ interface GoldenRateRecord {
     readonly timed_units_rule: string;
     readonly rounding: RoundingRule | null;
   };
+}
+
+interface GoldenPercentSchedule {
+  readonly percentage: string;
+  readonly year_basis: string;
+  readonly locality_basis: string;
+  readonly conversion_factor: string;
+}
+
+type GoldenContractAdjustment = { readonly kind: 'PERCENT'; readonly percent: string } | { readonly kind: 'CAP'; readonly cap_cents: string };
+
+/** A rate record's parameters as format 3 writes them, by method (fixtures/golden/README.md). */
+interface GoldenParameters extends Partial<GoldenPercentSchedule> {
+  readonly amount_cents?: string;
+  readonly schedule?: ({ readonly method: 'FIXED_SCHEDULE'; readonly amount_cents: string } | ({ readonly method: 'PERCENT_OF_MEDICARE' } & GoldenPercentSchedule));
+  readonly charge_basis?: string;
+  readonly contract_adjustment?: GoldenContractAdjustment | null;
 }
 
 interface GoldenLineInput {
@@ -87,6 +106,7 @@ export interface GoldenExpectedLine {
   readonly terms?: { readonly mapping_id: string; readonly mapping_kind: string; readonly contract_version_id: string | null; readonly rate_record_id: string | null };
   readonly base_cents?: string;
   readonly adjustments?: readonly GoldenAdjustment[];
+  readonly review_flags?: readonly { readonly flag: string; readonly column1_line_no: number }[];
 }
 
 export interface GoldenClaim {
@@ -167,6 +187,34 @@ function exclusiveEnd(inclusive: string | null): string | null {
   return inclusive === null ? null : addDays(inclusive, 1);
 }
 
+/** A golden percent schedule as the product stores it: the practice's locality is `{kind: "PRACTICE"}`. */
+function percentSchedule(schedule: Partial<GoldenPercentSchedule>): Record<string, unknown> {
+  return { percentage: schedule.percentage, year_basis: schedule.year_basis, locality_basis: { kind: 'PRACTICE' }, conversion_factor: schedule.conversion_factor };
+}
+
+/** A golden rate record's parameters as the product stores them; a null contract adjustment is left out. */
+function contractParameters(record: GoldenRateRecord): Record<string, unknown> {
+  const { parameters } = record;
+  const adjustment = parameters.contract_adjustment === null || parameters.contract_adjustment === undefined ? {} : { contract_adjustment: { ...parameters.contract_adjustment } };
+  switch (record.method) {
+    case 'UNSUPPORTED':
+      return {};
+    case 'FIXED_SCHEDULE':
+    case 'PER_VISIT':
+      return { amount_cents: parameters.amount_cents, ...adjustment };
+    case 'PERCENT_OF_MEDICARE':
+      return { ...percentSchedule(parameters), ...adjustment };
+    case 'LESSER_OF': {
+      const schedule = parameters.schedule;
+      return {
+        schedule: schedule?.method === 'PERCENT_OF_MEDICARE' ? { method: schedule.method, ...percentSchedule(schedule) } : { ...schedule },
+        charge_basis: parameters.charge_basis,
+        ...adjustment,
+      };
+    }
+  }
+}
+
 /** The golden mappings, versions and rate records as @tp/contracts' loader returns them. */
 export function agreementRecords(claim: GoldenClaim): AgreementRecords {
   const { inputs } = claim;
@@ -207,7 +255,7 @@ export function agreementRecords(claim: GoldenClaim): AgreementRecords {
             ...(record.scope.effective_to === null ? {} : { effective_to: exclusiveEnd(record.scope.effective_to) }),
           },
           method: record.method,
-          parameters: record.method === 'UNSUPPORTED' ? {} : { ...record.parameters, locality_basis: { kind: 'PRACTICE' } },
+          parameters: contractParameters(record),
           flags: {
             apply_mppr: record.flags.apply_mppr,
             apply_assistant_reduction: record.flags.apply_assistant_reduction,
@@ -293,7 +341,8 @@ function sameDecimal(a: string | undefined, b: string): boolean {
 /**
  * Field by field: the outcome and reason, expected allowed exactly, the unrounded amount as a number,
  * the rounding, the patient share, the method and terms, the base, each adjustment's before and after
- * against both the result and its trace, the variance and the dispute window.
+ * against both the result and its trace, the review flags (result and trace), the variance and the
+ * dispute window.
  */
 export function compareLine(file: string, claim: GoldenClaim, golden: GoldenExpectedLine, engine: LinePricing | undefined): EngineDifference[] {
   const found: EngineDifference[] = [];
@@ -342,6 +391,11 @@ export function compareLine(file: string, claim: GoldenClaim, golden: GoldenExpe
   const window = { ends_on: engine.window.endsOn, status: engine.window.status };
   if (JSON.stringify(window) !== JSON.stringify(golden.window)) {
     differ('window', golden.window, window);
+  }
+  const flags = engine.reviewFlags.map((flag) => ({ flag: flag.flag, column1_line_no: flag.column1LineNo }));
+  const tracedFlags = engine.trace.outcome.result === 'priced' ? engine.trace.outcome.review_flags : null;
+  if (JSON.stringify(flags) !== JSON.stringify(golden.review_flags) || JSON.stringify(tracedFlags) !== JSON.stringify(golden.review_flags)) {
+    differ('review_flags', golden.review_flags, flags);
   }
   const expected = golden.adjustments ?? [];
   const results = engine.adjustments.map((item) => ({ name: item.name, before_cents: item.beforeCents.toString(), after_cents: item.afterCents.toString() }));

@@ -1,14 +1,15 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { LATER_REASONS, PHASE_ONE_REASONS, recompute } from '@tp/pricing';
+import { UNPRICED_REASONS, recompute } from '@tp/pricing';
 import { describe, expect, it } from 'vitest';
 
 import { type EngineDifference, engineDifferences, runEngineOnGolden } from './engine';
 
 /**
  * The pricing oracle against the engine (PRD section 18; milestone 5's done check: "every golden line
- * matches to the cent ... and the trace recompute test passes"). The engine prices every golden claim
+ * matches to the cent ... and the trace recompute test passes"; milestone 7's: "200 golden lines across
+ * five fixture payers match to the cent"). The engine prices every golden claim
  * from the claim's own inputs (tools/golden-worksheet/engine.ts) and must match every expected line
  * field by field, while the lines are still the independent worksheet's (specialist_verified false):
  * a difference fails, and is explained with the golden-diff skill, never by editing a golden file.
@@ -68,6 +69,7 @@ describe('golden lines priced by the engine', () => {
         ['base_cents', result.baseCents.toString(), again.baseCents.toString()],
         ['rounding', result.rounding, again.rounding],
         ['adjustments', JSON.stringify(result.adjustments), JSON.stringify(again.adjustments)],
+        ['review_flags', JSON.stringify(result.reviewFlags.map((flag) => [flag.flag, flag.column1LineNo])), JSON.stringify(again.reviewFlags.map((flag) => [flag.flag, flag.column1LineNo]))],
       ] as const) {
         if (stored !== recomputed) {
           found.push({ ...where, field, stored, recomputed });
@@ -92,24 +94,26 @@ describe('golden lines priced by the engine', () => {
         recompute: recomputeDifferences,
       });
     }
-    // The specialist's one hundred lines of milestone 5, and the lines added since for its later branches.
-    expect(results.length).toBeGreaterThanOrEqual(100);
+    // The hundred lines of milestone 5, the lines added for its later branches, and milestone 7's two hundred across five fixture payers.
+    expect(results.length).toBeGreaterThanOrEqual(200);
     expect(results.length).toBe(runs.reduce((count, run) => count + run.claim.expected.lines.length, 0));
     expect(differences).toEqual([]);
   });
 
   it('recompute from their traces alone to the stored amount, every line (PRC-16)', () => {
     expect(recomputeDifferences).toEqual([]);
-    expect(results.filter(({ result }) => result.outcome === 'priced').length).toBeGreaterThan(70);
+    expect(results.filter(({ result }) => result.outcome === 'priced').length).toBeGreaterThan(200);
+    // Every method that prices, and the per-visit zero lines and review flags, recompute from their traces.
+    const priced = results.flatMap(({ result }) => (result.outcome === 'priced' ? [result] : []));
+    expect(new Set(priced.map((result) => result.method))).toEqual(new Set(['FIXED_SCHEDULE', 'PERCENT_OF_MEDICARE', 'LESSER_OF', 'PER_VISIT']));
+    expect(priced.some((result) => result.reviewFlags.length > 0)).toBe(true);
+    expect(priced.some((result) => result.adjustments.some((item) => item.name === 'contract_adjustment'))).toBe(true);
   });
 
-  it('produce every reason a golden line can hold, and none of milestone 7', () => {
+  it('produce every reason a golden line can hold', () => {
     const reasons = new Set(results.flatMap(({ result }) => (result.outcome === 'unpriced' ? [result.reason] : [])));
-    // ENGINE_ERROR is phase one's too, but a golden line is never an engine error; the unit tests produce it.
-    expect([...reasons].sort()).toEqual(PHASE_ONE_REASONS.filter((reason) => reason !== 'ENGINE_ERROR').sort());
-    for (const reason of LATER_REASONS) {
-      expect(reasons.has(reason), reason).toBe(false);
-    }
+    // A golden line is never an engine error; the unit tests produce ENGINE_ERROR.
+    expect([...reasons].sort()).toEqual(UNPRICED_REASONS.filter((reason) => reason !== 'ENGINE_ERROR').sort());
   });
 
   it('price under the release each claim names, recorded in every trace', () => {

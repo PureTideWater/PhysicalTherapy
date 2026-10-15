@@ -272,7 +272,8 @@ edits, which would sum a code's units across the day's lines; the worksheet does
 a code with no record in force has no limit (G112); the MUE is checked after the fee-schedule value (so `NO_PFS_VALUE`
 comes first) and before the timed-units rule (so `MUE_EXCEEDED` wins over `UNITS_RULE_UNKNOWN`); it applies to every
 method, per-visit included (G146, G158). A line stopped for its MUE is neither ranked nor reduced and never carries a
-visit. *Claims:* G105, G136, G146, G158, G167, G193, G194. *For the specialist:* whether date-of-service indicators should
+visit, so turning `apply_ncci` on can raise another line of the day, which then holds the whole unit the stopped line
+would have held (G167); the claim's total still falls or stays (a property test holds it). *Claims:* G105, G136, G146, G158, G167, G193, G194. *For the specialist:* whether date-of-service indicators should
 sum the day's units, and whether the MUE should bound units when `apply_ncci` is off (Q38).
 
 **Q43. Lesser of billed charges and the schedule.** PRD 11 step 2: "the lesser of the computed schedule amount and the
@@ -289,7 +290,12 @@ line number among the lines priced so far (agreement, method and units resolved)
 the visit to the next (G146), and the listing order of the remittance does not matter (G142); the assistant reduction
 follows the line, so CQ on the carrying line reduces the visit and on a zero line changes nothing (G143, G144); each
 line's variance is its own, so a payer that spreads the visit over the lines shows an underpaid first line and
-overpaid others (G141). *For the specialist:* whether the variance should be judged per visit.
+overpaid others (G141). A consequence a property test found: because the MUE moves the visit to the next line, turning
+`apply_ncci` on can raise a claim's expected total (the next line's patient share leaves less to sequester, or it lacks
+the first line's CQ), the one case where PRC-18 ("turning a flag off never lowers the amount") does not hold claim-wide;
+it holds line by line for every other method. *Alternative:* the first included line carries the visit whatever its
+outcome, so a line stopped for its MUE takes the visit's amount into review with it; PRC-18 then holds everywhere, and
+G146 line 2 would expect zero. *For the specialist:* which reading, and whether the variance should be judged per visit.
 
 **Q45. Contract-specific adjustments.** PRD 11 step 4: "contract-specific adjustments (a percentage or a cap the
 record defines)", after sequestration. *Choices:* a rate record defines at most one, in its parameters

@@ -7,8 +7,11 @@ import { TraceRecomputeError, recompute } from './recompute';
 import {
   SYNTHETIC_RELEASES,
   contractAgreement,
+  fixedTerms,
   keyOf,
+  lesserOfTerms,
   lineFacts,
+  perVisitTerms,
   percentTerms,
   pricingInput,
   readRuleRelease,
@@ -154,10 +157,10 @@ describe('recompute(trace)', () => {
     expect(recompute(rule).differences).toContain('rounding rule: the trace records TRUNCATE, the recomputation gives HALF_UP_CENT');
 
     const refused = stored(priceLines([lineFacts({ units: '0' })])[0]);
-    refused.outcome = { result: 'priced', expected_allowed_cents: '1', expected_unrounded_cents: '1' };
-    expect(() => recompute(refused)).toThrow('a priced trace is missing the fee schedule or the units');
+    refused.outcome = { result: 'priced', expected_allowed_cents: '1', expected_unrounded_cents: '1', review_flags: [] };
+    expect(() => recompute(refused)).toThrow('a priced trace is missing the units');
     const input = stored(priceLines([lineFacts({ procedureCode: 'X' })])[0]);
-    input.outcome = { result: 'priced', expected_allowed_cents: '1', expected_unrounded_cents: '1' };
+    input.outcome = { result: 'priced', expected_allowed_cents: '1', expected_unrounded_cents: '1', review_flags: [] };
     expect(recompute(input)).toEqual({ outcome: 'unpriced', reason: 'ENGINE_ERROR', differences: ['outcome: the trace records priced, the recomputation gives ENGINE_ERROR'] });
   });
 
@@ -217,7 +220,7 @@ describe('recompute(trace)', () => {
 
     const noSchedule = priced();
     noSchedule.steps.fee_schedule = null;
-    expect(() => recompute(noSchedule)).toThrow('a priced trace is missing the fee schedule or the units');
+    expect(() => recompute(noSchedule)).toThrow('a fee-schedule trace with units is missing a fee-schedule value');
 
     const noStep = priced();
     noStep.steps.adjustments = noStep.steps.adjustments.filter((item) => item.name !== 'sequestration');
@@ -241,6 +244,121 @@ describe('recompute(trace)', () => {
       mppr.reduction_percent = null;
     }
     expect(() => recompute(percent)).toThrow('an always-therapy line records no reduction percent');
+  });
+});
+
+type Edit = NonNullable<PricingTrace['steps']['ncci_ptp']>['edits'][number];
+
+describe('recompute(trace) for the methods, edits and adjustments of phase two', () => {
+  const fixed = (options: Parameters<typeof fixedTerms>[1] = {}) => contractAgreement({ terms: fixedTerms(3250n, { codes: ['97110', '97140', '97530'], ...options }) });
+  const visit = contractAgreement({ terms: perVisitTerms(8800n, { codes: ['97110', '97112', '97140', '97530'], flags: { apply_sequestration: true, apply_ncci: true }, adjustment: { kind: 'CAP', capCents: 8000n } }) });
+  const lesserFixed = contractAgreement({ terms: lesserOfTerms({ fixedCents: 3400n }, { codes: ['97110', '97112'], adjustment: { kind: 'PERCENT', percent: '98' } }) });
+  const lesserPercent = contractAgreement({ terms: lesserOfTerms({ percentage: '125' }, { codes: ['97530'], flags: { apply_assistant_reduction: true } }) });
+
+  it('reproduces fixed, lesser-of and per-visit amounts, the contract adjustments and the review flags', () => {
+    expectReproduced(priceLines([lineFacts({ units: '2', agreement: fixed({ adjustment: { kind: 'PERCENT', percent: '92.5' } }) })]));
+    expectReproduced(priceLines([lineFacts({ units: '3', agreement: fixed({ adjustment: { kind: 'CAP', capCents: 9000n } }) })]));
+    expectReproduced(priceLines([lineFacts({ chargeCents: cents(3000n), agreement: lesserFixed }), lineFacts({ lineNo: 2, procedureCode: '97112', chargeCents: cents(9000n), agreement: lesserFixed })]));
+    expectReproduced(priceLines([lineFacts({ procedureCode: '97530', modifiers: ['GP', 'CQ'], chargeCents: cents(2000n), agreement: lesserPercent })]));
+    const visitLines = [
+      lineFacts({ lineNo: 3, procedureCode: '97140', agreement: visit }),
+      lineFacts({ lineNo: 1, procedureCode: '97530', agreement: visit, patientShareAdjustments: [{ groupCode: 'PR', reasonCode: '2', amountCents: cents(500n) }] }),
+      lineFacts({ lineNo: 2, procedureCode: '97110', units: '2', agreement: visit }),
+    ];
+    const results = priceLines(visitLines);
+    expectReproduced(results);
+    const again = results.map((result) => recompute(stored(result)));
+    expect(again.map((item) => item.outcome === 'priced' && item.baseCents.toString())).toEqual(['8800', '0', '0']);
+    expect(again.map((item) => item.outcome === 'priced' && item.reviewFlags)).toEqual([[{ flag: 'NCCI_PTP', column1LineNo: 3 }], [], []]);
+    // The MUE and an edit that does not apply.
+    expectReproduced(priceLines([lineFacts({ units: '8', agreement: fixed({ flags: { apply_ncci: true } }) })]));
+    expectReproduced(priceLines([lineFacts({ procedureCode: '97750', agreement: contractAgreement({ terms: fixedTerms(4100n, { codes: ['97750'], flags: { apply_ncci: true } }) }) })]));
+    expectReproduced(
+      priceLines([
+        lineFacts({ procedureCode: '97140', modifiers: ['GP', '59'], agreement: fixed({ flags: { apply_ncci: true } }) }),
+        lineFacts({ lineNo: 2, procedureCode: '97530', agreement: fixed({ flags: { apply_ncci: true } }) }),
+      ]),
+    );
+  });
+
+  it('derives MUE_EXCEEDED from the recorded edit, before an unknown timed-units rule', () => {
+    const results = priceLines([lineFacts({ units: '8', agreement: fixed({ flags: { apply_ncci: true, timed_units_rule: 'UNKNOWN' } }) })]);
+    expect(recompute(stored(results[0]))).toEqual({ outcome: 'unpriced', reason: 'MUE_EXCEEDED', differences: [] });
+    const lifted = stored(results[0]);
+    if (lifted.steps.units !== null) {
+      lifted.steps.units.mue.value = 9;
+    }
+    expect(recompute(lifted)).toMatchObject({ outcome: 'unpriced', reason: 'UNITS_RULE_UNKNOWN' });
+  });
+
+  it('finds a phase-two trace changed after the fact', () => {
+    const tampered = (results: readonly LinePricing[], index: number, change: (trace: PricingTrace) => void): string[] => {
+      const trace = stored(results[index]);
+      change(trace);
+      return recompute(trace).differences.map((item) => item.slice(0, item.indexOf(':')));
+    };
+    const units = (trace: PricingTrace) => trace.steps.units as NonNullable<PricingTrace['steps']['units']>;
+    const fixedLine = priceLines([lineFacts({ units: '2', agreement: fixed({ adjustment: { kind: 'CAP', capCents: 6000n } }) })]);
+    expect(tampered(fixedLine, 0, () => undefined)).toEqual([]);
+    expect(tampered(fixedLine, 0, (trace) => (units(trace).unit_cents = '3251'))).toEqual(['unit cents']);
+    expect(tampered(fixedLine, 0, (trace) => (units(trace).base_cents = '6501'))).toEqual(['base cents']);
+    expect(tampered(fixedLine, 0, (trace) => (units(trace).units = '3'))).toEqual(['units']);
+    expect(tampered(fixedLine, 0, (trace) => (units(trace).charge_cents = '1'))).toEqual(['charge of a term that does not compare it']);
+    expect(tampered(fixedLine, 0, (trace) => (units(trace).mue.checked = true))).toEqual(['medically unlikely edit checked']);
+    expect(tampered(fixedLine, 0, (trace) => ((trace.terms as NonNullable<PricingTrace['terms']>).contract_adjustment = { kind: 'CAP', cap_cents: '6100' }))).toEqual([
+      'contract adjustment against the terms',
+      'contract_adjustment after',
+      'unrounded cents',
+      'variance cents',
+      'expected allowed cents',
+      'expected unrounded cents',
+    ]);
+    expect(tampered(fixedLine, 0, (trace) => (trace.steps.fee_schedule = stored(priceLines([lineFacts()])[0]).steps.fee_schedule))).toEqual(['fee schedule for a fixed amount']);
+    expect(tampered(fixedLine, 0, (trace) => (trace.steps.per_visit = { service_date: '2026-03-10', amount_cents: '3250', visit_line_nos: [1], carrier_line_no: 1, base_cents: '3250' }))).toEqual(['per-visit step']);
+    expect(tampered(fixedLine, 0, (trace) => (trace.steps.ncci_ptp = { edits: [] }))).toEqual(['procedure-to-procedure edits']);
+
+    const lesserLine = priceLines([lineFacts({ chargeCents: cents(3000n), agreement: lesserFixed })]);
+    expect(tampered(lesserLine, 0, (trace) => (trace.line.charge_cents = '2999'))).toEqual(['charge against the line']);
+    expect(tampered(lesserLine, 0, (trace) => (units(trace).schedule_cents = '1'))).toEqual(['schedule cents']);
+
+    const visitLines = priceLines([lineFacts({ procedureCode: '97530', agreement: visit }), lineFacts({ lineNo: 2, procedureCode: '97140', agreement: visit })]);
+    const perVisit = (trace: PricingTrace) => trace.steps.per_visit as NonNullable<PricingTrace['steps']['per_visit']>;
+    expect(tampered(visitLines, 1, (trace) => (perVisit(trace).carrier_line_no = 2))).toEqual(['the line carrying the visit']);
+    expect(tampered(visitLines, 1, (trace) => (perVisit(trace).visit_line_nos = [1]))).toEqual(['the line in its visit']);
+    expect(tampered(visitLines, 0, (trace) => (perVisit(trace).service_date = '2026-03-11'))).toEqual(['the visit date']);
+    expect(tampered(visitLines, 0, (trace) => (perVisit(trace).amount_cents = '8801'))).toEqual(['visit amount']);
+    expect(tampered(visitLines, 0, (trace) => (units(trace).schedule_cents = '8800'))).toEqual(['units step amounts of a visit']);
+    const edits = (trace: PricingTrace) => (trace.steps.ncci_ptp as NonNullable<PricingTrace['steps']['ncci_ptp']>).edits;
+    expect(tampered(visitLines, 0, (trace) => ((edits(trace)[0] as Edit).bypassed = true))).toEqual(['edit with line 2 bypassed']);
+    expect(tampered(visitLines, 0, (trace) => ((edits(trace)[0] as Edit).record.key = { column1: '97161', column2: '97530' }))).toEqual(['edit record key']);
+    expect(tampered(visitLines, 0, (trace) => ((edits(trace)[0] as Edit).record.effective_from = '2026-04-01'))).toEqual(['edit record window']);
+    expect(tampered(visitLines, 0, (trace) => trace.outcome.result === 'priced' && (trace.outcome.review_flags = []))).toEqual(['review flags']);
+  });
+
+  it('refuses a phase-two trace without the values its amount needs', () => {
+    const fixedTrace = () => stored(priceLines([lineFacts({ agreement: fixed({ flags: { apply_ncci: true }, adjustment: { kind: 'PERCENT', percent: '90' } }) })])[0]);
+    const noAmount = fixedTrace();
+    (noAmount.terms as NonNullable<PricingTrace['terms']>).fixed_amount_cents = null;
+    expect(() => recompute(noAmount)).toThrow('a FIXED_SCHEDULE trace records no amount');
+    const noEdits = fixedTrace();
+    noEdits.steps.ncci_ptp = null;
+    expect(() => recompute(noEdits)).toThrow('a trace with apply_ncci on records no procedure-to-procedure edits');
+    const noOwn = fixedTrace();
+    noOwn.steps.adjustments = [];
+    expect(() => recompute(noOwn)).toThrow('the trace records no contract adjustment for terms that define one');
+    const noSchedule = fixedTrace();
+    (noSchedule.steps.units as NonNullable<PricingTrace['steps']['units']>).schedule_cents = null;
+    expect(() => recompute(noSchedule)).toThrow('the trace records no schedule amount');
+    const noCharge = stored(priceLines([lineFacts({ agreement: lesserFixed })])[0]);
+    (noCharge.steps.units as NonNullable<PricingTrace['steps']['units']>).charge_cents = null;
+    expect(() => recompute(noCharge)).toThrow('the trace records no line charge');
+    const noVisit = stored(priceLines([lineFacts({ agreement: visit })])[0]);
+    noVisit.steps.per_visit = null;
+    expect(() => recompute(noVisit)).toThrow('a per-visit trace records no visit');
+  });
+
+  it('keeps the recorded ENGINE_ERROR of a reduction asked of a term without a fee schedule', () => {
+    expectReproduced(priceLines([lineFacts({ agreement: fixed({ flags: { apply_mppr: true } }) })]));
   });
 });
 

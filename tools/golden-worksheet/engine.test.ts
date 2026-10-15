@@ -39,6 +39,9 @@ describe('the engine’s golden comparison', () => {
     expect(differencesFor('G01', 1, (line) => ({ ...line, adjustments: (line.adjustments ?? []).slice(1) }))).toEqual(['adjustments', 'trace adjustments']);
     expect(differencesFor('G58', 2, (line) => ({ ...line, variance_cents: '196' }))).toEqual(['variance_cents']);
     expect(differencesFor('G59', 1, (line) => ({ ...line, window: { ends_on: '2026-09-19', status: 'OPEN' } }))).toEqual(['window']);
+    expect(differencesFor('G102', 2, (line) => ({ ...line, review_flags: [] }))).toEqual(['review_flags']);
+    expect(differencesFor('G102', 1, (line) => ({ ...line, review_flags: [{ flag: 'NCCI_PTP', column1_line_no: 2 }] }))).toEqual(['review_flags']);
+    expect(differencesFor('G111', 1, (line) => ({ ...line, adjustments: (line.adjustments ?? []).filter((item) => item.name !== 'contract_adjustment') }))).toEqual(['adjustments', 'trace adjustments']);
   });
 
   it('reports a changed outcome or reason, and a line missing on either side', () => {
@@ -65,6 +68,21 @@ describe('the engine’s golden comparison', () => {
     expect(agreementRecords(g49?.claim as NonNullable<typeof g49>['claim']).rateRecords).toEqual([]);
     const g41 = readGoldenClaims().find((item) => item.claim.id === 'G41');
     expect(agreementRecords(g41?.claim as NonNullable<typeof g41>['claim']).rateRecords[0]?.terms.scope).toMatchObject({ modifier_sets: [['GP']], places_of_service: ['11'] });
+  });
+
+  it('builds every method’s parameters as the product stores them, a null contract adjustment left out', () => {
+    const terms = (id: string, recordId: string) => {
+      const found = readGoldenClaims().find((item) => item.claim.id === id);
+      return agreementRecords(found?.claim as NonNullable<typeof found>['claim']).rateRecords.find((record) => record.id === recordId)?.terms;
+    };
+    expect(terms('G101', 'rr-a1-97110')).toMatchObject({ method: 'FIXED_SCHEDULE', parameters: { amount_cents: 3250n } });
+    expect(terms('G101', 'rr-a1-97110')?.parameters).not.toHaveProperty('contract_adjustment');
+    expect(terms('G111', 'rr-a2-97530')).toMatchObject({ method: 'FIXED_SCHEDULE', parameters: { amount_cents: 3433n, contract_adjustment: { kind: 'CAP', cap_cents: 6000n } } });
+    expect(terms('G121', 'rr-b-fixed')).toMatchObject({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: 3400n }, charge_basis: 'LINE_CHARGE' } });
+    expect(terms('G123', 'rr-b-medicare')).toMatchObject({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', locality_basis: { kind: 'PRACTICE' } } } });
+    expect(terms('G141', 'rr-c-visit')).toMatchObject({ method: 'PER_VISIT', parameters: { amount_cents: 8800n } });
+    expect(terms('G181', 'rr-e1-therapy')).toMatchObject({ method: 'PERCENT_OF_MEDICARE', parameters: { year_basis: 'LOCKED:2025', contract_adjustment: { kind: 'PERCENT' } } });
+    expect(terms('G109', 'rr-a1-g0283')).toMatchObject({ method: 'UNSUPPORTED', parameters: {} });
   });
 
   it('refuses a release whose manifest is not the one the claim names', () => {

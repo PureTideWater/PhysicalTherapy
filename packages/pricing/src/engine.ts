@@ -1,4 +1,4 @@
-import type { AgreementTerms, RateRecordTerms, RateWindows } from '@tp/contracts';
+import type { AgreementTerms, ContractAdjustment, PercentOfMedicareSchedule, RateRecordTerms, RateWindows } from '@tp/contracts';
 import {
   type Cents,
   DEFAULT_ROUNDING,
@@ -18,28 +18,49 @@ import type { RuleRecordOf, RuleRecordType } from '@tp/rules';
 import { isIsoDate, yearOf } from './dates';
 import { EngineInputError, type EngineErrorDetail, type NoPfsValueDetail, type UnpricedReason } from './reasons';
 import type { IndexedRelease } from './release';
-import { ENGINE_VERSION, type PricingTrace, TRACE_FORMAT, type TraceAdjustment, type TraceAgreement, type TraceFeeSchedule, type TraceStep, type TraceWindow } from './trace';
-import type { AppliedAdjustment, LineFacts, LinePricing, PracticeSettings, PricedLine, PricingInput, PricingTerms, UnpricedLine } from './types';
+import {
+  ENGINE_VERSION,
+  type PricingTrace,
+  TRACE_FORMAT,
+  type TraceAdjustment,
+  type TraceAgreement,
+  type TraceFeeSchedule,
+  type TraceStep,
+  type TraceTerms,
+  type TraceUnits,
+  type TraceWindow,
+} from './trace';
+import type { AppliedAdjustment, ClaimFacts, LineFacts, LinePricing, PracticeSettings, PricedLine, PricingInput, PricingTerms, ReviewFlag, UnpricedLine } from './types';
 import { disputeWindow } from './windows';
 
 /**
- * The expected-payment engine, phase one (PRD section 11): Medicare Advantage non-contracted lines
- * and PERCENT_OF_MEDICARE terms, locked to a year or current. Pure: the claim's line facts with each
- * line's resolved agreement, a rule release, practice settings and the triage date in; one result per
- * line out, priced or unpriced, each with its trace. It follows PRD 11 in order:
+ * The expected-payment engine (PRD section 11): Medicare Advantage non-contracted lines and every
+ * contract method: FIXED_SCHEDULE, PERCENT_OF_MEDICARE (locked to a year or current), LESSER_OF the
+ * schedule and the line charge, and PER_VISIT; UNSUPPORTED stops the line. Pure: the claim's line facts
+ * with each line's resolved agreement, a rule release, practice settings and the triage date in; one
+ * result per line out, priced or unpriced, each with its trace. It follows PRD 11 in order:
  *
  * 1. The agreement, as @tp/contracts' resolver gave it: a stop reason, or the terms that price the line.
- * 2. The base amount by method: for the basis year, per unit, (work RVU x work GPCI + PE RVU for the
- *    place of service x PE GPCI + MP RVU x MP GPCI) x the conversion factor the terms name, x the
- *    percentage; kept as its work, practice-expense and malpractice parts.
- * 3. Units as billed, at most MAX_UNITS. Terms whose timed-units rule is UNKNOWN stop the line with
- *    UNITS_RULE_UNKNOWN: until minutes are imported the units are a reason for review, not a price
- *    (PRD 20; PRD 2 point 6), so such a line is neither ranked nor reduced.
- * 4. The flagged adjustments, in order: the multiple procedure reduction (per claim and day, the
- *    always-therapy units of lines with apply_mppr on, ranked by practice-expense part, the highest
- *    kept whole), the assistant reduction (CQ or CO: the release's percentage of the amount after the
- *    reduction), sequestration (the release's percentage of the payer's share, the amount less the
- *    patient share, floored at zero). Percentages come from the release, never from code.
+ * 2. The amount per unit by method: a fixed schedule's amount; for a percentage of Medicare (the method,
+ *    or a lesser-of term's schedule), for the basis year, (work RVU x work GPCI + PE RVU for the place of
+ *    service x PE GPCI + MP RVU x MP GPCI) x the conversion factor the terms name, x the percentage, kept
+ *    as its work, practice-expense and malpractice parts; a per-visit amount. apply_mppr on a term without
+ *    a fee schedule has no rule (ENGINE_ERROR mppr_needs_fee_schedule, for review).
+ * 3. Units as billed, at most MAX_UNITS. With apply_ncci on, units above the code's medically unlikely
+ *    edit stop the line with MUE_EXCEEDED, for review, never priced down. Terms whose timed-units rule
+ *    is UNKNOWN stop it with UNITS_RULE_UNKNOWN (PRD 20; PRD 2 point 6). Either is neither ranked nor
+ *    reduced. The base is the unit amount times the units; for LESSER_OF the lesser of that and the line
+ *    charge; for PER_VISIT the visit amount once per claim, date and rate record, on the lowest line
+ *    number priced so far, zero on the others. With apply_ncci on, each NCCI procedure-to-procedure edit
+ *    pairing this line's code (column 2) with another line's of the date (column 1) raises a review flag
+ *    unless its modifier indicator is 1 and a 59 or X modifier is on either line; it never changes the
+ *    amount.
+ * 4. The adjustments, in order: the multiple procedure reduction (per claim and day, the always-therapy
+ *    units of lines with apply_mppr on, ranked by practice-expense part, the highest kept whole), the
+ *    assistant reduction (CQ or CO: the release's percentage of the amount after the reduction),
+ *    sequestration (the release's percentage of the payer's share, the amount less the patient share,
+ *    floored at zero), then the rate record's own adjustment (a percentage of the amount, or a cap on the
+ *    line). Percentages come from the release or the record, never from code.
  * 5. The patient share is reported, never subtracted. Claim status 1, 4 and 19 (processed as primary
  *    and forwarded) price; secondary and tertiary claims (2, 3, 20, 21) stop with SECONDARY_PAYER; a
  *    reversal (22), or a claim reversed and not corrected, with REVERSED_CLAIM; 23 and 25 have no rule
@@ -55,6 +76,8 @@ const HUNDRED = decimal(100n);
 const ZERO = decimal(0n);
 const ONE = decimal(1n);
 const ASSISTANT_MODIFIERS = ['CQ', 'CO'] as const;
+/** The NCCI modifier indicator that lets a 59 or X modifier bypass a procedure-to-procedure edit (QUESTIONS Q41). */
+const PTP_BYPASS_INDICATOR = '1';
 /** Claim statuses that price: processed as primary (1), denied (4), processed as primary and forwarded (19). */
 const PRICED_STATUSES = new Set(['1', '4', '19']);
 /** Processed as secondary or tertiary, forwarded or not (PRD 2 point 7: unpriced in v0 and v1). */
@@ -76,12 +99,14 @@ const LOCKED_YEAR = /^LOCKED:(\d{4})$/;
 
 /** The terms a line prices under: a contract rate record's, or the Medicare Advantage non-contracted terms. */
 type Terms = AgreementTerms | RateRecordTerms;
+/** Terms with a method that prices. */
+type PricedTerms = AgreementTerms | Exclude<RateRecordTerms, { readonly method: 'UNSUPPORTED' }>;
 
-interface UnitParts {
-  readonly work: Decimal;
-  readonly pe: Decimal;
-  readonly mp: Decimal;
+/** What one unit (one visit, for PER_VISIT) is worth before the adjustments. */
+interface UnitBasis {
   readonly total: Decimal;
+  /** The fee schedule's practice-expense part, which the multiple procedure reduction ranks and cuts; zero without one. */
+  readonly pe: Decimal;
 }
 
 /** What every line carries through the steps: its facts, its trace, and what it has resolved to so far. */
@@ -108,13 +133,15 @@ interface Stopped {
 interface Working {
   readonly kind: 'working';
   readonly context: LineContext;
-  readonly terms: Terms;
+  readonly terms: PricedTerms;
   readonly identity: PricingTerms;
   readonly contractWindows: RateWindows | null;
-  readonly unit: UnitParts;
+  readonly unit: UnitBasis;
   readonly unitCount: number;
-  readonly base: Decimal;
+  /** Set at step 3; a per-visit line's by the visit it belongs to. */
+  base: Decimal;
   amount: Decimal;
+  readonly reviewFlags: readonly ReviewFlag[];
 }
 
 interface Finished {
@@ -143,9 +170,10 @@ export function price(input: PricingInput): LinePricing[] {
         throw new EngineInputError('duplicate_line_no');
       }
       validateFacts(facts);
-      return stepsOneToThree(context, release, settings);
+      return stepsOneToThree(context, input);
     });
   });
+  perVisitAmounts(first);
   const reduced = multipleProcedureReduction(first, release);
   const finished = reduced.map((item) => (item.kind === 'stopped' ? item : attempt(item.context, () => stepsFourToEight(item, input))));
   return finished.map((item) => (item.kind === 'stopped' ? unpriced(item) : priced(item)));
@@ -188,7 +216,7 @@ function newContext(input: PricingInput, facts: LineFacts): LineContext {
     },
     agreement: null,
     terms: null,
-    steps: { fee_schedule: null, units: null, adjustments: [], patient_share_cents: null, rounding: null, variance_cents: null, window: null },
+    steps: { fee_schedule: null, units: null, per_visit: null, ncci_ptp: null, adjustments: [], patient_share_cents: null, rounding: null, variance_cents: null, window: null },
     // Replaced when the line ends, priced or stopped.
     outcome: { result: 'unpriced', reason: 'ENGINE_ERROR', detail: 'unexpected', step: 'input' },
   };
@@ -249,7 +277,8 @@ function validateFacts(facts: LineFacts): void {
 // ---------------------------------------------------------------------------------------------------
 // Steps 1 to 3
 
-function stepsOneToThree(context: LineContext, release: IndexedRelease, settings: PracticeSettings): Working | Stopped {
+function stepsOneToThree(context: LineContext, input: PricingInput): Working | Stopped {
+  const { release, settings } = input;
   const agreement = resolveTerms(context);
   if (agreement.kind === 'stopped') {
     return agreement;
@@ -267,23 +296,114 @@ function stepsOneToThree(context: LineContext, release: IndexedRelease, settings
   if (units.greaterThan(decimal(BigInt(MAX_UNITS)))) {
     throw new EngineInputError('units_above_limit');
   }
-  const base = unit.parts.total.times(units);
-  const rule = agreement.terms.flags.timed_units_rule;
-  context.trace.steps.units = { units: units.toString(), timed_units_rule: rule, base_cents: base.toString() };
-  if (rule === 'UNKNOWN') {
+  const { terms, basis } = unit;
+  const { flags } = terms;
+  const mue = medicallyUnlikelyEdit(context, flags.apply_ncci, release);
+  // Units do not multiply a per-visit amount; the per-visit step places it.
+  const schedule = terms.method === 'PER_VISIT' ? null : basis.total.times(units);
+  const charge = terms.method === 'LESSER_OF' ? decimal(context.facts.chargeCents) : null;
+  const base = schedule === null || charge === null ? schedule : lesser(schedule, charge);
+  context.trace.steps.units = {
+    units: units.toString(),
+    timed_units_rule: flags.timed_units_rule,
+    mue,
+    unit_cents: basis.total.toString(),
+    schedule_cents: schedule === null ? null : schedule.toString(),
+    charge_cents: charge === null ? null : charge.toString(),
+    base_cents: base === null ? null : base.toString(),
+  };
+  if (mue.value !== null && units.greaterThan(decimal(BigInt(mue.value)))) {
+    return stop(context, 'MUE_EXCEEDED');
+  }
+  if (flags.timed_units_rule === 'UNKNOWN') {
     return stop(context, 'UNITS_RULE_UNKNOWN');
   }
+  const reviewFlags = flags.apply_ncci ? procedureToProcedure(context, input.claim, release) : [];
   return {
     kind: 'working',
     context,
-    terms: agreement.terms,
+    terms,
     identity: agreement.identity,
     contractWindows: agreement.contractWindows,
-    unit: unit.parts,
+    unit: basis,
     unitCount: Number.parseInt(units.toString(), 10),
-    base,
-    amount: base,
+    base: base ?? ZERO,
+    amount: base ?? ZERO,
+    reviewFlags,
   };
+}
+
+function lesser(a: Decimal, b: Decimal): Decimal {
+  return a.lessThanOrEqualTo(b) ? a : b;
+}
+
+/** Step 3, with apply_ncci on: the code's medically unlikely edit in force on the service date (none: no limit). */
+function medicallyUnlikelyEdit(context: LineContext, checked: boolean, release: IndexedRelease): TraceUnits['mue'] {
+  if (!checked) {
+    return { checked: false, record: null, value: null };
+  }
+  const found = release.inForce('ncci_mue', { hcpcs: context.facts.procedureCode }, context.facts.serviceDate);
+  return found === null ? { checked: true, record: null, value: null } : { checked: true, record: release.ref(found), value: found.value.mue };
+}
+
+/** A modifier that can bypass a procedure-to-procedure edit: 59, or an X modifier (PRD 2 point 6). */
+function bypasses(modifier: string): boolean {
+  return modifier === '59' || modifier.startsWith('X');
+}
+
+/**
+ * Step 3, with apply_ncci on: the NCCI procedure-to-procedure edits in force on the date with this line's code
+ * in column 2 and the code of another line of the claim and date in column 1, whatever that line's own
+ * outcome. Each stands, a review flag, unless its modifier indicator is 1 and a 59 or X modifier is on either
+ * line. The amount is never changed (QUESTIONS Q41).
+ */
+function procedureToProcedure(context: LineContext, claim: ClaimFacts, release: IndexedRelease): ReviewFlag[] {
+  const { facts } = context;
+  const others = claim.lines.filter((line) => line.lineNo !== facts.lineNo && line.serviceDate === facts.serviceDate).sort((a, b) => a.lineNo - b.lineNo);
+  const edits = others.flatMap((other) => {
+    const record = release.inForce('ncci_ptp', { column1: other.procedureCode, column2: facts.procedureCode }, facts.serviceDate);
+    if (record === null) {
+      return [];
+    }
+    const indicator = record.value.modifier_indicator;
+    const bypassed = indicator === PTP_BYPASS_INDICATOR && [...facts.modifiers, ...other.modifiers].some(bypasses);
+    return [{ column1_line_no: other.lineNo, column1_code: other.procedureCode, column1_modifiers: [...other.modifiers], record: release.ref(record), modifier_indicator: indicator, bypassed }];
+  });
+  context.trace.steps.ncci_ptp = { edits };
+  return edits
+    .filter((edit) => !edit.bypassed)
+    .map((edit) => ({ flag: 'NCCI_PTP' as const, column1LineNo: edit.column1_line_no, column1Code: edit.column1_code, column2Code: facts.procedureCode }));
+}
+
+/**
+ * Step 3 for PER_VISIT, per claim, service date and rate record: the lines priced so far under the record on
+ * the date are one visit; the lowest line number carries the visit amount and the others expect zero (PRD 11
+ * step 2; QUESTIONS Q44). Lines already stopped (an MUE, an unknown timed-units rule) are not in the visit.
+ */
+function perVisitAmounts(items: readonly (Working | Stopped)[]): void {
+  const visits = new Map<string, Working[]>();
+  for (const item of items) {
+    if (item.kind === 'working' && item.terms.method === 'PER_VISIT') {
+      const key = `${item.context.facts.serviceDate} ${String(item.identity.rateRecordId)}`;
+      visits.set(key, [...(visits.get(key) ?? []), item]);
+    }
+  }
+  for (const visit of visits.values()) {
+    const lineNos = visit.map((work) => work.context.facts.lineNo).sort((a, b) => a - b);
+    const carrier = Math.min(...lineNos);
+    for (const work of visit) {
+      const base = work.context.facts.lineNo === carrier ? work.unit.total : ZERO;
+      work.base = base;
+      work.amount = base;
+      work.context.trace.steps.per_visit = {
+        service_date: work.context.facts.serviceDate,
+        amount_cents: work.unit.total.toString(),
+        visit_line_nos: lineNos,
+        carrier_line_no: carrier,
+        base_cents: base.toString(),
+      };
+    }
+  }
 }
 
 interface Resolved {
@@ -351,35 +471,84 @@ function resolveTerms(context: LineContext): Resolved | Stopped {
 
 function withTerms(context: LineContext, terms: Terms, identity: PricingTerms, contractWindows: RateWindows | null): Resolved {
   context.method = terms.method;
-  context.trace.terms = {
-    method: terms.method,
-    percent_of_medicare:
-      terms.method === 'PERCENT_OF_MEDICARE'
-        ? {
-            percentage: terms.parameters.percentage.toString(),
-            year_basis: terms.parameters.year_basis,
-            locality_basis: { ...terms.parameters.locality_basis },
-            conversion_factor: terms.parameters.conversion_factor,
-          }
-        : null,
-    flags: { ...terms.flags },
-    rounding: terms.rounding,
-  };
+  context.trace.terms = traceTerms(terms);
   return { kind: 'resolved', terms, identity, contractWindows };
+}
+
+function percentTrace(schedule: PercentOfMedicareSchedule): NonNullable<TraceTerms['percent_of_medicare']> {
+  return { percentage: schedule.percentage.toString(), year_basis: schedule.year_basis, locality_basis: { ...schedule.locality_basis }, conversion_factor: schedule.conversion_factor };
+}
+
+function adjustmentTrace(adjustment: ContractAdjustment | undefined): TraceTerms['contract_adjustment'] {
+  if (adjustment === undefined) {
+    return null;
+  }
+  return adjustment.kind === 'PERCENT' ? { kind: 'PERCENT', percent: adjustment.percent.toString() } : { kind: 'CAP', cap_cents: centsToString(adjustment.cap_cents) };
+}
+
+/** The terms as the trace records them: the method, its schedule, its amount, the contract adjustment, the flags and the rounding. */
+function traceTerms(terms: Terms): TraceTerms {
+  const none = { percent_of_medicare: null, fixed_amount_cents: null, lesser_of: null, contract_adjustment: null };
+  const common = { flags: { ...terms.flags }, rounding: terms.rounding };
+  switch (terms.method) {
+    case 'UNSUPPORTED':
+      return { method: terms.method, ...none, ...common };
+    case 'FIXED_SCHEDULE':
+    case 'PER_VISIT':
+      return { method: terms.method, ...none, fixed_amount_cents: centsToString(terms.parameters.amount_cents), contract_adjustment: adjustmentTrace(terms.parameters.contract_adjustment), ...common };
+    case 'PERCENT_OF_MEDICARE':
+      return { method: terms.method, ...none, percent_of_medicare: percentTrace(terms.parameters), contract_adjustment: adjustmentTrace(terms.parameters.contract_adjustment), ...common };
+    case 'LESSER_OF': {
+      const { schedule, charge_basis: chargeBasis } = terms.parameters;
+      return {
+        method: terms.method,
+        percent_of_medicare: schedule.method === 'PERCENT_OF_MEDICARE' ? percentTrace(schedule) : null,
+        fixed_amount_cents: schedule.method === 'FIXED_SCHEDULE' ? centsToString(schedule.amount_cents) : null,
+        lesser_of: { schedule_method: schedule.method, charge_basis: chargeBasis },
+        contract_adjustment: adjustmentTrace(terms.parameters.contract_adjustment),
+        ...common,
+      };
+    }
+  }
 }
 
 type Lookup = <T extends RuleRecordType>(type: T, key: Readonly<Record<string, string>>) => RuleRecordOf<T> | null;
 
-/** Step 2: the per-unit amount by method, for the basis year, in work, practice-expense and malpractice parts. */
-function baseAmount(context: LineContext, terms: Terms, release: IndexedRelease, settings: PracticeSettings): { readonly kind: 'unit'; readonly parts: UnitParts } | Stopped {
+interface Unit {
+  readonly kind: 'unit';
+  readonly terms: PricedTerms;
+  readonly basis: UnitBasis;
+}
+
+function fixedUnit(terms: PricedTerms, amount: Cents): Unit {
+  return { kind: 'unit', terms, basis: { total: decimal(amount), pe: ZERO } };
+}
+
+/** Step 2: the amount per unit (per visit) by method. */
+function baseAmount(context: LineContext, terms: Terms, release: IndexedRelease, settings: PracticeSettings): Unit | Stopped {
   context.step = 'method';
   if (terms.method === 'UNSUPPORTED') {
     return stop(context, 'UNSUPPORTED_METHOD');
   }
-  if (terms.method !== 'PERCENT_OF_MEDICARE') {
-    throw new EngineInputError('method_not_in_phase_one');
+  if (terms.flags.apply_mppr && terms.method !== 'PERCENT_OF_MEDICARE') {
+    // The reduction cuts a fee-schedule practice-expense part; a fixed, per-visit or lesser-of amount has none (QUESTIONS Q39).
+    throw new EngineInputError('mppr_needs_fee_schedule');
   }
-  const parameters = terms.parameters;
+  switch (terms.method) {
+    case 'FIXED_SCHEDULE':
+    case 'PER_VISIT':
+      return fixedUnit(terms, terms.parameters.amount_cents);
+    case 'LESSER_OF': {
+      const { schedule } = terms.parameters;
+      return schedule.method === 'FIXED_SCHEDULE' ? fixedUnit(terms, schedule.amount_cents) : feeSchedule(context, terms, schedule, release, settings);
+    }
+    case 'PERCENT_OF_MEDICARE':
+      return feeSchedule(context, terms, terms.parameters, release, settings);
+  }
+}
+
+/** Step 2 from the fee schedule: for the basis year, per unit, in work, practice-expense and malpractice parts at the percentage. */
+function feeSchedule(context: LineContext, terms: PricedTerms, parameters: PercentOfMedicareSchedule, release: IndexedRelease, settings: PracticeSettings): Unit | Stopped {
   if (parameters.locality_basis.kind !== 'PRACTICE') {
     throw new EngineInputError('locality_basis_not_in_phase_one');
   }
@@ -459,7 +628,7 @@ function baseAmount(context: LineContext, terms: Terms, release: IndexedRelease,
   const mp = decimal(values.mp_rvu).times(decimal(gpci.value.mp_gpci)).times(centsPerRvu);
   const total = work.plus(pe).plus(mp);
   schedule.unit_cents = { work: work.toString(), pe: pe.toString(), mp: mp.toString(), total: total.toString() };
-  return { kind: 'unit', parts: { work, pe, mp, total } };
+  return { kind: 'unit', terms, basis: { total, pe } };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -611,6 +780,23 @@ function assistantReduction(work: Working, release: IndexedRelease): void {
   );
 }
 
+/** Step 4d: the rate record's own adjustment, after the Medicare ones: a percentage of the amount, or a cap on the line. */
+function contractAdjustment(work: Working, adjustment: ContractAdjustment): void {
+  const before = work.amount;
+  switch (adjustment.kind) {
+    case 'PERCENT': {
+      const after = before.times(adjustment.percent).dividedBy(HUNDRED);
+      apply(work, { name: 'contract_adjustment', before_cents: before.toString(), after_cents: after.toString(), kind: 'PERCENT', percent: adjustment.percent.toString(), cap_cents: null }, before, after);
+      return;
+    }
+    case 'CAP': {
+      const after = lesser(before, decimal(adjustment.cap_cents));
+      apply(work, { name: 'contract_adjustment', before_cents: before.toString(), after_cents: after.toString(), kind: 'CAP', percent: null, cap_cents: centsToString(adjustment.cap_cents) }, before, after);
+      return;
+    }
+  }
+}
+
 /** Step 4c: the release's sequestration percentage of the payer's share (the amount less the patient share, floored at zero). */
 function sequestration(work: Working, release: IndexedRelease): void {
   work.context.step = 'sequestration';
@@ -652,6 +838,10 @@ function stepsFourToEight(work: Working, input: PricingInput): Finished | Stoppe
   }
   if (terms.flags.apply_sequestration) {
     sequestration(work, input.release);
+  }
+  const adjustment = terms.parameters.contract_adjustment;
+  if (adjustment !== undefined) {
+    contractAdjustment(work, adjustment);
   }
   // Step 5: the patient share is reported beside the amount; secondary and reversed claims stop here.
   context.step = 'claim';
@@ -704,17 +894,23 @@ function priced(item: Finished): PricedLine {
   const variance = subtractCents(rounded.cents, context.facts.observedAllowedCents);
   context.trace.steps.variance_cents = centsToString(variance);
   context.trace.steps.window = window;
-  context.trace.outcome = { result: 'priced', expected_allowed_cents: centsToString(rounded.cents), expected_unrounded_cents: rounded.unrounded.toString() };
+  context.trace.outcome = {
+    result: 'priced',
+    expected_allowed_cents: centsToString(rounded.cents),
+    expected_unrounded_cents: rounded.unrounded.toString(),
+    review_flags: work.reviewFlags.map((flag) => ({ flag: flag.flag, column1_line_no: flag.column1LineNo })),
+  };
   return {
     outcome: 'priced',
     lineNo: context.facts.lineNo,
-    method: 'PERCENT_OF_MEDICARE',
+    method: work.terms.method,
     terms: work.identity,
     expectedAllowedCents: rounded.cents,
     expectedUnroundedCents: rounded.unrounded,
     rounding: rounded.rule,
     baseCents: unroundedCents(work.base),
     adjustments: [...context.adjustments],
+    reviewFlags: [...work.reviewFlags],
     patientShareCents: context.patientShare,
     observedAllowedCents: context.facts.observedAllowedCents,
     varianceCents: variance,

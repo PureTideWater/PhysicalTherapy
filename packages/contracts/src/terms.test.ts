@@ -124,6 +124,36 @@ describe('rate record terms', () => {
     );
   });
 
+  it('takes an optional contract-specific adjustment, a percentage or a cap, and keeps records without one valid (PRD 11 step 4)', () => {
+    const before = { scope: SCOPE, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' }, flags: COMMERCIAL_DEFAULT_FLAGS, rounding: null };
+    const old = parseRateTerms(before);
+    expect(old.method === 'FIXED_SCHEDULE' && old.parameters.contract_adjustment).toBeUndefined();
+    expect(rateTermsToJson(old).parameters).toEqual({ amount_cents: '3200' });
+    const percent = parseRateTerms({ ...before, method: 'PER_VISIT', parameters: { amount_cents: '8800', contract_adjustment: { kind: 'PERCENT', percent: '92.5' } } });
+    expect(percent.method === 'PER_VISIT' && percent.parameters.contract_adjustment?.kind === 'PERCENT' && percent.parameters.contract_adjustment.percent.toString()).toBe('92.5');
+    expect(rateTermsToJson(percent).parameters).toEqual({ amount_cents: '8800', contract_adjustment: { kind: 'PERCENT', percent: '92.5' } });
+    const capped = parseRateTerms({
+      ...before,
+      method: 'LESSER_OF',
+      parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '3400' }, charge_basis: 'LINE_CHARGE', contract_adjustment: { kind: 'CAP', cap_cents: '6000' } },
+    });
+    expect(capped.method === 'LESSER_OF' && capped.parameters.contract_adjustment).toEqual({ kind: 'CAP', cap_cents: 6000n });
+    expect(rateTermsToJson(capped).parameters).toEqual({ schedule: { method: 'FIXED_SCHEDULE', amount_cents: '3400' }, charge_basis: 'LINE_CHARGE', contract_adjustment: { kind: 'CAP', cap_cents: '6000' } });
+    const medicare = { percentage: '120', year_basis: 'CURRENT', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'qualifying_apm' };
+    expect(rateTermsToJson(parseRateTerms({ ...before, method: 'PERCENT_OF_MEDICARE', parameters: { ...medicare, contract_adjustment: { kind: 'CAP', cap_cents: '0' } } })).parameters).toEqual({
+      ...medicare,
+      contract_adjustment: { kind: 'CAP', cap_cents: '0' },
+    });
+    for (const adjustment of [{ kind: 'DISCOUNT', percent: '5' }, { kind: 'PERCENT', percent: '0' }, { kind: 'PERCENT', percent: '1000.5' }, { kind: 'CAP', cap_cents: '-1' }, { kind: 'CAP', cap_cents: 60 }, { kind: 'CAP', percent: '5' }]) {
+      expect(() => parseRateTerms({ ...before, parameters: { amount_cents: '3200', contract_adjustment: adjustment } }), JSON.stringify(adjustment)).toThrow();
+    }
+    // The adjustment belongs to the record, not to a lesser-of term's schedule, and an unsupported method takes none.
+    expect(() =>
+      parseRateTerms({ ...before, method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '1', contract_adjustment: { kind: 'CAP', cap_cents: '1' } }, charge_basis: 'LINE_CHARGE' } }),
+    ).toThrow();
+    expect(() => parseRateTerms({ ...before, method: 'UNSUPPORTED', parameters: { contract_adjustment: { kind: 'CAP', cap_cents: '1' } } })).toThrow();
+  });
+
   it('writes cents as integer text and percentages as decimal text, never through a float', () => {
     const json = rateTermsToJson(parseRateTerms({ scope: SCOPE, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '999999999999' } }, true));
     expect(json.parameters).toEqual({ amount_cents: '999999999999' });

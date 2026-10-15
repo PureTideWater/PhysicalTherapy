@@ -5,7 +5,7 @@
  */
 import path from 'node:path';
 
-import type { AgreementResolution, AgreementTerms, ContractVersionRecord, PlanMappingRecord, RateRecordTerms, RateWindows } from '@tp/contracts';
+import type { AgreementResolution, AgreementTerms, ContractAdjustment, ContractVersionRecord, PlanMappingRecord, RateRecordTerms, RateWindows } from '@tp/contracts';
 import { type Cents, decimal } from '@tp/money';
 import type { RuleRecord } from '@tp/rules';
 import { readRelease } from '@tp/rules/content';
@@ -109,28 +109,72 @@ export function maAgreement(mapping: Partial<PlanMappingRecord> = {}): Agreement
   return { outcome: 'MA_NONCONTRACTED', mapping: mappingRecord(mapping), terms: MA_TERMS };
 }
 
-export interface PercentTermsOptions {
-  readonly percentage?: string;
-  readonly yearBasis?: 'CURRENT' | `LOCKED:${number}`;
-  readonly conversionFactor?: 'non_qualifying_apm' | 'qualifying_apm';
+/** A contract-specific adjustment as a test writes it: a percentage as text, or a cap in cents. */
+export type AdjustmentOption = { readonly kind: 'PERCENT'; readonly percent: string } | { readonly kind: 'CAP'; readonly capCents: bigint };
+
+export interface TermsOptions {
   readonly flags?: Partial<RateRecordTerms['flags']>;
   readonly rounding?: RateRecordTerms['rounding'];
   readonly codes?: readonly string[];
+  /** The record's own adjustment; none when left out. */
+  readonly adjustment?: AdjustmentOption;
+}
+
+export interface PercentTermsOptions extends TermsOptions {
+  readonly percentage?: string;
+  readonly yearBasis?: 'CURRENT' | `LOCKED:${number}`;
+  readonly conversionFactor?: 'non_qualifying_apm' | 'qualifying_apm';
+}
+
+function adjustmentOf(option: AdjustmentOption | undefined): { readonly contract_adjustment?: ContractAdjustment } {
+  if (option === undefined) {
+    return {};
+  }
+  return { contract_adjustment: option.kind === 'PERCENT' ? { kind: 'PERCENT', percent: decimal(option.percent) } : { kind: 'CAP', cap_cents: option.capCents as Cents } };
+}
+
+function common(options: TermsOptions): Pick<RateRecordTerms, 'scope' | 'flags' | 'rounding'> {
+  return {
+    scope: { codes: [...(options.codes ?? ['97110'])] },
+    flags: { apply_mppr: false, apply_assistant_reduction: false, apply_sequestration: false, apply_ncci: false, timed_units_rule: 'PER_CODE', ...options.flags },
+    rounding: options.rounding ?? null,
+  };
+}
+
+function percentSchedule(options: PercentTermsOptions) {
+  return {
+    percentage: decimal(options.percentage ?? '100'),
+    year_basis: options.yearBasis ?? 'CURRENT',
+    locality_basis: { kind: 'PRACTICE' as const },
+    conversion_factor: options.conversionFactor ?? 'non_qualifying_apm',
+  };
 }
 
 /** Percent-of-Medicare rate-record terms; commercial flags off unless named. */
 export function percentTerms(options: PercentTermsOptions = {}): RateRecordTerms {
+  return { ...common(options), method: 'PERCENT_OF_MEDICARE', parameters: { ...percentSchedule(options), ...adjustmentOf(options.adjustment) } };
+}
+
+/** Fixed-schedule terms: an amount per unit, in cents. */
+export function fixedTerms(amountCents: bigint, options: TermsOptions = {}): RateRecordTerms {
+  return { ...common(options), method: 'FIXED_SCHEDULE', parameters: { amount_cents: amountCents as Cents, ...adjustmentOf(options.adjustment) } };
+}
+
+/** Per-visit terms: an amount once per claim, date and record, in cents. */
+export function perVisitTerms(amountCents: bigint, options: TermsOptions = {}): RateRecordTerms {
+  return { ...common(options), method: 'PER_VISIT', parameters: { amount_cents: amountCents as Cents, ...adjustmentOf(options.adjustment) } };
+}
+
+/** Lesser-of terms: the line charge against a fixed amount per unit (`fixedCents`) or a percent-of-Medicare schedule. */
+export function lesserOfTerms(schedule: { readonly fixedCents: bigint } | PercentTermsOptions, options: TermsOptions = {}): RateRecordTerms {
   return {
-    scope: { codes: [...(options.codes ?? ['97110'])] },
-    method: 'PERCENT_OF_MEDICARE',
+    ...common(options),
+    method: 'LESSER_OF',
     parameters: {
-      percentage: decimal(options.percentage ?? '100'),
-      year_basis: options.yearBasis ?? 'CURRENT',
-      locality_basis: { kind: 'PRACTICE' },
-      conversion_factor: options.conversionFactor ?? 'non_qualifying_apm',
+      schedule: 'fixedCents' in schedule ? { method: 'FIXED_SCHEDULE', amount_cents: schedule.fixedCents as Cents } : { method: 'PERCENT_OF_MEDICARE', ...percentSchedule(schedule) },
+      charge_basis: 'LINE_CHARGE',
+      ...adjustmentOf(options.adjustment),
     },
-    flags: { apply_mppr: false, apply_assistant_reduction: false, apply_sequestration: false, apply_ncci: false, timed_units_rule: 'PER_CODE', ...options.flags },
-    rounding: options.rounding ?? null,
   };
 }
 

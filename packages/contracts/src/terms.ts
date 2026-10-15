@@ -129,15 +129,29 @@ const localityBasis = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('NAMED'), carrier: z.string().regex(/^\d{5}$/), locality: z.string().regex(/^\d{2}$/) }),
 ]);
 
-const fixedParameters = z.strictObject({ amount_cents: centsText });
-const percentParameters = z.strictObject({
+/**
+ * A contract-specific adjustment (PRD 11 step 4: "contract-specific adjustments (a percentage or a cap the record
+ * defines)"), applied after the Medicare adjustments: PERCENT pays that percentage of the amount (above 0% and at most
+ * 1000%), CAP limits the line's amount to the cap. Optional: a record without one, every record stored before
+ * milestone 7 included, has none (fixtures/golden/QUESTIONS.md, Q45).
+ */
+export const contractAdjustmentSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('PERCENT'), percent: percentageText }),
+  z.strictObject({ kind: z.literal('CAP'), cap_cents: centsText }),
+]);
+export type ContractAdjustment = z.output<typeof contractAdjustmentSchema>;
+
+const fixedAmount = z.strictObject({ amount_cents: centsText });
+const percentSchedule = z.strictObject({
   percentage: percentageText,
   year_basis: yearBasis,
   locality_basis: localityBasis,
   conversion_factor: z.enum(CONVERSION_FACTORS),
 });
+const fixedParameters = fixedAmount.extend({ contract_adjustment: contractAdjustmentSchema.optional() });
+const percentParameters = percentSchedule.extend({ contract_adjustment: contractAdjustmentSchema.optional() });
 
-/** Parameters per method (Rules reference, Commercial contract methods). */
+/** Parameters per method (Rules reference, Commercial contract methods), each but UNSUPPORTED with an optional contract adjustment. */
 export const METHOD_PARAMETERS = {
   /** Amount per unit for the scope's codes and modifier sets. */
   FIXED_SCHEDULE: fixedParameters,
@@ -145,8 +159,9 @@ export const METHOD_PARAMETERS = {
   PERCENT_OF_MEDICARE: percentParameters,
   /** The lesser of the schedule (a fixed amount or a percentage of Medicare) and the line's billed charge. */
   LESSER_OF: z.strictObject({
-    schedule: z.discriminatedUnion('method', [fixedParameters.extend({ method: z.literal('FIXED_SCHEDULE') }), percentParameters.extend({ method: z.literal('PERCENT_OF_MEDICARE') })]),
+    schedule: z.discriminatedUnion('method', [fixedAmount.extend({ method: z.literal('FIXED_SCHEDULE') }), percentSchedule.extend({ method: z.literal('PERCENT_OF_MEDICARE') })]),
     charge_basis: z.literal('LINE_CHARGE'),
+    contract_adjustment: contractAdjustmentSchema.optional(),
   }),
   /** A flat amount once per claim per date across the included codes, which are the scope's codes. */
   PER_VISIT: fixedParameters,
@@ -156,6 +171,8 @@ export const METHOD_PARAMETERS = {
 
 export type FixedScheduleParameters = z.output<typeof fixedParameters>;
 export type PercentOfMedicareParameters = z.output<typeof percentParameters>;
+/** A percent-of-Medicare schedule: the method's own parameters, or a lesser-of term's schedule. */
+export type PercentOfMedicareSchedule = z.output<typeof percentSchedule>;
 export type LesserOfParameters = z.output<(typeof METHOD_PARAMETERS)['LESSER_OF']>;
 export type PerVisitParameters = z.output<(typeof METHOD_PARAMETERS)['PER_VISIT']>;
 export type LocalityBasis = z.output<typeof localityBasis>;
@@ -257,7 +274,7 @@ export function parseRateTerms(value: unknown, entered = false): RateRecordTerms
 
 type Json = string | boolean | null | readonly Json[] | { readonly [key: string]: Json };
 
-function percentJson(parameters: PercentOfMedicareParameters): Record<string, Json> {
+function percentJson(parameters: PercentOfMedicareSchedule): Record<string, Json> {
   return {
     percentage: parameters.percentage.toString(),
     year_basis: parameters.year_basis,
@@ -266,18 +283,27 @@ function percentJson(parameters: PercentOfMedicareParameters): Record<string, Js
   };
 }
 
+/** The contract adjustment as stored, or nothing when the record has none (so a record without one is written as before). */
+function adjustmentJson(adjustment: ContractAdjustment | undefined): Record<string, Json> {
+  if (adjustment === undefined) {
+    return {};
+  }
+  return { contract_adjustment: adjustment.kind === 'PERCENT' ? { kind: 'PERCENT', percent: adjustment.percent.toString() } : { kind: 'CAP', cap_cents: centsToString(adjustment.cap_cents) } };
+}
+
 function parametersJson(terms: RateMethodTerms): Record<string, Json> {
   switch (terms.method) {
     case 'FIXED_SCHEDULE':
     case 'PER_VISIT':
-      return { amount_cents: centsToString(terms.parameters.amount_cents) };
+      return { amount_cents: centsToString(terms.parameters.amount_cents), ...adjustmentJson(terms.parameters.contract_adjustment) };
     case 'PERCENT_OF_MEDICARE':
-      return percentJson(terms.parameters);
+      return { ...percentJson(terms.parameters), ...adjustmentJson(terms.parameters.contract_adjustment) };
     case 'LESSER_OF': {
       const { schedule } = terms.parameters;
       return {
         schedule: schedule.method === 'FIXED_SCHEDULE' ? { method: schedule.method, amount_cents: centsToString(schedule.amount_cents) } : { method: schedule.method, ...percentJson(schedule) },
         charge_basis: terms.parameters.charge_basis,
+        ...adjustmentJson(terms.parameters.contract_adjustment),
       };
     }
     case 'UNSUPPORTED':
