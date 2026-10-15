@@ -5,9 +5,10 @@ import type { PgBoss } from 'pg-boss';
 import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
-import { JOB_TYPES, type JobType, QUEUE_OPTIONS, parsePayload } from './jobs/registry';
+import { enqueue } from './jobs/enqueue';
+import { JOB_TYPES, type JobType, QUEUE_OPTIONS, parsePayload, queueOptions } from './jobs/registry';
 
-export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work' | 'schedule'>;
+export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work' | 'schedule' | 'send'>;
 
 export interface WorkerOptions {
   readonly boss: QueueClient;
@@ -28,6 +29,11 @@ export interface RunningWorker {
 
 export class JobPayloadError extends Error {
   override readonly name = 'JobPayloadError';
+}
+
+/** A job tried to queue work for a practice other than its own (one practice per job, SEC-06). */
+export class CrossPracticeJobError extends Error {
+  override readonly name = 'CrossPracticeJobError';
 }
 
 /**
@@ -57,7 +63,7 @@ async function attempt(type: string, job: QueuedJob, logger: Logger, run: () => 
   }
 }
 
-async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobHandlers, logger: Logger, pool: ScopePool<ScopeClient>): Promise<void> {
+async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobHandlers, logger: Logger, pool: ScopePool<ScopeClient>, boss: QueueClient): Promise<void> {
   let payload;
   try {
     payload = parsePayload(type, job.data);
@@ -74,6 +80,13 @@ async function runJob<T extends JobType>(type: T, job: QueuedJob, handlers: JobH
     jobId: job.id,
     logger: jobLogger,
     transaction: (run) => withJobScope(pool, { jobId: job.id, practiceId }, run),
+    enqueue: (next, nextPayload) => {
+      if (nextPayload.practice_id !== practiceId) {
+        return Promise.reject(new CrossPracticeJobError(`a ${type} job queues work for its own practice only`));
+      }
+      return enqueue(boss, next, nextPayload);
+    },
+    lastAttempt: (job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit,
   });
 }
 
@@ -97,12 +110,12 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   const { boss, logger, handlers } = options;
   await boss.start();
   for (const type of JOB_TYPES) {
-    await boss.createQueue(type, QUEUE_OPTIONS);
+    await boss.createQueue(type, queueOptions(type));
   }
   for (const type of JOB_TYPES) {
     await boss.work(type, { batchSize: 1 }, async (jobs) => {
       for (const job of jobs) {
-        await attempt(type, job, logger, () => runJob(type, job, handlers, logger, options.pool));
+        await attempt(type, job, logger, () => runJob(type, job, handlers, logger, options.pool, boss));
       }
     });
   }

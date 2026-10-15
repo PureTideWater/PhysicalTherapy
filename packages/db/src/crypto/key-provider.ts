@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
 import { isUuid } from '../authz/ids';
 
@@ -53,6 +53,15 @@ export function unwrapRef(provider: 'kms' | 'local', ref: string): Buffer {
 
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+
+/**
+ * Development only: the fixed local master key the web app, the worker and `pnpm db:seed` share, so a
+ * practice's data key wrapped by one opens in the others. Derived rather than written down; it wraps
+ * synthetic practices' keys only, and production refuses the local provider altogether.
+ */
+export function developmentMasterKey(): Buffer {
+  return createHash('sha256').update('therapy-platform local development master key').digest();
+}
 
 /**
  * The local key provider for development and tests: AES-256-GCM under a 32-byte master key, with the

@@ -2,13 +2,16 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
-import { JOB_PAYLOADS, JOB_TYPES, type JobPayload, type JobType, QUEUE_OPTIONS, parsePayload, singletonKey } from './registry';
+import { assertNoPhi } from '@tp/observability';
+
+import { JOB_PAYLOADS, JOB_TYPES, type JobPayload, type JobType, QUEUE_OPTIONS, parsePayload, queueOptions, singletonKey } from './registry';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const OTHER_PRACTICE = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
 const SUBJECT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 
 const examples: { readonly [T in JobType]: JobPayload<T> } = {
+  intake: { practice_id: PRACTICE, document_id: SUBJECT },
   parse_835: { practice_id: PRACTICE, document_id: SUBJECT },
   price: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   triage: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
@@ -18,13 +21,19 @@ const examples: { readonly [T in JobType]: JobPayload<T> } = {
 };
 
 describe('job registry', () => {
-  it('registers the six job types of PRD section 15', () => {
-    expect(JOB_TYPES).toEqual(['parse_835', 'price', 'triage', 'reconcile', 'digest', 'export']);
+  it('registers the six job types of PRD section 15 and intake, which queues parse_835', () => {
+    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'price', 'triage', 'reconcile', 'digest', 'export']);
     expect(Object.keys(JOB_PAYLOADS).sort()).toEqual([...JOB_TYPES].sort());
   });
 
   it.each(JOB_TYPES)('accepts a valid %s payload', (type) => {
     expect(parsePayload(type, examples[type])).toEqual(examples[type]);
+  });
+
+  it.each(JOB_TYPES)('carries no PHI in a %s payload (SEC-08)', (type) => {
+    expect(() => {
+      assertNoPhi('job_payload', examples[type]);
+    }).not.toThrow();
   });
 
   it.each(JOB_TYPES)('refuses a %s payload that carries anything but IDs', (type) => {
@@ -45,6 +54,7 @@ describe('job registry', () => {
 
 describe('singletonKey', () => {
   it.each([
+    ['intake', `intake:${PRACTICE}:${SUBJECT}`],
     ['parse_835', `parse_835:${PRACTICE}:${SUBJECT}`],
     ['price', `price:${PRACTICE}:${SUBJECT}`],
     ['triage', `triage:${PRACTICE}:${SUBJECT}`],
@@ -92,5 +102,12 @@ describe('singletonKey', () => {
 describe('QUEUE_OPTIONS', () => {
   it('refuses a duplicate key while queued or active, and allows three attempts', () => {
     expect(QUEUE_OPTIONS).toEqual({ policy: 'exclusive', retryLimit: 2, retryDelay: 30, retryBackoff: true });
+  });
+
+  it('gives intake an hour per attempt and every other queue the shared settings', () => {
+    expect(queueOptions('intake')).toEqual({ ...QUEUE_OPTIONS, expireInSeconds: 3600 });
+    for (const type of JOB_TYPES.filter((candidate) => candidate !== 'intake')) {
+      expect(queueOptions(type)).toBe(QUEUE_OPTIONS);
+    }
   });
 });

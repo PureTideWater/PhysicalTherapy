@@ -31,11 +31,20 @@ export interface CookieJar {
   delete(name: string): void;
 }
 
+/** A PUT's body as it streams in, with what its headers declare (the local upload receiver). */
+export interface UploadBody {
+  readonly contentType: string | null;
+  readonly contentLength: number | null;
+  readonly body: AsyncIterable<Uint8Array>;
+}
+
 export interface RouteRequest {
   readonly cookies: CookieJar;
   readonly params: unknown;
   /** A mutation's input, its request key included. */
   readonly input?: unknown;
+  /** A PUT's streamed body. */
+  readonly upload?: UploadBody;
   /** An opaque ID for this request: the audit events' request_id. */
   readonly requestId: string;
   readonly userAgent: string | null;
@@ -120,11 +129,21 @@ export interface SampleRefs {
   readonly internalOrganizationId: string;
   /** The calling user's own device. */
   readonly actorDeviceId: string;
+  /** A source document of the practice awaiting its upload, and a local upload token for it. */
+  readonly documentId: string;
+  readonly uploadToken: string;
 }
 
 export interface RouteSample {
   params(refs: SampleRefs): Record<string, unknown>;
   input?(refs: SampleRefs): Record<string, unknown>;
+  /** A PUT's body. */
+  upload?(refs: SampleRefs): { readonly contentType: string; readonly body: Uint8Array };
+}
+
+/** What a download route returns: an attachment with an opaque file name, never PHI in the name. */
+export interface Download {
+  readonly download: { readonly filename: string; readonly contentType: string; readonly body: string };
 }
 
 interface BaseContext<P, I> {
@@ -154,7 +173,7 @@ interface CommonSpec<P, I> {
   readonly id: string;
   readonly kind: RouteKind;
   readonly path: string;
-  readonly method?: 'GET' | 'POST';
+  readonly method?: 'GET' | 'POST' | 'PUT';
   /** Whether it can show PHI: such responses are private, no-store, and its reads go through readWithAudit. */
   readonly phi: boolean;
   readonly params: z.ZodType<P>;
@@ -185,10 +204,10 @@ export interface Route<R = unknown> {
   readonly id: string;
   readonly kind: RouteKind;
   readonly path: string;
-  readonly method: 'GET' | 'POST';
+  readonly method: 'GET' | 'POST' | 'PUT';
   readonly access: Access;
   readonly phi: boolean;
-  /** Actions and POST handlers: they need a request key and record an audit event. */
+  /** Actions and POST and PUT handlers: they need a request key and record an audit event. */
   readonly mutation: boolean;
   readonly audit?: AuditSpec;
   readonly sample?: RouteSample;

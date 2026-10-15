@@ -150,7 +150,8 @@ describe('countRows', () => {
   it('counts every table exactly, PHI tables included, as the owner with every practice in scope', async () => {
     const counts = await countRows(owner);
     // audit_event: the one written above, and the security event each practice administrator's membership raised.
-    expect(counts).toMatchObject({ practice: 2, organization: 2, user: 2, membership: 2, agreement: 2, audit_event: 3, grant: 0, phi_table_registry: 3 });
+    // phi_table_registry: practice, grant and support_grant, then source_document, payer and plan.
+    expect(counts).toMatchObject({ practice: 2, organization: 2, user: 2, membership: 2, agreement: 2, audit_event: 3, grant: 0, phi_table_registry: 6, source_document: 0, payer: 0, plan: 0 });
     expect(counts.schema_migrations).toBeGreaterThan(0);
   });
 });

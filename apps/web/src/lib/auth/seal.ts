@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
 
 /**
  * Sealed values for state a browser carries between sign-in steps (the pending step, the identity
@@ -29,6 +29,11 @@ export class Sealer {
   /** A sealer whose key is derived from this one for another use (the dev provider's own challenges). */
   derive(label: string): Sealer {
     return new Sealer(createHash('sha256').update(this.key).update(label).digest());
+  }
+
+  /** An HMAC-SHA-256 of `message` for `purpose`: a signature only this server can make (upload tokens). */
+  sign(purpose: string, message: string): Buffer {
+    return createHmac('sha256', this.key).update(`${VERSION}:${purpose}:`).update(message).digest();
   }
 
   seal(purpose: string, payload: unknown, expiresAt: Date): string {

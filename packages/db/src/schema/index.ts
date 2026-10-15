@@ -2,6 +2,25 @@
  * The Drizzle schema, one file per area, alongside the hand-written SQL in packages/db/migrations.
  */
 export {
+  DOCUMENT_KINDS,
+  DOCUMENT_STATUSES,
+  type DocumentKind,
+  type DocumentStatus,
+  HELD_AT_INTAKE,
+  NETWORK_STATUSES,
+  type NetworkStatus,
+  type PayerRow,
+  type PlanRow,
+  SCAN_STATUSES,
+  type ScanStatus,
+  type SourceDocumentRow,
+  documentIntakeKey,
+  documentObjectKey,
+  payer,
+  plan,
+  sourceDocument,
+} from './documents';
+export {
   ACTOR_KINDS,
   type ActorKind,
   type AuditEventRow,

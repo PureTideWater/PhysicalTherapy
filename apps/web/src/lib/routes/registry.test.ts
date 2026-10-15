@@ -10,6 +10,7 @@ import * as consoleRoutes from './console';
 import * as registry from './index';
 import * as practice from './practice';
 import * as signIn from './sign-in';
+import * as uploads from './uploads';
 
 /**
  * Nothing reaches the browser without the registry: every page.tsx, route.ts and server action in
@@ -27,7 +28,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [account, consoleRoutes, practice, signIn, registry].flatMap((module) =>
+  [account, consoleRoutes, practice, signIn, uploads, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );
@@ -82,7 +83,7 @@ describe('the route registry', () => {
 
   it('runs every route handler through a registered handler route at its own path', () => {
     for (const file of handlers) {
-      const used = routesUsed(readFileSync(file, 'utf8'), ['routeHandler']);
+      const used = routesUsed(readFileSync(file, 'utf8'), ['routeHandler', 'downloadHandler']);
       expect(used, file).toHaveLength(1);
       expect(used[0]?.kind, file).toBe('handler');
       expect(used[0]?.path, file).toBe(urlOf(file));

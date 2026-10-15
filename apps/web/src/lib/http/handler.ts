@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Services } from '../server/services';
-import type { CookieJar, Outcome, Route } from './route';
+import type { CookieJar, Download, Outcome, Route, RouteRequest, UploadBody } from './route';
 
 /**
  * The route-handler adapter (route.ts files): a Web Request in, a Web Response out, through the same
@@ -75,20 +75,85 @@ export function outcomeResponse(outcome: Outcome<unknown>, cookies: ResponseCook
 
 type Params = Promise<Record<string, string | string[] | undefined>>;
 
-/** A Next route handler for a registered route. GET reads the URL's parameters; POST also reads a JSON body. */
+/** A request body as it streams in, without buffering it. */
+async function* streamOf(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        return;
+      }
+      yield value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function lengthOf(header: string | null): number | null {
+  return header !== null && /^\d{1,15}$/.test(header) ? Number.parseInt(header, 10) : null;
+}
+
+/** The route request for a Web Request: GET reads the URL; POST also a JSON body; PUT streams its body. */
+async function routeRequest(request: Request, cookies: ResponseCookies, context: { readonly params?: Params } | undefined): Promise<RouteRequest | Response> {
+  const query = Object.fromEntries(new URL(request.url).searchParams);
+  const params = { ...query, ...((await context?.params) ?? {}) };
+  let input: unknown;
+  let upload: UploadBody | undefined;
+  if (request.method === 'POST') {
+    try {
+      input = await request.json();
+    } catch {
+      return outcomeResponse({ status: 'invalid', issues: [{ field: 'input', message: 'a JSON body' }] }, cookies);
+    }
+  } else if (request.method === 'PUT') {
+    // A PUT carries its input in the query string (the upload URL), its request key as request_key.
+    input = { ...query, requestKey: query.request_key };
+    upload = {
+      contentType: request.headers.get('content-type'),
+      contentLength: lengthOf(request.headers.get('content-length')),
+      body: request.body === null ? streamOf(new Blob([]).stream()) : streamOf(request.body),
+    };
+  }
+  return { cookies, params, input, ...(upload === undefined ? {} : { upload }), requestId: randomUUID(), userAgent: request.headers.get('user-agent') };
+}
+
+/** A Next route handler for a registered route. GET reads the URL's parameters; POST also reads a JSON body; PUT streams its body. */
 export function routeHandler(route: Route, servicesOf: () => Services) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
-    const params = { ...Object.fromEntries(new URL(request.url).searchParams), ...((await context?.params) ?? {}) };
-    let input: unknown;
-    if (request.method === 'POST') {
-      try {
-        input = await request.json();
-      } catch {
-        return outcomeResponse({ status: 'invalid', issues: [{ field: 'input', message: 'a JSON body' }] }, cookies);
-      }
+    const built = await routeRequest(request, cookies, context);
+    if (built instanceof Response) {
+      return built;
     }
-    const outcome = await route.invoke({ cookies, params, input, requestId: randomUUID(), userAgent: request.headers.get('user-agent') }, servicesOf());
-    return outcomeResponse(outcome, cookies);
+    return outcomeResponse(await route.invoke(built, servicesOf()), cookies);
+  };
+}
+
+function isDownload(data: unknown): data is Download {
+  return typeof data === 'object' && data !== null && 'download' in data;
+}
+
+/**
+ * A Next route handler for a registered download route (GET): the file as an attachment, private and
+ * never cached, with the opaque file name the route chose; any refusal as the JSON outcome.
+ */
+export function downloadHandler(route: Route<Download>, servicesOf: () => Services) {
+  return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
+    const cookies = new ResponseCookies(request.headers.get('cookie'));
+    const built = await routeRequest(request, cookies, context);
+    if (built instanceof Response) {
+      return built;
+    }
+    const outcome = await route.invoke(built, servicesOf());
+    if (outcome.status !== 'ok' || !isDownload(outcome.data)) {
+      return outcomeResponse(outcome, cookies);
+    }
+    const { filename, contentType, body } = outcome.data.download;
+    return new Response(body, {
+      status: 200,
+      headers: { 'content-type': contentType, 'content-disposition': `attachment; filename="${filename}"`, 'cache-control': PRIVATE_NO_STORE },
+    });
   };
 }

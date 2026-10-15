@@ -4,6 +4,11 @@
   "private": true,
   "type": "module",
   "description": "The Node worker: pg-boss jobs (parse, price, triage, reconcile, digest, export).",
+  "exports": {
+    "./jobs": "./src/jobs/public.ts",
+    "./documents": "./src/storage/documents.ts",
+    "./runtime": "./src/runtime.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "build": "tsx build.ts",
@@ -26,14 +31,18 @@
     "@tp/rules": "workspace:*",
     "@tp/triage": "workspace:*",
     "pg-boss": "^12.38.0",
+    "yauzl": "3.4.0",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "fast-check": "catalog:",
     "@types/node": "catalog:",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
     "esbuild": "^0.28.2",
+    "fast-check": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "yazl": "3.3.1"
   }
 }

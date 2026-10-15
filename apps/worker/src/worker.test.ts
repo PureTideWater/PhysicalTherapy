@@ -4,8 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
-import { JOB_TYPES, QUEUE_OPTIONS } from './jobs/registry';
-import { JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
+import { JOB_TYPES, QUEUE_OPTIONS, queueOptions } from './jobs/registry';
+import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
@@ -36,6 +36,10 @@ function fakeBoss() {
     schedule: vi.fn((name: string) => {
       calls.push(`schedule:${name}`);
       return Promise.resolve();
+    }),
+    send: vi.fn((name: string, _data: unknown, options: { singletonKey: string }) => {
+      calls.push(`send:${name}:${options.singletonKey}`);
+      return Promise.resolve(`sent-${name}`);
     }),
   };
   return { boss, handlers, calls, client: boss as unknown as QueueClient };
@@ -80,9 +84,35 @@ describe('startWorker', () => {
       ...JOB_TYPES.map((type) => `work:${type}`),
     ]);
     for (const type of JOB_TYPES) {
-      expect(boss.createQueue).toHaveBeenCalledWith(type, QUEUE_OPTIONS);
+      expect(boss.createQueue).toHaveBeenCalledWith(type, queueOptions(type));
       expect(boss.work).toHaveBeenCalledWith(type, { batchSize: 1 }, expect.any(Function));
     }
+    await worker.stop();
+  });
+
+  it('lets a job queue follow-up work for its own practice only, and tells it which attempt is its last', async () => {
+    const { calls, handlers, client } = fakeBoss();
+    const seen: { sent: string | null; last: boolean }[] = [];
+    const worker = await startWorker({
+      boss: client,
+      pool,
+      logger: capture().logger,
+      handlers: {
+        ...placeholderHandlers,
+        intake: async (payload, context) => {
+          seen.push({ sent: await context.enqueue('parse_835', { practice_id: payload.practice_id, document_id: payload.document_id }), last: context.lastAttempt });
+          await expect(context.enqueue('parse_835', { practice_id: DOCUMENT, document_id: payload.document_id })).rejects.toThrow(CrossPracticeJobError);
+        },
+      },
+      heartbeatMs: 60_000,
+    });
+    await handlers.get('intake')?.([{ id: 'job-1', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    await handlers.get('intake')?.([{ id: 'job-1', retryCount: QUEUE_OPTIONS.retryLimit, data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    expect(seen).toEqual([
+      { sent: 'sent-parse_835', last: false },
+      { sent: 'sent-parse_835', last: true },
+    ]);
+    expect(calls.filter((call) => call.startsWith('send:'))).toEqual([`send:parse_835:parse_835:${PRACTICE}:${DOCUMENT}`, `send:parse_835:parse_835:${PRACTICE}:${DOCUMENT}`]);
     await worker.stop();
   });
 

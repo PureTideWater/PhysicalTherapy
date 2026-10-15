@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { developmentMasterKey } from '@tp/db';
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_HEARTBEAT_SECONDS, WorkerConfigError, readPlatformConfig, readWorkerConfig } from './config';
+import { DEFAULT_HEARTBEAT_SECONDS, WorkerConfigError, readIntakeConfig, readPlatformConfig, readWorkerConfig } from './config';
 
 const DATABASE_URL = 'postgres://u:p@localhost:5432/d';
 
@@ -129,5 +130,46 @@ describe('readPlatformConfig', () => {
     ['a plain-http origin', { APP_ORIGIN: 'http://app.synthetic.test' }, /APP_ORIGIN is an https URL when NODE_ENV is production/],
   ])('refuses %s in production', (_name, change, message) => {
     expect(() => readPlatformConfig({ ...PRODUCTION, ...change })).toThrow(message);
+  });
+});
+
+describe('readIntakeConfig', () => {
+  it('keeps documents in a temporary directory and opens keys with the development master key by default', () => {
+    expect(readIntakeConfig({})).toEqual({
+      documents: { kind: 'local', dir: expect.stringContaining('tp-documents') },
+      keys: { kind: 'local', masterKey: developmentMasterKey() },
+      scanWaitMs: 600_000,
+    });
+    const given = Buffer.alloc(32, 9).toString('base64');
+    expect(readIntakeConfig({ DOCUMENTS_DIR: '/var/tp/documents', TP_LOCAL_MASTER_KEY: given, SCAN_WAIT_SECONDS: '30' })).toEqual({
+      documents: { kind: 'local', dir: '/var/tp/documents' },
+      keys: { kind: 'local', masterKey: Buffer.alloc(32, 9) },
+      scanWaitMs: 30_000,
+    });
+  });
+
+  it('uses the documents bucket and KMS, and requires both in production', () => {
+    expect(readIntakeConfig({ DOCUMENTS_BUCKET: 'tp-documents', TP_KEY_PROVIDER: 'kms', KMS_KEY_ID: 'alias/tp' })).toEqual({
+      documents: { kind: 's3', bucket: 'tp-documents' },
+      keys: { kind: 'kms', keyId: 'alias/tp' },
+      scanWaitMs: 600_000,
+    });
+    const production = { NODE_ENV: 'production', DOCUMENTS_BUCKET: 'tp-documents', TP_KEY_PROVIDER: 'kms', KMS_KEY_ID: 'alias/tp' };
+    expect(readIntakeConfig(production).documents).toEqual({ kind: 's3', bucket: 'tp-documents' });
+    expect(() => readIntakeConfig({ ...production, DOCUMENTS_BUCKET: undefined })).toThrow(/DOCUMENTS_BUCKET is required/);
+    expect(() => readIntakeConfig({ ...production, TP_KEY_PROVIDER: undefined })).toThrow(/TP_KEY_PROVIDER is required/);
+    expect(() => readIntakeConfig({ ...production, TP_KEY_PROVIDER: 'local' })).toThrow(/TP_KEY_PROVIDER is kms when NODE_ENV is production/);
+    expect(() => readIntakeConfig({ ...production, DOCUMENTS_DIR: '/tmp/x' })).toThrow(/DOCUMENTS_DIR is refused/);
+    expect(() => readIntakeConfig({ ...production, TP_LOCAL_MASTER_KEY: 'x' })).toThrow(/TP_LOCAL_MASTER_KEY is refused/);
+  });
+
+  it('refuses settings that contradict each other or are malformed', () => {
+    expect(() => readIntakeConfig({ DOCUMENTS_BUCKET: 'b', DOCUMENTS_DIR: '/d' })).toThrow(WorkerConfigError);
+    expect(() => readIntakeConfig({ TP_KEY_PROVIDER: 'kms' })).toThrow(/KMS_KEY_ID is required/);
+    expect(() => readIntakeConfig({ TP_KEY_PROVIDER: 'vault' })).toThrow(/TP_KEY_PROVIDER is kms or local/);
+    expect(() => readIntakeConfig({ TP_LOCAL_MASTER_KEY: Buffer.alloc(16).toString('base64') })).toThrow(/32-byte key/);
+    for (const wait of ['0', '-1', '1.5', '100000']) {
+      expect(() => readIntakeConfig({ SCAN_WAIT_SECONDS: wait }), wait).toThrow(/SCAN_WAIT_SECONDS/);
+    }
   });
 });

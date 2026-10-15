@@ -5,11 +5,11 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { ConfigError, defaultDevAuthDirectory, developmentMasterKey, readWebConfig } from '../server/config';
+import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
 import { type Services, devOutbox } from '../server/services';
-import { PRIVATE_NO_STORE, ResponseCookies, outcomeResponse, routeHandler, setCookieHeader } from './handler';
+import { PRIVATE_NO_STORE, ResponseCookies, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
 import { platformRoute, practiceRoute, publicRoute, selfRoute } from './invoke';
-import { InputError, NotFoundError } from './route';
+import { type Download, InputError, NotFoundError } from './route';
 
 const services = {} as Services;
 
@@ -150,6 +150,74 @@ describe('the route-handler adapter', () => {
     expect(post.status).toBe(200);
     expect(seen[5]).toEqual({ x: 1 });
     expect(typeof seen[7]).toBe('string');
+    const broken = await handler(new Request('http://localhost/x?a=1&b=2', { method: 'POST', body: '{' }));
+    expect(broken.status).toBe(400);
+  });
+
+  it('streams a PUT’s body to the route with its declared type and length, its input from the query string', async () => {
+    const seen: unknown[] = [];
+    const route = publicRoute({
+      id: 'test.put',
+      kind: 'handler',
+      path: '/sign-in/put',
+      phi: false,
+      params: z.object({}),
+      input: z.unknown(),
+      handle: async ({ input, request }) => {
+        const parts: Buffer[] = [];
+        for await (const part of request.upload?.body ?? []) {
+          parts.push(Buffer.from(part));
+        }
+        seen.push(input, request.upload?.contentType, request.upload?.contentLength, Buffer.concat(parts).toString());
+        return { ok: true };
+      },
+    });
+    const handler = routeHandler(route, () => services);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('ISA*'));
+        controller.enqueue(new TextEncoder().encode('00*'));
+        controller.close();
+      },
+    });
+    const response = await handler(
+      new Request('http://localhost/x?token=abc&request_key=3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60', { method: 'PUT', body, headers: { 'content-type': 'text/plain', 'content-length': '7' }, duplex: 'half' } as RequestInit),
+    );
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([{ token: 'abc', request_key: '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60', requestKey: '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60' }, 'text/plain', 7, 'ISA*00*']);
+    await handler(new Request('http://localhost/x', { method: 'PUT', headers: { 'content-length': 'many' } }));
+    expect(seen.slice(4)).toEqual([{ requestKey: undefined }, null, null, '']);
+  });
+
+  it('sends a download route’s file as a private attachment, and a refusal as JSON', async () => {
+    const route = publicRoute<Record<string, never>, unknown, Download>({
+      id: 'test.download',
+      kind: 'handler',
+      path: '/sign-in/download',
+      phi: false,
+      params: z.object({}),
+      input: z.unknown(),
+      handle: () => Promise.resolve({ download: { filename: 'receipt-3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60.csv', contentType: 'text/csv; charset=utf-8', body: 'a,b\r\n' } }),
+    });
+    const response = await downloadHandler(route, () => services)(new Request('http://localhost/x'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-disposition')).toBe('attachment; filename="receipt-3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60.csv"');
+    expect(response.headers.get('cache-control')).toBe(PRIVATE_NO_STORE);
+    expect(await response.text()).toBe('a,b\r\n');
+    const refusing = publicRoute<Record<string, never>, unknown, Download>({
+      id: 'test.refusing',
+      kind: 'handler',
+      path: '/sign-in/refusing',
+      phi: false,
+      params: z.object({}),
+      input: z.unknown(),
+      handle: () => Promise.reject(new InputError([{ field: 'x', message: 'no' }])),
+    });
+    expect((await downloadHandler(refusing, () => services)(new Request('http://localhost/x'))).status).toBe(400);
+    expect((await downloadHandler(refusing, () => services)(new Request('http://localhost/x', { method: 'POST', body: '{' }))).status).toBe(400);
+    const notAFile = publicRoute({ id: 'test.json', kind: 'handler', path: '/sign-in/json', phi: false, params: z.object({}), handle: () => Promise.resolve({ a: 1 }) });
+    const json = await downloadHandler(notAFile as never, () => services)(new Request('http://localhost/x'));
+    expect(await json.json()).toEqual({ a: 1 });
   });
 });
 
@@ -206,15 +274,41 @@ describe('the web configuration', () => {
       KMS_KEY_ID: 'alias/tp-production',
       AUTH_COOKIE_SECRET: key,
       APP_ORIGIN: 'https://app.synthetic.test/ignored',
+      DOCUMENTS_BUCKET: 'tp-production-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp-production',
+      QUEUE_DATABASE_URL: 'postgres://tp_queue:x@db.internal:5432/tp',
     });
     expect(config).toMatchObject({
       origin: 'https://app.synthetic.test',
       rpId: 'app.synthetic.test',
       auth: { kind: 'cognito', userPoolId: 'us-east-1_Synthetic', clientId: 'syntheticclient', region: 'us-east-1' },
       keys: { kind: 'kms', keyId: 'alias/tp-production' },
+      documents: { kind: 's3', bucket: 'tp-production-documents', kmsKeyId: 'alias/tp-production' },
+      queueDatabaseUrl: 'postgres://tp_queue:x@db.internal:5432/tp',
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
+  });
+
+  it('lands uploads in a local directory in development, in the documents bucket in production, and queues on the database login by default', () => {
+    expect(readWebConfig(base)).toMatchObject({ documents: { kind: 'local', dir: defaultDocumentsDirectory() }, queueDatabaseUrl: base.DATABASE_URL });
+    expect(readWebConfig({ ...base, DOCUMENTS_DIR: '/var/tp/documents' }).documents).toEqual({ kind: 'local', dir: '/var/tp/documents' });
+    expect(() => readWebConfig({ ...base, DOCUMENTS_BUCKET: 'tp-documents' })).toThrow('DOCUMENTS_KMS_KEY_ID is required for DOCUMENTS_BUCKET');
+    expect(() => readWebConfig({ ...base, DOCUMENTS_BUCKET: 'tp-documents', DOCUMENTS_KMS_KEY_ID: 'k', DOCUMENTS_DIR: '/d' })).toThrow('at most one of DOCUMENTS_BUCKET and DOCUMENTS_DIR is set');
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+    };
+    expect(() => readWebConfig(production)).toThrow(new ConfigError('DOCUMENTS_BUCKET is required in production'));
+    expect(() => readWebConfig({ ...production, DOCUMENTS_DIR: '/d' })).toThrow(new ConfigError('DOCUMENTS_DIR is refused in production (S3 only, outside the e2e suite)'));
+    expect(readWebConfig({ ...production, TP_ALLOW_LOCAL_PROVIDERS: 'e2e', DOCUMENTS_DIR: '/d' }).documents).toEqual({ kind: 'local', dir: '/d' });
+    expect(readWebConfig({ ...production, TP_ALLOW_LOCAL_PROVIDERS: 'e2e' }).documents).toEqual({ kind: 'local', dir: defaultDocumentsDirectory() });
   });
 
   it('names the settings it refuses, never their values', () => {

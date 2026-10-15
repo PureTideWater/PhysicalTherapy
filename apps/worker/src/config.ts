@@ -1,7 +1,7 @@
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { readDatabaseUrl } from '@tp/db';
+import { developmentMasterKey, readDatabaseUrl } from '@tp/db';
 
 export interface WorkerConfig {
   /** NODE_ENV=production: a deployed worker (staging or production), where no local implementation may run. */
@@ -189,4 +189,63 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
     throw new WorkerConfigError(`APP_ORIGIN is an https URL ${IN_PRODUCTION}`);
   }
   return { operatorDatabaseUrl, auditStore, restoreDrill, mail, appOrigin: appOrigin.origin };
+}
+
+export type DocumentStoreConfig = { readonly kind: 's3'; readonly bucket: string } | { readonly kind: 'local'; readonly dir: string };
+
+export type KeyProviderConfig = { readonly kind: 'kms'; readonly keyId: string } | { readonly kind: 'local'; readonly masterKey: Buffer };
+
+/** The intake job's settings (docs/adr/0026). */
+export interface IntakeConfig {
+  /** Where documents live: the documents bucket (with its intake prefix and GuardDuty) or a directory. */
+  readonly documents: DocumentStoreConfig;
+  /** Opens practices' data keys: KMS, or the local provider under the development (or a given) master key. */
+  readonly keys: KeyProviderConfig;
+  /** How long one attempt waits for the malware scan's verdict. */
+  readonly scanWaitMs: number;
+}
+
+const DEFAULT_SCAN_WAIT_SECONDS = 600;
+
+/**
+ * Intake: the documents bucket (DOCUMENTS_BUCKET; uploads land under its intake prefix, GuardDuty
+ * scans them there) or, in development, a directory (DOCUMENTS_DIR, by default under the system's
+ * temporary directory; the web app's local upload receiver writes there too). Practice data keys
+ * open through KMS (TP_KEY_PROVIDER=kms with KMS_KEY_ID) or, in development, the local provider under
+ * TP_LOCAL_MASTER_KEY or the development master key the web app and the seed use. SCAN_WAIT_SECONDS
+ * bounds how long an attempt waits for the scan's verdict. With NODE_ENV=production the bucket and
+ * KMS are required and the local settings refused.
+ */
+export function readIntakeConfig(env: Env = process.env): IntakeConfig {
+  const production = isProduction(env);
+  if (production) {
+    for (const name of ['DOCUMENTS_DIR', 'TP_LOCAL_MASTER_KEY']) {
+      refused(env, name, `${IN_PRODUCTION} (it selects a local implementation)`);
+    }
+  }
+  const bucket = production ? required(env, 'DOCUMENTS_BUCKET', IN_PRODUCTION) : value(env, 'DOCUMENTS_BUCKET');
+  const dir = value(env, 'DOCUMENTS_DIR');
+  if (bucket !== undefined && dir !== undefined) {
+    throw new WorkerConfigError('at most one of DOCUMENTS_BUCKET and DOCUMENTS_DIR is set');
+  }
+  const documents: DocumentStoreConfig = bucket !== undefined ? { kind: 's3', bucket } : { kind: 'local', dir: dir ?? path.join(tmpdir(), 'tp-documents') };
+  const provider = production ? required(env, 'TP_KEY_PROVIDER', IN_PRODUCTION) : (value(env, 'TP_KEY_PROVIDER') ?? 'local');
+  let keys: KeyProviderConfig;
+  if (provider === 'kms') {
+    keys = { kind: 'kms', keyId: required(env, 'KMS_KEY_ID', 'when TP_KEY_PROVIDER is kms') };
+  } else if (provider === 'local' && !production) {
+    const given = value(env, 'TP_LOCAL_MASTER_KEY');
+    const masterKey = given === undefined ? developmentMasterKey() : Buffer.from(given, 'base64');
+    if (masterKey.length !== 32) {
+      throw new WorkerConfigError('TP_LOCAL_MASTER_KEY is a base64-encoded 32-byte key');
+    }
+    keys = { kind: 'local', masterKey };
+  } else {
+    throw new WorkerConfigError(production ? `TP_KEY_PROVIDER is kms ${IN_PRODUCTION}` : 'TP_KEY_PROVIDER is kms or local');
+  }
+  const wait = value(env, 'SCAN_WAIT_SECONDS') ?? String(DEFAULT_SCAN_WAIT_SECONDS);
+  if (!/^[1-9]\d{0,4}$/.test(wait)) {
+    throw new WorkerConfigError('SCAN_WAIT_SECONDS must be a whole number of seconds from 1 to 99999');
+  }
+  return { documents, keys, scanWaitMs: Number.parseInt(wait, 10) * 1000 };
 }

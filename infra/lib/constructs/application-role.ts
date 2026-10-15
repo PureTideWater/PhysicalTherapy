@@ -23,8 +23,9 @@ export interface ApplicationRoleProps {
  *   also what makes a practice's objects readable, and destroying the data key makes them unreadable.
  * - S3 server-side encryption beneath that: the same two actions only when S3 calls KMS on the role's
  *   behalf for the documents and packets buckets (SSE-KMS under the environment key).
- * - Documents: read and write objects (writes only to new keys, which the bucket policy enforces) and
- *   read their scan tags. Packets: write and read. No delete and no Object Lock bypass on any bucket.
+ * - Documents: read and write objects (writes only to new keys, which the bucket policy enforces, as
+ *   multipart uploads it may abort) and read their scan tags. Packets: write and read. No delete and
+ *   no Object Lock bypass on any bucket: uploads' intake copies expire by lifecycle rule.
  *   The audit copies are the operator role's (OperatorRole), not the application's.
  * - The application login's secret, decrypted only through Secrets Manager. The owner and operator
  *   logins' secrets are not readable by the application.
@@ -65,7 +66,7 @@ export class ApplicationRole extends Construct {
       }),
       new iam.PolicyStatement({
         sid: 'Documents',
-        actions: ['s3:GetObject', 's3:GetObjectVersion', 's3:GetObjectTagging', 's3:PutObject'],
+        actions: ['s3:GetObject', 's3:GetObjectVersion', 's3:GetObjectTagging', 's3:PutObject', 's3:AbortMultipartUpload'],
         resources: [props.documents.arnForObjects('*')],
       }),
       new iam.PolicyStatement({

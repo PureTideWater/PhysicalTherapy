@@ -203,7 +203,7 @@ interface Shape {
   readonly id: string;
   readonly kind: Route['kind'];
   readonly path: string;
-  readonly method?: 'GET' | 'POST';
+  readonly method?: 'GET' | 'POST' | 'PUT';
   readonly phi: boolean;
   readonly audit?: Route['audit'];
   readonly sample?: Route['sample'];
@@ -212,7 +212,7 @@ interface Shape {
 /** What every route records about itself; a mutation without an audit event is refused at definition. */
 function common(spec: Shape, access: Access): Omit<Route, 'invoke'> {
   const method = spec.method ?? (spec.kind === 'action' ? 'POST' : 'GET');
-  const mutation = spec.kind === 'action' || method === 'POST';
+  const mutation = spec.kind === 'action' || method === 'POST' || method === 'PUT';
   if (mutation && access.kind !== 'public' && spec.audit === undefined) {
     throw new Error(`route ${spec.id} changes records but names no audit event`);
   }

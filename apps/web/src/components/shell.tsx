@@ -49,7 +49,7 @@ function RailLink({ href, children, active }: { readonly href: string; readonly 
   );
 }
 
-export type ShellSection = 'practice' | 'devices' | 'organizations' | 'support' | 'home';
+export type ShellSection = 'practice' | 'uploads' | 'devices' | 'organizations' | 'support' | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
   if (shell === undefined) {
@@ -64,6 +64,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           <nav aria-label="Practice" className="flex flex-col gap-1">
             <RailLink href={`/p/${shell.currentPracticeId}`} active={section === 'practice'}>
               Practice home
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/uploads`} active={section === 'uploads'}>
+              Uploads
             </RailLink>
           </nav>
         )}

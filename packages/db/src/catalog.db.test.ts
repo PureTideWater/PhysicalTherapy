@@ -58,7 +58,10 @@ describe('the catalog test', () => {
     const registered = await client.query<{ table_name: string; policy_name: string }>('SELECT table_name, policy_name FROM phi_table_registry ORDER BY 1');
     expect(registered.rows).toEqual([
       { table_name: 'grant', policy_name: 'grant_tenant' },
+      { table_name: 'payer', policy_name: 'payer_tenant' },
+      { table_name: 'plan', policy_name: 'plan_tenant' },
       { table_name: 'practice', policy_name: 'practice_tenant' },
+      { table_name: 'source_document', policy_name: 'source_document_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
     ]);
     expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event']);
@@ -66,7 +69,10 @@ describe('the catalog test', () => {
       { table: 'agreement', tenantColumn: 'practice_id' },
       { table: 'audit_event', tenantColumn: 'practice_id' },
       { table: 'grant', tenantColumn: 'practice_id' },
+      { table: 'payer', tenantColumn: 'practice_id' },
+      { table: 'plan', tenantColumn: 'practice_id' },
       { table: 'practice', tenantColumn: 'id' },
+      { table: 'source_document', tenantColumn: 'practice_id' },
       { table: 'support_grant', tenantColumn: 'practice_id' },
     ]);
   });

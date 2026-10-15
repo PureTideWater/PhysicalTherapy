@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
-/** Every job the worker runs. Each is its own pg-boss queue. */
-export const JOB_TYPES = ['parse_835', 'price', 'triage', 'reconcile', 'digest', 'export'] as const;
+/**
+ * Every job the worker runs. Each is its own pg-boss queue. `intake` takes an upload in once its bytes
+ * have arrived (hash, duplicate check, malware scan, sniffing, zip expansion) and queues parse_835 for
+ * each clean 835 it finds (docs/adr/0026).
+ */
+export const JOB_TYPES = ['intake', 'parse_835', 'price', 'triage', 'reconcile', 'digest', 'export'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
@@ -13,6 +17,7 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'a calendar month, YYY
  * Every job belongs to exactly one practice.
  */
 export const JOB_PAYLOADS = {
+  intake: z.strictObject({ practice_id: id, document_id: id }),
   parse_835: z.strictObject({ practice_id: id, document_id: id }),
   price: z.strictObject({ practice_id: id, pricing_run_id: id }),
   triage: z.strictObject({ practice_id: id, pricing_run_id: id }),
@@ -25,6 +30,7 @@ export type JobPayload<T extends JobType> = z.infer<(typeof JOB_PAYLOADS)[T]>;
 
 /** What a job of each type is about: the idempotency subject inside its practice. */
 const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } = {
+  intake: (payload) => payload.document_id,
   parse_835: (payload) => payload.document_id,
   price: (payload) => payload.pricing_run_id,
   triage: (payload) => payload.pricing_run_id,
@@ -58,3 +64,12 @@ export const QUEUE_OPTIONS = {
   retryDelay: 30,
   retryBackoff: true,
 } as const;
+
+/**
+ * Each queue's settings: the shared ones, and for intake an hour before pg-boss expires an attempt
+ * (its default is fifteen minutes): an attempt may wait up to ten minutes for the malware scan and then
+ * stream a 2 GiB zip into its entries.
+ */
+export function queueOptions(type: JobType): typeof QUEUE_OPTIONS & { readonly expireInSeconds?: number } {
+  return type === 'intake' ? { ...QUEUE_OPTIONS, expireInSeconds: 3600 } : QUEUE_OPTIONS;
+}

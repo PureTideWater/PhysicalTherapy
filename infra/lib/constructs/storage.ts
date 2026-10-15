@@ -46,6 +46,9 @@ export function denyOverwrites(bucket: s3.Bucket): void {
   );
 }
 
+/** Where browsers upload documents before their malware scan (documentIntakeKey in packages/db). */
+export const INTAKE_PREFIX = 'intake/';
+
 export interface StorageProps {
   readonly key: kms.IKey;
   readonly objectLockMode: 'COMPLIANCE' | 'GOVERNANCE';
@@ -57,7 +60,10 @@ export interface StorageProps {
  * - `documents`: uploaded originals (835s, contracts, exhibits, exports). Versioned, so a deleted
  *   object survives as a noncurrent version for the backup window; no key is ever overwritten
  *   (denyOverwrites), so an original cannot be replaced; GuardDuty scans every new object
- *   (AccountSecurity). Incomplete multipart uploads are aborted after a week.
+ *   (AccountSecurity). Incomplete multipart uploads are aborted after a week. Browsers upload under
+ *   `intake/` (presigned PUTs), where GuardDuty scans the plaintext before the worker seals it under
+ *   the practice's key elsewhere; nothing reads an intake object again, so it, its noncurrent
+ *   version and its delete marker expire after a day (docs/adr/0018 and 0026).
  * - `packets` and `auditCopies`: exported packets and the nightly audit_event copies. Versioned
  *   with Object Lock and a default retention of seven years (PRD 19: write-once, seven years), and
  *   written once per key as well.
@@ -75,6 +81,17 @@ export class Storage extends Construct {
           id: 'noncurrent-versions-follow-the-backup-window',
           noncurrentVersionExpiration: Duration.days(BACKUP_RETENTION_DAYS),
           abortIncompleteMultipartUploadAfter: Duration.days(7),
+        },
+        {
+          id: 'intake-uploads-expire',
+          prefix: INTAKE_PREFIX,
+          expiration: Duration.days(1),
+          noncurrentVersionExpiration: Duration.days(1),
+        },
+        {
+          id: 'intake-delete-markers-expire',
+          prefix: INTAKE_PREFIX,
+          expiredObjectDeleteMarker: true,
         },
       ],
     });

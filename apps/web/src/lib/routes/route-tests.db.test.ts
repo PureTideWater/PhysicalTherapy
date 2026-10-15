@@ -1,6 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type MembershipRole, PERSONAS, databaseClient, openPool, readDatabaseUrl, rolesPermit, tenantTables } from '@tp/db';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type MembershipRole, PERSONAS, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, rolesPermit, tenantTables } from '@tp/db';
+import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,6 +17,8 @@ import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route, RouteRequest, SampleRefs } from '../http/route';
 import { type Services, createServices } from '../server/services';
+import { MemoryQueue } from '../uploads/queue';
+import { LocalUploadTargets } from '../uploads/targets';
 import { inviteMember } from './console';
 import { ROUTES } from './index';
 
@@ -38,6 +46,8 @@ let owner: DatabaseClient;
 let app: DatabasePool;
 let services: Services;
 let tables: { table: string; tenantColumn: string }[];
+const keys = LocalKeyProvider.random();
+const documentsDir = mkdtempSync(path.join(tmpdir(), 'tp-route-tests-'));
 
 beforeAll(async () => {
   database = await createMigratedDatabase(adminUrl);
@@ -55,9 +65,11 @@ beforeAll(async () => {
       deliverInvitation: () => Promise.resolve(),
       scryptCost: { n: 1024, r: 8, p: 1 },
     }),
-    keys: LocalKeyProvider.random(),
+    keys,
     sealer,
     logger: createLogger({ sink: () => undefined }),
+    uploads: new LocalUploadTargets('http://localhost:3100', new DocumentStore(new LocalSealedBytes(documentsDir)), sealer),
+    queue: new MemoryQueue(),
   });
   tables = await tenantTables(owner);
 }, 60_000);
@@ -66,6 +78,7 @@ afterAll(async () => {
   await app.end();
   await owner.end();
   await database.drop();
+  rmSync(documentsDir, { recursive: true, force: true });
 });
 
 class MemoryJar implements CookieJar {
@@ -177,6 +190,20 @@ async function buildWorld(name: string): Promise<World> {
       supportGrantId,
     ]);
   });
+  // The practice's real data key (the world's is a placeholder), so the upload receiver can seal its
+  // bytes; and one upload awaiting its bytes, with a local upload token for it.
+  const key = await provisionPracticeKey(keys, tenant.practiceId);
+  await owner.query('UPDATE practice SET data_key_ref = $1 WHERE id = $2', [key.dataKeyRef, tenant.practiceId]);
+  const documentId = randomUUID();
+  await asOwner(owner, [tenant.practiceId], () =>
+    owner.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) VALUES ($1, $2, 'x12_835', 1200, 'application/octet-stream', $3)", [
+      documentId,
+      tenant.practiceId,
+      tenant.adminUserId,
+    ]),
+  );
+  const target = await services.uploads.target({ practiceId: tenant.practiceId, documentId, sizeBytes: 1200, contentType: 'application/octet-stream' }, new Date());
+  const uploadToken = new URL(target.url).searchParams.get('token') ?? '';
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -191,6 +218,8 @@ async function buildWorld(name: string): Promise<World> {
     supportGrantId,
     supportEngineerId,
     internalOrganizationId: internalId,
+    documentId,
+    uploadToken,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }
@@ -227,10 +256,20 @@ async function rawSession(userId: string, method: 'totp' | 'webauthn'): Promise<
 function call<R>(route: Route<R>, session: SignedIn | undefined, refs: SampleRefs, requestKey: string = randomUUID()): Promise<Outcome<R>> {
   const params = route.sample?.params(refs) ?? {};
   const input = route.mutation ? { ...(route.sample?.input?.(refs) ?? {}), requestKey } : route.sample?.input?.(refs);
+  const upload = route.sample?.upload?.(refs);
   const request: RouteRequest = {
     cookies: new MemoryJar(session === undefined ? {} : { [SESSION_COOKIE]: session.token }),
     params,
     input,
+    ...(upload === undefined
+      ? {}
+      : {
+          upload: {
+            contentType: upload.contentType,
+            contentLength: upload.body.length,
+            body: Readable.from([upload.body]),
+          },
+        }),
     requestId: `test-${randomUUID()}`,
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0',
   };

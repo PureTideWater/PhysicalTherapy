@@ -25,6 +25,7 @@ const config: NextConfig = {
     '@tp/rules',
     '@tp/triage',
     '@tp/ui',
+    '@tp/worker',
   ],
 };
 

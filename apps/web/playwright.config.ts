@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 
 import { chromium, defineConfig, devices } from '@playwright/test';
 
-import { E2E_DEV_AUTH_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
+import { E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
 import { developmentMasterKey } from './src/lib/server/config';
 
 /**
@@ -57,6 +57,9 @@ export default defineConfig({
       // The development master key the seed wrapped the practices' data keys with (src/lib/server/config.ts).
       TP_LOCAL_MASTER_KEY: developmentMasterKey().toString('base64'),
       AUTH_COOKIE_SECRET: randomBytes(32).toString('base64'),
+      // Uploads land in a local directory (the e2e suite's worker reads it) and queue on pg-boss's login.
+      DOCUMENTS_DIR: E2E_DOCUMENTS_DIR,
+      QUEUE_DATABASE_URL: e2eDatabaseUrl(),
     },
   },
 });

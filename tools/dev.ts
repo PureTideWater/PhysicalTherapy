@@ -24,7 +24,8 @@ if (compose.status !== 0) {
 
 const databaseUrl = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
 const apps = [
-  spawn('pnpm', ['--filter', '@tp/web', 'run', 'dev'], { cwd: repositoryRoot, stdio: 'inherit', env: { ...process.env, DATABASE_URL: appDevLoginUrl(databaseUrl) } }),
+  // The web app queues intake jobs on pg-boss's login too (QUEUE_DATABASE_URL), as a producer only.
+  spawn('pnpm', ['--filter', '@tp/web', 'run', 'dev'], { cwd: repositoryRoot, stdio: 'inherit', env: { ...process.env, DATABASE_URL: appDevLoginUrl(databaseUrl), QUEUE_DATABASE_URL: databaseUrl } }),
   spawn('pnpm', ['--filter', '@tp/worker', 'run', 'dev'], {
     cwd: repositoryRoot,
     stdio: 'inherit',

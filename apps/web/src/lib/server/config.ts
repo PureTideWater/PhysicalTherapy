@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { developmentMasterKey } from '@tp/db/runtime';
 import { z } from 'zod';
 
 /**
@@ -32,6 +33,10 @@ const schema = z.object({
   TP_ALLOW_LOCAL_PROVIDERS: z.literal('e2e').optional(),
   TP_LOCAL_MASTER_KEY: base64Key.optional(),
   KMS_KEY_ID: z.string().min(1).optional(),
+  QUEUE_DATABASE_URL: z.url().optional(),
+  DOCUMENTS_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/).optional(),
+  DOCUMENTS_KMS_KEY_ID: z.string().min(1).optional(),
+  DOCUMENTS_DIR: z.string().min(1).optional(),
 });
 
 export type AuthProviderSettings =
@@ -39,6 +44,14 @@ export type AuthProviderSettings =
   | { readonly kind: 'cognito'; readonly userPoolId: string; readonly clientId: string; readonly region: string };
 
 export type KeyProviderSettings = { readonly kind: 'local'; readonly masterKey: Buffer } | { readonly kind: 'kms'; readonly keyId: string };
+
+/** Where uploads land: the documents bucket (presigned PUTs under SSE-KMS) or a local directory. */
+export type DocumentSettings = { readonly kind: 's3'; readonly bucket: string; readonly kmsKeyId: string } | { readonly kind: 'local'; readonly dir: string };
+
+/** Development only: where uploads land locally, shared with the worker (its DOCUMENTS_DIR default). */
+export function defaultDocumentsDirectory(): string {
+  return path.join(tmpdir(), 'tp-documents');
+}
 
 export interface WebConfig {
   readonly production: boolean;
@@ -50,6 +63,9 @@ export interface WebConfig {
   readonly cookieSecret: Buffer;
   readonly auth: AuthProviderSettings;
   readonly keys: KeyProviderSettings;
+  /** pg-boss's login, which the web app queues jobs with; DATABASE_URL unless QUEUE_DATABASE_URL is set. */
+  readonly queueDatabaseUrl: string;
+  readonly documents: DocumentSettings;
 }
 
 export class ConfigError extends Error {
@@ -61,10 +77,8 @@ export function defaultDevAuthDirectory(): string {
   return path.join(tmpdir(), 'therapy-platform-dev-auth');
 }
 
-/** Development only: a fixed local master key, derived rather than written down (synthetic data only). */
-export function developmentMasterKey(): Buffer {
-  return createHash('sha256').update('therapy-platform local development master key').digest();
-}
+/** Development only: the fixed local master key the web app, the worker and the seed share (synthetic data only). */
+export { developmentMasterKey };
 
 /** Development only: a cookie key for one server process. */
 function developmentCookieSecret(): Buffer {
@@ -113,6 +127,21 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     keys = { kind: 'local', masterKey: production ? needed(settings.TP_LOCAL_MASTER_KEY, 'TP_LOCAL_MASTER_KEY') : (settings.TP_LOCAL_MASTER_KEY ?? developmentMasterKey()) };
   }
 
+  if (production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' && settings.DOCUMENTS_DIR !== undefined) {
+    throw new ConfigError('DOCUMENTS_DIR is refused in production (S3 only, outside the e2e suite)');
+  }
+  let documents: DocumentSettings;
+  if (settings.DOCUMENTS_BUCKET !== undefined) {
+    if (settings.DOCUMENTS_DIR !== undefined) {
+      throw new ConfigError('at most one of DOCUMENTS_BUCKET and DOCUMENTS_DIR is set');
+    }
+    documents = { kind: 's3', bucket: settings.DOCUMENTS_BUCKET, kmsKeyId: needed(settings.DOCUMENTS_KMS_KEY_ID, 'DOCUMENTS_KMS_KEY_ID', 'for DOCUMENTS_BUCKET') };
+  } else if (production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e') {
+    throw new ConfigError('DOCUMENTS_BUCKET is required in production');
+  } else {
+    documents = { kind: 'local', dir: settings.DOCUMENTS_DIR ?? defaultDocumentsDirectory() };
+  }
+
   return {
     production,
     databaseUrl: settings.DATABASE_URL,
@@ -121,5 +150,7 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     cookieSecret,
     auth,
     keys,
+    queueDatabaseUrl: settings.QUEUE_DATABASE_URL ?? settings.DATABASE_URL,
+    documents,
   };
 }

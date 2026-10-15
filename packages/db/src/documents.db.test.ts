@@ -1,0 +1,190 @@
+import { randomBytes, randomUUID } from 'node:crypto';
+
+import { assertNoPhi } from '@tp/observability';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { withJobScope, withPracticeScope } from './authz';
+import { readDatabaseUrl } from './config';
+import { documentObjectKey } from './schema';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, placeholderDataKeyRef } from './testing';
+
+/**
+ * The rules of migration 20261016090000 (source_document, payer, plan) against the application role
+ * (PRD 6, Agreements: "no upload without a BAA"; Intake and documents; PRD 8: one row per upload even
+ * for duplicates; PRD 10: the practice's own prefix; test matrix PAR-06, PAR-30, SEC-08). The
+ * catalog test and the generated cross-tenant tests cover the tenant policies themselves.
+ */
+
+let database: MigratedDatabase;
+let owner: pg.Client;
+let app: pg.Pool;
+let north: TenantWorld;
+let other: TenantWorld;
+let manager: string;
+/** A practice of north's group with no agreement on file yet (J1). */
+let unsigned: string;
+
+const sha = () => randomBytes(32).toString('hex');
+
+beforeAll(async () => {
+  database = await createMigratedDatabase(readDatabaseUrl());
+  owner = new pg.Client({ connectionString: database.url });
+  await owner.connect();
+  app = new pg.Pool({ connectionString: database.appUrl, max: 4 });
+  north = await createTenantWorld(owner, 'north');
+  other = await createTenantWorld(owner, 'other');
+  manager = await createUser(owner);
+  await addMembership(owner, north.organizationId, manager, 'billing_manager');
+  unsigned = randomUUID();
+  await asOwner(owner, [unsigned], () =>
+    owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [unsigned, north.organizationId, 'SYNTHETIC UNSIGNED PRACTICE', placeholderDataKeyRef()]),
+  );
+});
+
+afterAll(async () => {
+  await app.end();
+  await owner.end();
+  await database.drop();
+});
+
+/** Runs `sql` as the application role for `actorId` with `practiceIds` in scope, rolled back. */
+async function asApp(actorId: string, practiceIds: readonly string[], sql: string, values: unknown[] = []): Promise<pg.QueryResult> {
+  const client = await app.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [actorId, `{${practiceIds.join(',')}}`]);
+    return await client.query(sql, values);
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+}
+
+const INSERT = `INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id)
+                VALUES ($1, $2, 'x12_835', 1200, 'application/octet-stream', $3, $4) RETURNING s3_key, status, scan_status, retention_class`;
+
+/** A document the manager uploads to north, committed. */
+async function upload(): Promise<string> {
+  const id = randomUUID();
+  await withPracticeScope(app, { actorId: manager, practiceIds: [north.practiceId] }, (scope) => scope.client.query(INSERT, [id, north.practiceId, manager, null]));
+  return id;
+}
+
+describe('source_document', () => {
+  it('records an upload with an opaque key inside the practice’s prefix, awaiting its bytes', async () => {
+    const id = randomUUID();
+    const { rows } = await withPracticeScope(app, { actorId: manager, practiceIds: [north.practiceId] }, (scope) => scope.client.query<{ s3_key: string }>(INSERT, [id, north.practiceId, manager, null]));
+    expect(rows).toEqual([{ s3_key: documentObjectKey(north.practiceId, id), status: 'awaiting_upload', scan_status: 'pending', retention_class: 'records' }]);
+    expect(() => {
+      assertNoPhi('s3_key', String(rows[0]?.s3_key));
+    }).not.toThrow();
+    // The key is generated: nobody writes one.
+    await expect(asApp(manager, [north.practiceId], "UPDATE source_document SET s3_key = 'elsewhere' WHERE id = $1", [id])).rejects.toMatchObject({ code: '428C9' });
+  });
+
+  it('refuses an upload until the practice’s BAA is on file, and says so through practice_baa_on_file (J1)', async () => {
+    const pool = (practiceId: string) => asApp(north.adminUserId, [practiceId], 'SELECT practice_baa_on_file($1) AS open', [practiceId]);
+    expect((await pool(north.practiceId)).rows).toEqual([{ open: true }]);
+    expect((await pool(unsigned)).rows).toEqual([{ open: false }]);
+    await expect(asApp(north.adminUserId, [unsigned], INSERT, [randomUUID(), unsigned, north.adminUserId, null])).rejects.toMatchObject({ code: '42501', message: expect.stringMatching(/row-level security/) });
+    // Only a practice in the transaction's scope gets an answer.
+    expect((await asApp(north.adminUserId, [unsigned], 'SELECT practice_baa_on_file($1) AS open', [north.practiceId])).rows).toEqual([{ open: false }]);
+  });
+
+  it('counts only a BAA the practice’s own group signed, for the practice or the whole group', async () => {
+    const practiceId = randomUUID();
+    await asOwner(owner, [practiceId], async () => {
+      await owner.query('INSERT INTO practice (id, organization_id, name, data_key_ref) VALUES ($1, $2, $3, $4)', [practiceId, north.organizationId, 'SYNTHETIC SECOND PRACTICE', placeholderDataKeyRef()]);
+      await owner.query(
+        `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, 'engagement', '1', now(), 'SYNTHETIC SIGNER', 'esign:synthetic-e', $3)`,
+        [north.organizationId, practiceId, sha()],
+      );
+      // Another organization's BAA naming the practice is not the practice's own.
+      await owner.query(
+        `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, $2, 'baa', '1', now(), 'SYNTHETIC SIGNER', 'esign:synthetic-x', $3)`,
+        [other.organizationId, practiceId, sha()],
+      );
+    });
+    const open = async () => (await asApp(north.adminUserId, [practiceId], 'SELECT practice_baa_on_file($1) AS open', [practiceId])).rows[0] as { open: boolean } | undefined;
+    expect(await open()).toEqual({ open: false });
+    await asOwner(owner, [], () =>
+      owner.query(
+        `INSERT INTO agreement (organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256) VALUES ($1, NULL, 'baa', '2', now(), 'SYNTHETIC SIGNER', 'esign:synthetic-g', $2)`,
+        [north.organizationId, sha()],
+      ),
+    );
+    expect(await open()).toEqual({ open: true });
+  });
+
+  it('records a top-level upload only in the acting user’s name; a zip’s entries carry the zip’s uploader', async () => {
+    await expect(asApp(north.adminUserId, [north.practiceId], INSERT, [randomUUID(), north.practiceId, manager, null])).rejects.toMatchObject({ code: '42501' });
+    const zip = await upload();
+    // The worker, acting as its job, expands the zip in the practice's scope.
+    const entry = randomUUID();
+    await withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [entry, north.practiceId, manager, zip]));
+    await expect(withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [randomUUID(), north.practiceId, manager, null]))).rejects.toMatchObject({
+      code: '42501',
+    });
+    // An entry of an entry, an entry of another practice's document, and a document its own entry are refused.
+    await expect(withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [randomUUID(), north.practiceId, manager, entry]))).rejects.toMatchObject({
+      code: '23514',
+    });
+    const otherDocument = randomUUID();
+    await withPracticeScope(app, { actorId: other.adminUserId, practiceIds: [other.practiceId] }, (scope) => scope.client.query(INSERT, [otherDocument, other.practiceId, other.adminUserId, null]));
+    await expect(withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [randomUUID(), north.practiceId, manager, otherDocument]))).rejects.toMatchObject({
+      code: '23514',
+    });
+    const self = randomUUID();
+    await expect(asApp(manager, [north.practiceId], INSERT, [self, north.practiceId, manager, self])).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('fixes a document’s hash once recorded, never takes a scan verdict back, and deletes nothing', async () => {
+    const id = await upload();
+    const hash = sha();
+    await withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) =>
+      scope.client.query("UPDATE source_document SET sha256 = $2, scan_status = 'clean', scan_at = now(), status = 'scanned' WHERE id = $1", [id, hash]),
+    );
+    await expect(asApp(manager, [north.practiceId], 'UPDATE source_document SET sha256 = $2 WHERE id = $1', [id, sha()])).rejects.toMatchObject({ code: '23514' });
+    await expect(asApp(manager, [north.practiceId], "UPDATE source_document SET scan_status = 'pending', scan_at = NULL WHERE id = $1", [id])).rejects.toMatchObject({ code: '23514' });
+    await expect(asApp(manager, [north.practiceId], "UPDATE source_document SET scan_status = 'clean', scan_at = NULL WHERE id = $1", [id])).rejects.toMatchObject({ code: '23514' });
+    await expect(asApp(manager, [north.practiceId], 'DELETE FROM source_document WHERE id = $1', [id])).rejects.toMatchObject({ code: '42501' });
+    for (const column of ['kind', 'size_bytes', 'content_type', 'uploaded_by', 'parent_document_id', 'retention_class', 'practice_id']) {
+      await expect(asApp(manager, [north.practiceId], `UPDATE source_document SET ${column} = ${column} WHERE id = $1`, [id]), column).rejects.toMatchObject({ code: '42501' });
+    }
+    expect((await asApp(manager, [north.practiceId], 'UPDATE source_document SET status = $2 WHERE id = $1', [id, 'parse_queued'])).rowCount).toBe(1);
+  });
+
+  it('keeps one first document per practice and bytes; every later one with the same bytes is a duplicate (PAR-06, PAR-30)', async () => {
+    const hash = sha();
+    const [first, second] = [await upload(), await upload()];
+    const claim = (id: string, status: string) =>
+      withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) =>
+        scope.client.query("UPDATE source_document SET sha256 = $2, status = $3, scan_status = 'clean', scan_at = now() WHERE id = $1", [id, hash, status]),
+      );
+    await claim(first, 'scanned');
+    await expect(claim(second, 'scanned')).rejects.toMatchObject({ code: '23505' });
+    await claim(second, 'duplicate');
+    // Another practice's document with the same bytes is its own first.
+    const theirs = randomUUID();
+    await withPracticeScope(app, { actorId: other.adminUserId, practiceIds: [other.practiceId] }, (scope) => scope.client.query(INSERT, [theirs, other.practiceId, other.adminUserId, null]));
+    await withJobScope(app, { jobId: randomUUID(), practiceId: other.practiceId }, (scope) =>
+      scope.client.query("UPDATE source_document SET sha256 = $2, status = 'scanned', scan_status = 'clean', scan_at = now() WHERE id = $1", [theirs, hash]),
+    );
+  });
+});
+
+describe('payer and plan', () => {
+  it('ties a plan to a payer of its own practice, and a contracted Medicare Advantage flag to Medicare Advantage', async () => {
+    const payerId = randomUUID();
+    const job = (practiceId: string, sql: string, values: unknown[]) => withJobScope(app, { jobId: randomUUID(), practiceId }, (scope) => scope.client.query(sql, values));
+    await job(north.practiceId, "INSERT INTO payer (id, practice_id, payer_id_raw, name_raw) VALUES ($1, $2, 'SYNPAYERA', 'SYNTHETIC PAYER A')", [payerId, north.practiceId]);
+    await expect(job(north.practiceId, "INSERT INTO payer (practice_id, payer_id_raw, name_raw) VALUES ($1, 'SYNPAYERA', 'SYNTHETIC PAYER A AGAIN')", [north.practiceId])).rejects.toMatchObject({ code: '23505' });
+    await job(north.practiceId, "INSERT INTO plan (practice_id, payer_id, plan_key, is_medicare_advantage, ma_contracted) VALUES ($1, $2, 'SYNPLAN-MA-01', true, true)", [north.practiceId, payerId]);
+    await expect(job(north.practiceId, "INSERT INTO plan (practice_id, payer_id, plan_key, ma_contracted) VALUES ($1, $2, 'SYNPLAN-COMM-01', true)", [north.practiceId, payerId])).rejects.toMatchObject({
+      code: '23514',
+    });
+    await expect(job(other.practiceId, "INSERT INTO plan (practice_id, payer_id, plan_key) VALUES ($1, $2, 'SYNPLAN-COMM-01')", [other.practiceId, payerId])).rejects.toMatchObject({ code: '23514' });
+    await expect(job(north.practiceId, 'DELETE FROM payer WHERE id = $1', [payerId])).rejects.toMatchObject({ code: '42501' });
+  });
+});

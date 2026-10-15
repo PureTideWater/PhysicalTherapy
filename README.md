@@ -35,6 +35,15 @@ runs: CI installs it with pip; locally use a virtualenv outside the source tree 
 The parser, `packages/edi835` (ADR 0025), turns bytes or a stream of chunks into typed loops, events and a report
 (`parse835`, `parse835Stream`); a held transaction set carries every reason with its segment and element.
 
+Uploads and intake (ADR 0026): the Uploads screen (`/p/<practice>/uploads`) asks for one PUT target per file, and the
+worker's `intake` job scans, hashes, deduplicates, sniffs and expands zips before queuing `parse_835` per clean 835.
+Locally the browser PUTs to the web app's own receiver, which seals the bytes into `DOCUMENTS_DIR` (default
+`tp-documents` under the system's temporary directory; the worker reads the same one), and the web app queues jobs on
+`QUEUE_DATABASE_URL` (a login that owns pg-boss's schema; `pnpm dev` sets it). In staging and production the target is
+a presigned S3 PUT (`DOCUMENTS_BUCKET`, `DOCUMENTS_KMS_KEY_ID`) and GuardDuty gives the scan's verdict; the worker
+waits up to `SCAN_WAIT_SECONDS` (600) for it. `TP_LARGE_ZIP_MB` sizes the large-zip streaming test (256 MiB by
+default).
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
@@ -97,7 +106,7 @@ lists what a person with network access does to finish it.
 | Path | What lives there |
 | --- | --- |
 | `apps/web` | Next.js App Router: UI, route handlers, server actions |
-| `apps/worker` | pg-boss worker: parse, price, triage, reconcile, digest and export jobs |
+| `apps/worker` | pg-boss worker: intake, parse, price, triage, reconcile, digest and export jobs |
 | `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability` |
 | `infra` | AWS CDK app, one stack per environment |
 | `tools` | log lint, content checker, release scripts, CI guards |
