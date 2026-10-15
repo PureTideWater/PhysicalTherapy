@@ -9,12 +9,16 @@
   },
   "dependencies": {
     "@tp/db": "workspace:*",
+    "@tp/money": "workspace:*",
     "@tp/observability": "workspace:*",
     "@tp/rules": "workspace:*",
-    "typescript": "catalog:"
+    "pg": "catalog:",
+    "typescript": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
     "eslint": "^10.12.0",
     "tsx": "catalog:",
     "typescript-eslint": "^8.71.2",

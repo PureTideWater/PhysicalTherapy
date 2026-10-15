@@ -8,7 +8,6 @@ import { isX12Interchange, listFiles, repositoryRoot } from '../content-files';
 import { RELEASE_COMMANDS, isReleaseCommand } from '../release/commands';
 import { GOLDEN_REPORT_PATH, goldenInvocation } from '../test-golden';
 import { findOracleFixtures } from '../test-oracle/fixtures';
-import { checkContent } from '../verify-content/check';
 
 let root = '';
 
@@ -35,22 +34,6 @@ describe('listFiles', () => {
 
   it('finds the repository root', () => {
     expect(listFiles(repositoryRoot, 'docs/product')).toContain(path.join('docs', 'product', 'PRD.md'));
-  });
-});
-
-describe('verify-content placeholder', () => {
-  it('passes while there is nothing to check', () => {
-    write('content/drafts/README.md', '# drafts\n');
-    expect(checkContent(root)).toMatchObject({ ok: true });
-  });
-
-  it('refuses content it cannot check yet', () => {
-    write('content/outgoing/1/MANIFEST.json', '{}');
-    expect(checkContent(root)).toMatchObject({ ok: false, message: expect.stringContaining('1 content file(s)') as string });
-  });
-
-  it('passes on this repository today', () => {
-    expect(checkContent(repositoryRoot).ok).toBe(true);
   });
 });
 
@@ -87,7 +70,7 @@ describe('test:golden wrapper', () => {
 
 describe('release commands', () => {
   it('names the three release scripts', () => {
-    expect(RELEASE_COMMANDS).toEqual(['prepare', 'dry-run', 'load']);
+    expect(RELEASE_COMMANDS).toEqual(['assemble', 'dry-run', 'load']);
     expect(isReleaseCommand('dry-run')).toBe(true);
     expect(isReleaseCommand('publish')).toBe(false);
     expect(isReleaseCommand(undefined)).toBe(false);

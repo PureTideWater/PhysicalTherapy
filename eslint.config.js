@@ -30,9 +30,10 @@ const modelSdkSyntax = [
 
 /**
  * No floats on amounts in the money packages (CLAUDE.md rule 2): amounts are bigint cents and rates
- * are Decimal, all through @tp/money. See packages/money/README.md for what to write instead.
+ * are Decimal, all through @tp/money. See packages/money/README.md for what to write instead. packages/rules
+ * is included because rule records carry cents, rates and relative values.
  */
-export const MONEY_PACKAGES = ['packages/money', 'packages/pricing', 'packages/ledger', 'packages/packets'];
+export const MONEY_PACKAGES = ['packages/money', 'packages/pricing', 'packages/ledger', 'packages/packets', 'packages/rules'];
 const MONEY_MESSAGE = 'Money is bigint cents and rates are Decimal (packages/money/README.md).';
 const moneySyntax = [
   { selector: "CallExpression[callee.name='parseFloat']", message: `parseFloat is forbidden here. ${MONEY_MESSAGE}` },
@@ -45,7 +46,7 @@ const moneySyntax = [
   {
     // A numeric literal with a fraction or an exponent (1.5, .85, 2., 1e3); strings and bigints never match.
     selector: String.raw`Literal[raw=/^(?!0[xXbBoO])[\d_]*(\.|[eE])/]`,
-    message: `Floating-point literals are forbidden here; write rate('1.10') or new Decimal('0.85'). ${MONEY_MESSAGE}`,
+    message: `Floating-point literals are forbidden here; write rate('1.10') or decimal('0.85'). ${MONEY_MESSAGE}`,
   },
 ];
 

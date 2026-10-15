@@ -35,5 +35,6 @@ later milestones. A placeholder that always passes would let real work land unga
 ## Consequences
 
 - Milestone 2 must land fixtures and the oracle comparison together; part B must land the checker with the
-  first draft.
+  first draft. (Milestone 0 part B did: `verify-content`, `release:*` and `db:migrate` are now the real
+  commands; see ADRs 0008 and 0009.)
 - The authorization helpers' location is fixed by the coverage glob; code elsewhere is not gated.

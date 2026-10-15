@@ -1,0 +1,22 @@
+{
+  "transcribed_by": "milestone 0 part B build session, second pass (typed again from the stored source, not copied from the first pass)",
+  "transcribed_on": "2026-10-15",
+  "records": [
+    {
+      "record_type": "assistant_modifier",
+      "key": { "modifier": "CO" },
+      "value": { "payment_percent": "85" },
+      "effective_from": "2022-01-01",
+      "effective_to": null,
+      "quotes": ["Assistant modifiers CQ and CO", "Paid at 85% of the otherwise applicable amount, effective January 1, 2022"]
+    },
+    {
+      "record_type": "assistant_modifier",
+      "key": { "modifier": "CQ" },
+      "value": { "payment_percent": "85" },
+      "effective_from": "2022-01-01",
+      "effective_to": null,
+      "quotes": ["Assistant modifiers CQ and CO", "Paid at 85% of the otherwise applicable amount, effective January 1, 2022"]
+    }
+  ]
+}

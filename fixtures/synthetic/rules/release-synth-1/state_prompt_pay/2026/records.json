@@ -1,0 +1,49 @@
+[
+  {
+    "record_type": "state_prompt_pay",
+    "key": {
+      "state": "ZZ"
+    },
+    "value": {
+      "days_to_pay": 33,
+      "day_basis": "calendar",
+      "days_after_requested_information": null,
+      "interest": {
+        "automatic": true,
+        "accrues_from": "SYNTHETIC: on late payment",
+        "annual_rate_percent": "9"
+      },
+      "applies_to": "SYNTHETIC: insurers in state ZZ",
+      "exclusions": [
+        "self_funded_plans"
+      ],
+      "statute": "SYNTHETIC statute ZZ 1-2-3"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC therapy rules for tests (fixtures/synthetic/cms/synthetic-rules.md)",
+      "url": null,
+      "path": "fixtures/synthetic/cms/synthetic-rules.md",
+      "retrieved": "2026-10-15",
+      "sha256": "c7d0efbd7a05c056a89164082dbcc80457c7371f251494d1036b55dbaec5f130",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 15",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC prompt pay for state ZZ: pay within 33 calendar days of receiving a claim; interest of 9% a year accrues automatically on late payment; self-funded plans are excluded; SYNTHETIC statute ZZ 1-2-3."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  }
+]

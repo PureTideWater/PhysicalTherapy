@@ -3,18 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Rule releases, code lists and the content checker.",
+  "description": "Rule record schema, CMS and X12 file parsers, the import command and the release loader.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./content": "./src/content.ts",
+    "./import": "./src/import.ts",
+    "./loader": "./src/loader.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tp/money": "workspace:*"
+    "@tp/money": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

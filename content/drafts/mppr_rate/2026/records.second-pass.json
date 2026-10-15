@@ -1,0 +1,14 @@
+{
+  "transcribed_by": "milestone 0 part B build session, second pass (typed again from the stored source, not copied from the first pass)",
+  "transcribed_on": "2026-10-15",
+  "records": [
+    {
+      "record_type": "mppr_rate",
+      "key": { "component": "practice_expense" },
+      "value": { "applies_to": "the second and later \"always therapy\" units in a day", "reduction_percent": "50" },
+      "effective_from": "2026-01-01",
+      "effective_to": null,
+      "quotes": ["50% reduction of the practice-expense component for the second and later \"always therapy\" units in a day"]
+    }
+  ]
+}

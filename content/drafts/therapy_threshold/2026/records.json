@@ -1,0 +1,70 @@
+[
+  {
+    "record_type": "therapy_threshold",
+    "key": { "discipline": "PT_SLP" },
+    "value": { "kx_threshold_cents": "248000", "medical_review_threshold_cents": "300000" },
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, rows \"KX modifier threshold\" and \"Targeted medical review threshold\" (lines 24 and 25)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services) and the CY 2026 physician fee schedule final rule: is the 2026 KX threshold for PT and SLP combined $2,480, and the targeted medical review threshold $3,000?",
+        "Store that CMS page or the final rule under content/sources/therapy_threshold/ and re-cite this record to it, quoting the stored file; the plan's rules reference is a secondary source.",
+        "Is the window right (calendar year 2026 only), with 2027 to come as its own record?"
+      ]
+    },
+    "quotes": [
+      "$2,480 for PT and SLP combined; $2,480 for OT (2026)",
+      "$3,000 for PT and SLP; $3,000 for OT (2026); indexed by the MEI from 2028"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services); the plan read the values from that page on 2026-10-14. Not yet read against a CMS document stored in this repository. A review flag for the engine, never a price change."
+  },
+  {
+    "record_type": "therapy_threshold",
+    "key": { "discipline": "OT" },
+    "value": { "kx_threshold_cents": "248000", "medical_review_threshold_cents": "300000" },
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-12-31",
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, rows \"KX modifier threshold\" and \"Targeted medical review threshold\" (lines 24 and 25)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services) and the CY 2026 physician fee schedule final rule: is the 2026 KX threshold for OT $2,480, and the targeted medical review threshold for OT $3,000?",
+        "Store that CMS page or the final rule under content/sources/therapy_threshold/ and re-cite this record to it, quoting the stored file; the plan's rules reference is a secondary source.",
+        "Is the window right (calendar year 2026 only), with 2027 to come as its own record?"
+      ]
+    },
+    "quotes": [
+      "$2,480 for PT and SLP combined; $2,480 for OT (2026)",
+      "$3,000 for PT and SLP; $3,000 for OT (2026); indexed by the MEI from 2028"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services); the plan read the values from that page on 2026-10-14. Not yet read against a CMS document stored in this repository. A review flag for the engine, never a price change."
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "record_type": "dispute_window",
+    "key": { "program": "medicare", "window": "timely_filing" },
+    "value": { "length": 12, "unit": "months", "measured_from": "date_of_service" },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Timely filing\" (line 29)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "Read the CMS timely filing rule: must a Medicare claim be filed within 12 months of the date of service? Store the CMS page or regulation under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
+        "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."
+      ]
+    },
+    "quotes": [
+      "12 months from the date of service for Medicare"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS and names no URL and no effective date. The start date is a placeholder for the first year release 1 prices."
+  },
+  {
+    "record_type": "dispute_window",
+    "key": { "program": "medicare", "window": "redetermination" },
+    "value": { "length": 120, "unit": "days", "measured_from": null },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Redetermination and reconsideration\" (line 30)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "Read the CMS appeals guidance: is a redetermination requested within 120 days? Store it under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
+        "From what event do the 120 days run? The rules reference does not say, so measured_from is null; set it from the source (the engine computes windows from remittance dates, PRD section 11, step 8).",
+        "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."
+      ]
+    },
+    "quotes": [
+      "Redetermination and reconsideration",
+      "120 days and 180 days respectively"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS and names no URL, no starting event and no effective date. The start date is a placeholder for the first year release 1 prices."
+  },
+  {
+    "record_type": "dispute_window",
+    "key": { "program": "medicare", "window": "reconsideration" },
+    "value": { "length": 180, "unit": "days", "measured_from": null },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Redetermination and reconsideration\" (line 30)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "Read the CMS appeals guidance: is a reconsideration requested within 180 days? Store it under content/sources/dispute_window/ and re-cite this record to it, quoting the stored file.",
+        "From what event do the 180 days run? The rules reference does not say, so measured_from is null; set it from the source (the engine computes windows from remittance dates, PRD section 11, step 8).",
+        "From what date is the rule in force? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source."
+      ]
+    },
+    "quotes": [
+      "Redetermination and reconsideration",
+      "120 days and 180 days respectively"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS and names no URL, no starting event and no effective date. The start date is a placeholder for the first year release 1 prices."
+  }
+]

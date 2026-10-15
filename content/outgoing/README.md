@@ -1,7 +1,8 @@
 # content/outgoing
 
 Content releases prepared for publication (PRD section 9, step 3). The `/load-release` skill
-(`pnpm release:prepare`) assembles the next release here from verified drafts; CI publishes it on merge.
+(`pnpm release:assemble <n>`) assembles the next release here from the drafts, refusing while any is still at
+L1; `pnpm release:dry-run <n>` lists what it changes and the runs it would change. CI publishes it on merge.
 
 ## Layout of a prepared release
 
@@ -9,7 +10,7 @@ Content releases prepared for publication (PRD section 9, step 3). The `/load-re
 content/outgoing/<n>/
   RELEASE.md        date, records, sources, who verified them, and the impact on existing runs
   MANIFEST.json     the SHA-256 of every other file in the directory
-  <type>/<year>/... the rule records, as drafted in content/drafts
+  <type>/<year>/... the rule records and second passes, copied unchanged from content/drafts
 ```
 
 `MANIFEST.json` is `{ "release": <n>, "files": { "<path relative to this directory>": "<sha256 hex>" } }`

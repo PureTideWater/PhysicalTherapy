@@ -1,12 +1,15 @@
+import path from 'node:path';
+
 import { repositoryRoot } from '../content-files';
 import { checkContent } from './check';
 
 /**
- * `pnpm verify-content`: the content checker of PRD section 9. Milestone 0 part B adds the rule
- * record schema (packages/rules/src/schema.ts) and the checks; until then it passes only while
- * there is no content to check, so a draft can never slip through unchecked.
+ * `pnpm verify-content [dir...]`: the content checker of PRD section 9 (see check.ts). With no
+ * arguments it checks content/drafts and every release under content/outgoing and content/releases;
+ * given directories (for example fixtures/synthetic/rules/release-synth-1) it checks those instead.
  */
-const result = checkContent(repositoryRoot);
+const dirs = process.argv.slice(2).map((dir) => path.resolve(process.env.INIT_CWD ?? process.cwd(), dir));
+const result = checkContent(repositoryRoot, dirs);
 if (result.ok) {
   process.stdout.write(`${result.message}\n`);
 } else {

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Drizzle schema, SQL migrations, RLS policies and catalog tests (milestone 1).",
+  "description": "Drizzle schema, forward-only SQL migrations, database roles, RLS policies and catalog tests.",
   "exports": {
     ".": "./src/index.ts",
     "./testing": "./src/testing.ts"
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tp/observability": "workspace:*",
+    "drizzle-orm": "catalog:",
     "pg": "catalog:"
   },
   "devDependencies": {

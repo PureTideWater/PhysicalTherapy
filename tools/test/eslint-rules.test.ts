@@ -53,7 +53,7 @@ describe('model SDKs outside packages/model-gateway (PRD section 14, SEC-09)', (
 });
 
 describe('floats on amounts in the money packages', () => {
-  const moneyFiles = ['packages/money/src/x.ts', 'packages/pricing/src/x.ts', 'packages/ledger/src/x.ts', 'packages/packets/src/x.ts'];
+  const moneyFiles = ['packages/money/src/x.ts', 'packages/pricing/src/x.ts', 'packages/ledger/src/x.ts', 'packages/packets/src/x.ts', 'packages/rules/src/x.ts'];
 
   it.each([
     ['parseFloat', "const a = parseFloat('1.5');", /parseFloat is forbidden/],

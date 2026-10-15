@@ -1,3 +1,33 @@
-export { type Cents, MoneyError, formatCents, formatUsd, parseAmount, sumCents } from './cents';
-export { Decimal, centsToDecimal, multiplyCents, rate } from './decimal';
-export { DEFAULT_ROUNDING, ROUNDING_RULES, type RoundingRule, roundToCents } from './rounding';
+export {
+  type Cents,
+  MoneyError,
+  ZERO_CENTS,
+  addCents,
+  cents,
+  centsToString,
+  compareCents,
+  formatCents,
+  formatUsd,
+  maxCents,
+  minCents,
+  negateCents,
+  parseAmount,
+  parseCents,
+  subtractCents,
+  sumCents,
+} from './cents';
+export { type Decimal, centsToDecimal, decimal, isDecimal, rate } from './decimal';
+export {
+  DEFAULT_ROUNDING,
+  ROUNDING_RULES,
+  type RoundedAmount,
+  type RoundingRule,
+  type UnroundedCents,
+  addUnrounded,
+  multiplyCents,
+  roundOnce,
+  roundToCents,
+  sumUnrounded,
+  unroundedCents,
+  unroundedFromDollars,
+} from './rounding';
