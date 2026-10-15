@@ -94,6 +94,11 @@ describe('the persona matrix (PRD 3)', () => {
     expect(MEMBERSHIP_ROLES.filter((role) => rolesPermit([role], 'grant.approve'))).toEqual(['practice_admin']);
   });
 
+  it('lets the practice administrator and the billing manager (and the firm principal, who does what a billing manager does) sign off a contract version (J5)', () => {
+    expect(MEMBERSHIP_ROLES.filter((role) => rolesPermit([role], 'contract.sign_off'))).toEqual(['practice_admin', 'billing_manager', 'firm_principal']);
+    expect(MEMBERSHIP_ROLES.filter((role) => rolesPermit([role], 'rate_record.approve'))).toEqual(['contract_specialist']);
+  });
+
   it('marks the structural "must not" rules', () => {
     expect(PERSONAS.firm_principal.mustNot.map((entry) => entry.structural)).toContain('grant_in_force');
     expect(PERSONAS.support.mustNot.map((entry) => entry.structural)).toEqual(['support_grant_expiry']);

@@ -1,31 +1,111 @@
 /**
- * @tp/contracts: contracts, versions, rate records with evidence, and the specialist workflow
- * (milestone 4). Rate records live in the database under the practice's policy.
+ * @tp/contracts: the contract repository (PRD 6, Contract repository and Payer and plan mapping;
+ * PRD 9, Contract rate records): typed rate records with Zod validation, the workflow services
+ * (draft, propose, approve field by field, sign off, amend, supersede, map plans), evidence
+ * resolution against the cited pages, the contract calendar, and agreement resolution for pricing,
+ * which is pure over loaded records so the pricing engine calls it without a database. Rate records
+ * live in the database under the practice's policy (migration 20261016160000; docs/adr/0028).
  */
-
-/** Rate methods a rate record can carry (PRD section 9). */
-export const RATE_METHODS = [
-  'FIXED_SCHEDULE',
-  'PERCENT_OF_MEDICARE',
-  'LESSER_OF',
-  'PER_VISIT',
-  'UNSUPPORTED',
-] as const;
-export type RateMethod = (typeof RATE_METHODS)[number];
-
-/** Contract version states; only `signed_off` versions price lines (PRD section 9). */
-export const CONTRACT_VERSION_STATES = ['draft', 'proposed', 'approved', 'signed_off', 'superseded'] as const;
-export type ContractVersionState = (typeof CONTRACT_VERSION_STATES)[number];
-
-/** Medicare adjustment flags; each defaults to off on a commercial contract (PRD section 9). */
-export const ADJUSTMENT_FLAGS = [
-  'apply_mppr',
-  'apply_assistant_reduction',
-  'apply_sequestration',
-  'apply_ncci',
-] as const;
-export type AdjustmentFlag = (typeof ADJUSTMENT_FLAGS)[number];
-
-/** How a contract counts timed units (PRD section 9, `timed_units_rule`). */
-export const TIMED_UNITS_RULES = ['MEDICARE_POOLED', 'PER_CODE', 'UNKNOWN'] as const;
-export type TimedUnitsRule = (typeof TIMED_UNITS_RULES)[number];
+export {
+  ADJUSTMENT_FLAGS,
+  type AdjustmentFlag,
+  type AgreementTerms,
+  COMMERCIAL_DEFAULT_FLAGS,
+  CONTRACT_VERSION_STATES,
+  CONVERSION_FACTORS,
+  type Citation,
+  type ContractVersionState,
+  type ConversionFactor,
+  type Evidence,
+  type FieldApproval,
+  type FixedScheduleParameters,
+  type LesserOfParameters,
+  type LocalityBasis,
+  MA_NONCONTRACTED_FLAGS,
+  MA_NONCONTRACTED_TERMS,
+  METHOD_PARAMETERS,
+  type PerVisitParameters,
+  type PercentOfMedicareParameters,
+  RATE_METHODS,
+  RATE_RECORD_FIELDS,
+  ROUNDING_RULES,
+  type RateFlags,
+  type RateMethod,
+  type RateMethodTerms,
+  type RateRecordField,
+  type RateRecordTerms,
+  type RateScope,
+  type RateWindows,
+  type RoundingRule,
+  TIMED_UNITS_RULES,
+  type TimedUnitsRule,
+  type YearBasis,
+  appealLevelsSchema,
+  citationSchema,
+  evidenceSchema,
+  parseRateTerms,
+  rateFlagsInputSchema,
+  rateFlagsSchema,
+  rateScopeSchema,
+  rateTermsInputSchema,
+  rateTermsSchema,
+  rateTermsToJson,
+  rateWindowsSchema,
+  roundingSchema,
+} from './terms';
+export { type IsoDate, addDays, addYears, isIsoDate, windowCovers, windowsOverlap } from './dates';
+export type { AgreementRecords, ContractVersionRecord, PlanMappingRecord, RateRecord } from './records';
+export {
+  AGREEMENT_UNPRICED_REASONS,
+  AgreementInvariantError,
+  type AgreementLine,
+  type AgreementResolution,
+  type AgreementResolver,
+  type AgreementUnpricedReason,
+  type ResolvedRate,
+  VersionNotSignedOffError,
+  agreementResolver,
+  assertSignedOff,
+  mappingInForce,
+  resolveAgreement,
+  scopeMatches,
+} from './resolver';
+export { type CoverageLine, type MappedLine, PricingRefusedError, type WaitingOnMapping, assertPricingAllowed, unmappedPlanIds, waitingOnMapping } from './coverage';
+export { type CalendarInput, type DerivedCalendarEvent, deriveCalendarEvents } from './calendar';
+export { normalizePageText, pageTextHash, quoteOnPage } from './evidence/page-text';
+export { DocumentUnreadableError, looksLikePdf, pdfPageTexts } from './evidence/pdf';
+export { type ScannedPageReader, ScanReadError, TextractPageReader, type TextractPageReaderOptions, type TextractStaging } from './evidence/scan';
+export { type DocumentSource, EVIDENCE_PROBLEMS, type EvidenceProblem, type EvidenceResolution, EvidenceResolver, type EvidenceResolverOptions } from './evidence/resolve';
+export {
+  ContractDataError,
+  type PlanWaitingOnMapping,
+  type ReadRequest,
+  assertPracticePricingAllowed,
+  dollarsWaitingOnMapping,
+  loadAgreementRecords,
+  loadMappings,
+  loadRateRecords,
+  loadVersions,
+} from './load';
+export {
+  ContractWorkflowError,
+  type FieldApprovalResult,
+  type ProposedRecordCheck,
+  type SignOffResult,
+  type WorkflowContext,
+  addRateRecord,
+  amendVersion,
+  approveRateRecordField,
+  approveVersion,
+  checkEvidence,
+  correctMapping,
+  createContract,
+  createDraftVersion,
+  mapPlan,
+  proposeVersion,
+  removeRateRecord,
+  signOffVersion,
+  supersedeVersion,
+  updateDraftVersion,
+  updateRateRecord,
+} from './services';

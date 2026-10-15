@@ -2,6 +2,30 @@
  * The Drizzle schema, one file per area, alongside the hand-written SQL in packages/db/migrations.
  */
 export {
+  CALENDAR_EVENT_KINDS,
+  CONTRACT_STATUSES,
+  type CalendarEventKind,
+  type ContractCalendarEventRow,
+  type ContractRow,
+  type ContractStatus,
+  type ContractVersionRow,
+  MAPPING_KINDS,
+  type MappingKind,
+  PROPOSERS,
+  type PayerPlanMappingRow,
+  type Proposer,
+  RATE_RECORD_METHODS,
+  RATE_RECORD_ROUNDINGS,
+  type RateRecordRow,
+  VERSION_STATUSES,
+  type VersionStatus,
+  contract,
+  contractCalendarEvent,
+  contractVersion,
+  payerPlanMapping,
+  rateRecord,
+} from './contracts';
+export {
   DOCUMENT_KINDS,
   DOCUMENT_STATUSES,
   type DocumentKind,

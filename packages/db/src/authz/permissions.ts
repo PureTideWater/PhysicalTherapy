@@ -13,6 +13,9 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  * - Line-level PHI is read by the roles that work lines (billing manager, analyst, firm roles) and by
  *   a support engineer under a support grant; exporting it by the billing manager and firm principal.
  * - firm_analyst is the Analyst persona in a firm.
+ * - The practice administrator and the billing manager sign off contract versions (PRD 5, J5:
+ *   contract.sign_off), and so does the firm principal, who does everything a billing manager does.
+ *   A contract specialist reaches a practice only under a support grant (docs/adr/0028).
  * - A permission is granted when one of the actor's roles allows it and none denies it (a "must not"
  *   wins). Some "must not" rules are not a single permission; they are kept by the structure of
  *   access (STRUCTURAL_RULES) and each has its own test.
@@ -50,6 +53,7 @@ export const PERMISSIONS = {
   'submission.log': { scope: 'practice', writes: true, description: 'log submissions' },
   'posting.reconcile': { scope: 'practice', writes: true, description: 'reconcile postings' },
   'rate_record.edit': { scope: 'practice', writes: true, description: 'edit rate records' },
+  'contract.sign_off': { scope: 'practice', writes: true, description: 'sign off a contract version' },
   'firm_user.manage': { scope: 'organization', writes: true, description: 'manage firm users' },
   'portfolio.read': { scope: 'organization', writes: false, description: 'see the firm portfolio' },
   'contract.review': { scope: 'platform', writes: false, description: 'review model-proposed contract abstractions' },
@@ -80,7 +84,7 @@ export const STRUCTURAL_RULES: Readonly<Record<StructuralRule, string>> = {
   grant_in_force:
     'a firm reaches a practice only through a grant in force: effective_practice_access() ignores an expired, revoked or not yet started grant on the next transaction',
   support_grant_required:
-    'internal roles have no standing access: the internal organization owns no practice and receives no grant, no internal user holds a group or firm membership (nor grants one to themselves), and the effective-permission function ignores customer routes of internal users, so only a support grant reaches PHI',
+    'internal roles have no standing access: the internal organization owns no practice and receives no grant, no internal user holds a group or firm membership (nor grants one to themselves), and the effective-permission function ignores customer routes of internal users, so only a support grant reaches PHI (a support engineer holds support under it, a contract specialist contract_specialist)',
   support_grant_expiry:
     'a support grant reaches its practice for at most four hours, or until it is ended when the ticket closes, and then nothing, on the next transaction',
   two_person_approval: 'the drafter of a packet never holds packet.approve_own_draft; the single-user 24-hour delay is the packet workflow’s (milestone 8)',
@@ -109,6 +113,7 @@ const BILLING_MANAGER_DOES: readonly Permission[] = [
   'phi.export',
   'file.upload',
   'mapping.edit',
+  'contract.sign_off',
   'anomaly.work',
   'case.work',
   'packet.draft',
@@ -135,7 +140,7 @@ export const WRITE_PERMISSIONS: readonly Permission[] = PERMISSION_NAMES.filter(
 export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
   practice_admin: {
     persona: 'Practice administrator',
-    does: [...VIEWER_READS, 'agreement.sign', 'user.invite', 'grant.approve', 'grant.revoke', 'export.request', 'deletion.request', 'access_log.read'],
+    does: [...VIEWER_READS, 'agreement.sign', 'user.invite', 'grant.approve', 'grant.revoke', 'export.request', 'deletion.request', 'access_log.read', 'contract.sign_off'],
     mustNot: [{ rule: 'Edit rate records (that is the specialist’s job)', denies: ['rate_record.edit'] }],
   },
   billing_manager: { persona: 'Billing manager', does: BILLING_MANAGER_DOES, mustNot: [NO_OWN_APPROVAL] },

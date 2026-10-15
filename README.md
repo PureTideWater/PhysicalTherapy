@@ -54,6 +54,15 @@ published rule release (with none, every code loads flagged unknown). Every prac
 Claims and lines (`/p/<practice>/claims`, the net view by default) screens read them; their PHI columns show only to
 roles that read PHI.
 
+Contracts (ADR 0028): `packages/contracts` holds the typed rate records (Zod over the stored JSON; cents as `Cents`,
+percentages as `Decimal`; commercial flags off unless the contract says so), the workflow services (`createContract`,
+`createDraftVersion`, `addRateRecord`, `proposeVersion`, `approveRateRecordField`, `approveVersion`, `signOffVersion`,
+`amendVersion`, `supersedeVersion`, `mapPlan`, `correctMapping`), evidence resolution (`EvidenceResolver`: pdf.js for text
+PDFs, `TextractPageReader` behind `ScannedPageReader` for scans) and `agreementResolver`, which is pure over the records
+`loadAgreementRecords` returns. The database holds the version states, the non-overlapping windows, the freeze of approved
+and signed-off versions and the approval and sign-off checks. A contract specialist reaches a practice under a support
+grant, as a support engineer does.
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
