@@ -1,6 +1,6 @@
 import { appDevLoginUrl, developmentMasterKey, openPool } from '@tp/db';
 import { createLogger } from '@tp/observability';
-import { type RunningWorker, databaseJobRuns, intakeHandler, intakeServices, parseHandler, placeholderHandlers, startWorker } from '@tp/worker/runtime';
+import { type RunningWorker, databaseJobRuns, intakeHandler, intakeServices, parseHandler, placeholderHandlers, priceHandler, startWorker } from '@tp/worker/runtime';
 import { PgBoss } from 'pg-boss';
 
 import { E2E_DOCUMENTS_DIR, e2eDatabaseUrl } from './env';
@@ -15,7 +15,7 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
     boss,
     pool,
     logger: createLogger({ sink: () => undefined }),
-    handlers: { ...placeholderHandlers, intake: intakeHandler(services), parse_835: parseHandler(services) },
+    handlers: { ...placeholderHandlers, intake: intakeHandler(services), parse_835: parseHandler(services), price: priceHandler() },
     runs: databaseJobRuns(pool),
     heartbeatMs: 60_000,
     shutdownTimeoutMs: 5_000,

@@ -17,6 +17,8 @@ import {
   payerOptions,
   remittanceDetail,
 } from '../remittances/queries';
+import { type LineRunOption, type PricedLineView, lineRuns, pricedLineOf } from '../pricing/queries';
+import { type TraceStepView, traceSteps } from '../pricing/view';
 import type { Services } from '../server/services';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
@@ -209,24 +211,49 @@ export interface LinePageData {
   readonly detail: LineDetail;
   readonly canReadPhi: boolean;
   readonly canNote: boolean;
+  /** The line as the run asked for (or the latest complete run that priced it) priced it; null before any did. */
+  readonly pricing: PricedLineView | null;
+  /** The steps of that run's trace, in the engine's order (roles that read PHI; the trace carries the line's dates). */
+  readonly steps: readonly TraceStepView[];
+  /** Every complete run that priced the line, newest first. */
+  readonly runs: readonly LineRunOption[];
 }
 
+/**
+ * The line trace page (PRD 7, Claims and lines: "Open the line trace"; PRD 11 step 9): the line's
+ * facts, adjustments and notes, and how a complete pricing run priced it: the expected allowed, the
+ * unrounded amount, the variance or the unpriced reason, and every step of its trace in order with the
+ * rule records and the release it read. `run` picks one of the runs that priced the line; without it,
+ * the latest. Every row is an audited read.
+ */
 export const linePage = practiceRoute({
   id: 'practice.lines.line',
   kind: 'page',
   path: '/p/[practiceId]/lines/[lineId]',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, lineId: opaqueId }),
+  params: z.object({ practiceId: opaqueId, lineId: opaqueId, run: id }),
   handle: async ({ scope, practiceId, params, request, services, access }): Promise<LinePageData> => {
     const cipher = await phiCipher(scope, services, practiceId, access.roles);
     const detail = await lineDetail(scope, practiceId, params.lineId, request.requestId, cipher);
     if (detail === undefined) {
       throw new NotFoundError();
     }
-    return { practiceId, detail, canReadPhi: cipher !== null, canNote: rolesPermit(access.roles, 'case.work') };
+    const pricing = await pricedLineOf(scope, practiceId, params.lineId, params.run ?? null, cipher !== null, request.requestId);
+    if (params.run !== undefined && pricing === undefined) {
+      throw new NotFoundError();
+    }
+    return {
+      practiceId,
+      detail,
+      canReadPhi: cipher !== null,
+      canNote: rolesPermit(access.roles, 'case.work'),
+      pricing: pricing ?? null,
+      steps: pricing === undefined || cipher === null ? [] : traceSteps(pricing.trace),
+      runs: await lineRuns(scope, practiceId, params.lineId),
+    };
   },
-  sample: { params: (refs) => ({ practiceId: refs.practiceId, lineId: refs.serviceLineId }) },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, lineId: refs.serviceLineId, run: refs.pricingRunId }) },
 });
 
 export const addLineNote = practiceRoute({

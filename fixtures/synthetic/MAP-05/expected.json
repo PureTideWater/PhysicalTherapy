@@ -9,7 +9,10 @@
     "packages/contracts/src/resolver.test.ts",
     "packages/contracts/src/contracts.db.test.ts",
     "packages/pricing/src/engine.test.ts",
-    "tools/golden-worksheet/engine.golden.test.ts"
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "apps/worker/src/price/price.db.test.ts",
+    "apps/web/src/lib/routes/pricing-routes.db.test.ts",
+    "apps/web/e2e/pricing.spec.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

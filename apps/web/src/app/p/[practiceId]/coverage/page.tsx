@@ -3,9 +3,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
+import { utc } from '../../../../components/format';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
+import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
 
@@ -17,14 +19,17 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * The Coverage screen (PRD 7): the share of lines and dollars priced, the unpriced reasons by count
  * with each reason's remedy linked to the screen it is taken on, the dollars waiting on mappings, what
  * to obtain to raise coverage, and the request-to-payer letter for a missing schedule (a text file from
- * a fixed template). Shares and counts come from pricing runs; until the first one, they are zero.
+ * a fixed template). Shares and counts are the latest complete pricing run's; until one completes,
+ * they are zero.
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts } = page.data;
+  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts } = page.data;
+  // The shares are of the latest complete run's lines; before one, of every line the practice holds.
+  const of = run === null ? { lines: lines.lines, chargeCents: lines.chargeCents } : { lines: run.lines, chargeCents: run.chargeCents };
   const path = `/p/${practiceId}/coverage`;
   return (
     <AppShell shell={page.shell} section="coverage">
@@ -35,12 +40,30 @@ export default async function CoveragePage(props: Props) {
       <Card role="region" aria-label="Priced share">
         <CardHeader>
           <CardTitle>
-            Priced: {priced.lines} of {lines.lines} lines; <Money value={priced.chargeCents} /> of <Money value={lines.chargeCents} /> billed
+            Priced: {priced.lines} of {of.lines} lines ({shareOf(priced.lines, of.lines)}); <Money value={priced.chargeCents} /> of <Money value={of.chargeCents} /> billed ({shareOf(priced.chargeCents, of.chargeCents)})
           </CardTitle>
           <CardDescription>
-            {pricingRuns === 0
-              ? 'No pricing run has priced this practice’s lines yet, so every line counts as unpriced. A pricing run prices each line under the signed-off contract version in force on its service date, or records why it cannot; the shares and counts here come from the latest one.'
-              : 'From the latest pricing run.'}
+            {run === null ? (
+              pricingRuns === 0 ? (
+                'No pricing run has priced this practice’s lines yet, so every line counts as unpriced. A pricing run prices each line under the signed-off contract version in force on its service date, or records why it cannot; the shares and counts here come from the latest one.'
+              ) : (
+                <>
+                  No pricing run has completed yet; the shares and counts here come from the latest complete one (
+                  <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
+                    Pricing runs
+                  </Link>
+                  ).
+                </>
+              )
+            ) : (
+              <>
+                From the latest complete pricing run,{' '}
+                <Link className="underline" href={`/p/${practiceId}/pricing-runs/${run.id}`}>
+                  {run.periodFrom} to {run.periodTo}
+                </Link>{' '}
+                under rule release {run.releaseNo}, complete {utc(run.completedAt)}. The practice holds {lines.lines} lines in all.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -114,6 +137,7 @@ export default async function CoveragePage(props: Props) {
       </Card>
       <section aria-label="Unpriced reasons" className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Unpriced reasons</h2>
+        <p className="text-sm text-muted-foreground">{run === null ? 'Counts appear once a pricing run completes.' : 'Lines of the latest complete pricing run, by the reason it left them unpriced.'}</p>
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>

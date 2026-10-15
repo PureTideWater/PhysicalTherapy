@@ -153,6 +153,8 @@ export interface SampleRefs {
   /** Open questions about the signed-off contract: one to answer, one to withdraw. */
   readonly questionId: string;
   readonly withdrawableQuestionId: string;
+  /** A complete pricing run of the practice that priced the service line above. */
+  readonly pricingRunId: string;
 }
 
 export interface RouteSample {

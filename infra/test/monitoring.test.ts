@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ENVIRONMENTS } from '../lib/environments';
 import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, workerLogGroupName } from '../lib/heartbeat';
-import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS } from '../lib/jobs';
+import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../lib/jobs';
 import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
 describe('the heartbeat contract with the worker', () => {
@@ -29,6 +29,14 @@ describe('the job-failure contract with the worker (JOB-02)', () => {
   });
 });
 
+describe('the pricing-run alert contract with the worker (ENGINE_ERROR: operator alert)', () => {
+  it('matches the line apps/worker logs when a run records engine errors that page the operator', () => {
+    const worker = readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/price/execute.ts'), 'utf8');
+    expect(worker).toContain(`export const ENGINE_ERRORS_MESSAGE = '${PRICING_ENGINE_ERRORS_MESSAGE}';`);
+    expect(worker).toContain(`context.logger.error('${PRICING_ENGINE_ERRORS_MESSAGE}'`);
+  });
+});
+
 /** PRD 19, monitoring: "worker heartbeat (two misses alert)"; test matrix JOB-04. */
 describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environment) => {
   const { stack, template } = synthesized(environment);
@@ -49,10 +57,30 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     filters.find(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))?.[1] ?? { Type: '' };
   const heartbeatAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.heartbeatAlarm));
   const jobAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.jobFailedAlarm));
+  const engineErrorsAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.pricingEngineErrorsAlarm));
 
-  it('has the heartbeat and job-failure metric filters and alarms, and no other', () => {
-    expect(filters).toHaveLength(2);
-    expect(resourcesOf(template, 'AWS::CloudWatch::Alarm')).toHaveLength(2);
+  it('has the heartbeat, job-failure and pricing engine-error metric filters and alarms, and no other', () => {
+    expect(filters).toHaveLength(3);
+    expect(resourcesOf(template, 'AWS::CloudWatch::Alarm')).toHaveLength(3);
+  });
+
+  it('counts each pricing run that recorded engine errors for the operator, and tells the operator within five minutes', () => {
+    expect(propertiesOf(filterFor(PRICING_ENGINE_ERRORS_METRIC.metricName))).toEqual({
+      LogGroupName: ref(logicalIdOf(stack, stack.monitoring.workerLogGroup)),
+      FilterPattern: `{ $.msg = "${PRICING_ENGINE_ERRORS_MESSAGE}" }`,
+      MetricTransformations: [{ MetricNamespace: PRICING_ENGINE_ERRORS_METRIC.namespace, MetricName: PRICING_ENGINE_ERRORS_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+    });
+    expect(propertiesOf(engineErrorsAlarm)).toMatchObject({
+      Namespace: PRICING_ENGINE_ERRORS_METRIC.namespace,
+      MetricName: PRICING_ENGINE_ERRORS_METRIC.metricName,
+      Statistic: 'Sum',
+      Period: JOB_FAILED_PERIOD_SECONDS,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
   });
 
   it('counts each heartbeat line as the custom heartbeat metric', () => {

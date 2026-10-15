@@ -36,6 +36,7 @@ import { inviteMember } from './console';
 import { ROUTES } from './index';
 import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
 import { seedContractWorld } from './test-support/contract-world';
+import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -69,6 +70,7 @@ beforeAll(async () => {
   database = await createMigratedDatabase(adminUrl);
   owner = databaseClient(database.url);
   await owner.connect();
+  await loadRouteRelease(owner);
   app = openPool(database.appUrl, 6);
   const sealer = new Sealer(randomBytes(32));
   services = createServices({
@@ -214,7 +216,8 @@ async function seedRemittance(practiceId: string, cipher: PracticeCipher, upload
 /**
  * A practice with every persona: its group's members, a firm with a grant, the internal roles, and
  * support grants for the support engineer and the contract specialist (docs/adr/0028); a loaded
- * remittance; and contracts at every state the contract screens show.
+ * remittance; contracts at every state the contract screens show; and a complete pricing run of the
+ * remittance's line under the signed-off version (docs/adr/0035).
  */
 async function buildWorld(name: string): Promise<World> {
   const tenant = await createTenantWorld(owner, name);
@@ -304,6 +307,8 @@ async function buildWorld(name: string): Promise<World> {
     customerId: tenant.adminUserId,
     specialistId,
   });
+  const manager = actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'billing_manager')?.userId ?? '';
+  const pricingRunId = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -322,6 +327,7 @@ async function buildWorld(name: string): Promise<World> {
     uploadToken,
     ...loaded,
     ...contracts,
+    pricingRunId,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

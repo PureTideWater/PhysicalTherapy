@@ -5,7 +5,7 @@
   "assertion": "No duplicate effects",
   "synthetic": true,
   "completesIn": 3,
-  "assertedBy": ["apps/worker/src/worker.db.test.ts"],
+  "assertedBy": ["apps/worker/src/worker.db.test.ts","apps/worker/src/price/price.db.test.ts"],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

@@ -13,6 +13,7 @@ import * as coverage from './coverage';
 import * as registry from './index';
 import * as mapping from './mapping';
 import * as practice from './practice';
+import * as pricing from './pricing';
 import * as remittances from './remittances';
 import * as signIn from './sign-in';
 import * as uploads from './uploads';
@@ -33,7 +34,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [abstraction, account, consoleRoutes, contracts, coverage, mapping, practice, remittances, signIn, uploads, registry].flatMap((module) =>
+  [abstraction, account, consoleRoutes, contracts, coverage, mapping, practice, pricing, remittances, signIn, uploads, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );

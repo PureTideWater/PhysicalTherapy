@@ -39,10 +39,17 @@ const STATUS_LABELS: Readonly<Record<LineStatus, string>> = {
   unpriced: 'Unpriced',
 };
 
-/** A line's status chip: one of the five stages, unpriced, or not priced yet (before any pricing run). */
-export function LineStatusChip({ status }: { readonly status: LineStatus | null }) {
+/**
+ * A line's status chip: one of the five stages, unpriced, priced without a shortfall (a complete run
+ * priced it at or under what was paid: no stage), or not priced yet (no complete run has priced it).
+ */
+export function LineStatusChip({ status, priced = false }: { readonly status: LineStatus | null; readonly priced?: boolean }) {
   if (status === null) {
-    return (
+    return priced ? (
+      <Badge variant="outline" data-status="priced" title="The latest pricing run priced this line at or under what was paid.">
+        Priced, no shortfall
+      </Badge>
+    ) : (
       <Badge variant="outline" title="Expected allowed and the line's stage come from a pricing run.">
         Not priced yet
       </Badge>

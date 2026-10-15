@@ -1,6 +1,8 @@
 import { rmSync } from 'node:fs';
+import path from 'node:path';
 
 import { databaseClient, migrate } from '@tp/db';
+import { loadRelease } from '@tp/rules/loader';
 import { JOB_TYPES, queueOptions } from '@tp/worker/jobs';
 import { PgBoss } from 'pg-boss';
 
@@ -9,9 +11,11 @@ import { seed } from '../scripts/seed';
 import { E2E_DATABASE, E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, e2eAdminUrl, e2eDatabaseUrl } from './env';
 
 /**
- * Before the e2e server starts: a fresh database (migrated, with the application role's dev login)
- * and a fresh local identity provider, seeded with the synthetic personas. Synthetic data only.
+ * Before the e2e server starts: a fresh database (migrated, with the application role's dev login,
+ * and SYNTHETIC rule release 900001 loaded, the release pricing runs are pinned to) and a fresh local
+ * identity provider, seeded with the synthetic personas. Synthetic data only.
  */
+const SYNTHETIC_RELEASE = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/rules/release-synth-900001');
 const admin = databaseClient(e2eAdminUrl());
 await admin.connect();
 try {
@@ -21,6 +25,13 @@ try {
   await admin.end();
 }
 await migrate({ databaseUrl: e2eDatabaseUrl(), devLogin: true });
+const owner = databaseClient(e2eDatabaseUrl());
+await owner.connect();
+try {
+  await loadRelease(owner, SYNTHETIC_RELEASE, { release: 900001, allowSyntheticFixtureForTests: true });
+} finally {
+  await owner.end();
+}
 rmSync(E2E_DEV_AUTH_DIR, { recursive: true, force: true });
 rmSync(E2E_DOCUMENTS_DIR, { recursive: true, force: true });
 await seed({ databaseUrl: e2eDatabaseUrl(), devAuthDirectory: E2E_DEV_AUTH_DIR, masterKey: developmentMasterKey() });

@@ -8,7 +8,8 @@
   "assertedBy": [
     "tools/golden-worksheet/worksheet.golden.test.ts",
     "tools/golden-worksheet/engine.golden.test.ts",
-    "packages/pricing/src/engine.test.ts"
+    "packages/pricing/src/engine.test.ts",
+    "apps/worker/src/price/price.db.test.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

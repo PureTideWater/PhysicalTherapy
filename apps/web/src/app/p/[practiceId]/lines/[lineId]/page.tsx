@@ -15,18 +15,23 @@ import { addLineNoteAction } from './actions';
 export const metadata: Metadata = { title: 'Line trace' };
 
 /**
- * One service line (PRD 7, Claims and lines: "open the line trace; add a note"): what the 835 said
- * about it, its adjustments, and how its observed allowed was derived. Expected allowed and the
- * pricing trace that recomputes it arrive with the pricing engine (milestone 5); until then this is
- * the trace's placeholder. Notes are PHI and show only to roles that read PHI; roles that work cases
- * add them.
+ * The line trace (PRD 7, Claims and lines: "open the line trace; add a note"; PRD 11 step 9): what the
+ * 835 said about the line, its adjustments and how its observed allowed was derived, and how a
+ * complete pricing run priced it: expected allowed with the unrounded amount beside it, the variance
+ * or the unpriced reason, the dispute window, and every step of the run's trace in the engine's order
+ * with the rule records and the release it read. `run` picks one of the runs that priced the line;
+ * without it, the latest. The trace carries the line's dates, so it shows to roles that read PHI, as
+ * notes do; roles that work cases add notes.
  */
-export default async function LinePage(props: { readonly params: Promise<{ practiceId: string; lineId: string }> }) {
+export default async function LinePage(props: {
+  readonly params: Promise<{ practiceId: string; lineId: string }>;
+  readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const page = await loadPage(linePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="claims" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, detail, canNote } = page.data;
+  const { practiceId, detail, canNote, canReadPhi, pricing, steps, runs } = page.data;
   const { line, adjustments, notes } = detail;
   const modifiers = line.modifiers.filter((modifier) => modifier !== '');
   return (
@@ -40,16 +45,120 @@ export default async function LinePage(props: { readonly params: Promise<{ pract
           {modifiers.length === 0 ? '' : ` ${modifiers.join(' ')}`}
         </h1>
         <div className="flex flex-wrap gap-1">
-          <LineStatusChip status={line.status} />
+          <LineStatusChip status={line.status} priced={line.pricing !== null} />
           {line.reversal ? <Badge variant="secondary">Reversal</Badge> : null}
           {line.reversed ? <Badge variant="outline">Reversed</Badge> : null}
           {line.superseded ? <Badge variant="outline">Superseded</Badge> : null}
         </div>
       </div>
+      <Card role="region" aria-label="Pricing">
+        <CardHeader>
+          <CardTitle>Pricing</CardTitle>
+          <CardDescription>
+            {pricing === null
+              ? 'No complete pricing run has priced this line yet. A run prices it under the signed-off contract version in force on its service date, or records why it cannot.'
+              : `As the pricing run of ${pricing.run.periodFrom} to ${pricing.run.periodTo} priced it, under rule release ${String(pricing.run.releaseNo)}.`}
+          </CardDescription>
+        </CardHeader>
+        {pricing === null ? null : (
+          <CardContent className="flex flex-col gap-3">
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+              {pricing.unpricedReason === null ? (
+                <>
+                  <Fact label="Expected allowed">
+                    <Money value={pricing.expectedAllowedCents} /> <span className="text-xs text-muted-foreground">(unrounded {pricing.expectedUnrounded} cents)</span>
+                  </Fact>
+                  <Fact label="Variance">
+                    <Money value={pricing.varianceCents} /> {BigInt(pricing.varianceCents ?? '0') < 0n ? <span className="text-xs text-muted-foreground">(overpaid: recorded, never pursued)</span> : null}
+                  </Fact>
+                  <Fact label="Method">{pricing.method ?? '—'}</Fact>
+                  <Fact label="Adjustments">
+                    {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
+                  </Fact>
+                  {canReadPhi ? <Fact label="Dispute window ends">{pricing.windowEndsOn ?? 'No window known'}</Fact> : null}
+                </>
+              ) : (
+                <Fact label="Unpriced">
+                  <span className="font-mono text-xs">{pricing.unpricedReason}</span>
+                </Fact>
+              )}
+              <Fact label="Mapping">
+                <span className="font-mono text-xs">{pricing.mappingId ?? '—'}</span>
+              </Fact>
+              <Fact label="Contract version">
+                {pricing.contractVersionId === null ? (
+                  '—'
+                ) : (
+                  <Link className="font-mono text-xs underline" href={`/p/${practiceId}/contracts/versions/${pricing.contractVersionId}`}>
+                    {pricing.contractVersionId}
+                  </Link>
+                )}
+              </Fact>
+              <Fact label="Rate record">
+                <span className="font-mono text-xs">{pricing.rateRecordId ?? '—'}</span>
+              </Fact>
+              <Fact label="Rule release">
+                {pricing.run.releaseNo} <span className="font-mono text-xs">(manifest {pricing.run.manifestSha256})</span>
+              </Fact>
+              <Fact label="Run">
+                <Link className="underline" href={`/p/${practiceId}/pricing-runs/${pricing.run.id}`}>
+                  {pricing.run.periodFrom} to {pricing.run.periodTo}
+                </Link>
+                , engine <span className="font-mono text-xs">{pricing.run.engineVersion}</span>, complete {utc(pricing.run.completedAt)}
+              </Fact>
+            </dl>
+            {runs.length <= 1 ? null : (
+              <nav aria-label="Runs that priced this line" className="flex flex-wrap gap-2 text-sm">
+                <span className="text-muted-foreground">Other runs:</span>
+                {runs
+                  .filter((other) => other.runId !== pricing.run.id)
+                  .map((other) => (
+                    <Link key={other.runId} className="underline" href={`/p/${practiceId}/lines/${line.lineId}?run=${other.runId}`}>
+                      {other.periodFrom} to {other.periodTo} (release {other.releaseNo}
+                      {other.unpricedReason === null ? '' : `, ${other.unpricedReason}`})
+                    </Link>
+                  ))}
+              </nav>
+            )}
+          </CardContent>
+        )}
+      </Card>
+      {pricing === null ? null : (
+        <section aria-label="Trace" className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">Trace</h2>
+          {!canReadPhi ? (
+            <p className="text-sm text-muted-foreground">The trace records the line’s service and remittance dates, so it shows to the roles that read PHI.</p>
+          ) : (
+            <ol className="flex flex-col gap-2" aria-label="Trace steps">
+              {steps.map((item) => (
+                <li key={item.key} className="rounded-md border p-3 text-sm" data-step={item.key}>
+                  <p className="font-medium">{item.title}</p>
+                  {item.recorded === null ? (
+                    <p className="text-xs text-muted-foreground">Not reached.</p>
+                  ) : (
+                    <>
+                      {item.records.length === 0 ? null : (
+                        <ul className="pt-1 text-xs" aria-label={`Rule records of ${item.title}`}>
+                          {item.records.map((record, index) => (
+                            <li key={`${record.sha256}:${String(index)}`} className="font-mono">
+                              {record.recordType} {record.key} {record.effectiveFrom} to {record.effectiveTo ?? 'open'}: {record.sha256}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">{item.recorded}</pre>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+      )}
       <Card>
         <CardHeader>
-          <CardTitle>Line trace</CardTitle>
-          <CardDescription>Expected allowed and the trace that recomputes it appear here once a pricing run prices this line under a signed-off contract version.</CardDescription>
+          <CardTitle>The line as paid</CardTitle>
+          <CardDescription>What the 835 said about the line.</CardDescription>
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">

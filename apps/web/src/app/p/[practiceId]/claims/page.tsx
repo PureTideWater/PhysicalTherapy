@@ -20,8 +20,9 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 /**
  * The Claims and lines screen (PRD 7): a server-side paginated, filterable table of every service
  * line, with patient reference, claim control numbers, service date, code and modifiers, units,
- * charge, paid, patient share, observed allowed, expected allowed (from pricing, milestone 5) and the
- * status chips. The net view shows each adjudicated claim once, so a reversal followed by a correction
+ * charge, paid, patient share, observed allowed, expected allowed and the status chips, both from the
+ * latest complete pricing run that priced the line (unpriced with its reason, validated when the line is
+ * short of its expected amount, priced without a shortfall, or not priced yet). The net view shows each adjudicated claim once, so a reversal followed by a correction
  * shows the corrected claim alone (PRD 6); the full view shows every claim as sent. PHI columns show
  * only to roles that read PHI; filters ride in the URL as opaque IDs, codes and months; a claim
  * control number is searched for by a form post.
@@ -186,7 +187,8 @@ export default async function ClaimsPage(props: Props) {
                       <Money value={row.expectedAllowedCents} />
                     </td>
                     <td className="py-2 pr-3">
-                      <LineStatusChip status={row.status} />
+                      <LineStatusChip status={row.status} priced={row.pricing !== null} />
+                      {row.pricing?.unpricedReason === null || row.pricing === null ? null : <div className="pt-1 font-mono text-xs text-muted-foreground">{row.pricing.unpricedReason}</div>}
                     </td>
                     <td className="py-2 whitespace-nowrap text-xs">
                       {row.lineId === null ? (

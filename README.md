@@ -75,7 +75,7 @@ grant, as a support engineer does.
 
 Mapping, coverage and contract screens (ADR 0030): Payer and plan mapping (`/p/<practice>/mapping`, unmapped plans and
 their dollars first; a plan's page shows its mapping history and how its lines resolve now), Coverage
-(`/p/<practice>/coverage`: zero priced until pricing runs, the unpriced reasons and remedies of the rules reference, the
+(`/p/<practice>/coverage`: the latest complete pricing run's priced shares and unpriced reasons by count, with the remedies of the rules reference, the
 dollars waiting on mappings, the request-to-payer letter as a text download) and Contracts (`/p/<practice>/contracts`:
 tag an uploaded contract, exhibit or payer letter to its payer, the calendar, sign-off and answers to the specialist's
 questions) are the customer's. The contract specialist abstracts, approves field by field and asks questions under
@@ -96,6 +96,19 @@ the review flags, the variance and the dispute window included (`--report` adds 
 `@tp/pricing/testing` builds SYNTHETIC inputs for tests. Claim status 19 prices, 20 and 21 are `SECONDARY_PAYER`, 23
 and 25 stop for review (`ENGINE_ERROR` `claim_status_not_priced`, which pages no one); a rate record whose
 timed-units rule is `UNKNOWN` leaves its lines `UNITS_RULE_UNKNOWN` (ADR 0033).
+
+Pricing runs (ADR 0035): a billing manager or firm principal creates a run for whole months of service dates on the
+Pricing runs screen (`/p/<practice>/pricing-runs`); `createPricingRun` (`@tp/worker/pricing`) refuses a release other
+than the newest published one, a period with no lines and a plan with no mapping at all (MAP-01), and records the run
+queued with the release and `ENGINE_VERSION`. The worker's `price` job (`apps/worker/src/price`, one practice per job,
+one run of a practice at a time, idempotent by run, three attempts) resolves every line through `agreementResolver`,
+prices it with `price()` under the run's release (read back from `rule_record`) and stores `priced_line` with its
+amounts or reason, its adjustments, its window's end and its trace, then completes the run with its coverage summary in
+the same transaction. The database refuses any change to a complete run or its lines, for every role. The run's page
+shows its coverage, unpriced reasons, contract versions, variance by payer pattern and lines; each line opens its trace
+(`/p/<practice>/lines/<line>?run=<run>`, every step with the rule records it read), and Claims and lines and Coverage read
+the latest complete run. `apps/worker/src/price/price.large.db.test.ts` prices 100,000 lines (`TP_LARGE_PRICING_LINES`)
+end to end in 55.2 seconds on the development container, against PRD 11's two minutes.
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
@@ -120,7 +133,9 @@ production; `TP_DEV_AUTH_DIR` is its directory, and invitations' temporary passw
 Every page, server action and route handler runs a route registered in `apps/web/src/lib/routes`; `pnpm test:db` generates
 the session, MFA, role and cross-tenant tests for each. The worker's `support_grant_notices` platform job emails practice
 administrators about support access (`MAIL_FROM` for SES, otherwise the `MAIL_OUTBOX_DIR` directory). The production
-build runs with the local providers only for the e2e suite, which sets `TP_ALLOW_LOCAL_PROVIDERS=e2e`.
+build runs with the local providers only for the e2e suite, which sets `TP_ALLOW_LOCAL_PROVIDERS=e2e`. The suite
+prepares its own database (`E2E_DATABASE`, default `tp_e2e`, on `E2E_ADMIN_URL`'s server; `E2E_PORT`, default 3100),
+with SYNTHETIC rule release 900001 loaded for its pricing run.
 
 Global rule content (PRD section 9; [content/sources/README.md](content/sources/README.md) lists the files
 release 1 needs):
@@ -149,6 +164,11 @@ RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A pe
    and `NODE_EXTRA_CA_CERTS` pointing at the RDS certificate bundle, then send it a `restore_drill` job.
 3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
+
+**Milestone 7 is not complete.** Its engine part and its pricing runs are built (ADRs 0034 and 0035); the re-run diffs
+under a new release, the monthly monitoring jobs and their digests are not, and its done check ("a re-run under
+release 2 lists exactly the changed lines") needs them and a release 2. Its golden lines wait on the specialist, as
+milestone 5's do.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
 cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (326 lines in 150 claims, 207 of

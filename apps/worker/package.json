@@ -7,6 +7,7 @@
   "exports": {
     "./jobs": "./src/jobs/public.ts",
     "./documents": "./src/storage/documents.ts",
+    "./pricing": "./src/price/public.ts",
     "./runtime": "./src/runtime.ts"
   },
   "scripts": {

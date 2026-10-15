@@ -1,5 +1,7 @@
 import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 
+import { stageOf } from '../pricing/view';
+
 /**
  * The Remittances and Claims and lines screens' reads (PRD 7; PRD 6, Canonical model and matching;
  * PRD 15, Request path for a PHI page). Every read runs in the request's practice scope, under the
@@ -413,10 +415,12 @@ export interface ClaimLine {
   readonly observedAllowedCents: string | null;
   readonly observedAllowedBasis: string | null;
   readonly observedAllowedAllocated: boolean;
-  /** Ready for pricing (milestone 5): null until a pricing run prices the line. */
+  /** From the latest complete pricing run that priced the line; null when none has, or it left the line unpriced. */
   readonly expectedAllowedCents: string | null;
-  /** Null until the line has a stage or an unpriced reason. */
+  /** Unpriced, or validated (priced with positive variance), from that run; null when no run gave the line a stage. */
   readonly status: LineStatus | null;
+  /** That run, and what it found: null when no complete run has priced the line. */
+  readonly pricing: { readonly pricingRunId: string; readonly varianceCents: string | null; readonly unpricedReason: string | null } | null;
   readonly patientRefId: string;
   readonly identifiers: (ClaimIdentifiers & { readonly serviceDate: string | null; readonly serviceDateTo: string | null }) | null;
 }
@@ -458,6 +462,33 @@ interface ClaimLineRow {
   readonly service_to: string | null;
   readonly service_date: string | null;
   readonly service_date_to: string | null;
+  readonly pricing_run_id: string | null;
+  readonly expected_allowed_cents: string | null;
+  readonly variance_cents: string | null;
+  readonly unpriced_reason: string | null;
+}
+
+/** The line's result in the latest complete pricing run that priced it (PRD 7, Claims and lines: expected allowed, status). */
+const LATEST_PRICING = `LEFT JOIN LATERAL (
+    SELECT p.pricing_run_id, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason
+      FROM priced_line p JOIN pricing_run pr ON pr.id = p.pricing_run_id
+     WHERE p.practice_id = l.practice_id AND p.service_line_id = l.id AND pr.status = 'complete'
+     ORDER BY pr.completed_at DESC, pr.id DESC
+     LIMIT 1
+  ) priced ON true`;
+
+const PRICING_COLUMNS = 'priced.pricing_run_id, priced.expected_allowed_cents, priced.variance_cents, priced.unpriced_reason';
+
+function pricingOf(row: Pick<ClaimLineRow, 'pricing_run_id' | 'expected_allowed_cents' | 'variance_cents' | 'unpriced_reason'>): Pick<ClaimLine, 'expectedAllowedCents' | 'status' | 'pricing'> {
+  if (row.pricing_run_id === null) {
+    return { expectedAllowedCents: null, status: null, pricing: null };
+  }
+  const result = { expectedAllowedCents: row.expected_allowed_cents, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason };
+  return {
+    expectedAllowedCents: row.expected_allowed_cents,
+    status: stageOf(result),
+    pricing: { pricingRunId: row.pricing_run_id, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason },
+  };
 }
 
 const NET = `c.claim_status_code <> '${REVERSAL_STATUS_CODE}' AND c.superseded_by_claim_id IS NULL AND NOT EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)`;
@@ -515,8 +546,10 @@ export async function listClaimLines(scope: Scope, query: ClaimLineQuery, cipher
                   coalesce(l.patient_share_cents, c.patient_resp_cents)::text AS patient_share_cents,
                   l.observed_allowed_cents::text AS observed_allowed_cents, l.observed_allowed_basis, l.observed_allowed_allocated,
                   c.patient_ref_id, c.patient_control_number, c.payer_claim_control_number, p.last_name, p.first_name,
-                  c.service_from::text AS service_from, c.service_to::text AS service_to, l.service_date::text AS service_date, l.service_date_to::text AS service_date_to
+                  c.service_from::text AS service_from, c.service_to::text AS service_to, l.service_date::text AS service_date, l.service_date_to::text AS service_date_to,
+                  ${PRICING_COLUMNS}
              ${CLAIM_LINE_FROM}
+             ${LATEST_PRICING}
             WHERE ${filters.sql}
             ORDER BY coalesce(l.service_date, c.service_from) DESC NULLS LAST, r.bpr16_date DESC, c.id, l.line_no NULLS FIRST
             LIMIT ${String(LINES_PER_PAGE)} OFFSET ${String(at.offset)}`,
@@ -547,8 +580,7 @@ export async function listClaimLines(scope: Scope, query: ClaimLineQuery, cipher
       observedAllowedCents: row.observed_allowed_cents,
       observedAllowedBasis: row.observed_allowed_basis,
       observedAllowedAllocated: row.observed_allowed_allocated === true,
-      expectedAllowedCents: null,
-      status: null,
+      ...pricingOf(row),
       patientRefId: row.patient_ref_id,
       identifiers:
         cipher === null
@@ -585,7 +617,7 @@ export async function claimByPayerControlNumber(scope: Scope, practiceId: string
 }
 
 // ---------------------------------------------------------------------------------------------------
-// One line: the trace placeholder and its notes
+// One line: its facts, its latest pricing and its notes
 // ---------------------------------------------------------------------------------------------------
 
 export interface LineAdjustment {
@@ -633,9 +665,11 @@ export async function lineDetail(scope: Scope, practiceId: string, lineId: strin
                   l.patient_share_cents::text AS patient_share_cents, l.observed_allowed_cents::text AS observed_allowed_cents, l.observed_allowed_basis,
                   l.observed_allowed_allocated, c.patient_ref_id, c.patient_control_number, c.payer_claim_control_number, p.last_name, p.first_name,
                   c.service_from::text AS service_from, c.service_to::text AS service_to, l.service_date::text AS service_date, l.service_date_to::text AS service_date_to,
-                  l.revenue_code, l.original_units::text AS original_units, l.line_allowed_cents::text AS line_allowed_cents, l.rendering_npi, pl.plan_key
+                  l.revenue_code, l.original_units::text AS original_units, l.line_allowed_cents::text AS line_allowed_cents, l.rendering_npi, pl.plan_key,
+                  ${PRICING_COLUMNS}
              FROM service_line l JOIN claim c ON c.id = l.claim_id JOIN remittance r ON r.id = c.remittance_id JOIN patient_ref p ON p.id = c.patient_ref_id
              JOIN plan pl ON pl.id = l.payer_plan_key
+             ${LATEST_PRICING}
             WHERE l.practice_id = $1 AND l.id = $2`,
           [practiceId, lineId],
         )
@@ -689,8 +723,7 @@ export async function lineDetail(scope: Scope, practiceId: string, lineId: strin
       observedAllowedCents: row.observed_allowed_cents,
       observedAllowedBasis: row.observed_allowed_basis,
       observedAllowedAllocated: row.observed_allowed_allocated === true,
-      expectedAllowedCents: null,
-      status: null,
+      ...pricingOf(row),
       patientRefId: row.patient_ref_id,
       revenueCode: row.revenue_code,
       originalUnits: row.original_units,

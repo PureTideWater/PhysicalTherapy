@@ -9,6 +9,7 @@ import { CONTRACT_ROUTES } from './contracts';
 import { COVERAGE_ROUTES } from './coverage';
 import { MAPPING_ROUTES } from './mapping';
 import { PRACTICE_ROUTES } from './practice';
+import { PRICING_ROUTES } from './pricing';
 import { REMITTANCE_ROUTES } from './remittances';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { UPLOAD_ROUTES } from './uploads';
@@ -41,6 +42,7 @@ export const ROUTES: readonly Route[] = [
   ...REMITTANCE_ROUTES,
   ...MAPPING_ROUTES,
   ...COVERAGE_ROUTES,
+  ...PRICING_ROUTES,
   ...CONTRACT_ROUTES,
   ...ABSTRACTION_ROUTES,
   ...CONSOLE_ROUTES,

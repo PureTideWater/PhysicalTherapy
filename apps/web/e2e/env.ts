@@ -7,12 +7,25 @@ import path from 'node:path';
  * an IP address as the relying party.
  */
 
-export const E2E_PORT = 3100;
+/**
+ * E2E_DATABASE and E2E_PORT name another run's database and port, so two runs on one machine never
+ * drop each other's database; its directories follow the database's name.
+ */
+function databaseName(): string {
+  const name = process.env.E2E_DATABASE ?? 'tp_e2e';
+  if (!/^[a-z_][a-z0-9_]{0,62}$/.test(name)) {
+    throw new Error('E2E_DATABASE is not a plain lowercase database name');
+  }
+  return name;
+}
+
+export const E2E_PORT = Number(process.env.E2E_PORT ?? '3100');
 export const E2E_ORIGIN = `http://localhost:${String(E2E_PORT)}`;
-export const E2E_DATABASE = 'tp_e2e';
-export const E2E_DEV_AUTH_DIR = path.join(tmpdir(), 'tp-e2e-dev-auth');
+export const E2E_DATABASE = databaseName();
+const DIRECTORY = E2E_DATABASE === 'tp_e2e' ? 'tp-e2e' : `tp-e2e-${E2E_DATABASE}`;
+export const E2E_DEV_AUTH_DIR = path.join(tmpdir(), `${DIRECTORY}-dev-auth`);
 /** Where the e2e server's local upload receiver and the in-test worker keep sealed documents. */
-export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), 'tp-e2e-documents');
+export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-documents`);
 
 /** The superuser (or CREATEDB and owner-capable) login the run prepares its database with. */
 export function e2eAdminUrl(): string {

@@ -119,6 +119,8 @@ describe('migrate', () => {
           'phi_table_registry',
           'plan',
           'practice',
+          'priced_line',
+          'pricing_run',
           'provider_adjustment',
           'rate_record',
           'remittance',

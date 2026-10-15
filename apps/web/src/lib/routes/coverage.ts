@@ -7,6 +7,7 @@ import { letterCodes, requestToPayerLetter } from '../contracts/letter';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
 import { practiceRoute } from '../http/invoke';
+import { latestCompleteRun, runCount } from '../pricing/queries';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
 import type { Services } from '../server/services';
@@ -15,12 +16,12 @@ import { opaqueId, optionalText } from './schemas';
 /**
  * The Coverage screen (PRD 7: "share of lines and dollars priced; the unpriced reasons by count; what
  * to obtain to raise coverage ... create a request-to-payer letter for a missing schedule ... links
- * each reason to its remedy screen"; PRD 5, J5 and J6; test matrix MAP-01). Coverage comes from
- * pricing runs, and none exists before milestone 7's runs: the shares are zero and every reason counts
- * zero, and the screen says why. What it can already show: the dollars waiting on mappings (per plan),
- * whether a pricing run over every line would be refused for an unmapped plan (the run's own guard),
- * and the specialist's open questions that ask the practice to obtain a document. The letter is plain
- * text from a fixed template (no model), downloaded as a file.
+ * each reason to its remedy screen"; PRD 5, J5 and J6; test matrix MAP-01). The priced shares and the
+ * unpriced reasons by count are the latest complete pricing run's (its stored coverage summary); before
+ * the first, they are zero and the screen says why. Beside them: the dollars waiting on mappings (per
+ * plan), whether a pricing run over every line would be refused for an unmapped plan (the run's own
+ * guard), and the specialist's open questions that ask the practice to obtain a document. The letter is
+ * plain text from a fixed template (no model), downloaded as a file.
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -29,12 +30,26 @@ export interface ReasonCount extends UnpricedReasonText {
   readonly lines: number;
 }
 
+/** The latest complete run the shares and counts come from. */
+export interface CoverageRun {
+  readonly id: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+  readonly releaseNo: number;
+  readonly completedAt: string;
+  /** Its lines and their billed dollars. */
+  readonly lines: number;
+  readonly chargeCents: string;
+}
+
 export interface CoveragePageData {
   readonly practiceId: string;
   readonly lines: Totals;
-  /** Lines and billed dollars priced by the latest pricing run; zero while no run exists. */
+  /** Lines and billed dollars the latest complete pricing run priced; zero while none has completed. */
   readonly priced: { readonly lines: number; readonly chargeCents: string };
-  /** Pricing runs of the practice (none before milestone 7). */
+  /** The run they come from; null before the first completes. */
+  readonly run: CoverageRun | null;
+  /** Pricing runs of the practice, in any state. */
   readonly pricingRuns: number;
   readonly reasons: readonly ReasonCount[];
   readonly waiting: Totals;
@@ -56,12 +71,19 @@ export const coveragePage = practiceRoute({
   params: z.object({ practiceId: opaqueId, page }),
   handle: async ({ scope, practiceId, params, request, services, access }): Promise<CoveragePageData> => {
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
+    const latest = await latestCompleteRun(scope, practiceId, request.requestId);
+    const coverage = latest?.coverage ?? null;
+    const counts = new Map((coverage?.reasons ?? []).map((entry) => [entry.reason, entry.lines]));
     return {
       practiceId,
       lines: await lineTotals(scope, practiceId),
-      priced: { lines: 0, chargeCents: '0' },
-      pricingRuns: 0,
-      reasons: UNPRICED_REASON_TEXT.map((reason) => ({ ...reason, lines: 0 })),
+      priced: coverage === null ? { lines: 0, chargeCents: '0' } : { lines: coverage.priced.lines, chargeCents: coverage.priced.charge_cents },
+      run:
+        latest === undefined || coverage === null || latest.completedAt === null
+          ? null
+          : { id: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, releaseNo: latest.releaseNo, completedAt: latest.completedAt, lines: coverage.lines, chargeCents: coverage.charge_cents },
+      pricingRuns: await runCount(scope, practiceId),
+      reasons: UNPRICED_REASON_TEXT.map((reason) => ({ ...reason, lines: counts.get(reason.reason) ?? 0 })),
       waiting: await waitingTotals(scope, practiceId),
       waitingPlans: await waitingPlans(scope, practiceId, params.page, request.requestId),
       readiness: await pricingReadiness(scope, practiceId, request.requestId),

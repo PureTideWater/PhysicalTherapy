@@ -15,7 +15,8 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * the pattern; anything else gets a synthetic value of its type. A column that names the row's actor
  * (actor_id, *_by, *_by_user_id) is the world's administrator, who is also the actor the rows are
  * written as, so a cross-tenant probe differs from an accepted row in its practice only. A user column
- * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it. It first fills only NOT NULL
+ * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it, and a column whose value the
+ * row's other constraints decide (FIXED_VALUES) gets that value. It first fills only NOT NULL
  * columns without defaults, and if a constraint refuses that row, fills every column it can. Rows are
  * written as the owner role inside the world's practice scope.
  *
@@ -90,6 +91,16 @@ const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
 
 /** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
 const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
+
+/**
+ * Columns whose value the row's other constraints decide, so no generic value fits: a priced line is
+ * priced (with its amounts) or carries a reason, and the factory's row is the unpriced one; a pricing
+ * run pins a published release, so the release the factory creates for one is published.
+ */
+const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
+  'priced_line.unpriced_reason': () => 'NO_MAPPING',
+  'rule_release.published_at': () => new Date().toISOString(),
+};
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
 const LITERAL = /'((?:[^']|'')*)'::[\w ]+/g;
@@ -251,6 +262,11 @@ export class RowFactory {
       }
       if (column.name === 'practice_id') {
         row.practice_id = world.practiceId;
+        continue;
+      }
+      const fixed = FIXED_VALUES[`${table}.${column.name}`];
+      if (fixed !== undefined) {
+        row[column.name] = fixed();
         continue;
       }
       const bound = ROLE_BOUND_USERS[`${table}.${column.name}`];

@@ -40,7 +40,7 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
     await expect(batch.getByText('remit.835')).toBeVisible();
     await expect(batch.getByRole('status')).toContainText('2 of 2 sent', { timeout: 30_000 });
     await expect(batch.getByRole('status')).toContainText('2 of 2 taken in', { timeout: 180_000 });
-    // With no rule release loaded, every adjustment code loads flagged unknown, and the receipt says so.
+    // The receipt counts what loaded; a code the loaded rule release does not know would follow, flagged.
     await expect(batch.getByText(/^Loaded 1 remittance, 1 claim and 1 line[.;]/)).toBeVisible();
     await expect(batch.getByText(/Each file in the zip has its own receipt: 500 files, 499 loaded, 1 held/)).toBeVisible();
   } finally {

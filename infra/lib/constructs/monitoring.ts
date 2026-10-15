@@ -13,7 +13,7 @@ import {
 import { Construct } from 'constructs';
 
 import type { EnvironmentName } from '../environments';
-import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS } from '../jobs';
+import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../jobs';
 import {
   HEARTBEAT_INTERVAL_SECONDS,
   HEARTBEAT_MESSAGE,
@@ -49,12 +49,16 @@ export interface MonitoringProps {
  * A second metric filter counts the line a job logs when it fails its last (third) attempt, the
  * restore drill and the audit copy included (infra/lib/jobs.ts; test matrix JOB-02); its alarm tells
  * the operator within one period. Earlier attempts' failures are retried and raise nothing.
+ *
+ * A third counts the line a pricing run logs when it recorded an ENGINE_ERROR line that pages the
+ * operator (the closed list's remedy for ENGINE_ERROR); its alarm tells the operator the same way.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
   readonly workerLogGroup: logs.LogGroup;
   readonly heartbeatAlarm: cloudwatch.Alarm;
   readonly jobFailedAlarm: cloudwatch.Alarm;
+  readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
 
   constructor(scope: Construct, id: string, props: MonitoringProps) {
     super(scope, id);
@@ -153,5 +157,22 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.jobFailedAlarm.addAlarmAction(notify);
+
+    const engineErrors = this.workerLogGroup.addMetricFilter('PricingRunEngineErrors', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', PRICING_ENGINE_ERRORS_MESSAGE),
+      metricNamespace: PRICING_ENGINE_ERRORS_METRIC.namespace,
+      metricName: PRICING_ENGINE_ERRORS_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    this.pricingEngineErrorsAlarm = new cloudwatch.Alarm(this, 'PricingRunEngineErrors', {
+      alarmDescription: `A ${props.environmentName} pricing run recorded engine errors for the operator.`,
+      metric: engineErrors.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(JOB_FAILED_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.pricingEngineErrorsAlarm.addAlarmAction(notify);
   }
 }
