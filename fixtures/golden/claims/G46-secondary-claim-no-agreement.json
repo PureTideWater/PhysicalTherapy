@@ -1,0 +1,87 @@
+{
+  "format": "tp-golden-claim/1",
+  "id": "G46",
+  "title": "A secondary claim mapped as no agreement",
+  "covers": ["NO_AGREEMENT", "SECONDARY_PAYER"],
+  "notes": "The agreement is resolved first (step 1); the secondary check comes at step 5, so the reason is NO_AGREEMENT.",
+  "inputs": {
+    "release": {
+      "number": 900001,
+      "dir": "fixtures/synthetic/rules/release-synth-900001",
+      "manifest_sha256": "6d346c8fa596c0f720ff3176be10044e86c9b4fe843d37b04c59192cdbdce45a"
+    },
+    "practice_settings": {"zip": "00011", "default_rounding": "HALF_UP_CENT"},
+    "place_of_service_settings": {"11": "non_facility", "22": "facility"},
+    "claim": {
+      "claim_id": "SYNTH-CLAIM-G46",
+      "claim_status_code": "2",
+      "reversed": false,
+      "corrected": false,
+      "payer_plan_key": "SYNTH-PAYER-OON/PLAN-2",
+      "lines": [
+        {
+          "line_no": 1,
+          "procedure_code": "97110",
+          "modifiers": ["GP"],
+          "units": "1",
+          "service_date": "2026-03-10",
+          "place_of_service": "11",
+          "charge_cents": "6000",
+          "observed_allowed_cents": "300",
+          "observed_allowed_basis": "amt_b6",
+          "patient_share_adjustments": []
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "mapping_id": "map-g46",
+        "kind": "no_agreement",
+        "contract_version_id": null,
+        "effective_from": "2026-01-01",
+        "effective_to": null
+      }
+    ],
+    "contract_versions": []
+  },
+  "expected": {
+    "lines": [
+      {"line_no": 1, "outcome": "unpriced", "unpriced_reason": "NO_AGREEMENT"}
+    ]
+  },
+  "worksheet": [
+    "# Worksheet G46: A secondary claim mapped as no agreement",
+    "",
+    "Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).",
+    "Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.",
+    "Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.",
+    "",
+    "## Inputs",
+    "",
+    "- Release 900001 at fixtures/synthetic/rules/release-synth-900001; its MANIFEST.json has SHA-256 6d346c8fa596c0f720ff3176be10044e86c9b4fe843d37b04c59192cdbdce45a and every file matched it.",
+    "- Practice settings: ZIP 00011; default rounding HALF_UP_CENT.",
+    "- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.",
+    "- Claim SYNTH-CLAIM-G46: status 2 (processed as secondary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-OON/PLAN-2.",
+    "- Mapping map-g46: no_agreement, 2026-01-01 to open.",
+    "- Contract versions: none.",
+    "",
+    "| Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | 97110 | GP | 1 | 2026-03-10 | 11 | 6000 | 300 (amt_b6) | none |",
+    "",
+    "## Steps 1 to 3, per line",
+    "",
+    "### Line 1: 97110 x 1 on 2026-03-10",
+    "",
+    "Step 1, the agreement.",
+    "- Mapping map-g46 (no_agreement, 2026-01-01 to open) is in force on 2026-03-10.",
+    "- **Unpriced: `NO_AGREEMENT`.** The plan is mapped as no_agreement: no agreement governs the line.",
+    "",
+    "## Results",
+    "",
+    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |",
+    "| --- | --- | --- | --- | --- | --- |",
+    "| 1 | unpriced `NO_AGREEMENT` | | | | |"
+  ],
+  "provenance": {"computed_by": "independent worksheet tools/golden-worksheet", "specialist_verified": false}
+}
