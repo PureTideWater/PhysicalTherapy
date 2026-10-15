@@ -155,10 +155,11 @@ by answering every question in `fixtures/golden/QUESTIONS.md` (and ADR 0029's), 
 setting `specialist_verified` to true claim by claim; any changed answer becomes a reviewed golden change through
 `/golden-diff`, never a regeneration.
 
-**Milestone 3 is not complete.** Its done check includes "a 2 GB zip queues per file". The intake test
-(`apps/worker/src/intake/intake.large.db.test.ts`) runs at 256 MiB here; the 2 GiB run is the weekly `large-zip`
-workflow, which has not run against this branch. A person runs that workflow (or `TP_LARGE_ZIP_MB=2048 pnpm test:db`
-with that file on a machine with the disk and time for it) and records the result.
+**Milestone 3: the 2 GB check has been run.** Its done check includes "a 2 GB zip queues per file". The intake test
+(`apps/worker/src/intake/intake.large.db.test.ts`) runs at 256 MiB by default; the 2 GiB run
+(`TP_LARGE_ZIP_MB=2048`, one source document and one parse_835 job per entry, bounded memory) passed on
+2026-10-15 in the build environment in 166 s against PostgreSQL 16. The weekly `large-zip` workflow repeats it
+on CI's PostgreSQL 18.
 
 **Milestone 2 is not complete.** Its done check asks for "code-set validation against release 1", and release 1 does
 not exist (milestone 0's note below): the parser checks CARC and RARC against SYNTHETIC release 900001 in every test,
