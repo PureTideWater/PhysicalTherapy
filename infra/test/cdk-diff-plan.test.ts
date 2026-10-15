@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { awsCredentialsAvailable, planCdkDiff } from '../lib/cdk-diff-plan';
 
 describe('planCdkDiff', () => {
-  it('diffs the staging stack when credentials work', () => {
-    expect(planCdkDiff(true)).toEqual({ args: ['diff', 'tp-staging', '--no-notices'] });
+  it('diffs the staging stack by template, which a read-only role can do, when credentials work', () => {
+    expect(planCdkDiff(true)).toEqual({ args: ['diff', 'tp-staging', '--method', 'template', '--no-notices'] });
   });
 
   it('synthesizes every stack and says why when they do not', () => {

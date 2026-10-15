@@ -1,0 +1,84 @@
+import { describe, expect, it } from 'vitest';
+
+import { PRACTICE_CONTEXT_KEY } from '../lib/constructs/application-role';
+import { ENVIRONMENTS } from '../lib/environments';
+import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
+
+/**
+ * PRD 15 and 16: per-practice data keys under the environment key. The application may generate
+ * and decrypt data keys only with an encryption context of practice_id alone; every other use of
+ * the key is through S3 or Secrets Manager for named resources.
+ */
+describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
+  const { stack, template } = synthesized(environment);
+  const roleId = logicalIdOf(stack, stack.application.role);
+  const statements = roleStatements(template, roleId);
+  const kmsStatements = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('kms:')));
+  const environmentKey = getAtt(keyId(template), 'Arn');
+
+  it('is assumed by ECS tasks of this account only', () => {
+    const role = resourceById(template, 'AWS::IAM::Role', roleId);
+    expect(propertiesOf(role).AssumeRolePolicyDocument).toEqual({
+      Version: '2012-10-17',
+      Statement: [
+        {
+          Action: 'sts:AssumeRole',
+          Effect: 'Allow',
+          Principal: { Service: 'ecs-tasks.amazonaws.com' },
+          Condition: { StringEquals: { 'aws:SourceAccount': { Ref: 'AWS::AccountId' } } },
+        },
+      ],
+    });
+    expect(propertiesOf(role).ManagedPolicyArns).toBeUndefined();
+  });
+
+  it('generates and decrypts data keys directly only with practice_id as the whole encryption context', () => {
+    const direct = kmsStatements.filter((statement) => statement.Condition?.StringEquals?.['kms:ViaService'] === undefined);
+    expect(direct).toEqual([
+      {
+        Sid: 'PracticeDataKeys',
+        Effect: 'Allow',
+        Action: ['kms:GenerateDataKey', 'kms:Decrypt'],
+        Resource: environmentKey,
+        Condition: {
+          'ForAllValues:StringEquals': { 'kms:EncryptionContextKeys': [PRACTICE_CONTEXT_KEY] },
+          Null: { 'kms:EncryptionContextKeys': 'false' },
+        },
+      },
+    ]);
+  });
+
+  it('uses the key otherwise only through S3 for its three buckets and Secrets Manager for its own login', () => {
+    const viaService = kmsStatements.filter((statement) => statement.Condition?.StringEquals?.['kms:ViaService'] !== undefined);
+    expect(viaService.map((statement) => statement.Sid).sort()).toEqual(['ApplicationLoginDecrypt', 'BucketEncryptionThroughS3']);
+    const s3 = viaService.find((statement) => statement.Sid === 'BucketEncryptionThroughS3');
+    const contexts = JSON.stringify(s3?.Condition?.ArnLike?.['kms:EncryptionContext:aws:s3:arn']);
+    for (const bucket of [stack.storage.documents, stack.storage.packets, stack.storage.auditCopies]) {
+      expect(contexts).toContain(logicalIdOf(stack, bucket));
+    }
+    expect(contexts).not.toContain(logicalIdOf(stack, stack.accountSecurity.trailBucket));
+    const secrets = viaService.find((statement) => statement.Sid === 'ApplicationLoginDecrypt');
+    expect(actionsOf(secrets as CfnStatement)).toEqual(['kms:Decrypt']);
+    expect(JSON.stringify(secrets?.Condition)).toContain(logicalIdOf(stack, stack.database.appSecret));
+  });
+
+  it('never allows a KMS action on the key without a condition, nor any key-management action', () => {
+    for (const statement of kmsStatements) {
+      expect(statement.Condition, statement.Sid).toBeDefined();
+      expect(actionsOf(statement).every((action) => action === 'kms:GenerateDataKey' || action === 'kms:Decrypt'), statement.Sid).toBe(true);
+      expect(statement.Resource, statement.Sid).toEqual(environmentKey);
+    }
+  });
+
+  it('reads its own login and never the owner login', () => {
+    const text = JSON.stringify(statements);
+    expect(text).toContain(logicalIdOf(stack, stack.database.appSecret));
+    expect(text).not.toContain(logicalIdOf(stack, stack.database.ownerSecret));
+  });
+
+  it('cannot delete objects, change retention or bypass Object Lock', () => {
+    const actions = statements.flatMap(actionsOf);
+    expect(actions.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);
+    expect(statements.every((statement) => statement.Effect === 'Allow')).toBe(true);
+  });
+});

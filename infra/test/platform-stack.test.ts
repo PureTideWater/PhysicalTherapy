@@ -1,10 +1,11 @@
 import { App } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Annotations, Match } from 'aws-cdk-lib/assertions';
 import { describe, expect, it } from 'vitest';
 
-import { buildApp } from '../lib/app';
+import { OPERATOR_EMAIL_CONTEXT, OPERATOR_SMS_CONTEXT, buildApp } from '../lib/app';
 import { ENVIRONMENTS, stackName } from '../lib/environments';
 import { PlatformStack } from '../lib/platform-stack';
+import { SYNTH_TIMEOUT_MS, resourcesOf, synthesizeAll, synthesized, templateFor } from './synth';
 
 describe('CDK app', () => {
   it('has one stack per environment', () => {
@@ -14,16 +15,71 @@ describe('CDK app', () => {
     expect(stacks.map((stack) => stack.environmentName)).toEqual([...ENVIRONMENTS]);
   });
 
-  it('synthesizes every stack with its environment tag and no resources yet', () => {
-    const app = buildApp(new App());
-    const assembly = app.synth();
+  it('synthesizes every stack with its environment tag', { timeout: SYNTH_TIMEOUT_MS }, () => {
+    // The stacks were synthesized for their templates already; this reuses that cloud assembly.
+    const assembly = synthesized('dev').app.synth();
     for (const environment of ENVIRONMENTS) {
-      const stack = app.node.findChild(stackName(environment)) as PlatformStack;
-      const template = Template.fromStack(stack);
-      const resources = (template.toJSON() as { Resources?: Record<string, unknown> }).Resources ?? {};
-      expect(Object.keys(resources).filter((id) => id !== 'CDKMetadata')).toEqual([]);
       const artifact = assembly.getStackByName(stackName(environment));
       expect(artifact.tags).toMatchObject({ environment, project: 'therapy-platform' });
     }
+  });
+
+  it.each(ENVIRONMENTS)('%s synthesizes without errors or warnings', (environment) => {
+    const { stack } = synthesized(environment);
+    expect(Annotations.fromStack(stack).findError('*', Match.anyValue())).toEqual([]);
+    expect(Annotations.fromStack(stack).findWarning('*', Match.anyValue())).toEqual([]);
+  });
+
+  it('protects only the production stack from termination', () => {
+    expect(ENVIRONMENTS.map((environment) => synthesized(environment).stack.terminationProtection)).toEqual([false, false, true]);
+  });
+
+  it.each(ENVIRONMENTS)('%s outputs what the compute and the deploy jobs need, and no secret value', (environment) => {
+    const outputs = Object.keys(templateFor(environment).findOutputs('*'));
+    expect(outputs).toEqual(
+      expect.arrayContaining([
+        'EnvironmentKeyArn',
+        'VpcId',
+        'WebSecurityGroupId',
+        'WorkerSecurityGroupId',
+        'DocumentsBucket',
+        'PacketsBucket',
+        'AuditCopiesBucket',
+        'DatabaseEndpoint',
+        'OwnerLoginSecretArn',
+        'AppLoginSecretArn',
+        'UserPoolId',
+        'WebClientId',
+        'OperatorTopicArn',
+        'WorkerLogGroup',
+        'WorkerHeartbeatSeconds',
+        'ApplicationRoleArn',
+      ]),
+    );
+    expect(outputs.includes('PullRequestDiffRoleArn')).toBe(environment === 'staging');
+    expect(JSON.stringify(templateFor(environment).findOutputs('*'))).not.toMatch(/resolve:secretsmanager|SecretString/);
+  });
+});
+
+describe('operator alert subscriptions', () => {
+  it('subscribe nobody when no deploy-time context names the operator', () => {
+    for (const environment of ENVIRONMENTS) {
+      expect(resourcesOf(templateFor(environment), 'AWS::SNS::Subscription')).toEqual([]);
+    }
+  });
+
+  it('subscribe the operator by email and SMS from context', { timeout: SYNTH_TIMEOUT_MS }, () => {
+    const stacks = synthesizeAll({ [OPERATOR_EMAIL_CONTEXT]: 'operator@example.test', [OPERATOR_SMS_CONTEXT]: '+15555550100' });
+    for (const environment of ENVIRONMENTS) {
+      const template = stacks[environment].template;
+      template.hasResourceProperties('AWS::SNS::Subscription', { Protocol: 'email', Endpoint: 'operator@example.test' });
+      template.hasResourceProperties('AWS::SNS::Subscription', { Protocol: 'sms', Endpoint: '+15555550100' });
+    }
+  });
+
+  it('treat an empty context value as absent and refuse a value that is not a string', { timeout: SYNTH_TIMEOUT_MS }, () => {
+    const stacks = synthesizeAll({ [OPERATOR_EMAIL_CONTEXT]: '' });
+    expect(resourcesOf(stacks.staging.template, 'AWS::SNS::Subscription')).toEqual([]);
+    expect(() => buildApp(new App({ context: { [OPERATOR_SMS_CONTEXT]: 5 } }))).toThrow(/tp:operatorSms must be a string/);
   });
 });

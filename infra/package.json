@@ -3,9 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "AWS CDK (TypeScript): one stack per environment. Network, data, compute and security arrive with milestone 1.",
+  "description": "AWS CDK (TypeScript): one stack per environment from shared constructs. Network, database, files, keys, secrets, identity and monitoring; compute arrives with milestone 11.",
   "scripts": {
     "synth": "cdk synth --quiet",
+    "test": "vitest run --root .. --project unit infra/",
     "cdk:diff": "tsx scripts/cdk-diff.ts",
     "typecheck": "tsc --noEmit"
   },
