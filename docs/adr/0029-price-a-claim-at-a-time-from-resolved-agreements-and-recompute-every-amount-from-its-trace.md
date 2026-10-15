@@ -1,6 +1,6 @@
 # 0029. Price a claim at a time from resolved agreements, and recompute every amount from its trace
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (claim statuses 19 to 25, `UNITS_RULE_UNKNOWN` for a timed-units rule of `UNKNOWN`, the units bound, ZIP+4 localities, general terms, golden format 2)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering); the reimbursement specialist reviews the questions below before milestone 5 closes
 - **PRD sections:** 2 (what the engine must get right), 9 (contract rate records), 11 (the expected-payment engine), 18 (the pricing oracle and the gates); test matrix PRC-01 to PRC-18 and PRC-20
@@ -106,7 +106,7 @@ nothing from the network". Several facts shape how:
   thread here (the PRC-20 test allows two minutes).
 - Milestone 7 adds the remaining methods, NCCI and MUE, the pricing runs that store results, and the `priced_line`
   column above. Its golden lines come first, as these did.
-- Questions for the reimbursement specialist, beside fixtures/golden/QUESTIONS.md: (1) is redetermination the right
+- Questions for the reimbursement specialist, now fixtures/golden/QUESTIONS.md Q34, Q31 and Q35: (1) is redetermination the right
   first-level window for a Medicare Advantage non-contracted line, and for a contract silent on disputes; (2) should
   claim status 19, 20 and 21 (processed and forwarded) price, as phase one refuses them; (3) a reversed claim whose
   units are negative is `ENGINE_ERROR` before it reaches `REVERSED_CLAIM`, the order PRD 11 gives; is that acceptable.

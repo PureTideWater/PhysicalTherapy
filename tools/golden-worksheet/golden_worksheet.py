@@ -3,11 +3,13 @@
 
 From a golden claim file's inputs and the rule release it names, this program computes every line's
 expected allowed amount by the algorithm of PRD section 11, in its order: resolve the agreement,
-compute the base amount by method, apply units, apply the flagged adjustments (multiple procedure
-reduction, assistant reduction, sequestration), report the patient share and stop secondary and
-reversed claims, and round once at the end under the record's rule, keeping the unrounded value.
-It writes a human-readable worksheet per claim: every input value, every intermediate amount, each
-adjustment's before and after, and the rounding.
+compute the base amount by method, apply units (a timed-units rule of UNKNOWN stops the line), apply
+the flagged adjustments (multiple procedure reduction, assistant reduction, sequestration), report the
+patient share and stop secondary and reversed claims, round once at the end under the record's rule
+keeping the unrounded value, compare with observed allowed (the variance), and work out the dispute
+deadline from the remittance date. It writes a human-readable worksheet per claim: every input value,
+every intermediate amount, each adjustment's before and after, the rounding, the variance and the
+window.
 
 It shares no code with packages/pricing: it is Python, standard library only, run with `python3 -I`.
 Every operation runs in a decimal context that traps any inexact result or rounding, so a figure is
@@ -25,6 +27,8 @@ specialist_verified false until the specialist has checked the worksheet.
 """
 
 import argparse
+import calendar
+import datetime
 import decimal
 import hashlib
 import json
@@ -33,7 +37,7 @@ import sys
 from decimal import ROUND_DOWN, ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
-FORMAT = "tp-golden-claim/1"
+FORMAT = "tp-golden-claim/2"
 COMPUTED_BY = "independent worksheet tools/golden-worksheet"
 REPOSITORY = Path(__file__).resolve().parents[2]
 GOLDEN_DIR = REPOSITORY / "fixtures" / "golden" / "claims"
@@ -60,14 +64,25 @@ NO_AGREEMENT_KINDS = ("no_agreement", "government", "other")
 VERSION_STATUSES = ("draft", "proposed", "approved", "signed_off", "superseded")
 PHASE_ONE_METHODS = ("PERCENT_OF_MEDICARE", "UNSUPPORTED")
 LATER_METHODS = ("FIXED_SCHEDULE", "LESSER_OF", "PER_VISIT")
-TIMED_UNITS_RULES = ("MEDICARE_POOLED", "PER_CODE")
+TIMED_UNITS_RULES = ("MEDICARE_POOLED", "PER_CODE", "UNKNOWN")
+# The most units one line may carry; more is malformed input, an engine error and never a golden line.
+MAX_UNITS = 999
 CONVERSION_FACTORS = ("non_qualifying_apm", "qualifying_apm")
 SETTINGS = ("facility", "non_facility")
 OBSERVED_BASES = ("amt_b6", "paid_plus_pr")
-# Claim statuses as PRD section 2 names them: 1 primary, 2 secondary, 3 tertiary, 4 denied, 22 reversal.
-CLAIM_STATUSES = {"1": "processed as primary", "2": "processed as secondary", "3": "processed as tertiary", "4": "denied", "22": "reversal of a prior payment"}
-SECONDARY_STATUSES = ("2", "3")
+# Claim statuses: the five PRD section 2 names (1 primary, 2 secondary, 3 tertiary, 4 denied, 22 reversal) and
+# 19, 20 and 21, read as processed as primary, secondary or tertiary and forwarded to another payer (ADR 0029;
+# fixtures/golden/QUESTIONS.md Q31). 23 and 25, also valid in an 835, have no pricing rule yet: the engine stops
+# them for review (ENGINE_ERROR claim_status_not_priced), so no golden line holds them.
+CLAIM_STATUSES = {
+    "1": "processed as primary", "2": "processed as secondary", "3": "processed as tertiary", "4": "denied",
+    "19": "processed as primary and forwarded", "20": "processed as secondary and forwarded", "21": "processed as tertiary and forwarded",
+    "22": "reversal of a prior payment",
+}
+NOT_PRICED_STATUSES = ("23", "25")
+SECONDARY_STATUSES = ("2", "3", "20", "21")
 REVERSAL_STATUS = "22"
+FIRST_LEVEL_WINDOW = "redetermination"
 ASSISTANT_MODIFIERS = ("CQ", "CO")
 FLAG_NAMES = ("apply_mppr", "apply_assistant_reduction", "apply_sequestration", "apply_ncci")
 ADJUSTMENT_OF_FLAG = {"apply_mppr": "mppr", "apply_assistant_reduction": "assistant_reduction", "apply_sequestration": "sequestration"}
@@ -215,7 +230,7 @@ def validate(case):
     string_list(case["covers"], "covers", r"^\S")
     if not isinstance(case["notes"], str):
         raise InputError("notes: must be a string")
-    inputs = strict(case["inputs"], "inputs", ["release", "practice_settings", "place_of_service_settings", "claim", "mappings", "contract_versions"])
+    inputs = strict(case["inputs"], "inputs", ["release", "as_of", "practice_settings", "place_of_service_settings", "claim", "mappings", "contract_versions"])
     release = strict(inputs["release"], "inputs.release", ["number", "dir", "manifest_sha256"])
     if not isinstance(release["number"], int) or isinstance(release["number"], bool) or release["number"] < 1:
         raise InputError("inputs.release.number: must be a positive whole number")
@@ -223,6 +238,7 @@ def validate(case):
     if ".." in release["dir"].split("/"):
         raise InputError("inputs.release.dir: must stay inside the repository")
     text(release["manifest_sha256"], "inputs.release.manifest_sha256", r"^[0-9a-f]{64}$")
+    iso_date(inputs["as_of"], "inputs.as_of")
     practice = strict(inputs["practice_settings"], "inputs.practice_settings", ["zip", "default_rounding"])
     text(practice["zip"], "inputs.practice_settings.zip", r"^\d{5}$")
     if practice["default_rounding"] is not None:
@@ -254,9 +270,15 @@ def validate(case):
 
 
 def validate_claim(claim, places):
-    strict(claim, "inputs.claim", ["claim_id", "claim_status_code", "reversed", "corrected", "payer_plan_key", "lines"])
+    strict(claim, "inputs.claim", ["claim_id", "claim_status_code", "reversed", "corrected", "remittance_date", "payer_plan_key", "lines"])
     text(claim["claim_id"], "inputs.claim.claim_id", r"^SYNTH-")
+    if claim["claim_status_code"] in NOT_PRICED_STATUSES:
+        raise InputError(
+            f"inputs.claim.claim_status_code: status {claim['claim_status_code']} has no pricing rule yet; the engine stops it for review "
+            "(ENGINE_ERROR claim_status_not_priced), so no golden line holds it (fixtures/golden/QUESTIONS.md)"
+        )
     choice(claim["claim_status_code"], "inputs.claim.claim_status_code", tuple(CLAIM_STATUSES))
+    optional_date(claim["remittance_date"], "inputs.claim.remittance_date")
     boolean(claim["reversed"], "inputs.claim.reversed")
     boolean(claim["corrected"], "inputs.claim.corrected")
     if claim["reversed"] and claim["corrected"]:
@@ -288,6 +310,8 @@ def validate_claim(claim, places):
                 f"{where}.units: phase one prices whole units of at least 1; fractional units have no rule for the "
                 "multiple procedure reduction (fixtures/golden/QUESTIONS.md)"
             )
+        if units > MAX_UNITS:
+            raise InputError(f"{where}.units: more than {MAX_UNITS} units on one line is malformed input, an engine error and not a golden line")
         iso_date(line["service_date"], f"{where}.service_date")
         if line["place_of_service"] not in places:
             raise InputError(f"{where}.place_of_service: {json.dumps(line['place_of_service'])} is not in inputs.place_of_service_settings")
@@ -328,7 +352,7 @@ def validate_versions(versions):
     seen = set()
     for index, version in enumerate(versions):
         where = f"inputs.contract_versions[{index}]"
-        strict(version, where, ["contract_version_id", "contract_id", "version_no", "status", "effective_from", "effective_to", "rate_records"])
+        strict(version, where, ["contract_version_id", "contract_id", "version_no", "status", "effective_from", "effective_to", "windows", "rate_records"])
         text(version["contract_version_id"], f"{where}.contract_version_id")
         if version["contract_version_id"] in seen:
             raise InputError(f"{where}.contract_version_id: appears twice")
@@ -338,6 +362,7 @@ def validate_versions(versions):
             raise InputError(f"{where}.version_no: must be a positive whole number")
         choice(version["status"], f"{where}.status", VERSION_STATUSES)
         window(version, where)
+        validate_windows(version["windows"], f"{where}.windows")
         if not isinstance(version["rate_records"], list):
             raise InputError(f"{where}.rate_records: must be a list")
         for position, record in enumerate(version["rate_records"]):
@@ -348,6 +373,27 @@ def validate_versions(versions):
             a, b = signed[first], signed[second]
             if a["contract_id"] == b["contract_id"] and a["effective_from"] <= (b["effective_to"] or "9999-12-31") and b["effective_from"] <= (a["effective_to"] or "9999-12-31"):
                 raise InputError(f"inputs.contract_versions: signed-off versions {a['contract_version_id']} and {b['contract_version_id']} overlap; versions never overlap")
+
+
+def day_count(value, where):
+    if value is not None and (not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 3650):
+        raise InputError(f"{where}: must be null or a whole number of days from 1 to 3650")
+    return value
+
+
+def validate_windows(windows, where):
+    """A version's windows, as the contract states them: null where it is silent."""
+    strict(windows, where, ["timely_filing_days", "dispute_window_days", "appeal_levels"])
+    day_count(windows["timely_filing_days"], f"{where}.timely_filing_days")
+    day_count(windows["dispute_window_days"], f"{where}.dispute_window_days")
+    levels = windows["appeal_levels"]
+    if not isinstance(levels, list):
+        raise InputError(f"{where}.appeal_levels: must be a list")
+    for index, level in enumerate(levels):
+        strict(level, f"{where}.appeal_levels[{index}]", ["level", "days"])
+        if level["level"] != index + 1:
+            raise InputError(f"{where}.appeal_levels[{index}].level: levels are numbered 1, 2, 3 in order")
+        day_count(level["days"], f"{where}.appeal_levels[{index}].days")
 
 
 def validate_rate_record(record, where):
@@ -381,8 +427,6 @@ def validate_rate_record(record, where):
     flags = strict(record["flags"], f"{where}.flags", list(FLAG_NAMES) + ["timed_units_rule", "rounding"])
     for name in FLAG_NAMES:
         boolean(flags[name], f"{where}.flags.{name}")
-    if flags["timed_units_rule"] == "UNKNOWN":
-        raise InputError(f"{where}.flags.timed_units_rule: UNKNOWN belongs to UNITS_RULE_UNKNOWN, a later milestone's reason")
     choice(flags["timed_units_rule"], f"{where}.flags.timed_units_rule", TIMED_UNITS_RULES)
     if flags["rounding"] is not None:
         choice(flags["rounding"], f"{where}.flags.rounding", tuple(ROUNDING_RULES))
@@ -526,6 +570,8 @@ class Line:
         self.patient_share = sum((Decimal(item["amount_cents"]) for item in facts["patient_share_adjustments"]), ZERO)
         self.rounding = None
         self.rounded = None
+        self.variance = None
+        self.window = None
         self.log = []
 
     def say(self, line=""):
@@ -652,6 +698,10 @@ def base_amount(case, line, release):
     locality = release.in_force("locality_map", {"zip": zip_code}, line.date)
     if locality is None:
         raise InputError(f"release {release.number} maps no locality for ZIP {zip_code} on {line.date}; that is an engine error, not a golden line")
+    if locality["value"].get("plus_four_required") is True:
+        raise InputError(
+            f"release {release.number}: ZIP {zip_code} needs its ZIP+4 to name a locality; the engine stops the line with ENGINE_ERROR, so it is not a golden line"
+        )
     carrier, locality_no = locality["value"]["carrier"], locality["value"]["locality"]
     line.say(f"- Locality: practice ZIP {zip_code} maps to carrier {carrier} locality {locality_no} (locality_map in force on {line.date}, {window_text(locality['effective_from'], locality['effective_to'])}).")
     gpci = lookup("pfs_gpci", {"carrier": carrier, "locality": locality_no})
@@ -681,10 +731,18 @@ def base_amount(case, line, release):
 
 
 def apply_units(line):
-    """Step 3. Units as billed."""
+    """Step 3. Units as billed; under a timed-units rule of UNKNOWN they are a reason for review, not a price."""
+    line.say("")
+    if line.terms.flags["timed_units_rule"] == "UNKNOWN":
+        line.say(f"Step 3, units: {line.units} as billed, under the timed-units rule UNKNOWN.")
+        line.stop(
+            "UNITS_RULE_UNKNOWN",
+            "The rate record does not say how the payer counts timed units, and no minutes are imported: the units are a reason "
+            "for review, not a price (PRD 20; fixtures/golden/QUESTIONS.md Q32). The line is neither ranked nor reduced.",
+        )
+        return
     line.base = line.unit_total * Decimal(line.units)
     line.amount = line.base
-    line.say("")
     line.say(f"Step 3, units: {line.units} as billed; {money(line.unit_total)} x {line.units} = {money(line.base)}.")
 
 
@@ -796,6 +854,64 @@ def sequestration(line, release):
     ))
 
 
+def add_days(date_text, days):
+    return (datetime.date.fromisoformat(date_text) + datetime.timedelta(days=days)).isoformat()
+
+
+def add_months(date_text, months):
+    """The same day `months` months later; a day the target month lacks becomes its last day (QUESTIONS Q33)."""
+    date = datetime.date.fromisoformat(date_text)
+    year, month = divmod(date.year * 12 + date.month - 1 + months, 12)
+    last = calendar.monthrange(year, month + 1)[1]
+    return datetime.date(year, month + 1, min(date.day, last)).isoformat()
+
+
+NO_WINDOW = {"ends_on": None, "status": "NO_WINDOW"}
+
+
+def dispute_window(case, line, release):
+    """Step 8. The dispute deadline, from the remittance date and the agreement's window, judged on the triage date."""
+    inputs = case["inputs"]
+    remittance = inputs["claim"]["remittance_date"]
+    as_of = inputs["as_of"]
+    line.say("")
+    if remittance is None:
+        line.say(f"Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on {as_of}.")
+        return NO_WINDOW
+    version = line.terms.version
+    days = None if version is None else version["windows"]["dispute_window_days"]
+    if days is not None:
+        ends = add_days(remittance, days)
+        how = f"the contract's dispute window, {days} days from the remittance date {remittance},"
+    else:
+        program = "medicare" if version is None else "commercial_default"
+        whose = (
+            "the plan is Medicare Advantage non-contracted, so Original Medicare's first-level window applies"
+            if version is None
+            else "the contract states no dispute window, so the release's commercial default first-level window applies"
+        )
+        found = release.in_force("dispute_window", {"program": program, "window": FIRST_LEVEL_WINDOW}, remittance)
+        if found is None:
+            line.say(
+                f"Step 8, dispute window: {whose}, but release {release.number} has no dispute_window record for {program} "
+                f"{FIRST_LEVEL_WINDOW} in force on the remittance date {remittance}: NO_WINDOW on {as_of}."
+            )
+            return NO_WINDOW
+        value = found["value"]
+        from_service = value["measured_from"] == "date_of_service"
+        start = line.date if from_service else remittance
+        ends = add_days(start, value["length"]) if value["unit"] == "days" else add_months(start, value["length"])
+        how = (
+            f"{whose} (dispute_window {program} {FIRST_LEVEL_WINDOW}, {window_text(found['effective_from'], found['effective_to'])}, in force on the remittance "
+            f"date {remittance}): {value['length']} {value['unit']} from the {'date of service' if from_service else 'remittance date'} {start}"
+            f"{'' if value['measured_from'] is not None else ' (the record names no start, so the remittance date)'},"
+        )
+    passed = as_of > ends
+    verdict = "passed: WINDOW_PASSED, validated and not actionable; the amount is unchanged" if passed else "open"
+    line.say(f"Step 8, dispute window: {how} ends on {ends}; on the triage date {as_of} it is {verdict}.")
+    return {"ends_on": ends, "status": "WINDOW_PASSED" if passed else "OPEN"}
+
+
 def price_case(case):
     """Prices one golden claim. Returns (expected, worksheet lines)."""
     inputs = case["inputs"]
@@ -850,6 +966,15 @@ def price_case(case):
         line.rounding = rule
         line.rounded = round_once(line.amount, rule)
         line.say(f"Step 6, rounding once: {fmt(line.amount)} cents under {rule} ({origin}; {ROUNDING_WORDS[rule]}) = **{fmt(line.rounded)} cents ({dollars(line.rounded)})**; the unrounded {fmt(line.amount)} is kept beside it.")
+        line.say("")
+        observed = Decimal(line.facts["observed_allowed_cents"])
+        line.variance = line.rounded - observed
+        meaning = "an underpayment" if line.variance > 0 else ("an overpayment, recorded and never pursued" if line.variance < 0 else "none")
+        line.say(
+            f"Step 7, variance: expected allowed {fmt(line.rounded)} - observed allowed {fmt(observed)} cents ({line.facts['observed_allowed_basis']}) "
+            f"= {fmt(line.variance)} cents: {meaning}."
+        )
+        line.window = dispute_window(case, line, release)
     expected = {"lines": [expected_line(line) for line in lines]}
     return expected, render_worksheet(case, release, lines, day_log)
 
@@ -868,6 +993,8 @@ def expected_line(line):
         "terms": line.terms.identity(),
         "base_cents": fmt(line.base),
         "adjustments": [{"name": name, "before_cents": fmt(before), "after_cents": fmt(after)} for name, before, after, _ in line.adjustments],
+        "variance_cents": fmt(line.variance),
+        "window": line.window,
     }
 
 
@@ -894,6 +1021,7 @@ def render_worksheet(case, release, lines, day_log):
         + "; ".join(f"{code} {setting.replace('_', '-')}" for code, setting in sorted(inputs["place_of_service_settings"].items())) + ".",
         f"- Claim {claim['claim_id']}: status {claim['claim_status_code']} ({CLAIM_STATUSES[claim['claim_status_code']]}); "
         f"reversed by a later claim: {'yes' if claim['reversed'] else 'no'}; superseded by a correction: {'yes' if claim['corrected'] else 'no'}; payer and plan {claim['payer_plan_key']}.",
+        f"- Remittance date: {claim['remittance_date'] or 'not known'}; dispute windows are judged on the triage date {inputs['as_of']}.",
     ]
     if inputs["mappings"]:
         for mapping in inputs["mappings"]:
@@ -904,7 +1032,10 @@ def render_worksheet(case, release, lines, day_log):
     if not inputs["contract_versions"]:
         out.append("- Contract versions: none.")
     for version in inputs["contract_versions"]:
-        out.append(f"- Contract version {version['contract_version_id']} (contract {version['contract_id']}, version {version['version_no']}, {version['status']}, {window_text(version['effective_from'], version['effective_to'])}):")
+        out.append(
+            f"- Contract version {version['contract_version_id']} (contract {version['contract_id']}, version {version['version_no']}, {version['status']}, "
+            f"{window_text(version['effective_from'], version['effective_to'])}; windows: {windows_text(version['windows'])}):"
+        )
         for record in version["rate_records"]:
             if record["method"] == "PERCENT_OF_MEDICARE":
                 parameters = record["parameters"]
@@ -937,17 +1068,31 @@ def render_worksheet(case, release, lines, day_log):
         out += trim(day_log)
     later = [(line.no, trim(line.rest)) for line in lines if trim(line.rest)]
     if later:
-        out += ["", "## Steps 4 to 6, per line"]
+        out += ["", "## Steps 4 to 8, per line"]
     for number_, rest in later:
         out += ["", f"### Line {number_}", ""]
         out += rest
-    out += ["", "## Results", "", "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |", "| --- | --- | --- | --- | --- | --- |"]
+    out += [
+        "",
+        "## Results",
+        "",
+        "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
     for line in lines:
         if line.reason is not None:
-            out.append(f"| {line.no} | unpriced `{line.reason}` | | | | |")
+            out.append(f"| {line.no} | unpriced `{line.reason}` | | | | | | |")
         else:
-            out.append(f"| {line.no} | priced | {fmt(line.rounded)} | {fmt(line.amount)} | {line.rounding} | {fmt(line.patient_share)} |")
+            window_cell = line.window["status"] if line.window["ends_on"] is None else f"{line.window['status']} (ends {line.window['ends_on']})"
+            out.append(f"| {line.no} | priced | {fmt(line.rounded)} | {fmt(line.amount)} | {line.rounding} | {fmt(line.patient_share)} | {fmt(line.variance)} | {window_cell} |")
     return out
+
+
+def windows_text(windows):
+    def days(value):
+        return "not stated" if value is None else f"{value} days"
+    levels = ", ".join(f"level {item['level']} {item['days']} days" for item in windows["appeal_levels"]) or "none stated"
+    return f"timely filing {days(windows['timely_filing_days'])}, dispute {days(windows['dispute_window_days'])}, appeal levels {levels}"
 
 
 def trim(items):

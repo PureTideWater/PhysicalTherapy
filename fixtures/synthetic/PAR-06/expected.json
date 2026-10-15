@@ -5,7 +5,12 @@
   "assertion": "Document recorded; zero rows loaded; receipt says duplicate",
   "synthetic": true,
   "completesIn": 2,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/edi835/src/fixtures.test.ts",
+    "apps/web/src/lib/routes/remittances.db.test.ts",
+    "packages/db/src/documents.db.test.ts",
+    "apps/worker/src/intake/intake.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

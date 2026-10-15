@@ -17,19 +17,20 @@ const WORKSHEET = 'tools/golden-worksheet/golden_worksheet.py';
 const CLAIMS = 'fixtures/golden/claims';
 const COMPUTED_BY = 'independent worksheet tools/golden-worksheet';
 
-/** The unpriced reasons phase one (milestone 5) can produce; the others arrive with NCCI, minute logs and the engine itself. */
+/** The unpriced reasons a phase-one (milestone 5) golden line can hold; MUE_EXCEEDED arrives with NCCI, and ENGINE_ERROR is never a golden line. */
 const PHASE_ONE_REASONS = [
   'NO_MAPPING',
   'NO_AGREEMENT',
   'AMBIGUOUS_RATE',
   'NO_RATE_FOR_CODE',
   'NO_PFS_VALUE',
+  'UNITS_RULE_UNKNOWN',
   'SECONDARY_PAYER',
   'DATE_OUTSIDE_VERSIONS',
   'REVERSED_CLAIM',
   'UNSUPPORTED_METHOD',
 ];
-const LATER_REASONS = ['MUE_EXCEEDED', 'UNITS_RULE_UNKNOWN', 'ENGINE_ERROR'];
+const LATER_REASONS = ['MUE_EXCEEDED', 'ENGINE_ERROR'];
 
 interface Difference {
   readonly file: string;
@@ -53,6 +54,8 @@ interface GoldenLine {
   readonly unpriced_reason?: string;
   readonly expected_unrounded_cents?: string;
   readonly rounding?: string;
+  readonly variance_cents?: string;
+  readonly window?: { readonly ends_on: string | null; readonly status: string };
 }
 
 interface RateRecord {
@@ -137,8 +140,8 @@ describe('golden lines', () => {
     }
   });
 
-  it('hold one hundred lines, each claim with its provenance', () => {
-    expect(lines).toHaveLength(100);
+  it('hold at least the one hundred lines of milestone 5, each claim with its provenance', () => {
+    expect(lines.length).toBeGreaterThanOrEqual(100);
     expect(new Set(claims.map((claim) => claim.id)).size).toBe(claims.length);
     for (const claim of claims) {
       expect(claim.provenance.computed_by, claim.id).toBe(COMPUTED_BY);
@@ -175,5 +178,13 @@ describe('golden lines', () => {
       expect(claimLines.some(({ line }) => line.modifiers.includes(modifier)), modifier).toBe(true);
     }
     expect(new Set(claimLines.map(({ line }) => line.patient_share_adjustments.length > 0))).toEqual(new Set([true, false]));
+    // Steps 7 and 8: underpaid and overpaid lines, and every window status.
+    const priced = lines.filter((line) => line.outcome === 'priced');
+    const sides = new Set(priced.map((line) => ((line.variance_cents ?? '0').startsWith('-') ? 'overpaid' : line.variance_cents === '0' ? 'even' : 'underpaid')));
+    expect(sides.has('underpaid') && sides.has('overpaid')).toBe(true);
+    expect(new Set(priced.map((line) => line.window?.status))).toEqual(new Set(['OPEN', 'WINDOW_PASSED', 'NO_WINDOW']));
+    for (const id of ['PRC-14', 'PRC-15', 'claim status 19', 'claim status 20', 'UNITS_RULE_UNKNOWN', 'suspended sequestration', 'MPPR general rate']) {
+      expect(covered.has(id), id).toBe(true);
+    }
   });
 });

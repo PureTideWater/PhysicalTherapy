@@ -83,14 +83,16 @@ function unique<T>(values: readonly T[], key: (value: T) => string): boolean {
 // scope
 
 /**
- * What a record applies to. Absent lists match anything: no modifier_sets means any modifiers, no
+ * What a record applies to. Absent lists match anything: no codes means every code (a contract-wide
+ * term such as "110% of the Medicare Physician Fee Schedule"), no modifier_sets any modifiers, no
  * places_of_service any place, no provider_types any provider. A modifier set matches a line whose
  * modifiers are exactly that set (order ignored). The optional window [effective_from, effective_to)
- * narrows the version's.
+ * narrows the version's. A general term and a code exhibit that both match a line are AMBIGUOUS_RATE
+ * until the specialist narrows one (no precedence of the specific over the general; ADR 0033).
  */
 export const rateScopeSchema = z
   .strictObject({
-    codes: z.array(procedureCode).min(1).max(1000),
+    codes: z.array(procedureCode).min(1).max(1000).optional(),
     modifier_sets: z.array(z.array(modifier).max(4)).min(1).max(100).optional(),
     places_of_service: z.array(placeOfService).min(1).max(100).optional(),
     provider_types: z.array(providerType).min(1).max(50).optional(),
@@ -98,7 +100,7 @@ export const rateScopeSchema = z
     effective_to: isoDate.optional(),
   })
   .superRefine((scope, context) => {
-    if (!unique(scope.codes, (code) => code)) {
+    if (!unique(scope.codes ?? [], (code) => code)) {
       context.addIssue({ code: 'custom', path: ['codes'], message: 'names each code once' });
     }
     const sets = scope.modifier_sets ?? [];
@@ -291,7 +293,10 @@ export function rateTermsToJson(terms: RateRecordTerms): {
   readonly flags: Record<string, Json>;
   readonly rounding: RoundingRule | null;
 } {
-  const scope: Record<string, Json> = { codes: [...terms.scope.codes] };
+  const scope: Record<string, Json> = {};
+  if (terms.scope.codes !== undefined) {
+    scope.codes = [...terms.scope.codes];
+  }
   if (terms.scope.modifier_sets !== undefined) {
     scope.modifier_sets = terms.scope.modifier_sets.map((set) => [...set]);
   }

@@ -7,6 +7,7 @@ import {
   type ContractVersionRecord,
   type PlanMappingRecord,
   type RateRecord,
+  type RateWindows,
   addDays,
   agreementResolver,
   parseRateTerms,
@@ -22,17 +23,15 @@ import { repositoryRoot } from '../content-files';
  * 5"). Each claim's inputs become the engine's inputs the way production builds them: the release is
  * read from its directory and its manifest hash checked; the mappings, contract versions and rate
  * records become the records @tp/contracts loads, and its pure resolver resolves each line; the line
- * facts, claim context and practice settings are copied across. The golden format writes windows
- * inclusively and a rate record's codes as null for any code; the contract records are half-open and
- * name their codes, so an inclusive end becomes the next day's exclusive end and a null code list
- * becomes the claim's own codes (the same match for every line of the claim). Nothing here computes
- * an amount; the comparison is field by field against the golden expected results.
+ * facts, claim context (its remittance date), the version windows, the triage date and practice
+ * settings are copied across. The golden format writes windows inclusively and a rate record's codes as
+ * null for any code; the contract records are half-open and leave codes out for any code, so an
+ * inclusive end becomes the next day's exclusive end and a null code list is left out (the general
+ * term the product stores, ADR 0033). Nothing here computes an amount; the comparison is field by
+ * field against the golden expected results, the variance and the dispute window included.
  */
 
 export const GOLDEN_CLAIMS_DIR = 'fixtures/golden/claims';
-
-/** The triage date the golden claims are judged on: none has a remittance date, so no window is open. */
-export const GOLDEN_AS_OF = '2026-10-15';
 
 interface GoldenRateRecord {
   readonly rate_record_id: string;
@@ -78,6 +77,8 @@ export interface GoldenExpectedLine {
   readonly line_no: number;
   readonly outcome: 'priced' | 'unpriced';
   readonly unpriced_reason?: string;
+  readonly variance_cents?: string;
+  readonly window?: { readonly ends_on: string | null; readonly status: string };
   readonly expected_allowed_cents?: string;
   readonly expected_unrounded_cents?: string;
   readonly rounding?: string;
@@ -92,12 +93,15 @@ export interface GoldenClaim {
   readonly id: string;
   readonly inputs: {
     readonly release: { readonly number: number; readonly dir: string; readonly manifest_sha256: string };
+    /** The triage date the dispute windows are judged on. */
+    readonly as_of: string;
     readonly practice_settings: { readonly zip: string; readonly default_rounding: RoundingRule | null };
     readonly place_of_service_settings: Readonly<Record<string, PlaceOfServiceSetting>>;
     readonly claim: {
       readonly claim_status_code: string;
       readonly reversed: boolean;
       readonly corrected: boolean;
+      readonly remittance_date: string | null;
       readonly payer_plan_key: string;
       readonly lines: readonly GoldenLineInput[];
     };
@@ -115,6 +119,7 @@ export interface GoldenClaim {
       readonly status: ContractVersionRecord['status'];
       readonly effective_from: string;
       readonly effective_to: string | null;
+      readonly windows: RateWindows;
       readonly rate_records: readonly GoldenRateRecord[];
     }[];
   };
@@ -165,7 +170,6 @@ function exclusiveEnd(inclusive: string | null): string | null {
 /** The golden mappings, versions and rate records as @tp/contracts' loader returns them. */
 export function agreementRecords(claim: GoldenClaim): AgreementRecords {
   const { inputs } = claim;
-  const codes = [...new Set(inputs.claim.lines.map((line) => line.procedure_code))].sort();
   const mappings: PlanMappingRecord[] = inputs.mappings.map((mapping) => ({
     id: mapping.mapping_id,
     planId: inputs.claim.payer_plan_key,
@@ -184,7 +188,7 @@ export function agreementRecords(claim: GoldenClaim): AgreementRecords {
     effectiveTo: exclusiveEnd(version.effective_to),
     supersedesId: null,
     sourceDocumentIds: [],
-    windows: { timely_filing_days: null, dispute_window_days: null, appeal_levels: [] },
+    windows: { timely_filing_days: version.windows.timely_filing_days, dispute_window_days: version.windows.dispute_window_days, appeal_levels: version.windows.appeal_levels.map((level) => ({ ...level })) },
     noticeDays: null,
   }));
   // The loader returns the rate records of signed-off versions only.
@@ -196,7 +200,7 @@ export function agreementRecords(claim: GoldenClaim): AgreementRecords {
         contractVersionId: version.contract_version_id,
         terms: parseRateTerms({
           scope: {
-            codes: [...(record.scope.codes ?? codes)],
+            ...(record.scope.codes === null ? {} : { codes: [...record.scope.codes] }),
             ...(record.scope.modifier_sets === null ? {} : { modifier_sets: record.scope.modifier_sets.map((set) => [...set]) }),
             ...(record.scope.places_of_service === null ? {} : { places_of_service: [...record.scope.places_of_service] }),
             effective_from: record.scope.effective_from,
@@ -263,13 +267,13 @@ export function goldenPricingInput(claim: GoldenClaim, root = repositoryRoot): P
       claimStatusCode: inputs.claim.claim_status_code,
       reversed: inputs.claim.reversed,
       corrected: inputs.claim.corrected,
-      remittanceDate: null,
+      remittanceDate: inputs.claim.remittance_date,
       payerPlanKey: inputs.claim.payer_plan_key,
       lines,
     },
     release: goldenRelease(inputs.release, root),
     settings: { zip: inputs.practice_settings.zip, defaultRounding: inputs.practice_settings.default_rounding, placeOfServiceSettings: inputs.place_of_service_settings },
-    asOf: GOLDEN_AS_OF,
+    asOf: inputs.as_of,
   };
 }
 
@@ -288,8 +292,8 @@ function sameDecimal(a: string | undefined, b: string): boolean {
 
 /**
  * Field by field: the outcome and reason, expected allowed exactly, the unrounded amount as a number,
- * the rounding, the patient share, the method and terms, the base, and each adjustment's before and
- * after against both the result and its trace.
+ * the rounding, the patient share, the method and terms, the base, each adjustment's before and after
+ * against both the result and its trace, the variance and the dispute window.
  */
 export function compareLine(file: string, claim: GoldenClaim, golden: GoldenExpectedLine, engine: LinePricing | undefined): EngineDifference[] {
   const found: EngineDifference[] = [];
@@ -331,6 +335,13 @@ export function compareLine(file: string, claim: GoldenClaim, golden: GoldenExpe
   }
   if (!sameDecimal(golden.base_cents, engine.baseCents.toString())) {
     differ('base_cents', golden.base_cents, engine.baseCents.toString());
+  }
+  if (engine.varianceCents.toString() !== golden.variance_cents) {
+    differ('variance_cents', golden.variance_cents, engine.varianceCents.toString());
+  }
+  const window = { ends_on: engine.window.endsOn, status: engine.window.status };
+  if (JSON.stringify(window) !== JSON.stringify(golden.window)) {
+    differ('window', golden.window, window);
   }
   const expected = golden.adjustments ?? [];
   const results = engine.adjustments.map((item) => ({ name: item.name, before_cents: item.beforeCents.toString(), after_cents: item.afterCents.toString() }));

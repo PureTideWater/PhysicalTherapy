@@ -24,7 +24,7 @@ describe('the engine’s golden comparison', () => {
     expect(engineDifferences(runs)).toEqual([]);
   });
 
-  it('reports a changed cent, unrounded value, rounding, patient share, method, terms, base or adjustment', () => {
+  it('reports a changed cent, unrounded value, rounding, patient share, method, terms, base, adjustment, variance or window', () => {
     expect(differencesFor('G01', 1, (line) => ({ ...line, expected_allowed_cents: '3077' }))).toEqual(['expected_allowed_cents']);
     expect(differencesFor('G01', 1, (line) => ({ ...line, expected_unrounded_cents: '3075.657' }))).toEqual(['expected_unrounded_cents']);
     expect(differencesFor('G01', 1, (line) => ({ ...line, rounding: 'TRUNCATE' }))).toEqual(['rounding']);
@@ -37,6 +37,8 @@ describe('the engine’s golden comparison', () => {
       'trace adjustments',
     ]);
     expect(differencesFor('G01', 1, (line) => ({ ...line, adjustments: (line.adjustments ?? []).slice(1) }))).toEqual(['adjustments', 'trace adjustments']);
+    expect(differencesFor('G58', 2, (line) => ({ ...line, variance_cents: '196' }))).toEqual(['variance_cents']);
+    expect(differencesFor('G59', 1, (line) => ({ ...line, window: { ends_on: '2026-09-19', status: 'OPEN' } }))).toEqual(['window']);
   });
 
   it('reports a changed outcome or reason, and a line missing on either side', () => {
@@ -49,11 +51,16 @@ describe('the engine’s golden comparison', () => {
     expect(engineDifferences([fewer]).map((item) => [item.line_no, item.field])).toEqual([[1, '(line)']]);
   });
 
-  it('builds the records @tp/contracts loads: half-open windows, named codes, signed-off records only', () => {
+  it('builds the records @tp/contracts loads: half-open windows, general terms without codes, the version windows, signed-off records only', () => {
     const g42 = readGoldenClaims().find((item) => item.claim.id === 'G42');
     const records = agreementRecords(g42?.claim as NonNullable<typeof g42>['claim']);
     const scope = records.rateRecords[0]?.terms.scope;
-    expect(scope).toEqual({ codes: ['97110'], effective_from: '2026-01-01', effective_to: '2026-04-01' });
+    expect(scope).toEqual({ effective_from: '2026-01-01', effective_to: '2026-04-01' });
+    const g40 = readGoldenClaims().find((item) => item.claim.id === 'G40');
+    expect(agreementRecords(g40?.claim as NonNullable<typeof g40>['claim']).rateRecords.map((record) => record.terms.scope.codes ?? 'every code')).toEqual(['every code', ['97110']]);
+    const g58 = readGoldenClaims().find((item) => item.claim.id === 'G58');
+    expect(agreementRecords(g58?.claim as NonNullable<typeof g58>['claim']).versions[0]?.windows).toEqual({ timely_filing_days: 180, dispute_window_days: 90, appeal_levels: [{ level: 1, days: 90 }, { level: 2, days: 60 }] });
+    expect(goldenPricingInput(g58?.claim as NonNullable<typeof g58>['claim'])).toMatchObject({ asOf: '2026-10-15', claim: { remittanceDate: '2026-07-17' } });
     const g49 = readGoldenClaims().find((item) => item.claim.id === 'G49');
     expect(agreementRecords(g49?.claim as NonNullable<typeof g49>['claim']).rateRecords).toEqual([]);
     const g41 = readGoldenClaims().find((item) => item.claim.id === 'G41');

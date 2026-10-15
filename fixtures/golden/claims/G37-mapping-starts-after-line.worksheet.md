@@ -10,6 +10,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G37: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-MA-PLAN-2.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g37: ma_noncontracted, 2026-06-01 to open.
 - Contract versions: none.
 
@@ -55,7 +56,7 @@ Lines with apply_mppr on and a price so far: line 2. Units are ranked by their p
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 2 | 97110 | 1 | 1349 | kept whole | 0 |
 
-## Steps 4 to 6, per line
+## Steps 4 to 8, per line
 
 ### Line 2
 
@@ -71,9 +72,13 @@ Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); re
 
 Step 6, rounding once: 2048.64 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **2049 cents ($20.49)**; the unrounded 2048.64 is kept beside it.
 
+Step 7, variance: expected allowed 2049 - observed allowed 2000 cents (amt_b6) = 49 cents: an underpayment.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `NO_MAPPING` | | | | |
-| 2 | priced | 2049 | 2048.64 | HALF_UP_CENT | 0 |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `NO_MAPPING` | | | | | | |
+| 2 | priced | 2049 | 2048.64 | HALF_UP_CENT | 0 | 49 | NO_WINDOW |

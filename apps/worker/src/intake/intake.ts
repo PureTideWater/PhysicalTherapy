@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 
+import type { ReadPagesOptions } from '@tp/contracts/pages';
 import { type DocumentKind, type DocumentStatus, type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, documentObjectKey, loadPracticeCipher } from '@tp/db/runtime';
 
 import type { JobContext, JobHandler } from '../jobs/handlers';
 import type { DocumentReader, DocumentStore, WrittenDocument } from '../storage/documents';
 import { type Disposition, dispose } from './classify';
 import type { LandedDocument, UploadLanding } from './landing';
+import { PAGE_TEXT_KINDS, readAndStorePages, recordPageText } from './pages';
 import { DEFAULT_SCAN_WAIT, type ScanService, type ScanWait, waitForVerdict } from './scan';
 import { HEAD_BYTES, sniff } from './sniff';
 import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLimits, inspectZip, zipEntries } from './zip';
@@ -32,6 +34,9 @@ import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLi
  *    (PAR-27). If any entry is an executable, a script or the EICAR file, the whole upload is
  *    quarantined and nothing is queued (PAR-28). Otherwise every clean 835 entry is queued for parse,
  *    and the zip is expanded.
+ * 7. A clean contract, exhibit or payer letter (a top-level upload or a zip entry) has its page text
+ *    read in a bounded thread and sealed beside it before it is stored (pages.ts; docs/adr/0033), so
+ *    the web app cites pages from that text and never parses an uploaded document itself.
  *
  * Every step is idempotent, so a retried attempt resumes: an entry's document ID is derived from the
  * zip's ID and the entry's position, entries already decided are skipped, a sealed object already
@@ -47,12 +52,15 @@ export interface IntakeServices {
   readonly keys: KeyProvider;
   readonly zipLimits?: ZipLimits;
   readonly scanWait?: ScanWait;
+  /** The page reader's limits and scan reader (defaults: PAGE_READ_LIMITS, no scan reader). */
+  readonly pages?: ReadPagesOptions;
 }
 
 interface DocumentRow {
   readonly id: string;
   readonly kind: DocumentKind;
   readonly s3_key: string;
+  readonly content_type: string;
   readonly sha256: string | null;
   readonly size_bytes: string;
   readonly uploaded_by: string;
@@ -61,7 +69,7 @@ interface DocumentRow {
   readonly parent_document_id: string | null;
 }
 
-const SELECT_DOCUMENT = 'SELECT id, kind, s3_key, sha256, size_bytes::text AS size_bytes, uploaded_by, scan_status, status, parent_document_id FROM source_document WHERE id = $1';
+const SELECT_DOCUMENT = 'SELECT id, kind, s3_key, content_type, sha256, size_bytes::text AS size_bytes, uploaded_by, scan_status, status, parent_document_id FROM source_document WHERE id = $1';
 
 /** The statuses intake works on; every other one has been decided. */
 const OPEN_STATUSES: ReadonlySet<DocumentStatus> = new Set(['awaiting_upload', 'received', 'scanned', 'failed']);
@@ -173,6 +181,19 @@ class Intake {
     await this.context.enqueue('parse_835', { practice_id: this.practiceId, document_id: documentId });
   }
 
+  /** Stores a clean document of another kind: a contract kind with its page text read first. */
+  private async store(document: { readonly id: string; readonly kind: DocumentKind; readonly key: string; readonly contentType: string; readonly sizeBytes: number }): Promise<void> {
+    const pages = PAGE_TEXT_KINDS.has(document.kind)
+      ? await readAndStorePages(this.services.documents, this.cipher, { practiceId: this.practiceId, documentId: document.id, key: document.key, contentType: document.contentType, sizeBytes: document.sizeBytes }, this.services.pages)
+      : null;
+    await this.transaction(async (scope) => {
+      if (pages !== null) {
+        await recordPageText(scope, document.id, pages);
+      }
+      await setStatus(scope, document.id, 'stored');
+    });
+  }
+
   async takeIn(row: DocumentRow): Promise<void> {
     const landed: LandedDocument = { practiceId: this.practiceId, documentId: row.id, key: row.s3_key };
     const { landing, scan } = this.services;
@@ -219,7 +240,7 @@ class Intake {
         await this.queueParse(row.id);
         return;
       case 'store':
-        await this.transaction((scope) => setStatus(scope, row.id, 'stored'));
+        await this.store({ id: row.id, kind: row.kind, key: row.s3_key, contentType: row.content_type, sizeBytes: Number(row.size_bytes) });
         return;
       case 'hold':
         await this.transaction((scope) =>
@@ -306,6 +327,10 @@ class Intake {
       const decided = await disposition(zip.kind, await documents.open(this.cipher, key), true, this.limits);
       const next = decided.disposition;
       const status: DocumentStatus = next.action === 'hold' ? next.status : next.action === 'parse' ? 'scanned' : 'stored';
+      if (status === 'stored') {
+        await this.store({ id, kind: zip.kind, key, contentType: 'application/octet-stream', sizeBytes: written.sizeBytes });
+        continue;
+      }
       await this.transaction((scope) => (status === 'quarantined' ? recordVerdict(scope, id, 'flagged', status) : setStatus(scope, id, status)));
       quarantined ||= status === 'quarantined';
     }

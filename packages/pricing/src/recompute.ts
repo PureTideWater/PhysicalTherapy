@@ -32,8 +32,13 @@ import { type PricingTrace, type TraceAdjustment, parseTrace } from './trace';
  * - sequestration takes its percentage of the amount less the patient share (the sum of the line's PR
  *   adjustments), floored at zero, unless suspended;
  * - the reasons the recorded facts show (the agreement's stop, an unsupported method, a missing
- *   relative value, a secondary or reversed claim) are derived again; the rest round once under the
- *   rule of the terms, else the practice, else the engine default.
+ *   relative value, a timed-units rule of UNKNOWN, a secondary or reversed claim) are derived again;
+ *   the rest round once under the rule of the terms, else the practice, else the engine default;
+ * - the fee-schedule step is held to the terms and facts it was computed for: its percentage, year
+ *   basis and conversion factor are the terms', its setting the practice's for the line's place of
+ *   service, its basis year the service date's (CURRENT) or the locked year, and each rule record it
+ *   names has the key the line looks up and a window that covers the service date (CURRENT) or the
+ *   basis year (LOCKED); the locality's record is the practice ZIP's, in force on the service date.
  *
  * It returns what it computed and every difference from what the trace recorded. A trace that cannot
  * be recomputed (malformed, or priced without a step its amount needs) raises TraceRecomputeError.
@@ -66,6 +71,7 @@ export type Recomputed =
 
 const HUNDREDTH = decimal('0.01');
 const NOTHING = decimal(0n);
+const LOCKED = /^LOCKED:(\d{4})$/;
 
 /** The stops the resolver gives, which the trace's agreement outcome names. */
 const AGREEMENT_STOPS: Readonly<Record<string, UnpricedReason>> = {
@@ -121,6 +127,7 @@ export function recompute(value: unknown): Recomputed {
   const pe = decimal(peRvu).times(decimal(gpci.pe_gpci)).times(centsPerRvu);
   const mp = decimal(rvu.mp_rvu).times(decimal(gpci.mp_gpci)).times(centsPerRvu);
   const unitTotal = work.plus(pe).plus(mp);
+  checkFeeSchedule(trace, check);
   check.amount('unit work cents', unitCents.work, work);
   check.amount('unit practice-expense cents', unitCents.pe, pe);
   check.amount('unit malpractice cents', unitCents.mp, mp);
@@ -246,21 +253,73 @@ function derivedStop(trace: PricingTrace): UnpricedReason | null {
   if (rvu !== undefined && setting !== null && (setting === 'facility' ? rvu.facility_pe_na : rvu.non_facility_pe_na)) {
     return 'NO_PFS_VALUE';
   }
+  // Units recorded under terms that do not say how timed units are counted: reviewed, not priced.
+  if (trace.steps.units !== null && trace.terms?.flags.timed_units_rule === 'UNKNOWN') {
+    return 'UNITS_RULE_UNKNOWN';
+  }
   return null;
 }
 
+/** Secondary and tertiary adjudications, forwarded or not; the statuses that price; the reversal. */
+const SECONDARY_CLAIM = ['2', '3', '20', '21'];
+const PRICED_CLAIM = ['1', '4', '19'];
+
 function claimStop(trace: PricingTrace): UnpricedReason | null {
   const { claim_status_code: status, reversed, corrected } = trace.claim;
-  if (status === '2' || status === '3') {
+  if (SECONDARY_CLAIM.includes(status)) {
     return 'SECONDARY_PAYER';
   }
   if (status === '22') {
     return 'REVERSED_CLAIM';
   }
-  if ((status !== '1' && status !== '4') || (reversed && corrected)) {
+  if (!PRICED_CLAIM.includes(status) || (reversed && corrected)) {
     return 'ENGINE_ERROR';
   }
   return reversed ? 'REVERSED_CLAIM' : null;
+}
+
+/** Whether a rule window [from, to] (inclusive; null open) covers the day, or touches the year. */
+function covers(record: { readonly effective_from: string; readonly effective_to: string | null }, from: string, to: string = from): boolean {
+  return record.effective_from <= to && (record.effective_to === null || record.effective_to >= from);
+}
+
+/** The fee-schedule step against the terms, the settings and the line it was computed for. */
+function checkFeeSchedule(trace: PricingTrace, check: Comparison): void {
+  const schedule = trace.steps.fee_schedule;
+  const terms = trace.terms?.percent_of_medicare ?? null;
+  if (schedule === null || terms === null) {
+    check.same('percent-of-Medicare terms', 'missing', 'present');
+    return;
+  }
+  const { line } = trace;
+  check.amount('fee schedule percentage against the terms', terms.percentage, decimal(schedule.percentage));
+  check.same('fee schedule year basis against the terms', terms.year_basis, schedule.year_basis);
+  const locked = LOCKED.exec(terms.year_basis);
+  const basisYear = locked === null ? line.service_date.slice(0, 4) : (locked[1] as string);
+  check.same('basis year', basisYear, String(schedule.basis_year));
+  check.same('fee schedule lookup', locked === null ? 'in_force_on_service_date' : 'latest_in_basis_year', schedule.lookup);
+  const period = locked === null ? ([line.service_date, line.service_date] as const) : ([`${basisYear}-01-01`, `${basisYear}-12-31`] as const);
+  const setting = line.place_of_service === null ? undefined : trace.settings.place_of_service_settings[line.place_of_service];
+  check.same('setting against the place of service', String(setting), String(schedule.setting));
+  const { rvu, gpci, locality, conversion_factor: factor } = schedule;
+  if (rvu === null || gpci === null || locality === null || factor === null) {
+    check.same('fee schedule records', 'missing', 'present');
+    return;
+  }
+  check.same('relative value record key', `${line.procedure_code} `, `${String(rvu.record.key.hcpcs)} ${String(rvu.record.key.modifier)}`);
+  check.same('locality record key', trace.settings.zip, String(locality.record.key.zip));
+  check.same('locality ZIP+4', 'not required', locality.plus_four_required === true ? 'required' : 'not required');
+  check.same('GPCI record key', `${locality.carrier} ${locality.locality}`, `${String(gpci.record.key.carrier)} ${String(gpci.record.key.locality)}`);
+  check.same('conversion factor against the terms', terms.conversion_factor, factor.applicability);
+  check.same('conversion factor record key', terms.conversion_factor, String(factor.record.key.applicability));
+  check.same('locality record window', 'covers the service date', covers(locality.record, line.service_date) ? 'covers the service date' : 'does not');
+  for (const [label, record] of [
+    ['relative value', rvu.record],
+    ['GPCI', gpci.record],
+    ['conversion factor', factor.record],
+  ] as const) {
+    check.same(`${label} record window`, 'covers the basis', covers(record, ...period) ? 'covers the basis' : 'does not');
+  }
 }
 
 /** One adjustment, worked out again from what it recorded. */

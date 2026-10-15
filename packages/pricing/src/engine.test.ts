@@ -3,7 +3,8 @@ import type { Cents } from '@tp/money';
 import type { RuleRecord } from '@tp/rules';
 import { describe, expect, it } from 'vitest';
 
-import { price } from './engine';
+import { MAX_UNITS, price } from './engine';
+import { REVIEW_DETAILS, pagesOperator } from './reasons';
 import { indexRelease } from './release';
 import {
   MA_TERMS,
@@ -216,6 +217,13 @@ describe('step 2, the base amount by method', () => {
     expect(gpci.record_type).toBe('pfs_gpci');
   });
 
+  it('is ENGINE_ERROR when the practice ZIP needs its ZIP+4 to name a locality, and records the flag either way', () => {
+    const line = unpricedLine(priceOne({}, { settings: practiceSettings({ zip: '00012' }) }));
+    expect(reasonOf(line)).toBe('ENGINE_ERROR locality_needs_zip_plus_four');
+    expect(line.trace.steps.fee_schedule?.locality).toMatchObject({ carrier: '99999', locality: '01', plus_four_required: true });
+    expect(pricedLine(priceOne({})).trace.steps.fee_schedule?.locality?.plus_four_required).toBe(false);
+  });
+
   it('is ENGINE_ERROR when two records of one rule are in force on the date', () => {
     const rvu = base.records.find((record) => record.record_type === 'pfs_rvu' && keyOf(record).hcpcs === '97110') as RuleRecord;
     const twice = releaseVariant(base, (records) => [...records, ruleRecordLike(rvu, { effective_from: '2026-03-01' })]);
@@ -239,13 +247,34 @@ describe('step 3, units', () => {
     for (const units of ['0', '1.5', '-1', 'two', '']) {
       expect(reasonOf(priceOne({ units })), units).toBe('ENGINE_ERROR units_not_whole');
     }
+    expect(pricedLine(priceOne({ units: String(MAX_UNITS), agreement: contractAgreement() })).baseCents.toString()).toBe(String(2112 * MAX_UNITS));
   });
 
-  it('takes units as billed whatever the timed-units rule, which the trace records (UNITS_RULE_UNKNOWN arrives in milestone 7)', () => {
-    const unknown = contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: 'UNKNOWN' } }) });
-    const line = pricedLine(priceOne({ units: '2', agreement: unknown }));
-    expect(line.baseCents.toString()).toBe('4224');
-    expect(line.trace.steps.units?.timed_units_rule).toBe('UNKNOWN');
+  it('refuses more than MAX_UNITS on a line before anything is ranked, so a claim stays bounded (PRC-20)', () => {
+    const mppr = contractAgreement({ terms: percentTerms({ codes: ['97110', '97140'], flags: { apply_mppr: true } }) });
+    for (const units of [String(MAX_UNITS + 1), '5000000000', '999999.000']) {
+      const [huge, other] = price(pricingInput(release, [lineFacts({ units, agreement: mppr }), lineFacts({ lineNo: 2, procedureCode: '97140', agreement: mppr })]));
+      expect(reasonOf(huge as LinePricing), units).toBe('ENGINE_ERROR units_above_limit');
+      expect(unpricedLine(huge).trace.outcome).toMatchObject({ step: 'units' });
+      // The other line of the day is the pool's only unit, kept whole.
+      expect(pricedLine(other).expectedUnroundedCents.toString()).toBe('2458');
+    }
+  });
+
+  it('stops a line whose terms do not say how timed units are counted with UNITS_RULE_UNKNOWN, before the reduction ranks it (PRD 20)', () => {
+    const unknown = contractAgreement({ terms: percentTerms({ codes: ['97110'], flags: { timed_units_rule: 'UNKNOWN', apply_mppr: true } }) });
+    const known = contractAgreement({ terms: percentTerms({ codes: ['97140'], flags: { apply_mppr: true } }), rateRecordId: 'rr-synth-2' });
+    const [first, second] = price(pricingInput(release, [lineFacts({ units: '2', agreement: unknown }), lineFacts({ lineNo: 2, procedureCode: '97140', agreement: known })]));
+    const line = unpricedLine(first);
+    expect(reasonOf(line)).toBe('UNITS_RULE_UNKNOWN');
+    expect(line.trace.outcome).toMatchObject({ step: 'units' });
+    expect(line.trace.steps.units).toEqual({ units: '2', timed_units_rule: 'UNKNOWN', base_cents: '4224' });
+    expect(line.trace.steps.adjustments).toEqual([]);
+    // 97110's PE (1349) is below 97140's (1596) anyway; the 97140 unit is the day's only ranked unit.
+    expect(pricedLine(second).trace.steps.adjustments[0]).toMatchObject({ name: 'mppr', ranking: [{ rank: 1, line_no: 2, unit: 1 }], reductions: [] });
+    for (const rule of ['MEDICARE_POOLED', 'PER_CODE'] as const) {
+      expect(reasonOf(priceOne({ agreement: contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: rule } }) }) })), rule).toBe('priced');
+    }
   });
 });
 
@@ -313,6 +342,32 @@ describe('step 4a, the multiple procedure reduction', () => {
     expect(pricedLine(second).expectedUnroundedCents.toString()).toBe('1819.6');
   });
 
+  it('records in each line’s trace the day’s first unit and the line’s own units only', () => {
+    const results = price(
+      pricingInput(release, [
+        lineFacts({ lineNo: 1, procedureCode: '97530', agreement: mppr }),
+        lineFacts({ lineNo: 2, procedureCode: '97110', units: '3', agreement: mppr }),
+        lineFacts({ lineNo: 3, procedureCode: '97140', units: '2', agreement: mppr }),
+      ]),
+    ).map(pricedLine);
+    const ranking = (line: PricedLine | undefined) => {
+      const step = line?.trace.steps.adjustments[0];
+      return step?.name === 'mppr' ? step.ranking.map((item) => [item.rank, item.line_no, item.unit]) : null;
+    };
+    expect(ranking(results[0])).toEqual([[1, 1, 1]]);
+    expect(ranking(results[1])).toEqual([
+      [1, 1, 1],
+      [4, 2, 1],
+      [5, 2, 2],
+      [6, 2, 3],
+    ]);
+    expect(ranking(results[2])).toEqual([
+      [1, 1, 1],
+      [2, 3, 1],
+      [3, 3, 2],
+    ]);
+  });
+
   it('stops every line of the day with ENGINE_ERROR when the pool cannot be known', () => {
     const rate = base.records.find((record) => record.record_type === 'mppr_rate' && keyOf(record).hcpcs === '97140') as RuleRecord;
     const twice = releaseVariant(base, (records) => [...records, ruleRecordLike(rate, { effective_from: '2026-02-01' })]);
@@ -372,8 +427,8 @@ describe('step 4c, sequestration', () => {
 });
 
 describe('step 5, the claim', () => {
-  it('works a secondary or tertiary claim through, then stops it with SECONDARY_PAYER', () => {
-    for (const status of ['2', '3']) {
+  it('works a secondary or tertiary claim through, forwarded or not, then stops it with SECONDARY_PAYER', () => {
+    for (const status of ['2', '3', '20', '21']) {
       const result = unpricedLine(priceOne({}, { claim: { claimStatusCode: status } }));
       expect(result.reason).toBe('SECONDARY_PAYER');
       expect(result.trace.steps.adjustments).toHaveLength(3);
@@ -387,8 +442,20 @@ describe('step 5, the claim', () => {
     expect(reasonOf(priceOne({ observedAllowedCents: cents(0n) }, { claim: { claimStatusCode: '4' } }))).toBe('priced');
   });
 
-  it('is ENGINE_ERROR for another claim status, or a reversed claim a correction supersedes', () => {
-    expect(reasonOf(priceOne({}, { claim: { claimStatusCode: '19' } }))).toBe('ENGINE_ERROR claim_status_unknown');
+  it('prices a claim processed as primary and forwarded (19) as a primary claim', () => {
+    const forwarded = pricedLine(priceOne({}, { claim: { claimStatusCode: '19' } }));
+    expect(forwarded.expectedAllowedCents).toBe(pricedLine(priceOne({})).expectedAllowedCents);
+  });
+
+  it('stops 23 and 25 for review without paging the operator, and is an operator alert for a status outside the 835’s list or a reversed claim a correction supersedes', () => {
+    for (const status of ['23', '25']) {
+      const line = unpricedLine(priceOne({}, { claim: { claimStatusCode: status } }));
+      expect(reasonOf(line), status).toBe('ENGINE_ERROR claim_status_not_priced');
+      expect(line.detail !== null && line.reason === 'ENGINE_ERROR' && pagesOperator(line.detail as never)).toBe(false);
+    }
+    expect(REVIEW_DETAILS).toEqual(['claim_status_not_priced']);
+    expect(reasonOf(priceOne({}, { claim: { claimStatusCode: '24' } }))).toBe('ENGINE_ERROR claim_status_unknown');
+    expect(pagesOperator('claim_status_unknown')).toBe(true);
     expect(reasonOf(priceOne({}, { claim: { reversed: true, corrected: true } }))).toBe('ENGINE_ERROR reversed_and_corrected');
   });
 

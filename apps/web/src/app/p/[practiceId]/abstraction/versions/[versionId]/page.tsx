@@ -137,7 +137,7 @@ export default async function AbstractionVersionPage(props: Props) {
                 <ActionForm action={addRateRecordFormAction} submit="Add the rate record" className="grid gap-3 md:grid-cols-2">
                   {hidden()}
                   <input type="hidden" name="versionId" value={version.id} />
-                  <Field label="Procedure codes" name="codes" required hint="Five characters each, separated by commas: 97110, 97140." />
+                  <Field label="Procedure codes" name="codes" required hint="Five characters each, separated by commas: 97110, 97140. Or the word any, for a term that covers every code." />
                   <Field label="Modifier sets (optional)" name="modifierSets" hint="Sets separated by semicolons, such as GP; GP 59; none. Blank matches any modifiers." />
                   <Field label="Places of service (optional)" name="placesOfService" hint="Two digits each, such as 11, 22. Blank matches any." />
                   <SelectField label="Method" name="method" options={METHODS} />

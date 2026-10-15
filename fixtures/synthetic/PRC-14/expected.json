@@ -5,7 +5,12 @@
   "assertion": "Validated, not actionable",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": [],
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/pricing/src/engine.test.ts",
+    "packages/pricing/src/properties.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

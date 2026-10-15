@@ -6,6 +6,7 @@
   "description": "Contract versions, rate records and the specialist workflow (milestone 4).",
   "exports": {
     ".": "./src/index.ts",
+    "./pages": "./src/evidence/pages.ts",
     "./testing": "./src/testing/index.ts"
   },
   "scripts": {
@@ -17,11 +18,13 @@
     "@tp/money": "workspace:*",
     "@tp/rules": "workspace:*",
     "pdfjs-dist": "^6.4.299",
+    "yauzl": "3.4.0",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
+    "@types/yauzl": "3.4.0",
     "fast-check": "catalog:",
     "pg": "catalog:",
     "typescript": "catalog:",

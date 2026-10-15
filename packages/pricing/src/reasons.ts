@@ -20,9 +20,10 @@ export const UNPRICED_REASONS = [
 export type UnpricedReason = (typeof UNPRICED_REASONS)[number];
 
 /**
- * The reasons phase one of the engine (milestone 5) produces. The others are in the type so a stored
- * line can carry them, and are produced from milestone 7: MUE_EXCEEDED with the NCCI edits and
- * UNITS_RULE_UNKNOWN with minute logs.
+ * The reasons phase one of the engine (milestone 5) produces. MUE_EXCEEDED is in the type so a stored
+ * line can carry it, and is produced from milestone 7 with the NCCI edits. UNITS_RULE_UNKNOWN is
+ * phase one's: a line whose terms do not say how the payer counts timed units is reviewed, not priced,
+ * until minute logs are imported (PRD 20).
  */
 export const PHASE_ONE_REASONS = [
   'NO_MAPPING',
@@ -32,13 +33,14 @@ export const PHASE_ONE_REASONS = [
   'DATE_OUTSIDE_VERSIONS',
   'NO_PFS_VALUE',
   'UNSUPPORTED_METHOD',
+  'UNITS_RULE_UNKNOWN',
   'SECONDARY_PAYER',
   'REVERSED_CLAIM',
   'ENGINE_ERROR',
 ] as const satisfies readonly UnpricedReason[];
 
 /** Reasons in the closed list that phase one never produces (milestone 7). */
-export const LATER_REASONS = ['MUE_EXCEEDED', 'UNITS_RULE_UNKNOWN'] as const satisfies readonly UnpricedReason[];
+export const LATER_REASONS = ['MUE_EXCEEDED'] as const satisfies readonly UnpricedReason[];
 
 /**
  * Why a line is ENGINE_ERROR, as a fixed code (never free text, so no identifier or document text can
@@ -63,6 +65,10 @@ export const ENGINE_ERROR_DETAILS = [
   'no_conversion_factor',
   /** Units are not a whole number of at least one (phase one prices whole units). */
   'units_not_whole',
+  /** More units on one line than MAX_UNITS: malformed input, never ranked or priced. */
+  'units_above_limit',
+  /** The practice ZIP's locality_map record says the ZIP needs its ZIP+4 to name a locality. */
+  'locality_needs_zip_plus_four',
   /** An always-therapy code with no share of its own and no general practice-expense reduction in force. */
   'no_mppr_rate',
   /** CQ or CO on the line and no assistant_modifier record in force on the service date. */
@@ -71,7 +77,12 @@ export const ENGINE_ERROR_DETAILS = [
   'assistant_percentages_differ',
   /** No sequestration record (in force or suspended) on the service date. */
   'no_sequestration_record',
-  /** A claim status other than 1, 2, 3, 4 and 22. */
+  /**
+   * Claim status 23 or 25: valid in an 835, with no pricing rule yet (fixtures/golden/QUESTIONS.md,
+   * Q31). For review, not an operator alert (REVIEW_DETAILS).
+   */
+  'claim_status_not_priced',
+  /** A claim status outside the 835's own list (1, 2, 3, 4, 19, 20, 21, 22, 23 and 25). */
   'claim_status_unknown',
   /** A reversed claim that a correction supersedes: its correction is priced, not it. */
   'reversed_and_corrected',
@@ -87,6 +98,18 @@ export const ENGINE_ERROR_DETAILS = [
   'unexpected',
 ] as const;
 export type EngineErrorDetail = (typeof ENGINE_ERROR_DETAILS)[number];
+
+/**
+ * ENGINE_ERROR details whose input is valid and expected, with no pricing rule yet: the line is
+ * reviewed, and the operator is not paged for it. Every other detail is an operator alert (the
+ * remedy the closed list gives ENGINE_ERROR); milestone 7's pricing runs raise it.
+ */
+export const REVIEW_DETAILS = ['claim_status_not_priced'] as const satisfies readonly EngineErrorDetail[];
+
+/** Whether an unpriced line's ENGINE_ERROR detail pages the operator. */
+export function pagesOperator(detail: EngineErrorDetail): boolean {
+  return !(REVIEW_DETAILS as readonly EngineErrorDetail[]).includes(detail);
+}
 
 /** Why a line is NO_PFS_VALUE: no relative value for the code, or none for the setting. */
 export const NO_PFS_VALUE_DETAILS = ['no_rvu_in_basis_year', 'practice_expense_not_available'] as const;

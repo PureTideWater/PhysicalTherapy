@@ -62,9 +62,10 @@ describe('contract words', () => {
     });
     expect(describeTerms(parseRateTerms({ scope: { codes: ['97110'] }, method: 'PER_VISIT', parameters: { amount_cents: '9500' } }, true)).parameters).toBe('$95.00 once per claim and date');
     expect(describeTerms(parseRateTerms({ scope: { codes: ['97110'] }, method: 'UNSUPPORTED', parameters: {} }, true))).toMatchObject({ method: 'Unsupported (capitation or undefined case rate)', parameters: 'None' });
+    expect(describeTerms(parseRateTerms({ scope: {}, method: 'UNSUPPORTED', parameters: {} }, true)).scope).toBe('Every code; any modifiers; any place of service');
   });
 
   it('words every evidence problem', () => {
-    expect(Object.keys(EVIDENCE_PROBLEM_TEXT)).toHaveLength(8);
+    expect(Object.keys(EVIDENCE_PROBLEM_TEXT)).toHaveLength(9);
   });
 });

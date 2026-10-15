@@ -5,7 +5,12 @@
   "assertion": "`EDI_NOT_835`; held",
   "synthetic": true,
   "completesIn": 2,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/edi835/src/fixtures.test.ts",
+    "apps/web/src/lib/routes/remittances.db.test.ts",
+    "tools/test-oracle/parser.test.ts",
+    "apps/worker/src/intake/sniff.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

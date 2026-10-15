@@ -8,7 +8,7 @@
  * with its trace, and `recompute` reproduces a priced amount from its trace alone.
  */
 export { type IsoDate, addDays, addMonths, isIsoDate } from './dates';
-export { price } from './engine';
+export { MAX_UNITS, price } from './engine';
 export {
   ENGINE_ERROR_DETAILS,
   type EngineErrorDetail,
@@ -17,8 +17,10 @@ export {
   NO_PFS_VALUE_DETAILS,
   type NoPfsValueDetail,
   PHASE_ONE_REASONS,
+  REVIEW_DETAILS,
   UNPRICED_REASONS,
   type UnpricedReason,
+  pagesOperator,
 } from './reasons';
 export { type Recomputed, TraceRecomputeError, recompute } from './recompute';
 export { type IndexedRelease, type RecordRef, type RuleRelease, indexRelease } from './release';

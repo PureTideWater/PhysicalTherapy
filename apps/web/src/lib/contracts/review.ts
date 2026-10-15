@@ -27,7 +27,8 @@ export interface FieldReview {
 export interface RecordReview {
   readonly id: string;
   readonly proposedBy: RateRecord['proposedBy'];
-  readonly codes: readonly string[];
+  /** The codes the record covers; null for a term that covers every code. */
+  readonly codes: readonly string[] | null;
   readonly fields: readonly FieldReview[];
   readonly citation: { readonly documentId: string; readonly page: number; readonly quote: string } | null;
   /** Whether the citation resolves to its page now, and why not. */
@@ -75,7 +76,7 @@ function recordReview(record: RateRecord, evidence: EvidenceResolution, people: 
   return {
     id: record.id,
     proposedBy: record.proposedBy,
-    codes: record.terms.scope.codes,
+    codes: record.terms.scope.codes ?? null,
     fields: RATE_RECORD_FIELDS.map((field) => {
       const approval = record.approvals[field];
       return { field, label: FIELD_NAMES[field], text: words[field], approvedBy: approval === undefined ? null : name(approval.by), approvedAt: approval?.at ?? null };

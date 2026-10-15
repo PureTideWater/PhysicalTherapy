@@ -2,11 +2,13 @@ import { build } from 'esbuild';
 
 /**
  * Bundles the worker and every workspace package it imports into one ESM file for the container
- * image. pg's optional native binding is left out; the pure JavaScript client is used.
+ * image, and beside it the page reader's thread (@tp/contracts, page-thread.ts), which the worker
+ * starts from dist/page-thread.js for every contract document it reads (docs/adr/0033). pg's optional
+ * native binding is left out; the pure JavaScript client is used.
  */
 await build({
-  entryPoints: ['src/main.ts'],
-  outfile: 'dist/main.js',
+  entryPoints: { main: 'src/main.ts', 'page-thread': '../../packages/contracts/src/evidence/page-thread.ts' },
+  outdir: 'dist',
   bundle: true,
   platform: 'node',
   format: 'esm',

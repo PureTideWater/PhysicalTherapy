@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { ADJUSTMENT_FLAGS, CONTRACT_VERSION_STATES, RATE_METHODS, TIMED_UNITS_RULES } from './index';
@@ -17,5 +20,31 @@ describe('@tp/contracts', () => {
 
   it('lists the timed-units rules', () => {
     expect(TIMED_UNITS_RULES).toEqual(['MEDICARE_POOLED', 'PER_CODE', 'UNKNOWN']);
+  });
+
+  it('reaches no document parser from its main entry, which the web app bundles (ADR 0033)', () => {
+    const seen = new Set<string>();
+    const external = new Set<string>();
+    const visit = (file: string): void => {
+      if (seen.has(file)) {
+        return;
+      }
+      seen.add(file);
+      for (const match of readFileSync(file, 'utf8').matchAll(/^(?:import|export)\s[^;]*?from\s+'([^']+)';/gms)) {
+        const specifier = match[1] as string;
+        if (specifier.startsWith('.')) {
+          const target = path.resolve(path.dirname(file), specifier);
+          visit(existsSync(`${target}.ts`) ? `${target}.ts` : path.join(target, 'index.ts'));
+        } else {
+          external.add(specifier);
+        }
+      }
+    };
+    visit(path.join(import.meta.dirname, 'index.ts'));
+    const reached = [...seen].map((file) => path.relative(import.meta.dirname, file));
+    expect(reached).not.toContain('evidence/pages.ts');
+    expect(reached).not.toContain('evidence/page-thread.ts');
+    expect([...external].filter((name) => name.startsWith('pdfjs-dist') || name === 'yauzl' || name === 'node:worker_threads')).toEqual([]);
+    expect(reached).toContain('evidence/resolve.ts');
   });
 });

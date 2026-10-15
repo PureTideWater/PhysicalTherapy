@@ -5,7 +5,12 @@
   "assertion": "Priced from the fee schedule with all flags on",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/contracts/src/resolver.test.ts",
+    "packages/contracts/src/contracts.db.test.ts",
+    "packages/pricing/src/engine.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

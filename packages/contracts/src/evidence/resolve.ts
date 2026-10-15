@@ -1,14 +1,14 @@
 import type { Citation } from '../terms';
 import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
-import { DocumentUnreadableError, looksLikePdf, pdfPageTexts } from './pdf';
-import type { ScannedPageReader } from './scan';
 
 /**
  * Evidence resolution (PRD 6, Contract repository: "every rate record resolves to a page"; PRD 7,
  * Rate record review; test matrix CON-04, CON-05): a citation resolves when its document is one of its
  * version's, the document has the page, the quote is on that page's text, and the page text's hash is
- * the one the citation stores. Text PDFs are read with pdf.js; pages without a text layer are read by
- * the scan reader (Textract) when one is configured. A failure names its problem, which the
+ * the one the citation stores. The page text comes from a PageSource: in the web app, the text intake
+ * read once and stored sealed (docs/adr/0033); in the worker and in tests, `documentPages` from
+ * `@tp/contracts/pages`, which reads a document's bytes in a bounded thread. A PDF's pages, a
+ * workbook's sheets and a CSV's row blocks are its pages. A failure names its problem, which the
  * specialist sees beside the field (CON-05), and approval is refused until it resolves.
  */
 
@@ -17,6 +17,7 @@ export const EVIDENCE_PROBLEMS = [
   'document_not_in_version',
   'document_unreadable',
   'unsupported_document',
+  'not_read_yet',
   'no_text',
   'page_missing',
   'quote_not_on_page',
@@ -33,15 +34,17 @@ export interface DocumentSource {
   read(documentId: string): Promise<{ readonly bytes: Uint8Array; readonly contentType: string }>;
 }
 
-export interface EvidenceResolverOptions {
-  readonly documents: DocumentSource;
-  /** Reads scanned pages; without one, a page with no text layer cannot be evidence (`no_text`). */
-  readonly scans?: ScannedPageReader;
+/** A document's page texts, in page order (index 0 is page 1), or why it has none. */
+export type Pages = { readonly ok: true; readonly pages: readonly string[] } | { readonly ok: false; readonly problem: EvidenceProblem };
+
+/** Where a resolver finds a document's page texts. */
+export interface PageSource {
+  pages(documentId: string): Promise<Pages>;
 }
 
-type Pages = { readonly ok: true; readonly pages: readonly string[] } | { readonly ok: false; readonly problem: EvidenceProblem };
-
-const IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/tiff']);
+export interface EvidenceResolverOptions {
+  readonly pages: PageSource;
+}
 
 /** Resolves citations against one practice's documents; pages are read once per document per resolver. */
 export class EvidenceResolver {
@@ -53,36 +56,10 @@ export class EvidenceResolver {
   pages(documentId: string): Promise<Pages> {
     let pages = this.cache.get(documentId);
     if (pages === undefined) {
-      pages = this.read(documentId);
+      pages = this.options.pages.pages(documentId);
       this.cache.set(documentId, pages);
     }
     return pages;
-  }
-
-  private async read(documentId: string): Promise<Pages> {
-    const document = await this.options.documents.read(documentId);
-    if (!looksLikePdf(document.bytes)) {
-      if (IMAGE_TYPES.has(document.contentType) && this.options.scans !== undefined) {
-        return { ok: true, pages: await this.options.scans.pageTexts(document) };
-      }
-      return { ok: false, problem: 'unsupported_document' };
-    }
-    let texts: string[];
-    try {
-      texts = await pdfPageTexts(document.bytes);
-    } catch (error) {
-      if (error instanceof DocumentUnreadableError) {
-        return { ok: false, problem: 'document_unreadable' };
-      }
-      throw error;
-    }
-    if (texts.some((text) => normalizePageText(text) === '') && this.options.scans !== undefined) {
-      // A scanned page (or a whole scanned document): Textract reads every page, and its text stands
-      // in only where pdf.js found none.
-      const scanned = await this.options.scans.pageTexts(document);
-      texts = texts.map((text, index) => (normalizePageText(text) === '' ? (scanned[index] ?? '') : text));
-    }
-    return { ok: true, pages: texts };
   }
 
   /** The citation for a quote on a page, with the page's hash; or why it cannot be one. */

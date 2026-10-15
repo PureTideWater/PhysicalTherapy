@@ -5,7 +5,11 @@
   "assertion": "`DATE_OUTSIDE_VERSIONS`",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/contracts/src/resolver.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

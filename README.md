@@ -62,9 +62,14 @@ roles that read PHI.
 Contracts (ADR 0028): `packages/contracts` holds the typed rate records (Zod over the stored JSON; cents as `Cents`,
 percentages as `Decimal`; commercial flags off unless the contract says so), the workflow services (`createContract`,
 `createDraftVersion`, `addRateRecord`, `proposeVersion`, `approveRateRecordField`, `approveVersion`, `signOffVersion`,
-`amendVersion`, `supersedeVersion`, `mapPlan`, `correctMapping`), evidence resolution (`EvidenceResolver`: pdf.js for text
-PDFs, `TextractPageReader` behind `ScannedPageReader` for scans) and `agreementResolver`, which is pure over the records
-`loadAgreementRecords` returns. The database holds the version states, the non-overlapping windows, the freeze of approved
+`amendVersion`, `supersedeVersion`, `mapPlan`, `correctMapping`), evidence resolution (`EvidenceResolver` over a
+`PageSource`) and `agreementResolver`, which is pure over the records `loadAgreementRecords` returns. A rate record whose
+scope names no codes is a general term for every code; beside a code exhibit it is `AMBIGUOUS_RATE` (ADR 0033). The web
+app never parses an uploaded document (ADR 0033): intake reads each clean contract, exhibit and payer letter once in its
+own worker thread under a memory cap, a deadline and page, text and inflation caps (`@tp/contracts/pages`: pdf.js for
+text PDFs, an .xlsx a page per sheet, a CSV a page per 50 rows, `TextractPageReader` behind `ScannedPageReader` for
+scans), seals its page text beside the original and records `page_text_status`; the screens cite from that stored
+text. An .xls exhibit is refused at upload and held at intake. The database holds the version states, the non-overlapping windows, the freeze of approved
 and signed-off versions and the approval and sign-off checks. A contract specialist reaches a practice under a support
 grant, as a support engineer does.
 
@@ -83,8 +88,11 @@ non-contracted and percent-of-Medicare terms). `price({ claim, release, settings
 each with the agreement `agreementResolver` gave it, a release indexed by `indexRelease`, the practice settings (billing
 ZIP, default rounding, the place-of-service split) and the triage date in; one priced or unpriced line out per input line,
 each with its JSON trace (`tp-pricing-trace/1`), which `recompute(trace)` reproduces without the engine or a database.
-`pnpm test:golden` prices every golden claim with the engine and compares it with `fixtures/golden` beside the worksheet
-(`--report` adds `fixtures/golden/.report/engine.{json,md}`); `@tp/pricing/testing` builds SYNTHETIC inputs for tests.
+`pnpm test:golden` prices every golden claim with the engine and compares it with `fixtures/golden` beside the worksheet,
+the variance and the dispute window included (`--report` adds `fixtures/golden/.report/engine.{json,md}`);
+`@tp/pricing/testing` builds SYNTHETIC inputs for tests. Claim status 19 prices, 20 and 21 are `SECONDARY_PAYER`, 23
+and 25 stop for review (`ENGINE_ERROR` `claim_status_not_priced`, which pages no one); a rate record whose
+timed-units rule is `UNKNOWN` leaves its lines `UNITS_RULE_UNKNOWN` (ADR 0033).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
@@ -138,6 +146,25 @@ RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A pe
    and `NODE_EXTRA_CA_CERTS` pointing at the RDS certificate bundle, then send it a `restore_drill` job.
 3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
+
+**Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
+cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (119 lines in 64 claims) was
+computed by the independent worksheet, not by the specialist, and says `"specialist_verified": false`: the engine
+matching them to the cent shows that two readings of the plan agree, not that either is right. A specialist finishes it
+by answering every question in `fixtures/golden/QUESTIONS.md` (and ADR 0029's), checking each claim's worksheet, and
+setting `specialist_verified` to true claim by claim; any changed answer becomes a reviewed golden change through
+`/golden-diff`, never a regeneration.
+
+**Milestone 3 is not complete.** Its done check includes "a 2 GB zip queues per file". The intake test
+(`apps/worker/src/intake/intake.large.db.test.ts`) runs at 256 MiB here; the 2 GiB run is the weekly `large-zip`
+workflow, which has not run against this branch. A person runs that workflow (or `TP_LARGE_ZIP_MB=2048 pnpm test:db`
+with that file on a machine with the disk and time for it) and records the result.
+
+**Milestone 2 is not complete.** Its done check asks for "code-set validation against release 1", and release 1 does
+not exist (milestone 0's note below): the parser checks CARC and RARC against SYNTHETIC release 900001 in every test,
+and against the newest published release in the worker, of which there is none yet. A person finishes it by loading
+release 1's CARC, RARC and claim-status code lists (milestone 0) and running `pnpm test:db` and `pnpm test:oracle`
+against it.
 
 **Milestone 0 is not complete.** Its done check ("release 1 loads into an empty database") needs the 2026 CMS
 and X12 files, which cannot be downloaded from the environment the repository was built in (cms.gov, x12.org

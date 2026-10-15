@@ -16,7 +16,7 @@ import {
   ruleRecordLike,
   syntheticRelease,
 } from './testing';
-import type { PricingTrace } from './trace';
+import type { PricingTrace, TraceRecordRef } from './trace';
 import type { LineFacts, LinePricing, PricingInput } from './types';
 
 /**
@@ -159,6 +159,56 @@ describe('recompute(trace)', () => {
     const input = stored(priceLines([lineFacts({ procedureCode: 'X' })])[0]);
     input.outcome = { result: 'priced', expected_allowed_cents: '1', expected_unrounded_cents: '1' };
     expect(recompute(input)).toEqual({ outcome: 'unpriced', reason: 'ENGINE_ERROR', differences: ['outcome: the trace records priced, the recomputation gives ENGINE_ERROR'] });
+  });
+
+  it('holds the fee-schedule step to the terms, the settings and the rule records it was computed for', () => {
+    const [first] = priceLines(day());
+    const tampered = (change: (trace: PricingTrace) => void): string[] => {
+      const trace = stored(first);
+      change(trace);
+      return recompute(trace).differences.map((item) => item.slice(0, item.indexOf(':')));
+    };
+    const schedule = (trace: PricingTrace) => trace.steps.fee_schedule as NonNullable<PricingTrace['steps']['fee_schedule']>;
+    const terms = (trace: PricingTrace) => trace.terms?.percent_of_medicare as NonNullable<NonNullable<PricingTrace['terms']>['percent_of_medicare']>;
+    expect(tampered(() => undefined)).toEqual([]);
+    expect(tampered((trace) => (terms(trace).percentage = '100'))).toEqual(['fee schedule percentage against the terms']);
+    expect(tampered((trace) => (terms(trace).conversion_factor = 'qualifying_apm'))).toEqual(['conversion factor against the terms', 'conversion factor record key']);
+    expect(tampered((trace) => (terms(trace).year_basis = 'LOCKED:2025'))).toEqual([
+      'fee schedule year basis against the terms',
+      'basis year',
+      'fee schedule lookup',
+      'relative value record window',
+      'GPCI record window',
+      'conversion factor record window',
+    ]);
+    expect(tampered((trace) => (schedule(trace).basis_year = 2025))).toEqual(['basis year']);
+    expect(tampered((trace) => (trace.settings.place_of_service_settings['11'] = 'facility'))).toEqual(['setting against the place of service']);
+    expect(tampered((trace) => (trace.line.place_of_service = null))).toEqual(['setting against the place of service']);
+    expect(tampered((trace) => (schedule(trace).rvu = { ...(schedule(trace).rvu as NonNullable<ReturnType<typeof schedule>['rvu']>), record: { ...(schedule(trace).rvu?.record as TraceRecordRef), key: { hcpcs: '97140', modifier: '' } } }))).toEqual([
+      'relative value record key',
+    ]);
+    const locality = (trace: PricingTrace) => schedule(trace).locality as NonNullable<ReturnType<typeof schedule>['locality']>;
+    expect(tampered((trace) => (locality(trace).record.key = { zip: '00012' }))).toEqual(['locality record key']);
+    expect(tampered((trace) => (locality(trace).plus_four_required = true))).toEqual(['locality ZIP+4']);
+    expect(tampered((trace) => (locality(trace).record.effective_to = '2026-01-31'))).toEqual(['locality record window']);
+    expect(tampered((trace) => (schedule(trace).gpci = { ...(schedule(trace).gpci as NonNullable<ReturnType<typeof schedule>['gpci']>), record: { ...(schedule(trace).gpci?.record as TraceRecordRef), key: { carrier: '99999', locality: '02' } } }))).toEqual([
+      'GPCI record key',
+    ]);
+    expect(tampered((trace) => ((schedule(trace).conversion_factor as NonNullable<ReturnType<typeof schedule>['conversion_factor']>).record.effective_from = '2027-01-01'))).toEqual(['conversion factor record window']);
+    expect(tampered((trace) => (schedule(trace).locality = null))).toEqual(['fee schedule records']);
+    expect(tampered((trace) => ((trace.terms as NonNullable<PricingTrace['terms']>).percent_of_medicare = null))).toEqual(['percent-of-Medicare terms']);
+  });
+
+  it('derives UNITS_RULE_UNKNOWN only once the units are recorded, and the new claim statuses', () => {
+    const unknown = contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: 'UNKNOWN' } }) });
+    expectReproduced(priceLines([lineFacts({ agreement: unknown })]));
+    // Refused for its units first: the trace has no units step, so its ENGINE_ERROR stands.
+    expectReproduced(priceLines([lineFacts({ agreement: unknown, units: '1000' })]));
+    const noLocality = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'locality_map'));
+    expectReproduced(priceLines([lineFacts({ agreement: unknown })], {}, noLocality));
+    for (const claimStatusCode of ['20', '21', '23', '25', '24']) {
+      expectReproduced(priceLines(day(), { claim: { claimStatusCode } }));
+    }
   });
 
   it('refuses a value that is not a trace, or a priced trace without the steps its amount needs', () => {

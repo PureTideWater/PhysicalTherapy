@@ -36,6 +36,13 @@ describe('rate record terms', () => {
     expect(Object.isFrozen(MA_NONCONTRACTED_TERMS)).toBe(true);
   });
 
+  it('takes a scope that names no codes as a general term for every code, and writes it back without codes', () => {
+    const general = parseRateTerms({ scope: { places_of_service: ['11'] }, method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110', year_basis: 'CURRENT', locality_basis: { kind: 'PRACTICE' }, conversion_factor: 'non_qualifying_apm' } }, true);
+    expect(general.scope).toEqual({ places_of_service: ['11'] });
+    expect(rateTermsToJson(general).scope).toEqual({ places_of_service: ['11'] });
+    expect(parseRateTerms({ scope: {}, method: 'UNSUPPORTED', parameters: {} }, true).scope).toEqual({});
+  });
+
   it('requires stored terms to carry every flag', () => {
     expect(() => parseRateTerms({ scope: SCOPE, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '1' }, flags: { apply_mppr: false }, rounding: null })).toThrow();
     expect(parseRateTerms({ scope: SCOPE, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '1' }, flags: COMMERCIAL_DEFAULT_FLAGS, rounding: null }).flags).toEqual(COMMERCIAL_DEFAULT_FLAGS);

@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { normalizePageText, parsePageText } from '@tp/contracts';
+import { syntheticPdf, syntheticXlsx } from '@tp/contracts/testing';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, documentPagesKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -11,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { JobContext } from '../jobs/handlers';
 import type { JobPayload, JobType } from '../jobs/registry';
 import { parseHandler } from '../parse/job';
-import { DocumentStore, type SealedBytes } from '../storage/documents';
+import { DocumentStore, type SealedBytes, collect } from '../storage/documents';
 import { type IntakeServices, entryDocumentId, intakeHandler } from './intake';
 import { LocalLanding } from './landing';
 import { LocalScanService, ScanPendingError, type ScanService } from './scan';
@@ -290,6 +292,52 @@ describe('intake of a single file', () => {
       await intake(h, id);
       expect(await one(id)).toMatchObject({ status: 'quarantined', scan_status: status });
     }
+  });
+});
+
+describe('the page text of contract documents (docs/adr/0033)', () => {
+  const pageText = async (h: Harness, id: string) => {
+    const row = (await owner.query('SELECT status, page_text_status, page_count FROM source_document WHERE id = $1', [id])).rows[0] as { status: string; page_text_status: string | null; page_count: number | null };
+    const key = documentPagesKey(world.practiceId, id);
+    const pages = (await h.bytes.size(key)) === null ? null : parsePageText(await collect(h.services.documents.read(ciphers.get(world.practiceId) as PracticeCipher, key))).map(normalizePageText);
+    return { ...row, pages };
+  };
+
+  it('reads a clean contract, a workbook exhibit and a CSV exhibit once, and seals each page text beside it before storing it', async () => {
+    const h = harness();
+    const contract = await upload(h, Buffer.from(syntheticPdf([['SYNTHETIC AGREEMENT'], ['97110 $32.00 per unit']])), { kind: 'contract' });
+    const workbook = await upload(h, Buffer.from(syntheticXlsx([{ name: 'Rates', rows: [['97110', 32]] }])), { kind: 'exhibit' });
+    const csv = await upload(h, Buffer.from('code,amount\n97140,30.50\n'), { kind: 'exhibit' });
+    for (const id of [contract, workbook, csv]) {
+      expect((await intake(h, id)).queued).toEqual([]);
+    }
+    expect(await pageText(h, contract)).toEqual({ status: 'stored', page_text_status: 'ready', page_count: 2, pages: ['SYNTHETIC AGREEMENT', '97110 $32.00 per unit'] });
+    expect(await pageText(h, workbook)).toEqual({ status: 'stored', page_text_status: 'ready', page_count: 1, pages: ['97110 32'] });
+    expect(await pageText(h, csv)).toEqual({ status: 'stored', page_text_status: 'ready', page_count: 1, pages: ['code amount 97140 30.50'] });
+  });
+
+  it('records a damaged PDF, a document past a limit and a decompression bomb, and stores them without page text', async () => {
+    const h = harness();
+    const bounded: Harness = { ...h, services: { ...h.services, pages: { limits: { maxPages: 1, maxMemoryBytes: 64 * 1024 * 1024 } } } };
+    const damaged = await upload(bounded, Buffer.from('%PDF-1.7\n%synthetic damaged contract\n'), { kind: 'contract' });
+    const long = await upload(bounded, Buffer.from(syntheticPdf([['SYNTHETIC PAGE 1'], ['SYNTHETIC PAGE 2']])), { kind: 'payer_letter' });
+    for (const id of [damaged, long]) {
+      await intake(bounded, id);
+    }
+    expect(await pageText(h, damaged)).toEqual({ status: 'stored', page_text_status: 'document_unreadable', page_count: null, pages: null });
+    expect(await pageText(h, long)).toEqual({ status: 'stored', page_text_status: 'unsupported_document', page_count: null, pages: null });
+    // Other kinds are stored without being read.
+    const posting = await upload(h, Buffer.from('check,amount\nSYN-3,1.00\n'), { kind: 'posting_export' });
+    await intake(h, posting);
+    expect(await pageText(h, posting)).toEqual({ status: 'stored', page_text_status: null, page_count: null, pages: null });
+  });
+
+  it('reads the contract documents a zip holds, entry by entry', async () => {
+    const h = harness();
+    const id = await upload(h, buildZip([{ name: 'agreement.pdf', data: Buffer.from(syntheticPdf([['SYNTHETIC ZIPPED AGREEMENT']])) }]), { kind: 'contract' });
+    await intake(h, id);
+    expect((await one(id)).status).toBe('expanded');
+    expect(await pageText(h, entryDocumentId(id, 0))).toEqual({ status: 'stored', page_text_status: 'ready', page_count: 1, pages: ['SYNTHETIC ZIPPED AGREEMENT'] });
   });
 });
 

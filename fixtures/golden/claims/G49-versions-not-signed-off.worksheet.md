@@ -10,10 +10,11 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G49: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-1/PLAN-1.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g49: contract, contract version cv-g49-1, 2026-01-01 to open.
-- Contract version cv-g49-1 (contract contract-g49, version 1, superseded, 2026-01-01 to 2026-03-31):
+- Contract version cv-g49-1 (contract contract-g49, version 1, superseded, 2026-01-01 to 2026-03-31; windows: timely filing not stated, dispute not stated, appeal levels none stated):
   - Rate record rr-g49-1: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
-- Contract version cv-g49-2 (contract contract-g49, version 2, approved, 2026-04-01 to open):
+- Contract version cv-g49-2 (contract contract-g49, version 2, approved, 2026-04-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
   - Rate record rr-g49-2: PERCENT_OF_MEDICARE 115%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-04-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
@@ -43,7 +44,7 @@ Step 1, the agreement.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | |
-| 2 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | | | |
+| 2 | unpriced `DATE_OUTSIDE_VERSIONS` | | | | | | |

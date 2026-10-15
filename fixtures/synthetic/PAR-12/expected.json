@@ -5,7 +5,7 @@
   "assertion": "Observed allowed basis `amt_b6`",
   "synthetic": true,
   "completesIn": 2,
-  "assertedBy": [],
+  "assertedBy": ["packages/edi835/src/fixtures.test.ts","apps/web/src/lib/routes/remittances.db.test.ts"],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

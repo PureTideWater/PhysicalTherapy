@@ -1,0 +1,211 @@
+{
+  "format": "tp-golden-claim/2",
+  "id": "G55",
+  "title": "Claim status 20, processed as secondary and forwarded: SECONDARY_PAYER",
+  "covers": ["SECONDARY_PAYER", "claim status 20"],
+  "notes": "A secondary payer's adjudication, forwarded on: secondary payers are unpriced in v0 and v1 (PRD 2 point 7), whatever the contract (QUESTIONS Q31). The amount is worked through first (QUESTIONS Q24).",
+  "inputs": {
+    "release": {
+      "number": 900001,
+      "dir": "fixtures/synthetic/rules/release-synth-900001",
+      "manifest_sha256": "6d346c8fa596c0f720ff3176be10044e86c9b4fe843d37b04c59192cdbdce45a"
+    },
+    "as_of": "2026-10-15",
+    "practice_settings": {"zip": "00011", "default_rounding": "HALF_UP_CENT"},
+    "place_of_service_settings": {"11": "non_facility", "22": "facility"},
+    "claim": {
+      "claim_id": "SYNTH-CLAIM-G55",
+      "claim_status_code": "20",
+      "reversed": false,
+      "corrected": false,
+      "remittance_date": null,
+      "payer_plan_key": "SYNTH-PAYER-G55/PLAN-1",
+      "lines": [
+        {
+          "line_no": 1,
+          "procedure_code": "97110",
+          "modifiers": ["GP"],
+          "units": "2",
+          "service_date": "2026-03-10",
+          "place_of_service": "11",
+          "charge_cents": "12000",
+          "observed_allowed_cents": "1200",
+          "observed_allowed_basis": "amt_b6",
+          "patient_share_adjustments": []
+        },
+        {
+          "line_no": 2,
+          "procedure_code": "97530",
+          "modifiers": ["GP"],
+          "units": "1",
+          "service_date": "2026-03-10",
+          "place_of_service": "11",
+          "charge_cents": "7000",
+          "observed_allowed_cents": "900",
+          "observed_allowed_basis": "amt_b6",
+          "patient_share_adjustments": []
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "mapping_id": "map-g55",
+        "kind": "contract",
+        "contract_version_id": "cv-g55-1",
+        "effective_from": "2026-01-01",
+        "effective_to": null
+      }
+    ],
+    "contract_versions": [
+      {
+        "contract_version_id": "cv-g55-1",
+        "contract_id": "contract-g55",
+        "version_no": 1,
+        "status": "signed_off",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "windows": {
+          "timely_filing_days": null,
+          "dispute_window_days": null,
+          "appeal_levels": []
+        },
+        "rate_records": [
+          {
+            "rate_record_id": "rr-g55-1",
+            "scope": {
+              "codes": null,
+              "modifier_sets": null,
+              "places_of_service": null,
+              "effective_from": "2026-01-01",
+              "effective_to": null
+            },
+            "method": "PERCENT_OF_MEDICARE",
+            "parameters": {
+              "percentage": "110",
+              "year_basis": "CURRENT",
+              "locality_basis": "practice",
+              "conversion_factor": "non_qualifying_apm"
+            },
+            "flags": {
+              "apply_mppr": false,
+              "apply_assistant_reduction": false,
+              "apply_sequestration": false,
+              "apply_ncci": false,
+              "timed_units_rule": "PER_CODE",
+              "rounding": null
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "lines": [
+      {"line_no": 1, "outcome": "unpriced", "unpriced_reason": "SECONDARY_PAYER"},
+      {"line_no": 2, "outcome": "unpriced", "unpriced_reason": "SECONDARY_PAYER"}
+    ]
+  },
+  "worksheet": [
+    "# Worksheet G55: Claim status 20, processed as secondary and forwarded: SECONDARY_PAYER",
+    "",
+    "Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).",
+    "Specialist verified: no. A reimbursement specialist checks every figure here before milestone 5 closes.",
+    "Every reference value comes from SYNTHETIC release 900001: invented for tests, never a CMS value.",
+    "",
+    "## Inputs",
+    "",
+    "- Release 900001 at fixtures/synthetic/rules/release-synth-900001; its MANIFEST.json has SHA-256 6d346c8fa596c0f720ff3176be10044e86c9b4fe843d37b04c59192cdbdce45a and every file matched it.",
+    "- Practice settings: ZIP 00011; default rounding HALF_UP_CENT.",
+    "- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.",
+    "- Claim SYNTH-CLAIM-G55: status 20 (processed as secondary and forwarded); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-G55/PLAN-1.",
+    "- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.",
+    "- Mapping map-g55: contract, contract version cv-g55-1, 2026-01-01 to open.",
+    "- Contract version cv-g55-1 (contract contract-g55, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):",
+    "  - Rate record rr-g55-1: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.",
+    "",
+    "| Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | 97110 | GP | 2 | 2026-03-10 | 11 | 12000 | 1200 (amt_b6) | none |",
+    "| 2 | 97530 | GP | 1 | 2026-03-10 | 11 | 7000 | 900 (amt_b6) | none |",
+    "",
+    "## Steps 1 to 3, per line",
+    "",
+    "### Line 1: 97110 x 2 on 2026-03-10",
+    "",
+    "Step 1, the agreement.",
+    "- Mapping map-g55 (contract, 2026-01-01 to open) is in force on 2026-03-10.",
+    "- The mapping names contract version cv-g55-1 of contract contract-g55; the version that prices the line is the signed-off one of that contract in force on 2026-03-10:",
+    "  - cv-g55-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.",
+    "- Rate records of cv-g55-1 against code 97110, modifier set [GP], place of service 11, 2026-03-10:",
+    "  - rr-g55-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.",
+    "- Rate record rr-g55-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).",
+    "",
+    "Step 2, the base amount by method.",
+    "- Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.",
+    "- pfs_rvu 97110 (year 2026, quarter A, 2026-01-01 to 2026-12-31): work 0.31, PE non-facility 0.71, PE facility 0.21, MP 0.11, status A.",
+    "- Place of service 11 is non-facility, so the non-facility practice-expense value applies.",
+    "- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-03-10, 2026-01-01 to 2026-12-31).",
+    "- pfs_gpci 99999-01 (2026-01-01 to 2026-12-31): work 1.000, PE 0.950, MP 0.650.",
+    "- conversion_factor non_qualifying_apm (2026-01-01 to 2026-12-31): $20.0000 per RVU.",
+    "- Geographically adjusted RVUs: work 0.31 x 1.000 = 0.31; PE 0.71 x 0.950 = 0.6745; MP 0.11 x 0.650 = 0.0715; total 1.056.",
+    "- Fee schedule amount per unit: 1.056 x $20.0000 = $21.12.",
+    "- At 110%, per unit: work 682 cents ($6.82), practice expense 1483.9 cents ($14.839), malpractice 157.3 cents ($1.573); total 2323.2 cents ($23.232).",
+    "",
+    "Step 3, units: 2 as billed; 2323.2 cents ($23.232) x 2 = 4646.4 cents ($46.464).",
+    "",
+    "### Line 2: 97530 x 1 on 2026-03-10",
+    "",
+    "Step 1, the agreement.",
+    "- Mapping map-g55 (contract, 2026-01-01 to open) is in force on 2026-03-10.",
+    "- The mapping names contract version cv-g55-1 of contract contract-g55; the version that prices the line is the signed-off one of that contract in force on 2026-03-10:",
+    "  - cv-g55-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.",
+    "- Rate records of cv-g55-1 against code 97530, modifier set [GP], place of service 11, 2026-03-10:",
+    "  - rr-g55-1 (any code; any modifiers; any place of service; 2026-01-01 to open): matches.",
+    "- Rate record rr-g55-1: PERCENT_OF_MEDICARE at 110%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated (the practice default applies).",
+    "",
+    "Step 2, the base amount by method.",
+    "- Year basis CURRENT: the fee schedule in effect on the date of service, 2026-03-10 (basis year 2026); each value is the record in force on that date.",
+    "- pfs_rvu 97530 (year 2026, quarter A, 2026-01-01 to 2026-12-31): work 0.35, PE non-facility 0.95, PE facility 0.25, MP 0.15, status A.",
+    "- Place of service 11 is non-facility, so the non-facility practice-expense value applies.",
+    "- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-03-10, 2026-01-01 to 2026-12-31).",
+    "- pfs_gpci 99999-01 (2026-01-01 to 2026-12-31): work 1.000, PE 0.950, MP 0.650.",
+    "- conversion_factor non_qualifying_apm (2026-01-01 to 2026-12-31): $20.0000 per RVU.",
+    "- Geographically adjusted RVUs: work 0.35 x 1.000 = 0.35; PE 0.95 x 0.950 = 0.9025; MP 0.15 x 0.650 = 0.0975; total 1.35.",
+    "- Fee schedule amount per unit: 1.35 x $20.0000 = $27.00.",
+    "- At 110%, per unit: work 770 cents ($7.70), practice expense 1985.5 cents ($19.855), malpractice 214.5 cents ($2.145); total 2970 cents ($29.70).",
+    "",
+    "Step 3, units: 1 as billed; 2970 cents ($29.70) x 1 = 2970 cents ($29.70).",
+    "",
+    "## Steps 4 to 8, per line",
+    "",
+    "### Line 1",
+    "",
+    "Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).",
+    "- mppr: flag apply_mppr is off; not applied.",
+    "- assistant_reduction: flag apply_assistant_reduction is off; not applied.",
+    "- sequestration: flag apply_sequestration is off; not applied.",
+    "- Contract-specific adjustments: none (phase one rate records define none).",
+    "",
+    "Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.",
+    "- **Unpriced: `SECONDARY_PAYER`.** Claim status 20 (processed as secondary and forwarded): secondary and tertiary claims are unpriced in v0 and v1.",
+    "",
+    "### Line 2",
+    "",
+    "Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).",
+    "- mppr: flag apply_mppr is off; not applied.",
+    "- assistant_reduction: flag apply_assistant_reduction is off; not applied.",
+    "- sequestration: flag apply_sequestration is off; not applied.",
+    "- Contract-specific adjustments: none (phase one rate records define none).",
+    "",
+    "Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.",
+    "- **Unpriced: `SECONDARY_PAYER`.** Claim status 20 (processed as secondary and forwarded): secondary and tertiary claims are unpriced in v0 and v1.",
+    "",
+    "## Results",
+    "",
+    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | unpriced `SECONDARY_PAYER` | | | | | | |",
+    "| 2 | unpriced `SECONDARY_PAYER` | | | | | | |"
+  ],
+  "provenance": {"computed_by": "independent worksheet tools/golden-worksheet", "specialist_verified": false}
+}

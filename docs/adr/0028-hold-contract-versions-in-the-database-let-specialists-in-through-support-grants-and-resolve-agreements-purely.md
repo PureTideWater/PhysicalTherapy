@@ -1,6 +1,6 @@
 # 0028. Hold contract versions and their rules in the database, let specialists in through support grants, and resolve agreements purely
 
-- **Status:** accepted (amends 0013, 0017 and 0019 where they say a support grant goes only to a support engineer)
+- **Status:** accepted (amends 0013, 0017 and 0019 where they say a support grant goes only to a support engineer); amended by [0033](0033-read-contract-pages-at-intake-in-a-bounded-thread-hold-general-terms-and-price-what-the-review-found-unsettled.md) (page text read at intake in a bounded thread, spreadsheet and CSV pages, general terms)
 - **Date:** 2026-10-16
 - **Deciders:** founder (engineering)
 - **PRD sections:** 2 (Which agreement governs the line), 3 (Personas; "the company's internal organization has

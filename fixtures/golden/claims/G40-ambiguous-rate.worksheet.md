@@ -10,8 +10,9 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G40: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-1/PLAN-1.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g40: contract, contract version cv-g40-1, 2026-01-01 to open.
-- Contract version cv-g40-1 (contract contract-g40, version 1, signed_off, 2026-01-01 to open):
+- Contract version cv-g40-1 (contract contract-g40, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
   - Rate record rr-g40-any: PERCENT_OF_MEDICARE 110%, CURRENT, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
   - Rate record rr-g40-exhibit: PERCENT_OF_MEDICARE 115%, CURRENT, locality practice, non_qualifying_apm; scope codes 97110; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
 
@@ -57,7 +58,7 @@ Step 2, the base amount by method.
 
 Step 3, units: 1 as billed; 2703.8 cents ($27.038) x 1 = 2703.8 cents ($27.038).
 
-## Steps 4 to 6, per line
+## Steps 4 to 8, per line
 
 ### Line 2
 
@@ -72,9 +73,13 @@ Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); re
 
 Step 6, rounding once: 2703.8 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **2704 cents ($27.04)**; the unrounded 2703.8 is kept beside it.
 
+Step 7, variance: expected allowed 2704 - observed allowed 2700 cents (amt_b6) = 4 cents: an underpayment.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `AMBIGUOUS_RATE` | | | | |
-| 2 | priced | 2704 | 2703.8 | HALF_UP_CENT | 0 |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `AMBIGUOUS_RATE` | | | | | | |
+| 2 | priced | 2704 | 2703.8 | HALF_UP_CENT | 0 | 4 | NO_WINDOW |

@@ -59,7 +59,8 @@ export const EVIDENCE_PROBLEM_TEXT: Readonly<Record<EvidenceProblem, string>> = 
   not_cited: 'No page is cited yet',
   document_not_in_version: 'The cited document is not one of this version’s documents',
   document_unreadable: 'The cited document cannot be read',
-  unsupported_document: 'The cited document is not a PDF with text (a scan or a spreadsheet cannot be cited yet)',
+  unsupported_document: 'The cited document cannot be cited: it is not a PDF with text, an .xlsx workbook or a CSV (a scan needs the scan reader), or it is too large to read',
+  not_read_yet: 'The document’s pages are still being read; try again in a minute',
   no_text: 'The cited page has no text to compare',
   page_missing: 'The document has no such page',
   quote_not_on_page: 'The quote is not on the cited page',
@@ -120,7 +121,7 @@ const ROUNDING: Readonly<Record<NonNullable<RateRecordTerms['rounding']>, string
 /** Each field of a rate record in words, as the review screen shows it beside its approval. */
 export function describeTerms(terms: RateRecordTerms): Readonly<Record<RateRecordField, string>> {
   const { scope, flags } = terms;
-  const parts = [`Codes ${list(scope.codes)}`];
+  const parts = [scope.codes === undefined ? 'Every code' : `Codes ${list(scope.codes)}`];
   parts.push(scope.modifier_sets === undefined ? 'any modifiers' : `modifiers ${scope.modifier_sets.map((set) => (set.length === 0 ? 'none' : set.join(' '))).join(' or ')}`);
   parts.push(scope.places_of_service === undefined ? 'any place of service' : `places of service ${list(scope.places_of_service)}`);
   if (scope.provider_types !== undefined) {

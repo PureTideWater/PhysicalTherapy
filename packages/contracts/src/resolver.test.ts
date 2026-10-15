@@ -45,6 +45,23 @@ describe('agreement resolution', () => {
     }
   });
 
+  it('prices every code from a general term (a scope that names no codes), and calls a general term beside a code exhibit ambiguous', () => {
+    const signed = version();
+    const general = rate(signed.id, fixedTerms(null, '2900'));
+    const records = { mappings: [mapping({ planId: PLAN, contractVersionId: signed.id })], versions: [signed], rateRecords: [general] };
+    for (const procedureCode of ['97110', '97530', 'G0283']) {
+      const resolved = resolveAgreement(line({ procedureCode }), records);
+      expect(resolved.outcome === 'CONTRACT_RATE' && resolved.rate.rateRecordId).toBe(general.id);
+    }
+    const exhibit = rate(signed.id, fixedTerms(['97110'], '3200'));
+    const both = { ...records, rateRecords: [general, exhibit] };
+    expect(resolveAgreement(line({ procedureCode: '97110' }), both)).toMatchObject({ outcome: 'AMBIGUOUS_RATE', rateRecordIds: [general.id, exhibit.id].sort() });
+    expect(resolveAgreement(line({ procedureCode: '97530' }), both)).toMatchObject({ outcome: 'CONTRACT_RATE', rate: { rateRecordId: general.id } });
+    // Narrowing the general term by place of service settles it for the exhibit's lines elsewhere.
+    const narrowed = { ...records, rateRecords: [rate(signed.id, fixedTerms(null, '2900', { places_of_service: ['22'] })), exhibit] };
+    expect(resolveAgreement(line({ procedureCode: '97110' }), narrowed)).toMatchObject({ outcome: 'CONTRACT_RATE', rate: { rateRecordId: exhibit.id } });
+  });
+
   it('MAP-01: gives NO_MAPPING for every line of an unmapped plan, and for a line with no plan', () => {
     const records = contracted();
     for (const serviceDate of ['2025-01-01', '2026-03-02', '2030-12-31']) {
@@ -215,13 +232,13 @@ describe('agreement resolution (properties)', () => {
     );
   });
 
-  it('never prices from more than one record and names every match when ambiguous', () => {
+  it('never prices from more than one record and names every match when ambiguous, general terms included', () => {
     fc.assert(
-      fc.property(fc.array(fc.subarray(['97110', '97112', '97140'], { minLength: 1 }), { minLength: 1, maxLength: 4 }), fc.constantFrom('97110', '97112', '97140', '97530'), (scopes, code) => {
+      fc.property(fc.array(fc.option(fc.subarray(['97110', '97112', '97140'], { minLength: 1 })), { minLength: 1, maxLength: 4 }), fc.constantFrom('97110', '97112', '97140', '97530'), (scopes, code) => {
         const signed = version();
         const rateRecords = scopes.map((codes) => rate(signed.id, fixedTerms(codes, '100')));
         const resolved = resolveAgreement(line({ procedureCode: code }), { mappings: [mapping({ planId: PLAN, contractVersionId: signed.id })], versions: [signed], rateRecords });
-        const matching = rateRecords.filter((record) => record.terms.scope.codes.includes(code));
+        const matching = rateRecords.filter((record) => record.terms.scope.codes?.includes(code) ?? true);
         expect(resolved.outcome).toBe(matching.length === 0 ? 'NO_RATE_FOR_CODE' : matching.length === 1 ? 'CONTRACT_RATE' : 'AMBIGUOUS_RATE');
         if (resolved.outcome === 'AMBIGUOUS_RATE') {
           expect(resolved.rateRecordIds).toEqual(matching.map((record) => record.id).sort());

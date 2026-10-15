@@ -1,5 +1,5 @@
 import { type SQL, sql } from 'drizzle-orm';
-import { type AnyPgColumn, bigint, boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { type AnyPgColumn, bigint, boolean, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { practice, user } from './tenancy';
 
@@ -80,6 +80,18 @@ export function documentObjectKey(practiceId: string, documentId: string): strin
   return `practices/${practiceId}/documents/${documentId}`;
 }
 
+/** The page texts intake read from a contract document: beside its original, sealed the same way (docs/adr/0033). */
+export function documentPagesKey(practiceId: string, documentId: string): string {
+  return `${documentObjectKey(practiceId, documentId)}.pages`;
+}
+
+/**
+ * How intake's reading of a contract, exhibit or payer letter went: ready (its page text is stored),
+ * unsupported_document (no supported kind, or past a limit) or document_unreadable. Null until read.
+ */
+export const PAGE_TEXT_STATUSES = ['ready', 'unsupported_document', 'document_unreadable'] as const;
+export type PageTextStatus = (typeof PAGE_TEXT_STATUSES)[number];
+
 /**
  * Where a browser uploads a document in S3 before its malware scan: the documents bucket's intake
  * prefix, where GuardDuty scans it, until the worker seals it under documentObjectKey (docs/adr/0018).
@@ -115,6 +127,9 @@ export const sourceDocument = pgTable(
     status: text('status', { enum: DOCUMENT_STATUSES }).notNull().default('awaiting_upload'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Set by intake for contracts, exhibits and payer letters (migration 20261017120000; docs/adr/0033). */
+    pageTextStatus: text('page_text_status', { enum: PAGE_TEXT_STATUSES }),
+    pageCount: integer('page_count'),
   },
   (table) => [
     index('source_document_by_practice').on(table.practiceId, table.createdAt.desc(), table.id),

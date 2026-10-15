@@ -32,14 +32,18 @@ import { disputeWindow } from './windows';
  * 2. The base amount by method: for the basis year, per unit, (work RVU x work GPCI + PE RVU for the
  *    place of service x PE GPCI + MP RVU x MP GPCI) x the conversion factor the terms name, x the
  *    percentage; kept as its work, practice-expense and malpractice parts.
- * 3. Units as billed.
+ * 3. Units as billed, at most MAX_UNITS. Terms whose timed-units rule is UNKNOWN stop the line with
+ *    UNITS_RULE_UNKNOWN: until minutes are imported the units are a reason for review, not a price
+ *    (PRD 20; PRD 2 point 6), so such a line is neither ranked nor reduced.
  * 4. The flagged adjustments, in order: the multiple procedure reduction (per claim and day, the
  *    always-therapy units of lines with apply_mppr on, ranked by practice-expense part, the highest
  *    kept whole), the assistant reduction (CQ or CO: the release's percentage of the amount after the
  *    reduction), sequestration (the release's percentage of the payer's share, the amount less the
  *    patient share, floored at zero). Percentages come from the release, never from code.
- * 5. The patient share is reported, never subtracted; secondary claims stop with SECONDARY_PAYER and
- *    reversed claims with REVERSED_CLAIM.
+ * 5. The patient share is reported, never subtracted. Claim status 1, 4 and 19 (processed as primary
+ *    and forwarded) price; secondary and tertiary claims (2, 3, 20, 21) stop with SECONDARY_PAYER; a
+ *    reversal (22), or a claim reversed and not corrected, with REVERSED_CLAIM; 23 and 25 have no rule
+ *    yet and stop for review (ENGINE_ERROR claim_status_not_priced, which pages no one).
  * 6. One rounding at the end, under the terms' rule, else the practice default, else HALF_UP_CENT;
  *    the unrounded value is kept.
  * 7 and 8. The variance against observed allowed, and the dispute deadline from the remittance date.
@@ -51,9 +55,18 @@ const HUNDRED = decimal(100n);
 const ZERO = decimal(0n);
 const ONE = decimal(1n);
 const ASSISTANT_MODIFIERS = ['CQ', 'CO'] as const;
-const PRICED_STATUSES = new Set(['1', '4']);
-const SECONDARY_STATUSES = new Set(['2', '3']);
+/** Claim statuses that price: processed as primary (1), denied (4), processed as primary and forwarded (19). */
+const PRICED_STATUSES = new Set(['1', '4', '19']);
+/** Processed as secondary or tertiary, forwarded or not (PRD 2 point 7: unpriced in v0 and v1). */
+const SECONDARY_STATUSES = new Set(['2', '3', '20', '21']);
+/** Valid 835 statuses with no pricing rule yet (fixtures/golden/QUESTIONS.md, Q31). */
+const NOT_PRICED_STATUSES = new Set(['23', '25']);
 const REVERSAL_STATUS = '22';
+/**
+ * The most units one line may carry. More is malformed input (ENGINE_ERROR units_above_limit): it is
+ * never expanded into the day's ranking, so a claim's work and its traces stay bounded (PRC-20).
+ */
+export const MAX_UNITS = 999;
 const PROCEDURE_CODE = /^[0-9A-Z]{5}$/;
 const MODIFIER = /^[0-9A-Z]{2}$/;
 const PLACE_OF_SERVICE = /^\d{2}$/;
@@ -251,8 +264,15 @@ function stepsOneToThree(context: LineContext, release: IndexedRelease, settings
   if (units === null || !units.isInteger() || units.lessThan(ONE)) {
     throw new EngineInputError('units_not_whole');
   }
+  if (units.greaterThan(decimal(BigInt(MAX_UNITS)))) {
+    throw new EngineInputError('units_above_limit');
+  }
   const base = unit.parts.total.times(units);
-  context.trace.steps.units = { units: units.toString(), timed_units_rule: agreement.terms.flags.timed_units_rule, base_cents: base.toString() };
+  const rule = agreement.terms.flags.timed_units_rule;
+  context.trace.steps.units = { units: units.toString(), timed_units_rule: rule, base_cents: base.toString() };
+  if (rule === 'UNKNOWN') {
+    return stop(context, 'UNITS_RULE_UNKNOWN');
+  }
   return {
     kind: 'working',
     context,
@@ -413,7 +433,12 @@ function baseAmount(context: LineContext, terms: Terms, release: IndexedRelease,
     throw new EngineInputError('no_locality');
   }
   const { carrier, locality: localityNo } = locality.value;
-  schedule.locality = { record: release.ref(locality), carrier, locality: localityNo };
+  const plusFour = locality.value.plus_four_required;
+  schedule.locality = { record: release.ref(locality), carrier, locality: localityNo, plus_four_required: plusFour };
+  if (plusFour === true) {
+    // The five-digit ZIP does not name the locality; nothing in the settings gives its ZIP+4.
+    throw new EngineInputError('locality_needs_zip_plus_four');
+  }
   const gpci = lookup('pfs_gpci', { carrier, locality: localityNo });
   if (gpci === null) {
     throw new EngineInputError('no_gpci');
@@ -465,7 +490,9 @@ interface RankedUnit {
  * highest first (ties: the lower line number, then the earlier unit). The first unit stays whole;
  * every other unit's practice-expense part is cut by its code's percentage, or by the general
  * practice-expense percentage when the code's share is null. Lines whose terms have the flag off,
- * and lines already unpriced, are neither ranked nor reduced.
+ * and lines already unpriced, are neither ranked nor reduced. Each line's trace records the day's
+ * first unit and its own ranked units, which is all its amount depends on. Anything that goes wrong
+ * in a day stops every line of that day with ENGINE_ERROR: which units it reduces is then unknown.
  */
 function multipleProcedureReduction(items: readonly (Working | Stopped)[], release: IndexedRelease): (Working | Stopped)[] {
   const days = new Map<string, Working[]>();
@@ -479,54 +506,59 @@ function multipleProcedureReduction(items: readonly (Working | Stopped)[], relea
     for (const work of day) {
       work.context.step = 'mppr';
     }
-    let members: PoolMember[];
     try {
-      members = day.map((work) => poolMember(work, release, date));
+      reduceDay(day, date, release, stopped);
     } catch (error) {
-      // Which units belong to the day's pool is unknown, so none of the day's lines can be reduced.
+      // Which units belong to the day's pool, or what they are cut by, is unknown: none of the day's lines is reduced.
       for (const work of day) {
+        work.context.adjustments.length = 0;
+        work.context.trace.steps.adjustments.length = 0;
         stopped.set(work, engineError(work.context, error));
       }
-      continue;
-    }
-    const units = members
-      .filter((member) => member.codeRecord !== null)
-      .flatMap((member) => Array.from({ length: member.work.unitCount }, (_, index) => ({ work: member.work, unit: index + 1 })))
-      .sort((a, b) => b.work.unit.pe.comparedTo(a.work.unit.pe) || a.work.context.facts.lineNo - b.work.context.facts.lineNo || a.unit - b.unit);
-    const ranked: RankedUnit[] = units.map((item, index) => ({ ...item, rank: index + 1 }));
-    const ranking = ranked.map((item) => ({ rank: item.rank, line_no: item.work.context.facts.lineNo, unit: item.unit, pe_cents: item.work.unit.pe.toString() }));
-    for (const member of members) {
-      const { work, codeRecord, percent } = member;
-      if (codeRecord !== null && percent === null) {
-        stopped.set(work, stop(work.context, 'ENGINE_ERROR', 'no_mppr_rate'));
-        continue;
-      }
-      const cutBy = percent ?? ZERO;
-      const reductions = ranked
-        .filter((item) => item.work === work && item.rank > 1)
-        .map((item) => ({ unit: item.unit, rank: item.rank, cut: work.unit.pe.times(cutBy).dividedBy(HUNDRED) }));
-      const before = work.amount;
-      const after = reductions.reduce((amount, item) => amount.minus(item.cut), before);
-      apply(
-        work,
-        {
-          name: 'mppr',
-          before_cents: before.toString(),
-          after_cents: after.toString(),
-          service_date: date,
-          in_pool: codeRecord !== null,
-          code_record: codeRecord === null ? null : release.ref(codeRecord),
-          general_record: member.generalRecord === null ? null : release.ref(member.generalRecord),
-          reduction_percent: percent === null ? null : percent.toString(),
-          ranking: codeRecord === null ? [] : ranking,
-          reductions: reductions.map((item) => ({ unit: item.unit, rank: item.rank, cut_cents: item.cut.toString() })),
-        },
-        before,
-        after,
-      );
     }
   }
   return items.map((item) => (item.kind === 'working' ? (stopped.get(item) ?? item) : item));
+}
+
+function reduceDay(day: readonly Working[], date: string, release: IndexedRelease, stopped: Map<Working, Stopped>): void {
+  const members = day.map((work) => poolMember(work, release, date));
+  const units = members
+    .filter((member) => member.codeRecord !== null)
+    .flatMap((member) => Array.from({ length: member.work.unitCount }, (_, index) => ({ work: member.work, unit: index + 1 })))
+    .sort((a, b) => b.work.unit.pe.comparedTo(a.work.unit.pe) || a.work.context.facts.lineNo - b.work.context.facts.lineNo || a.unit - b.unit);
+  const ranked: RankedUnit[] = units.map((item, index) => ({ ...item, rank: index + 1 }));
+  const entry = (item: RankedUnit) => ({ rank: item.rank, line_no: item.work.context.facts.lineNo, unit: item.unit, pe_cents: item.work.unit.pe.toString() });
+  for (const member of members) {
+    const { work, codeRecord, percent } = member;
+    if (codeRecord !== null && percent === null) {
+      stopped.set(work, stop(work.context, 'ENGINE_ERROR', 'no_mppr_rate'));
+      continue;
+    }
+    const cutBy = percent ?? ZERO;
+    const own = ranked.filter((item) => item.work === work);
+    const reductions = own.filter((item) => item.rank > 1).map((item) => ({ unit: item.unit, rank: item.rank, cut: work.unit.pe.times(cutBy).dividedBy(HUNDRED) }));
+    const before = work.amount;
+    const after = reductions.reduce((amount, item) => amount.minus(item.cut), before);
+    const first = ranked[0];
+    const recorded = first === undefined || first.work === work ? own : [first, ...own];
+    apply(
+      work,
+      {
+        name: 'mppr',
+        before_cents: before.toString(),
+        after_cents: after.toString(),
+        service_date: date,
+        in_pool: codeRecord !== null,
+        code_record: codeRecord === null ? null : release.ref(codeRecord),
+        general_record: member.generalRecord === null ? null : release.ref(member.generalRecord),
+        reduction_percent: percent === null ? null : percent.toString(),
+        ranking: codeRecord === null ? [] : recorded.map(entry),
+        reductions: reductions.map((item) => ({ unit: item.unit, rank: item.rank, cut_cents: item.cut.toString() })),
+      },
+      before,
+      after,
+    );
+  }
 }
 
 function poolMember(work: Working, release: IndexedRelease, date: string): PoolMember {
@@ -630,6 +662,9 @@ function stepsFourToEight(work: Working, input: PricingInput): Finished | Stoppe
   }
   if (claimStatusCode === REVERSAL_STATUS) {
     return stop(context, 'REVERSED_CLAIM');
+  }
+  if (NOT_PRICED_STATUSES.has(claimStatusCode)) {
+    throw new EngineInputError('claim_status_not_priced');
   }
   if (!PRICED_STATUSES.has(claimStatusCode)) {
     throw new EngineInputError('claim_status_unknown');

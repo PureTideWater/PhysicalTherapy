@@ -79,7 +79,7 @@ describe('golden lines priced by the engine', () => {
     return found;
   });
 
-  it('match every golden line to the cent, field by field, though no line is specialist-verified yet', () => {
+  it('match every golden line to the cent, field by field, variance and window included, though no line is specialist-verified yet', () => {
     const differences = engineDifferences(runs);
     const reportDir = process.env.TP_GOLDEN_REPORT;
     if (reportDir !== undefined && reportDir !== '') {
@@ -92,7 +92,8 @@ describe('golden lines priced by the engine', () => {
         recompute: recomputeDifferences,
       });
     }
-    expect(results).toHaveLength(100);
+    // The specialist's one hundred lines of milestone 5, and the lines added since for its later branches.
+    expect(results.length).toBeGreaterThanOrEqual(100);
     expect(results.length).toBe(runs.reduce((count, run) => count + run.claim.expected.lines.length, 0));
     expect(differences).toEqual([]);
   });

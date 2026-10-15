@@ -1,0 +1,76 @@
+[
+  {
+    "record_type": "sequestration",
+    "key": {
+      "program": "medicare"
+    },
+    "value": {
+      "reduction_percent": "3",
+      "applies_to": "SYNTHETIC: the payment after the beneficiary share",
+      "suspended": false
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": "2026-06-30",
+    "source": {
+      "title": "SYNTHETIC variant therapy rules for the golden lines (fixtures/golden/sources/synthetic-rules-900003.md)",
+      "url": null,
+      "path": "fixtures/golden/sources/synthetic-rules-900003.md",
+      "retrieved": "2026-10-15",
+      "sha256": "3f368e336fee4f02d870fe5494abef1254e2743bd67c8e365a009056459b836e",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 7",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC sequestration takes 3% of the payment after the beneficiary share from January 1, 2026 through June 30, 2026."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  },
+  {
+    "record_type": "sequestration",
+    "key": {
+      "program": "medicare"
+    },
+    "value": {
+      "reduction_percent": "0",
+      "applies_to": "SYNTHETIC: suspended, nothing is taken",
+      "suspended": true
+    },
+    "effective_from": "2026-07-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC variant therapy rules for the golden lines (fixtures/golden/sources/synthetic-rules-900003.md)",
+      "url": null,
+      "path": "fixtures/golden/sources/synthetic-rules-900003.md",
+      "retrieved": "2026-10-15",
+      "sha256": "3f368e336fee4f02d870fe5494abef1254e2743bd67c8e365a009056459b836e",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 8",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC sequestration is suspended from July 1, 2026: it takes 0%."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  }
+]

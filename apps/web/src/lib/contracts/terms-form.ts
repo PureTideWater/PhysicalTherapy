@@ -67,10 +67,21 @@ function dayAfter(lastDay: string): string {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** The word that makes a term cover every code (a contract-wide percentage, say); never a blank field. */
+export const EVERY_CODE = 'any';
+
 /** The rate record's terms from the specialist's form, or the fields that need fixing. */
 export function termsFromForm(fields: TermsFormFields): TermsFromForm {
   const issues: Issue[] = [];
-  const scope: Record<string, Json> = { codes: words(fields.codes, /[\s,]+/) };
+  const codes = words(fields.codes, /[\s,]+/);
+  const scope: Record<string, Json> = {};
+  if (codes.length === 1 && codes[0] === EVERY_CODE.toUpperCase()) {
+    // Every code: the scope names none (packages/contracts, rateScopeSchema).
+  } else if (codes.includes(EVERY_CODE.toUpperCase())) {
+    issues.push({ field: 'codes', message: `the codes the term covers, or the word ${EVERY_CODE} alone for every code` });
+  } else {
+    scope.codes = codes;
+  }
   const sets = modifierSets(fields.modifierSets);
   if (sets !== undefined) {
     scope.modifier_sets = sets;

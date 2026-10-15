@@ -10,10 +10,12 @@ import {
   approveVersion,
   createContract,
   createDraftVersion,
+  serializePageText,
   signOffVersion,
 } from '@tp/contracts';
+import { documentPages, readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
-import { type DatabaseClient, type DatabasePool, type PracticeCipher, documentObjectKey, withPracticeScope } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, type PracticeCipher, documentObjectKey, documentPagesKey, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import type { DocumentStore } from '@tp/worker/documents';
 
@@ -59,16 +61,24 @@ export interface ContractWorldOptions {
   readonly specialistId: string;
 }
 
-/** A clean, stored contract document of the practice, its bytes sealed in the document store. */
+/**
+ * A clean, stored contract document of the practice, as intake leaves one: its bytes sealed in the
+ * document store and its page text, read by the bounded reader, sealed beside them (docs/adr/0033).
+ */
 export async function storeContractDocument(options: ContractWorldOptions, pages: readonly (readonly string[])[] = CONTRACT_PAGES): Promise<string> {
   const id = randomUUID();
   const bytes = syntheticPdf(pages);
   await options.documents.write(options.cipher, documentObjectKey(options.practiceId, id), Readable.from([bytes]));
+  const read = await readDocumentPages({ bytes, contentType: 'application/pdf' });
+  if (!read.ok) {
+    throw new Error(`the synthetic contract does not read: ${read.problem}`);
+  }
+  await options.documents.write(options.cipher, documentPagesKey(options.practiceId, id), Readable.from([serializePageText(read.pages)]));
   await asOwner(options.owner, [options.practiceId], () =>
     options.owner.query(
-      `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
-       VALUES ($1, $2, 'contract', $3, $4, 'application/pdf', $5, 'clean', now(), 'stored')`,
-      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId],
+      `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, page_text_status, page_count)
+       VALUES ($1, $2, 'contract', $3, $4, 'application/pdf', $5, 'clean', now(), 'stored', 'ready', $6)`,
+      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId, read.pages.length],
     ),
   );
   return id;
@@ -80,7 +90,7 @@ export async function seedContractWorld(options: ContractWorldOptions): Promise<
   const contractDocumentId = await storeContractDocument(options);
   const untaggedDocumentId = await storeContractDocument(options, [['SYNTHETIC EXHIBIT B - INVENTED TERMS', '97112 Neuromuscular reeducation $33.00 per unit']]);
   const bytes = syntheticPdf(CONTRACT_PAGES);
-  const evidence = new EvidenceResolver({ documents: { read: () => Promise.resolve({ bytes, contentType: 'application/pdf' }) } });
+  const evidence = new EvidenceResolver({ pages: documentPages({ read: () => Promise.resolve({ bytes, contentType: 'application/pdf' }) }) });
   const as = <T>(actorId: string, run: (context: WorkflowContext) => Promise<T>) =>
     withPracticeScope(app, { actorId, practiceIds: [practiceId] }, (scope) => run({ scope, requestId: `seed-${randomUUID()}`, evidence }));
   const specialist = <T>(run: (context: WorkflowContext) => Promise<T>) => as(options.specialistId, run);

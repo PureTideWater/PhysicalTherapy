@@ -5,7 +5,12 @@
   "assertion": "Expected per rule; unrounded kept",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/pricing/src/engine.test.ts",
+    "packages/money/src/rounding.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

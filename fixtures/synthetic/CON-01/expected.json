@@ -5,7 +5,11 @@
   "assertion": "Refused",
   "synthetic": true,
   "completesIn": 4,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/contracts/src/contracts.db.test.ts",
+    "apps/web/src/lib/routes/contracts-routes.db.test.ts",
+    "apps/web/e2e/contracts.spec.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

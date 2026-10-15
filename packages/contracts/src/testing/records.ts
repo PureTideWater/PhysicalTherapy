@@ -36,9 +36,9 @@ export function version(overrides: Partial<ContractVersionRecord> = {}): Contrac
   };
 }
 
-/** Fixed-schedule terms for the codes at an amount per unit, flags off, rounding silent. */
-export function fixedTerms(codes: readonly string[], amountCents: string, scope: Record<string, unknown> = {}): RateRecordTerms {
-  return parseRateTerms({ scope: { codes: [...codes], ...scope }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: amountCents } }, true);
+/** Fixed-schedule terms at an amount per unit for the codes, or for every code when `codes` is null (a general term); flags off, rounding silent. */
+export function fixedTerms(codes: readonly string[] | null, amountCents: string, scope: Record<string, unknown> = {}): RateRecordTerms {
+  return parseRateTerms({ scope: { ...(codes === null ? {} : { codes: [...codes] }), ...scope }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: amountCents } }, true);
 }
 
 export function rate(contractVersionId: string, terms: RateRecordTerms, overrides: Partial<RateRecord> = {}): RateRecord {

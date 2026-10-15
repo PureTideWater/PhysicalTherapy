@@ -5,6 +5,7 @@ import { type MigratedDatabase, RowFactory, type TenantWorld, addMembership, asO
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { documentPages } from './evidence/pages';
 import { EvidenceResolver } from './evidence/resolve';
 import { assertPracticePricingAllowed, dollarsWaitingOnMapping, loadAgreementRecords, loadMappings } from './load';
 import { PricingRefusedError } from './coverage';
@@ -124,12 +125,12 @@ function as<T>(actorId: string, run: (context: WorkflowContext) => Promise<T>): 
       scope,
       requestId: `test-${randomUUID()}`,
       evidence: new EvidenceResolver({
-        documents: {
+        pages: documentPages({
           read: (id) => {
             const bytes = documents.get(id);
             return bytes === undefined ? Promise.reject(new Error('no such synthetic document')) : Promise.resolve({ bytes, contentType: 'application/pdf' });
           },
-        },
+        }),
       }),
     }),
   );

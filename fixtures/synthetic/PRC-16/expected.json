@@ -5,7 +5,11 @@
   "assertion": "Equals stored amount for every golden line",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/pricing/src/recompute.test.ts",
+    "packages/pricing/src/properties.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "Recomputes the trace of every golden line in fixtures/golden; no fixture of its own.",
   "files": [],

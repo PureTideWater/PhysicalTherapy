@@ -5,7 +5,11 @@
   "assertion": "Parses within target; memory bounded",
   "synthetic": true,
   "completesIn": 2,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/edi835/src/performance.test.ts",
+    "packages/synth/src/fixtures.test.ts",
+    "apps/web/src/lib/routes/remittances.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": "The 10000-claim file is generated when a test needs it, by writeLargeFixture() from @tp/synth, into fixtures/synthetic/PAR-29/generated/remit-10000-claims.835 (ignored by git); its size, hash and counts are recorded here.",
   "files": [],

@@ -1,5 +1,5 @@
 {
-  "format": "tp-golden-claim/1",
+  "format": "tp-golden-claim/2",
   "id": "G43",
   "title": "MA non-contracted, a code with no relative value",
   "covers": ["NO_PFS_VALUE", "PRC-09"],
@@ -10,6 +10,7 @@
       "dir": "fixtures/synthetic/rules/release-synth-900001",
       "manifest_sha256": "6d346c8fa596c0f720ff3176be10044e86c9b4fe843d37b04c59192cdbdce45a"
     },
+    "as_of": "2026-10-15",
     "practice_settings": {"zip": "00011", "default_rounding": "HALF_UP_CENT"},
     "place_of_service_settings": {"11": "non_facility", "22": "facility"},
     "claim": {
@@ -17,6 +18,7 @@
       "claim_status_code": "1",
       "reversed": false,
       "corrected": false,
+      "remittance_date": null,
       "payer_plan_key": "SYNTH-MA-PLAN-1",
       "lines": [
         {
@@ -62,6 +64,7 @@
     "- Practice settings: ZIP 00011; default rounding HALF_UP_CENT.",
     "- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.",
     "- Claim SYNTH-CLAIM-G43: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-MA-PLAN-1.",
+    "- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.",
     "- Mapping map-ma-1: ma_noncontracted, 2026-01-01 to open.",
     "- Contract versions: none.",
     "",
@@ -83,9 +86,9 @@
     "",
     "## Results",
     "",
-    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |",
-    "| --- | --- | --- | --- | --- | --- |",
-    "| 1 | unpriced `NO_PFS_VALUE` | | | | |"
+    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | unpriced `NO_PFS_VALUE` | | | | | | |"
   ],
   "provenance": {"computed_by": "independent worksheet tools/golden-worksheet", "specialist_verified": false}
 }

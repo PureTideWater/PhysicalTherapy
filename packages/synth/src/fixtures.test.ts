@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { type GeneratedCase } from './cases/builder';
 import { LARGE_CLAIMS, LARGE_FIXTURE_PATH, writeLargeFixture } from './cases/large';
 import { TEST_MATRIX } from './cases/matrix';
-import { ALL_CASES, CASES, REGISTRY_IDS, VARIANT_CASES, findCase, generateAll } from './cases/registry';
+import { ALL_CASES, BUILT_THROUGH_MILESTONE, CASES, REGISTRY_IDS, VARIANT_CASES, findCase, generateAll } from './cases/registry';
 import { SYNTHETIC_CARCS, SYNTHETIC_RARCS } from './expected/parse';
 import { type CaseExpectation, type X12FileExpectation } from './expected/types';
 import { readZip } from './formats/zip';
@@ -60,6 +60,12 @@ describe('the case registry', () => {
         expect(existsSync(path.join(repository, test)), `${item.id}: ${test}`).toBe(true);
       }
     }
+  });
+
+  it('names the tests that assert every case a built milestone completes', () => {
+    const unasserted = ALL_CASES.filter((item) => item.completesIn <= BUILT_THROUGH_MILESTONE && item.assertedBy.length === 0).map((item) => item.id);
+    expect(unasserted).toEqual([]);
+    expect(BUILT_THROUGH_MILESTONE).toBe(5);
   });
 
   it('finds cases by ID, variants included', () => {

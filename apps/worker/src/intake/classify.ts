@@ -11,8 +11,12 @@ import type { Sniffed } from './sniff';
  * is quarantined, whatever the malware scan said (PAR-28).
  */
 
-/** What the bytes are, for the purpose of matching them to a kind. */
-export type ContentClass = 'x12' | 'pdf' | 'spreadsheet' | 'csv' | 'unknown';
+/**
+ * What the bytes are, for the purpose of matching them to a kind. A workbook is an .xlsx zip
+ * (`spreadsheet`) or a legacy binary .xls (`legacy_spreadsheet`), which no exhibit may be: its pages
+ * cannot be cited (docs/adr/0033).
+ */
+export type ContentClass = 'x12' | 'pdf' | 'spreadsheet' | 'legacy_spreadsheet' | 'csv' | 'unknown';
 
 /** The contents each declared kind may hold. */
 export const ACCEPTED_CONTENT: Readonly<Record<DocumentKind, ReadonlySet<ContentClass>>> = {
@@ -20,9 +24,9 @@ export const ACCEPTED_CONTENT: Readonly<Record<DocumentKind, ReadonlySet<Content
   contract: new Set(['pdf']),
   payer_letter: new Set(['pdf']),
   exhibit: new Set(['pdf', 'spreadsheet', 'csv']),
-  posting_export: new Set(['csv', 'spreadsheet']),
-  eft_export: new Set(['csv', 'spreadsheet']),
-  other: new Set(['x12', 'pdf', 'spreadsheet', 'csv', 'unknown']),
+  posting_export: new Set(['csv', 'spreadsheet', 'legacy_spreadsheet']),
+  eft_export: new Set(['csv', 'spreadsheet', 'legacy_spreadsheet']),
+  other: new Set(['x12', 'pdf', 'spreadsheet', 'legacy_spreadsheet', 'csv', 'unknown']),
 };
 
 export type Disposition =
@@ -52,7 +56,7 @@ export function dispose(kind: DocumentKind, sniffed: Sniffed, options: { readonl
       }
       return options.entry ? { action: 'hold', status: 'nested_zip' } : { action: 'expand' };
     case 'ole2':
-      content = 'spreadsheet';
+      content = 'legacy_spreadsheet';
       break;
     case 'x12':
     case 'pdf':

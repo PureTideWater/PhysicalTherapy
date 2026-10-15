@@ -15,7 +15,7 @@ import { ENGINE_ERROR_DETAILS, NO_PFS_VALUE_DETAILS, UNPRICED_REASONS } from './
 export const TRACE_FORMAT = 'tp-pricing-trace/1';
 
 /** The engine's version, recorded in every trace and in `pricing_run.engine_version`. */
-export const ENGINE_VERSION = 'phase-one/1';
+export const ENGINE_VERSION = 'phase-one/2';
 
 const decimalText = z.string().regex(/^-?\d+(?:\.\d+)?$/, 'must be decimal text');
 const centsText = z.string().regex(/^(?:0|-?[1-9]\d*)$/, 'must be whole cents as integer text');
@@ -113,7 +113,8 @@ const feeSchedule = z.strictObject({
     .strictObject({ record: recordRef, work_rvu: decimalText, pe_rvu_facility: decimalText, pe_rvu_non_facility: decimalText, mp_rvu: decimalText, facility_pe_na: z.boolean(), non_facility_pe_na: z.boolean() })
     .nullable(),
   setting: setting.nullable(),
-  locality: z.strictObject({ record: recordRef, carrier: z.string(), locality: z.string() }).nullable(),
+  /** The practice ZIP's locality; a ZIP whose record needs its ZIP+4 stops the line (ENGINE_ERROR). */
+  locality: z.strictObject({ record: recordRef, carrier: z.string(), locality: z.string(), plus_four_required: z.boolean().nullable() }).nullable(),
   gpci: z.strictObject({ record: recordRef, work_gpci: decimalText, pe_gpci: decimalText, mp_gpci: decimalText }).nullable(),
   conversion_factor: z.strictObject({ record: recordRef, applicability: z.string(), value: decimalText }).nullable(),
   percentage: decimalText,
@@ -123,7 +124,7 @@ const feeSchedule = z.strictObject({
 
 const units = z.strictObject({
   units: decimalText,
-  /** Recorded only: units are taken as billed in phase one (PRD 2 point 6). */
+  /** Units are taken as billed (PRD 2 point 6); UNKNOWN stops the line with UNITS_RULE_UNKNOWN (PRD 20). */
   timed_units_rule: z.string(),
   base_cents: decimalText,
 });
@@ -141,7 +142,11 @@ const mppr = z.strictObject({
   /** The general practice-expense reduction, used when the code's own share is null. */
   general_record: recordRef.nullable(),
   reduction_percent: decimalText.nullable(),
-  /** Every always-therapy unit of the claim's day, with apply_mppr on, highest practice-expense part first. */
+  /**
+   * The ranked units the line's amount depends on, highest practice-expense part first: the claim's
+   * day's first always-therapy unit (with apply_mppr on), and every unit of this line. Empty when the
+   * line is not in the pool.
+   */
   ranking: z.array(rankedUnit),
   /** This line's reduced units: each cut is its practice-expense part times the reduction percent. */
   reductions: z.array(z.strictObject({ unit: z.number().int(), rank: z.number().int(), cut_cents: decimalText })),

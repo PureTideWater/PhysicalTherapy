@@ -17,9 +17,10 @@ import { type AgreementTerms, MA_NONCONTRACTED_TERMS, type RateRecordTerms, type
  * - contract: the mapping names a version; the contract's signed-off version covering the date prices
  *   the line, whatever version the mapping names, and nothing else does (CON-07: a draft, proposed,
  *   approved or superseded version never prices). None: DATE_OUTSIDE_VERSIONS.
- * - Rate records of that version whose scope matches the code, the modifiers (as a set), the place
- *   of service, the provider type and the date: one is the rate; none is NO_RATE_FOR_CODE; more than
- *   one is AMBIGUOUS_RATE (CON-06), never a choice between them.
+ * - Rate records of that version whose scope matches the code (a record without codes covers every
+ *   code), the modifiers (as a set), the place of service, the provider type and the date: one is the
+ *   rate; none is NO_RATE_FOR_CODE; more than one is AMBIGUOUS_RATE (CON-06), never a choice between
+ *   them, a general term beside a code exhibit included.
  *
  * Records the database's invariants rule out (two mappings in force, two signed-off versions on one
  * date, an unverified record in a signed-off version, a mapping naming a version that was not loaded)
@@ -121,7 +122,7 @@ function normalized(values: readonly string[]): string[] {
 export function scopeMatches(terms: RateRecordTerms, line: AgreementLine): boolean {
   const { scope } = terms;
   const code = line.procedureCode.trim().toUpperCase();
-  if (!scope.codes.includes(code)) {
+  if (scope.codes !== undefined && !scope.codes.includes(code)) {
     return false;
   }
   if (scope.modifier_sets !== undefined) {

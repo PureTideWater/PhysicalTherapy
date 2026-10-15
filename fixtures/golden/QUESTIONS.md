@@ -7,8 +7,9 @@ choice is listed here with the plan's words that leave it open, what the workshe
 golden claims whose cents depend on it. Milestone 5 closes only after the specialist has answered each one and
 verified each worksheet; a changed answer changes the inputs or the worksheet, then `write`, then a reviewed diff.
 
-All reference values are SYNTHETIC (release 900001, and 900002 for 2025). Their percentages are deliberately not
-the real ones: assistant 77% (real 85%), sequestration 3% (real 2%), MPPR 40% (real 50%).
+All reference values are SYNTHETIC (release 900001; 900002 adds 2025; 900003 varies sequestration, the general
+reduction rate and the dispute windows). Their percentages are deliberately not the real ones: assistant 77% (real
+85%), sequestration 3% (real 2%), MPPR 40% (real 50%; 45% for the general rate in 900003).
 
 **The three that move the most cents:** Q21 (sequestration against observed allowed from AMT B6), Q13 (ties in
 the multiple procedure ranking) and Q18 (the assistant reduction applied after the multiple procedure reduction).
@@ -36,7 +37,9 @@ prices at 110%).
 place of service and date; more than one match is `AMBIGUOUS_RATE`". *Choice:* a `null` code list, modifier list or
 place list matches anything; a modifier set matches only when it equals the line's modifiers as a set (so `[GP]`
 does not match `GP 59`); a general term and a code-specific exhibit that both match are `AMBIGUOUS_RATE` (no
-precedence of the specific over the general). *Claims:* G40, G41, G42. *Alternatives:* subset matching of
+precedence of the specific over the general). The product now stores a general term as the golden lines state it
+(a rate record whose scope names no codes covers every code; ADR 0033), so the engine prices G40 from the same
+records. *Claims:* G40, G41, G42 and every claim with a `null` code list. *Alternatives:* subset matching of
 modifiers; the most specific term wins.
 
 **Q05. The conversion factor for Medicare Advantage non-contracted lines.** The rules reference: "contracts that
@@ -154,7 +157,7 @@ fee-schedule value (step 2), then secondary and reversed claims (step 5). A seco
 G46, G51. *Alternative:* claim-level reasons first.
 
 **Q25. Denied claims.** *Choice:* claim status 4 prices normally (expected allowed against an observed allowed of
-zero). Only the five statuses section 2 names (1, 2, 3, 4, 22) are accepted. *Claims:* G28.
+zero). *Claims:* G28. The other statuses an 835 can carry are Q31.
 
 **Q26. Fractional units.** "Units are taken as billed"; the 835 can carry decimal units. *Choice:* phase one prices
 whole units only and refuses a fraction, because the multiple procedure reduction has no rule for part of a unit.
@@ -170,7 +173,59 @@ adjustment, so the reduction cuts the practice-expense part at the contract's pe
 
 **Q29. Flags without a phase-one effect.** *Choice:* `apply_ncci` changes no amount until milestone 7; every golden line
 keeps its units at or below the SYNTHETIC MUE so that milestone 7 does not turn it into `MUE_EXCEEDED`. The MA terms'
-`timed_units_rule` is `MEDICARE_POOLED`, recorded only.
+`timed_units_rule` is `MEDICARE_POOLED`, recorded only; a record's `UNKNOWN` is Q32.
 
 **Q30. Contract-specific adjustments.** Section 11 step 4 ends with "contract-specific adjustments (a percentage or a
 cap the record defines)". *Choice:* no rate-record field defines one yet, so none is applied.
+
+## Added with the review of milestones 3 to 5
+
+**Q31. Claim statuses beyond the five PRD 2 names.** PRD 2 lists "1 processed as primary, 2 secondary, 3 tertiary,
+4 denied, 22 reversal of a prior payment, and others"; an 835 can also carry 19, 20, 21, 23 and 25. The rules
+reference gives `SECONDARY_PAYER` for "Claim status 2 or 3". *Choice:* 19 (read as processed as primary and
+forwarded to another payer) prices as a primary claim; 20 and 21 (processed as secondary or tertiary and forwarded)
+are `SECONDARY_PAYER`; 23 and 25 have no rule yet and stop for review as `ENGINE_ERROR` with the detail
+`claim_status_not_priced`, which does not page the operator, so no golden line holds them. *Claims:* G54, G55, G56.
+*For the specialist:* confirm each status's reading against the purchased implementation guide, and say what 23 and
+25 should be (`SECONDARY_PAYER`, `NO_AGREEMENT`, priced, or a reason the closed list lacks).
+
+**Q32. A timed-units rule of `UNKNOWN`.** PRD 20: "UNKNOWN (review, not price) until minutes are imported"; PRD 1 rule 1:
+an unknown term makes a line unpriced, never a guess; the reason `UNITS_RULE_UNKNOWN` ("Confirm with the contract or
+import minutes"). Commercial records default to `UNKNOWN`. *Choice:* a line whose rate record's rule is `UNKNOWN` stops
+at step 3 with `UNITS_RULE_UNKNOWN`, after its fee-schedule value (so `NO_PFS_VALUE` comes first) and before the
+multiple procedure reduction (so it is neither ranked nor reduced, Q14). No rule record says which codes are timed,
+and the plan forbids typing that list from memory, so every line under the record stops, untimed codes included.
+*Claims:* G57. *For the specialist:* whether untimed codes (the evaluations, for example) should price under `UNKNOWN`,
+and the source of the timed-code list if so.
+
+**Q33. Windows in months, and where a window is measured from.** *Choice:* a window in months ends on the same day
+that many months later, or on the last day of that month when it has no such day (2026-05-31 plus 4 months is
+2026-09-30); a record that names no start is measured from the remittance date; the deadline day itself is still
+open, and the day after it is `WINDOW_PASSED`. *Claims:* G58, G59, G60.
+
+**Q34. Which window decides a dispute.** PRD 11 step 8: "From the remittance date and the agreement's windows, compute
+the dispute deadline". *Choice:* a contract's `dispute_window_days` from the remittance date; when the contract is
+silent, the release's `commercial_default` first-level window (redetermination), else no window; a Medicare
+Advantage non-contracted line takes Original Medicare's redetermination window. The record is the one in force on
+the remittance date. *Claims:* G58 to G63. *For the specialist:* whether redetermination is the right first-level
+window for an MA non-contracted line and for a contract silent on disputes (ADR 0029 asked the same).
+
+**Q35. A reversal with negative units.** *Choice:* phase one refuses units that are not a whole number of at least one,
+so a reversal whose units are negative is `ENGINE_ERROR` before step 5 can call it `REVERSED_CLAIM` (the order PRD 11
+gives). No golden line has one. *For the specialist:* whether that is acceptable, or a reversal's units should be read
+as their absolute value.
+
+**Q36. "Unless the practice has marked the plan otherwise".** PRD 11 step 1 prices a Medicare Advantage
+non-contracted line as Original Medicare would "unless the practice has marked the plan otherwise". *Choice:* nothing
+can be marked yet; every such line takes Q05's terms. ADR 0033 defers the mark to milestone 7, with the pricing runs.
+*For the specialist:* what a practice may mark (the qualifying conversion factor, an adjustment off, a percentage),
+and on what evidence.
+
+**Q37. A ZIP that needs its ZIP+4 to name a locality.** The ZIP-to-locality file flags ZIPs that span localities.
+*Choice:* the engine stops such a line with `ENGINE_ERROR` (`locality_needs_zip_plus_four`) and records the flag in
+the trace; the settings carry no ZIP+4 and no per-site locality override yet. No golden line uses one. *For the
+specialist:* the override the practice settings should carry.
+
+**Q38. A bound on units.** *Choice:* more than 999 units on one line is malformed input (`ENGINE_ERROR`
+`units_above_limit`); it is never ranked. No golden line comes near it. *For the specialist:* whether a lower bound,
+or the MUE where `apply_ncci` is off, should apply instead (milestone 7).

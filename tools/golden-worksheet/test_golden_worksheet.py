@@ -111,10 +111,28 @@ class Validation(unittest.TestCase):
         self.refused(lambda case: self.line(case).update(charge_cents="60.00"), "integer cents written as a string")
         self.refused(lambda case: self.rate_record(case)["parameters"].update(percentage="1e2"), "decimal string")
 
-    def test_refuses_methods_and_rules_of_later_milestones(self):
+    def test_refuses_methods_of_later_milestones(self):
         self.refused(lambda case: self.rate_record(case).update(method="FIXED_SCHEDULE"), "arrives in milestone 7")
-        self.refused(lambda case: self.rate_record(case)["flags"].update(timed_units_rule="UNKNOWN"), "UNITS_RULE_UNKNOWN")
         self.refused(lambda case: self.rate_record(case)["parameters"].update(year_basis="LOCKED:25"), "does not match")
+        self.refused(lambda case: self.rate_record(case)["flags"].update(timed_units_rule="SOMETIMES"), "must be one of MEDICARE_POOLED")
+
+    def test_refuses_what_the_engine_stops_as_an_engine_error(self):
+        self.refused(lambda case: self.line(case).update(units="1000"), "more than 999 units")
+        for status in ("23", "25"):
+            self.refused(lambda case, status=status: case["inputs"]["claim"].update(claim_status_code=status), "no pricing rule yet")
+        self.refused(lambda case: case["inputs"]["claim"].update(claim_status_code="24"), "must be one of 1, 2, 3, 4, 19, 20, 21, 22")
+
+    def test_refuses_malformed_dates_and_windows(self):
+        def version(case):
+            return case["inputs"]["contract_versions"][0]
+        self.refused(lambda case: case["inputs"].update(as_of="2026-13-01"), "inputs.as_of: 2026-13-01 is not a calendar date")
+        self.refused(lambda case: case["inputs"]["claim"].update(remittance_date="soon"), "remittance_date: must be a date")
+        self.refused(lambda case: version(case)["windows"].update(dispute_window_days=0), "whole number of days from 1 to 3650")
+        self.refused(lambda case: version(case)["windows"].update(timely_filing_days="90"), "whole number of days")
+        self.refused(lambda case: version(case)["windows"].update(appeal_levels={}), "appeal_levels: must be a list")
+        self.refused(lambda case: version(case)["windows"].update(appeal_levels=[{"level": 2, "days": 30}]), "numbered 1, 2, 3 in order")
+        self.refused(lambda case: version(case)["windows"].update(appeal_levels=[{"level": 1, "days": 4000}]), "from 1 to 3650")
+        self.refused(lambda case: version(case)["windows"].pop("appeal_levels"), "missing appeal_levels")
 
     def test_refuses_a_reversed_claim_a_correction_supersedes(self):
         self.refused(lambda case: case["inputs"]["claim"].update(reversed=True, corrected=True), "a correction supersedes is not priced")
@@ -304,6 +322,12 @@ class BaseAmount(unittest.TestCase):
         self.assertEqual(outcome(golden("G43"))["unpriced_reason"], "NO_PFS_VALUE")
         self.assertEqual(outcome(golden("G15"), 1)["unpriced_reason"], "NO_PFS_VALUE")
 
+    def test_a_zip_that_needs_its_plus_four_is_an_engine_error_not_a_golden_line(self):
+        case = golden("G02")
+        case["inputs"]["practice_settings"]["zip"] = "00012"
+        with self.assertRaisesRegex(gw.InputError, "needs its ZIP\\+4"):
+            gw.price_case(case)
+
     def test_missing_locality_gpci_or_factor_is_an_engine_error_not_a_golden_line(self):
         case = golden("G02")
         line = gw.Line(case["inputs"]["claim"]["lines"][0])
@@ -411,11 +435,77 @@ class PatientShareAndClaims(unittest.TestCase):
         self.assertEqual(outcome(golden("G52"))["unpriced_reason"], "REVERSED_CLAIM")
         self.assertEqual(outcome(golden("G28"))["outcome"], "priced")
 
+    def test_forwarded_claims(self):
+        case = golden("G54")
+        self.assertEqual([outcome(case, n)["expected_allowed_cents"] for n in (1, 2)], ["4646", "2704"])
+        for status, reason in (("19", None), ("20", "SECONDARY_PAYER"), ("21", "SECONDARY_PAYER"), ("1", None)):
+            case["inputs"]["claim"]["claim_status_code"] = status
+            self.assertEqual(outcome(case).get("unpriced_reason"), reason, status)
+        self.assertEqual(outcome(golden("G55"), 2)["unpriced_reason"], "SECONDARY_PAYER")
+        self.assertEqual(outcome(golden("G56"))["unpriced_reason"], "SECONDARY_PAYER")
+
+    def test_a_timed_units_rule_of_unknown_stops_the_line_before_the_reduction(self):
+        case = golden("G57")
+        self.assertEqual([outcome(case, n).get("unpriced_reason") for n in (1, 2, 3)], ["UNITS_RULE_UNKNOWN", "UNITS_RULE_UNKNOWN", None])
+        self.assertEqual(outcome(case, 3)["adjustments"], [{"name": "mppr", "before_cents": "2970", "after_cents": "2970"}])
+        case["inputs"]["contract_versions"][0]["rate_records"][0]["flags"]["timed_units_rule"] = "MEDICARE_POOLED"
+        reduced = outcome(case, 1)["adjustments"][0]
+        self.assertEqual((reduced["name"], reduced["before_cents"]), ("mppr", "4646.4"))
+        self.assertLess(D(reduced["after_cents"]), D(reduced["before_cents"]))
+        _, worksheet = gw.price_case(golden("G57"))
+        self.assertTrue(any("timed-units rule UNKNOWN" in item for item in worksheet))
+
+    def test_variance_is_expected_less_observed(self):
+        case = golden("G58")
+        self.assertEqual([outcome(case, n)["variance_cents"] for n in (1, 2)], ["646", "-196"])
+        self.assertEqual(outcome(golden("G01"))["variance_cents"], "-1124")
+
     def test_rounding_comes_from_the_record_then_the_practice_then_the_plan(self):
         self.assertEqual(outcome(golden("G29"))["expected_allowed_cents"], "3073")
         self.assertEqual(outcome(golden("G33"))["rounding"], "HALF_EVEN_CENT")
         self.assertEqual(outcome(golden("G34"))["rounding"], "HALF_UP_CENT")
         self.assertEqual(outcome(golden("G35"))["expected_allowed_cents"], "2396")
+
+
+class Windows(unittest.TestCase):
+    def window(self, case, number=1):
+        return outcome(case, number)["window"]
+
+    def test_no_remittance_date_is_no_window(self):
+        self.assertEqual(self.window(golden("G02")), {"ends_on": None, "status": "NO_WINDOW"})
+
+    def test_a_contract_window_in_days_from_the_remittance_date(self):
+        self.assertEqual(self.window(golden("G58")), {"ends_on": "2026-10-15", "status": "OPEN"})
+        self.assertEqual(self.window(golden("G59"), 2), {"ends_on": "2026-09-19", "status": "WINDOW_PASSED"})
+        case = golden("G58")
+        case["inputs"]["as_of"] = "2026-10-16"
+        self.assertEqual(self.window(case), {"ends_on": "2026-10-15", "status": "WINDOW_PASSED"})
+
+    def test_passing_the_window_never_changes_the_amount(self):
+        for number in (1, 2):
+            open_line, passed = outcome(golden("G58"), number), outcome(golden("G59"), number)
+            self.assertEqual({k: v for k, v in open_line.items() if k not in ("terms", "window")}, {k: v for k, v in passed.items() if k not in ("terms", "window")})
+
+    def test_a_silent_contract_takes_the_release_default_or_none(self):
+        self.assertEqual(self.window(golden("G60")), {"ends_on": "2026-09-30", "status": "WINDOW_PASSED"})
+        self.assertEqual(self.window(golden("G61")), {"ends_on": None, "status": "NO_WINDOW"})
+        _, worksheet = gw.price_case(golden("G61"))
+        self.assertTrue(any("has no dispute_window record for commercial_default redetermination" in item for item in worksheet))
+
+    def test_medicare_advantage_takes_the_first_level_medicare_window(self):
+        self.assertEqual(self.window(golden("G62")), {"ends_on": "2026-10-20", "status": "OPEN"})
+        self.assertEqual(self.window(golden("G63")), {"ends_on": "2026-12-14", "status": "OPEN"})
+
+    def test_months_keep_the_day_or_take_the_last_of_the_month(self):
+        self.assertEqual(gw.add_months("2026-05-31", 4), "2026-09-30")
+        self.assertEqual(gw.add_months("2026-01-31", 1), "2026-02-28")
+        self.assertEqual(gw.add_months("2028-01-31", 1), "2028-02-29")
+        self.assertEqual(gw.add_months("2026-11-15", 3), "2027-02-15")
+        self.assertEqual(gw.add_days("2026-12-31", 1), "2027-01-01")
+
+    def test_the_variant_release_suspends_sequestration_and_falls_back_to_the_general_rate(self):
+        self.assertEqual(outcome(golden("G63"))["adjustments"][2], {"name": "sequestration", "before_cents": "3684.4", "after_cents": "3684.4"})
+        self.assertEqual(outcome(golden("G64"), 2)["adjustments"][0], {"name": "mppr", "before_cents": "3948", "after_cents": "2887.8"})
 
 
 class Files(unittest.TestCase):
@@ -508,7 +598,7 @@ class Files(unittest.TestCase):
     def test_checks_every_committed_file_by_default(self):
         status, out, _ = self.run_main("check", "--json")
         report = json.loads(out)
-        self.assertEqual((status, report["lines"], report["differences"]), (0, 100, []))
+        self.assertEqual((status, report["lines"], report["differences"]), (0, 119, []))
 
     def test_trims_blank_lines_at_both_ends(self):
         self.assertEqual(gw.trim(["", "a", "", "b", ""]), ["a", "", "b"])

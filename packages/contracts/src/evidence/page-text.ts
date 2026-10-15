@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { z } from 'zod';
+
 /**
  * A page's text as evidence compares it (PRD 9: evidence is "the quoted text, the hash of the page
  * image or text"). Extraction differs in whitespace from one tool to the next (line breaks, runs of
@@ -20,4 +22,19 @@ export function pageTextHash(text: string): string {
 export function quoteOnPage(quote: string, pageText: string): boolean {
   const wanted = normalizePageText(quote);
   return wanted !== '' && normalizePageText(pageText).includes(wanted);
+}
+
+/** How intake stores a document's page texts, sealed beside the original (docs/adr/0033). */
+export const STORED_PAGE_TEXT_FORMAT = 'tp-page-text/1';
+
+const storedPageText = z.strictObject({ format: z.literal(STORED_PAGE_TEXT_FORMAT), pages: z.array(z.string()) });
+
+/** A document's page texts as intake stores them. */
+export function serializePageText(pages: readonly string[]): Uint8Array {
+  return new TextEncoder().encode(`${JSON.stringify({ format: STORED_PAGE_TEXT_FORMAT, pages })}\n`);
+}
+
+/** The page texts intake stored; throws a ZodError (or a SyntaxError) for anything else. */
+export function parsePageText(bytes: Uint8Array): string[] {
+  return storedPageText.parse(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes))).pages;
 }

@@ -10,6 +10,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G46: status 2 (processed as secondary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-OON/PLAN-2.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g46: no_agreement, 2026-01-01 to open.
 - Contract versions: none.
 
@@ -27,6 +28,6 @@ Step 1, the agreement.
 
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | unpriced `NO_AGREEMENT` | | | | |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | unpriced `NO_AGREEMENT` | | | | | | |

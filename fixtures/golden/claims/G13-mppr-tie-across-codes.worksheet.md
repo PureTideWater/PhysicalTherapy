@@ -10,8 +10,9 @@ Every reference value comes from SYNTHETIC release 900002: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G13: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-1/PLAN-1.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-g13: contract, contract version cv-g13-1, 2026-01-01 to open.
-- Contract version cv-g13-1 (contract contract-g13, version 1, signed_off, 2026-01-01 to open):
+- Contract version cv-g13-1 (contract contract-g13, version 1, signed_off, 2026-01-01 to open; windows: timely filing not stated, dispute not stated, appeal levels none stated):
   - Rate record rr-g13-1: PERCENT_OF_MEDICARE 100%, LOCKED:2025, locality practice, non_qualifying_apm; scope any code; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr on, apply_assistant_reduction off, apply_sequestration off, apply_ncci off; timed_units_rule PER_CODE; rounding not stated.
 
 | Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |
@@ -80,7 +81,7 @@ Lines with apply_mppr on and a price so far: line 1, line 2. Units are ranked by
 | 1 | 1 | 97112 | 1 | 1216.747092 | kept whole | 0 |
 | 2 | 2 | 97110 | 1 | 1216.747092 | PE reduced by 40% | 1216.747092 x 40% = 486.6988368 |
 
-## Steps 4 to 6, per line
+## Steps 4 to 8, per line
 
 ### Line 1
 
@@ -95,6 +96,10 @@ Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); re
 
 Step 6, rounding once: 1956.326925 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **1956 cents ($19.56)**; the unrounded 1956.326925 is kept beside it.
 
+Step 7, variance: expected allowed 1956 - observed allowed 1900 cents (amt_b6) = 56 cents: an underpayment.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ### Line 2
 
 Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
@@ -108,9 +113,13 @@ Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); re
 
 Step 6, rounding once: 1438.0522852 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **1438 cents ($14.38)**; the unrounded 1438.0522852 is kept beside it.
 
+Step 7, variance: expected allowed 1438 - observed allowed 1300 cents (amt_b6) = 138 cents: an underpayment.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | priced | 1956 | 1956.326925 | HALF_UP_CENT | 0 |
-| 2 | priced | 1438 | 1438.0522852 | HALF_UP_CENT | 0 |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 1956 | 1956.326925 | HALF_UP_CENT | 0 | 56 | NO_WINDOW |
+| 2 | priced | 1438 | 1438.0522852 | HALF_UP_CENT | 0 | 138 | NO_WINDOW |

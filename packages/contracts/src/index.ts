@@ -72,10 +72,18 @@ export {
 } from './resolver';
 export { type CoverageLine, type MappedLine, PricingRefusedError, type WaitingOnMapping, assertPricingAllowed, unmappedPlanIds, waitingOnMapping } from './coverage';
 export { type CalendarInput, type DerivedCalendarEvent, deriveCalendarEvents } from './calendar';
-export { normalizePageText, pageTextHash, quoteOnPage } from './evidence/page-text';
-export { DocumentUnreadableError, looksLikePdf, pdfPageTexts } from './evidence/pdf';
+export { STORED_PAGE_TEXT_FORMAT, normalizePageText, pageTextHash, parsePageText, quoteOnPage, serializePageText } from './evidence/page-text';
 export { type ScannedPageReader, ScanReadError, TextractPageReader, type TextractPageReaderOptions, type TextractStaging } from './evidence/scan';
-export { type DocumentSource, EVIDENCE_PROBLEMS, type EvidenceProblem, type EvidenceResolution, EvidenceResolver, type EvidenceResolverOptions } from './evidence/resolve';
+export {
+  type DocumentSource,
+  EVIDENCE_PROBLEMS,
+  type EvidenceProblem,
+  type EvidenceResolution,
+  EvidenceResolver,
+  type EvidenceResolverOptions,
+  type PageSource,
+  type Pages,
+} from './evidence/resolve';
 export {
   ContractDataError,
   type PlanWaitingOnMapping,

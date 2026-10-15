@@ -15,10 +15,15 @@ import type { ClaimFacts, LineFacts, PracticeSettings, PricingInput } from './ty
 
 const REPOSITORY = path.resolve(import.meta.dirname, '../../..');
 
-/** The SYNTHETIC releases: 900001 holds 2026; 900002 is 900001 plus a 2025 fee-schedule year. */
+/**
+ * The SYNTHETIC releases: 900001 holds 2026; 900002 is 900001 plus a 2025 fee-schedule year; 900003 is
+ * 900001 with sequestration suspended from 2026-07-01, a 45% general reduction that 97112 falls back
+ * to, and a commercial default dispute window of 4 months from the date of service.
+ */
 export const SYNTHETIC_RELEASES = {
   900001: 'fixtures/synthetic/rules/release-synth-900001',
   900002: 'fixtures/synthetic/rules/release-synth-900002',
+  900003: 'fixtures/synthetic/rules/release-synth-900003',
 } as const;
 
 /** Reads a release directory (relative to the repository) and refuses one whose manifest does not verify. */

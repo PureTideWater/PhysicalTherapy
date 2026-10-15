@@ -5,7 +5,7 @@
   "assertion": "Parses; pyx12 reads the same segments, amounts and balances",
   "synthetic": true,
   "completesIn": 2,
-  "assertedBy": [],
+  "assertedBy": ["packages/edi835/src/fixtures.test.ts"],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

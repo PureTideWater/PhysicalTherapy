@@ -156,7 +156,7 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
             <Card key={record.id} data-record={record.id} aria-label={`Rate record ${String(index + 1)}`} role="region">
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2 text-base">
-                  Record {index + 1}: {record.codes.join(', ')}
+                  Record {index + 1}: {record.codes === null ? 'every code' : record.codes.join(', ')}
                   {record.verifiedBy === null ? <Badge variant="secondary">Not verified</Badge> : <Badge>Verified</Badge>}
                   {record.proposedBy === 'model' ? <Badge variant="outline">Proposed by the model</Badge> : null}
                 </CardTitle>

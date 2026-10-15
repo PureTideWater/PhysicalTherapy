@@ -1,0 +1,39 @@
+[
+  {
+    "record_type": "denial_category",
+    "key": {
+      "group_code": "CO",
+      "carc": "9001",
+      "rarc": null
+    },
+    "value": {
+      "category": "timely_filing"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC therapy rules for tests (fixtures/synthetic/cms/synthetic-rules.md)",
+      "url": null,
+      "path": "fixtures/synthetic/cms/synthetic-rules.md",
+      "retrieved": "2026-10-15",
+      "sha256": "c5f7544336aee203acd3e0cbd5561705cc93974223a510d2331a9749e70f41af",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 16",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC denial category: group CO with reason 9001 and any remark code is a timely filing denial."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  }
+]

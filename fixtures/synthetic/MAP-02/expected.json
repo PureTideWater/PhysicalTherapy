@@ -5,7 +5,12 @@
   "assertion": "Earlier lines `NO_MAPPING`; later priced",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/contracts/src/resolver.test.ts",
+    "packages/contracts/src/coverage.test.ts",
+    "packages/contracts/src/contracts.db.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

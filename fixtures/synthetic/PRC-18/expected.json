@@ -5,7 +5,7 @@
   "assertion": "Holds",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": ["packages/pricing/src/properties.test.ts"],
   "codeListRelease": null,
   "noFileReason": "A property test over generated line facts and flag settings (fast-check); no fixture.",
   "files": [],

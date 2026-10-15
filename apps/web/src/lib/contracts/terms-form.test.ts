@@ -62,8 +62,15 @@ describe('a rate record from the specialist’s form', () => {
     const unsupported = termsFromForm({ method: 'UNSUPPORTED', codes: '97110' });
     expect(unsupported.ok && unsupported.terms.parameters).toEqual({});
     for (const result of [fixed, percent, perVisit, unsupported]) {
-      expect(result.ok && parseRateTerms(result.terms, true).scope.codes[0]).toBe('97110');
+      expect(result.ok && parseRateTerms(result.terms, true).scope.codes?.[0]).toBe('97110');
     }
+  });
+
+  it('takes the word any alone as a term for every code, and refuses it beside named codes', () => {
+    const general = termsFromForm({ method: 'UNSUPPORTED', codes: ' Any ' });
+    expect(general.ok && general.terms.scope).toEqual({});
+    expect(general.ok && parseRateTerms(general.terms, true).scope.codes).toBeUndefined();
+    expect(termsFromForm({ method: 'UNSUPPORTED', codes: 'any, 97110' })).toEqual({ ok: false, issues: [{ field: 'codes', message: 'the codes the term covers, or the word any alone for every code' }] });
   });
 
   it('names the field of every problem: an amount with three places or below zero, a date, an unknown method', () => {

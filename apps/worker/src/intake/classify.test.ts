@@ -39,11 +39,14 @@ describe('dispose', () => {
       expect(dispose(kind, { type: 'empty' }, entry)).toEqual({ action: 'hold', status: 'unreadable' });
     }
     expect(dispose('x12_835', { type: 'x12_malformed' }, top)).toEqual({ action: 'hold', status: 'unreadable' });
+    // A legacy .xls is no exhibit: its pages cannot be cited (ADR 0033); an .xlsx is.
+    expect(dispose('exhibit', { type: 'ole2' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('exhibit', { type: 'zip' }, { ...top, spreadsheetZip: true })).toEqual({ action: 'store', status: 'stored' });
   });
 
   it('gives every kind and content a disposition, and accepts for each kind exactly its contents', () => {
     const contents: readonly Sniffed[] = [{ type: 'x12' }, { type: 'pdf' }, { type: 'ole2' }, { type: 'csv' }, { type: 'unknown' }];
-    const classes = { x12: 'x12', pdf: 'pdf', ole2: 'spreadsheet', csv: 'csv', unknown: 'unknown' } as const;
+    const classes = { x12: 'x12', pdf: 'pdf', ole2: 'legacy_spreadsheet', csv: 'csv', unknown: 'unknown' } as const;
     for (const kind of DOCUMENT_KINDS as readonly DocumentKind[]) {
       for (const content of contents) {
         const accepted = ACCEPTED_CONTENT[kind].has(classes[content.type as keyof typeof classes]);

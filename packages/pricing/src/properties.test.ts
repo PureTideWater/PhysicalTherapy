@@ -28,8 +28,9 @@ import type { AgreementInput, LineFacts, LinePricing, PricedLine, PricingInput }
  * SYNTHETIC release 900002 (2025 and 2026 fee schedules): expected allowed is non-negative and finite;
  * doubling units doubles the base (PRC-17, percent of Medicare; fixed schedules arrive in milestone 7);
  * turning a flag off never lowers the amount (PRC-18); the one rounding moves the amount by less than
- * a cent; the trace recomputes; the engine is deterministic; and every phase-one reason comes from at
- * least one fixture.
+ * a cent; the trace recomputes; the engine is deterministic; every phase-one reason comes from at
+ * least one fixture; and the dispute deadline is never before the date it is measured from, while
+ * passing it never changes the amount.
  */
 const release = syntheticRelease(900002);
 const CODES = ['97110', '97112', '97116', '97140', '97530', '97161', '97026', '97035', 'G0283', '97750'] as const;
@@ -183,6 +184,79 @@ describe('properties of the engine (PRD 11)', () => {
   });
 });
 
+describe('properties of the dispute window (PRD 11 step 8)', () => {
+  const releases = { 900001: syntheticRelease(900001), 900003: syntheticRelease(900003) } as const;
+  const generatedWindowClaim = fc.record({
+    release: fc.constantFrom(900001 as const, 900003 as const),
+    /** Null: Medicare Advantage non-contracted; else a contract, with its own dispute days or silent. */
+    contract: fc.option(fc.record({ disputeDays: fc.option(fc.integer({ min: 1, max: 3650 }), { nil: null }) }), { nil: null }),
+    serviceDay: fc.integer({ min: 0, max: 360 }),
+    remittanceAfter: fc.option(fc.integer({ min: 0, max: 400 }), { nil: null }),
+    asOfAfter: fc.integer({ min: -30, max: 4000 }),
+    laterAsOf: fc.integer({ min: 1, max: 4000 }),
+  });
+
+  function windowInput(claim: typeof generatedWindowClaim extends fc.Arbitrary<infer T> ? T : never, asOfShift = 0): PricingInput {
+    const serviceDate = addDays('2026-01-01', claim.serviceDay);
+    const agreement =
+      claim.contract === null
+        ? maAgreement()
+        : contractAgreement({ terms: percentTerms({ percentage: '110', codes: ['97110'] }), windows: { timely_filing_days: null, dispute_window_days: claim.contract.disputeDays, appeal_levels: [] } });
+    const remittanceDate = claim.remittanceAfter === null ? null : addDays(serviceDate, claim.remittanceAfter);
+    return pricingInput(releases[claim.release], [lineFacts({ serviceDate, agreement })], {
+      claim: { remittanceDate },
+      asOf: addDays(remittanceDate ?? serviceDate, claim.asOfAfter + asOfShift),
+    });
+  }
+
+  it('ends no earlier than the date it is measured from, and is WINDOW_PASSED exactly when the triage date is after it', () => {
+    let windows = 0;
+    fc.assert(
+      fc.property(generatedWindowClaim, (claim) => {
+        const input = windowInput(claim);
+        for (const line of priced(price(input))) {
+          const window = line.trace.steps.window;
+          expect(window).not.toBeNull();
+          if (line.window.endsOn === null) {
+            expect(line.window.status).toBe('NO_WINDOW');
+            continue;
+          }
+          windows += 1;
+          const from = window?.measured_from === 'date_of_service' ? input.claim.lines[0]?.serviceDate : input.claim.remittanceDate;
+          expect(window?.from_date).toBe(from);
+          expect(line.window.endsOn >= (from ?? '9999-12-31')).toBe(true);
+          expect(line.window.status).toBe(input.asOf > line.window.endsOn ? 'WINDOW_PASSED' : 'OPEN');
+        }
+      }),
+      { numRuns: 300 },
+    );
+    expect(windows).toBeGreaterThan(100);
+  });
+
+  it('never changes the amount when the window passes: the same claim judged later prices the same', () => {
+    fc.assert(
+      fc.property(generatedWindowClaim, (claim) => {
+        const now = price(windowInput(claim));
+        const later = price(windowInput(claim, claim.laterAsOf));
+        expect(later.map((line) => line.outcome)).toEqual(now.map((line) => line.outcome));
+        now.forEach((line, index) => {
+          const other = later[index];
+          if (line.outcome === 'priced' && other?.outcome === 'priced') {
+            expect([other.expectedAllowedCents, other.expectedUnroundedCents.toString(), other.varianceCents, json(other.adjustments)]).toEqual([
+              line.expectedAllowedCents,
+              line.expectedUnroundedCents.toString(),
+              line.varianceCents,
+              json(line.adjustments),
+            ]);
+            expect(other.window.endsOn).toBe(line.window.endsOn);
+          }
+        });
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
 describe('the reasons phase one produces', () => {
   const base = readRuleRelease(SYNTHETIC_RELEASES[900001]);
   const noLocality = releaseVariant(base, (records) => records.filter((record) => record.record_type !== 'locality_map'));
@@ -195,6 +269,7 @@ describe('the reasons phase one produces', () => {
     ['DATE_OUTSIDE_VERSIONS', pricingInput(release, [lineFacts({ agreement: { outcome: 'DATE_OUTSIDE_VERSIONS', mapping: contract } })])],
     ['NO_PFS_VALUE', pricingInput(release, [lineFacts({ procedureCode: '97750' })])],
     ['UNSUPPORTED_METHOD', pricingInput(release, [lineFacts({ agreement: contractAgreement({ terms: { ...percentTerms(), method: 'UNSUPPORTED', parameters: {} } }) })])],
+    ['UNITS_RULE_UNKNOWN', pricingInput(release, [lineFacts({ agreement: contractAgreement({ terms: percentTerms({ flags: { timed_units_rule: 'UNKNOWN' } }) }) })])],
     ['SECONDARY_PAYER', pricingInput(release, [lineFacts()], { claim: { claimStatusCode: '2' } })],
     ['REVERSED_CLAIM', pricingInput(release, [lineFacts()], { claim: { claimStatusCode: '22' } })],
     ['ENGINE_ERROR', pricingInput(noLocality, [lineFacts()])],

@@ -10,6 +10,7 @@ Every reference value comes from SYNTHETIC release 900001: invented for tests, n
 - Practice settings: ZIP 00011; default rounding HALF_UP_CENT.
 - Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.
 - Claim SYNTH-CLAIM-G16: status 1 (processed as primary); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-MA-PLAN-1.
+- Remittance date: not known; dispute windows are judged on the triage date 2026-10-15.
 - Mapping map-ma-1: ma_noncontracted, 2026-01-01 to open.
 - Contract versions: none.
 
@@ -72,7 +73,7 @@ Lines with apply_mppr on and a price so far: line 1, line 2. Units are ranked by
 | 2 | 2 | 97035 | 2 | 665 | PE reduced by 40% | 665 x 40% = 266 |
 | 3 | 1 | 97026 | 1 | 494 | PE reduced by 40% | 494 x 40% = 197.6 |
 
-## Steps 4 to 6, per line
+## Steps 4 to 8, per line
 
 ### Line 1
 
@@ -88,6 +89,10 @@ Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); re
 
 Step 6, rounding once: 479.568 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **480 cents ($4.80)**; the unrounded 479.568 is kept beside it.
 
+Step 7, variance: expected allowed 480 - observed allowed 450 cents (amt_b6) = 30 cents: an underpayment.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ### Line 2
 
 Step 4, flagged adjustments in order (multiple procedure reduction, assistant reduction, sequestration).
@@ -102,9 +107,13 @@ Step 5, patient share: 380 cents ($3.80) from the line's PR adjustments (PR-2 38
 
 Step 6, rounding once: 1751.58 cents under HALF_UP_CENT (the practice default; halves move away from zero) = **1752 cents ($17.52)**; the unrounded 1751.58 is kept beside it.
 
+Step 7, variance: expected allowed 1752 - observed allowed 1900 cents (amt_b6) = -148 cents: an overpayment, recorded and never pursued.
+
+Step 8, dispute window: the remittance date is not known, so no deadline can be worked out: NO_WINDOW on 2026-10-15.
+
 ## Results
 
-| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) |
-| --- | --- | --- | --- | --- | --- |
-| 1 | priced | 480 | 479.568 | HALF_UP_CENT | 0 |
-| 2 | priced | 1752 | 1751.58 | HALF_UP_CENT | 380 |
+| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | priced | 480 | 479.568 | HALF_UP_CENT | 0 | 30 | NO_WINDOW |
+| 2 | priced | 1752 | 1751.58 | HALF_UP_CENT | 380 | -148 | NO_WINDOW |

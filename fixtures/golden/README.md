@@ -6,12 +6,14 @@ only. Every reference value they use says SYNTHETIC in its source metadata and i
 The pricing oracle (PRD sections 17 and 18): service lines whose expected allowed amount is computed outside
 the engine, recorded with the worksheet that produced it, before the engine code for that branch exists.
 
-**Status: not yet verified by a reimbursement specialist.** The one hundred lines here were computed by an
-independent worksheet, `tools/golden-worksheet/golden_worksheet.py`: Python, standard library only, exact decimal
-arithmetic, no code shared with `packages/pricing`. That is the most rigorous check available without the
-specialist, and it is labelled as exactly that: every file says `"specialist_verified": false`. The specialist
-reviews each worksheet, and every judgement call in [QUESTIONS.md](QUESTIONS.md), before milestone 5 can close
-("one hundred hand-computed golden lines match to the cent").
+**Status: not yet verified by a reimbursement specialist, so milestone 5 is not complete.** The lines here (the one
+hundred milestone 5 names, and those added since for its later branches) were computed by an independent worksheet,
+`tools/golden-worksheet/golden_worksheet.py`: Python, standard library only, exact decimal arithmetic, no code shared
+with `packages/pricing`. That is the most rigorous check available without the specialist, and it is labelled as
+exactly that: every file says `"specialist_verified": false`. The engine and the worksheet agreeing shows only that
+the two readings of the plan are consistent, not that either is right. The specialist reviews each worksheet, and
+every judgement call in [QUESTIONS.md](QUESTIONS.md), before milestone 5 can close ("one hundred hand-computed golden
+lines match to the cent"); a changed answer goes through `/golden-diff`, never a regeneration.
 
 ## Layout
 
@@ -19,12 +21,13 @@ reviews each worksheet, and every judgement call in [QUESTIONS.md](QUESTIONS.md)
 | --- | --- |
 | `claims/<id>-<slug>.json` | One golden claim: its inputs, the expected result of every line, the worksheet, the provenance |
 | `claims/<id>-<slug>.worksheet.md` | The same worksheet as Markdown, for review |
-| `sources/` | SYNTHETIC 2025 fee-schedule files that release 900002 parses ([sources/README.md](sources/README.md)) |
+| `sources/` | SYNTHETIC 2025 fee-schedule files that release 900002 parses, and the variant rules release 900003 quotes ([sources/README.md](sources/README.md)) |
 | `QUESTIONS.md` | Every pricing judgement the plan leaves to the specialist, the choice the worksheet made, and the cases that depend on it |
 | `.report/` | Written by `pnpm test:golden --report`; ignored by git |
 
 Golden lines are claims, not single lines, because the multiple procedure reduction ranks every unit of a day.
-53 claims hold the 100 lines.
+64 claims hold 119 lines: G01 to G53 (the first 100) and G54 to G64 (claim statuses 19, 20 and 21, a timed-units
+rule of `UNKNOWN`, the dispute windows and the variance, a suspended sequestration and the general reduction rate).
 
 ## Commands
 
@@ -41,7 +44,12 @@ results and worksheet together) is reviewed like code, with the specialist. It r
 `specialist_verified` is true. `check` and the golden test never write. The `/golden-diff` skill reads `.report`
 and explains each changed cent; it never edits a golden line.
 
-## The golden claim format (`tp-golden-claim/1`)
+## The golden claim format (`tp-golden-claim/2`)
+
+Format 2 adds what steps 7 and 8 need: the triage date (`inputs.as_of`), the remittance date
+(`inputs.claim.remittance_date`), each version's `windows`, and each priced line's `variance_cents` and `window`. The
+first 53 claims took `as_of` 2026-10-15, no remittance date and silent windows, and every expected value they held
+in format 1 is unchanged.
 
 One JSON object per file, keys in this order. Every object is strict: no key may be missing or unknown. Amounts
 are integer cents as strings (`"2112"`); rates, percentages, units and unrounded amounts are decimal strings
@@ -50,7 +58,7 @@ are integer cents as strings (`"2112"`); rates, percentages, units and unrounded
 
 ```jsonc
 {
-  "format": "tp-golden-claim/1",
+  "format": "tp-golden-claim/2",
   "id": "G01",                         // G and two or three digits; unique
   "title": "...",
   "covers": ["PRC-01", "MAP-05"],      // test-matrix IDs, unpriced reasons or topics the claim exercises
@@ -67,17 +75,19 @@ are integer cents as strings (`"2112"`); rates, percentages, units and unrounded
 | Field | Meaning | Engine input (PRD 11) |
 | --- | --- | --- |
 | `release.number`, `release.dir`, `release.manifest_sha256` | The rule release the line prices under: its number, its directory, and the SHA-256 of its `MANIFEST.json` bytes. The worksheet refuses a release whose manifest hash, number or any file hash differs | Rule release |
+| `as_of` | The triage date the dispute window is judged on | The run's triage date |
 | `practice_settings.zip` | The practice's billing ZIP; the locality is the `locality_map` record for it in force on the service date | Practice settings: locality |
 | `practice_settings.default_rounding` | `HALF_UP_CENT`, `HALF_EVEN_CENT`, `TRUNCATE`, or `null` (then `HALF_UP_CENT`) | Practice settings: default rounding |
 | `place_of_service_settings` | `{ "<POS>": "facility" \| "non_facility" }` for every place of service the claim uses. A **SYNTHETIC test assumption** (the plan names no source for the split; QUESTIONS Q08): `11` non-facility, `22` facility | Which practice-expense value applies |
 | `claim.claim_id` | A synthetic pseudonymous identifier (`SYNTH-...`) | |
-| `claim.claim_status_code` | CLP02 as PRD section 2 names it: `1` primary, `2` secondary, `3` tertiary, `4` denied, `22` reversal | Line facts: claim status |
+| `claim.claim_status_code` | CLP02: `1` primary, `2` secondary, `3` tertiary, `4` denied, `22` reversal (PRD section 2), and `19`, `20`, `21` (processed as primary, secondary or tertiary and forwarded; QUESTIONS Q31). `23` and `25` are refused: the engine stops them for review | Line facts: claim status |
 | `claim.reversed` | A later reversal claim reverses this claim | Claim context |
 | `claim.corrected` | A corrected claim supersedes this claim. `reversed` and `corrected` both true is refused (QUESTIONS Q20) | Claim context |
+| `claim.remittance_date` | The remittance's date (BPR16), or `null` when unknown (then no window) | Claim context |
 | `claim.payer_plan_key` | The payer and plan identifiers (`SYNTH-...`) | Line facts: payer and plan |
 | `claim.lines[]` | The service lines, below | Line facts |
 | `mappings[]` | `{mapping_id, kind, contract_version_id, effective_from, effective_to}`; `kind` is `contract`, `no_agreement`, `ma_noncontracted`, `government` or `other`; `contract_version_id` is set exactly when the kind is `contract`. Mappings never overlap; an empty list means the plan was never mapped | Agreement: the mapping in force |
-| `contract_versions[]` | `{contract_version_id, contract_id, version_no, status, effective_from, effective_to, rate_records}`; `status` is `draft`, `proposed`, `approved`, `signed_off` or `superseded`. Signed-off versions of one contract never overlap | Agreement: contract versions |
+| `contract_versions[]` | `{contract_version_id, contract_id, version_no, status, effective_from, effective_to, windows, rate_records}`; `status` is `draft`, `proposed`, `approved`, `signed_off` or `superseded`. Signed-off versions of one contract never overlap. `windows` is `{timely_filing_days, dispute_window_days, appeal_levels}`, `null` (or `[]`) where the contract is silent | Agreement: contract versions |
 | `contract_versions[].rate_records[]` | Below | Signed-off rate records |
 
 Each line of `claim.lines[]`:
@@ -87,7 +97,7 @@ Each line of `claim.lines[]`:
 | `line_no` | Positive whole number, unique in the claim |
 | `procedure_code` | Five-character HCPCS or CPT code |
 | `modifiers` | Up to four distinct two-character modifiers, in billed order |
-| `units` | Decimal string; phase one prices whole units of at least 1 and refuses fractions (QUESTIONS Q26) |
+| `units` | Decimal string; phase one prices whole units from 1 to 999 and refuses fractions (QUESTIONS Q26, Q38) |
 | `service_date` | The line's date of service |
 | `place_of_service` | Two digits; must be in `place_of_service_settings` |
 | `charge_cents` | The line charge (negative on a reversal) |
@@ -99,10 +109,10 @@ Each rate record:
 | Field | Meaning |
 | --- | --- |
 | `rate_record_id` | Unique in the claim file |
-| `scope` | `{codes, modifier_sets, places_of_service, effective_from, effective_to}`. `codes`: `null` (any code) or a list. `modifier_sets`: `null` (any modifiers) or a list of modifier lists, each compared with the line's modifiers as a set (order ignored, exact match). `places_of_service`: `null` (any) or a list. The window is the record's own |
+| `scope` | `{codes, modifier_sets, places_of_service, effective_from, effective_to}`. `codes`: `null` (any code: a general term, which the product stores as a scope with no codes) or a list. `modifier_sets`: `null` (any modifiers) or a list of modifier lists, each compared with the line's modifiers as a set (order ignored, exact match). `places_of_service`: `null` (any) or a list. The window is the record's own |
 | `method` | `PERCENT_OF_MEDICARE` or `UNSUPPORTED`. `FIXED_SCHEDULE`, `LESSER_OF` and `PER_VISIT` arrive in milestone 7 and are refused until their golden lines exist |
 | `parameters` | For `PERCENT_OF_MEDICARE`: `{percentage, year_basis, locality_basis, conversion_factor}`: `percentage` above 0 (`"110"` is 110%), `year_basis` `CURRENT` or `LOCKED:<year>`, `locality_basis` `practice`, `conversion_factor` `non_qualifying_apm` or `qualifying_apm` (the release's `conversion_factor` keys). For `UNSUPPORTED`: `{}` |
-| `flags` | `{apply_mppr, apply_assistant_reduction, apply_sequestration, apply_ncci, timed_units_rule, rounding}`: four booleans; `timed_units_rule` `MEDICARE_POOLED` or `PER_CODE` (`UNKNOWN` is refused until `UNITS_RULE_UNKNOWN` has golden lines); `rounding` a rule or `null` (the practice default) |
+| `flags` | `{apply_mppr, apply_assistant_reduction, apply_sequestration, apply_ncci, timed_units_rule, rounding}`: four booleans; `timed_units_rule` `MEDICARE_POOLED`, `PER_CODE` or `UNKNOWN` (`UNITS_RULE_UNKNOWN`, QUESTIONS Q32); `rounding` a rule or `null` (the practice default) |
 
 ### `expected.lines[]`
 
@@ -128,7 +138,9 @@ A priced line:
     { "name": "mppr", "before_cents": "4224", "after_cents": "3144.8" },
     { "name": "assistant_reduction", "before_cents": "3144.8", "after_cents": "3144.8" },
     { "name": "sequestration", "before_cents": "3144.8", "after_cents": "3075.656" }
-  ]
+  ],
+  "variance_cents": "-1124",
+  "window": { "ends_on": null, "status": "NO_WINDOW" }
 }
 ```
 
@@ -141,6 +153,8 @@ A priced line:
 | `terms` | What priced the line: the mapping, and for a contract the version and the rate record (both `null` for MA non-contracted) |
 | `base_cents` | After step 3 (the per-unit amount at the record's percentage, times units) |
 | `adjustments` | Every adjustment whose flag is on, in the order applied (`mppr`, `assistant_reduction`, `sequestration`), with its amount before and after; an adjustment that changes nothing still appears. A flag that is off leaves no entry |
+| `variance_cents` | Expected allowed less observed allowed, whole cents; negative is an overpayment, recorded and never pursued |
+| `window` | `{ends_on, status}`: the dispute deadline and `OPEN`, `WINDOW_PASSED` (validated, not actionable; the amount is unchanged) or `NO_WINDOW` |
 
 ## The algorithm the worksheet follows (PRD section 11, in its order)
 
@@ -156,7 +170,8 @@ A priced line:
    `NO_PFS_VALUE` too), the locality's `pfs_gpci` and the named `conversion_factor`; per unit, (work RVU x work
    GPCI + PE RVU x PE GPCI + MP RVU x MP GPCI) x factor x percentage, kept as work, practice-expense and
    malpractice parts in cents.
-3. **Units** as billed.
+3. **Units** as billed. A rate record whose `timed_units_rule` is `UNKNOWN` stops the line with `UNITS_RULE_UNKNOWN`
+   here: it is neither ranked nor reduced.
 4. **Flagged adjustments, in order.** Multiple procedure reduction, per service date: the units of the lines
    priced so far whose terms have `apply_mppr` on and whose code has an `mppr_rate` record in force are ranked by
    their practice-expense part, highest first (ties: lower line number, then earlier unit); the first stays whole
@@ -164,17 +179,26 @@ A priced line:
    `practice_expense` record when the code's share is null). Assistant reduction: with CQ or CO on the line, the
    `assistant_modifier` percentage of the amount after the reduction. Sequestration: the `sequestration`
    percentage of the payer's share, the amount less the patient share (floored at zero), taken off the amount.
-5. **Patient share** reported. Claim status `2` or `3` is `SECONDARY_PAYER`; status `22`, or `reversed`, is
-   `REVERSED_CLAIM`.
+5. **Patient share** reported. Claim status `2`, `3`, `20` or `21` is `SECONDARY_PAYER`; status `22`, or `reversed`,
+   is `REVERSED_CLAIM`; `1`, `4` and `19` price.
 6. **Round once** under the rule, keeping the unrounded value.
+7. **Variance**: expected allowed less observed allowed.
+8. **Dispute window**, from the remittance date: the contract's `dispute_window_days`; a contract silent on disputes
+   takes the release's `commercial_default` redetermination window, an MA non-contracted line the `medicare` one (the
+   record in force on the remittance date; measured from the date of service when it says so; months to the same day,
+   or the month's last day). No remittance date, or no record, is `NO_WINDOW`; a deadline before `as_of` is
+   `WINDOW_PASSED` (QUESTIONS Q33, Q34).
 
 Percentages come from the release. In the SYNTHETIC releases they are deliberately not the real ones (assistant
 77%, sequestration 3%, MPPR 40%; `fixtures/synthetic/cms/synthetic-rules.md`), so an engine that hard-codes 85%,
-2% or 50% fails the golden lines.
+2% or 50% fails the golden lines. Release 900003 (`fixtures/golden/sources/synthetic-rules-900003.md`) suspends
+sequestration from 2026-07-01, sets the general reduction at 45% for 97112, which its MPPR file lists without a share,
+and adds a commercial default dispute window of 4 months from the date of service.
 
 A release that lacks a record the line needs (a locality, a GPCI or a conversion factor for the basis year, an
-assistant or sequestration record on the service date) is not a golden line: the worksheet refuses it, as the
-engine would raise `ENGINE_ERROR`.
+assistant or sequestration record on the service date), a ZIP that needs its ZIP+4 to name a locality, more than 999
+units, and claim status 23 or 25 are not golden lines: the worksheet refuses them, as the engine raises
+`ENGINE_ERROR`.
 
 ## Consuming the format in milestone 5
 
@@ -182,8 +206,8 @@ The engine's golden test reads the same files: it loads the release from `inputs
 `manifest_sha256`), builds its line facts, agreement, rate records and practice settings from `inputs`, prices
 every line of the claim together (the reduction is per day), and compares with `expected.lines` field by field:
 the outcome and reason, `expected_allowed_cents` exactly, `expected_unrounded_cents` as a number, `rounding`,
-`patient_share_cents`, `terms`, `base_cents` and each adjustment's before and after against its trace. It adds
-its differences to `fixtures/golden/.report` beside the worksheet's.
+`patient_share_cents`, `terms`, `base_cents`, each adjustment's before and after against its trace,
+`variance_cents` and `window`. It adds its differences to `fixtures/golden/.report` beside the worksheet's.
 
 Two things the engine must handle that this format makes visible:
 

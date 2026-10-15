@@ -5,7 +5,11 @@
   "assertion": "Unreduced sum times 1.10",
   "synthetic": true,
   "completesIn": 5,
-  "assertedBy": [],
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/pricing/src/engine.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [
