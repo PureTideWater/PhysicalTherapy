@@ -49,7 +49,7 @@ export default async function CasesPage(props: Props) {
           </CardHeader>
           <CardContent>
             {runs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No complete pricing run yet.</p>
+              <p className="text-sm text-muted-foreground">No pricing run in effect yet: a complete run, or a re-run once it is accepted.</p>
             ) : (
               <ActionForm action={triageRunFormAction} submit="Triage the run" className="flex max-w-xl flex-col gap-3">
                 <input type="hidden" name="requestKey" value={randomUUID()} />

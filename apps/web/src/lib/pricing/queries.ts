@@ -1,6 +1,6 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import type { UnpricedReason } from '@tp/pricing';
-import { type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from '@tp/worker/pricing';
+import { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT, type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from '@tp/worker/pricing';
 
 /**
  * The Pricing runs, line trace, Claims and lines and Coverage reads of pricing (PRD 7; PRD 5, J7; PRD
@@ -18,17 +18,8 @@ import { type RerunReason, type RunCoverage, parseCoverage, rerunReasons } from 
 
 type Scope = PracticeScope<ScopeClient>;
 
-/** A run that can be in effect: complete, and a first run or an accepted re-run. */
-export const ELIGIBLE_RUN = (alias: string) => `(${alias}.status = 'complete' AND (${alias}.rerun_of_id IS NULL OR ${alias}.accepted_at IS NOT NULL))`;
-
-/** When an eligible run took effect: an accepted re-run when it was accepted, a first run when it completed. */
-export const IN_EFFECT_SINCE = (alias: string) => `coalesce(${alias}.accepted_at, ${alias}.completed_at)`;
-
-/** The run in effect for its period: eligible, and no eligible run of the same period took effect after it. */
-export const RUN_IN_EFFECT = (alias: string) => `(${ELIGIBLE_RUN(alias)} AND NOT EXISTS (
-    SELECT 1 FROM pricing_run later
-     WHERE later.practice_id = ${alias}.practice_id AND later.period_from = ${alias}.period_from AND later.period_to = ${alias}.period_to
-       AND ${ELIGIBLE_RUN('later')} AND (${IN_EFFECT_SINCE('later')}, later.id) > (${IN_EFFECT_SINCE(alias)}, ${alias}.id)))`;
+// The rule of which run is in effect is the worker's (triage and the audit report read it too).
+export { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT };
 
 export const RUNS_PER_PAGE = 20;
 export const RUN_LINES_PER_PAGE = 50;

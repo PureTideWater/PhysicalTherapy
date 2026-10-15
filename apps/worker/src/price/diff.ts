@@ -7,9 +7,11 @@ import { type CauseTrace, type LineCause, type TraceRecordRef, differingRecords,
  * The diff of two complete runs of a practice (PRD 7, Pricing runs: "compare two runs; re-run under a
  * new release with a diff"; PRD 9, step 4: "a re-run of any earlier run under the new release produces
  * a diff of changed lines before anyone accepts it"; J17; test matrix PRC-19, MAP-03; docs/adr/0037):
- * exactly the lines whose expected allowed, unpriced reason or adjustments applied differ, with both
- * sides and the causes read from the two traces (causes.ts), and the lines one run priced and the other
- * did not. Lines are matched by service line. The counts are SQL over the stored lines (the database's
+ * exactly the lines whose expected allowed, unpriced reason, adjustments applied, dispute window (its
+ * last day, which decides whether the line is actionable; PRD 11 step 8), review flags or terms (the
+ * mapping, contract version and rate record that priced it) differ, each with what differs, both sides
+ * and the causes read from the two traces (causes.ts), and the lines one run priced and the other did
+ * not. Lines are matched by service line. The counts are SQL over the stored lines (the database's
  * pricing_run_changed_lines() counts the same predicate); each listed line's two priced lines are
  * audited reads. Neither run changes.
  */
@@ -19,6 +21,10 @@ export type DiffKind = (typeof DIFF_KINDS)[number];
 export type DiffFilter = 'all' | DiffKind;
 
 export const DIFF_LINES_PER_PAGE = 50;
+
+/** What can differ between two runs' results for one line: the predicate of pricing_run_changed_lines(). */
+export const DIFF_CHANGES = ['expected_allowed', 'unpriced_reason', 'adjustments', 'window', 'review_flags', 'terms'] as const;
+export type DiffChange = (typeof DIFF_CHANGES)[number];
 
 /** The two runs could not be compared: one is not the practice's, or not complete. */
 export class RunComparisonError extends Error {
@@ -46,13 +52,16 @@ export interface DiffRun {
 export interface DiffSummary {
   /** Lines both runs priced. */
   readonly compared: number;
-  /** Of those, the ones whose expected allowed, reason or adjustments differ. */
+  /** Of those, the ones whose expected allowed, reason, adjustments, window, review flags or terms differ. */
   readonly changed: number;
   readonly onlyBefore: number;
   readonly onlyAfter: number;
   /** Changed lines under another mapping, and under another contract version or rate record. */
   readonly mappingChanged: number;
   readonly versionChanged: number;
+  /** Changed lines whose dispute window ends on another day (or has none in one run), and whose review flags differ. */
+  readonly windowChanged: number;
+  readonly reviewFlagsChanged: number;
   /** Expected allowed over the lines both runs priced, before and after: integer cents as text. */
   readonly beforeExpectedCents: string;
   readonly afterExpectedCents: string;
@@ -66,9 +75,18 @@ export interface DiffSide {
   readonly varianceCents: string | null;
   readonly unpricedReason: string | null;
   readonly adjustments: readonly { readonly name: string; readonly before_cents: string; readonly after_cents: string }[];
+  /** The last day a dispute can be filed; null when no window is known (or the line is unpriced). */
+  readonly windowEndsOn: string | null;
+  /** The review flags the trace reports with the amount; none on an unpriced line. */
+  readonly reviewFlags: readonly DiffReviewFlag[];
   readonly mappingId: string | null;
   readonly contractVersionId: string | null;
   readonly rateRecordId: string | null;
+}
+
+export interface DiffReviewFlag {
+  readonly flag: string;
+  readonly column1_line_no: number;
 }
 
 export interface DiffLine {
@@ -79,6 +97,8 @@ export interface DiffLine {
   readonly units: string | null;
   readonly before: DiffSide | null;
   readonly after: DiffSide | null;
+  /** What differs, in DIFF_CHANGES order, for a changed line; empty for a line one run did not price. */
+  readonly changes: readonly DiffChange[];
   /** From the traces, for changed lines; empty for a line one run did not price. */
   readonly causes: readonly LineCause[];
 }
@@ -104,11 +124,22 @@ export interface CompareRunsInput {
   readonly perPage?: number;
 }
 
+/** The review flags a stored line's trace reports with its amount; none on an unpriced line. */
+const FLAGS_OF = (alias: string) => `coalesce(${alias}.trace #> '{outcome,review_flags}', '[]'::jsonb)`;
+
+const WINDOW_DIFFERS = 'a.window_ends_on IS DISTINCT FROM b.window_ends_on';
+const FLAGS_DIFFER = `${FLAGS_OF('a')} IS DISTINCT FROM ${FLAGS_OF('b')}`;
+
 /** The lines two runs price differently: the predicate of pricing_run_changed_lines(). */
 const DIFFERS = `(a.id IS NULL OR b.id IS NULL
       OR a.expected_allowed_cents IS DISTINCT FROM b.expected_allowed_cents
       OR a.unpriced_reason IS DISTINCT FROM b.unpriced_reason
-      OR a.adjustments_applied IS DISTINCT FROM b.adjustments_applied)`;
+      OR a.adjustments_applied IS DISTINCT FROM b.adjustments_applied
+      OR ${WINDOW_DIFFERS}
+      OR ${FLAGS_DIFFER}
+      OR a.mapping_id IS DISTINCT FROM b.mapping_id
+      OR a.contract_version_id IS DISTINCT FROM b.contract_version_id
+      OR a.rate_record_id IS DISTINCT FROM b.rate_record_id)`;
 
 const SIDES = `a AS (SELECT * FROM priced_line WHERE practice_id = $1 AND pricing_run_id = $2),
      b AS (SELECT * FROM priced_line WHERE practice_id = $1 AND pricing_run_id = $3)`;
@@ -169,6 +200,8 @@ interface SummaryRow {
   readonly only_after: number;
   readonly mapping_changed: number;
   readonly version_changed: number;
+  readonly window_changed: number;
+  readonly review_flags_changed: number;
   readonly before_expected_cents: string;
   readonly after_expected_cents: string;
 }
@@ -183,6 +216,8 @@ async function summaryOf(client: ScopeClient, practiceId: string, before: string
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS} AND a.mapping_id IS DISTINCT FROM b.mapping_id)::int AS mapping_changed,
             count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${DIFFERS}
                                AND (a.contract_version_id IS DISTINCT FROM b.contract_version_id OR a.rate_record_id IS DISTINCT FROM b.rate_record_id))::int AS version_changed,
+            count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${WINDOW_DIFFERS})::int AS window_changed,
+            count(*) FILTER (WHERE a.id IS NOT NULL AND b.id IS NOT NULL AND ${FLAGS_DIFFER})::int AS review_flags_changed,
             coalesce(sum(a.expected_allowed_cents) FILTER (WHERE b.id IS NOT NULL), 0)::text AS before_expected_cents,
             coalesce(sum(b.expected_allowed_cents) FILTER (WHERE a.id IS NOT NULL), 0)::text AS after_expected_cents
        FROM a FULL JOIN b ON b.service_line_id = a.service_line_id`,
@@ -196,6 +231,8 @@ async function summaryOf(client: ScopeClient, practiceId: string, before: string
     onlyAfter: row.only_after,
     mappingChanged: row.mapping_changed,
     versionChanged: row.version_changed,
+    windowChanged: row.window_changed,
+    reviewFlagsChanged: row.review_flags_changed,
     beforeExpectedCents: row.before_expected_cents,
     afterExpectedCents: row.after_expected_cents,
   };
@@ -216,6 +253,8 @@ interface SideRow {
   readonly variance_cents: string | null;
   readonly unpriced_reason: string | null;
   readonly adjustments_applied: DiffSide['adjustments'];
+  readonly window_ends_on: string | null;
+  readonly review_flags: DiffSide['reviewFlags'];
   readonly mapping_id: string | null;
   readonly contract_version_id: string | null;
   readonly rate_record_id: string | null;
@@ -232,10 +271,25 @@ function sideOf(row: SideRow | undefined): DiffSide | null {
         varianceCents: row.variance_cents,
         unpricedReason: row.unpriced_reason,
         adjustments: row.adjustments_applied,
+        windowEndsOn: row.window_ends_on,
+        reviewFlags: row.review_flags,
         mappingId: row.mapping_id,
         contractVersionId: row.contract_version_id,
         rateRecordId: row.rate_record_id,
       };
+}
+
+/** What differs between two runs' results for a line both priced, in DIFF_CHANGES order (the same tests as DIFFERS). */
+export function sideChanges(before: DiffSide, after: DiffSide): DiffChange[] {
+  const differs: Readonly<Record<DiffChange, boolean>> = {
+    expected_allowed: before.expectedAllowedCents !== after.expectedAllowedCents,
+    unpriced_reason: before.unpricedReason !== after.unpricedReason,
+    adjustments: canonicalJson(before.adjustments) !== canonicalJson(after.adjustments),
+    window: before.windowEndsOn !== after.windowEndsOn,
+    review_flags: canonicalJson(before.reviewFlags) !== canonicalJson(after.reviewFlags),
+    terms: before.mappingId !== after.mappingId || before.contractVersionId !== after.contractVersionId || before.rateRecordId !== after.rateRecordId,
+  };
+  return DIFF_CHANGES.filter((change) => differs[change]);
 }
 
 /** Whether two stored records of a rule hold the same value and window, from rule_record. */
@@ -299,7 +353,8 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
            )
            SELECT s.position::text AS position, s.kind, s.side, p.id, p.practice_id, p.service_line_id, l.procedure_code, l.modifiers, trim_scale(l.units)::text AS units,
                   p.method, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason,
-                  p.adjustments_applied, p.mapping_id, p.contract_version_id, p.rate_record_id, p.trace
+                  p.adjustments_applied, p.window_ends_on::text AS window_ends_on, ${FLAGS_OF('p')} AS review_flags,
+                  p.mapping_id, p.contract_version_id, p.rate_record_id, p.trace
              FROM sides s JOIN priced_line p ON p.id = s.priced_line_id JOIN service_line l ON l.id = p.service_line_id
             ORDER BY s.position, s.side DESC`,
           [input.practiceId, before.id, after.id, filter],
@@ -322,14 +377,17 @@ export async function compareRuns(scope: PracticeScope<ScopeClient>, input: Comp
   const sameRule = (await sameRuleLookup(scope.client, pairs))(before.releaseNo, after.releaseNo);
   const lines = entries.map(([serviceLineId, entry]): DiffLine => {
     const any = (entry.before ?? entry.after) as SideRow;
+    const first = sideOf(entry.before);
+    const second = sideOf(entry.after);
     return {
       serviceLineId,
       kind: entry.kind,
       procedureCode: any.procedure_code,
       modifiers: (any.modifiers ?? []).filter((modifier) => modifier !== ''),
       units: any.units,
-      before: sideOf(entry.before),
-      after: sideOf(entry.after),
+      before: first,
+      after: second,
+      changes: first !== null && second !== null ? sideChanges(first, second) : [],
       causes: entry.before !== undefined && entry.after !== undefined ? lineCauses(entry.before.trace, entry.after.trace, sameRule) : [],
     };
   });

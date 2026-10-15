@@ -62,11 +62,16 @@ multiple procedure reduction means for an amount that has no practice-expense pa
   the line's). It reads format 2 only: no format-1 trace was ever stored outside a test, since the pricing runs that
   store traces arrive in this milestone. From here on a trace format change must keep reading the formats before it.
 - **Properties.** PRC-17 over fixed and percent terms (doubling can only add an `MUE_EXCEEDED`); PRC-18 line by line
-  for the three Medicare adjustments and claim-wide for `apply_ncci`, which changes no amount but can stop a line that
-  then holds neither the day's whole unit nor the visit; a per-visit claim's total does not depend on the order or the
-  numbers of its lines; a lesser-of base never exceeds the schedule or the charge. A property test found the one case
-  where PRC-18 fails claim-wide (Q44): turning NCCI on can move a visit to a line whose patient share leaves less to
-  sequester. The reading stays, as the golden line G146 states it, and goes to the specialist with its alternative.
+  for the three Medicare adjustments and claim-wide for every flag and method; a per-visit claim's total does not depend
+  on the order or the numbers of its lines; a lesser-of base never exceeds the schedule or the charge. `apply_ncci`
+  changes no amount but can stop a line that then holds neither the day's whole unit nor the visit, so it is compared
+  claim-wide only: line by line it cannot hold under these readings (G167, Q42: another line of the day then holds the
+  whole unit; G146, Q44: the next line carries the visit). A property test found the one case where PRC-18 fails
+  claim-wide (Q44): turning NCCI on can move a visit to a line whose patient share leaves less to sequester, or which
+  lacks the first line's CQ or CO. The property leaves out exactly the claims whose visit carrier moved (every other
+  per-visit claim under NCCI is compared), and an example test states the departure. The reading stays, as the golden
+  line G146 states it, and goes to the specialist with its alternative: changing it changes G146 line 2's expected
+  amount, a golden line only the specialist changes.
 
 ## Alternatives considered
 

@@ -25,7 +25,8 @@ a changed answer goes through `/golden-diff`, never a regeneration.
 | `claims/<id>-<slug>.worksheet.md` | The same worksheet as Markdown, for review |
 | `sources/` | SYNTHETIC 2025 fee-schedule files that release 900002 parses, and the variant rules release 900003 quotes ([sources/README.md](sources/README.md)) |
 | `QUESTIONS.md` | Every pricing judgement the plan leaves to the specialist, the choice the worksheet made, and the cases that depend on it |
-| `.report/` | Written by `pnpm test:golden --report`; ignored by git |
+| `diffs/<id>-<slug>.json` | A golden diff: a change to what existing golden lines expect, line by line with its cause, pending the specialist's approval until they give it (below) |
+| `.report/` | Written by `pnpm test:golden --report` (`pending.md` lists the golden diffs); ignored by git |
 
 Golden lines are claims, not single lines, because the multiple procedure reduction ranks every unit of a day and a
 per-visit amount is paid once per claim and date. 150 claims hold 326 lines: G01 to G53 (the first 100), G54 to G64
@@ -82,6 +83,22 @@ rate record's `parameters.contract_adjustment`, the `contract_adjustment` entry 
 line's `review_flags`. The 64 claims of format 2 took `contract_adjustment: null` on every record and were rewritten by
 `write`; a script compared all 119 lines field by field and every value they held is unchanged. Their worksheets now
 describe the NCCI edits, and eight of their lines gained an `NCCI_PTP` review flag (QUESTIONS Q41); no amount moved.
+Those eight flags are a change to what existing golden lines expect, which is the specialist's to approve: they are
+golden diff D001 (`diffs/D001-phase-one-ncci-ptp-review-flags.json`), pending the specialist's approval.
+
+## Golden diffs (`tp-golden-diff/1`)
+
+A change to what an existing golden line expects is recorded as a golden diff before anyone relies on it: one JSON
+object per diff, with its `id` (D and three digits), `title`, `status` (`pending_specialist_approval` or `approved`),
+`approval` (`null` while pending; `{by, on}` once the specialist approves it, a human step), the `baseline` (the commit,
+the golden format and the claims, `{from, to}`, as they stood before the change), the commit the change was made in
+(`changed_in`), the `question` it belongs to, whether any amount changed (`amounts_changed`), its `cause`, and each changed
+line: `claim`, `line_no`, `field`, `before` (`null` where the baseline's format had no such field, so nothing was
+compared), `after` (what the claim now expects), the rule `record` behind it and an `explanation`. The golden test
+checks that every recorded `after` is what the claim holds, that a claim is not verified while a diff of it is pending,
+and that every review flag on a claim of D001's baseline (G01 to G64, format 2, which compared none) is recorded; `pnpm
+test:golden --report` writes them to `.report/pending.{md,json}` for `/golden-diff`. The comparison of a pending line
+stays on, so the engine cannot drift from it while it waits.
 
 One JSON object per file, keys in this order. Every object is strict: no key may be missing or unknown. Amounts
 are integer cents as strings (`"2112"`); rates, percentages, units and unrounded amounts are decimal strings

@@ -261,7 +261,9 @@ SYNTHETIC file's header reads "0=not allowed 1=allowed 9=not applicable"; G125, 
 the patient's other claims of the day (as Q15). The flag is reported on the priced line and in its trace; the amount is
 never changed. *Claims:* G102 to G104, G111, G120, G124, G125, G136, G142, G146, G148, G149, G157, G161 to G165, G167 to G169, G184.
 Eight phase-one lines gained the flag when the edits arrived (their amounts are unchanged): G01 line 3, G03 line 3,
-G04 line 1, G14 line 3, G16 line 1, G19 lines 2 and 3, G20 line 3. *For the specialist:* the list of X modifiers, which
+G04 line 1, G14 line 3, G16 line 1, G19 lines 2 and 3, G20 line 3. Changing what those lines expect is the
+specialist's to approve: they are golden diff D001 (`fixtures/golden/diffs/D001-phase-one-ncci-ptp-review-flags.json`),
+pending the specialist's approval. *For the specialist:* approve or correct D001; the list of X modifiers, which
 line the modifier must be on, what indicator 9 means here, and whether a flag on a priced line should keep it from
 becoming actionable.
 
@@ -295,7 +297,11 @@ overpaid others (G141). A consequence a property test found: because the MUE mov
 the first line's CQ), the one case where PRC-18 ("turning a flag off never lowers the amount") does not hold claim-wide;
 it holds line by line for every other method. *Alternative:* the first included line carries the visit whatever its
 outcome, so a line stopped for its MUE takes the visit's amount into review with it; PRC-18 then holds everywhere, and
-G146 line 2 would expect zero. *For the specialist:* which reading, and whether the variance should be judged per visit.
+G146 line 2 would expect zero. Until the specialist rules, the test matrix's "Holds" for PRC-18 is not met for this one
+case: `packages/pricing/src/properties.test.ts` compares every claim's total but those whose visit carrier NCCI moved,
+and an example test states the departure (a one-cent visit, sequestration on: 1 cent with NCCI on, 0.97 off). Neither
+reading is applied without the specialist, since the alternative changes G146's expected line 2. *For the specialist:*
+which reading, and whether the variance should be judged per visit.
 
 **Q45. Contract-specific adjustments.** PRD 11 step 4: "contract-specific adjustments (a percentage or a cap the
 record defines)", after sequestration. *Choices:* a rate record defines at most one, in its parameters

@@ -15,6 +15,8 @@ import { repositoryRoot } from '../content-files';
  */
 const WORKSHEET = 'tools/golden-worksheet/golden_worksheet.py';
 const CLAIMS = 'fixtures/golden/claims';
+/** Golden diffs: changes to what existing golden lines expect, each explained and awaiting (or given) the specialist's approval. */
+const DIFFS = 'fixtures/golden/diffs';
 const COMPUTED_BY = 'independent worksheet tools/golden-worksheet';
 
 /** The unpriced reasons a golden line can hold: every reason of the closed list but ENGINE_ERROR, which is never a golden line. */
@@ -100,6 +102,55 @@ interface GoldenClaim {
   readonly provenance: { readonly computed_by: string; readonly specialist_verified: boolean };
 }
 
+/** One golden diff (tp-golden-diff/1, fixtures/golden/README.md). */
+interface GoldenDiff {
+  readonly format: string;
+  readonly id: string;
+  readonly title: string;
+  readonly status: 'pending_specialist_approval' | 'approved';
+  /** The specialist's approval, a human step: who and when. Null while pending. */
+  readonly approval: { readonly by: string; readonly on: string } | null;
+  readonly baseline: { readonly commit: string; readonly format: string; readonly claims: { readonly from: string; readonly to: string }; readonly note: string };
+  readonly changed_in: string;
+  readonly question: string;
+  readonly amounts_changed: boolean;
+  readonly cause: string;
+  readonly lines: readonly {
+    readonly claim: string;
+    readonly line_no: number;
+    readonly field: 'review_flags';
+    readonly before: unknown;
+    readonly after: unknown;
+    readonly record: { readonly release: number; readonly record_type: string; readonly key: Readonly<Record<string, string>>; readonly modifier_indicator: string };
+    readonly explanation: string;
+  }[];
+}
+
+function readDiffs(): GoldenDiff[] {
+  return readdirSync(path.join(repositoryRoot, DIFFS))
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => JSON.parse(readFileSync(path.join(repositoryRoot, DIFFS, name), 'utf8')) as GoldenDiff);
+}
+
+const claimNumber = (id: string) => Number.parseInt(id.slice(1), 10);
+
+/** The golden diffs as the golden-diff skill reads them, beside the worksheet's report. */
+function writePendingReport(directory: string, diffs: readonly GoldenDiff[]): void {
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, 'pending.json'), `${JSON.stringify({ comparison: 'golden diffs: changes to existing golden lines and their approval', diffs }, null, 2)}\n`);
+  const body = ['# Golden diffs: changes to what existing golden lines expect', '', 'A golden line changes only with the specialist. Each diff below is explained; a pending one awaits their approval.', ''];
+  for (const diff of diffs) {
+    body.push(`## ${diff.id}: ${diff.title} (${diff.status === 'approved' ? `approved by ${diff.approval?.by ?? ''} on ${diff.approval?.on ?? ''}` : 'pending the specialist'})`, '', diff.cause, '');
+    body.push('| Claim | Line | Field | Before | After | Record | Why |', '| --- | --- | --- | --- | --- | --- | --- |');
+    for (const line of diff.lines) {
+      body.push(`| ${line.claim} | ${String(line.line_no)} | ${line.field} | ${line.before === null ? `not compared (${diff.baseline.format})` : cell(line.before)} | ${cell(line.after)} | ${line.record.record_type} ${cell(line.record.key)} (release ${String(line.record.release)}) | ${line.explanation} |`);
+    }
+    body.push('');
+  }
+  writeFileSync(path.join(directory, 'pending.md'), body.join('\n'));
+}
+
 function runWorksheetCheck(): CheckReport {
   const result = spawnSync('python3', ['-I', WORKSHEET, 'check', '--json'], { cwd: repositoryRoot, encoding: 'utf8' });
   if (result.error !== undefined) {
@@ -152,6 +203,44 @@ describe('golden lines', () => {
     }
     expect(report.files).toBe(claims.length);
     expect(report.differences).toEqual([]);
+  });
+
+  it('record every review flag an earlier golden line gained as a golden diff awaiting the specialist, as the claim now holds it', () => {
+    const diffs = readDiffs();
+    const reportDir = process.env.TP_GOLDEN_REPORT;
+    if (reportDir !== undefined && reportDir !== '') {
+      writePendingReport(reportDir, diffs);
+    }
+    const byId = new Map(claims.map((claim) => [claim.id, claim]));
+    expect(diffs.map((diff) => diff.id)).toEqual(['D001']);
+    for (const diff of diffs) {
+      expect(diff.format, diff.id).toBe('tp-golden-diff/1');
+      // Approval is the specialist's, a human step: none is recorded without a name and a date.
+      expect(diff.status === 'approved' ? diff.approval !== null && diff.approval.by !== '' && /^\d{4}-\d{2}-\d{2}$/.test(diff.approval.on) : diff.approval === null, diff.id).toBe(true);
+      expect(['pending_specialist_approval', 'approved']).toContain(diff.status);
+      for (const line of diff.lines) {
+        const claim = byId.get(line.claim);
+        const where = `${diff.id} ${line.claim} line ${String(line.line_no)}`;
+        expect(claim, where).toBeDefined();
+        expect(claimNumber(line.claim) >= claimNumber(diff.baseline.claims.from) && claimNumber(line.claim) <= claimNumber(diff.baseline.claims.to), where).toBe(true);
+        // The recorded change is what the claim now expects: the record and the golden line agree.
+        expect(claim?.expected.lines.find((expected) => expected.line_no === line.line_no)?.[line.field], where).toEqual(line.after);
+        // A claim is not verified while a change to it awaits the specialist.
+        if (diff.status === 'pending_specialist_approval') {
+          expect(claim?.provenance.specialist_verified, where).toBe(false);
+        }
+      }
+    }
+    // Every review flag on a line of the claims format 2 held (which compared none) is recorded in a diff.
+    const [phaseOne] = diffs;
+    const inBaseline = claims.filter((claim) => phaseOne !== undefined && claimNumber(claim.id) >= claimNumber(phaseOne.baseline.claims.from) && claimNumber(claim.id) <= claimNumber(phaseOne.baseline.claims.to));
+    expect(inBaseline).toHaveLength(64);
+    const flagged = inBaseline.flatMap((claim) => claim.expected.lines.filter((line) => (line.review_flags ?? []).length > 0).map((line) => `${claim.id}:${String(line.line_no)}`));
+    const recorded = diffs.flatMap((diff) => diff.lines.map((line) => `${line.claim}:${String(line.line_no)}`));
+    expect(flagged.sort()).toEqual([...recorded].sort());
+    expect(recorded).toHaveLength(8);
+    // D001 waits for the specialist; no amount of its lines moved.
+    expect(phaseOne).toMatchObject({ id: 'D001', status: 'pending_specialist_approval', amounts_changed: false, question: 'Q41' });
   });
 
   it('hold only claim files, each with its worksheet beside it', () => {

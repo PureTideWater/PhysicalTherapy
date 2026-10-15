@@ -18,7 +18,10 @@ import type { PdfRenderer } from './pdf';
  * sealed with the practice's key (written once, under keys of their own for this attempt) and records
  * the report ready with its numbers, the files' keys and their SHA-256. A failed attempt leaves the
  * report queued and the next starts over; the third failure marks it failed. A report already
- * generated is left as it is (JOB-01).
+ * generated is left as it is (JOB-01). The run must still be the run in effect for its period (a
+ * re-run accepted since the request replaces it, docs/adr/0037): otherwise the report is marked failed,
+ * run_not_in_effect, at once, since no attempt can change that, and a new report is requested of the
+ * run in effect. The database refuses a request, and a ready report, of any other run.
  */
 
 export interface ReportServices {
@@ -31,6 +34,8 @@ export type ReportOutcome =
   | { readonly outcome: 'ready'; readonly pdfSha256: string; readonly csvSha256: string }
   | { readonly outcome: 'already_finished'; readonly status: string }
   | { readonly outcome: 'not_complete' }
+  /** The run is no longer the run in effect for its period: the report is failed, run_not_in_effect. */
+  | { readonly outcome: 'not_in_effect' }
   | { readonly outcome: 'missing' };
 
 export interface ReportOptions {
@@ -53,6 +58,10 @@ export async function generateAuditReport(context: TriageJobContext, services: R
       return { outcome: 'already_finished', status: report.status };
     }
     const triaged = await triageInScope(scope, practiceId, report.pricing_run_id, context.jobId, asOf);
+    if (triaged.outcome === 'not_in_effect') {
+      await scope.client.query("UPDATE audit_report SET status = 'failed', failure_code = 'run_not_in_effect' WHERE id = $1 AND practice_id = $2 AND status = 'queued'", [auditReportId, practiceId]);
+      return { outcome: 'not_in_effect' };
+    }
     if (triaged.outcome !== 'triaged') {
       return { outcome: triaged.outcome === 'missing' ? 'missing' : 'not_complete' };
     }
@@ -80,12 +89,15 @@ async function failReport(context: TriageJobContext, practiceId: string, auditRe
   );
 }
 
+/** The error code a report not generated is logged with, by outcome. */
+const REPORT_REFUSALS = { missing: 'AUDIT_REPORT_NOT_FOUND', not_complete: 'AUDIT_REPORT_RUN_NOT_COMPLETE', not_in_effect: 'AUDIT_REPORT_RUN_NOT_IN_EFFECT' } as const;
+
 export function auditReportHandler(services: ReportServices, options: ReportOptions = {}): JobHandler<'audit_report'> {
   return async (payload, context) => {
     try {
       const outcome = await generateAuditReport(context, services, payload.practice_id, payload.audit_report_id, options);
-      if (outcome.outcome === 'missing' || outcome.outcome === 'not_complete') {
-        context.logger.warn('audit report not generated', { audit_report_id: payload.audit_report_id, error_code: outcome.outcome === 'missing' ? 'AUDIT_REPORT_NOT_FOUND' : 'AUDIT_REPORT_RUN_NOT_COMPLETE' });
+      if (outcome.outcome === 'missing' || outcome.outcome === 'not_complete' || outcome.outcome === 'not_in_effect') {
+        context.logger.warn('audit report not generated', { audit_report_id: payload.audit_report_id, error_code: REPORT_REFUSALS[outcome.outcome] });
       }
     } catch (error) {
       if (context.lastAttempt) {

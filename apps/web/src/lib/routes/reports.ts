@@ -7,7 +7,7 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
 import type { Services } from '../server/services';
 import { type Attestation, type DownloadRecord, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
-import { type RunChoice, completeRuns, isCompleteRun } from '../triage/queries';
+import { RUN_NOT_IN_EFFECT, type RunChoice, isRunInEffect, runsInEffect } from '../triage/queries';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -62,7 +62,7 @@ export const reportsPage = practiceRoute({
       practiceId,
       reports: await listReports(scope, practiceId, request.requestId),
       history: await downloads(scope, practiceId, null, request.requestId),
-      runs: canGenerate ? await completeRuns(scope, practiceId) : [],
+      runs: canGenerate ? await runsInEffect(scope, practiceId) : [],
       canGenerate,
       canExport: rolesPermit(access.roles, 'phi.export'),
       canReview: rolesPermit(access.roles, 'audit_finding.validate'),
@@ -71,7 +71,11 @@ export const reportsPage = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
 
-/** Requests an audit report of a complete run: recorded queued in the requester's name, and the report job queued. */
+/**
+ * Requests an audit report of the run in effect for its period (never a re-run nobody has accepted, nor a
+ * run since replaced; the database refuses them too): recorded queued in the requester's name, and the
+ * report job queued.
+ */
 export const generateReportAction = practiceRoute({
   id: 'practice.reports.generate',
   kind: 'action',
@@ -82,8 +86,8 @@ export const generateReportAction = practiceRoute({
   input: z.object({ runId: opaqueId }),
   audit: { action: 'audit_report_requested', objectType: 'audit_report' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
-    if (!(await isCompleteRun(scope, practiceId, input.runId))) {
-      throw new InputError([{ field: 'runId', message: 'a complete pricing run of this practice' }]);
+    if (!(await isRunInEffect(scope, practiceId, input.runId))) {
+      throw new InputError([{ field: 'runId', message: RUN_NOT_IN_EFFECT }]);
     }
     const id = randomUUID();
     await scope.client.query('INSERT INTO audit_report (id, practice_id, pricing_run_id, requested_by) VALUES ($1, $2, $3, app_actor_id())', [id, practiceId, input.runId]);

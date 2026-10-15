@@ -146,6 +146,8 @@ function inputOf(claim: GeneratedClaim, options: InputOptions = {}): PricingInpu
 }
 
 const priced = (results: readonly LinePricing[]) => results.filter((result): result is PricedLine => result.outcome === 'priced');
+/** The lines that carry a per-visit amount (a visit's carrier), by line number. */
+const visitCarriers = (results: readonly LinePricing[]) => priced(results).flatMap((line) => (line.trace.steps.per_visit?.carrier_line_no === line.lineNo ? [line.lineNo] : []));
 const json = (value: unknown) => JSON.stringify(value, (_key, item: unknown) => (typeof item === 'bigint' ? `${item.toString()}n` : item));
 
 describe('properties of the engine (PRD 11)', () => {
@@ -189,7 +191,9 @@ describe('properties of the engine (PRD 11)', () => {
     expect(doubled).toBeGreaterThan(100);
   });
 
-  it('turning a flag off never lowers the amount, line by line for the Medicare adjustments and claim-wide for NCCI, nor unprices a line (PRC-18)', () => {
+  it('turning a flag off never lowers the amount, line by line for the Medicare adjustments and claim-wide for every flag, nor unprices a line (PRC-18), but where NCCI moves a visit (Q44)', () => {
+    let visitClaimsHeld = 0;
+    let carriersMoved = 0;
     fc.assert(
       fc.property(generatedClaim, generatedTerms, fc.constantFrom(...FLAGS), (claim, terms, flag) => {
         const on = termsOf({ ...terms, flags: { ...terms.flags, [flag]: true } });
@@ -217,14 +221,54 @@ describe('properties of the engine (PRD 11)', () => {
             expect(other.expectedAllowedCents >= line.expectedAllowedCents).toBe(true);
           }
         });
-        // Turning NCCI off can move a per-visit amount back to a line its MUE stopped, whose patient share or
-        // modifiers differ, so the claim's total can fall by a sequestration or assistant difference (QUESTIONS Q44).
-        if (!(on.method === 'PER_VISIT' && flag === 'apply_ncci')) {
-          expect(totalOff.greaterThanOrEqualTo(totalOn), flag).toBe(true);
+        // The claim-wide total holds for every method and flag, with one exception the specialist rules on
+        // (QUESTIONS Q44, G146): turning NCCI on can stop the line carrying a per-visit amount for its MUE, and
+        // the visit passes to the next line, under that line's own patient share and modifiers. Exactly then
+        // (the visits' carriers differ) the total is not compared; nothing else is left out.
+        if (json(visitCarriers(withFlag)) === json(visitCarriers(without))) {
+          expect(totalOff.greaterThanOrEqualTo(totalOn), `${flag} ${on.method}`).toBe(true);
+          if (on.method === 'PER_VISIT' && flag === 'apply_ncci') {
+            visitClaimsHeld += 1;
+          }
+        } else {
+          // Only the medically unlikely edit, which NCCI turns on, can move a visit.
+          expect([flag, on.method]).toEqual(['apply_ncci', 'PER_VISIT']);
+          carriersMoved += 1;
         }
       }),
       { numRuns: 400 },
     );
+    // The per-visit claims under NCCI are compared too, apart from the moved visits.
+    expect(visitClaimsHeld).toBeGreaterThan(0);
+    expect(carriersMoved).toBeLessThan(400);
+  });
+
+  it('the one known departure from PRC-18, pending the specialist (QUESTIONS Q44): NCCI stops the visit carrier, and the next line carries the visit under its own patient share', () => {
+    // A per-visit claim of one date: 97161 x2 (its SYNTHETIC MUE allows 1) with no patient share, then 97110 x1
+    // with a one-cent patient share; a visit of one cent with sequestration on.
+    const visit = (ncci: boolean) =>
+      perVisitTerms(1n, { codes: [...CODES], flags: { apply_mppr: false, apply_assistant_reduction: false, apply_sequestration: true, apply_ncci: ncci, timed_units_rule: 'MEDICARE_POOLED' } });
+    const lines = (terms: RateRecordTerms) => [
+      lineFacts({ lineNo: 1, procedureCode: '97161', units: '2', modifiers: [], placeOfService: '11', serviceDate: '2026-03-10', agreement: contractAgreement({ terms }) }),
+      lineFacts({
+        lineNo: 2,
+        procedureCode: '97110',
+        units: '1',
+        modifiers: [],
+        placeOfService: '11',
+        serviceDate: '2026-03-10',
+        patientShareAdjustments: [{ groupCode: 'PR', reasonCode: '2', amountCents: 1n as Cents }],
+        agreement: contractAgreement({ terms }),
+      }),
+    ];
+    const total = (results: readonly LinePricing[]) => priced(results).reduce((sum, line) => sum.plus(line.expectedUnroundedCents), decimal(0n));
+    const on = price(pricingInput(release, lines(visit(true))));
+    const off = price(pricingInput(release, lines(visit(false))));
+    expect(on.map((line) => (line.outcome === 'priced' ? line.trace.steps.per_visit?.carrier_line_no : line.reason))).toEqual(['MUE_EXCEEDED', 2]);
+    expect(off.map((line) => (line.outcome === 'priced' ? line.trace.steps.per_visit?.carrier_line_no : line.reason))).toEqual([1, 1]);
+    // With NCCI on, the carrier's patient share leaves nothing to sequester; off, the first line has none and pays sequestration.
+    expect(total(on).greaterThan(total(off))).toBe(true);
+    expect([total(on).toString(), total(off).toString()]).toEqual(['1', '0.97']);
   });
 
   it('a per-visit claim’s total does not depend on the order of its lines or their numbers, one amount per date', () => {

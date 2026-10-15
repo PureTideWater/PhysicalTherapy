@@ -112,12 +112,14 @@ end to end in 55.2 seconds on the development container, against PRD 11's two mi
 
 Re-runs, diffs and content rollback (ADR 0037): a complete run is priced again from its page under the release in force
 (`createRerun`, `@tp/worker/pricing`): the same practice, period and lines (the original's cut-off), never changing the
-original. A re-run's page shows its diff (`compareRuns`): exactly the lines whose expected allowed, unpriced reason or
-adjustments differ, both sides, and each line's cause read from the two traces (a rule record whose value changed, a
-contract version, a mapping, the claim, the settings, the engine, or another line of the claim). Any two complete runs
+original. A re-run's page shows its diff (`compareRuns`): exactly the lines whose expected allowed, unpriced reason,
+adjustments, dispute window, review flags or terms (mapping, contract version, rate record) differ, what differs, both
+sides, and each line's cause read from the two traces (a rule record whose value changed, a contract version, a mapping,
+the claim, the settings, the engine, or another line of the claim). Any two complete runs
 compare at `/p/<practice>/pricing-runs/compare?before=<run>&after=<run>`. A re-run is in effect only once a billing
 manager or firm principal accepts it (`acceptRun`; the database checks the role and refuses everything else on a
-complete run); Claims and lines, Coverage and the line trace read the run in effect. The release note
+complete run); Claims and lines, Coverage, the line trace, triage and the audit report read the run in effect (the
+database refuses a report of any other run, `pricing_run_in_effect()`). The release note
 (`/p/<practice>/releases?release=<n>`) shows what a release changed against the one before, the practice's runs in
 effect pinned to another release, how many of a run's lines the release in force would change (priced in memory) and
 a re-run button. The console's Rule releases (`/console/rule-releases`, platform administrators) shows the published
@@ -225,7 +227,12 @@ practice's materiality and pursuit settings live in `practice.settings` until th
 lists exactly the two affected lines with their cause (test matrix PRC-19, `apps/worker/src/price/rerun.db.test.ts`),
 and `pnpm release:dry-run` names the run and its two lines. The monthly monitoring jobs and their digests are built (ADR
 0039). The done check against a real release 2 waits for real releases 1 and 2 (milestone 0's note below), and the golden
-lines wait on the specialist, as milestone 5's do.
+lines wait on the specialist, as milestone 5's do. Test matrix PRC-18 ("turning a flag off never lowers the amount")
+holds for every method and flag but one case the specialist decides (QUESTIONS Q44): turning NCCI on can stop the line
+that carries a per-visit amount for its medically unlikely edit, and the next line then carries the visit under its own
+patient share and modifiers, so the claim's total can rise. The reading that makes PRC-18 hold everywhere (the first
+included line carries the visit whatever its outcome) changes what golden line G146 expects, which only the specialist
+may do; `packages/pricing/src/properties.test.ts` compares every other claim and states the exception as an example.
 
 **Milestone 5 is not complete.** Its done check rests on "the specialist's 100 golden lines", and PRD 20 says milestone 5
 cannot close without a reimbursement specialist. Every golden line in `fixtures/golden` (326 lines in 150 claims, 207 of

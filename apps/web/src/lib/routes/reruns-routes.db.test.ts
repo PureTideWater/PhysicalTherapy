@@ -25,9 +25,11 @@ import { mapPlanAction } from './mapping';
 import { acceptPricingRunAction, comparePricingRunsPage, createPricingRunAction, pricingRunPage, pricingRunsPage, rerunPricingRunAction } from './pricing';
 import { releasesPage } from './releases';
 import { claimsPage } from './remittances';
+import { generateReportAction, reportsPage } from './reports';
 import { prepareRuleReleaseAction, ruleReleasesPage } from './rule-releases';
 import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease } from './test-support/pricing-world';
+import { casesPage, triageRunAction } from './triage';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
 
 /**
@@ -283,8 +285,12 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     expect(ok(await call(comparePricingRunsPage, manager, { ...P(), before: second, after: first })).canAccept).toBe(false);
     expect((await call(comparePricingRunsPage, viewer, { ...P(), before: first, after: randomUUID() })).status).toBe('not_found');
 
-    // Until it is accepted, Coverage and Claims and lines read the first run.
+    // Until it is accepted, Coverage and Claims and lines read the first run, and triage and reports offer and take only it.
     expect(ok(await call(coveragePage, viewer, P())).run?.id).toBe(first);
+    expect(ok(await call(casesPage, manager, P())).runs.map((run) => run.id)).toEqual([first]);
+    expect(ok(await call(reportsPage, manager, P())).runs.map((run) => run.id)).toEqual([first]);
+    expect(refusedWith(await call(triageRunAction, manager, P(), { runId: second }))).toMatch(/^runId: the pricing run in effect for its period/);
+    expect(refusedWith(await call(generateReportAction, manager, P(), { runId: second }))).toMatch(/^runId: the pricing run in effect for its period/);
     const before = ok(await call(claimsPage, manager, { ...P(), view: 'all' })).list.rows.filter((row) => row.procedureCode === '97110');
     expect(before.map((row) => row.pricing?.pricingRunId)).toEqual([first, first]);
 
@@ -302,6 +308,19 @@ describe('a re-run under release 2 through the screens (PRC-19)', () => {
     // Both requests are recorded; the second changed nothing.
     const { rows } = await owner.query("SELECT 1 FROM audit_event WHERE action = 'pricing_run_accepted' AND object_id = $1", [second]);
     expect(rows).toHaveLength(2);
+
+    // Once accepted, triage and reports offer and take the re-run, and no longer the run it replaced.
+    expect(ok(await call(casesPage, manager, P())).runs.map((run) => run.id)).toEqual([second]);
+    expect(ok(await call(reportsPage, manager, P())).runs.map((run) => run.id)).toEqual([second]);
+    expect(refusedWith(await call(triageRunAction, manager, P(), { runId: first }))).toMatch(/^runId: the pricing run in effect for its period/);
+    expect(refusedWith(await call(generateReportAction, manager, P(), { runId: first }))).toMatch(/^runId: the pricing run in effect for its period/);
+    queue.jobs.splice(0);
+    ok(await call(triageRunAction, manager, P(), { runId: second }));
+    const requested = ok(await call(generateReportAction, manager, P(), { runId: second })).objectId;
+    expect(queue.jobs.splice(0)).toEqual([
+      { type: 'triage', payload: { practice_id: practiceId, pricing_run_id: second } },
+      { type: 'audit_report', payload: { practice_id: practiceId, audit_report_id: requested } },
+    ]);
   });
 
   it('flags the re-run when release 900004 is withdrawn, without changing it, and refuses to accept a re-run pinned to it', async () => {

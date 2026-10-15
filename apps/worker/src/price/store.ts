@@ -23,6 +23,11 @@ export interface PricedLineInsert {
   /** JSON text of the adjustments applied, in order. */
   readonly adjustmentsApplied: string;
   readonly windowEndsOn: string | null;
+  /**
+   * JSON text of the review flags reported with the amount ('[]' for an unpriced line). Not a column of
+   * its own: the trace holds them (outcome.review_flags); a dry run compares them without parsing it.
+   */
+  readonly reviewFlags: string;
   /** JSON text of the trace. */
   readonly trace: string;
 }
@@ -47,6 +52,7 @@ export function pricedLineRow(line: StoredLine, result: LinePricing): PricedLine
       unpricedReason: result.reason,
       adjustmentsApplied: '[]',
       windowEndsOn: null,
+      reviewFlags: '[]',
     };
   }
   return {
@@ -58,6 +64,7 @@ export function pricedLineRow(line: StoredLine, result: LinePricing): PricedLine
     unpricedReason: null,
     adjustmentsApplied: JSON.stringify(result.adjustments.map((item) => ({ name: item.name, before_cents: item.beforeCents.toString(), after_cents: item.afterCents.toString() }))),
     windowEndsOn: result.window.endsOn,
+    reviewFlags: JSON.stringify(result.trace.outcome.result === 'priced' ? result.trace.outcome.review_flags : []),
   };
 }
 

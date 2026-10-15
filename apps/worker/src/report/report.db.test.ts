@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import { readDocumentPages } from '@tp/contracts/pages';
-import { readDatabaseUrl, withPracticeScope } from '@tp/db';
+import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { Practice } from '../price/test-support/pricing-world';
+import { RUN_IN_EFFECT } from '../price/in-effect';
+import { acceptRun, createRerun } from '../price/rerun';
+import { type Practice, RELEASE } from '../price/test-support/pricing-world';
 import { todayUtc } from '../triage/execute';
 import { TriageWorld } from '../triage/test-support/triage-world';
 import type { AuditReportContent } from './content';
@@ -230,11 +232,12 @@ describe('generating an audit report (PRD 4, Audit v0)', () => {
     const contract = await w.fixedContract(practice, FIXED);
     await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-FIX-ONE'), 'contract', '2026-01-01', contract.versionId);
     const queuedRun = await w.pricing.createRun(practice, '2026-03-01', '2026-03-31');
-    const id = await w.requestReport(practice, queuedRun);
-    expect(await w.generate(practice, id)).toEqual({ outcome: 'not_complete' });
-    expect((await report(practice, id)).status).toBe('queued');
+    // A run being priced is not in effect: the database refuses the request.
+    await expect(w.requestReport(practice, queuedRun)).rejects.toThrow(/the pricing run in effect for its period/);
 
     await w.pricing.execute(practice, queuedRun);
+    const id = await w.requestReport(practice, queuedRun);
+    expect((await report(practice, id)).status).toBe('queued');
     const failing = auditReportHandler({ ...w.services, pdf: { render: () => Promise.reject(new Error('SYNTHETIC printer failure')) } });
     await expect(failing({ practice_id: practice.practiceId, audit_report_id: id }, w.pricing.jobContext(practice.practiceId))).rejects.toThrow(/printer/);
     expect((await report(practice, id)).status).toBe('queued');
@@ -320,4 +323,67 @@ describe('the reviewer’s attestation and the release (PRD 4: an independent re
     ]);
     await expect(inScope(practice, practice.manager, "UPDATE audit_report_download SET file = 'pdf'")).rejects.toMatchObject({ code: '42501' });
   }, 120_000);
+});
+
+describe('the run triage and an audit report read (docs/adr/0037: a re-run is in effect only once accepted)', () => {
+  it('refuses a re-run nobody has accepted and a run an accepted re-run replaced: in triage, in the request, in the report job and when a report is made ready', async () => {
+    const { practice, runId } = await cas03('report runs in effect');
+    const asManager = <T>(run: Parameters<typeof withPracticeScope<typeof w.app, T>>[2]) => withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, run);
+    const rerunOf = async (pricingRunId: string): Promise<string> => {
+      const created = await asManager((scope) => createRerun(scope, { practiceId: practice.practiceId, pricingRunId, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
+      await w.pricing.execute(practice, created.pricingRunId);
+      return created.pricingRunId;
+    };
+    const accept = (pricingRunId: string) => asManager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId }));
+    const inEffect = async (pricingRunId: string) => (await inScope<{ in_effect: boolean }>(practice, practice.manager, 'SELECT pricing_run_in_effect($1) AS in_effect', [pricingRunId]))[0]?.in_effect;
+    const triagedFrom = async (pricingRunId: string) =>
+      (await inScope<{ n: number }>(practice, practice.manager, 'SELECT count(*)::int AS n FROM line_status s JOIN priced_line p ON p.id = s.priced_line_id WHERE p.pricing_run_id = $1', [pricingRunId]))[0]?.n;
+
+    // A re-run nobody has accepted is complete, and not in effect: nothing triages or reports on it.
+    const pending = await rerunOf(runId);
+    expect([await inEffect(runId), await inEffect(pending)]).toEqual([true, false]);
+    expect(await w.triage(practice, pending)).toEqual({ outcome: 'not_in_effect' });
+    expect(await triagedFrom(pending)).toBe(0);
+    await expect(w.requestReport(practice, pending)).rejects.toThrow(/the pricing run in effect for its period/);
+
+    // A report of the run in effect, requested; then the re-run is accepted before the report job runs.
+    const queued = await w.requestReport(practice, runId);
+    await accept(pending);
+    expect([await inEffect(runId), await inEffect(pending)]).toEqual([false, true]);
+    expect(await w.triage(practice, runId)).toEqual({ outcome: 'not_in_effect' });
+    await expect(w.requestReport(practice, runId)).rejects.toThrow(/the pricing run in effect for its period/);
+    expect(await w.generate(practice, queued)).toEqual({ outcome: 'not_in_effect' });
+    expect(await report(practice, queued)).toMatchObject({ status: 'failed', failure_code: 'run_not_in_effect', content: null, pdf_key: null, csv_key: null });
+
+    // The accepted re-run is the one triaged and reported on.
+    expect((await w.triage(practice, pending)).outcome).toBe('triaged');
+    expect(await triagedFrom(pending)).toBeGreaterThan(0);
+    const ready = await w.requestReport(practice, pending);
+    expect((await w.generate(practice, ready)).outcome).toBe('ready');
+
+    // The database's own check when a report is made ready: its run was replaced after the request.
+    const replaced = await w.requestReport(practice, pending);
+    await accept(await rerunOf(pending));
+    expect(await inEffect(pending)).toBe(false);
+    await expect(
+      withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) =>
+        scope.client.query(
+          `UPDATE audit_report SET status = 'ready', as_of = '2026-10-15', content = '{}', pdf_key = $3, pdf_sha256 = $4, csv_key = $5, csv_sha256 = $4 WHERE id = $1 AND practice_id = $2`,
+          [replaced, practice.practiceId, `practices/${practice.practiceId}/reports/${replaced}/${randomUUID()}.pdf`, '0'.repeat(64), `practices/${practice.practiceId}/reports/${replaced}/${randomUUID()}.csv`],
+        ),
+      ),
+    ).rejects.toThrow(/generated only while its pricing run is the run in effect/);
+    expect((await report(practice, replaced)).status).toBe('queued');
+
+    // The database's rule and the application's agree on every run of the practice: the first and two accepted re-runs.
+    const runs = await inScope<{ id: string; database: boolean; application: boolean }>(
+      practice,
+      practice.manager,
+      `SELECT r.id, pricing_run_in_effect(r.id) AS database, ${RUN_IN_EFFECT('r')} AS application FROM pricing_run r WHERE r.practice_id = $1`,
+      [practice.practiceId],
+    );
+    expect(runs).toHaveLength(3);
+    expect(runs.filter((run) => run.database !== run.application)).toEqual([]);
+    expect(runs.filter((run) => run.database)).toHaveLength(1);
+  }, 180_000);
 });

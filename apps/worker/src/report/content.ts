@@ -19,6 +19,7 @@ import {
 } from '@tp/triage';
 
 import { parseCoverage } from '../price/coverage';
+import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 import { UNPRICED_REMEDIES } from './remedies';
 
@@ -339,12 +340,12 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   const run = (
     await client.query<{ id: string; period_from: string; period_to: string; release_no: number; engine_version: string; coverage: unknown; completed_at: Date; manifest_sha256: string }>(
       `SELECT r.id, r.period_from::text, r.period_to::text, r.release_no, r.engine_version, r.coverage, r.completed_at, rr.manifest_sha256
-         FROM pricing_run r JOIN rule_release rr ON rr.release_no = r.release_no WHERE r.id = $1 AND r.practice_id = $2 AND r.status = 'complete'`,
+         FROM pricing_run r JOIN rule_release rr ON rr.release_no = r.release_no WHERE r.id = $1 AND r.practice_id = $2 AND ${RUN_IN_EFFECT('r')}`,
       [input.pricingRunId, input.practiceId],
     )
   ).rows[0];
   if (run === undefined) {
-    throw new Error('the audit report’s pricing run is not complete');
+    throw new Error('the audit report’s pricing run is not the run in effect for its period');
   }
   const practice = (await client.query<{ name: string; settings: unknown }>('SELECT name, settings FROM practice WHERE id = $1', [input.practiceId])).rows[0];
   const settings: TriageSettings = triageSettings(practice?.settings ?? {});

@@ -64,6 +64,13 @@ stage, who triages and when, where the reviewer stands in the tenancy model, and
   from the Cases screen (the triage job), and the report job triages its run again on the day it prints, so a report's
   windows are judged on its own date. Triage is idempotent (an advisory lock per practice; anomalies once per run and
   cohort; stages only forward; a line in at most one case).
+- **Only the run in effect is triaged or reported on** (ADR 0037: a complete first run, or a re-run once a person
+  accepts it). The Cases and Reports screens offer only runs in effect and their actions refuse any other; the triage
+  job leaves a re-run nobody has accepted, or a run an accepted re-run replaced (`not_in_effect`, logged); the report
+  job marks a report failed (`run_not_in_effect`) when its run was replaced after the request, and a new report is
+  requested of the run in effect. The database refuses a report requested of any other run, and refuses to make one
+  ready once its run is no longer in effect (`pricing_run_in_effect()`, `20261021090000_run_diffs_and_runs_in_effect.sql`).
+  So cases and a releasable report are built only from numbers that went through acceptance, as the digest's are.
 - **The audit report.** The report job (`audit_report`, three attempts with an alert on the third, ADR 0019) gathers
   `tp-audit-report/1`: coverage, anomalies, validated discrepancies by pattern with why each that is not actionable is
   not, actionable cases with deadline, pursuit cost (from the practice's staff rate and minutes; **no default**, so an
@@ -99,7 +106,7 @@ stage, who triages and when, where the reviewer stands in the tenancy model, and
   screen comes later); the defaults apply until then, and pursuit cost is not estimated until they are set.
 - Case states other than open and closed written off arrive with submissions (milestone 8); the CHECK already lists
   them. Case lines are not re-judged when a claim is reversed after it joined; the workbench will.
-- Triage offers any complete run; once re-run acceptance is in force everywhere, triage and reports should offer only
-  the run in effect for a period.
+- Triage and reports read the run in effect for a period; lines already in a case stay there, judged from the priced
+  line they joined with, until the workbench re-judges them (milestone 8).
 - The worker image carries Chromium (`playwright-core` external in the bundle, the headless shell installed in the
   runtime stage); the Dockerfile change is not built here (no Docker).

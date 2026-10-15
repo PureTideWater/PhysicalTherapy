@@ -1,6 +1,7 @@
 import { type EncryptedColumn, type PracticeCipher, type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { parseCents, sumCents } from '@tp/money';
 import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineStage, type WriteOffReason, deadlineState, netExpectedValue, triageSettings } from '@tp/triage';
+import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '@tp/worker/pricing';
 
 /**
  * The Anomalies and Cases reads (PRD 7, Anomalies and Cases; PRD 12; PRD 8, The status machine;
@@ -15,30 +16,39 @@ import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineSt
 
 type Scope = PracticeScope<ScopeClient>;
 
-/** A complete pricing run, for choosing one to triage or report on. */
+/** A pricing run in effect for its period, for choosing one to triage or report on. */
 export interface RunChoice {
   readonly id: string;
   readonly periodFrom: string;
   readonly periodTo: string;
   readonly releaseNo: number;
+  /** When it took effect: an accepted re-run when it was accepted, a first run when it completed. */
   readonly completedAt: string;
 }
 
-/** The practice's complete runs, newest first. */
-export async function completeRuns(scope: Scope, practiceId: string): Promise<RunChoice[]> {
-  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string; release_no: number; completed_at: Date }>(
-    `SELECT id, period_from::text, period_to::text, release_no, completed_at FROM pricing_run
-      WHERE practice_id = $1 AND status = 'complete' ORDER BY completed_at DESC, id DESC LIMIT 100`,
+/**
+ * The practice's runs in effect (one per period: a complete first run, or the re-run accepted since),
+ * the latest to take effect first. A re-run nobody has accepted, and a run an accepted re-run has
+ * replaced, are never offered: triage and reports read the numbers that went through acceptance
+ * (docs/adr/0037 and 0038).
+ */
+export async function runsInEffect(scope: Scope, practiceId: string): Promise<RunChoice[]> {
+  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string; release_no: number; in_effect_since: Date }>(
+    `SELECT r.id, r.period_from::text, r.period_to::text, r.release_no, ${IN_EFFECT_SINCE('r')} AS in_effect_since FROM pricing_run r
+      WHERE r.practice_id = $1 AND ${RUN_IN_EFFECT('r')} ORDER BY in_effect_since DESC, r.id DESC LIMIT 100`,
     [practiceId],
   );
-  return rows.map((row) => ({ id: row.id, periodFrom: row.period_from, periodTo: row.period_to, releaseNo: row.release_no, completedAt: row.completed_at.toISOString() }));
+  return rows.map((row) => ({ id: row.id, periodFrom: row.period_from, periodTo: row.period_to, releaseNo: row.release_no, completedAt: row.in_effect_since.toISOString() }));
 }
 
-/** Whether the practice's run is complete (triage and reports read complete runs only). */
-export async function isCompleteRun(scope: Scope, practiceId: string, runId: string): Promise<boolean> {
-  const { rowCount } = await scope.client.query("SELECT 1 FROM pricing_run WHERE id = $1 AND practice_id = $2 AND status = 'complete'", [runId, practiceId]);
+/** Whether the practice's run is the run in effect for its period (triage and reports read no other). */
+export async function isRunInEffect(scope: Scope, practiceId: string, runId: string): Promise<boolean> {
+  const { rowCount } = await scope.client.query(`SELECT 1 FROM pricing_run r WHERE r.id = $1 AND r.practice_id = $2 AND ${RUN_IN_EFFECT('r')}`, [runId, practiceId]);
   return rowCount === 1;
 }
+
+/** Why a run was refused for triage or a report, as the person sees it. */
+export const RUN_NOT_IN_EFFECT = 'the pricing run in effect for its period: a complete run, or a re-run once it is accepted (not one it replaced)';
 
 /** The practice's triage settings, read from its settings (the defaults where it names none). */
 export async function practiceTriageSettings(scope: Scope, practiceId: string) {

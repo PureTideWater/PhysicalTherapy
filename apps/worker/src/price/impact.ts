@@ -15,9 +15,10 @@ import type { PricedLineInsert } from './store';
  * their runs would change"; docs/adr/0037). The run's lines (its period, up to its cut-off) are priced
  * twice by this engine with the practice's agreements and settings as they are now and the run's
  * triage date: once under the run's own release and once under the other; a line would change when
- * its expected allowed, unpriced reason or adjustments differ, the same test as a re-run's diff. So the
- * count is the release's own effect, whatever else changed since the run (a mapping, a sign-off),
- * which a re-run's diff shows with its causes. Claims are audited reads (purpose release_impact).
+ * its expected allowed, unpriced reason, adjustments, dispute window, review flags or terms differ,
+ * the same test as a re-run's diff (diff.ts, pricing_run_changed_lines()). So the count is the
+ * release's own effect, whatever else changed since the run (a mapping, a sign-off), which a re-run's
+ * diff shows with its causes. Claims are audited reads (purpose release_impact).
  */
 
 export interface ImpactRun {
@@ -49,9 +50,21 @@ export interface ImpactOptions {
 
 const CLAIMS_PER_BATCH = 500;
 
-/** Whether two rows of one line differ in what a diff compares: expected allowed, reason, adjustments. */
+/**
+ * Whether two rows of one line differ in what a diff compares: expected allowed, reason, adjustments,
+ * the window's last day, the review flags, and the mapping, contract version and rate record.
+ */
 export function linePricesDiffer(first: PricedLineInsert, second: PricedLineInsert): boolean {
-  return first.expectedAllowedCents !== second.expectedAllowedCents || first.unpricedReason !== second.unpricedReason || first.adjustmentsApplied !== second.adjustmentsApplied;
+  return (
+    first.expectedAllowedCents !== second.expectedAllowedCents ||
+    first.unpricedReason !== second.unpricedReason ||
+    first.adjustmentsApplied !== second.adjustmentsApplied ||
+    first.windowEndsOn !== second.windowEndsOn ||
+    first.reviewFlags !== second.reviewFlags ||
+    first.mappingId !== second.mappingId ||
+    first.contractVersionId !== second.contractVersionId ||
+    first.rateRecordId !== second.rateRecordId
+  );
 }
 
 /** The practice's complete runs, newest first, each an audited read. */

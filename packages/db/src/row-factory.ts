@@ -17,9 +17,10 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * written as, so a cross-tenant probe differs from an accepted row in its practice only. A user column
  * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it, and a column whose value the
  * row's other constraints decide (FIXED_VALUES) gets that value, and one that must match a column of a
- * row another column references (SAME_AS) is read from that row. It first fills only NOT NULL
- * columns without defaults, and if a constraint refuses that row, fills every column it can. Rows are
- * written as the owner role inside the world's practice scope.
+ * row another column references (SAME_AS) is read from that row; a row a column references that must
+ * have taken a further step first (PREPARED_REFERENCES) takes it once created. It first fills only NOT
+ * NULL columns without defaults, and if a constraint refuses that row, fills every column it can. Rows
+ * are written as the owner role inside the world's practice scope.
  *
  * A table the factory cannot fill raises a RowFactoryError naming the table and constraint, which is
  * the cue to extend the factory, not to skip the table.
@@ -121,6 +122,22 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
 const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: string }>> = {
   'case.payer_id': { via: 'plan_id', column: 'payer_id' },
   'case_line.service_line_id': { via: 'priced_line_id', column: 'service_line_id' },
+};
+
+/**
+ * Referenced rows that must take a step after they are created before the referring row is accepted: an
+ * audit report is of the pricing run in effect for its period (docs/adr/0037), so the factory's run for
+ * one completes, as the price job completes a run that priced no lines (its coverage counts none).
+ */
+const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: TenantWorld, referenced: Row) => Promise<void>>> = {
+  'audit_report.pricing_run_id': async (client, world, run) => {
+    await asOwner(
+      client,
+      [world.practiceId],
+      () => client.query("UPDATE pricing_run SET status = 'complete', completed_at = now(), coverage = $2 WHERE id = $1", [run.id, JSON.stringify({ lines: 0 })]),
+      world.adminUserId,
+    );
+  },
 };
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
@@ -311,7 +328,9 @@ export class RowFactory {
         if (ref !== undefined && foreignKey.refColumn === 'id') {
           row[column.name] = ref;
         } else if (column.notNull) {
-          row[column.name] = (await this.create(client, foreignKey.refTable, world, depth + 1))[foreignKey.refColumn];
+          const referenced = await this.create(client, foreignKey.refTable, world, depth + 1);
+          await PREPARED_REFERENCES[`${table}.${column.name}`]?.(client, world, referenced);
+          row[column.name] = referenced[foreignKey.refColumn];
         }
         continue;
       }

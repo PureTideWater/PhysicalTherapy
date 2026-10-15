@@ -58,7 +58,7 @@ export default async function ReportsPage(props: Props) {
           </CardHeader>
           <CardContent>
             {runs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No complete pricing run yet.</p>
+              <p className="text-sm text-muted-foreground">No pricing run in effect yet: a complete run, or a re-run once it is accepted.</p>
             ) : (
               <ActionForm action={generateReportFormAction} submit="Generate the report" className="flex max-w-xl flex-col gap-3">
                 <input type="hidden" name="requestKey" value={randomUUID()} />
@@ -81,7 +81,7 @@ export default async function ReportsPage(props: Props) {
       <section aria-label="Audit reports" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Audit reports</h2>
         {reports.length === 0 ? (
-          <EmptyState title="No audit report yet" nextStep="Generate one from a complete pricing run." />
+          <EmptyState title="No audit report yet" nextStep="Generate one from the pricing run in effect for its period." />
         ) : (
           <ul className="flex flex-col gap-3" aria-label="Reports">
             {reports.map((report) => (

@@ -9,19 +9,20 @@ import {
   type CaseDetail,
   type CaseSummary,
   type FlaggedLine,
+  RUN_NOT_IN_EFFECT,
   type RunChoice,
   anomalyOf,
   caseDetail,
   caseLineState,
   caseOf,
-  completeRuns,
   currentStage,
   flaggedLines,
-  isCompleteRun,
+  isRunInEffect,
   listAnomalies,
   listCases,
   openActionableCents,
   practiceTriageSettings,
+  runsInEffect,
 } from '../triage/queries';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
@@ -162,7 +163,7 @@ export const casesPage = practiceRoute({
     const asOf = today(services.now());
     const cases = await listCases(scope, practiceId, asOf, request.requestId);
     const canTriage = rolesPermit(access.roles, 'case.work');
-    return { practiceId, asOf, cases, actionableCents: openActionableCents(cases), runs: canTriage ? await completeRuns(scope, practiceId) : [], canTriage };
+    return { practiceId, asOf, cases, actionableCents: openActionableCents(cases), runs: canTriage ? await runsInEffect(scope, practiceId) : [], canTriage };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
@@ -197,8 +198,9 @@ export const casePage = practiceRoute({
 });
 
 /**
- * Triages a complete run (PRD 12): queues the triage job, which screens its unpriced lines for
- * anomalies, judges its priced lines on today's date and opens or adds to cases by payer pattern.
+ * Triages the run in effect for its period (PRD 12; docs/adr/0037: a re-run counts only once accepted):
+ * queues the triage job, which screens its unpriced lines for anomalies, judges its priced lines on
+ * today's date and opens or adds to cases by payer pattern.
  */
 export const triageRunAction = practiceRoute({
   id: 'practice.cases.triage',
@@ -210,8 +212,8 @@ export const triageRunAction = practiceRoute({
   input: z.object({ runId: opaqueId }),
   audit: { action: 'triage_requested', objectType: 'pricing_run' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
-    if (!(await isCompleteRun(scope, practiceId, input.runId))) {
-      throw new InputError([{ field: 'runId', message: 'a complete pricing run of this practice' }]);
+    if (!(await isRunInEffect(scope, practiceId, input.runId))) {
+      throw new InputError([{ field: 'runId', message: RUN_NOT_IN_EFFECT }]);
     }
     await services.queue.enqueue('triage', { practice_id: practiceId, pricing_run_id: input.runId });
     return { objectId: input.runId, redirect: `/p/${practiceId}/cases` };

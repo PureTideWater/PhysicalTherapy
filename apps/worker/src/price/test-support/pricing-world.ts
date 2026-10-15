@@ -33,6 +33,13 @@ const RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900001');
 /** The SYNTHETIC "release 2" of the re-run tests: release 900001 with the 97110 work RVU changed (PRC-19). */
 export const RERUN_RELEASE = 900004;
 const RERUN_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900004');
+/**
+ * SYNTHETIC release 900003: release 900001 with its sequestration, MPPR rate and dispute window records
+ * replaced; among them a commercial default dispute window (4 months from the date of service) that
+ * 900001 lacks, so a contract silent on disputes gains a window and nothing else changes.
+ */
+export const WINDOW_RELEASE = 900003;
+const WINDOW_RELEASE_DIR = path.join(FIXTURES, 'rules/release-synth-900003');
 
 /** The SYNTHETIC place-of-service split and default rounding of a practice's settings. */
 export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' };
@@ -231,6 +238,11 @@ export class PricingWorld {
   /** Loads SYNTHETIC release 900004 into the scratch database (once): from then on it is the release in force. */
   async loadRerunRelease(): Promise<void> {
     await loadRelease(this.owner, RERUN_RELEASE_DIR, { release: RERUN_RELEASE, allowSyntheticFixtureForTests: true });
+  }
+
+  /** Loads SYNTHETIC release 900003 into the scratch database (once): from then on it is the release in force. */
+  async loadWindowRelease(): Promise<void> {
+    await loadRelease(this.owner, WINDOW_RELEASE_DIR, { release: WINDOW_RELEASE, allowSyntheticFixtureForTests: true });
   }
 
   /** A content rollback of the release in force, as `pnpm release:rollback` records it (the owner role). */

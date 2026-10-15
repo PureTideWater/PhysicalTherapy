@@ -18,14 +18,17 @@ import {
   triageSettings,
 } from '@tp/triage';
 
+import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 
 /**
- * Triage of a complete pricing run (PRD 12; PRD 5, J8; PRD 8, The status machine; test matrix CAS-01
- * to CAS-05, PRC-14, PRC-15), on its triage date, in the run's one practice (the job's scope), in one
- * transaction, one practice at a time (an advisory lock), and idempotent: a triage run again finds what
- * it recorded and adds only what has changed since (a window that closed, lines that now carry a
- * pattern across the case materiality).
+ * Triage of the pricing run in effect for its period (PRD 12; PRD 5, J8 and J17; PRD 8, The status
+ * machine; test matrix CAS-01 to CAS-05, PRC-14, PRC-15; docs/adr/0037: a complete first run, or a
+ * re-run once a person accepts it; never a re-run awaiting acceptance nor a run an accepted re-run
+ * replaced, whose numbers did not go through acceptance), on its triage date, in the run's one
+ * practice (the job's scope), in one transaction, one practice at a time (an advisory lock), and
+ * idempotent: a triage run again finds what it recorded and adds only what has changed since (a window
+ * that closed, lines that now carry a pattern across the case materiality).
  *
  * 1. Anomaly screening of the run's lines that cannot be priced (@tp/triage screenAnomalies): one
  *    anomaly per cohort, written once per run; the lines short of the mode are flagged (a stage, a
@@ -66,7 +69,12 @@ export interface TriageSummary {
   readonly windowsClosed: number;
 }
 
-export type TriageOutcome = { readonly outcome: 'triaged'; readonly summary: TriageSummary } | { readonly outcome: 'not_complete' } | { readonly outcome: 'missing' };
+export type TriageOutcome =
+  | { readonly outcome: 'triaged'; readonly summary: TriageSummary }
+  | { readonly outcome: 'not_complete' }
+  /** Complete, but not the run in effect for its period: a re-run nobody has accepted, or a run since replaced. */
+  | { readonly outcome: 'not_in_effect' }
+  | { readonly outcome: 'missing' };
 
 /** Today's date in UTC: the date the windows and the database's write-off rules are judged on. */
 export function todayUtc(now: Date = new Date()): string {
@@ -77,6 +85,7 @@ interface RunRow {
   readonly id: string;
   readonly status: string;
   readonly release_no: number;
+  readonly in_effect: boolean;
 }
 
 interface ScreenRow {
@@ -113,7 +122,10 @@ interface CandidateRow {
 }
 
 async function lockedRun(client: ScopeClient, practiceId: string, pricingRunId: string): Promise<RunRow | undefined> {
-  const { rows } = await client.query<RunRow>('SELECT id, status, release_no FROM pricing_run WHERE id = $1 AND practice_id = $2', [pricingRunId, practiceId]);
+  const { rows } = await client.query<RunRow>(`SELECT r.id, r.status, r.release_no, ${RUN_IN_EFFECT('r')} AS in_effect FROM pricing_run r WHERE r.id = $1 AND r.practice_id = $2`, [
+    pricingRunId,
+    practiceId,
+  ]);
   return rows[0];
 }
 
@@ -332,6 +344,9 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
   }
   if (run.status !== 'complete') {
     return { outcome: 'not_complete' };
+  }
+  if (!run.in_effect) {
+    return { outcome: 'not_in_effect' };
   }
   const practice = await client.query<{ settings: unknown }>('SELECT settings FROM practice WHERE id = $1', [practiceId]);
   const settings = triageSettings(practice.rows[0]?.settings ?? {});

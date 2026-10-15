@@ -3,18 +3,21 @@
  * complete run) in the creator's own scope and queues the price job for it, accepts a complete re-run,
  * compares two complete runs, works out in memory which lines a release would change in a run, and
  * reads a complete run's coverage summary; the release tooling's dry run uses the same in-memory
- * pricing. Executing a run is the worker's (the price job); nothing here stores a priced line.
+ * pricing. Which run is in effect for its period is defined here once (in-effect.ts), for every reader. Executing a run is the worker's (the price job); nothing here stores a priced line.
  */
 export { type CreatePricingRunInput, type CreatedPricingRun, PricingRunInputError, createPricingRun } from './create';
 export { COVERAGE_FORMAT, type RunCoverage, operatorAlerts, parseCoverage, runCoverageSchema } from './coverage';
 export { CAUSE_KINDS, type CauseKind, type ContractPin, type LineCause, type MappingPin, type RecordVersion } from './causes';
 export {
   type CompareRunsInput,
+  DIFF_CHANGES,
   DIFF_KINDS,
   DIFF_LINES_PER_PAGE,
+  type DiffChange,
   type DiffFilter,
   type DiffKind,
   type DiffLine,
+  type DiffReviewFlag,
   type DiffRun,
   type DiffSide,
   type DiffSummary,
@@ -23,6 +26,7 @@ export {
   compareRuns,
 } from './diff';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
+export { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT } from './in-effect';
 export { type ReleaseWithdrawal, RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, releaseHeader, releaseWithdrawals } from './release';
 export {
   type AcceptRunInput,

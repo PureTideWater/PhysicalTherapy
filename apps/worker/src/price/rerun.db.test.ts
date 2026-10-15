@@ -117,10 +117,22 @@ describe('MAP-03: a re-run after a mapping is corrected', () => {
     expect(await snapshot(first)).toEqual(before);
 
     const diff = await compare(target, first, created.pricingRunId);
-    expect(diff.summary).toEqual({ compared: 3, changed: 3, onlyBefore: 0, onlyAfter: 0, mappingChanged: 3, versionChanged: 3, beforeExpectedCents: '0', afterExpectedCents: expect.stringMatching(/^[1-9]\d*$/) });
+    expect(diff.summary).toEqual({
+      compared: 3,
+      changed: 3,
+      onlyBefore: 0,
+      onlyAfter: 0,
+      mappingChanged: 3,
+      versionChanged: 3,
+      windowChanged: 0,
+      reviewFlagsChanged: 0,
+      beforeExpectedCents: '0',
+      afterExpectedCents: expect.stringMatching(/^[1-9]\d*$/),
+    });
     expect(diff.lines).toHaveLength(3);
     for (const line of diff.lines) {
       expect(line.kind).toBe('changed');
+      expect(line.changes).toEqual(['expected_allowed', 'unpriced_reason', 'terms']);
       expect(line.before).toMatchObject({ unpricedReason: 'NO_AGREEMENT', expectedAllowedCents: null, mappingId: wrong });
       expect(line.after).toMatchObject({ unpricedReason: null, method: 'PERCENT_OF_MEDICARE', mappingId: right, contractVersionId: signed.versionId, rateRecordId: signed.rateRecordId });
       expect(line.causes).toEqual([
@@ -296,8 +308,12 @@ describe('PRC-19: a re-run under release 2 with one changed RVU', () => {
     expectTracesRecompute(linesB, RERUN_RELEASE);
 
     const diff = await compare(prc19, runA, runB);
-    expect(diff.summary).toMatchObject({ compared: 4, changed: 2, onlyBefore: 0, onlyAfter: 0, mappingChanged: 0, versionChanged: 0 });
+    expect(diff.summary).toMatchObject({ compared: 4, changed: 2, onlyBefore: 0, onlyAfter: 0, mappingChanged: 0, versionChanged: 0, windowChanged: 0, reviewFlagsChanged: 0 });
     expect(diff.lines.map((line) => line.serviceLineId).sort()).toEqual(affected);
+    expect(diff.lines.map((line) => line.changes)).toEqual([
+      ['expected_allowed', 'adjustments'],
+      ['expected_allowed', 'adjustments'],
+    ]);
     const rvu = { before: await recordSha(RELEASE, 'pfs_rvu', { hcpcs: '97110', modifier: '' }), after: await recordSha(RERUN_RELEASE, 'pfs_rvu', { hcpcs: '97110', modifier: '' }) };
     for (const line of diff.lines) {
       expect(line).toMatchObject({ kind: 'changed', procedureCode: '97110' });

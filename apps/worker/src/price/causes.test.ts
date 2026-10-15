@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { type CauseTrace, type TraceRecordRef, differingRecords, lineCauses, recordsRead, ruleLabel } from './causes';
+import { type DiffSide, sideChanges } from './diff';
 import { linePricesDiffer } from './impact';
 import type { PricedLineInsert } from './store';
 
@@ -76,6 +77,21 @@ describe('lineCauses', () => {
     ]);
   });
 
+  it('names the release window a line reads in one run only when nothing but its dispute window moved', () => {
+    const window = ref('dispute_window', { program: 'commercial_default', window: 'redetermination' }, '9', '2026-01-01', null);
+    const before = trace();
+    const after = { ...trace(), steps: { ...(trace().steps as object), window: { source: 'release', record: window } } };
+    expect(lineCauses(before, after, never)).toEqual([
+      {
+        kind: 'release_record',
+        recordType: 'dispute_window',
+        key: { program: 'commercial_default', window: 'redetermination' },
+        before: null,
+        after: { sha256: window.sha256, effectiveFrom: '2026-01-01', effectiveTo: null },
+      },
+    ]);
+  });
+
   it('names the claim, the settings and the engine when they differ', () => {
     const before = trace();
     const after = trace({
@@ -116,13 +132,52 @@ describe('what a diff and a dry run compare', () => {
     unpricedReason: null,
     adjustmentsApplied: '[]',
     windowEndsOn: null,
+    reviewFlags: '[]',
     trace: '{}',
   };
 
-  it('is expected allowed, the unpriced reason and the adjustments, never the trace or the window', () => {
-    expect(linePricesDiffer(row, { ...row, trace: '{"other":true}', windowEndsOn: '2026-12-31', varianceCents: '0' })).toBe(false);
+  it('is expected allowed, the unpriced reason, the adjustments, the window, the review flags and the terms, never the rest of the trace', () => {
+    expect(linePricesDiffer(row, { ...row, trace: '{"other":true}', varianceCents: '0', method: 'FIXED_SCHEDULE', expectedUnrounded: '6000.4' })).toBe(false);
     expect(linePricesDiffer(row, { ...row, expectedAllowedCents: '6001' })).toBe(true);
     expect(linePricesDiffer(row, { ...row, unpricedReason: 'NO_PFS_VALUE' })).toBe(true);
     expect(linePricesDiffer(row, { ...row, adjustmentsApplied: '[{"name":"mppr"}]' })).toBe(true);
+    // The window decides whether a line is actionable (PRD 11 step 8); a quarterly NCCI update moves the flags.
+    expect(linePricesDiffer(row, { ...row, windowEndsOn: '2026-12-31' })).toBe(true);
+    expect(linePricesDiffer({ ...row, windowEndsOn: '2026-05-01' }, { ...row, windowEndsOn: '2036-03-29' })).toBe(true);
+    expect(linePricesDiffer(row, { ...row, reviewFlags: '[{"flag":"NCCI_PTP","column1_line_no":2}]' })).toBe(true);
+    expect(linePricesDiffer(row, { ...row, mappingId: 'mapping-2' })).toBe(true);
+    expect(linePricesDiffer(row, { ...row, contractVersionId: 'version-2' })).toBe(true);
+    expect(linePricesDiffer(row, { ...row, rateRecordId: 'rate-2' })).toBe(true);
+  });
+});
+
+describe('what a listed line says changed', () => {
+  const side: DiffSide = {
+    pricedLineId: 'priced',
+    method: 'FIXED_SCHEDULE',
+    expectedAllowedCents: '5000',
+    varianceCents: '2000',
+    unpricedReason: null,
+    adjustments: [],
+    windowEndsOn: '2036-03-29',
+    reviewFlags: [],
+    mappingId: 'mapping-1',
+    contractVersionId: 'version-1',
+    rateRecordId: 'rate-1',
+  };
+
+  it('names each compared part that differs, in order, and nothing when only the rest differs', () => {
+    expect(sideChanges(side, { ...side, pricedLineId: 'other', varianceCents: '0' })).toEqual([]);
+    expect(sideChanges(side, { ...side, windowEndsOn: '2026-05-01' })).toEqual(['window']);
+    expect(sideChanges(side, { ...side, windowEndsOn: null })).toEqual(['window']);
+    expect(sideChanges(side, { ...side, reviewFlags: [{ flag: 'NCCI_PTP', column1_line_no: 1 }] })).toEqual(['review_flags']);
+    expect(sideChanges(side, { ...side, mappingId: 'mapping-2', contractVersionId: 'version-2', rateRecordId: 'rate-2', windowEndsOn: '2026-05-01' })).toEqual(['window', 'terms']);
+    expect(sideChanges(side, { ...side, rateRecordId: 'rate-2' })).toEqual(['terms']);
+    expect(sideChanges(side, { ...side, expectedAllowedCents: null, unpricedReason: 'NO_AGREEMENT', windowEndsOn: null, adjustments: [{ name: 'mppr', before_cents: '1', after_cents: '1' }] })).toEqual([
+      'expected_allowed',
+      'unpriced_reason',
+      'adjustments',
+      'window',
+    ]);
   });
 });

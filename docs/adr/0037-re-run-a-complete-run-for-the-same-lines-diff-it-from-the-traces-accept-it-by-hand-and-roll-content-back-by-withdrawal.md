@@ -36,11 +36,19 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
   For a period, the run in effect is the eligible run (a complete first run or an accepted re-run) that took
   effect last (`coalesce(accepted_at, completed_at)`); Claims and lines read, per line, the eligible run that
   priced it and took effect last, Coverage the eligible run that took effect last, and the line trace the
-  same unless a run is asked for.
+  same unless a run is asked for. Triage and the audit report read only the run in effect for its period
+  (`RUN_IN_EFFECT`, `apps/worker/src/price/in-effect.ts`, which the web app's reads share; the database's
+  `pricing_run_in_effect()` holds the same rule for its own checks; ADR 0038).
 - **A diff is the stored lines, matched by service line** (`compareRuns`, `apps/worker/src/price/diff.ts`):
-  exactly the lines whose expected allowed, unpriced reason or adjustments applied differ, and the lines one
-  run priced and the other did not. `pricing_run_changed_lines(before, after)` counts the same predicate in
-  SQL. Each listed line's two priced lines are audited reads (purpose `run_comparison`).
+  exactly the lines whose expected allowed, unpriced reason, adjustments applied, dispute window (its last day,
+  which decides whether the line is actionable, PRD 11 step 8), review flags (the trace's `outcome.review_flags`,
+  none on an unpriced line) or terms (the mapping, contract version and rate record that priced it) differ, and
+  the lines one run priced and the other did not; each listed line says which of these differ (`changes`), and
+  the summary counts the lines whose window or flags moved beside those under another mapping or version.
+  `pricing_run_changed_lines(before, after)` counts the same predicate in SQL
+  (`20261021090000_run_diffs_and_runs_in_effect.sql` replaced the first, which compared the amount, the reason
+  and the adjustments only, so a re-run that moved every window, or a quarterly NCCI update that raised a review
+  flag, listed nothing). Each listed line's two priced lines are audited reads (purpose `run_comparison`).
 - **The cause comes from the two traces** (`lineCauses`, `causes.ts`, pure): the mapping (another
   `mapping_id` or kind), the contract version (another version or rate record), a rule record (a record of the
   same rule, type and key, whose value or window differs, looked up in `rule_record` by release and SHA-256:
@@ -50,7 +58,8 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
   carrier), since the engine is pure.
 - **The dry run prices in memory, twice** (`runReleaseImpact`, `impact.ts`): a run's lines under its own
   release and under the release tried, with the practice's agreements and settings as they are now and the
-  run's triage date, by the price job's own engine; a line would change when the same three things differ.
+  run's triage date, by the price job's own engine; a line would change when the same things differ
+  (`linePricesDiffer`: the diff's predicate over the rows the price job would store).
   So the count is the release's own effect, whatever else changed since the run (a re-run's diff names those
   causes). `pnpm release:dry-run <n>` reads release n from `content/releases` or `content/outgoing` and checks
   every complete run of every practice in `DATABASE_URL` (the staging snapshot), as the owner role, one practice
@@ -114,5 +123,5 @@ recorded when a release row is permanent (ADR 0009), and what the console may re
 ## Revisit when
 
 A practice's run outgrows an in-memory check in a request, the monthly runs arrive (they create first runs
-through the same service), triage reads runs (it should read the run in effect), or a release needs to be
+through the same service), or a release needs to be
 reinstated after a withdrawal.
