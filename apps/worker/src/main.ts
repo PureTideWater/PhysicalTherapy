@@ -12,7 +12,10 @@ import { intakeServices } from './intake/wiring';
 import { parseHandler } from './parse/job';
 import { platformRuntime } from './platform/wiring';
 import { priceHandler } from './price/job';
+import { auditReportHandler } from './report/generate';
+import { ChromiumPdfRenderer } from './report/pdf';
 import { installShutdownHandlers } from './shutdown';
+import { triageHandler } from './triage/job';
 import { startWorker } from './worker';
 
 const logger = createLogger({ base: { worker_id: randomUUID() } });
@@ -48,10 +51,18 @@ if (config !== undefined && intake !== undefined) {
     // Practice jobs: the application login, each transaction scoped to the job's one practice.
     const pool = openPool(config.databaseUrl, 4);
     // Intake takes uploads in and queues parse_835 per clean 835, which parses and loads it; price
-    // executes a pricing run; the other jobs arrive with their milestones. Every practice job's attempts
-    // are recorded in job_run.
+    // executes a pricing run; triage screens a complete run and groups its lines into cases; audit_report
+    // triages a run and prints its report; the other jobs arrive with their milestones. Every practice
+    // job's attempts are recorded in job_run.
     const services = intakeServices(intake);
-    const handlers: JobHandlers = { ...placeholderHandlers, intake: intakeHandler(services), parse_835: parseHandler(services), price: priceHandler() };
+    const handlers: JobHandlers = {
+      ...placeholderHandlers,
+      intake: intakeHandler(services),
+      parse_835: parseHandler(services),
+      price: priceHandler(),
+      triage: triageHandler(),
+      audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
+    };
     const worker = await startWorker({
       boss,
       logger,

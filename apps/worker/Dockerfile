@@ -11,7 +11,13 @@ RUN pnpm --filter @tp/worker build
 
 FROM node:24-slim AS runtime
 ENV NODE_ENV=production
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
+# The audit report's PDF is printed with Chromium (docs/adr/0037): playwright-core at the version the
+# lockfile pins, beside the bundle, and its headless Chromium with the system libraries it needs.
+RUN npm install --no-save --omit=dev playwright-core@1.56.1 \
+ && npx playwright-core install --with-deps chromium-headless-shell \
+ && npm cache clean --force
 COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
 USER node
 # ECS sends SIGTERM before stopping a task; the worker drains active jobs and exits.

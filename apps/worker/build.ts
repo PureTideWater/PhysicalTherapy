@@ -14,7 +14,9 @@ await build({
   format: 'esm',
   target: 'node22',
   sourcemap: true,
-  external: ['pg-native'],
+  // playwright-core prints the audit report's PDF with Chromium; it locates its browser at run time, so
+  // it stays a module beside the bundle (the image installs it with its browser).
+  external: ['pg-native', 'playwright-core'],
   // CommonJS dependencies inside an ESM bundle still call require() for Node built-ins.
   banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
   logLevel: 'info',

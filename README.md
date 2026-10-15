@@ -185,6 +185,21 @@ RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A pe
 3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
 
+**Milestone 6 is not complete.** Triage, the five-stage status model, case grouping (report-only), the pursuit-cost
+estimate, the audit report (PDF printed by Playwright's Chromium, plus the line CSV) and the independent reviewer's
+checklist are built (ADR 0038; the Anomalies, Cases and Reports screens and the reviewer checklist). Its done check has
+two parts. "An independent reviewer signs the checklist" works in the application: a reimbursement reviewer reaches the
+practice under a support grant and signs over the report's SHA-256, and an unsigned report cannot be released. "The
+three hand-run audits reproduce from the app line for line" remains open: it needs the three real audits and a
+reimbursement specialist, which this repository does not have. What stands in for it is the synthetic audit
+`fixtures/synthetic/audit/AUDIT-01`: its declarative `inputs.json`, an 835 built from it by `packages/synth`
+(`tsx packages/synth/src/audit-cli.ts` regenerates it), and the expected report and line CSV computed from the inputs
+alone by `tools/audit-worksheet` (Python, `python3 -I tools/audit-worksheet/audit_worksheet.py write`). The test
+`apps/web/src/lib/routes/audit-e2e.db.test.ts` uploads, parses, maps, signs off the contracts, prices, triages and
+reports it through the routes and the jobs, and the report matches the worksheet figure by figure and line for line. A
+practice's materiality and pursuit settings live in `practice.settings` until the Settings screen exists; pursuit cost is
+"not estimated" until the staff rate and minutes are set.
+
 **Milestone 7 is not complete.** Its engine part, its pricing runs and the re-run diffs under a new release are built
 (ADRs 0034, 0035 and 0037): a re-run under SYNTHETIC release 900004, a "release 2" that changes one relative value,
 lists exactly the two affected lines with their cause (test matrix PRC-19, `apps/worker/src/price/rerun.db.test.ts`),
@@ -222,7 +237,7 @@ lists what a person with network access does to finish it.
 | Path | What lives there |
 | --- | --- |
 | `apps/web` | Next.js App Router: UI, route handlers, server actions |
-| `apps/worker` | pg-boss worker: intake, parse, price, triage, reconcile, digest and export jobs |
+| `apps/worker` | pg-boss worker: intake, parse, price, triage, audit report, reconcile, digest and export jobs |
 | `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability` |
 | `infra` | AWS CDK app, one stack per environment |
 | `tools` | log lint, content checker, release scripts, CI guards |

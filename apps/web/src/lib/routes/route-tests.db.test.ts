@@ -38,6 +38,7 @@ import { SAMPLE_PAYER_CLAIM_CONTROL_NUMBER } from './remittances';
 import { seedContractWorld } from './test-support/contract-world';
 import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
+import { seedTriage, seedTriageLine } from './test-support/triage-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -48,8 +49,9 @@ import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
  * - no session, an idle session (30 minutes), a session past 12 hours: refused;
  * - a user without MFA: refused; an internal role signed in without a hardware key: refused;
  * - every persona (each customer role of the practice's group, each firm role through a grant, each
- *   internal role, the support engineer and the contract specialist through support grants): allowed
- *   exactly when the persona matrix allows the route's permission and the actor reaches the practice;
+ *   internal role, the support engineer, the contract specialist and the reviewer through support
+ *   grants): allowed exactly when the persona matrix allows the route's permission and the actor
+ *   reaches the practice;
  * - a mutation replayed with its request key: does nothing;
  * - every persona of another practice, aimed at this practice's records or mixing them into its own
  *   request: never answered with any of this practice's records, and nothing of this practice changes;
@@ -219,9 +221,10 @@ async function seedRemittance(practiceId: string, cipher: PracticeCipher, upload
 
 /**
  * A practice with every persona: its group's members, a firm with a grant, the internal roles, and
- * support grants for the support engineer and the contract specialist (docs/adr/0028); a loaded
- * remittance; contracts at every state the contract screens show; and a complete pricing run of the
- * remittance's line under the signed-off version (docs/adr/0035).
+ * support grants for the support engineer, the contract specialist and the reviewer (docs/adr/0028,
+ * 0038); a loaded remittance; contracts at every state the contract screens show; a complete pricing
+ * run of the remittance's lines under the signed-off version (docs/adr/0035); and its triage: an
+ * anomaly, a case and audit reports (docs/adr/0038).
  */
 async function buildWorld(name: string): Promise<World> {
   const tenant = await createTenantWorld(owner, name);
@@ -230,6 +233,7 @@ async function buildWorld(name: string): Promise<World> {
   const internalId = await createOrganization(owner, 'internal', `${name} internal`);
   let supportEngineerId = '';
   let specialistId = '';
+  let reviewerId = '';
   let memberUserId = '';
   let membershipId = '';
   for (const persona of PERSONA_LIST) {
@@ -248,8 +252,12 @@ async function buildWorld(name: string): Promise<World> {
     if (persona.kind === 'internal' && persona.role === 'contract_specialist') {
       specialistId = userId;
     }
-    // Under a support grant a support engineer holds support, a contract specialist contract_specialist.
-    const granted = persona.kind === 'internal' && (persona.role === 'support' || persona.role === 'contract_specialist');
+    if (persona.kind === 'internal' && persona.role === 'reviewer') {
+      reviewerId = userId;
+    }
+    // Under a support grant a support engineer holds support, a contract specialist contract_specialist,
+    // a reimbursement reviewer reviewer (docs/adr/0038).
+    const granted = persona.kind === 'internal' && (persona.role === 'support' || persona.role === 'contract_specialist' || persona.role === 'reviewer');
     actors.push({
       persona,
       userId,
@@ -279,6 +287,10 @@ async function buildWorld(name: string): Promise<World> {
     await owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'SYN-2', 'SYNTHETIC ABSTRACTION', now() + interval '4 hours')`, [
       tenant.practiceId,
       specialistId,
+    ]);
+    await owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'SYN-3', 'SYNTHETIC AUDIT REVIEW', now() + interval '4 hours')`, [
+      tenant.practiceId,
+      reviewerId,
     ]);
     await owner.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose) VALUES ($1, 'user', 'read', 'practice', $2, $2, $3, 'workspace')", [
       supportEngineerId,
@@ -312,7 +324,23 @@ async function buildWorld(name: string): Promise<World> {
     specialistId,
   });
   const manager = actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'billing_manager')?.userId ?? '';
+  const triageLineId = await seedTriageLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
   const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
+  const triage = await seedTriage({
+    owner,
+    app,
+    keys,
+    documents,
+    practiceId: tenant.practiceId,
+    pricingRunId,
+    flaggedLineId: loaded.serviceLineId,
+    caseLineServiceLineId: triageLineId,
+    payerId: loaded.payerId,
+    planId: loaded.planId,
+    signedOffVersionId: contracts.signedOffVersionId,
+    managerId: manager,
+    reviewerId,
+  });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -333,6 +361,7 @@ async function buildWorld(name: string): Promise<World> {
     ...contracts,
     pricingRunId,
     rerunId,
+    ...triage,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

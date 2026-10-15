@@ -1,8 +1,8 @@
 /**
  * The worker as a library (@tp/worker/runtime), for the end-to-end suite, which runs it beside the web
  * app against the same local document directory and database, and for the web app's database tests:
- * the worker loop, the intake job, the parse_835 job (the parser and the loader) and the price job as
- * they run in production, wired to their local implementations.
+ * the worker loop, the intake job, the parse_835 job (the parser and the loader), the price job, the
+ * triage job and the audit report job as they run in production, wired to their local implementations.
  */
 export { type IntakeConfig, readIntakeConfig } from './config';
 export { type JobContext, type JobHandlers, placeholderHandlers } from './jobs/handlers';
@@ -15,4 +15,8 @@ export { type ParseReportRow, type ReportedError, type ReportedTransaction, type
 export { ZIP_LIMITS, type ZipLimits } from './intake/zip';
 export { ENGINE_ERRORS_MESSAGE, type ExecuteOptions, type ExecuteOutcome, type PricingJobContext, executePricingRun } from './price/execute';
 export { priceHandler } from './price/job';
+export { type ReportOptions, type ReportOutcome, type ReportServices, auditReportHandler, generateAuditReport } from './report/generate';
+export { ChromiumPdfRenderer, type PdfRenderer } from './report/pdf';
+export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeTriage, todayUtc } from './triage/execute';
+export { triageHandler } from './triage/job';
 export { type QueueClient, type RunningWorker, startWorker } from './worker';

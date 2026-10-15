@@ -16,7 +16,8 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * (actor_id, *_by, *_by_user_id) is the world's administrator, who is also the actor the rows are
  * written as, so a cross-tenant probe differs from an accepted row in its practice only. A user column
  * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it, and a column whose value the
- * row's other constraints decide (FIXED_VALUES) gets that value. It first fills only NOT NULL
+ * row's other constraints decide (FIXED_VALUES) gets that value, and one that must match a column of a
+ * row another column references (SAME_AS) is read from that row. It first fills only NOT NULL
  * columns without defaults, and if a constraint refuses that row, fills every column it can. Rows are
  * written as the owner role inside the world's practice scope.
  *
@@ -100,6 +101,17 @@ const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.u
 const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'priced_line.unpriced_reason': () => 'NO_MAPPING',
   'rule_release.published_at': () => new Date().toISOString(),
+  // One open case per pattern: each factory case is its own pattern.
+  'case.pattern_key': () => JSON.stringify({ synthetic: randomUUID() }),
+};
+
+/**
+ * Columns that must equal a column of the row another of their columns references: a case's payer is
+ * its plan's payer, and a case line's service line is its priced line's. Filled after the reference.
+ */
+const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: string }>> = {
+  'case.payer_id': { via: 'plan_id', column: 'payer_id' },
+  'case_line.service_line_id': { via: 'priced_line_id', column: 'service_line_id' },
 };
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
@@ -264,6 +276,9 @@ export class RowFactory {
         row.practice_id = world.practiceId;
         continue;
       }
+      if (SAME_AS[`${table}.${column.name}`] !== undefined) {
+        continue;
+      }
       const fixed = FIXED_VALUES[`${table}.${column.name}`];
       if (fixed !== undefined) {
         row[column.name] = fixed();
@@ -298,6 +313,17 @@ export class RowFactory {
         hours += 1;
       }
       row[column.name] = this.scalar(info, column, hours);
+    }
+    for (const column of info.columns) {
+      const same = SAME_AS[`${table}.${column.name}`];
+      const foreignKey = same === undefined ? undefined : info.foreignKeys.get(same.via);
+      if (same === undefined || foreignKey === undefined) {
+        continue;
+      }
+      const found = await asOwner(client, [world.practiceId], () =>
+        client.query(`SELECT ${quote(same.column)} AS value FROM ${quote(foreignKey.refTable)} WHERE ${quote(foreignKey.refColumn)} = $1`, [row[same.via]]),
+      );
+      row[column.name] = (found.rows[0] as { value?: unknown } | undefined)?.value;
     }
     return row;
   }

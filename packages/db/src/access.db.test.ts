@@ -301,7 +301,17 @@ describe('internal roles and support grants (SEC-05)', () => {
     });
   });
 
-  it('refuses a support grant longer than four hours, and a support grant for someone without the support or contract specialist role', async () => {
+  it('lets a reimbursement reviewer reach the practice under a support grant, holding the reviewer role there (ADR 0038)', async () => {
+    const reviewer = await internalUser('reviewer');
+    const id = await supportGrant(reviewer, null);
+    expect(await allowed(reviewer)).toEqual([world.practiceId]);
+    await withPracticeScope(app, { actorId: reviewer, practiceIds: [world.practiceId] }, (scope) => {
+      expect(scope.access(world.practiceId)).toEqual({ practiceId: world.practiceId, via: 'support', grantId: id, roles: ['reviewer'] });
+      return Promise.resolve();
+    });
+  });
+
+  it('refuses a support grant longer than four hours, and a support grant for someone without the support, contract specialist or reviewer role', async () => {
     const engineer = await internalUser('support');
     await expect(
       asOwner(owner, [world.practiceId], () =>
@@ -311,9 +321,9 @@ describe('internal roles and support grants (SEC-05)', () => {
         ]),
       ),
     ).rejects.toMatchObject({ code: '23514' });
-    const reviewer = await internalUser('reviewer');
-    await expect(supportGrant(reviewer, null)).rejects.toMatchObject({ code: '23514' });
-    expect(await allowed(reviewer)).toEqual([]);
+    const platformAdmin = await internalUser('platform_admin');
+    await expect(supportGrant(platformAdmin, null)).rejects.toMatchObject({ code: '23514' });
+    expect(await allowed(platformAdmin)).toEqual([]);
   });
 
   it('lets only a platform administrator create a support grant through the application role', async () => {

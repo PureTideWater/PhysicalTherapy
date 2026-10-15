@@ -249,6 +249,9 @@ importers:
       pg-boss:
         specifier: ^12.38.0
         version: 12.38.0(@opentelemetry/api@1.9.1)
+      playwright-core:
+        specifier: 1.56.1
+        version: 1.56.1
       yauzl:
         specifier: 3.4.0
         version: 3.4.0
@@ -588,10 +591,16 @@ importers:
       '@tp/rules':
         specifier: workspace:*
         version: link:../rules
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
         version: 24.19.2
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.10.2
       typescript:
         specifier: 'catalog:'
         version: 6.0.3

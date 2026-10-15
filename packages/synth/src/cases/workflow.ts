@@ -47,11 +47,11 @@ export function cas02(b: CaseBuilder): void {
 
 export function cas03(b: CaseBuilder): void {
   const base = { ...basics(b, 'Q'), date: calendarDate(2026, 3, 2), paid: calendarDate(2026, 4, 1) };
-  const first = Array.from({ length: 8 }, (_, index) => therapyClaim(b.world, { caseId: b.info.id, n: index + 1, plan: 'SYNPLAN-FIX-ONE', lines: [allowedLine(b, addDays(base.date, index), 2, 7000n)] }));
+  const first = Array.from({ length: 8 }, (_, index) => therapyClaim(b.world, { caseId: b.info.id, n: index + 1, plan: 'SYNPLAN-FIX-ONE', lines: [allowedLine(b, addDays(base.date, index), 2, 6500n)] }));
   const second = Array.from({ length: 8 }, (_, index) =>
     therapyClaim(b.world, { caseId: b.info.id, n: index + 11, plan: 'SYNPLAN-FIX-TWO', lines: [therapyLine(b.world, { code: '97530', units: 2, date: addDays(base.date, index), unitCharge: 8000n, allowed: 7000n, b6: true })] }),
   );
-  b.add835('remit.835', file(b, oneRemittance(b, base, [...first, ...second], 1), 1, base.paid), 'Sixteen underpaid lines in two payer patterns: eight 97110 x 2 under plan one, eight 97530 x 2 under plan two.');
+  b.add835('remit.835', file(b, oneRemittance(b, base, [...first, ...second], 1), 1, base.paid), 'Sixteen underpaid lines in two payer patterns: eight 97110 x 2 allowed 65.00 under plan one, eight 97530 x 2 allowed 70.00 under plan two.');
   b.scenario({
     contracts: [
       { plan: 'SYNPLAN-FIX-ONE', method: 'FIXED_SCHEDULE', schedule: [{ code: '97110', amountCents: centsToString(cents(FIXED_97110)) }] },
@@ -60,7 +60,13 @@ export function cas03(b: CaseBuilder): void {
     lineMaterialityCents: '500',
     caseMaterialityCents: '25000',
   });
-  b.outcome({ cases: [{ plan: 'SYNPLAN-FIX-ONE', lines: 8, varianceCents: '24000' }, { plan: 'SYNPLAN-FIX-TWO', lines: 8, varianceCents: '27200' }], note: 'one case per pattern; each line expects 100.00 (plan one) or 104.00 (plan two) against 70.00 observed' });
+  b.outcome({
+    cases: [
+      { plan: 'SYNPLAN-FIX-ONE', lines: 8, varianceCents: '28000' },
+      { plan: 'SYNPLAN-FIX-TWO', lines: 8, varianceCents: '27200' },
+    ],
+    note: 'one case per pattern, each above the 250.00 case materiality; each line expects 100.00 (plan one, 65.00 observed) or 104.00 (plan two, 70.00 observed)',
+  });
 }
 
 export function cas04(b: CaseBuilder): void {

@@ -363,7 +363,8 @@ describe('a complete run never changes (PRD 8, Invariants)', () => {
       message: expect.stringMatching(/never changes/) as string,
     });
     expect(await asTheOwner('DELETE FROM priced_line WHERE id = $1', [lineId])).toMatchObject({ code: '23514' });
-    expect(await errorOf(w.owner.query('TRUNCATE priced_line'))).toMatchObject({ code: '23514' });
+    // CASCADE: the triage tables reference priced lines (docs/adr/0038), and their own triggers refuse it too.
+    expect(await errorOf(w.owner.query('TRUNCATE priced_line CASCADE'))).toMatchObject({ code: '23514' });
     // A line added to the complete run, of a service line it does not hold, is refused.
     expect(
       await asApp("INSERT INTO priced_line (practice_id, pricing_run_id, service_line_id, observed_allowed_cents, unpriced_reason, trace) VALUES ($1, $2, $3, 0, 'ENGINE_ERROR', '{}')", [

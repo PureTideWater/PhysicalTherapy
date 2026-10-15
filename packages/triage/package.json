@@ -13,10 +13,12 @@
   "dependencies": {
     "@tp/money": "workspace:*",
     "@tp/pricing": "workspace:*",
-    "@tp/rules": "workspace:*"
+    "@tp/rules": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "fast-check": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

@@ -5,7 +5,7 @@
   "assertion": "No anomaly",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/triage/triage.db.test.ts","packages/triage/src/anomaly.test.ts"],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

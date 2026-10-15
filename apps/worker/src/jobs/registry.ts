@@ -3,9 +3,11 @@ import { z } from 'zod';
 /**
  * Every job the worker runs. Each is its own pg-boss queue. `intake` takes an upload in once its bytes
  * have arrived (hash, duplicate check, malware scan, sniffing, zip expansion) and queues parse_835 for
- * each clean 835 it finds (docs/adr/0026).
+ * each clean 835 it finds (docs/adr/0026). `triage` screens a complete pricing run's lines and groups
+ * its validated ones into cases; `audit_report` triages a run and generates its audit report (the PDF
+ * and the line CSV, docs/adr/0038).
  */
-export const JOB_TYPES = ['intake', 'parse_835', 'price', 'triage', 'reconcile', 'digest', 'export'] as const;
+export const JOB_TYPES = ['intake', 'parse_835', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
@@ -21,6 +23,7 @@ export const JOB_PAYLOADS = {
   parse_835: z.strictObject({ practice_id: id, document_id: id }),
   price: z.strictObject({ practice_id: id, pricing_run_id: id }),
   triage: z.strictObject({ practice_id: id, pricing_run_id: id }),
+  audit_report: z.strictObject({ practice_id: id, audit_report_id: id }),
   reconcile: z.strictObject({ practice_id: id, document_id: id }),
   digest: z.strictObject({ practice_id: id, period: month }),
   export: z.strictObject({ practice_id: id, export_job_id: id }),
@@ -34,6 +37,7 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   parse_835: (payload) => payload.document_id,
   price: (payload) => payload.pricing_run_id,
   triage: (payload) => payload.pricing_run_id,
+  audit_report: (payload) => payload.audit_report_id,
   reconcile: (payload) => payload.document_id,
   digest: (payload) => payload.period,
   export: (payload) => payload.export_job_id,

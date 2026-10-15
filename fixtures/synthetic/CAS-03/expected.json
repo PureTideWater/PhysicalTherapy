@@ -5,16 +5,21 @@
   "assertion": "One case per pattern",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/triage/triage.db.test.ts",
+    "packages/triage/src/patterns.test.ts",
+    "apps/worker/src/report/report.db.test.ts",
+    "apps/web/src/lib/routes/audit-e2e.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [
     {
       "path": "remit.835",
-      "sha256": "d0c37d40531c669cd11909bb7c0188b100f170b3d51bbe15fe58c139d8acd45b",
+      "sha256": "a39d5525c400f1cfc986a01c4c2f59aced260610c8e2e0f4f4d3b9846a2c6572",
       "bytes": 5188,
       "kind": "x12",
-      "description": "Sixteen underpaid lines in two payer patterns: eight 97110 x 2 under plan one, eight 97530 x 2 under plan two.",
+      "description": "Sixteen underpaid lines in two payer patterns: eight 97110 x 2 allowed 65.00 under plan one, eight 97530 x 2 allowed 70.00 under plan two.",
       "x12": {
         "oracle": {
           "valid": true,
@@ -52,7 +57,7 @@
                         "segmentCount": 159,
                         "bpr": {
                           "handling": "C",
-                          "amountCents": "89600",
+                          "amountCents": "86400",
                           "creditDebit": "C",
                           "method": "ACH",
                           "format": "CCP",
@@ -80,8 +85,8 @@
                             "clp01": "SYNPCNCAS03001",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030001",
                             "clp08": "11",
@@ -94,7 +99,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -107,9 +112,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -125,8 +130,8 @@
                             "clp01": "SYNPCNCAS03002",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030002",
                             "clp08": "11",
@@ -139,7 +144,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -152,9 +157,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -170,8 +175,8 @@
                             "clp01": "SYNPCNCAS03003",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030003",
                             "clp08": "11",
@@ -184,7 +189,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -197,9 +202,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -215,8 +220,8 @@
                             "clp01": "SYNPCNCAS03004",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030004",
                             "clp08": "11",
@@ -229,7 +234,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -242,9 +247,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -260,8 +265,8 @@
                             "clp01": "SYNPCNCAS03005",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030005",
                             "clp08": "11",
@@ -274,7 +279,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -287,9 +292,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -305,8 +310,8 @@
                             "clp01": "SYNPCNCAS03006",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030006",
                             "clp08": "11",
@@ -319,7 +324,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -332,9 +337,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -350,8 +355,8 @@
                             "clp01": "SYNPCNCAS03007",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030007",
                             "clp08": "11",
@@ -364,7 +369,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -377,9 +382,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -395,8 +400,8 @@
                             "clp01": "SYNPCNCAS03008",
                             "clp02": "1",
                             "chargeCents": "15000",
-                            "paidCents": "5600",
-                            "patientResponsibilityCents": "1400",
+                            "paidCents": "5200",
+                            "patientResponsibilityCents": "1300",
                             "clp06": "12",
                             "clp07": "SYNCCNCAS030008",
                             "clp08": "11",
@@ -409,7 +414,7 @@
                               {
                                 "procedure": "HC:97110",
                                 "chargeCents": "15000",
-                                "paidCents": "5600",
+                                "paidCents": "5200",
                                 "revenueCode": null,
                                 "units": "2",
                                 "originalProcedure": null,
@@ -422,9 +427,9 @@
                                     "period": null
                                   }
                                 ],
-                                "cas": {"CO-45":"8000","PR-2":"1400"},
+                                "cas": {"CO-45":"8500","PR-2":"1300"},
                                 "refs": [],
-                                "amounts": [["B6","7000"]],
+                                "amounts": [["B6","6500"]],
                                 "remarks": [],
                                 "differenceCents": "0"
                               }
@@ -798,9 +803,9 @@
                         ],
                         "plb": [],
                         "balance": {
-                          "claimsPaidCents": "89600",
+                          "claimsPaidCents": "86400",
                           "plbTotalCents": "0",
-                          "paymentCents": "89600",
+                          "paymentCents": "86400",
                           "differenceCents": "0",
                           "balanced": true,
                           "claimsBalanced": true
@@ -831,7 +836,7 @@
                 "payeeId": "9933698968",
                 "isa13": "050030001",
                 "trn02": "SYNEFTCAS03001",
-                "bpr02Cents": "89600"
+                "bpr02Cents": "86400"
               },
               "bprMethod": "ACH",
               "bprHandling": "C",
@@ -839,9 +844,9 @@
               "payerName": "SYNTHETIC PAYER Q",
               "payerIds": [["2U","SYNPAYERQ"],["TRN03","1SYN00000Q"]],
               "balance": {
-                "claimsPaidCents": "89600",
+                "claimsPaidCents": "86400",
                 "plbTotalCents": "0",
-                "paymentCents": "89600",
+                "paymentCents": "86400",
                 "differenceCents": "0",
                 "balanced": true
               },
@@ -854,8 +859,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030001",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -873,19 +878,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-02",
                       "serviceTo": "2026-03-02",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 23
@@ -893,7 +898,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 24
@@ -909,8 +914,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030002",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -928,19 +933,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-03",
                       "serviceTo": "2026-03-03",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 32
@@ -948,7 +953,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 33
@@ -964,8 +969,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030003",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -983,19 +988,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-04",
                       "serviceTo": "2026-03-04",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 41
@@ -1003,7 +1008,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 42
@@ -1019,8 +1024,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030004",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -1038,19 +1043,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-05",
                       "serviceTo": "2026-03-05",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 50
@@ -1058,7 +1063,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 51
@@ -1074,8 +1079,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030005",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -1093,19 +1098,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-06",
                       "serviceTo": "2026-03-06",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 59
@@ -1113,7 +1118,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 60
@@ -1129,8 +1134,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030006",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -1148,19 +1153,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-07",
                       "serviceTo": "2026-03-07",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 68
@@ -1168,7 +1173,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 69
@@ -1184,8 +1189,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030007",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -1203,19 +1208,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-08",
                       "serviceTo": "2026-03-08",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 77
@@ -1223,7 +1228,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 78
@@ -1239,8 +1244,8 @@
                   "payerClaimControlNumber": "SYNCCNCAS030008",
                   "status": "1",
                   "chargeCents": "15000",
-                  "paidCents": "5600",
-                  "patientResponsibilityCents": "1400",
+                  "paidCents": "5200",
+                  "patientResponsibilityCents": "1300",
                   "filingIndicator": "12",
                   "facilityCode": "11",
                   "frequencyCode": "1",
@@ -1258,19 +1263,19 @@
                       "modifiers": [],
                       "revenueCode": null,
                       "chargeCents": "15000",
-                      "paidCents": "5600",
+                      "paidCents": "5200",
                       "units": "2",
                       "originalUnits": null,
                       "serviceFrom": "2026-03-09",
                       "serviceTo": "2026-03-09",
-                      "lineAllowedCents": "7000",
-                      "observedAllowed": {"cents":"7000","basis":"amt_b6","allocatedFromClaim":false},
-                      "patientShareCents": "1400",
+                      "lineAllowedCents": "6500",
+                      "observedAllowed": {"cents":"6500","basis":"amt_b6","allocatedFromClaim":false},
+                      "patientShareCents": "1300",
                       "adjustments": [
                         {
                           "group": "CO",
                           "reason": "45",
-                          "amountCents": "8000",
+                          "amountCents": "8500",
                           "quantity": null,
                           "position": 1,
                           "segmentIndex": 86
@@ -1278,7 +1283,7 @@
                         {
                           "group": "PR",
                           "reason": "2",
-                          "amountCents": "1400",
+                          "amountCents": "1300",
                           "quantity": null,
                           "position": 2,
                           "segmentIndex": 87
@@ -1766,10 +1771,10 @@
   },
   "outcome": {
     "cases": [
-      {"plan":"SYNPLAN-FIX-ONE","lines":8,"varianceCents":"24000"},
+      {"plan":"SYNPLAN-FIX-ONE","lines":8,"varianceCents":"28000"},
       {"plan":"SYNPLAN-FIX-TWO","lines":8,"varianceCents":"27200"}
     ],
-    "note": "one case per pattern; each line expects 100.00 (plan one) or 104.00 (plan two) against 70.00 observed"
+    "note": "one case per pattern, each above the 250.00 case materiality; each line expects 100.00 (plan one, 65.00 observed) or 104.00 (plan two, 70.00 observed)"
   },
   "notes": []
 }

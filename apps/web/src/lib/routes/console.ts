@@ -397,8 +397,8 @@ export interface ConsoleSupportGrant {
   readonly practiceId: string;
   readonly practiceName: string;
   readonly engineerEmail: string;
-  /** The grantee's internal role: a support engineer, or a contract specialist (docs/adr/0028). */
-  readonly granteeRole: 'support' | 'contract_specialist' | null;
+  /** The grantee's internal role: a support engineer, a contract specialist (docs/adr/0028) or a reimbursement reviewer (docs/adr/0038). */
+  readonly granteeRole: 'support' | 'contract_specialist' | 'reviewer' | null;
   readonly ticket: string;
   readonly reason: string;
   readonly createdAt: Date;
@@ -429,13 +429,13 @@ export const supportPage = platformRoute({
       open: boolean;
     }>("SELECT *, (now() < expires_at AND now() < created_at + interval '4 hours') AS open FROM console_support_grants() LIMIT 100");
     const practices = await scope.client.query<{ practice_id: string; name: string; status: string }>('SELECT practice_id, name, status FROM console_practices(NULL)');
-    // Who a support grant can go to: support engineers and contract specialists (support_grant_role()).
-    const engineers = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' }>(
+    // Who a support grant can go to: support engineers, contract specialists and reimbursement reviewers (support_grant_role()).
+    const engineers = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' | 'reviewer' }>(
       `SELECT u.id, u.email, support_grant_role(u.id) AS role FROM "user" u
         WHERE support_grant_role(u.id) IS NOT NULL
         ORDER BY support_grant_role(u.id) DESC, u.email`,
     );
-    const emails = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' | null }>('SELECT id, email, support_grant_role(id) AS role FROM "user" WHERE id = ANY ($1::uuid[])', [
+    const emails = await scope.client.query<{ id: string; email: string; role: 'support' | 'contract_specialist' | 'reviewer' | null }>('SELECT id, email, support_grant_role(id) AS role FROM "user" WHERE id = ANY ($1::uuid[])', [
       grants.rows.map((row) => row.user_id),
     ]);
     const practiceName = new Map(practices.rows.map((row) => [row.practice_id, row.name]));

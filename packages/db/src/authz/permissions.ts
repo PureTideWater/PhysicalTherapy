@@ -13,6 +13,9 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  * - Line-level PHI is read by the roles that work lines (billing manager, analyst, firm roles) and by
  *   a support engineer under a support grant; exporting it by the billing manager and firm principal.
  * - firm_analyst is the Analyst persona in a firm.
+ * - The reimbursement reviewer validates a practice's audit findings inside that practice, reached
+ *   through a support grant (docs/adr/0038), so audit_finding.validate is a practice permission; signing
+ *   the attestation is the only record it writes, and the permission does not count as a write.
  * - The practice administrator and the billing manager sign off contract versions (PRD 5, J5:
  *   contract.sign_off), and so does the firm principal, who does everything a billing manager does.
  *   A contract specialist reaches a practice only under a support grant (docs/adr/0028).
@@ -60,7 +63,7 @@ export const PERMISSIONS = {
   'rate_record.approve': { scope: 'platform', writes: true, description: 'approve rate records for publication' },
   'rate_record.edit_published': { scope: 'platform', writes: true, description: 'edit a published rate version' },
   'pricing.answer': { scope: 'platform', writes: false, description: 'answer pricing questions' },
-  'audit_finding.validate': { scope: 'platform', writes: false, description: 'validate audit findings against contracts' },
+  'audit_finding.validate': { scope: 'practice', writes: false, description: 'validate audit findings against contracts and sign the attestation' },
   'organization.manage': { scope: 'platform', writes: true, description: 'manage organizations, practices and memberships' },
   'agreement.record': { scope: 'platform', writes: true, description: 'record agreements' },
   'support_grant.create': { scope: 'platform', writes: true, description: 'create a break-glass grant from a ticket' },
@@ -84,7 +87,7 @@ export const STRUCTURAL_RULES: Readonly<Record<StructuralRule, string>> = {
   grant_in_force:
     'a firm reaches a practice only through a grant in force: effective_practice_access() ignores an expired, revoked or not yet started grant on the next transaction',
   support_grant_required:
-    'internal roles have no standing access: the internal organization owns no practice and receives no grant, no internal user holds a group or firm membership (nor grants one to themselves), and the effective-permission function ignores customer routes of internal users, so only a support grant reaches PHI (a support engineer holds support under it, a contract specialist contract_specialist)',
+    'internal roles have no standing access: the internal organization owns no practice and receives no grant, no internal user holds a group or firm membership (nor grants one to themselves), and the effective-permission function ignores customer routes of internal users, so only a support grant reaches PHI (a support engineer holds support under it, a contract specialist contract_specialist, a reimbursement reviewer reviewer)',
   support_grant_expiry:
     'a support grant reaches its practice for at most four hours, or until it is ended when the ticket closes, and then nothing, on the next transaction',
   two_person_approval: 'the drafter of a packet never holds packet.approve_own_draft; the single-user 24-hour delay is the packet workflow’s (milestone 8)',

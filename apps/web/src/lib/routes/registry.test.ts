@@ -16,8 +16,10 @@ import * as practice from './practice';
 import * as pricing from './pricing';
 import * as releases from './releases';
 import * as remittances from './remittances';
+import * as reports from './reports';
 import * as ruleReleases from './rule-releases';
 import * as signIn from './sign-in';
+import * as triage from './triage';
 import * as uploads from './uploads';
 
 /**
@@ -36,7 +38,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [abstraction, account, consoleRoutes, contracts, coverage, mapping, practice, pricing, releases, remittances, ruleReleases, signIn, uploads, registry].flatMap((module) =>
+  [abstraction, account, consoleRoutes, contracts, coverage, mapping, practice, pricing, releases, remittances, reports, ruleReleases, signIn, triage, uploads, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );

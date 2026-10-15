@@ -5,7 +5,12 @@
   "assertion": "Holds",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/triage/triage.db.test.ts",
+    "packages/triage/src/anomaly.test.ts",
+    "apps/worker/src/report/report.db.test.ts",
+    "apps/web/src/lib/routes/audit-e2e.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

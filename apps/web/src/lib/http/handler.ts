@@ -131,7 +131,7 @@ export function routeHandler(route: Route, servicesOf: () => Services) {
   };
 }
 
-function isDownload(data: unknown): data is Download {
+function isDownload(data: unknown): data is Download<string | Uint8Array<ArrayBuffer>> {
   return typeof data === 'object' && data !== null && 'download' in data;
 }
 
@@ -139,7 +139,7 @@ function isDownload(data: unknown): data is Download {
  * A Next route handler for a registered download route (GET): the file as an attachment, private and
  * never cached, with the opaque file name the route chose; any refusal as the JSON outcome.
  */
-export function downloadHandler(route: Route<Download>, servicesOf: () => Services) {
+export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayBuffer>>>, servicesOf: () => Services) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
     const built = await routeRequest(request, cookies, context);

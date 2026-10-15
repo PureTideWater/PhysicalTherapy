@@ -5,7 +5,11 @@
   "assertion": "Validated, not actionable",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/triage/triage.db.test.ts",
+    "packages/triage/src/actionable.test.ts",
+    "apps/web/src/lib/routes/audit-e2e.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

@@ -21,6 +21,11 @@ only into scratch test databases, through the loader's test-only option, never t
   PLB items, unknown codes, the receipt); upload sequences with their dedup outcomes (`uploads`); scenario
   inputs that are not files (`scenario`) and outcomes a later milestone asserts (`outcome`). Cases that need no
   file say why (`noFileReason`). The types are `CaseExpectation` in `packages/synth/src/expected/types.ts`.
+- `audit/<id>/` holds a synthetic end-to-end audit (milestone 6, docs/adr/0038): a declarative `inputs.json` written
+  by hand (invented settings, payer, plans, contracts and lines), the `remit.835` and `expected.json` that
+  `packages/synth/src/audit.ts` builds from it (`tsx packages/synth/src/audit-cli.ts`), and the
+  `expected-report.json` and `expected-lines.csv` that the independent worksheet computes from the inputs alone
+  (`python3 -I tools/audit-worksheet/audit_worksheet.py write`). `pnpm synth --all` never touches it.
 - `PAR-29/generated/` holds the 10,000-claim file when a test or `pnpm synth --large` writes it; git ignores
   it, and `PAR-29/expected.json` records its size, hash and counts.
 

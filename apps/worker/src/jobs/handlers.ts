@@ -38,6 +38,7 @@ export const placeholderHandlers: JobHandlers = {
   parse_835: placeholder,
   price: placeholder,
   triage: placeholder,
+  audit_report: placeholder,
   reconcile: placeholder,
   digest: placeholder,
   export: placeholder,

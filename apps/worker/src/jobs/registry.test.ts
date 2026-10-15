@@ -15,14 +15,15 @@ const examples: { readonly [T in JobType]: JobPayload<T> } = {
   parse_835: { practice_id: PRACTICE, document_id: SUBJECT },
   price: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   triage: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
+  audit_report: { practice_id: PRACTICE, audit_report_id: SUBJECT },
   reconcile: { practice_id: PRACTICE, document_id: SUBJECT },
   digest: { practice_id: PRACTICE, period: '2026-10' },
   export: { practice_id: PRACTICE, export_job_id: SUBJECT },
 };
 
 describe('job registry', () => {
-  it('registers the six job types of PRD section 15 and intake, which queues parse_835', () => {
-    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'price', 'triage', 'reconcile', 'digest', 'export']);
+  it('registers the six job types of PRD section 15, intake, which queues parse_835, and the audit report', () => {
+    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export']);
     expect(Object.keys(JOB_PAYLOADS).sort()).toEqual([...JOB_TYPES].sort());
   });
 
@@ -58,6 +59,7 @@ describe('singletonKey', () => {
     ['parse_835', `parse_835:${PRACTICE}:${SUBJECT}`],
     ['price', `price:${PRACTICE}:${SUBJECT}`],
     ['triage', `triage:${PRACTICE}:${SUBJECT}`],
+    ['audit_report', `audit_report:${PRACTICE}:${SUBJECT}`],
     ['reconcile', `reconcile:${PRACTICE}:${SUBJECT}`],
     ['digest', `digest:${PRACTICE}:2026-10`],
     ['export', `export:${PRACTICE}:${SUBJECT}`],
