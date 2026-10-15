@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobHandlers } from './jobs/handlers';
 import { placeholderHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers } from './jobs/platform';
-import { JOB_TYPES, QUEUE_OPTIONS, queueOptions } from './jobs/registry';
+import { JOB_TYPES, PARSE_CONCURRENCY, QUEUE_OPTIONS, queueOptions, workOptions } from './jobs/registry';
 import type { JobRunRecorder } from './jobs/runs';
 import { CrossPracticeJobError, JOB_FAILED_MESSAGE, JobPayloadError, type QueueClient, startWorker } from './worker';
 
@@ -86,7 +86,12 @@ describe('startWorker', () => {
     ]);
     for (const type of JOB_TYPES) {
       expect(boss.createQueue).toHaveBeenCalledWith(type, queueOptions(type));
-      expect(boss.work).toHaveBeenCalledWith(type, { batchSize: 1 }, expect.any(Function));
+      expect(boss.work).toHaveBeenCalledWith(type, workOptions(type), expect.any(Function));
+    }
+    // A zip's parse jobs drain several at a time, polled at pg-boss's minimum; every other queue one at a time.
+    expect(workOptions('parse_835')).toEqual({ batchSize: 1, pollingIntervalSeconds: 0.5, localConcurrency: PARSE_CONCURRENCY });
+    for (const type of JOB_TYPES.filter((other) => other !== 'parse_835')) {
+      expect(workOptions(type)).toEqual({ batchSize: 1 });
     }
     await worker.stop();
   });

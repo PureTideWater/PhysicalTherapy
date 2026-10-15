@@ -803,6 +803,8 @@ describe('the screens', () => {
     const claimId = new URL(found.redirect ?? '', 'http://localhost').searchParams.get('claim');
     const one = ok(await call(claimsPage, practice.manager, { ...params(), view: 'all', claim: claimId }));
     expect(new Set(one.list.rows.map((row) => row.claimId))).toEqual(new Set([claimId]));
+    // The reversal repeats the number; the search lands on the adjudicated claim it reversed.
+    expect(one.list.rows.every((row) => !row.reversal && row.reversed && row.superseded)).toBe(true);
     expect(await call(findClaim, practice.manager, params(), { payerClaimControlNumber: 'SYNCCNNOSUCH' })).toMatchObject({ status: 'invalid', issues: [{ field: 'payerClaimControlNumber' }] });
     expect(await call(findClaim, practice.viewer, params(), { payerClaimControlNumber: 'SYNCCNPAR080001' })).toMatchObject({ status: 'forbidden', permission: 'phi.read' });
     // Every row returned is an audited read of its claim.

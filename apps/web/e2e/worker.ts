@@ -7,7 +7,7 @@ import { E2E_DOCUMENTS_DIR, e2eDatabaseUrl } from './env';
 
 /** The worker, as main.ts wires it in development, for the length of a test. */
 export async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
-  const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 2);
+  const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 4);
   const boss = new PgBoss(e2eDatabaseUrl());
   boss.on('error', () => undefined);
   const services = intakeServices({ documents: { kind: 'local', dir: E2E_DOCUMENTS_DIR }, keys: { kind: 'local', masterKey: developmentMasterKey() }, scanWaitMs: 10_000 });

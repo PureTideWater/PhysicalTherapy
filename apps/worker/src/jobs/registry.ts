@@ -78,3 +78,23 @@ export const QUEUE_OPTIONS = {
 export function queueOptions(type: JobType): typeof QUEUE_OPTIONS & { readonly expireInSeconds?: number } {
   return type === 'intake' ? { ...QUEUE_OPTIONS, expireInSeconds: 3600 } : QUEUE_OPTIONS;
 }
+
+export interface WorkOptions {
+  readonly batchSize: 1;
+  readonly pollingIntervalSeconds?: number;
+  readonly localConcurrency?: number;
+}
+
+/** How many parse_835 jobs one worker runs at once. */
+export const PARSE_CONCURRENCY = 4;
+
+/**
+ * How the worker takes each queue's jobs: one job per fetch, pg-boss's two-second poll. A zip queues
+ * hundreds of parse_835 jobs at once, each a fraction of a second's work, so that queue is polled
+ * every half second (pg-boss's minimum) by four workers per process: a 500-file zip loads in about a
+ * minute rather than seventeen. Concurrent loads of one practice are safe (ADR 0027: the remittance
+ * key, an advisory lock per trace, and upserts in one order).
+ */
+export function workOptions(type: JobType): WorkOptions {
+  return type === 'parse_835' ? { batchSize: 1, pollingIntervalSeconds: 0.5, localConcurrency: PARSE_CONCURRENCY } : { batchSize: 1 };
+}

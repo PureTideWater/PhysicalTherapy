@@ -79,6 +79,10 @@ page lists every error with its segment and position.
 **Runs.** The worker records each practice job's attempts in `job_run` (running, retrying, failed on the third,
 succeeded) inside the job's own scope; the practice home shows the last run and a run-failed banner with the job
 reference until a later run of the same job key succeeds (JOB-02). The operator alert line is unchanged (ADR 0019).
+A zip queues hundreds of `parse_835` jobs at once, each well under a second's work, so that queue is polled every half
+second (pg-boss's minimum, against its default two) by four workers per process (`workOptions`): a 500-file zip loads in
+about a minute instead of seventeen. Concurrent loads of one practice are safe for the reasons under Dedup and because
+every upsert takes its rows in one order.
 
 **Code lists.** CARC and RARC come from the newest published rule release; with none (a development database), every
 one loads flagged unknown and the report records no release.
@@ -88,7 +92,8 @@ paid month; reversals linked to their originals) and Claims and lines (server-si
 remittance, claim, patient reference, code and service month; the net and full views; expected allowed and status
 ready for pricing) are practice routes under `practice.open`. PHI columns (patient reference, control numbers, service
 dates, a PLB's reference, notes) are decrypted only for `phi.read`; a payer claim control number is searched for by a
-form post that redirects to the claim's opaque ID; filters carry months, not dates, because the URL guard refuses
+form post that redirects to the claim's opaque ID (the newest adjudicated claim with that number, not the reversal that
+repeats it); filters carry months, not dates, because the URL guard refuses
 date-of-birth-shaped values. Every row returned is an audited read. A note on a line (`case.work`) is a `line_note`
 row, encrypted like the identifiers because a person may type anything into it.
 

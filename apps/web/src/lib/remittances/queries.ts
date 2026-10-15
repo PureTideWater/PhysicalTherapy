@@ -569,11 +569,16 @@ export async function listClaimLines(scope: Scope, query: ClaimLineQuery, cipher
   };
 }
 
-/** The practice's claim with this payer claim control number (by its keyed hash), newest first. */
+/**
+ * The practice's claim with this payer claim control number (by its keyed hash): the newest the payer
+ * adjudicated. A reversal repeats the number of the claim it reverses, so it is found only when no
+ * adjudicated claim has the number; the adjudicated one shows it is reversed and what superseded it.
+ */
 export async function claimByPayerControlNumber(scope: Scope, practiceId: string, cipher: PracticeCipher, payerClaimControlNumber: string): Promise<string | undefined> {
   const { rows } = await scope.client.query<{ id: string }>(
     `SELECT c.id FROM claim c JOIN remittance r ON r.id = c.remittance_id
-      WHERE c.practice_id = $1 AND c.payer_claim_control_number_hash = $2 ORDER BY r.bpr16_date DESC, c.created_at DESC, c.id LIMIT 1`,
+      WHERE c.practice_id = $1 AND c.payer_claim_control_number_hash = $2
+      ORDER BY c.claim_status_code = '${REVERSAL_STATUS_CODE}', r.bpr16_date DESC, c.created_at DESC, c.id LIMIT 1`,
     [practiceId, cipher.lookupHash('claim.payer_claim_control_number', payerClaimControlNumber)],
   );
   return rows[0]?.id;

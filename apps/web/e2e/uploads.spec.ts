@@ -40,7 +40,8 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
     await expect(batch.getByText('remit.835')).toBeVisible();
     await expect(batch.getByRole('status')).toContainText('2 of 2 sent', { timeout: 30_000 });
     await expect(batch.getByRole('status')).toContainText('2 of 2 taken in', { timeout: 180_000 });
-    await expect(batch.getByText('Loaded 1 remittance, 1 claim and 1 line.')).toBeVisible();
+    // With no rule release loaded, every adjustment code loads flagged unknown, and the receipt says so.
+    await expect(batch.getByText(/^Loaded 1 remittance, 1 claim and 1 line[.;]/)).toBeVisible();
     await expect(batch.getByText(/Each file in the zip has its own receipt: 500 files, 499 loaded, 1 held/)).toBeVisible();
   } finally {
     await local.close();
@@ -70,9 +71,15 @@ test('a billing manager uploads an 835 and a zip; the worker takes them in and l
   const download = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download the report (CSV)' }).click();
   expect((await download).suggestedFilename()).toMatch(/^receipt-[0-9a-f-]{36}\.csv$/);
-  // The held file shows its segment and position (milestone 3).
-  const held = page.getByRole('row').filter({ hasText: 'Held' }).first();
-  await held.getByRole('link').first().click();
+  // The held file shows its segment and position (milestone 3): page through the zip's files to it.
+  const held = page.getByRole('row').filter({ hasText: 'Held' });
+  const pager = page.getByRole('navigation', { name: 'Receipt pages' });
+  for (let turn = 0; turn < 20 && (await held.count()) === 0; turn += 1) {
+    const shown = (await pager.textContent()) ?? '';
+    await pager.getByRole('button', { name: 'Older' }).click();
+    await expect(pager).not.toHaveText(shown);
+  }
+  await held.first().getByRole('link').first().click();
   await expect(page.getByRole('table', { name: 'Errors' })).toContainText(/EDI_SYNTAX.*segment \d+ \([A-Z0-9]+\), element \d+/);
 });
 

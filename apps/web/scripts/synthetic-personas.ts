@@ -5,8 +5,10 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
 /**
  * The synthetic people `pnpm db:seed` creates for development and the e2e tests: one for every
  * persona of PRD 3, plus a few the e2e tests use alone (an invited user without MFA, one to lock out,
- * one to let sit idle, a second support engineer). Their passwords and TOTP secrets are derived from
- * their keys here rather than written down, and exist only in the local identity provider's store.
+ * one to let sit idle, a second support engineer, and a billing manager and a viewer for the
+ * remittances journey, whose sign-ins never share a TOTP step with another spec's). Their passwords
+ * and TOTP secrets are derived from their keys here rather than written down, and exist only in the
+ * local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
  */
 
@@ -47,6 +49,8 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'lockout', organization: 'group', role: 'analyst' },
   { key: 'idle', organization: 'group', role: 'billing_manager' },
   { key: 'devices', organization: 'group', role: 'viewer' },
+  { key: 'remittances-manager', organization: 'group', role: 'billing_manager' },
+  { key: 'remittances-viewer', organization: 'group', role: 'viewer' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

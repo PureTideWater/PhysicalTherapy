@@ -21,7 +21,7 @@ const KNOWN = ['SYNCCNPAR080001', 'SYNCCNPAR080002', 'SYNPCNPAR08001', 'SYNTHLAS
 
 test('a billing manager follows a payment, its reversal and its correction from upload to the line; a viewer sees no PHI', async ({ page, browser }) => {
   test.setTimeout(180_000);
-  await signInWithTotp(page, 'billing-manager');
+  await signInWithTotp(page, 'remittances-manager');
   const south = await practiceId('south');
   await page.goto(`/p/${south}/uploads`);
   const local = await startLocalWorker();
@@ -70,7 +70,7 @@ test('a billing manager follows a payment, its reversal and its correction from 
   // The line trace, and a note on the line.
   await table.getByRole('link', { name: 'Line trace' }).first().click();
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/^Line \d: 97/);
-  await page.getByLabel('Note').fill('SYNTHETIC NOTE: superseded by the correction of June');
+  await page.getByRole('textbox', { name: 'Note' }).fill('SYNTHETIC NOTE: superseded by the correction of June');
   await page.getByRole('button', { name: 'Add the note' }).click();
   await expect(page.getByRole('list', { name: 'Notes' })).toContainText('SYNTHETIC NOTE: superseded by the correction of June');
 
@@ -78,7 +78,7 @@ test('a billing manager follows a payment, its reversal and its correction from 
   const viewerContext = await browser.newContext();
   const viewer = await viewerContext.newPage();
   try {
-    await signInWithTotp(viewer, 'viewer', true);
+    await signInWithTotp(viewer, 'remittances-viewer');
     await viewer.goto(`/p/${south}/claims`);
     await expect(viewer.getByText(/hidden for your role \(Viewer\)/)).toBeVisible();
     const viewed = viewer.getByRole('table', { name: 'Claims and lines' });

@@ -6,7 +6,7 @@ import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
 import { enqueue } from './jobs/enqueue';
-import { JOB_TYPES, type JobType, QUEUE_OPTIONS, jobSubject, parsePayload, queueOptions, singletonKey } from './jobs/registry';
+import { JOB_TYPES, type JobType, QUEUE_OPTIONS, jobSubject, parsePayload, queueOptions, singletonKey, workOptions } from './jobs/registry';
 import type { JobRunEnd, JobRunRecorder } from './jobs/runs';
 
 export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work' | 'schedule' | 'send'>;
@@ -134,7 +134,7 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
     await boss.createQueue(type, queueOptions(type));
   }
   for (const type of JOB_TYPES) {
-    await boss.work(type, { batchSize: 1 }, async (jobs) => {
+    await boss.work(type, workOptions(type), async (jobs) => {
       for (const job of jobs) {
         await attempt(type, job, logger, () => runJob(type, job, options));
       }
