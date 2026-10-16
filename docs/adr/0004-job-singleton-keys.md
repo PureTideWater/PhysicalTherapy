@@ -1,6 +1,6 @@
 # 0004. Key every job by type, practice and subject, on exclusive pg-boss queues with three attempts
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md) (pg-boss's login)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (one practice per job), 10 (parse idempotency and attempts), 15 (singleton keys per practice and job type), test matrix JOB-01 and JOB-02

@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "AWS CDK (TypeScript): one stack per environment from shared constructs. Network, database, files, keys, secrets, identity and monitoring; compute arrives with milestone 11.",
+  "description": "AWS CDK (TypeScript): one stack per environment from shared constructs. Network, database, files, keys, secrets, identity, monitoring, image repositories, Fargate compute, the load balancer with its web ACL, CloudFront for static assets and uptime checks.",
   "scripts": {
     "synth": "cdk synth --quiet",
     "test": "vitest run --root .. --project unit infra/",

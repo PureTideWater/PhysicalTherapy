@@ -47,7 +47,7 @@ export interface MonitoringProps {
  * metric exists before the worker does. A metric filter counts the worker's heartbeat lines as the
  * custom metric HEARTBEAT_METRIC; the alarm fires when two consecutive one-minute periods have no
  * heartbeat, missing data counting as missed, and tells the operator when beats resume. Until the
- * worker runs (milestone 11) the alarm is, correctly, in ALARM.
+ * worker runs (the first release, docs/adr/0049) the alarm is, correctly, in ALARM.
  *
  * A second metric filter counts the line a job logs when it fails its last (third) attempt, the
  * restore drill and the audit copy included (infra/lib/jobs.ts; test matrix JOB-02); its alarm tells

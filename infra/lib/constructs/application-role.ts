@@ -20,7 +20,7 @@ export interface ApplicationRoleProps {
 }
 
 /**
- * The task role the web app and the worker run as (their Fargate services arrive in milestone 11).
+ * The task role the web app and the worker's practice jobs run as (their Fargate services, Compute).
  * Every permission names its resource; none comes from a CDK `grant*` helper, because the bucket
  * helpers would also grant the key without conditions.
  *

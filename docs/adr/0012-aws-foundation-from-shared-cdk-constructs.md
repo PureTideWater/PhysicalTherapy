@@ -1,6 +1,6 @@
 # 0012. Build every environment's AWS foundation from the same CDK constructs, tested by template assertions
 
-- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md) and [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md)
+- **Status:** accepted; amended by [0018](0018-seal-stored-objects-with-the-practice-data-key-in-the-application.md), [0019](0019-close-the-standing-access-paths-and-run-platform-jobs-as-an-operator-role.md) and [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 14 (provider and data path), 15 (stack, environments, cost), 16 (encryption, network, backups and

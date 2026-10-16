@@ -1,7 +1,7 @@
 import { aws_ec2 as ec2 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-/** Subnet groups: `edge` for the load balancer (milestone 11), `app` for web and worker, `data` for RDS. */
+/** Subnet groups: `edge` for the load balancer and the NAT gateways, `app` for the tasks, `data` for RDS. */
 export const SUBNET_GROUPS = { edge: 'edge', app: 'app', data: 'data' } as const;
 
 /**

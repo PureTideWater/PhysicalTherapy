@@ -1,6 +1,6 @@
 # 0019. Close the standing-access paths the milestone 1 review found, and run platform jobs as an operator role that owns nothing
 
-- **Status:** accepted (amends 0012, 0013, 0014, 0016 and 0017 where they say otherwise)
+- **Status:** accepted (amends 0012, 0013, 0014, 0016 and 0017 where they say otherwise); amended by [0049](0049-run-the-compute-on-fargate-behind-an-https-only-load-balancer-and-waf-migrate-before-traffic-moves-and-egress-through-nat-for-what-has-no-endpoint.md) (the deploy job's logins, pg-boss's login)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 3 (Personas: the platform administrator "must not read PHI without a support grant", support must

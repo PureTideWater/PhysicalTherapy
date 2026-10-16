@@ -29,9 +29,10 @@ export interface OperatorRoleProps {
 }
 
 /**
- * The task role of the platform jobs (the worker with OPERATOR_DATABASE_URL; its Fargate service
- * arrives with the compute in milestone 11): the nightly audit copy, the monthly restore drill and
- * the support-access notices (docs/adr/0014 and 0017). Every permission names its resource.
+ * The task role of the platform jobs (the worker with WORKER_JOBS=platform and OPERATOR_DATABASE_URL, the
+ * platform service in Compute; docs/adr/0049): the nightly audit copy, the monthly restore drill, the
+ * support-access notices and the monitoring schedule (docs/adr/0014, 0017 and 0039). Every permission
+ * names its resource.
  *
  * - The operator login's secret (tp_operator: reads the audit log, writes the drill's evidence, calls
  *   the notice functions; owns nothing). Not the owner login, and not the application login.

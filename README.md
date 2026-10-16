@@ -353,6 +353,15 @@ pnpm release:load <n> [--dir <d>]  # load a published release (or a directory ou
 pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in force, loading the published release before it if needed
 ```
 
+Production compute (ADR 0049; `infra/`): each environment's stack runs the web app, the worker's practice jobs and its
+platform jobs as three Fargate services (`WORKER_JOBS=practice` and `platform`; unset, one worker runs both) in private
+subnets, behind an HTTPS-only load balancer with a WAF web ACL (rate limits and AWS managed rules), with CloudFront for
+`/_next/static/` only. A migration task (the worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the
+application, operator and queue logins from their secrets) runs before any service moves to a new release; pg-boss
+connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
+certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
+image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
+
 **Milestone 9: the proof level cannot yet be set in the product.** PRD 13 has practices set their proof level
 (posted or deposited) and PRD 20 revisits it at milestone 9. The ledger, the totals, the ROI statement and the
 database all read `proof_level` from `practice.settings` (posted by default), but no route sets it: only
@@ -361,19 +370,14 @@ after entries exist needs a rule for the lines already at recovered, and the pra
 brings both (ADRs 0043 and 0046). Until then a practice that uploads EFT exports still proves recovery by posting.
 
 **Milestone 1 is not complete.** Its done check includes "the restore job runs on staging", and nothing can be deployed
-from the environment the repository was built in (no AWS credentials, and the compute arrives in milestone 11). The
-repository holds what the drill needs there (ADR 0019): the `OperatorRole` task role, the operator login's secret, the
-RDS and SES endpoints, the scratch-instance name and the job-failure alarm. A person with staging credentials finishes it:
+from the environment the repository was built in (no AWS credentials, no Docker to build the images). Everything the drill
+needs is in the stack now (ADR 0019 and 0049): the platform service runs the platform jobs, the restore drill among them,
+under `OperatorRole` with the operator login and every `RESTORE_DRILL_*` setting. A person with staging credentials
+finishes it:
 
-1. `cdk deploy tp-staging`, then run `pnpm db:migrate` against the staging database as `tp_owner_login`, and create
-   `tp_app_login` and `tp_operator_login` from their secrets as members of `tp_app` and `tp_operator`.
-2. Run the worker image as a one-off ECS task in the `app` subnets with the `OperatorSecurityGroupId` security group
-   and the `OperatorRoleArn` task role, `NODE_ENV=production`, `OPERATOR_DATABASE_URL` from the operator login,
-   `AUDIT_COPY_BUCKET` and `AUDIT_COPY_LOCK_MODE` from the stack outputs, `MAIL_FROM` (a verified SES identity),
-   `APP_ORIGIN`, `RESTORE_DRILL_MODE=rds`, `RESTORE_DRILL_SOURCE_INSTANCE` (`DatabaseInstanceId`),
-   `RESTORE_DRILL_SCRATCH_INSTANCE` (`RestoreDrillInstanceId`), `RESTORE_DRILL_INSTANCE_CLASS`,
-   `RESTORE_DRILL_SUBNET_GROUP` (`DatabaseSubnetGroup`), `RESTORE_DRILL_SECURITY_GROUPS` (`DatabaseSecurityGroupId`),
-   and `NODE_EXTRA_CA_CERTS` pointing at the RDS certificate bundle, then send it a `restore_drill` job.
+1. Deploy staging as ADR 0049's "Deploying" says: the first deploy with ImageTag `none`, the images pushed under a release
+   tag, then the deploy with that ImageTag, whose migration task migrates and creates the logins.
+2. Let the platform service run the drill on its schedule (the first Monday of each month, 06:00 UTC).
 3. Check the `restore_drill` row (outcome `passed`, row counts, no catalog problems), that the scratch instance is gone,
    and that a PUT without `If-None-Match` to the documents bucket is refused (ADR 0018). Record the result in the PR.
 
