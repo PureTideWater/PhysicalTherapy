@@ -10,7 +10,7 @@ import { practice, user } from './tenancy';
 /**
  * Triage, cases and audit reports (Data dictionary, Pricing, triage and cases: anomaly, line_status,
  * case, case_line; PRD 4, Audit v0; PRD 8, The status machine), mirroring
- * migrations/20261018120000_triage_cases_and_audit_reports.sql for typed queries. The SQL is the source
+ * migrations/20261019160000_triage_cases_and_audit_reports.sql for typed queries. The SQL is the source
  * of truth for the monotonic stages and explicit reopens, the derived case columns, the write-off and
  * reopen rules, the report's freeze, attestation and release, row-level security and grants; a
  * database test checks that these columns match it. Every table is a PHI table: every query runs

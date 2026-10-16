@@ -14,20 +14,21 @@ export interface LinePricingResult {
   readonly unpricedReason: string | null;
 }
 
+/** The five line stages (PRD 8) and unpriced: what a status chip says. */
+export type LineChipStatus = 'flagged' | 'validated' | 'actionable' | 'payer_approved' | 'recovered' | 'unpriced';
+
 /**
- * The stage a run gives a line: unpriced with its reason, validated when priced with positive variance
- * (PRD 12: "A priced line with positive variance is validated"), and no stage when priced without a
- * shortfall (an overpayment is recorded and never pursued, PRC-15). Triage (milestone 6) moves lines on
- * from validated; null when no run priced the line.
+ * A line's status chip (PRD 7, Claims and lines: "status chips for the five stages plus unpriced"; PRD
+ * 8, The status machine): the stage it has reached (its latest stage event, which triage and the
+ * ledger record), else unpriced when its pricing in effect left it unpriced, else none (priced and
+ * not triaged into a stage, or paid at or above what it expects; an overpayment is never pursued,
+ * PRC-15). Null as well when no run in effect priced the line.
  */
-export function stageOf(result: LinePricingResult | null): 'unpriced' | 'validated' | null {
-  if (result === null) {
-    return null;
+export function lineStatusOf(stage: string | null, result: LinePricingResult | null): LineChipStatus | null {
+  if (stage === 'flagged' || stage === 'validated' || stage === 'actionable' || stage === 'payer_approved' || stage === 'recovered') {
+    return stage;
   }
-  if (result.unpricedReason !== null) {
-    return 'unpriced';
-  }
-  return BigInt(result.varianceCents ?? '0') > 0n ? 'validated' : null;
+  return result !== null && result.unpricedReason !== null ? 'unpriced' : null;
 }
 
 /** A share as a percentage to one decimal place, from integer counts or cents (text or bigint); "0%" of nothing. */

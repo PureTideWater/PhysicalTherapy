@@ -31,6 +31,8 @@ export type Row = Record<string, unknown>;
 export interface BuiltRow {
   readonly table: string;
   readonly values: Readonly<Row>;
+  /** The user the row is written as: the world's administrator, or a holder of the role its table needs (ROLE_BOUND_ACTORS). */
+  readonly actorId: string;
 }
 
 export class RowFactoryError extends Error {
@@ -96,10 +98,18 @@ const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
  * by a person (created_by) or by the monitoring job (created_by_job_id), exactly one; the factory's run
  * is a person's, so its creator is filled in the first, minimal row too.
  */
-const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by']);
+const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by', 'line_status.set_by']);
 
 /** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
 const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
+
+/**
+ * Tables whose rows a person writes only with a role the database checks (migration 20261022090000):
+ * a person's stage event is a case worker's, a pricing run a mapper's, an audit report request a case
+ * worker's. Their actor columns name, and the row is written by, a user of the world's organization
+ * who holds the role, so the probe differs from an accepted row in its practice only.
+ */
+const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = { line_status: 'billing_manager', pricing_run: 'billing_manager', audit_report: 'billing_manager' };
 
 /**
  * Columns whose value the row's other constraints decide, so no generic value fits: a priced line is
@@ -148,6 +158,7 @@ const PRINTABLE = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
 export class RowFactory {
   private sequence = 0;
   private readonly roleHolders = new Map<string, string>();
+  private readonly worldActors = new Map<string, string>();
 
   private constructor(private readonly tables: ReadonlyMap<string, TableInfo>) {}
 
@@ -236,7 +247,23 @@ export class RowFactory {
    */
   async build(client: OwnerClient, table: string, world: TenantWorld): Promise<BuiltRow> {
     const values = await this.attempt(client, table, world, 0, false);
-    return { table, values };
+    return { table, values, actorId: await this.actorFor(client, table, world) };
+  }
+
+  /** Who writes a row of `table` for `world`: its administrator, or a holder of the role the table needs. */
+  async actorFor(client: OwnerClient, table: string, world: TenantWorld): Promise<string> {
+    const role = ROLE_BOUND_ACTORS[table];
+    if (role === undefined) {
+      return world.adminUserId;
+    }
+    const key = `${world.practiceId} ${role}`;
+    let actor = this.worldActors.get(key);
+    if (actor === undefined) {
+      actor = await createUser(client);
+      await addMembership(client, world.organizationId, actor, role);
+      this.worldActors.set(key, actor);
+    }
+    return actor;
   }
 
   private async attempt(client: OwnerClient, table: string, world: TenantWorld, depth: number, keep: boolean): Promise<Row> {
@@ -244,20 +271,21 @@ export class RowFactory {
       throw new RowFactoryError(`${table}: foreign keys nest deeper than the factory follows`);
     }
     let failure: unknown;
+    const actor = await this.actorFor(client, table, world);
     for (const full of [false, true, true, true]) {
-      const values = await this.values(client, table, world, full, depth);
+      const values = await this.values(client, table, world, full, depth, actor);
       const scope = table === TENANT_TABLE ? [world.practiceId, String(values.id)] : [world.practiceId];
       const columns = Object.keys(values);
       const sql = `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(', ')}) RETURNING *`;
       try {
         if (keep) {
-          const inserted = await asOwner(client, scope, () => client.query(sql, Object.values(values)), world.adminUserId);
+          const inserted = await asOwner(client, scope, () => client.query(sql, Object.values(values)), actor);
           return inserted.rows[0] as Row;
         }
         await client.query('BEGIN');
         try {
           await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
-          await client.query("SELECT set_config('app.practice_ids', $1, true), set_config('app.actor_id', $2, true)", [`{${scope.join(',')}}`, world.adminUserId]);
+          await client.query("SELECT set_config('app.practice_ids', $1, true), set_config('app.actor_id', $2, true)", [`{${scope.join(',')}}`, actor]);
           await client.query(sql, Object.values(values));
         } finally {
           await client.query('ROLLBACK');
@@ -285,7 +313,7 @@ export class RowFactory {
     return holder;
   }
 
-  private async values(client: OwnerClient, table: string, world: TenantWorld, full: boolean, depth: number): Promise<Row> {
+  private async values(client: OwnerClient, table: string, world: TenantWorld, full: boolean, depth: number, actor: string): Promise<Row> {
     const info = this.info(table);
     const refs = worldRefs(world);
     const row: Row = {};
@@ -316,7 +344,7 @@ export class RowFactory {
         continue;
       }
       if (column.type === 'uuid' && ACTOR_COLUMN.test(column.name) && (column.notNull || full || REQUIRED_ACTORS.has(`${table}.${column.name}`))) {
-        row[column.name] = world.adminUserId;
+        row[column.name] = actor;
         continue;
       }
       const foreignKey = info.foreignKeys.get(column.name);

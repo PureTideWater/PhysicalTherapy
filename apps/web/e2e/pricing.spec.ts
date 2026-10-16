@@ -4,15 +4,16 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
-import { practiceId, signInWithTotp, withDatabase } from './helpers';
+import { practiceId, registerKeyAndSignIn, signInWithTotp } from './helpers';
 import { startLocalWorker } from './worker';
 
 /**
  * Pricing runs in the browser (PRD 5, J7; PRD 7, Pricing runs, Claims and lines, Coverage; test matrix
- * MAP-05): a billing manager uploads a SYNTHETIC remittance from a Medicare Advantage plan (fixture
- * MAP-05, February 2026), maps the plan as MA non-contracted, creates a run for February under the
- * SYNTHETIC release prepare.ts loads, and the price job (the worker run here beside the server)
- * prices it. The run shows complete with its coverage and its variance by payer pattern; a line opens
+ * MAP-05): a platform administrator sets the practice's billing ZIP and place-of-service split in
+ * the internal console (docs/adr/0040), a billing manager uploads a SYNTHETIC remittance from a
+ * Medicare Advantage plan (fixture MAP-05, February 2026), maps the plan as MA non-contracted,
+ * creates a run for February under the SYNTHETIC release prepare.ts loads, and the price job (the
+ * worker run here beside the server) prices it. The run shows complete with its coverage and its variance by payer pattern; a line opens
  * its trace, every step in order with the rule records it read; the line's claim shows its expected
  * allowed; Coverage shows the run's shares. Then the run is re-run (docs/adr/0037): the re-run's page
  * shows its diff (nothing changed under the same release and mapping), Coverage keeps reading the
@@ -23,17 +24,27 @@ import { startLocalWorker } from './worker';
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 const KNOWN = ['SYNTHLASTYQFQC8', 'SYNTHFIRSTN5T', 'SYNPCNMAP05001', 'SYNCCNMAP050001', 'SYNMBR01538394'];
 
-test('a billing manager creates a pricing run; the worker prices it, and its lines open their traces (J7, MAP-05)', async ({ page }) => {
+test('a billing manager creates a pricing run; the worker prices it, and its lines open their traces (J7, MAP-05)', async ({ page, browser }) => {
   test.setTimeout(240_000);
   await signInWithTotp(page, 'pricing-manager');
   const other = await practiceId('other');
-  // The practice's ZIP and place-of-service settings, which pricing reads and no screen sets yet.
-  await withDatabase((client) =>
-    client.query("UPDATE practice SET zip = '00011', settings = settings || $2::jsonb WHERE id = $1", [
-      other,
-      JSON.stringify({ place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT' }),
-    ]),
-  );
+  await test.step('a platform administrator sets the practice’s billing ZIP and place-of-service settings in the console', async () => {
+    const context = await browser.newContext();
+    const admin = await context.newPage();
+    try {
+      await registerKeyAndSignIn(admin, 'pricing-admin');
+      await admin.goto(`/console/practices/${other}`);
+      await admin.getByLabel('Billing ZIP').fill('00011');
+      await admin.getByLabel('Places of service priced as facility').fill('22');
+      await admin.getByLabel('Places of service priced as non-facility').fill('11');
+      await admin.getByLabel('Default rounding when a contract is silent').selectOption('HALF_UP_CENT');
+      await admin.getByRole('button', { name: 'Save the settings' }).click();
+      await expect(admin.locator('[data-notice="saved"]')).toBeVisible();
+      await expect(admin.getByLabel('Billing ZIP')).toHaveValue('00011');
+    } finally {
+      await context.close();
+    }
+  });
 
   await test.step('the remittance loads', async () => {
     await page.goto(`/p/${other}/uploads`);

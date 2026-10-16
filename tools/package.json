@@ -19,6 +19,7 @@
     "@tp/pricing": "workspace:*",
     "@tp/rules": "workspace:*",
     "@tp/synth": "workspace:*",
+    "@tp/triage": "workspace:*",
     "@tp/worker": "workspace:*",
     "pg": "catalog:",
     "typescript": "catalog:",

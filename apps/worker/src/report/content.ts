@@ -33,9 +33,13 @@ import { UNPRICED_REMEDIES } from './remedies';
  * - coverage: the run's lines and billed dollars priced, and the unpriced reasons by count;
  * - anomalies (flagged, investigatory): counts and dollar ranges, in no total;
  * - validated discrepancies: priced lines paid below the contract, by payer pattern, with why each
- *   that is not actionable is not;
- * - actionable: the cases, each total the sum of its lines not written off, with its deadline, pursuit
- *   cost and net expected value;
+ *   that is not actionable is not; a per-visit line is counted with its visit (the visit's net
+ *   shortfall at most, on the line that carries the visit; docs/adr/0040);
+ * - actionable: the cases holding this run's lines, each with this run's share (its lines priced by
+ *   this run, not written off; their deadline), the whole case beside it, the pursuit cost and the
+ *   net expected value of the share. A case may hold lines of other runs (a pattern accumulates
+ *   across runs); those count in their own runs' reports, so the headline, the cases and the line CSV
+ *   reconcile;
  * - payer approved and recovered: zero until the recovery ledger has entries (milestone 9);
  * - evidence gaps: what to obtain to price more lines or to pursue them.
  *
@@ -66,12 +70,17 @@ export interface ReportCase {
   readonly behavior: AdjustmentBehavior;
   readonly behavior_text: string;
   readonly state: string;
+  /** This run's share of the case: its lines this run priced, those not written off, their total and earliest window. */
   readonly deadline_on: string | null;
   readonly lines: number;
   readonly actionable_lines: number;
   readonly actionable_cents: string;
   readonly written_off_lines: number;
   readonly written_off_cents: string;
+  /** The whole case, every run's lines (the database's total and deadline). */
+  readonly case_lines: number;
+  readonly case_actionable_cents: string;
+  readonly case_deadline_on: string | null;
   readonly materiality_cents: string;
   readonly pursuit_cost_cents: string | null;
   readonly net_expected_cents: string | null;
@@ -174,14 +183,24 @@ export interface ReportLine {
   readonly observed_allowed_cents: string;
   readonly expected_allowed_cents: string | null;
   readonly variance_cents: string | null;
+  /** The shortfall the line validates (its variance; for a per-visit line, at most its visit's net); null when it validates nothing. */
+  readonly validated_cents: string | null;
+  /** For a line of a per-visit visit, the visit's net variance (the sum of its lines'); null otherwise. */
+  readonly visit_variance_cents: string | null;
   readonly unpriced_reason: string | null;
   readonly window_ends_on: string | null;
   /** The line's stage now (flagged, validated, actionable), or empty. */
   readonly stage: string;
-  /** actionable, written_off, not_actionable, held, overpaid, paid_as_expected, unpriced. */
+  /**
+   * actionable, written_off, not_actionable, held, in_case_other_run (in a case through another run's
+   * pricing of it), overpaid, paid_as_expected, with_visit (a per-visit line the visit's carrying line
+   * counts for), unpriced.
+   */
   readonly status: string;
   /** Why it is not actionable, or its write-off reason. */
   readonly reasons: readonly string[];
+  /** The review flags it was priced with (an NCCI procedure-to-procedure edit, naming the column-1 line). */
+  readonly review_flags: readonly { readonly flag: string; readonly column1_line_no: number }[];
   readonly behavior: AdjustmentBehavior | null;
   readonly case_id: string | null;
   readonly anomaly_id: string | null;
@@ -215,8 +234,13 @@ interface LineRow {
   readonly superseded: boolean;
   readonly stage: string | null;
   readonly case_id: string | null;
+  /** Whether the line's case line names this run's priced line (else another run's pricing of the line). */
+  readonly case_in_run: boolean | null;
   readonly written_off_reason: WriteOffReason | null;
   readonly trace: unknown;
+  readonly per_visit: { readonly carrier_line_no: number } | null;
+  readonly visit_variance_cents: string | null;
+  readonly review_flags: readonly { readonly flag: string; readonly column1_line_no: number }[];
 }
 
 interface CaseRow {
@@ -228,6 +252,9 @@ interface CaseRow {
   readonly state: string;
   readonly deadline_on: string | null;
   readonly actionable_cents: string;
+  readonly case_actionable_cents: string;
+  readonly case_deadline_on: string | null;
+  readonly case_lines: string;
   readonly materiality_cents: string;
   readonly pursuit_cost_cents: string | null;
   readonly owner: string | null;
@@ -277,8 +304,11 @@ async function runLines(scope: PracticeScope<ScopeClient>, input: GatherInput): 
                   l.charge_cents::text, c.payer_claim_control_number, py.id AS payer_id, py.name_raw AS payer_name, pl.id AS plan_id, coalesce(pl.name, pl.plan_key) AS plan_name,
                   (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
                   c.superseded_by_claim_id IS NOT NULL AS superseded,
-                  cs.stage, cl.case_id, cl.written_off_reason,
-                  CASE WHEN p.variance_cents > 0 THEN p.trace END AS trace
+                  cs.stage, cl.case_id, cl.priced_line_id = p.id AS case_in_run, cl.written_off_reason,
+                  CASE WHEN p.variance_cents > 0 THEN p.trace END AS trace,
+                  CASE WHEN jsonb_typeof(p.trace #> '{steps,per_visit}') = 'object' THEN p.trace #> '{steps,per_visit}' END AS per_visit,
+                  priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
+                  coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
              FROM priced_line p
              JOIN service_line l ON l.id = p.service_line_id
              JOIN claim c ON c.id = l.claim_id
@@ -296,20 +326,29 @@ async function runLines(scope: PracticeScope<ScopeClient>, input: GatherInput): 
   );
 }
 
+/**
+ * The cases holding lines this run priced, each with this run's share (its case lines whose priced line
+ * is this run's) beside the whole case (the database's total and deadline over every run's lines).
+ */
 async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRow[]> {
   const { rows } = await client.query<CaseRow>(
-    `SELECT c.id, c.pattern_key, py.name_raw AS payer_name, coalesce(pl.name, pl.plan_key) AS plan_name, c.rate_record_id, c.state, c.deadline_on::text,
-            c.actionable_cents::text, c.materiality_cents::text, c.pursuit_cost_cents::text, u.email AS owner,
-            count(cl.id)::text AS lines, count(cl.id) FILTER (WHERE cl.written_off_reason IS NULL)::text AS open_lines,
-            coalesce(sum(p.variance_cents) FILTER (WHERE cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents
+    `SELECT c.id, c.pattern_key, py.name_raw AS payer_name, coalesce(pl.name, pl.plan_key) AS plan_name, c.rate_record_id, c.state,
+            min(p.window_ends_on) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NULL)::text AS deadline_on,
+            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NULL), 0)::text AS actionable_cents,
+            c.actionable_cents::text AS case_actionable_cents, c.deadline_on::text AS case_deadline_on, count(cl.id)::text AS case_lines,
+            c.materiality_cents::text, c.pursuit_cost_cents::text, u.email AS owner,
+            count(cl.id) FILTER (WHERE p.pricing_run_id = $1)::text AS lines,
+            count(cl.id) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NULL)::text AS open_lines,
+            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents
        FROM "case" c
        JOIN payer py ON py.id = c.payer_id
        JOIN plan pl ON pl.id = c.plan_id
        LEFT JOIN "user" u ON u.id = c.owner_user_id
        JOIN case_line cl ON cl.case_id = c.id
        JOIN priced_line p ON p.id = cl.priced_line_id
-      WHERE c.practice_id = $2 AND EXISTS (SELECT 1 FROM case_line x JOIN priced_line y ON y.id = x.priced_line_id WHERE x.case_id = c.id AND y.pricing_run_id = $1)
+      WHERE c.practice_id = $2
       GROUP BY c.id, py.name_raw, pl.name, pl.plan_key, u.email
+     HAVING count(cl.id) FILTER (WHERE p.pricing_run_id = $1) > 0
       ORDER BY py.name_raw, coalesce(pl.name, pl.plan_key), c.opened_at, c.id`,
     [input.pricingRunId, input.practiceId],
   );
@@ -364,32 +403,43 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
 
   const lines: ReportLine[] = rows.map((row) => {
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
-    const behavior = row.trace === null || variance === null || variance <= 0n ? null : detectBehavior(parseTrace(row.trace), references);
+    const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
+    const judged = judgeLine(
+      {
+        varianceCents: variance,
+        windowEndsOn: row.window_ends_on,
+        claimReversed: row.reversed,
+        claimSuperseded: row.superseded,
+        mappingKind: row.mapping_kind,
+        contractVersionStatus: row.version_status,
+        writtenOff: false,
+        visitVarianceCents: visit,
+        reviewFlags: row.review_flags.map((flag) => flag.flag),
+      },
+      settings.lineMaterialityCents,
+      input.asOf,
+    );
+    const validatedCents = judged.validatedCents;
+    const behavior = row.trace === null || validatedCents === null ? null : detectBehavior(parseTrace(row.trace), references);
+    // A per-visit line counts with its visit: on the line that carries it, at the visit's net.
+    const counted = row.per_visit === null ? variance : row.per_visit.carrier_line_no === row.line_no ? visit : null;
     let status: string;
     let reasons: string[] = [];
     if (row.unpriced_reason !== null) {
       status = 'unpriced';
-    } else if (variance !== null && variance < 0n) {
+    } else if (row.per_visit !== null && row.per_visit.carrier_line_no !== row.line_no) {
+      status = 'with_visit';
+    } else if (counted !== null && counted < 0n) {
       status = 'overpaid';
-    } else if (variance === null || variance === 0n) {
+    } else if (validatedCents === null) {
       status = 'paid_as_expected';
-    } else if (row.case_id !== null) {
+    } else if (row.case_id !== null && row.case_in_run === true) {
       status = row.written_off_reason === null ? 'actionable' : 'written_off';
       reasons = row.written_off_reason === null ? [] : [row.written_off_reason];
+    } else if (row.case_id !== null) {
+      status = 'in_case_other_run';
+      reasons = ['CASE_LINE_FROM_OTHER_RUN'];
     } else {
-      const judged = judgeLine(
-        {
-          varianceCents: variance,
-          windowEndsOn: row.window_ends_on,
-          claimReversed: row.reversed,
-          claimSuperseded: row.superseded,
-          mappingKind: row.mapping_kind,
-          contractVersionStatus: row.version_status,
-          writtenOff: false,
-        },
-        settings.lineMaterialityCents,
-        input.asOf,
-      );
       status = judged.actionable ? 'held' : 'not_actionable';
       reasons = judged.actionable ? ['BELOW_CASE_MATERIALITY'] : [...judged.reasons];
     }
@@ -408,11 +458,14 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       observed_allowed_cents: row.observed_allowed_cents,
       expected_allowed_cents: row.expected_allowed_cents,
       variance_cents: row.variance_cents,
+      validated_cents: status === 'with_visit' || validatedCents === null ? null : centsToString(validatedCents),
+      visit_variance_cents: row.visit_variance_cents,
       unpriced_reason: row.unpriced_reason,
       window_ends_on: row.window_ends_on,
       stage: row.stage ?? '',
       status,
       reasons,
+      review_flags: row.review_flags,
       behavior,
       case_id: row.case_id,
       anomaly_id: anomalyOf.get(row.service_line_id) ?? null,
@@ -427,8 +480,10 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       compareText(a.service_line_id, b.service_line_id),
   );
 
-  const validated = lines.filter((line) => line.variance_cents !== null && parseCents(line.variance_cents) > 0n);
+  const validated = lines.filter((line) => line.validated_cents !== null);
   const overpaid = lines.filter((line) => line.status === 'overpaid');
+  /** What an overpaid line counts: its variance, or for the line carrying a visit the visit's net. */
+  const overpaidCents = (line: ReportLine): string => line.visit_variance_cents ?? line.variance_cents ?? '0';
   const patterns = new Map<string, { readonly key: Omit<ReportPattern, 'lines' | 'variance_cents'>; readonly variances: string[] }>();
   const rowById = new Map(rows.map((row) => [row.priced_line_id, row]));
   for (const line of validated) {
@@ -447,14 +502,19 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       },
       variances: [],
     };
-    entry.variances.push(line.variance_cents as string);
+    entry.variances.push(line.validated_cents as string);
     patterns.set(key, entry);
   }
-  const notActionableReasons = [...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF'), 'BELOW_CASE_MATERIALITY', ...Object.keys(WRITE_OFF_TEXT).map((reason) => `written_off:${reason}`)];
+  const notActionableReasons = [
+    ...NOT_ACTIONABLE_REASONS.filter((reason) => reason !== 'WRITTEN_OFF'),
+    'BELOW_CASE_MATERIALITY',
+    'CASE_LINE_FROM_OTHER_RUN',
+    ...Object.keys(WRITE_OFF_TEXT).map((reason) => `written_off:${reason}`),
+  ];
   const notActionable = notActionableReasons
     .map((reason) => {
       const matching = validated.filter((line) => (reason.startsWith('written_off:') ? line.status === 'written_off' && line.reasons.includes(reason.slice('written_off:'.length)) : line.reasons.includes(reason)));
-      return { reason, lines: matching.length, variance_cents: text(sum(matching.map((line) => line.variance_cents as string))) };
+      return { reason, lines: matching.length, variance_cents: text(sum(matching.map((line) => line.validated_cents as string))) };
     })
     .filter((entry) => entry.lines > 0);
 
@@ -477,6 +537,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       actionable_cents: row.actionable_cents,
       written_off_lines: Number.parseInt(row.lines, 10) - Number.parseInt(row.open_lines, 10),
       written_off_cents: row.written_off_cents,
+      case_lines: Number.parseInt(row.case_lines, 10),
+      case_actionable_cents: row.case_actionable_cents,
+      case_deadline_on: row.case_deadline_on,
       materiality_cents: row.materiality_cents,
       pursuit_cost_cents: row.pursuit_cost_cents,
       net_expected_cents: net === null ? null : text(net),
@@ -511,7 +574,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     flaggedRangeLowCents: sum(anomalies.map((item) => item.range_low_cents)),
     flaggedRangeHighCents: sum(anomalies.map((item) => item.range_high_cents)),
     validatedLines: validated.length,
-    validatedCents: sum(validated.map((line) => line.variance_cents as string)),
+    validatedCents: sum(validated.map((line) => line.validated_cents as string)),
   });
 
   const pursuitCosts = openCases.map((item) => item.pursuit_cost_cents);
@@ -598,13 +661,13 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     anomalies,
     validated: {
       lines: validated.length,
-      variance_cents: text(sum(validated.map((line) => line.variance_cents as string))),
+      variance_cents: text(sum(validated.map((line) => line.validated_cents as string))),
       patterns: [...patterns.values()]
         .map((entry) => ({ ...entry.key, lines: entry.variances.length, variance_cents: text(sum(entry.variances)) }))
         .sort((a, b) => compareText(a.payer, b.payer) || compareText(a.plan, b.plan) || compareText(a.behavior, b.behavior) || compareText(a.rate_record_id ?? '', b.rate_record_id ?? '')),
       not_actionable: notActionable,
     },
-    overpaid: { lines: overpaid.length, variance_cents: text(sum(overpaid.map((line) => line.variance_cents as string))) },
+    overpaid: { lines: overpaid.length, variance_cents: text(sum(overpaid.map(overpaidCents))) },
     cases,
     pursuit: { estimated, cost_cents: pursuitTotal === null ? null : text(pursuitTotal), net_expected_cents: pursuitTotal === null ? null : text(cents(actionableCents - pursuitTotal)) },
     evidence_gaps: gaps,

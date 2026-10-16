@@ -5,7 +5,13 @@
   "assertion": "First line carries it; others expect zero",
   "synthetic": true,
   "completesIn": 7,
-  "assertedBy": [],
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/pricing/src/engine.test.ts",
+    "tools/golden-worksheet/triage.golden.test.ts",
+    "apps/worker/src/triage/triage.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

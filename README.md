@@ -138,15 +138,18 @@ of service dates whose newest line no run covers, under the release in force and
 (`pricing_run.created_by_job_id`; a month with an unmapped plan waits); `price` prices it and, for a run the chain created,
 queues `triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
 (milestone 9 fills it in; until then it records that it ran). The operator's daily `monitoring_schedule` (05:10 UTC, where
-`OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day and `digest` for the month before:
+`OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day (which first writes off, window
+passed, every open case's line whose window has closed) and `digest` for the month before:
 one digest per practice and month, its figures fixed when recorded (new validated variance by payer, cases nearing
 deadline, recoveries posted, coverage against the previous digest, contracts expiring), emailed once to each person who
 keeps it on (`MAIL_FROM` for SES, otherwise `MAIL_OUTBOX_DIR`; fixed sentences, counts, dollar totals and one link) and
 shown at `/p/<practice>/digests/<digest>`. `notification` and `digest` hold counts and totals only: their CHECKs admit
-nothing but integers and integer cents keyed by codes or opaque IDs. People read their own notifications at
-`/p/<practice>/notifications` and set their preferences at `/account/notifications` (in their own `user.settings`).
-The monthly variance summary (`/p/<practice>/reports/monthly?month=<YYYY-MM>`, with its CSV) counts each line of a month
-once, at the furthest stage it has reached, by payer and in all, never adding stages together.
+nothing but integers and integer cents keyed by a closed list of figure codes, nested only by payers' opaque IDs. People
+read their own notifications at `/p/<practice>/notifications` and set their preferences at `/account/notifications` (in
+their own `user.settings`). The monthly variance summary (`/p/<practice>/reports/monthly?month=<YYYY-MM>`, with its CSV)
+counts each line of a month once, from its pricing in effect, at the furthest stage it has reached, by payer and in all,
+never adding stages together. The notifications, preferences and the summary were pulled forward from milestone 11 and
+the v1 reports (ADR 0040); the summary's PDF export comes with the other v1 reports.
 `apps/worker/src/monitor/monitor.db.test.ts` runs the chain on SYNTHETIC files through the worker loop: replays of every
 step with no duplicate effect (JOB-01), three failures with the alert and the dashboard's run-failed record (JOB-02),
 and the digest's counts and totals with no PHI column read (JOB-03).
@@ -218,9 +221,14 @@ reimbursement specialist, which this repository does not have. What stands in fo
 (`tsx packages/synth/src/audit-cli.ts` regenerates it), and the expected report and line CSV computed from the inputs
 alone by `tools/audit-worksheet` (Python, `python3 -I tools/audit-worksheet/audit_worksheet.py write`). The test
 `apps/web/src/lib/routes/audit-e2e.db.test.ts` uploads, parses, maps, signs off the contracts, prices, triages and
-reports it through the routes and the jobs, and the report matches the worksheet figure by figure and line for line. A
-practice's materiality and pursuit settings live in `practice.settings` until the Settings screen exists; pursuit cost is
-"not estimated" until the staff rate and minutes are set.
+reports it through the routes and the jobs, and the report matches the worksheet figure by figure and line for line.
+Triage and the report judge every line from its pricing in effect (ADR 0040): a per-visit line is judged with its visit
+(at most the visit's net shortfall) and, with a line carrying an NCCI review flag, stays validated for review until the
+specialist answers QUESTIONS Q44 and Q41; each case in a report shows this run's share beside the whole case, so the
+headline, the cases and the line CSV reconcile. A platform administrator sets a practice's billing ZIP and its pricing
+and triage settings (place-of-service split, rounding, materiality, anomaly and pursuit-cost settings) in the internal
+console at `/console/practices/<practice>` until the practice's own Settings screen exists (milestone 11); pursuit cost
+is "not estimated" until the staff rate and minutes are set.
 
 **Milestone 7 is not complete.** Its engine part, its pricing runs and the re-run diffs under a new release are built
 (ADRs 0034, 0035 and 0037): a re-run under SYNTHETIC release 900004, a "release 2" that changes one relative value,

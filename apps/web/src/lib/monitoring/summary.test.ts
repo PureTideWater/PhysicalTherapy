@@ -27,6 +27,22 @@ describe('the monthly variance summary as CSV', () => {
     expect(unnamed).toContain('2026-03,7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01,flagged,0,0.00,');
   });
 
+  it('defuses a payer name a spreadsheet would run as a formula, and keeps every figure a number', () => {
+    const summary: MonthlySummary = {
+      month: '2026-03',
+      total: { payerId: null, payerName: null, figures: figures({ overpaid: { lines: 1, billedCents: '7500', varianceCents: null } }), writtenOff: zero(true) },
+      byPayer: [{ payerId: '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01', payerName: '=HYPERLINK("http://attacker.example/","Open")', figures: figures({ validated: { lines: 1, billedCents: '7500', varianceCents: '-120' } }), writtenOff: zero(true) }],
+    };
+    const csv = monthlySummaryCsv(summary);
+    expect(csv).toContain(`2026-03,"'=HYPERLINK(""http://attacker.example/"",""Open"")",validated,1,75.00,-1.20`);
+    for (const name of ['-2+3+cmd|\' /C calc\'!A0', '+SUM(A1)', '@SUM(A1)']) {
+      const row = monthlySummaryCsv({ ...summary, byPayer: [{ ...(summary.byPayer[0] as MonthlySummary['byPayer'][number]), payerName: name }] })
+        .split('\r\n')
+        .find((line) => line.includes(',flagged,') && !line.includes('all payers'));
+      expect(row?.startsWith(`2026-03,'${name.slice(0, 1)}`)).toBe(true);
+    }
+  });
+
   it('labels every stage as the rest of the product does, and the lines with no stage by how their run left them', () => {
     expect(SUMMARY_LABELS).toMatchObject({ flagged: 'Flagged (investigatory)', validated: 'Validated', actionable: 'Actionable', payer_approved: 'Payer approved', recovered: 'Recovered' });
     expect(Object.keys(SUMMARY_LABELS).sort()).toEqual([...SUMMARY_BUCKETS].sort());

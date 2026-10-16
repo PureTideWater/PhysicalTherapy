@@ -1,7 +1,9 @@
 import { type EncryptedColumn, type PracticeCipher, type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
-import { parseCents, sumCents } from '@tp/money';
+import { parseCents } from '@tp/money';
 import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineStage, type WriteOffReason, deadlineState, netExpectedValue, triageSettings } from '@tp/triage';
 import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '@tp/worker/pricing';
+
+import { type ListPage, pageWindow } from '../http/paging';
 
 /**
  * The Anomalies and Cases reads (PRD 7, Anomalies and Cases; PRD 12; PRD 8, The status machine;
@@ -144,26 +146,50 @@ function anomalyView(row: AnomalyRow): AnomalyView {
   };
 }
 
+export const ANOMALIES_PER_PAGE = 50;
+
+/** The Anomalies screen's filters (in the URL): the pricing run that wrote the cohort, and its payer. */
+export interface AnomalyQuery {
+  readonly runId?: string;
+  readonly payerId?: string;
+  readonly page: number;
+}
+
 /**
  * The practice's anomalies at or above its minimum cohort size (PRD 7: "hidden for cohorts under the
  * minimum size"; triage writes none below it, and one written under a lower minimum stays hidden),
- * newest period first.
+ * newest period first, a page at a time, filtered by run and payer in SQL.
  */
-export async function listAnomalies(scope: Scope, practiceId: string, minimumCohort: number, requestId: string): Promise<AnomalyView[]> {
+export async function listAnomalies(scope: Scope, practiceId: string, minimumCohort: number, requestId: string, query: AnomalyQuery = { page: 1 }): Promise<ListPage<AnomalyView>> {
+  const where = `a.practice_id = $1 AND a.cohort_size >= $2 AND ($3::uuid IS NULL OR a.pricing_run_id = $3) AND ($4::uuid IS NULL OR pl.payer_id = $4)`;
+  const values = [practiceId, minimumCohort, query.runId ?? null, query.payerId ?? null];
+  const { rows: counted } = await scope.client.query<{ n: number }>(`SELECT count(*)::int AS n FROM anomaly a JOIN plan pl ON pl.id = (a.cohort_key ->> 'plan_id')::uuid WHERE ${where}`, values);
+  const total = counted[0]?.n ?? 0;
+  const at = pageWindow(total, ANOMALIES_PER_PAGE, query.page);
   const rows = await readWithAudit(
     scope,
     { objectType: 'anomaly', purpose: 'anomaly_review', requestId },
     async (client) =>
       (
         await client.query<AnomalyRow>(
-          `${ANOMALIES} WHERE a.practice_id = $1 AND a.cohort_size >= $2
-            ORDER BY r.period_from DESC, r.completed_at DESC, py.name_raw, coalesce(pl.name, pl.plan_key), a.cohort_key ->> 'procedure_code', a.cohort_key ->> 'quarter', a.id LIMIT 200`,
-          [practiceId, minimumCohort],
+          `${ANOMALIES} WHERE ${where}
+            ORDER BY r.period_from DESC, r.completed_at DESC, py.name_raw, coalesce(pl.name, pl.plan_key), a.cohort_key ->> 'procedure_code', a.cohort_key ->> 'quarter', a.id
+            LIMIT ${String(ANOMALIES_PER_PAGE)} OFFSET ${String(at.offset)}`,
+          values,
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return rows.map(anomalyView);
+  return { items: rows.map(anomalyView), page: at.page, pages: at.pages, total };
+}
+
+/** The runs that wrote the practice's anomalies, for the Anomalies screen's filter. */
+export async function anomalyRuns(scope: Scope, practiceId: string): Promise<{ readonly id: string; readonly periodFrom: string; readonly periodTo: string }[]> {
+  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string }>(
+    'SELECT DISTINCT r.id, r.period_from::text, r.period_to::text FROM anomaly a JOIN pricing_run r ON r.id = a.pricing_run_id WHERE a.practice_id = $1 ORDER BY 2 DESC, 3 DESC, 1',
+    [practiceId],
+  );
+  return rows.map((row) => ({ id: row.id, periodFrom: row.period_from, periodTo: row.period_to }));
 }
 
 export async function anomalyOf(scope: Scope, practiceId: string, anomalyId: string, minimumCohort: number, requestId: string): Promise<AnomalyView | undefined> {
@@ -312,18 +338,47 @@ function caseSummary(row: CaseRow, asOf: string): CaseSummary {
   };
 }
 
-/** The practice's cases: open ones first by deadline, then the closed. */
-export async function listCases(scope: Scope, practiceId: string, asOf: string, requestId: string): Promise<CaseSummary[]> {
+export const CASES_PER_PAGE = 50;
+
+/** The Cases screen's filters (in the URL): the state, the payer, and a deadline within so many days of today. */
+export interface CaseQuery {
+  readonly state?: CaseState;
+  readonly payerId?: string;
+  readonly deadlineWithinDays?: number;
+  readonly page: number;
+}
+
+export interface CasePage extends ListPage<CaseSummary> {
+  /** The open cases the filters admit, and their actionable total (stage three only), over every page. */
+  readonly openCases: number;
+  readonly openActionableCents: string;
+}
+
+/** The practice's cases, open ones first by deadline, then the closed: a page at a time, filtered in SQL. */
+export async function listCases(scope: Scope, practiceId: string, asOf: string, requestId: string, query: CaseQuery = { page: 1 }): Promise<CasePage> {
+  const where = `c.practice_id = $1 AND ($2::text IS NULL OR c.state = $2) AND ($3::uuid IS NULL OR c.payer_id = $3)
+    AND ($4::int IS NULL OR (c.state = 'open' AND c.deadline_on <= $5::date + $4::int))`;
+  const values = [practiceId, query.state ?? null, query.payerId ?? null, query.deadlineWithinDays ?? null, asOf];
+  const { rows: counted } = await scope.client.query<{ n: number; open: number; open_cents: string }>(
+    `SELECT count(*)::int AS n, (count(*) FILTER (WHERE c.state = 'open'))::int AS open, coalesce(sum(c.actionable_cents) FILTER (WHERE c.state = 'open'), 0)::text AS open_cents
+       FROM "case" c WHERE ${where}`,
+    values,
+  );
+  const total = counted[0]?.n ?? 0;
+  const at = pageWindow(total, CASES_PER_PAGE, query.page);
   const rows = await readWithAudit(
     scope,
     { objectType: 'case', purpose: 'case_review', requestId },
     async (client) =>
       (
-        await client.query<CaseRow>(`${CASES} WHERE c.practice_id = $1 ORDER BY (c.state = 'open') DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id LIMIT 500`, [practiceId])
+        await client.query<CaseRow>(
+          `${CASES} WHERE ${where} ORDER BY (c.state = 'open') DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id LIMIT ${String(CASES_PER_PAGE)} OFFSET ${String(at.offset)}`,
+          values,
+        )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return rows.map((row) => caseSummary(row, asOf));
+  return { items: rows.map((row) => caseSummary(row, asOf)), page: at.page, pages: at.pages, total, openCases: counted[0]?.open ?? 0, openActionableCents: counted[0]?.open_cents ?? '0' };
 }
 
 export async function caseOf(scope: Scope, practiceId: string, caseId: string, asOf: string, requestId: string): Promise<CaseSummary | undefined> {
@@ -376,9 +431,16 @@ export interface CaseEvent {
   readonly by: string | null;
 }
 
+export const CASE_LINES_PER_PAGE = 100;
+
 export interface CaseDetail {
+  /** A page of the case's line schedule. */
   readonly lines: readonly CaseLineView[];
+  /** The timeline of the page's lines. */
   readonly events: readonly CaseEvent[];
+  readonly page: number;
+  readonly pages: number;
+  readonly totalLines: number;
 }
 
 interface CaseLineRow {
@@ -407,8 +469,11 @@ interface CaseLineRow {
   readonly payer_claim_control_number: string;
 }
 
-/** A case's lines (each with its priced line and its write-off or reopen) and its timeline. */
-export async function caseDetail(scope: Scope, practiceId: string, caseId: string, cipher: PracticeCipher | null, requestId: string): Promise<CaseDetail> {
+/** A page of a case's lines (each with its priced line and its write-off or reopen) and their timeline. */
+export async function caseDetail(scope: Scope, practiceId: string, caseId: string, cipher: PracticeCipher | null, requestId: string, page = 1): Promise<CaseDetail> {
+  const { rows: counted } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM case_line WHERE case_id = $1 AND practice_id = $2', [caseId, practiceId]);
+  const totalLines = counted[0]?.n ?? 0;
+  const at = pageWindow(totalLines, CASE_LINES_PER_PAGE, page);
   const rows = await readWithAudit(
     scope,
     { objectType: 'case_line', purpose: 'case_review', requestId },
@@ -428,7 +493,8 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
              LEFT JOIN "user" wu ON wu.id = cl.written_off_by
              LEFT JOIN "user" ru ON ru.id = cl.reopened_by
             WHERE cl.case_id = $1 AND cl.practice_id = $2
-            ORDER BY coalesce(l.service_date, c.service_from), l.line_no, cl.id`,
+            ORDER BY coalesce(l.service_date, c.service_from), l.line_no, cl.id
+            LIMIT ${String(CASE_LINES_PER_PAGE)} OFFSET ${String(at.offset)}`,
           [caseId, practiceId],
         )
       ).rows,
@@ -485,7 +551,7 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     }
   }
   events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.lineNo - b.lineNo));
-  return { lines, events };
+  return { lines, events, page: at.page, pages: at.pages, totalLines };
 }
 
 /** A case line of the practice, as a write-off or a reopen finds it. */
@@ -518,7 +584,4 @@ export async function currentStage(scope: Scope, serviceLineId: string): Promise
   return rows[0]?.stage ?? null;
 }
 
-/** The sum of the open cases' actionable totals, for the Cases screen's own total (never mixed with another stage). */
-export function openActionableCents(cases: readonly CaseSummary[]): string {
-  return sumCents(cases.filter((item) => item.state === 'open').map((item) => parseCents(item.actionableCents))).toString();
-}
+

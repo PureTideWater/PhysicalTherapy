@@ -265,7 +265,8 @@ G04 line 1, G14 line 3, G16 line 1, G19 lines 2 and 3, G20 line 3. Changing what
 specialist's to approve: they are golden diff D001 (`fixtures/golden/diffs/D001-phase-one-ncci-ptp-review-flags.json`),
 pending the specialist's approval. *For the specialist:* approve or correct D001; the list of X modifiers, which
 line the modifier must be on, what indicator 9 means here, and whether a flag on a priced line should keep it from
-becoming actionable.
+becoming actionable. Until then triage keeps a flagged line validated, not actionable (`NCCI_REVIEW`, docs/adr/0040;
+G184 line 2 in `tools/golden-worksheet/triage.golden.test.ts`).
 
 **Q42. Medically unlikely edits.** PRD 11 step 3: "Units above the MUE value when `apply_ncci` is on are `MUE_EXCEEDED`
 for review, not priced down." *Choices:* the line's own units against the `ncci_mue` value for its code in force on the
@@ -301,7 +302,10 @@ G146 line 2 would expect zero. Until the specialist rules, the test matrix's "Ho
 case: `packages/pricing/src/properties.test.ts` compares every claim's total but those whose visit carrier NCCI moved,
 and an example test states the departure (a one-cent visit, sequestration on: 1 cent with NCCI on, 0.97 off). Neither
 reading is applied without the specialist, since the alternative changes G146's expected line 2. *For the specialist:*
-which reading, and whether the variance should be judged per visit.
+which reading, and whether the variance should be judged per visit. Until then triage judges a visit's lines together
+(the visit's net shortfall at most, on the line that carries it) and keeps them validated, not actionable
+(`PER_VISIT_REVIEW`, docs/adr/0040; G141, G145 and G150 in `tools/golden-worksheet/triage.golden.test.ts`); the golden
+lines' own variances are unchanged.
 
 **Q45. Contract-specific adjustments.** PRD 11 step 4: "contract-specific adjustments (a percentage or a cap the
 record defines)", after sequestration. *Choices:* a rate record defines at most one, in its parameters

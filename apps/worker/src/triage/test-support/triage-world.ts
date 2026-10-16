@@ -34,6 +34,8 @@ export interface FixedContractOptions {
   /** An amount in cents per unit for each code. */
   readonly schedule: readonly { readonly code: string; readonly amountCents: string }[];
   readonly payerId?: string;
+  /** Adjustment flags the contract writes in (all off unless named), e.g. apply_ncci. */
+  readonly flags?: Readonly<Record<string, boolean>>;
 }
 
 const quoteFor = (code: string, amountCents: string) => `${code} is paid ${formatCents(parseCents(amountCents))} per unit`;
@@ -96,6 +98,25 @@ export class TriageWorld {
 
   /** A signed-off version of a new contract with the payer: one fixed amount per unit for each code, flags off. */
   async fixedContract(target: Practice, options: FixedContractOptions): Promise<FixedContract> {
+    const quotes = options.schedule.map((item) => quoteFor(item.code, item.amountCents));
+    return this.contractWith(
+      target,
+      options,
+      quotes,
+      options.schedule.map((item) => ({
+        terms: { scope: { codes: [item.code] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: item.amountCents }, flags: { ...options.flags, timed_units_rule: 'PER_CODE' } },
+        quote: quoteFor(item.code, item.amountCents),
+      })),
+    );
+  }
+
+  /** A signed-off version of a new contract with the payer whose exhibit quotes `quotes` and holds `records`. */
+  private async contractWith(
+    target: Practice,
+    options: { readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly payerId?: string },
+    quotes: readonly string[],
+    records: readonly { readonly terms: object; readonly quote: string }[],
+  ): Promise<FixedContract> {
     const { owner } = this;
     const documentId = randomUUID();
     await asOwner(owner, [target.practiceId], () =>
@@ -109,7 +130,7 @@ export class TriageWorld {
       documentId,
       syntheticPdf([
         ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
-        ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...options.schedule.map((item) => quoteFor(item.code, item.amountCents))],
+        ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...quotes],
       ]),
     );
     const payerId = options.payerId ?? (await this.pricing.payerOf(target));
@@ -127,9 +148,8 @@ export class TriageWorld {
     });
     const rateRecordIds = await this.as(target, this.pricing.specialist, async (context) => {
       const ids: string[] = [];
-      for (const item of options.schedule) {
-        const terms = { scope: { codes: [item.code] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: item.amountCents }, flags: { timed_units_rule: 'PER_CODE' } };
-        const { rateRecordId } = await addRateRecord(context, { practiceId: target.practiceId, versionId, terms, citation: { documentId, page: 2, quote: quoteFor(item.code, item.amountCents) } });
+      for (const item of records) {
+        const { rateRecordId } = await addRateRecord(context, { practiceId: target.practiceId, versionId, terms: item.terms, citation: { documentId, page: 2, quote: item.quote } });
         for (const field of RATE_RECORD_FIELDS) {
           await approveRateRecordField(context, { practiceId: target.practiceId, rateRecordId, field });
         }
@@ -140,6 +160,15 @@ export class TriageWorld {
     });
     await this.as(target, target.manager, (context) => signOffVersion(context, { practiceId: target.practiceId, versionId }));
     return { contractId, versionId, rateRecordIds };
+  }
+
+  /**
+   * A signed-off version of a new contract with the payer: one per-visit amount for a visit of the given
+   * codes (PRD 11 step 2: once per claim and date, carried by the first included line), flags off.
+   */
+  async perVisitContract(target: Practice, options: { readonly codes: readonly string[]; readonly amountCents: string; readonly effectiveFrom: string; readonly disputeWindowDays: number }): Promise<FixedContract> {
+    const quote = `A visit of ${options.codes.join(', ')} is paid ${formatCents(parseCents(options.amountCents))} per visit`;
+    return this.contractWith(target, options, [quote], [{ terms: { scope: { codes: options.codes }, method: 'PER_VISIT', parameters: { amount_cents: options.amountCents }, flags: { timed_units_rule: 'PER_CODE' } }, quote }]);
   }
 
   /** Triage of a complete run in the practice's job scope, on `asOf` (today unless named). */

@@ -3,17 +3,24 @@ import { lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
 import { firstDayOf, lastDayOf } from '../routes/pricing';
-import { shareOf, stageOf, traceOrder, traceSteps } from './view';
+import { lineStatusOf, shareOf, traceOrder, traceSteps } from './view';
 
 /** How pricing results read on screen: stages, shares, the trace's steps in order, and run periods by month. SYNTHETIC inputs only. */
 
-describe('a line’s stage from its run', () => {
-  it('is unpriced with a reason, validated when short of its expected amount, and none when paid at or above it', () => {
-    expect(stageOf(null)).toBeNull();
-    expect(stageOf({ expectedAllowedCents: null, varianceCents: null, unpricedReason: 'NO_MAPPING' })).toBe('unpriced');
-    expect(stageOf({ expectedAllowedCents: '5000', varianceCents: '1200', unpricedReason: null })).toBe('validated');
-    expect(stageOf({ expectedAllowedCents: '5000', varianceCents: '0', unpricedReason: null })).toBeNull();
-    expect(stageOf({ expectedAllowedCents: '5000', varianceCents: '-300', unpricedReason: null })).toBeNull();
+describe('a line’s status chip', () => {
+  it('is the stage triage gave it, else unpriced when its pricing in effect left it so, else none', () => {
+    const priced = { expectedAllowedCents: '5000', varianceCents: '1200', unpricedReason: null };
+    expect(lineStatusOf(null, null)).toBeNull();
+    expect(lineStatusOf(null, { expectedAllowedCents: null, varianceCents: null, unpricedReason: 'NO_MAPPING' })).toBe('unpriced');
+    // Triage, not the pricing alone, puts a line at a stage.
+    expect(lineStatusOf(null, priced)).toBeNull();
+    expect(lineStatusOf(null, { ...priced, varianceCents: '-300' })).toBeNull();
+    for (const stage of ['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const) {
+      expect(lineStatusOf(stage, priced)).toBe(stage);
+    }
+    // A line flagged by an anomaly while unpriced shows its stage; an unknown stage falls back to the pricing.
+    expect(lineStatusOf('flagged', { expectedAllowedCents: null, varianceCents: null, unpricedReason: 'NO_AGREEMENT' })).toBe('flagged');
+    expect(lineStatusOf('archived', null)).toBeNull();
   });
 });
 

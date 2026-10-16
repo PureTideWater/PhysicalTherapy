@@ -40,9 +40,11 @@ AUDIT_ROOT = REPOSITORY / "fixtures" / "synthetic" / "audit"
 
 COLUMNS = [
     "payer", "plan", "payer_claim_control_number", "line_no", "service_date", "procedure_code", "modifiers", "units",
-    "billed", "observed_allowed", "expected_allowed", "variance", "unpriced_reason", "window_ends_on", "stage",
-    "counted_as", "reasons", "behavior", "case_ref", "anomaly_ref", "line_ref",
+    "billed", "observed_allowed", "expected_allowed", "variance", "validated", "visit_variance", "unpriced_reason",
+    "window_ends_on", "stage", "counted_as", "reasons", "review_flags", "behavior", "case_ref", "anomaly_ref", "line_ref",
 ]
+# Figures (counts and dollars from cents) are written as they are; every other column is text.
+NUMBER_COLUMNS = {"line_no", "units", "billed", "observed_allowed", "expected_allowed", "variance", "validated", "visit_variance"}
 
 # The rules this worksheet applies, from PRD section 12 and the plan's contracts as the inputs state them.
 MODIFIERS = ["GP"]
@@ -78,10 +80,15 @@ def quarter(date):
 
 
 def csv_field(value):
-    safe = "'" + value if value[:1] in ("=", "+", "@", "\t", "\r") else value
+    """A text field: a leading formula character (= + - @ tab CR) is defused with an apostrophe, then quoted as CSV needs."""
+    safe = "'" + value if value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
     if any(ch in safe for ch in '",\r\n'):
         return '"' + safe.replace('"', '""') + '"'
     return safe
+
+
+def csv_row(row):
+    return ",".join(value if column in NUMBER_COLUMNS else csv_field(value) for column, value in zip(COLUMNS, row))
 
 
 def read_inputs(directory):
@@ -238,17 +245,22 @@ def compute(inputs):
             dollars(line["allowed"]),
             "" if line["expected"] is None else dollars(line["expected"]),
             "" if line["variance"] is None else dollars(line["variance"]),
+            # A fixed schedule's line validates its own shortfall; no line here is per visit.
+            dollars(line["variance"]) if line["variance"] is not None and line["variance"] > 0 else "",
+            "",
             line["unpriced"] or "",
             "" if line["window"] is None else line["window"].isoformat(),
             stage,
             counted,
             " ".join(line["reasons"]) if counted in ("not_actionable", "held") else "",
+            # The scenario's contracts leave NCCI off: no line carries a review flag.
+            "",
             BEHAVIOR if line["variance"] is not None and line["variance"] > 0 else "",
             "case" if line.get("in_case") else "",
             "anomaly" if line.get("flagged") else "",
             "",
         ])
-    csv = "\r\n".join([",".join(COLUMNS)] + [",".join(csv_field(value) for value in row) for row in rows]) + "\r\n"
+    csv = "\r\n".join([",".join(COLUMNS)] + [csv_row(row) for row in rows]) + "\r\n"
 
     validated = [line for line in lines if line["variance"] is not None and line["variance"] > 0]
     unpriced = [line for line in lines if line["unpriced"] is not None]

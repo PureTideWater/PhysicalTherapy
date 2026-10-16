@@ -29,6 +29,9 @@ export interface ApplicationRoleProps {
  *   The audit copies are the operator role's (OperatorRole), not the application's.
  * - The application login's secret, decrypted only through Secrets Manager. The owner and operator
  *   logins' secrets are not readable by the application.
+ * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
+ *   (SESv2 SendEmail) from this account's verified identities in this region only. A digest carries
+ *   counts and a sign-in link, never a patient's data.
  */
 export class ApplicationRole extends Construct {
   readonly role: iam.Role;
@@ -39,7 +42,7 @@ export class ApplicationRole extends Construct {
     const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, application login',
+      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -78,6 +81,11 @@ export class ApplicationRole extends Construct {
         sid: 'ApplicationLogin',
         actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
         resources: [props.appSecret.secretArn],
+      }),
+      new iam.PolicyStatement({
+        sid: 'DigestEmail',
+        actions: ['ses:SendEmail'],
+        resources: [`arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/*`],
       }),
       new iam.PolicyStatement({
         sid: 'ApplicationLoginDecrypt',

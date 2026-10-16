@@ -177,6 +177,38 @@ describe('generating an audit report (PRD 4, Audit v0)', () => {
     expect(text).toContain('Validated');
   }, 120_000);
 
+  it('counts this run’s share of a case that holds other runs’ lines, so the headline, the cases and the line CSV reconcile', async () => {
+    const practice = await w.practice('report share');
+    await w.load(practice, 'CAS-04/remit.835');
+    const contract = await w.fixedContract(practice, FIXED);
+    // May's three lines (60.00) are held below the case materiality; March's eight (280.00) carry the pattern across.
+    const may = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: contract.versionId }], from: '2026-05-01', to: '2026-05-31' });
+    await w.triage(practice, may);
+    await w.load(practice, 'CAS-03/remit.835');
+    const march = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: contract.versionId }, { key: 'CE:SYNPLAN-FIX-TWO', versionId: null, kind: 'no_agreement' }], from: '2026-03-01', to: '2026-03-31' });
+    const id = await w.requestReport(practice, march);
+    expect((await w.generate(practice, id)).outcome).toBe('ready');
+    const row = await report(practice, id);
+    const content = row.content as AuditReportContent;
+    expect(content.headline).toMatchObject({ actionable_cents: '28000', actionable_lines: 8, validated_lines: 8, validated_cents: '28000' });
+    expect(content.cases.map((item) => [item.lines, item.actionable_lines, item.actionable_cents, item.case_lines, item.case_actionable_cents])).toEqual([[8, 8, '28000', 11, '34000']]);
+    // The CSV's actionable lines are the headline's, line for line, and never more than what is validated.
+    const [, ...lines] = csvRows(await w.stored(practice, row.csv_key ?? ''));
+    const column = (name: (typeof CSV_COLUMNS)[number]) => CSV_COLUMNS.indexOf(name);
+    const cents = (text: string | undefined) => BigInt((text ?? '').replace('.', '') || '0');
+    const actionable = lines.filter((line) => line[column('counted_as')] === 'actionable');
+    expect(actionable).toHaveLength(content.headline.actionable_lines);
+    expect(actionable.reduce((total, line) => total + cents(line[column('variance')]), 0n).toString()).toBe(content.headline.actionable_cents);
+    expect(lines.reduce((total, line) => total + cents(line[column('validated')]), 0n).toString()).toBe(content.headline.validated_cents);
+    expect(BigInt(content.headline.actionable_cents) <= BigInt(content.headline.validated_cents)).toBe(true);
+    // May's report counts May's three lines of the same case, and only them.
+    const mayReport = await w.requestReport(practice, may);
+    await w.generate(practice, mayReport);
+    const mayContent = (await report(practice, mayReport)).content as AuditReportContent;
+    expect(mayContent.headline).toMatchObject({ actionable_cents: '6000', actionable_lines: 3, validated_cents: '6000' });
+    expect(mayContent.cases.map((item) => [item.lines, item.actionable_cents, item.case_lines])).toEqual([[3, '6000', 11]]);
+  }, 180_000);
+
   it('keeps an anomaly investigatory and in no total (CAS-02)', async () => {
     const practice = await w.practice('report CAS-02', { anomaly_threshold_cents: '1000' });
     await w.load(practice, 'CAS-02/remit.835');
@@ -260,8 +292,8 @@ describe('the reviewer’s attestation and the release (PRD 4: an independent re
     );
     const viewer = await createUser(w.owner);
     await addMembership(w.owner, practice.world.organizationId, viewer, 'viewer');
-    const signed = (files: { pdf_sha256: string | null; csv_sha256: string | null }, statement = 'SYNTHETIC attestation') =>
-      JSON.stringify({ checklist: ['coverage', 'anomalies', 'validated', 'actionable', 'evidence_gaps'], statement, pdf_sha256: files.pdf_sha256, csv_sha256: files.csv_sha256 });
+    const signed = (files: { pdf_sha256: string | null; csv_sha256: string | null }, checklist = ['coverage', 'anomalies', 'validated', 'actionable', 'gaps', 'independent']) =>
+      JSON.stringify({ format: 'tp-attestation/1', checklist, pdf_sha256: files.pdf_sha256, csv_sha256: files.csv_sha256 });
     const attest = (actorId: string, attestation: string) => inScope(practice, actorId, 'UPDATE audit_report SET attested_by = $2, attestation = $3 WHERE id = $1', [id, actorId, attestation]);
     const release = (actorId: string) => inScope(practice, actorId, 'UPDATE audit_report SET released_by = $2 WHERE id = $1', [id, actorId]);
 
@@ -278,6 +310,10 @@ describe('the reviewer’s attestation and the release (PRD 4: an independent re
     await expect(attest(practice.manager, attestation)).rejects.toMatchObject({ code: '42501' });
     await expect(inScope(practice, reviewer, 'UPDATE audit_report SET attested_by = $2, attestation = $3 WHERE id = $1', [id, practice.manager, attestation])).rejects.toMatchObject({ code: '42501' });
     await expect(attest(reviewer, signed({ pdf_sha256: 'f'.repeat(64), csv_sha256: generated.csv_sha256 }))).rejects.toThrow(/SHA-256 of the report/);
+    // An attestation holds no words: no statement, and nothing but item codes in its checklist.
+    const withWords = { ...(JSON.parse(attestation) as object), statement: 'SYNTHETIC: reviewed claim SYNCCNCAS030001 for SYNTHLAST' };
+    await expect(attest(reviewer, JSON.stringify(withWords))).rejects.toMatchObject({ code: '23514', constraint: 'audit_report_attestation_holds_no_words' });
+    await expect(attest(reviewer, signed(generated, ['coverage', 'SYNTHLAST SYNTHFIRST 1980-01-01']))).rejects.toMatchObject({ code: '23514' });
     await attest(reviewer, attestation);
     const attested = await report(practice, id);
     expect(attested).toMatchObject({ attested_by: reviewer, released_by: null });
@@ -285,7 +321,7 @@ describe('the reviewer’s attestation and the release (PRD 4: an independent re
     // Signed once: the same signature again changes nothing; another is refused.
     await attest(reviewer, attestation);
     expect((await report(practice, id)).attested_at).toEqual(attested.attested_at);
-    await expect(attest(reviewer, signed(generated, 'SYNTHETIC second thoughts'))).rejects.toThrow(/attested once/);
+    await expect(attest(reviewer, signed(generated, ['coverage']))).rejects.toThrow(/attested once/);
     // The reviewer edits nothing else: not the release, not the numbers.
     await expect(release(reviewer)).rejects.toMatchObject({ code: '42501' });
     await expect(release(viewer)).rejects.toMatchObject({ code: '42501' });

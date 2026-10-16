@@ -6,7 +6,7 @@
  * trace, case grouping by payer pattern with case materiality, case totals and deadlines, pursuit-cost
  * estimates, write-off reasons and the three-number headline. No database, clock or network inside.
  */
-export { type Judgement, NOT_ACTIONABLE_REASONS, type NotActionableReason, type TriageFacts, judgeLine, windowOpen } from './actionable';
+export { type Judgement, NOT_ACTIONABLE_REASONS, type NotActionableReason, type TriageFacts, judgeLine, shortfallOf, windowOpen } from './actionable';
 export {
   ANOMALY_STATS_FORMAT,
   type AnomalyCohort,

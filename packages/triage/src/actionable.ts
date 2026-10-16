@@ -13,13 +13,32 @@ import { type Cents } from '@tp/money';
  * 4. the contract version that priced it is signed off (a Medicare Advantage non-contracted line has
  *    no version: it priced from the public fee schedule): else VERSION_NOT_SIGNED_OFF, a version
  *    superseded by its correction since the run;
- * 5. it has no open write-off: else WRITTEN_OFF.
+ * 5. it is not a per-visit line (PER_VISIT_REVIEW) and carries no NCCI procedure-to-procedure review
+ *    flag (NCCI_REVIEW): until the specialist answers QUESTIONS Q44 (whether a visit's variance is
+ *    judged per visit) and Q41 (whether a standing edit keeps a line from becoming actionable), such a
+ *    line stays validated for a person's review and joins no case (docs/adr/0040);
+ * 6. it has no open write-off: else WRITTEN_OFF.
  *
  * A line with zero or negative variance is never validated: an overpayment is recorded on its priced
- * line and shown, and never becomes a case (PRC-15). Every reason that holds is returned, in this order.
+ * line and shown, and never becomes a case (PRC-15). A per-visit line is judged with its visit (PRD 11
+ * step 2: the first included line carries the visit's amount and the rest expect zero): it validates at
+ * most the visit's net shortfall (the sum of its lines' variance), and nothing when the visit as a whole
+ * was paid in full, as when a payer spreads the visit's payment over its lines (the database's
+ * priced_line_shortfall_cents() holds the same rule; a database test runs both). Every reason that
+ * holds is returned, in this order.
  */
 
-export const NOT_ACTIONABLE_REASONS = ['BELOW_LINE_MATERIALITY', 'WINDOW_PASSED', 'NO_WINDOW', 'CLAIM_REVERSED', 'CLAIM_SUPERSEDED', 'VERSION_NOT_SIGNED_OFF', 'WRITTEN_OFF'] as const;
+export const NOT_ACTIONABLE_REASONS = [
+  'BELOW_LINE_MATERIALITY',
+  'WINDOW_PASSED',
+  'NO_WINDOW',
+  'CLAIM_REVERSED',
+  'CLAIM_SUPERSEDED',
+  'VERSION_NOT_SIGNED_OFF',
+  'PER_VISIT_REVIEW',
+  'NCCI_REVIEW',
+  'WRITTEN_OFF',
+] as const;
 export type NotActionableReason = (typeof NOT_ACTIONABLE_REASONS)[number];
 
 /** What triage knows about a priced line on the triage date. */
@@ -35,12 +54,39 @@ export interface TriageFacts {
   /** The status now of the contract version that priced it; null without one. */
   readonly contractVersionStatus: string | null;
   readonly writtenOff: boolean;
+  /**
+   * For a line of a per-visit visit, the visit's net variance (the sum of the variance of the visit's
+   * lines in the line's run); null for a line priced by any other method.
+   */
+  readonly visitVarianceCents: Cents | null;
+  /** The review flags the line was priced with (its trace's outcome.review_flags, NCCI_PTP). */
+  readonly reviewFlags: readonly string[];
 }
 
 export interface Judgement {
   readonly validated: boolean;
   readonly actionable: boolean;
   readonly reasons: readonly NotActionableReason[];
+  /** The shortfall the line validates (its variance, at most its visit's net shortfall); null when not validated. */
+  readonly validatedCents: Cents | null;
+}
+
+/**
+ * The shortfall a priced line validates: its variance when positive; for a line of a per-visit visit,
+ * at most the visit's net shortfall, and nothing when the visit was paid in full or more. Null when
+ * the line validates nothing.
+ */
+export function shortfallOf(varianceCents: Cents | null, visitVarianceCents: Cents | null): Cents | null {
+  if (varianceCents === null || varianceCents <= 0n) {
+    return null;
+  }
+  if (visitVarianceCents === null) {
+    return varianceCents;
+  }
+  if (visitVarianceCents <= 0n) {
+    return null;
+  }
+  return visitVarianceCents < varianceCents ? visitVarianceCents : varianceCents;
 }
 
 /** Whether a window is open on a date: it ends on or after it (YYYY-MM-DD compares as text). */
@@ -49,11 +95,12 @@ export function windowOpen(windowEndsOn: string | null, asOf: string): boolean {
 }
 
 export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf: string): Judgement {
-  if (facts.varianceCents === null || facts.varianceCents <= 0n) {
-    return { validated: false, actionable: false, reasons: [] };
+  const shortfall = shortfallOf(facts.varianceCents, facts.visitVarianceCents);
+  if (shortfall === null) {
+    return { validated: false, actionable: false, reasons: [], validatedCents: null };
   }
   const reasons: NotActionableReason[] = [];
-  if (facts.varianceCents < lineMaterialityCents) {
+  if (shortfall < lineMaterialityCents) {
     reasons.push('BELOW_LINE_MATERIALITY');
   }
   if (facts.windowEndsOn === null) {
@@ -70,8 +117,14 @@ export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf:
   if (facts.mappingKind !== 'ma_noncontracted' && facts.contractVersionStatus !== 'signed_off') {
     reasons.push('VERSION_NOT_SIGNED_OFF');
   }
+  if (facts.visitVarianceCents !== null) {
+    reasons.push('PER_VISIT_REVIEW');
+  }
+  if (facts.reviewFlags.length > 0) {
+    reasons.push('NCCI_REVIEW');
+  }
   if (facts.writtenOff) {
     reasons.push('WRITTEN_OFF');
   }
-  return { validated: true, actionable: reasons.length === 0, reasons: NOT_ACTIONABLE_REASONS.filter((reason) => reasons.includes(reason)) };
+  return { validated: true, actionable: reasons.length === 0, reasons: NOT_ACTIONABLE_REASONS.filter((reason) => reasons.includes(reason)), validatedCents: shortfall };
 }

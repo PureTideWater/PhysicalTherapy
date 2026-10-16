@@ -25,6 +25,8 @@ function candidate(variance: bigint, overrides: Partial<CandidateLine> = {}): Ca
     mappingKind: 'contract',
     contractVersionStatus: 'signed_off',
     writtenOff: false,
+    visitVarianceCents: null,
+    reviewFlags: [],
     ...overrides,
   };
 }
@@ -84,6 +86,21 @@ describe('case grouping by payer pattern (PRD 12; CAS-03, CAS-04)', () => {
     expect(plan.waiting.get(small.serviceLineId)).toEqual(['BELOW_LINE_MATERIALITY']);
     expect(plan.waiting.get(reversed.serviceLineId)).toEqual(['CLAIM_REVERSED']);
     expect(plan.waiting.has(overpaid.serviceLineId)).toBe(false);
+  });
+
+  it('holds per-visit lines and lines with an NCCI review flag out of every case, for a person’s review (Q41, Q44)', () => {
+    const big = Array.from({ length: 9 }, () => candidate(3000n));
+    const carrier = candidate(30000n, { visitVarianceCents: 28000n as Cents });
+    const spread = candidate(4566n, { visitVarianceCents: -234n as Cents });
+    const flagged = candidate(30000n, { reviewFlags: ['NCCI_PTP'] });
+    const plan = planCases([...big, carrier, spread, flagged], new Map(), SETTINGS, AS_OF);
+    const inCases = plan.created.flatMap((item) => item.lines.map((entry) => entry.serviceLineId));
+    expect(inCases).toEqual(big.map((item) => item.serviceLineId));
+    expect(plan.created[0]?.actionableCents).toBe(27000n);
+    expect(plan.waiting.get(carrier.serviceLineId)).toEqual(['PER_VISIT_REVIEW']);
+    expect(plan.waiting.get(flagged.serviceLineId)).toEqual(['NCCI_REVIEW']);
+    // A visit paid in full as a whole validates nothing.
+    expect(plan.waiting.has(spread.serviceLineId)).toBe(false);
   });
 
   it('puts every validated actionable line in exactly one case of its own pattern, and each case total is the sum of its actionable lines (property)', () => {

@@ -26,7 +26,7 @@ export {
   compareRuns,
 } from './diff';
 export { type ImpactOptions, type ImpactRun, type RunImpact, completeRuns, runReleaseImpact } from './impact';
-export { ELIGIBLE_RUN, IN_EFFECT_SINCE, RUN_IN_EFFECT } from './in-effect';
+export { ELIGIBLE_RUN, IN_EFFECT_SINCE, PRICED_IN_EFFECT, RUN_IN_EFFECT } from './in-effect';
 export { type ReleaseWithdrawal, RuleReleaseMismatchError, currentReleaseNo, loadRuleRelease, releaseHeader, releaseWithdrawals } from './release';
 export {
   type AcceptRunInput,

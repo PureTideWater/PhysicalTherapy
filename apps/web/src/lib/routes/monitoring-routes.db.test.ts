@@ -1,10 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { readDatabaseUrl, withJobScope } from '@tp/db';
+import { correctMapping } from '@tp/contracts';
+import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { type JobContext, monitorHandler, notifyRun, prepareDigest } from '@tp/worker/runtime';
-import type { Practice } from '@tp/worker/testing';
+import { acceptRun, createRerun } from '@tp/worker/pricing';
+import { type Practice, RELEASE } from '@tp/worker/testing';
 import { TriageWorld } from '@tp/worker/testing/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -137,6 +139,13 @@ describe('the practice dashboard (JOB-02)', () => {
     expect(home.notifications.latest.map((item) => item.kind).sort()).toEqual(['digest', 'monitoring_run']);
     expect(home.notifications.latest.find((item) => item.kind === 'monitoring_run')).toMatchObject({ subjectId: runId, periodFrom: '2026-03-01', periodTo: '2026-03-31', counts: { lines: 17, cases: 2 } });
     expect(home.freshness.failedRun).toBeNull();
+    // The dashboard's counts and totals: coverage of the run in effect, the cases by state, deadlines in 14 days (none: 2036), recovered zero.
+    expect(home.dashboard).toEqual({
+      coverage: { runId, periodFrom: '2026-03-01', periodTo: '2026-03-31', lines: 17, pricedLines: 17, chargeCents: '255500', pricedChargeCents: '255500' },
+      casesByState: [{ state: 'open', cases: 2, actionableCents: '55200' }],
+      deadlines: { cases: 0, actionableCents: '0', earliest: null },
+      recoveredCents: '0',
+    });
 
     const jobId = randomUUID();
     const key = `monitor:${practice.practiceId}:2026-11-01`;
@@ -263,5 +272,31 @@ describe('notification preferences', () => {
     expect(rows[0]?.settings).toEqual({ notifications: { digest_email: true, in_app: false } });
     // Someone else's are untouched.
     expect(ok(await call(notificationPreferencesPage, practice.manager, {})).preferences).toEqual({ digestEmail: true, inApp: true });
+  });
+});
+
+describe('the monthly summary reads each line’s pricing in effect (PRD 5, J17; docs/adr/0037)', () => {
+  it('counts a validated line whose accepted re-run finds no shortfall by how the re-run leaves it, never at its old variance', async () => {
+    const target = await w.practice('summary in effect', { case_materiality_cents: '100000' });
+    await w.load(target, 'CAS-04/remit.835');
+    const first = await w.fixedContract(target, { schedule: [{ code: '97110', amountCents: '5000' }], ...FIXED });
+    const may = await w.pricedRun(target, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: first.versionId }], from: '2026-05-01', to: '2026-05-31' });
+    await w.triage(target, may);
+    const month = { practiceId: target.practiceId, month: '2026-05' };
+    expect(ok(await call(monthlySummaryPage, target.manager, month)).summary.total.figures.validated).toEqual({ lines: 3, billedCents: '22500', varianceCents: '6000' });
+    // The mapping was wrong: corrected to a contract that pays what the payer paid, then May re-run and accepted.
+    const right = await w.fixedContract(target, { schedule: [{ code: '97110', amountCents: '3000' }], ...FIXED });
+    const planId = await w.pricing.planOf(target, 'CE:SYNPLAN-FIX-ONE');
+    const old = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [planId]);
+    await w.as(target, target.manager, (context) => correctMapping(context, { practiceId: target.practiceId, planId, kind: 'contract', contractVersionId: right.versionId, effectiveFrom: '2026-01-01', supersedesId: old.id }));
+    const asManager = <T>(run: Parameters<typeof withPracticeScope<typeof w.app, T>>[2]) => withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, run);
+    const rerun = await asManager((scope) => createRerun(scope, { practiceId: target.practiceId, pricingRunId: may, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
+    await w.pricing.execute(target, rerun.pricingRunId);
+    // Before anyone accepts it, the summary still reads the first run.
+    expect(ok(await call(monthlySummaryPage, target.manager, month)).summary.total.figures.validated.lines).toBe(3);
+    await asManager((scope) => acceptRun(scope, { practiceId: target.practiceId, pricingRunId: rerun.pricingRunId }));
+    const figures = ok(await call(monthlySummaryPage, target.manager, month)).summary.total.figures;
+    expect(figures.validated).toEqual({ lines: 0, billedCents: '0', varianceCents: '0' });
+    expect(figures.priced).toMatchObject({ lines: 3, billedCents: '22500' });
   });
 });

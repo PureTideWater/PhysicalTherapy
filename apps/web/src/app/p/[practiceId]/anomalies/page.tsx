@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
-import { Money } from '../../../../components/remittances/display';
+import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { Investigatory } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
@@ -29,7 +29,7 @@ export default async function AnomaliesPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="anomalies" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, anomalies, open, minimumCohort, thresholdCents, canWork, canReadPhi } = page.data;
+  const { practiceId, anomalies, open, minimumCohort, thresholdCents, canWork, canReadPhi, filters, runs, payers, total } = page.data;
   const path = `/p/${practiceId}/anomalies`;
   return (
     <AppShell shell={page.shell} section="anomalies">
@@ -128,8 +128,37 @@ export default async function AnomaliesPage(props: Props) {
       )}
       <section aria-label="Cohorts" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Cohorts</h2>
-        {anomalies.length === 0 ? (
+        <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cohorts">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="anomalies-run">Pricing run</Label>
+            <select id="anomalies-run" name="run" defaultValue={filters.run ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Every run</option>
+              {runs.map((run) => (
+                <option key={run.id} value={run.id}>
+                  {run.periodFrom} to {run.periodTo}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="anomalies-payer">Payer</Label>
+            <select id="anomalies-payer" name="payer" defaultValue={filters.payer ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Every payer</option>
+              {payers.map((payer) => (
+                <option key={payer.id} value={payer.id}>
+                  {payer.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="h-9 rounded-md border px-3">
+            Filter
+          </button>
+        </form>
+        {anomalies.length === 0 && filters.run === undefined && filters.payer === undefined ? (
           <EmptyState title="No anomaly" nextStep="Triage a complete pricing run from the Cases screen; cohorts of unpriced lines at or above the minimum size with lines paid short of their mode appear here." />
+        ) : anomalies.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No cohort matches these filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm" aria-label="Anomaly cohorts">
@@ -172,6 +201,7 @@ export default async function AnomaliesPage(props: Props) {
             </table>
           </div>
         )}
+        <Pager path={path} query={filters} page={page.data.page} pages={page.data.pages} total={total} noun="Cohorts" />
       </section>
     </AppShell>
   );

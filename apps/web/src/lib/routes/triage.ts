@@ -19,11 +19,13 @@ import {
   flaggedLines,
   isRunInEffect,
   listAnomalies,
+  anomalyRuns,
   listCases,
-  openActionableCents,
   practiceTriageSettings,
   runsInEffect,
 } from '../triage/queries';
+import { pageParam } from '../http/paging';
+import { type PayerOption, payerOptions } from '../remittances/queries';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -44,7 +46,14 @@ const today = (now: Date) => now.toISOString().slice(0, 10);
 
 export interface AnomaliesPageData {
   readonly practiceId: string;
+  /** A page of the cohorts the filters admit. */
   readonly anomalies: readonly AnomalyView[];
+  readonly page: number;
+  readonly pages: number;
+  readonly total: number;
+  readonly filters: { readonly run?: string; readonly payer?: string };
+  readonly runs: readonly { readonly id: string; readonly periodFrom: string; readonly periodTo: string }[];
+  readonly payers: readonly PayerOption[];
   /** The cohort opened, with its flagged lines. */
   readonly open: { readonly anomaly: AnomalyView; readonly lines: readonly FlaggedLine[] } | null;
   readonly minimumCohort: number;
@@ -59,7 +68,7 @@ export const anomaliesPage = practiceRoute({
   path: '/p/[practiceId]/anomalies',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, anomaly: optionalText(opaqueId) }),
+  params: z.object({ practiceId: opaqueId, anomaly: optionalText(opaqueId), run: optionalText(opaqueId), payer: optionalText(opaqueId), page: pageParam }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<AnomaliesPageData> => {
     const settings = await practiceTriageSettings(scope, practiceId);
     const canReadPhi = rolesPermit(access.roles, 'phi.read');
@@ -72,9 +81,20 @@ export const anomaliesPage = practiceRoute({
       const cipher = canReadPhi ? await loadPracticeCipher(scope, services.keys, practiceId) : null;
       open = { anomaly, lines: await flaggedLines(scope, practiceId, anomaly, cipher, request.requestId) };
     }
+    const listed = await listAnomalies(scope, practiceId, settings.anomalyMinimumCohort, request.requestId, {
+      ...(params.run === undefined ? {} : { runId: params.run }),
+      ...(params.payer === undefined ? {} : { payerId: params.payer }),
+      page: params.page,
+    });
     return {
       practiceId,
-      anomalies: await listAnomalies(scope, practiceId, settings.anomalyMinimumCohort, request.requestId),
+      anomalies: listed.items,
+      page: listed.page,
+      pages: listed.pages,
+      total: listed.total,
+      filters: { ...(params.run === undefined ? {} : { run: params.run }), ...(params.payer === undefined ? {} : { payer: params.payer }) },
+      runs: await anomalyRuns(scope, practiceId),
+      payers: await payerOptions(scope, practiceId),
       open,
       minimumCohort: settings.anomalyMinimumCohort,
       thresholdCents: settings.anomalyThresholdCents.toString(),
@@ -142,11 +162,21 @@ export const requestValidationAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ anomalyId: refs.anomalyId }) },
 });
 
+/** The Cases screen's deadline filter: open cases whose deadline falls within so many days. */
+export const DEADLINE_FILTERS = ['14', '30', '90'] as const;
+
 export interface CasesPageData {
   readonly practiceId: string;
   readonly asOf: string;
+  /** A page of the cases the filters admit. */
   readonly cases: readonly CaseSummary[];
-  /** The open cases' actionable total (stage three only). */
+  readonly page: number;
+  readonly pages: number;
+  readonly total: number;
+  readonly filters: { readonly state?: string; readonly payer?: string; readonly deadline?: string };
+  readonly payers: readonly PayerOption[];
+  /** The open cases the filters admit, over every page, and their actionable total (stage three only). */
+  readonly openCases: number;
   readonly actionableCents: string;
   readonly runs: readonly RunChoice[];
   readonly canTriage: boolean;
@@ -158,12 +188,40 @@ export const casesPage = practiceRoute({
   path: '/p/[practiceId]/cases',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId }),
-  handle: async ({ scope, practiceId, request, access, services }): Promise<CasesPageData> => {
+  params: z.object({
+    practiceId: opaqueId,
+    state: optionalText(z.enum(['open', 'submitted', 'awaiting_response', 'partially_resolved', 'resolved', 'closed_written_off'])),
+    payer: optionalText(opaqueId),
+    deadline: optionalText(z.enum(DEADLINE_FILTERS)),
+    page: pageParam,
+  }),
+  handle: async ({ scope, practiceId, params, request, access, services }): Promise<CasesPageData> => {
     const asOf = today(services.now());
-    const cases = await listCases(scope, practiceId, asOf, request.requestId);
+    const listed = await listCases(scope, practiceId, asOf, request.requestId, {
+      ...(params.state === undefined ? {} : { state: params.state }),
+      ...(params.payer === undefined ? {} : { payerId: params.payer }),
+      ...(params.deadline === undefined ? {} : { deadlineWithinDays: Number.parseInt(params.deadline, 10) }),
+      page: params.page,
+    });
     const canTriage = rolesPermit(access.roles, 'case.work');
-    return { practiceId, asOf, cases, actionableCents: openActionableCents(cases), runs: canTriage ? await runsInEffect(scope, practiceId) : [], canTriage };
+    return {
+      practiceId,
+      asOf,
+      cases: listed.items,
+      page: listed.page,
+      pages: listed.pages,
+      total: listed.total,
+      filters: {
+        ...(params.state === undefined ? {} : { state: params.state }),
+        ...(params.payer === undefined ? {} : { payer: params.payer }),
+        ...(params.deadline === undefined ? {} : { deadline: params.deadline }),
+      },
+      payers: await payerOptions(scope, practiceId),
+      openCases: listed.openCases,
+      actionableCents: listed.openActionableCents,
+      runs: canTriage ? await runsInEffect(scope, practiceId) : [],
+      canTriage,
+    };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
@@ -183,7 +241,7 @@ export const casePage = practiceRoute({
   path: '/p/[practiceId]/cases/[caseId]',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, caseId: opaqueId }),
+  params: z.object({ practiceId: opaqueId, caseId: opaqueId, page: pageParam }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<CasePageData> => {
     const asOf = today(services.now());
     const found = await caseOf(scope, practiceId, params.caseId, asOf, request.requestId);
@@ -192,7 +250,7 @@ export const casePage = practiceRoute({
     }
     const canReadPhi = rolesPermit(access.roles, 'phi.read');
     const cipher = canReadPhi ? await loadPracticeCipher(scope, services.keys, practiceId) : null;
-    return { practiceId, asOf, case: found, detail: await caseDetail(scope, practiceId, params.caseId, cipher, request.requestId), canWork: rolesPermit(access.roles, 'case.work'), canReadPhi };
+    return { practiceId, asOf, case: found, detail: await caseDetail(scope, practiceId, params.caseId, cipher, request.requestId, params.page), canWork: rolesPermit(access.roles, 'case.work'), canReadPhi };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
 });
@@ -221,10 +279,15 @@ export const triageRunAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ runId: refs.pricingRunId }) },
 });
 
+/** What a write-off does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
+export const WRITE_OFF_CONSEQUENCE =
+  'The line leaves the case’s actionable total and stays in the case, struck through, with its reason. A person who works cases can reopen it, with a reason, while its dispute window is open.';
+
 /**
  * Writes a case line off with a reason from the closed list ("other" says why; PRD 12, Write-offs and
- * reopening): the line stays in the case, struck through and out of its total. The words are kept
- * encrypted with the practice's key. A line already written off is left as it is.
+ * reopening): the line stays in the case, struck through and out of its total. The person confirms the
+ * consequence first (WRITE_OFF_CONSEQUENCE). The words are kept encrypted with the practice's key. A
+ * line already written off is left as it is.
  */
 export const writeOffLineAction = practiceRoute({
   id: 'practice.cases.write_off',
@@ -233,7 +296,7 @@ export const writeOffLineAction = practiceRoute({
   phi: true,
   permission: 'case.work',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ caseLineId: opaqueId, reason: z.enum(WRITE_OFF_REASONS), text: optionalText(z.string().max(500)) }),
+  input: z.object({ caseLineId: opaqueId, reason: z.enum(WRITE_OFF_REASONS), text: optionalText(z.string().max(500)), confirm: z.literal('on', 'confirm what a write-off does') }),
   audit: { action: 'case_line_written_off', objectType: 'case_line' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
     const checked = writeOffSchema.safeParse({ reason: input.reason, text: input.text });
@@ -256,7 +319,7 @@ export const writeOffLineAction = practiceRoute({
     }
     return { objectId: line.id, redirect: `/p/${practiceId}/cases/${line.caseId}` };
   },
-  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseLineId: refs.caseLineId, reason: 'not_worth_pursuit', text: '' }) },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseLineId: refs.caseLineId, reason: 'not_worth_pursuit', text: '', confirm: 'on' }) },
 });
 
 /**

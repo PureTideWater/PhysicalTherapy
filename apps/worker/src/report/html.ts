@@ -29,7 +29,10 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   CLAIM_REVERSED: 'Claim reversed since it was priced',
   CLAIM_SUPERSEDED: 'Claim corrected since it was priced',
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
+  PER_VISIT_REVIEW: 'Per-visit line, judged with its visit: held for the specialist’s review',
+  NCCI_REVIEW: 'An NCCI procedure-to-procedure edit stands: held for review',
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',
+  CASE_LINE_FROM_OTHER_RUN: 'In a case through another run’s pricing of the line (counted in that run’s report)',
 };
 
 /** Why a validated line is not actionable, in words (the report and the Reports screen say it the same way). */
@@ -122,11 +125,12 @@ export function auditHtml(content: AuditReportContent): string {
     `${String(item.actionable_lines)} of ${String(item.lines)}`,
     usd(item.actionable_cents),
     item.deadline_on ?? 'none open',
+    `${count(item.case_lines, 'line')}, ${usd(item.case_actionable_cents)}`,
     usd(item.pursuit_cost_cents),
     usd(item.net_expected_cents),
   ]);
   sections.push(
-    `<section aria-label="Actionable cases"><h2>${escapeHtml(labels.actionable)}: cases by payer pattern</h2><p>${escapeHtml(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'State', 'Lines counted', labels.actionable, 'Deadline', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.')}<p>${escapeHtml(content.pursuit.estimated ? `Pursuit cost of the open cases: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
+    `<section aria-label="Actionable cases"><h2>${escapeHtml(labels.actionable)}: cases by payer pattern</h2><p>${escapeHtml(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them. A pattern accumulates across runs, so a case may hold lines other runs priced: this report counts the lines this run priced, and the whole case is shown beside them.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'State', 'Lines counted (this run)', `${labels.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.')}<p>${escapeHtml(content.pursuit.estimated ? `Pursuit cost of the open cases: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
   );
 
   const gapRows = content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind.replaceAll('_', ' '), gap.lines === 0 ? '' : String(gap.lines), gap.charge_cents === null ? '' : usd(gap.charge_cents), gap.detail, gap.remedy]);

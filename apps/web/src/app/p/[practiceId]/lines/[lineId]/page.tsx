@@ -45,7 +45,7 @@ export default async function LinePage(props: {
           {modifiers.length === 0 ? '' : ` ${modifiers.join(' ')}`}
         </h1>
         <div className="flex flex-wrap gap-1">
-          <LineStatusChip status={line.status} priced={line.pricing !== null} />
+          <LineStatusChip status={line.status} priced={line.pricing !== null} shortfall={line.pricing !== null && BigInt(line.pricing.varianceCents ?? '0') > 0n} />
           {line.reversal ? <Badge variant="secondary">Reversal</Badge> : null}
           {line.reversed ? <Badge variant="outline">Reversed</Badge> : null}
           {line.superseded ? <Badge variant="outline">Superseded</Badge> : null}

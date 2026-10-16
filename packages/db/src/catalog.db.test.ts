@@ -250,6 +250,7 @@ describe('the catalog test', () => {
     expect(REVIEWED_SCOPE_FUNCTIONS.map((item) => [item.function, item.scope])).toEqual([
       ['end_support_grant(uuid)', 'narrows'],
       ['console_contract_queue()', 'counts'],
+      ['console_set_practice_settings(uuid,text,jsonb)', 'narrows'],
       ['console_release_runs()', 'counts'],
     ]);
     expect(await problemsAfter('DROP FUNCTION console_contract_queue();')).toEqual([

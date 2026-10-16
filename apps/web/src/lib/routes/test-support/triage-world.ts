@@ -144,7 +144,7 @@ export async function seedTriage(options: TriageWorldOptions): Promise<SeededTri
   await withPracticeScope(app, { actorId: options.reviewerId, practiceIds: [practiceId] }, (scope) =>
     scope.client.query('UPDATE audit_report SET attested_by = app_actor_id(), attestation = $2 WHERE id = $1', [
       attestedReportId,
-      JSON.stringify({ format: 'tp-attestation/1', checklist: ['coverage'], statement: 'SYNTHETIC attestation', pdf_sha256: generated.pdfSha256, csv_sha256: generated.csvSha256 }),
+      JSON.stringify({ format: 'tp-attestation/1', checklist: ['coverage'], pdf_sha256: generated.pdfSha256, csv_sha256: generated.csvSha256 }),
     ]),
   );
   return { ...seeded, auditReportPdfSha256: generated.pdfSha256, auditReportCsvSha256: generated.csvSha256, attestedReportId };

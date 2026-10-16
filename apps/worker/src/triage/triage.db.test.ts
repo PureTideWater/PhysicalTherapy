@@ -1,10 +1,16 @@
 import { randomUUID } from 'node:crypto';
 
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { addMembership, createUser } from '@tp/db/testing';
+import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { Practice } from '../price/test-support/pricing-world';
+import { judgeLine } from '@tp/triage';
+import { parseCents } from '@tp/money';
+
+import { monitorHandler } from '../monitor/job';
+import { acceptRun, createRerun } from '../price/rerun';
+import { type Practice, RELEASE } from '../price/test-support/pricing-world';
+import { correctMapping } from '@tp/contracts';
 import { type TriageOutcome, todayUtc } from './execute';
 import { TriageWorld } from './test-support/triage-world';
 
@@ -290,10 +296,16 @@ describe('the stage rules in SQL (PRD 8: monotonic forward, reopen explicit)', (
     await expect(insert('validated', null, null)).rejects.toThrow(/move forward only/);
     await expect(insert('payer_approved', null, null)).rejects.toThrow(/recovery ledger/);
     await expect(insert('recovered', null, null)).rejects.toThrow(/recovery ledger/);
-    await expect(insert('actionable', null, null, randomUUID())).rejects.toThrow(/own name/);
+    // In another's name, or in no one's (as triage, a job, sets it): refused for a person by the policy.
+    await expect(insert('actionable', null, null, randomUUID())).rejects.toThrow(/row-level security/);
     const other = await createUser(w.owner);
     await addMembership(w.owner, practice.world.organizationId, other, 'billing_manager');
-    await expect(insert('actionable', null, null, other)).rejects.toThrow(/own name/);
+    await expect(insert('actionable', null, null, other)).rejects.toThrow(/row-level security/);
+    await expect(insert('actionable', null, null, null)).rejects.toThrow(/row-level security/);
+    // The owner, whom no policy narrows, meets the rule itself.
+    await expect(
+      asOwner(w.owner, [practice.practiceId], () => w.owner.query('INSERT INTO line_status (practice_id, service_line_id, stage, set_by) VALUES ($1, $2, $3, $4)', [practice.practiceId, lineId, 'actionable', other]), practice.manager),
+    ).rejects.toThrow(/own name/);
     await expect(insert('validated', 'actionable', 'enc:v1:SYNTHETIC')).rejects.toThrow(/stage the line is at/);
     await expect(insert('actionable', 'validated', 'enc:v1:SYNTHETIC')).rejects.toThrow(/not a reopen/);
     await expect(insert('flagged', 'validated', null)).rejects.toMatchObject({ code: '23514' });
@@ -313,5 +325,194 @@ describe('the stage rules in SQL (PRD 8: monotonic forward, reopen explicit)', (
       code: '42501',
     });
     await expect(w.owner.query('TRUNCATE line_status')).rejects.toThrow(/cannot be truncated/);
+  });
+});
+
+describe('every line is judged from its pricing in effect (PRD 5, J6 and J17; docs/adr/0037)', () => {
+  it('keeps a held line whose accepted re-run finds no shortfall out of a later case, and never names the replaced run’s priced line', async () => {
+    const practice = await w.practice('in effect', { case_materiality_cents: '4000' });
+    await w.load(practice, 'CAS-04/remit.835');
+    const first = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97110', amountCents: '5000' }] });
+    const sixteenth = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: first.versionId }], from: '2026-05-16', to: '2026-05-16' });
+    expect(summary(await w.triage(practice, sixteenth))).toMatchObject({ validatedLines: 1, casesOpened: 0, heldPatterns: 1 });
+    const seventeenth = await w.pricing.createRun(practice, '2026-05-17', '2026-05-17');
+    await w.pricing.execute(practice, seventeenth);
+    // The mapping was wrong: corrected to a contract that pays what the payer paid, and the first run re-run and accepted.
+    const right = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97110', amountCents: '3000' }] });
+    const planId = await w.pricing.planOf(practice, 'CE:SYNPLAN-FIX-ONE');
+    const old = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [planId]);
+    await w.as(practice, practice.manager, (context) => correctMapping(context, { practiceId: practice.practiceId, planId, kind: 'contract', contractVersionId: right.versionId, effectiveFrom: '2026-01-01', supersedesId: old.id }));
+    const manager = <T>(run: (scope: Parameters<Parameters<typeof withPracticeScope>[2]>[0]) => Promise<T>) => withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, run);
+    const rerun = await manager((scope) => createRerun(scope, { practiceId: practice.practiceId, pricingRunId: sixteenth, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
+    await w.pricing.execute(practice, rerun.pricingRunId);
+    await manager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId: rerun.pricingRunId }));
+    expect(await rows(practice, 'SELECT variance_cents::text FROM priced_line WHERE pricing_run_id = $1', [rerun.pricingRunId])).toEqual([{ variance_cents: '0' }]);
+    expect(summary(await w.triage(practice, rerun.pricingRunId))).toMatchObject({ validatedLines: 0, casesOpened: 0, linesAdded: 0 });
+    // The 17th's line alone (20.00) is below the case materiality: no case, and the 16th's old pricing is not added to it.
+    expect(summary(await w.triage(practice, seventeenth))).toMatchObject({ validatedLines: 1, casesOpened: 0, linesAdded: 0, heldPatterns: 1 });
+    expect(await cases(practice)).toEqual([]);
+    // The replaced run is never triaged again.
+    expect((await w.triage(practice, sixteenth)).outcome).toBe('not_in_effect');
+  });
+});
+
+describe('anomaly cohorts are the quarter’s, across the month runs (PRD 12, Anomaly screening)', () => {
+  it('screens April’s lines with May’s: two months of 29 lines each make a cohort neither makes alone', async () => {
+    const practice = await w.practice('quarter cohort', { anomaly_threshold_cents: '1000' });
+    await w.load(practice, 'CAS-01/remit.835');
+    const april = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-OON-CAS', versionId: null, kind: 'no_agreement' }], from: '2026-04-01', to: '2026-04-30' });
+    expect(summary(await w.triage(practice, april))).toMatchObject({ anomalies: 0, flaggedLines: 0 });
+    // The same file for May: its own payment, claims and interchange.
+    await w.pricing.loadVariant(practice, 'CAS-01/remit.835', [
+      ['DTM*472*202604', 'DTM*472*202605'],
+      ['SYNEFTCAS01001', 'SYNEFTCAS01MAY'],
+      ['SYNCCNCAS01', 'SYNCCNCAS0M'],
+      ['SYNPCNCAS01', 'SYNPCNCAS0M'],
+      ['050010001', '050010002'],
+    ]);
+    const may = await w.pricedRun(practice, { plans: [], from: '2026-05-01', to: '2026-05-31' });
+    expect(summary(await w.triage(practice, may))).toMatchObject({ anomalies: 1, flaggedLines: 8 });
+    const [anomaly, ...others] = await rows<{ pricing_run_id: string; cohort_size: number; cohort_key: Record<string, unknown>; line_ids: string[] }>(practice, 'SELECT pricing_run_id, cohort_size, cohort_key, line_ids FROM anomaly');
+    expect(others).toEqual([]);
+    expect(anomaly).toMatchObject({ pricing_run_id: may, cohort_size: 58, cohort_key: { quarter: '2026-Q2', procedure_code: '97110' } });
+    expect(anomaly?.line_ids).toHaveLength(8);
+    expect(await stages(practice)).toEqual([{ stage: 'flagged', lines: '8' }]);
+  });
+});
+
+describe('per-visit lines are judged with their visit (PRD 11 step 2; QUESTIONS Q44; PRC-07)', () => {
+  // PRC-07: one visit of three lines on 2026-05-31, paid 45.88, 59.04 and 60.04 (164.96 in all).
+  const visit = async (label: string, amountCents: string) => {
+    const practice = await w.practice(label, { case_materiality_cents: '1' });
+    await w.load(practice, 'PRC-07/remit.835');
+    const contract = await w.perVisitContract(practice, { codes: ['97110', '97140', '97530'], amountCents, effectiveFrom: '2026-01-01', disputeWindowDays: 3650 });
+    const runId = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-COMM-VISIT', versionId: contract.versionId }], from: '2026-05-01', to: '2026-05-31' });
+    const lines = await rows<{ id: string; variance_cents: string; visit: string | null; shortfall: string | null; flags: { flag: string }[] }>(
+      practice,
+      `SELECT p.id, p.variance_cents::text, priced_line_visit_variance_cents(p.id)::text AS visit, priced_line_shortfall_cents(p.id)::text AS shortfall, coalesce(p.trace #> '{outcome,review_flags}', '[]') AS flags
+         FROM priced_line p JOIN service_line l ON l.id = p.service_line_id WHERE p.pricing_run_id = $1 ORDER BY l.line_no`,
+      [runId],
+    );
+    // The database's shortfall is @tp/triage's judgement of the same line.
+    for (const line of lines) {
+      const judged = judgeLine(
+        { varianceCents: parseCents(line.variance_cents), visitVarianceCents: line.visit === null ? null : parseCents(line.visit), reviewFlags: line.flags.map((flag) => flag.flag), windowEndsOn: '2036-01-01', claimReversed: false, claimSuperseded: false, mappingKind: 'contract', contractVersionStatus: 'signed_off', writtenOff: false },
+        parseCents('500'),
+        '2026-06-01',
+      );
+      expect(judged.validatedCents === null ? null : judged.validatedCents.toString()).toBe(line.shortfall);
+    }
+    return { practice, runId, lines };
+  };
+
+  it('validates nothing of a visit the payer paid in full across its lines, however short the carrying line looks', async () => {
+    const { practice, runId, lines } = await visit('PRC-07 paid in full', '15000');
+    expect(lines.map((line) => [line.variance_cents, line.visit, line.shortfall])).toEqual([
+      ['10412', '-1496', null],
+      ['-5904', '-1496', null],
+      ['-6004', '-1496', null],
+    ]);
+    expect(summary(await w.triage(practice, runId))).toMatchObject({ validatedLines: 0, casesOpened: 0 });
+    expect(await stages(practice)).toEqual([]);
+  });
+
+  it('validates the visit’s net shortfall on the carrying line and holds it for review, out of every case', async () => {
+    const { practice, runId, lines } = await visit('PRC-07 short', '20000');
+    expect(lines.map((line) => [line.variance_cents, line.visit, line.shortfall])).toEqual([
+      ['15412', '3504', '3504'],
+      ['-5904', '3504', null],
+      ['-6004', '3504', null],
+    ]);
+    expect(summary(await w.triage(practice, runId))).toMatchObject({ validatedLines: 1, casesOpened: 0, heldPatterns: 0 });
+    expect(await stages(practice)).toEqual([{ stage: 'validated', lines: '1' }]);
+    expect(await cases(practice)).toEqual([]);
+  });
+});
+
+describe('the closing of windows follows the calendar (PRD 12, Deadlines)', () => {
+  it('writes off, on the daily monitor, the lines of an open case whose windows closed since its triage', async () => {
+    const practice = await w.practice('daily windows');
+    await w.load(practice, 'CAS-03/remit.835');
+    const two = await w.fixedContract(practice, { schedule: [{ code: '97530', amountCents: '5200' }], effectiveFrom: '2026-01-01', disputeWindowDays: 30 });
+    const runId = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-FIX-TWO', versionId: two.versionId }, { key: 'CE:SYNPLAN-FIX-ONE', versionId: null, kind: 'no_agreement' }], from: '2026-03-01', to: '2026-03-31' });
+    // Triaged while the windows were open; nobody triages again.
+    expect(summary(await w.triage(practice, runId, '2026-04-10'))).toMatchObject({ casesOpened: 1, linesAdded: 8 });
+    expect((await cases(practice)).map((item) => [item.state, item.open_lines, item.actionable_cents])).toEqual([['open', '8', '27200']]);
+    // The daily schedule's monitor job of the practice.
+    const logs: Record<string, unknown>[] = [];
+    await monitorHandler()({ practice_id: practice.practiceId, day: todayUtc() }, w.pricing.jobContext(practice.practiceId, logs));
+    expect((await cases(practice)).map((item) => [item.state, item.open_lines, item.actionable_cents, item.deadline_on])).toEqual([['closed_written_off', '0', '0', null]]);
+    expect(logs.map((line) => line.msg)).toContain('monitoring wrote off case lines whose windows closed');
+    // Again the same day: nothing more.
+    const again: Record<string, unknown>[] = [];
+    await monitorHandler()({ practice_id: practice.practiceId, day: todayUtc() }, w.pricing.jobContext(practice.practiceId, again));
+    expect(again.map((line) => line.msg)).not.toContain('monitoring wrote off case lines whose windows closed');
+  });
+});
+
+describe('who writes stages, runs and report requests, in SQL as in the routes (PRD 3; docs/adr/0040)', () => {
+  it('refuses the reviewer and the viewer every one of them, and lets a person who works cases and maps plans', async () => {
+    const practice = await w.practice('writers');
+    await w.load(practice, 'CAS-05/remit.835');
+    const contract = await w.fixedContract(practice, FIXED);
+    const runId = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-FIX-ONE', versionId: contract.versionId }], from: '2026-03-01', to: '2026-03-31' });
+    summary(await w.triage(practice, runId));
+    const [line] = await rows<{ service_line_id: string }>(practice, 'SELECT service_line_id FROM priced_line LIMIT 1');
+    const viewer = await createUser(w.owner);
+    await addMembership(w.owner, practice.world.organizationId, viewer, 'viewer');
+    const internal = await createOrganization(w.owner, 'internal', 'writers');
+    const reviewer = await createUser(w.owner, { hardwareKeyRequired: true });
+    await addMembership(w.owner, internal, reviewer, 'reviewer');
+    await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'REV-1', 'SYNTHETIC REVIEW', now() + interval '4 hours')`, [practice.practiceId, reviewer]),
+    );
+    const as = (actorId: string, sql: string, values: unknown[]) => withPracticeScope(w.app, { actorId, practiceIds: [practice.practiceId] }, (scope) => scope.client.query(sql, values));
+    const stage = (actorId: string, stageName: string, reopenedFrom: string | null = null) =>
+      as(actorId, 'INSERT INTO line_status (practice_id, service_line_id, stage, set_by, reopened_from, reason) VALUES ($1, $2, $3, $4, $5, $6)', [
+        practice.practiceId,
+        line?.service_line_id,
+        stageName,
+        actorId,
+        reopenedFrom,
+        reopenedFrom === null ? null : 'enc:v1:SYNTHETIC',
+      ]);
+    const run = (actorId: string) =>
+      as(actorId, "INSERT INTO pricing_run (practice_id, period_from, period_to, release_no, engine_version, created_by) VALUES ($1, '2026-03-01', '2026-03-31', $2, 'phase-two/1', $3)", [practice.practiceId, RELEASE, actorId]);
+    const report = (actorId: string) => as(actorId, 'INSERT INTO audit_report (practice_id, pricing_run_id, requested_by) VALUES ($1, $2, $3)', [practice.practiceId, runId, actorId]);
+    for (const outsider of [reviewer, viewer]) {
+      await expect(stage(outsider, 'actionable')).rejects.toThrow(/row-level security/);
+      await expect(stage(outsider, 'validated', 'validated')).rejects.toThrow(/row-level security/);
+      await expect(run(outsider)).rejects.toThrow(/row-level security/);
+      await expect(report(outsider)).rejects.toThrow(/row-level security/);
+    }
+    await expect(report(practice.manager)).resolves.toMatchObject({ rowCount: 1 });
+    await expect(stage(practice.manager, 'validated', 'validated')).resolves.toMatchObject({ rowCount: 1 });
+  });
+});
+
+describe('an NCCI procedure-to-procedure flag holds a line for review (PRD 2 point 6; QUESTIONS Q41; PRC-11)', () => {
+  it('validates the flagged line from its trace and keeps it out of every case', async () => {
+    const practice = await w.practice('PRC-11 flagged', { case_materiality_cents: '1' });
+    await w.load(practice, 'PRC-11/remit.835');
+    // A contract that writes the NCCI edits in, paying more than the payer paid for both codes.
+    const contract = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97140', amountCents: '8000' }, { code: '97530', amountCents: '8000' }], flags: { apply_ncci: true } });
+    const runId = await w.pricedRun(practice, { plans: [{ key: 'CE:SYNPLAN-MA-NC', versionId: contract.versionId }], from: '2026-02-01', to: '2026-02-28' });
+    const lines = await rows<{ procedure_code: string; variance_cents: string; flags: { flag: string; column1_line_no: number }[] }>(
+      practice,
+      `SELECT l.procedure_code, p.variance_cents::text, coalesce(p.trace #> '{outcome,review_flags}', '[]') AS flags FROM priced_line p JOIN service_line l ON l.id = p.service_line_id WHERE p.pricing_run_id = $1 ORDER BY l.line_no`,
+      [runId],
+    );
+    expect(lines).toEqual([
+      { procedure_code: '97140', variance_cents: '1084', flags: [] },
+      { procedure_code: '97530', variance_cents: '3212', flags: [{ flag: 'NCCI_PTP', column1_line_no: 1 }] },
+    ]);
+    // Both validated; the unflagged line opens its case, the flagged one waits for a person's review.
+    expect(summary(await w.triage(practice, runId))).toMatchObject({ validatedLines: 2, casesOpened: 1, linesAdded: 1 });
+    const inCases = await rows<{ procedure_code: string }>(practice, 'SELECT l.procedure_code FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id');
+    expect(inCases).toEqual([{ procedure_code: '97140' }]);
+    expect(await stages(practice)).toEqual([
+      { stage: 'actionable', lines: '1' },
+      { stage: 'validated', lines: '1' },
+    ]);
   });
 });

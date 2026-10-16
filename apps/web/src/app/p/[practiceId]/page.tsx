@@ -4,9 +4,11 @@ import Link from 'next/link';
 
 import { roleNames, utc, utcDate } from '../../../components/format';
 import { NotificationText } from '../../../components/monitoring/display';
+import { Money } from '../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { practiceHome } from '../../../lib/routes/practice';
+import { shareOf } from '../../../lib/pricing/view';
+import { DEADLINE_WINDOW_DAYS, practiceHome } from '../../../lib/routes/practice';
 
 export const metadata: Metadata = { title: 'Practice' };
 
@@ -87,6 +89,15 @@ function failedNextStep(practiceId: string, jobType: string) {
   }
 }
 
+const CASE_STATE_TEXT: Readonly<Record<string, string>> = {
+  open: 'open',
+  submitted: 'submitted',
+  awaiting_response: 'awaiting a response',
+  partially_resolved: 'partially resolved',
+  resolved: 'resolved',
+  closed_written_off: 'closed, written off',
+};
+
 const OUTCOME_NAMES: Readonly<Record<string, string>> = {
   running: 'Running',
   retrying: 'Failed; retrying',
@@ -98,14 +109,15 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
  * The practice workspace home (a PHI route: MFA, the 30-minute idle limit, private no-store, the
  * practice record read through readWithAudit): data freshness (the last file and the last run, and a
  * banner with the job reference when a run failed on its last attempt; test matrix JOB-02), the
- * practice record and its agreements. The rest of the dashboard of PRD 7 arrives with its milestones.
+ * dashboard's counts and totals (coverage of the run in effect, cases by state, deadlines in 14 days,
+ * recovered this quarter, which is zero until the ledger), the practice record and its agreements.
  */
 export default async function PracticePage(props: { readonly params: Promise<{ practiceId: string }> }) {
   const page = await loadPage(practiceHome, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, notifications } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -164,6 +176,68 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                 Claims and lines
               </Link>
             </div>
+          </CardContent>
+        </Card>
+      )}
+      {freshness.lastFileAt === null ? null : (
+        <Card role="region" aria-label="Dashboard">
+          <CardHeader>
+            <CardTitle>Where things stand</CardTitle>
+            <CardDescription>Counts and dollar totals, each at its own stage.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Coverage</dt>
+              <dd data-figure="coverage">
+                {dashboard.coverage === null ? (
+                  'No pricing run in effect yet.'
+                ) : (
+                  <>
+                    {dashboard.coverage.pricedLines} of {dashboard.coverage.lines} lines priced ({shareOf(dashboard.coverage.pricedLines, dashboard.coverage.lines)}), <Money value={dashboard.coverage.pricedChargeCents} /> of{' '}
+                    <Money value={dashboard.coverage.chargeCents} /> billed, in the run of {dashboard.coverage.periodFrom} to {dashboard.coverage.periodTo}.{' '}
+                    <Link className="underline" href={`/p/${practice.id}/coverage`}>
+                      Coverage
+                    </Link>
+                  </>
+                )}
+              </dd>
+              <dt className="text-muted-foreground">Cases</dt>
+              <dd data-figure="cases">
+                {dashboard.casesByState.length === 0
+                  ? 'No case yet.'
+                  : dashboard.casesByState.map((entry, index) => (
+                      <span key={entry.state}>
+                        {index === 0 ? '' : '; '}
+                        {entry.cases} {CASE_STATE_TEXT[entry.state] ?? entry.state}
+                        {entry.state === 'open' ? (
+                          <>
+                            , <Money value={entry.actionableCents} /> actionable
+                          </>
+                        ) : null}
+                      </span>
+                    ))}{' '}
+                <Link className="underline" href={`/p/${practice.id}/cases`}>
+                  Cases
+                </Link>
+              </dd>
+              <dt className="text-muted-foreground">Deadlines in {DEADLINE_WINDOW_DAYS} days</dt>
+              <dd data-figure="deadlines">
+                {dashboard.deadlines.cases === 0 ? (
+                  'No open case’s deadline falls in the next 14 days.'
+                ) : (
+                  <>
+                    {dashboard.deadlines.cases} open {dashboard.deadlines.cases === 1 ? 'case' : 'cases'}, <Money value={dashboard.deadlines.actionableCents} /> actionable, the first on {dashboard.deadlines.earliest}.{' '}
+                    <Link className="underline" href={`/p/${practice.id}/cases`}>
+                      Cases
+                    </Link>
+                  </>
+                )}
+              </dd>
+              <dt className="text-muted-foreground">Recovered this quarter</dt>
+              <dd data-figure="recovered">
+                <Money value={dashboard.recoveredCents} /> (stage five: cash posted, net of recoupments; the recovery ledger arrives later, so nothing has posted).
+              </dd>
+            </dl>
           </CardContent>
         </Card>
       )}

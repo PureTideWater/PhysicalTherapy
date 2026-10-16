@@ -140,6 +140,12 @@ export const REVIEWED_SCOPE_FUNCTIONS: readonly ReviewedScopeFunction[] = [
       'PRD 7, Internal console, Specialist queue: per active practice, counts of documents awaiting abstraction, drafts, proposals, sign-offs and open questions, for contract specialists and platform administrators only; it names no document, contract or question (ADR 0030)',
   },
   {
+    function: 'console_set_practice_settings(uuid,text,jsonb)',
+    scope: 'narrows',
+    reason:
+      'PRD 5, J8 and PRD 11, Inputs: a platform administrator sets a practice\u2019s billing ZIP and its pricing and triage settings from the console (organization.manage, checked inside); the update runs in that one practice and the caller\u2019s scope is restored (ADR 0040)',
+  },
+  {
     function: 'console_release_runs()',
     scope: 'counts',
     reason:

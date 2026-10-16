@@ -10,6 +10,7 @@ import {
   type ScreenedLine,
   type TriageSettings,
   detectBehavior,
+  judgeLine,
   patternId,
   planCases,
   pursuitCost,
@@ -18,7 +19,7 @@ import {
   triageSettings,
 } from '@tp/triage';
 
-import { RUN_IN_EFFECT } from '../price/in-effect';
+import { PRICED_IN_EFFECT, RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 
 /**
@@ -30,19 +31,27 @@ import { loadRuleRelease } from '../price/release';
  * idempotent: a triage run again finds what it recorded and adds only what has changed since (a window
  * that closed, lines that now carry a pattern across the case materiality).
  *
- * 1. Anomaly screening of the run's lines that cannot be priced (@tp/triage screenAnomalies): one
- *    anomaly per cohort, written once per run; the lines short of the mode are flagged (a stage, a
- *    count, never a dollar claim).
- * 2. The run's lines with positive variance are validated; with the lines validated by earlier runs
- *    whose patterns were below the case materiality (they accumulate), each is judged on the triage
- *    date and grouped by payer pattern: its payer and plan, its rate record and the adjustment behavior
- *    detected from its trace (under its own run's release). A pattern with an open case adds its lines
- *    to it; one at or above the case materiality opens a case with the pursuit-cost estimate the
- *    practice's settings give; a smaller one waits. A line joining a case is actionable, or struck
- *    through (written off, window passed) when its window has closed.
+ * Every line is judged from its pricing in effect (PRICED_IN_EFFECT: its priced line in the run in
+ * effect that took effect last), never from the priced line an earlier triage validated it on: a line
+ * an accepted re-run prices again is judged by the re-run's numbers.
+ *
+ * 1. Anomaly screening (@tp/triage screenAnomalies) of the practice's lines that cannot be priced in
+ *    effect whose service dates fall in the quarters the run's period touches (PRD 12: the cohort is
+ *    the quarter's, across the month runs of the monitoring chain): one anomaly per cohort, written
+ *    once per run; the lines short of the mode are flagged (a stage, a count, never a dollar claim).
+ * 2. The run's lines, and the lines earlier triage validated whose patterns were below the case
+ *    materiality (they accumulate), each judged from its pricing in effect on the triage date: a line
+ *    whose shortfall is positive (for a per-visit line, its visit's net shortfall at most) is
+ *    validated, and grouped by payer pattern: its payer and plan, its rate record and the adjustment
+ *    behavior detected from its trace (under its own run's release). A pattern with an open case adds
+ *    its lines to it; one at or above the case materiality opens a case with the pursuit-cost estimate
+ *    the practice's settings give; a smaller one waits. A line joining a case is actionable, or struck
+ *    through (written off, window passed) when its window has closed. A per-visit line and a line with
+ *    an NCCI review flag stay validated for a person's review (docs/adr/0040).
  * 3. Every open case's line whose window closed by the triage date is written off, window passed: it
- *    leaves the case's actionable total and stays visible. The case's totals, deadline and state are
- *    the database's, derived from its lines.
+ *    leaves the case's actionable total and stays visible (the monitoring schedule's daily monitor job
+ *    does the same, closePassedWindows). The case's totals, deadline and state are the database's,
+ *    derived from its lines.
  *
  * Negative variance never reaches a case: an overpaid line is recorded on its priced line and shown.
  */
@@ -86,6 +95,8 @@ interface RunRow {
   readonly status: string;
   readonly release_no: number;
   readonly in_effect: boolean;
+  readonly period_from: string;
+  readonly period_to: string;
 }
 
 interface ScreenRow {
@@ -119,33 +130,48 @@ interface CandidateRow {
   readonly reversed: boolean;
   readonly superseded: boolean;
   readonly written_off: boolean;
+  readonly visit_variance_cents: string | null;
+  readonly review_flags: readonly { readonly flag: string }[];
 }
 
 async function lockedRun(client: ScopeClient, practiceId: string, pricingRunId: string): Promise<RunRow | undefined> {
-  const { rows } = await client.query<RunRow>(`SELECT r.id, r.status, r.release_no, ${RUN_IN_EFFECT('r')} AS in_effect FROM pricing_run r WHERE r.id = $1 AND r.practice_id = $2`, [
+  const { rows } = await client.query<RunRow>(
+    `SELECT r.id, r.status, r.release_no, ${RUN_IN_EFFECT('r')} AS in_effect, r.period_from::text, r.period_to::text FROM pricing_run r WHERE r.id = $1 AND r.practice_id = $2`,
+    [
     pricingRunId,
     practiceId,
-  ]);
+    ],
+  );
   return rows[0];
 }
 
-/** The run's lines that cannot be priced, with what screening compares them by. */
-async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string): Promise<ScreenedLine[]> {
+/**
+ * The lines screening compares: the practice's lines that cannot be priced in effect (their pricing in
+ * effect has an unpriced reason) whose service dates fall in a quarter the run's period touches, with
+ * what screening compares them by. A quarter's cohort gathers its lines from every month run of it.
+ */
+async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: string, run: RunRow, requestId: string): Promise<ScreenedLine[]> {
   const rows = await readWithAudit(
     scope,
     { objectType: 'priced_line', purpose: 'triage', requestId },
     async (client) =>
       (
         await client.query<ScreenRow & { id: string }>(
-          `SELECT p.id, p.practice_id, p.service_line_id, p.unpriced_reason, pl.payer_id, pl.id AS plan_id, l.procedure_code, l.modifiers, l.place_of_service,
+          `WITH quarter_lines AS (
+             SELECT l.id FROM service_line l JOIN claim c ON c.id = l.claim_id
+              WHERE l.practice_id = $1
+                AND coalesce(l.service_date, c.service_from) >= date_trunc('quarter', $2::date)::date
+                AND coalesce(l.service_date, c.service_from) < (date_trunc('quarter', $3::date) + interval '3 months')::date
+           ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT id FROM quarter_lines)')})
+           SELECT p.id, p.practice_id, p.service_line_id, p.unpriced_reason, pl.payer_id, pl.id AS plan_id, l.procedure_code, l.modifiers, l.place_of_service,
                   coalesce(l.service_date, c.service_from)::text AS service_date, trim_scale(coalesce(l.units, 1))::text AS units, p.observed_allowed_cents::text
-             FROM priced_line p
+             FROM in_effect p
              JOIN service_line l ON l.id = p.service_line_id
              JOIN claim c ON c.id = l.claim_id
              JOIN plan pl ON pl.id = l.payer_plan_key
-            WHERE p.pricing_run_id = $1 AND p.practice_id = $2 AND p.unpriced_reason IS NOT NULL
+            WHERE p.unpriced_reason IS NOT NULL
             ORDER BY p.service_line_id`,
-          [pricingRunId, practiceId],
+          [practiceId, run.period_from, run.period_to],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
@@ -165,9 +191,10 @@ async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: stri
 }
 
 /**
- * The validated lines in no case yet: the run's lines with positive variance, and the lines an earlier
- * triage validated (from that run's priced line) whose pattern was held below the case materiality and
- * that this run does not price again.
+ * The lines that may be validated and in no case yet, each from its pricing in effect with positive
+ * variance: the run's own lines, and the lines an earlier triage validated whose pattern was held below
+ * the case materiality. A line whose pricing in effect no longer shows a shortfall (an accepted re-run
+ * priced it again at what was paid) or that no run in effect prices is left out.
  */
 async function candidateRows(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string): Promise<CandidateRow[]> {
   return readWithAudit(
@@ -177,22 +204,21 @@ async function candidateRows(scope: PracticeScope<ScopeClient>, practiceId: stri
       (
         await client.query<CandidateRow>(
           `WITH current_stage AS (
-             SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage, s.priced_line_id
+             SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage
                FROM line_status s WHERE s.practice_id = $1 ORDER BY s.service_line_id, s.seq DESC
-           ), candidates AS (
-             SELECT p.id AS priced_line_id FROM priced_line p WHERE p.pricing_run_id = $2 AND p.practice_id = $1 AND p.variance_cents > 0
+           ), wanted AS (
+             SELECT x.service_line_id FROM priced_line x WHERE x.pricing_run_id = $2 AND x.practice_id = $1
              UNION
-             SELECT cs.priced_line_id FROM current_stage cs
-              WHERE cs.stage = 'validated' AND cs.priced_line_id IS NOT NULL
-                AND NOT EXISTS (SELECT 1 FROM priced_line x WHERE x.pricing_run_id = $2 AND x.service_line_id = cs.service_line_id)
-           )
+             SELECT cs.service_line_id FROM current_stage cs WHERE cs.stage = 'validated'
+           ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
                   m.mapping_kind, p.contract_version_id, v.status AS version_status, p.rate_record_id, pl.payer_id, pl.id AS plan_id,
                   (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
                   c.superseded_by_claim_id IS NOT NULL AS superseded,
-                  false AS written_off
-             FROM candidates
-             JOIN priced_line p ON p.id = candidates.priced_line_id
+                  false AS written_off,
+                  priced_line_visit_variance_cents(p.id)::text AS visit_variance_cents,
+                  coalesce(p.trace #> '{outcome,review_flags}', '[]'::jsonb) AS review_flags
+             FROM in_effect p
              JOIN pricing_run r ON r.id = p.pricing_run_id
              JOIN service_line l ON l.id = p.service_line_id
              JOIN claim c ON c.id = l.claim_id
@@ -246,6 +272,8 @@ async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]
       mappingKind: row.mapping_kind,
       contractVersionStatus: row.version_status,
       writtenOff: row.written_off,
+      visitVarianceCents: row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents),
+      reviewFlags: row.review_flags.map((flag) => flag.flag),
     });
   }
   return lines;
@@ -321,6 +349,11 @@ async function openCase(client: ScopeClient, practiceId: string, pattern: Patter
   return (rows[0] as { id: string }).id;
 }
 
+/** One triage of a practice at a time, whatever the queue does (and the daily monitor's window closing beside it). */
+async function lockPractice(client: ScopeClient, practiceId: string): Promise<void> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended('triage:' || $1::text, 0))", [practiceId]);
+}
+
 /** Open cases' lines whose windows closed before the triage date: written off by triage, window passed. */
 async function closeWindows(client: ScopeClient, practiceId: string, asOf: string): Promise<number> {
   const { rowCount } = await client.query(
@@ -333,11 +366,21 @@ async function closeWindows(client: ScopeClient, practiceId: string, asOf: strin
   return rowCount ?? 0;
 }
 
+/**
+ * Writes off, window passed, every open case's line whose window closed before `asOf` (PRD 12,
+ * Deadlines: "lines whose windows close are struck through and leave the actionable total"), in the
+ * practice's job scope: the daily monitor job runs it for every active practice, so a case's total and
+ * deadline follow the calendar without a new upload. How many lines it wrote off.
+ */
+export async function closePassedWindows(scope: PracticeScope<ScopeClient>, practiceId: string, asOf: string): Promise<number> {
+  await lockPractice(scope.client, practiceId);
+  return closeWindows(scope.client, practiceId, asOf);
+}
+
 /** Triage in the transaction's scope (the report job runs it before it reads the run's numbers). */
 export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string, asOf: string): Promise<TriageOutcome> {
   const { client } = scope;
-  // One triage of a practice at a time, whatever the queue does.
-  await client.query("SELECT pg_advisory_xact_lock(hashtextextended('triage:' || $1::text, 0))", [practiceId]);
+  await lockPractice(client, practiceId);
   const run = await lockedRun(client, practiceId, pricingRunId);
   if (run === undefined) {
     return { outcome: 'missing' };
@@ -351,7 +394,7 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
   const practice = await client.query<{ settings: unknown }>('SELECT settings FROM practice WHERE id = $1', [practiceId]);
   const settings = triageSettings(practice.rows[0]?.settings ?? {});
 
-  const screened = await screenedLines(scope, practiceId, pricingRunId, requestId);
+  const screened = await screenedLines(scope, practiceId, run, requestId);
   const anomalies = screenAnomalies(screened, settings);
   const stored = await storeAnomalies(client, practiceId, pricingRunId, anomalies);
   const flagged = anomalies.flatMap((anomaly) => anomaly.lineIds.map((serviceLineId) => ({ serviceLineId, pricedLineId: null })));
@@ -359,7 +402,9 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
 
   const windowsClosed = await closeWindows(client, practiceId, asOf);
   const candidates = await candidateLines(client, await candidateRows(scope, practiceId, pricingRunId, requestId));
-  await advanceStages(client, practiceId, 'validated', candidates);
+  // Validated: a positive shortfall (a per-visit line's at most its visit's), whatever else holds.
+  const validated = candidates.filter((line) => judgeLine(line, settings.lineMaterialityCents, asOf).validated);
+  await advanceStages(client, practiceId, 'validated', validated);
   const plan = planCases(candidates, await openCases(client, practiceId), settings, asOf);
   const pursuit = pursuitCost(settings.pursuit);
   let linesAdded = 0;
@@ -380,7 +425,7 @@ export async function triageInScope(scope: PracticeScope<ScopeClient>, practiceI
       asOf,
       anomalies: stored,
       flaggedLines: flagged.length,
-      validatedLines: candidates.length,
+      validatedLines: validated.length,
       casesOpened: plan.created.length,
       linesAdded,
       heldPatterns: plan.held.length,

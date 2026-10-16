@@ -1,17 +1,22 @@
 import type { UserSettings } from '@tp/db/runtime';
+import { formatCents, parseCents } from '@tp/money';
 import { STAGE_LABELS } from '@tp/triage';
+import { type CsvCell, csvDocument } from '@tp/worker/reports';
 import { z } from 'zod';
 
 import { practiceRoute, selfRoute } from '../http/invoke';
+import { pageParam, pageWindow } from '../http/paging';
 import { type Download, type MutationResult, NotFoundError } from '../http/route';
 import {
   type DigestDetail,
   type DigestSummary,
   type MonthlySummary,
   type NotificationView,
+  NOTIFICATIONS_PER_PAGE,
   SUMMARY_BUCKETS,
   type SummaryBucket,
   type SummaryFigure,
+  countNotifications,
   digestOf,
   lastMonth,
   listDigests,
@@ -36,7 +41,11 @@ const month = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'a month, YYYY-MM');
 
 export interface NotificationsPageData {
   readonly practiceId: string;
+  /** A page of the person's notifications, newest first. */
   readonly notifications: readonly NotificationView[];
+  readonly page: number;
+  readonly pages: number;
+  readonly total: number;
   readonly unread: number;
 }
 
@@ -46,12 +55,19 @@ export const notificationsPage = practiceRoute({
   path: '/p/[practiceId]/notifications',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId }),
-  handle: async ({ scope, practiceId }): Promise<NotificationsPageData> => ({
-    practiceId,
-    notifications: await listNotifications(scope, practiceId),
-    unread: await unreadNotifications(scope, practiceId),
-  }),
+  params: z.object({ practiceId: opaqueId, page: pageParam }),
+  handle: async ({ scope, practiceId, params }): Promise<NotificationsPageData> => {
+    const total = await countNotifications(scope, practiceId);
+    const at = pageWindow(total, NOTIFICATIONS_PER_PAGE, params.page);
+    return {
+      practiceId,
+      notifications: await listNotifications(scope, practiceId, NOTIFICATIONS_PER_PAGE, at.offset),
+      page: at.page,
+      pages: at.pages,
+      total,
+      unread: await unreadNotifications(scope, practiceId),
+    };
+  },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
 
@@ -127,37 +143,31 @@ export const SUMMARY_LABELS: Readonly<Record<SummaryBucket, string>> = {
 
 const CSV_HEADER = ['month', 'payer', 'stage', 'lines', 'billed', 'variance'] as const;
 
-function csvField(value: string): string {
-  return /[",\n\r]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
-}
-
-function dollars(cents: string | null): string {
-  if (cents === null) {
-    return '';
-  }
-  const negative = cents.startsWith('-');
-  const digits = (negative ? cents.slice(1) : cents).padStart(3, '0');
-  return `${negative ? '-' : ''}${digits.slice(0, -2)}.${digits.slice(-2)}`;
+function dollars(cents: string | null): CsvCell {
+  return { number: cents === null ? '' : formatCents(parseCents(cents)) };
 }
 
 /**
  * The summary as CSV: one row per payer (and "all payers") and stage, counts and totals only, never a
  * stage added to another. A stage without dollars (flagged, the unstaged lines) leaves variance blank.
+ * Payer names come from the 835s a practice uploaded, so every text field goes through the exports'
+ * one encoder (csvText: a leading =, +, -, @, tab or carriage return is defused); counts and dollars,
+ * built from integers and cents, stay numbers.
  */
 export function monthlySummaryCsv(summary: MonthlySummary): string {
-  const rows: string[][] = [[...CSV_HEADER]];
+  const rows: CsvCell[][] = [];
   const write = (payer: string, figures: Readonly<Record<SummaryBucket, SummaryFigure>>, writtenOff: SummaryFigure) => {
     for (const bucket of SUMMARY_BUCKETS) {
       const figure = figures[bucket];
-      rows.push([summary.month, payer, bucket, String(figure.lines), dollars(figure.billedCents), dollars(figure.varianceCents)]);
+      rows.push([{ text: summary.month }, { text: payer }, { text: bucket }, { number: String(figure.lines) }, dollars(figure.billedCents), dollars(figure.varianceCents)]);
     }
-    rows.push([summary.month, payer, 'actionable_written_off', String(writtenOff.lines), dollars(writtenOff.billedCents), dollars(writtenOff.varianceCents)]);
+    rows.push([{ text: summary.month }, { text: payer }, { text: 'actionable_written_off' }, { number: String(writtenOff.lines) }, dollars(writtenOff.billedCents), dollars(writtenOff.varianceCents)]);
   };
   write('all payers', summary.total.figures, summary.total.writtenOff);
   for (const payer of summary.byPayer) {
     write(payer.payerName ?? payer.payerId ?? 'unknown payer', payer.figures, payer.writtenOff);
   }
-  return `${rows.map((row) => row.map(csvField).join(',')).join('\r\n')}\r\n`;
+  return csvDocument(CSV_HEADER, rows);
 }
 
 export const monthlySummaryCsvRoute = practiceRoute({

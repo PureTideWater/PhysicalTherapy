@@ -206,7 +206,8 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
         <CardHeader>
           <CardTitle>Actionable cases</CardTitle>
           <CardDescription>
-            One case per payer pattern at or above the case materiality; each total is the sum of its lines not written off. Pursuit cost:{' '}
+            One case per payer pattern at or above the case materiality; each total is the sum of its lines not written off. A pattern accumulates across runs, so a case may hold lines other runs
+            priced: the report counts this run’s lines, with the whole case beside them. Pursuit cost:{' '}
             {content.pursuit.estimated ? (
               <>
                 {money(content.pursuit.cost_cents)}; net expected value {money(content.pursuit.net_expected_cents)}.
@@ -222,7 +223,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
         <CardContent>
           <Table
             caption="Cases"
-            headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines', 'Actionable', 'Deadline', 'Pursuit cost', 'Net expected']}
+            headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', 'Actionable (this run)', 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,
@@ -231,6 +232,9 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
               `${String(item.actionable_lines)} of ${String(item.lines)}`,
               <Money key="actionable" value={item.actionable_cents} />,
               item.deadline_on ?? '—',
+              <span key="case">
+                {count(item.case_lines, 'line')}, <Money value={item.case_actionable_cents} />
+              </span>,
               money(item.pursuit_cost_cents),
               money(item.net_expected_cents),
             ])}

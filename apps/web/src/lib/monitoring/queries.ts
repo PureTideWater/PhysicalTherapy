@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { centsToString, parseCents, sumCents } from '@tp/money';
 import { type DigestFigures, parseDigestFigures } from '@tp/worker/digests';
+import { PRICED_IN_EFFECT } from '@tp/worker/pricing';
 
 /**
  * The monitoring reads (PRD 5, J11 and J12; PRD 7, Practice dashboard, Reports and Settings; PRD 8,
@@ -44,8 +45,8 @@ interface NotificationRow {
   readonly period: string | null;
 }
 
-/** The person's notifications in the practice, newest first (the policy admits their own only). */
-export async function listNotifications(scope: Scope, practiceId: string, limit = NOTIFICATIONS_PER_PAGE): Promise<NotificationView[]> {
+/** The person's notifications in the practice, newest first, `limit` from `offset` (the policy admits their own only). */
+export async function listNotifications(scope: Scope, practiceId: string, limit = NOTIFICATIONS_PER_PAGE, offset = 0): Promise<NotificationView[]> {
   const { rows } = await scope.client.query<NotificationRow>(
     `SELECT n.id, n.kind, n.subject_id, n.counts, n.totals_cents, n.created_at, n.read_at,
             r.period_from::text AS period_from, r.period_to::text AS period_to, d.period
@@ -54,8 +55,8 @@ export async function listNotifications(scope: Scope, practiceId: string, limit 
        LEFT JOIN digest d ON n.kind = 'digest' AND d.id = n.subject_id
       WHERE n.practice_id = $1 AND n.user_id = app_actor_id()
       ORDER BY n.created_at DESC, n.id DESC
-      LIMIT $2`,
-    [practiceId, limit],
+      LIMIT $2 OFFSET $3`,
+    [practiceId, limit, offset],
   );
   return rows.map((row) => ({
     id: row.id,
@@ -69,6 +70,12 @@ export async function listNotifications(scope: Scope, practiceId: string, limit 
     periodTo: row.period_to,
     period: row.period,
   }));
+}
+
+/** How many notifications the person has in the practice. */
+export async function countNotifications(scope: Scope, practiceId: string): Promise<number> {
+  const { rows } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM notification WHERE practice_id = $1 AND user_id = app_actor_id()', [practiceId]);
+  return rows[0]?.n ?? 0;
 }
 
 export async function unreadNotifications(scope: Scope, practiceId: string): Promise<number> {
@@ -173,6 +180,14 @@ interface BucketRow {
   readonly variance: string;
 }
 
+/**
+ * Each line of the month in one bucket. A line at a stage stays at it (stages move forward only), with
+ * two readings of its pricing in effect (PRICED_IN_EFFECT: a re-run's once accepted, never the run it
+ * replaced): a validated line counts its shortfall in effect (a per-visit line's at most its visit's
+ * net, priced_line_shortfall_cents()), and one whose pricing in effect no longer shows a shortfall
+ * counts as that pricing leaves it; an actionable line counts the variance of the priced line its case
+ * holds (the case's own total), until the workbench re-judges it.
+ */
 const SUMMARY = `
   WITH lines AS (
     SELECT l.id, l.charge_cents, pl.payer_id
@@ -180,32 +195,32 @@ const SUMMARY = `
      WHERE l.practice_id = $1 AND c.claim_status_code <> '22' AND c.superseded_by_claim_id IS NULL
        AND coalesce(l.service_date, c.service_from) >= $2::date AND coalesce(l.service_date, c.service_from) < ($2::date + interval '1 month')
   ), latest AS (
-    SELECT DISTINCT ON (p.service_line_id) p.service_line_id, p.unpriced_reason, p.variance_cents
-      FROM priced_line p JOIN pricing_run r ON r.id = p.pricing_run_id
-     WHERE p.practice_id = $1 AND p.service_line_id IN (SELECT id FROM lines)
-       AND r.status = 'complete' AND (r.rerun_of_id IS NULL OR r.accepted_at IS NOT NULL)
-     ORDER BY p.service_line_id, coalesce(r.accepted_at, r.completed_at) DESC, r.id DESC
+    SELECT p.service_line_id, p.unpriced_reason, p.variance_cents, priced_line_shortfall_cents(p.id) AS shortfall
+      FROM (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT id FROM lines)')}) p
   ), stage AS (
     SELECT DISTINCT ON (s.service_line_id) s.service_line_id, s.stage, s.priced_line_id
       FROM line_status s
      WHERE s.practice_id = $1 AND s.service_line_id IN (SELECT id FROM lines)
      ORDER BY s.service_line_id, s.seq DESC
+  ), judged AS (
+    SELECT l.id, l.payer_id, l.charge_cents, cl.written_off_reason,
+           CASE WHEN st.stage IS NOT NULL AND NOT (st.stage = 'validated' AND lt.shortfall IS NULL) THEN st.stage
+                WHEN lt.service_line_id IS NULL THEN 'not_priced'
+                WHEN lt.unpriced_reason IS NOT NULL THEN 'unpriced'
+                WHEN lt.variance_cents < 0 THEN 'overpaid'
+                ELSE 'priced' END AS bucket,
+           CASE WHEN st.stage = 'validated' THEN lt.shortfall ELSE sp.variance_cents END AS variance
+      FROM lines l
+      LEFT JOIN latest lt ON lt.service_line_id = l.id
+      LEFT JOIN stage st ON st.service_line_id = l.id
+      LEFT JOIN priced_line sp ON sp.id = st.priced_line_id
+      LEFT JOIN case_line cl ON cl.service_line_id = l.id
   )
-  SELECT l.payer_id,
-         CASE WHEN st.stage IS NOT NULL THEN st.stage
-              WHEN lt.service_line_id IS NULL THEN 'not_priced'
-              WHEN lt.unpriced_reason IS NOT NULL THEN 'unpriced'
-              WHEN lt.variance_cents < 0 THEN 'overpaid'
-              ELSE 'priced' END AS bucket,
-         coalesce(cl.written_off_reason IS NOT NULL, false) AS written_off,
+  SELECT j.payer_id, j.bucket, coalesce(j.written_off_reason IS NOT NULL, false) AS written_off,
          count(*)::int AS lines,
-         coalesce(sum(l.charge_cents), 0)::text AS billed,
-         coalesce(sum(sp.variance_cents), 0)::text AS variance
-    FROM lines l
-    LEFT JOIN latest lt ON lt.service_line_id = l.id
-    LEFT JOIN stage st ON st.service_line_id = l.id
-    LEFT JOIN priced_line sp ON sp.id = st.priced_line_id
-    LEFT JOIN case_line cl ON cl.service_line_id = l.id
+         coalesce(sum(j.charge_cents), 0)::text AS billed,
+         coalesce(sum(j.variance), 0)::text AS variance
+    FROM judged j
    GROUP BY 1, 2, 3
    ORDER BY 1, 2, 3`;
 
@@ -227,8 +242,8 @@ function emptyRow(payerId: string | null, payerName: string | null): { payerId: 
 /**
  * The month's lines (service dates in it; reversals and superseded claims left out, as a run leaves
  * them), each counted once, at the furthest stage it has reached, by payer and in all: counts, billed
- * charges and, for validated and actionable, the variance of the priced line the stage names. Stages
- * are never added together. Payer approved and recovered stay zero until the recovery ledger posts.
+ * charges and, for validated and actionable, their dollars (SUMMARY says which). Stages are never added
+ * together. Payer approved and recovered stay zero until the recovery ledger posts.
  */
 export async function monthlySummary(scope: Scope, practiceId: string, month: string): Promise<MonthlySummary> {
   const { rows } = await scope.client.query<BucketRow>(SUMMARY, [practiceId, `${month}-01`]);

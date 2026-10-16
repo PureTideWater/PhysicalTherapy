@@ -12,7 +12,7 @@
  * forward: an explicit action with a reason (and an audit event), recorded with the stage it was
  * reopened from; it keeps the stage (reopening a written-off line) or moves it back (a recoupment
  * reopens a recovered line, milestone 9). The line_status table holds the same rule in SQL
- * (migrations/20261018120000_triage_cases_and_audit_reports.sql); a database test runs both.
+ * (migrations/20261019160000_triage_cases_and_audit_reports.sql); a database test runs both.
  */
 
 export const LINE_STAGES = ['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const;

@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
-import { Money } from '../../../../components/remittances/display';
+import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
@@ -28,14 +28,15 @@ export default async function CasesPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, cases, actionableCents, runs, canTriage, asOf } = page.data;
-  const open = cases.filter((item) => item.state === 'open');
+  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, total } = page.data;
+  const path = `/p/${practiceId}/cases`;
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
         <p className="text-sm text-muted-foreground">
-          {stageLabel('actionable')}: <Money value={actionableCents} /> across {open.length} open {open.length === 1 ? 'case' : 'cases'}, as of {asOf}. Each total is the sum of its lines not written off; a line past its window is
+          {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} open {openCases === 1 ? 'case' : 'cases'}
+          {filters.state === undefined && filters.payer === undefined && filters.deadline === undefined ? '' : ' the filters admit'}, as of {asOf}. Each total is the sum of its lines not written off; a line past its window is
           struck through and out of it.
         </p>
       </div>
@@ -71,8 +72,43 @@ export default async function CasesPage(props: Props) {
       ) : null}
       <section aria-label="Case list" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">By deadline</h2>
-        {cases.length === 0 ? (
+        <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cases">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="cases-state">State</Label>
+            <select id="cases-state" name="state" defaultValue={filters.state ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Any state</option>
+              <option value="open">Open</option>
+              <option value="closed_written_off">Closed, written off</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="cases-payer">Payer</Label>
+            <select id="cases-payer" name="payer" defaultValue={filters.payer ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Every payer</option>
+              {payers.map((payer) => (
+                <option key={payer.id} value={payer.id}>
+                  {payer.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="cases-deadline">Deadline</Label>
+            <select id="cases-deadline" name="deadline" defaultValue={filters.deadline ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Any deadline</option>
+              <option value="14">Open, within 14 days</option>
+              <option value="30">Open, within 30 days</option>
+              <option value="90">Open, within 90 days</option>
+            </select>
+          </div>
+          <button type="submit" className="h-9 rounded-md border px-3">
+            Filter
+          </button>
+        </form>
+        {cases.length === 0 && total === 0 && filters.state === undefined && filters.payer === undefined && filters.deadline === undefined ? (
           <EmptyState title="No case yet" nextStep="Triage a complete pricing run: a payer pattern whose actionable lines reach the case materiality opens a case." />
+        ) : cases.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No case matches these filters.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm" aria-label="Cases">
@@ -117,6 +153,7 @@ export default async function CasesPage(props: Props) {
             </table>
           </div>
         )}
+        <Pager path={path} query={filters} page={page.data.page} pages={page.data.pages} total={total} noun="Cases" />
       </section>
     </AppShell>
   );

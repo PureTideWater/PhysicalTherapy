@@ -23,18 +23,20 @@ export function SelectField({
   options,
   required,
   id: given,
+  defaultValue,
 }: {
   readonly label: string;
   readonly name: string;
   readonly options: readonly { readonly value: string; readonly label: string }[];
   readonly required?: boolean;
   readonly id?: string;
+  readonly defaultValue?: string;
 }) {
   const id = given ?? `field-${name}`;
   return (
     <div className="flex flex-col gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <select id={id} name={name} required={required} className="h-9 rounded-md border border-input bg-transparent px-2 text-sm">
+      <select id={id} name={name} required={required} defaultValue={defaultValue} className="h-9 rounded-md border border-input bg-transparent px-2 text-sm">
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}

@@ -138,10 +138,23 @@ export class PricingWorld {
     await this.parse({ practice_id: target.practiceId, document_id: id }, this.jobContext(target.practiceId));
   }
 
+  /**
+   * Parses and loads a SYNTHETIC 835 made from a fixture with text replaced (each pair, every occurrence):
+   * the same file for another month, payment or claims, its segments and their count unchanged.
+   */
+  async loadVariant(target: Practice, fixture: string, replacements: readonly (readonly [string, string])[]): Promise<void> {
+    let text = readFileSync(path.join(FIXTURES, fixture), 'latin1');
+    for (const [from, to] of replacements) {
+      text = text.replaceAll(from, to);
+    }
+    const id = await this.stage(target, fixture, Buffer.from(text, 'latin1'));
+    await this.parse({ practice_id: target.practiceId, document_id: id }, this.jobContext(target.practiceId));
+  }
+
   /** Stages a SYNTHETIC 835 as intake leaves a clean one, waiting for its parse (scanned); returns its document ID. */
-  async stage(target: Practice, fixture: string): Promise<string> {
+  async stage(target: Practice, fixture: string, bytes?: Buffer): Promise<string> {
     const { owner } = this;
-    const content = readFileSync(path.join(FIXTURES, fixture));
+    const content = bytes ?? readFileSync(path.join(FIXTURES, fixture));
     const id = randomUUID();
     await withPracticeScope(this.app, { actorId: target.manager, practiceIds: [target.practiceId] }, (scope) =>
       scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) VALUES ($1, $2, 'x12_835', $3, 'application/octet-stream', $4)", [

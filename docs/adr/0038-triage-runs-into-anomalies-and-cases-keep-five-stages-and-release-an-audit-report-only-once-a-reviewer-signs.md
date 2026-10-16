@@ -1,6 +1,6 @@
 # 0038. Triage runs into anomalies and cases, keep five stages, and release an audit report only once a reviewer signs
 
-- **Status:** accepted
+- **Status:** accepted (amended by [0040](0040-judge-lines-from-their-pricing-in-effect-hold-per-visit-and-ncci-lines-for-review-and-set-practice-settings-in-the-console.md): lines judged from their pricing in effect, per-visit and NCCI-flagged lines held for review, the report's in-run share, an attestation without words, role checks in SQL, practice settings in the console)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 2 (Reimbursement reviewer), 4 (Audit v0), 5 (J8, J12), 6 (Reports and exports), 7 (Anomalies, Cases,
@@ -22,7 +22,7 @@ stage, who triages and when, where the reviewer stands in the tenancy model, and
 - **Packages and tables.** `@tp/triage` is pure (no database, clock or network) and tested with fast-check:
   `screenAnomalies`, `judgeLine`, `detectBehavior`, `planCases`, `caseTotals`, `deadlineState`, `pursuitCost`,
   `headline`, `checkStageEvent`, `deriveCaseState`, the closed write-off list and `triageSettings`. One migration
-  (`20261018120000_triage_cases_and_audit_reports.sql`) adds six PHI tables (`anomaly`, `line_status`, `case`,
+  (`20261019160000_triage_cases_and_audit_reports.sql`) adds six PHI tables (`anomaly`, `line_status`, `case`,
   `case_line`, `audit_report`, `audit_report_download`), each with RLS on `app.practice_ids`, FORCE, registry rows, no
   DELETE or TRUNCATE for anyone, and column grants that let the application role touch only what a person or a job
   may set. Rules that read other rows run in AFTER triggers, so a row of another practice meets the tenant policy
@@ -102,8 +102,9 @@ stage, who triages and when, where the reviewer stands in the tenancy model, and
 - The milestone's gate is only half met: "the three hand-run audits reproduce from the app line for line" needs the
   three real audits and a reimbursement specialist, neither of which is in this repository; the synthetic audit is the
   rehearsal of the same path, and the golden lines stay `specialist_verified: false`.
-- A practice's materiality and pursuit settings are read from `practice.settings` and have no screen yet (the Settings
-  screen comes later); the defaults apply until then, and pursuit cost is not estimated until they are set.
+- A practice's materiality and pursuit settings are read from `practice.settings`; a platform administrator sets them in
+  the internal console (ADR 0040) until the practice's own Settings screen comes (milestone 11); the defaults apply until
+  then, and pursuit cost is not estimated until they are set.
 - Case states other than open and closed written off arrive with submissions (milestone 8); the CHECK already lists
   them. Case lines are not re-judged when a claim is reversed after it joined; the workbench will.
 - Triage and reports read the run in effect for a period; lines already in a case stay there, judged from the priced

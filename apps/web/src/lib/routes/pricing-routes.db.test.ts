@@ -260,13 +260,14 @@ describe('the screens after a run', () => {
     expect((await call(pricingRunPage, viewer, { ...P(), runId: randomUUID() })).status).toBe('not_found');
   });
 
-  it('shows expected allowed and the status from the latest complete run on Claims and lines', async () => {
+  it('shows expected allowed from the run in effect on Claims and lines, and a stage only once triage gives one', async () => {
     const rows = ok(await call(claimsPage, manager, { ...P(), view: 'all' })).list.rows;
     const byPlanLines = (code: string, date: string) => rows.filter((row) => row.procedureCode === code && row.identifiers?.serviceDate === date);
     const [ma] = byPlanLines('97110', '2026-02-16');
     expect(ma?.pricing).toMatchObject({ pricingRunId: firstRun, unpricedReason: null });
     expect(ma?.expectedAllowedCents).toMatch(/^\d+$/);
-    expect(ma?.status).toBe(BigInt(ma?.pricing?.varianceCents ?? '0') > 0n ? 'validated' : null);
+    // Not triaged: priced, at no stage yet (the chip says so); an unpriced line shows unpriced.
+    expect(ma?.status).toBeNull();
     const oon = byPlanLines('97530', '2026-04-21');
     expect(oon.map((row) => [row.status, row.expectedAllowedCents, row.pricing?.unpricedReason])).toEqual([
       ['unpriced', null, 'NO_AGREEMENT'],

@@ -211,12 +211,14 @@ describe.each(TABLES)('$table', ({ table, tenantColumn }) => {
     // Rows only platform administrators create (the reviewed insert policies): the control is theirs.
     const platformOnly = REVIEWED_PLATFORM_POLICIES.some((item) => item.table === table && item.command === 'a' && table !== 'practice');
     if (platformOnly) {
-      await refused(attempt(worldA.adminUserId, own), true);
+      await refused(attempt(probe.actorId, own), true);
       await expect(attempt(outsiders.get('platform_admin') ?? '', own)).resolves.toMatchObject({ rowCount: 1 });
       return;
     }
-    await expect(attempt(worldA.adminUserId, own)).resolves.toMatchObject({ rowCount: 1 });
-    await refused(attempt(worldA.adminUserId, [worldB.practiceId]), true);
+    // The actor is practice A's administrator, or the role holder a role-bound table needs (a case
+    // worker's stage event and report request, a mapper's run).
+    await expect(attempt(probe.actorId, own)).resolves.toMatchObject({ rowCount: 1 });
+    await refused(attempt(probe.actorId, [worldB.practiceId]), true);
   });
 
   describe.each(OUTSIDERS)('as a %s, who reaches no practice', (role) => {

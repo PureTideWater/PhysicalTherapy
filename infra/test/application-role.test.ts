@@ -80,6 +80,16 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 
+  it('sends digest email from this account’s SES identities in its region, and nothing else of SES', () => {
+    const ses = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('ses:')));
+    expect(ses.map((statement) => statement.Sid)).toEqual(['DigestEmail']);
+    expect(actionsOf(ses[0] as CfnStatement)).toEqual(['ses:SendEmail']);
+    const resource = JSON.stringify(ses[0]?.Resource);
+    expect(resource).toContain(':identity/*');
+    expect(resource).toContain('AWS::AccountId');
+    expect(resource).toContain('AWS::Region');
+  });
+
   it('cannot delete objects, change retention or bypass Object Lock', () => {
     const actions = statements.flatMap(actionsOf);
     expect(actions.filter((action) => /Delete|Retention|LegalHold|Bypass|PutBucket|\*/.test(action))).toEqual([]);

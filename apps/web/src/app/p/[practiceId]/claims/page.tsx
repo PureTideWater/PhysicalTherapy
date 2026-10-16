@@ -187,7 +187,7 @@ export default async function ClaimsPage(props: Props) {
                       <Money value={row.expectedAllowedCents} />
                     </td>
                     <td className="py-2 pr-3">
-                      <LineStatusChip status={row.status} priced={row.pricing !== null} />
+                      <LineStatusChip status={row.status} priced={row.pricing !== null} shortfall={row.pricing !== null && BigInt(row.pricing.varianceCents ?? '0') > 0n} />
                       {row.pricing?.unpricedReason === null || row.pricing === null ? null : <div className="pt-1 font-mono text-xs text-muted-foreground">{row.pricing.unpricedReason}</div>}
                     </td>
                     <td className="py-2 whitespace-nowrap text-xs">

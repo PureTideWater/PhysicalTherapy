@@ -671,6 +671,9 @@ importers:
       '@tp/synth':
         specifier: workspace:*
         version: link:../packages/synth
+      '@tp/triage':
+        specifier: workspace:*
+        version: link:../packages/triage
       '@tp/worker':
         specifier: workspace:*
         version: link:../apps/worker

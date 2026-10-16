@@ -40,13 +40,21 @@ const STATUS_LABELS: Readonly<Record<LineStatus, string>> = {
 };
 
 /**
- * A line's status chip: one of the five stages, unpriced, priced without a shortfall (a complete run
- * priced it at or under what was paid: no stage), or not priced yet (no complete run has priced it).
+ * A line's status chip: one of the five stages (from the line's stage events), unpriced (its pricing in
+ * effect left it so), priced with a shortfall triage has not judged yet, priced without a shortfall (at
+ * or under what was paid: no stage), or not priced yet (no run in effect has priced it).
  */
-export function LineStatusChip({ status, priced = false }: { readonly status: LineStatus | null; readonly priced?: boolean }) {
+export function LineStatusChip({ status, priced = false, shortfall = false }: { readonly status: LineStatus | null; readonly priced?: boolean; readonly shortfall?: boolean }) {
   if (status === null) {
+    if (priced && shortfall) {
+      return (
+        <Badge variant="outline" data-status="priced_untriaged" title="Priced below what it expects; triage of its run decides its stage.">
+          Priced, not triaged yet
+        </Badge>
+      );
+    }
     return priced ? (
-      <Badge variant="outline" data-status="priced" title="The latest pricing run priced this line at or under what was paid.">
+      <Badge variant="outline" data-status="priced" title="The pricing run in effect priced this line at or under what was paid.">
         Priced, no shortfall
       </Badge>
     ) : (

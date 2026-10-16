@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
 import { type NotificationView, listNotifications, unreadNotifications } from '../monitoring/queries';
+import { latestRunInEffect } from '../pricing/queries';
 import { opaqueId } from './schemas';
 
 /**
@@ -11,7 +12,9 @@ import { opaqueId } from './schemas';
  * and the last run, with a banner when a run failed on its last attempt; JOB-02), the practice
  * record, its agreement chain and, for its administrators, the support (break-glass) grants on it
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
- * here), and the person's latest in-app notifications from monitoring (docs/adr/0039). Every read of
+ * here), the dashboard's counts and totals (coverage of the run in effect, cases by state, deadlines
+ * in 14 days, recovered this quarter), and the person's latest in-app notifications from monitoring
+ * (docs/adr/0039). Every read of
  * the practice record goes through readWithAudit, so a support engineer's view of it appears in that
  * list.
  */
@@ -110,6 +113,44 @@ export async function freshness(scope: PracticeScope<ScopeClient>, practiceId: s
   return { lastFileAt: file.rows[0]?.at ?? null, lastRun: jobRun(last.rows[0]), failedRun: jobRun(failed.rows[0]) };
 }
 
+/** How many days ahead the dashboard's deadlines look (PRD 7: "deadlines in 14 days"; the digest's own window). */
+export const DEADLINE_WINDOW_DAYS = 14;
+
+export interface Dashboard {
+  /** The coverage of the latest run in effect (Coverage's own), or null before any run is in effect. */
+  readonly coverage: { readonly runId: string; readonly periodFrom: string; readonly periodTo: string; readonly lines: number; readonly pricedLines: number; readonly chargeCents: string; readonly pricedChargeCents: string } | null;
+  /** The practice's cases by state, with each state's actionable total (the cases' own, derived in SQL). */
+  readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
+  /** Open cases whose deadline falls today or within DEADLINE_WINDOW_DAYS, with their actionable total. */
+  readonly deadlines: { readonly cases: number; readonly actionableCents: string; readonly earliest: string | null };
+  /** Recovered this quarter: zero until the recovery ledger posts (milestone 9); never an estimate. */
+  readonly recoveredCents: string;
+}
+
+/** The dashboard's counts and totals (PRD 7, Practice dashboard): coverage, open cases by stage, deadlines in 14 days, recovered this quarter. */
+export async function dashboard(scope: PracticeScope<ScopeClient>, practiceId: string, today: string, requestId: string): Promise<Dashboard> {
+  const latest = await latestRunInEffect(scope, practiceId, requestId);
+  const states = await scope.client.query<{ state: string; cases: number; actionable: string }>(
+    'SELECT state, count(*)::int AS cases, coalesce(sum(actionable_cents), 0)::text AS actionable FROM "case" WHERE practice_id = $1 GROUP BY state ORDER BY state',
+    [practiceId],
+  );
+  const near = await scope.client.query<{ cases: number; actionable: string; earliest: string | null }>(
+    `SELECT count(*)::int AS cases, coalesce(sum(actionable_cents), 0)::text AS actionable, min(deadline_on)::text AS earliest
+       FROM "case" WHERE practice_id = $1 AND state = 'open' AND deadline_on BETWEEN $2::date AND $2::date + $3::int`,
+    [practiceId, today, DEADLINE_WINDOW_DAYS],
+  );
+  const coverage = latest?.coverage ?? null;
+  return {
+    coverage:
+      latest === undefined || coverage === null
+        ? null
+        : { runId: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, lines: coverage.lines, pricedLines: coverage.priced.lines, chargeCents: coverage.charge_cents, pricedChargeCents: coverage.priced.charge_cents },
+    casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
+    deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },
+    recoveredCents: '0',
+  };
+}
+
 function supportGrant(row: SupportGrantRow): SupportGrantSummary {
   return { id: row.id, ticket: row.ticket, reason: row.reason, createdAt: row.created_at, expiresAt: row.expires_at, notifiedAt: row.notified_at, open: row.open };
 }
@@ -121,7 +162,7 @@ export const practiceHome = practiceRoute({
   phi: true,
   permission: 'practice.open',
   params: z.object({ practiceId: opaqueId }),
-  handle: async ({ scope, practiceId, access, request }) => {
+  handle: async ({ scope, practiceId, access, request, services }) => {
     const [practice] = await readWithAudit(
       scope,
       { objectType: 'practice', purpose: 'workspace', requestId: request.requestId },
@@ -153,6 +194,7 @@ export const practiceHome = practiceRoute({
       access: { via: access.via, roles: access.roles },
       supportGrants,
       freshness: await freshness(scope, practiceId),
+      dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10), request.requestId),
       notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };
   },

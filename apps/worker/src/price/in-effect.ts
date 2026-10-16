@@ -18,3 +18,16 @@ export const RUN_IN_EFFECT = (alias: string) => `(${ELIGIBLE_RUN(alias)} AND NOT
     SELECT 1 FROM pricing_run later
      WHERE later.practice_id = ${alias}.practice_id AND later.period_from = ${alias}.period_from AND later.period_to = ${alias}.period_to
        AND ${ELIGIBLE_RUN('later')} AND (${IN_EFFECT_SINCE('later')}, later.id) > (${IN_EFFECT_SINCE(alias)}, ${alias}.id)))`;
+
+/**
+ * Each service line's priced line in the run in effect that took effect last: the line's pricing in
+ * effect (a re-run's once accepted, never a run it replaced). A query over priced_line `p` and its run
+ * `r` for the practice `practice` (a parameter or column), one row per service line `lines` admits (a
+ * condition on p.service_line_id), every column of the priced line. Triage, the monthly summary and
+ * Claims and lines judge a line from this priced line, whichever run first validated it.
+ */
+export const PRICED_IN_EFFECT = (practice: string, lines: string) => `
+  SELECT DISTINCT ON (p.service_line_id) p.*
+    FROM priced_line p JOIN pricing_run r ON r.id = p.pricing_run_id
+   WHERE p.practice_id = ${practice} AND (${lines}) AND ${RUN_IN_EFFECT('r')}
+   ORDER BY p.service_line_id, ${IN_EFFECT_SINCE('r')} DESC, r.id DESC`;

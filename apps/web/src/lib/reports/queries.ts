@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import type { AuditReportContent } from '@tp/worker/reports';
 
+import { type ListPage, pageWindow } from '../http/paging';
 import type { Services } from '../server/services';
 
 /**
@@ -46,11 +47,10 @@ export interface ReportDetail extends ReportSummary {
   readonly attestation: Attestation | null;
 }
 
-/** What a reviewer signs: the checklist items they confirmed, their statement and the files' SHA-256. */
+/** What a reviewer signs: the checklist items they confirmed and the files' SHA-256 (no words a person typed). */
 export interface Attestation {
   readonly format: 'tp-attestation/1';
   readonly checklist: readonly string[];
-  readonly statement: string;
   readonly pdf_sha256: string;
   readonly csv_sha256: string;
 }
@@ -110,14 +110,22 @@ function summary(row: ReportRow): ReportSummary {
   };
 }
 
-export async function listReports(scope: Scope, practiceId: string, requestId: string): Promise<ReportSummary[]> {
+export const REPORTS_PER_PAGE = 25;
+export const DOWNLOADS_PER_PAGE = 50;
+
+/** A page of the practice's reports, newest first. */
+export async function listReports(scope: Scope, practiceId: string, requestId: string, page = 1): Promise<ListPage<ReportSummary>> {
+  const { rows: counted } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM audit_report WHERE practice_id = $1', [practiceId]);
+  const total = counted[0]?.n ?? 0;
+  const at = pageWindow(total, REPORTS_PER_PAGE, page);
   const rows = await readWithAudit(
     scope,
     { objectType: 'audit_report', purpose: 'report_review', requestId },
-    async (client) => (await client.query<ReportRow>(`${REPORTS(false)} WHERE a.practice_id = $1 ORDER BY a.created_at DESC, a.id LIMIT 100`, [practiceId])).rows,
+    async (client) =>
+      (await client.query<ReportRow>(`${REPORTS(false)} WHERE a.practice_id = $1 ORDER BY a.created_at DESC, a.id LIMIT ${String(REPORTS_PER_PAGE)} OFFSET ${String(at.offset)}`, [practiceId])).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return rows.map(summary);
+  return { items: rows.map(summary), page: at.page, pages: at.pages, total };
 }
 
 export async function reportOf(scope: Scope, practiceId: string, reportId: string, requestId: string): Promise<ReportDetail | undefined> {
@@ -137,8 +145,14 @@ export interface DownloadRecord {
   readonly downloadedAt: string;
 }
 
-/** The export history: who downloaded which report's file, newest first (one report's, or every report's). */
-export async function downloads(scope: Scope, practiceId: string, reportId: string | null, requestId: string): Promise<DownloadRecord[]> {
+/** A page of the export history: who downloaded which report's file, newest first (one report's, or every report's). */
+export async function downloads(scope: Scope, practiceId: string, reportId: string | null, requestId: string, page = 1): Promise<ListPage<DownloadRecord>> {
+  const { rows: counted } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM audit_report_download d WHERE d.practice_id = $1 AND ($2::uuid IS NULL OR d.audit_report_id = $2)', [
+    practiceId,
+    reportId,
+  ]);
+  const total = counted[0]?.n ?? 0;
+  const at = pageWindow(total, DOWNLOADS_PER_PAGE, page);
   const rows = await readWithAudit(
     scope,
     { objectType: 'audit_report_download', purpose: 'export_history', requestId },
@@ -148,13 +162,13 @@ export async function downloads(scope: Scope, practiceId: string, reportId: stri
           `SELECT d.id, d.practice_id, d.audit_report_id, d.file, u.email AS downloaded_by, d.downloaded_at
              FROM audit_report_download d LEFT JOIN "user" u ON u.id = d.downloaded_by
             WHERE d.practice_id = $1 AND ($2::uuid IS NULL OR d.audit_report_id = $2)
-            ORDER BY d.downloaded_at DESC, d.id LIMIT 200`,
+            ORDER BY d.downloaded_at DESC, d.id LIMIT ${String(DOWNLOADS_PER_PAGE)} OFFSET ${String(at.offset)}`,
           [practiceId, reportId],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return rows.map((row) => ({ reportId: row.audit_report_id, file: row.file, downloadedBy: row.downloaded_by, downloadedAt: row.downloaded_at.toISOString() }));
+  return { items: rows.map((row) => ({ reportId: row.audit_report_id, file: row.file, downloadedBy: row.downloaded_by, downloadedAt: row.downloaded_at.toISOString() })), page: at.page, pages: at.pages, total };
 }
 
 /** A stored report file did not match the SHA-256 its report recorded: it is never sent. */

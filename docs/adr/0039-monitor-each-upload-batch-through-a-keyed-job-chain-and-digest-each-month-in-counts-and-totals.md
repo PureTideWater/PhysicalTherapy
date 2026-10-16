@@ -1,6 +1,7 @@
 # 0039. Monitor each upload batch through a keyed job chain, digest each month on the operator's schedule, and keep notifications to counts and totals
 
-- **Status:** accepted (amends 0004 for the monitor and reconcile subjects, and 0038 for triage of the chain's runs)
+- **Status:** accepted (amends 0004 for the monitor and reconcile subjects, and 0038 for triage of the chain's runs;
+  amended by [0040](0040-judge-lines-from-their-pricing-in-effect-hold-per-visit-and-ncci-lines-for-review-and-set-practice-settings-in-the-console.md): the daily monitor closes passed windows, figures keyed by a closed list, and what was pulled forward from milestone 11)
 - **Date:** 2026-10-15
 - **Deciders:** founder (engineering)
 - **PRD sections:** 5 (J11, J12), 6 (Monitoring jobs and notifications; Reports and exports), 7 (Practice dashboard,

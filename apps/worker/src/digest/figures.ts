@@ -1,6 +1,7 @@
 import type { ScopeClient } from '@tp/db/runtime';
 import { centsToString, parseCents, sumCents } from '@tp/money';
 
+import { PRICED_IN_EFFECT } from '../price/in-effect';
 import { CONTRACT_EXPIRY_DAYS, DEADLINE_DAYS, type DigestCounts, type DigestFigures, type DigestTotals, digestCountsSchema, digestTotalsSchema } from './view';
 
 /**
@@ -9,12 +10,13 @@ import { CONTRACT_EXPIRY_DAYS, DEADLINE_DAYS, type DigestCounts, type DigestFigu
  * identifier, name or text column is read (test matrix JOB-03, which checks the statements below).
  *
  * - New validated variance: the lines whose stage reached validated during the month (UTC), with the
- *   variance of the priced line triage validated them on, by payer.
+ *   shortfall of the priced line triage validated them on (its variance; a per-visit line's at most its
+ *   visit's net, priced_line_shortfall_cents()), by payer.
  * - Cases nearing deadline: open cases whose deadline falls on the digest's day or within
  *   DEADLINE_DAYS after it, with their actionable total (the case's own, derived in SQL).
  * - Recoveries posted: zero until the recovery ledger (milestone 9) posts entries.
- * - Coverage: each line's result in the run that priced it and took effect last (as Claims and lines
- *   reads it), priced against all, by lines and billed dollars; beside it, the previous digest's.
+ * - Coverage: each line's result in its pricing in effect (PRICED_IN_EFFECT, as Claims and lines reads
+ *   it), priced against all, by lines and billed dollars; beside it, the previous digest's.
  * - Contracts expiring: contracts whose signed-off version ends within CONTRACT_EXPIRY_DAYS of the
  *   digest's day with no signed-off version starting after it.
  */
@@ -34,12 +36,11 @@ export const DIGEST_QUERIES = {
           AND s.set_at >= ($2::date::timestamp AT TIME ZONE 'UTC') AND s.set_at < (($2::date + interval '1 month') AT TIME ZONE 'UTC')
         ORDER BY s.service_line_id, s.seq
      )
-     SELECT pl.payer_id, count(*)::int AS lines, sum(p.variance_cents)::text AS cents
-       FROM validated v
-       JOIN priced_line p ON p.id = v.priced_line_id
+     SELECT pl.payer_id, count(*)::int AS lines, sum(v.shortfall)::text AS cents
+       FROM (SELECT validated.service_line_id, priced_line_shortfall_cents(validated.priced_line_id) AS shortfall FROM validated) v
        JOIN service_line l ON l.id = v.service_line_id
        JOIN plan pl ON pl.id = l.payer_plan_key
-      WHERE p.variance_cents > 0
+      WHERE v.shortfall IS NOT NULL
       GROUP BY pl.payer_id
       ORDER BY pl.payer_id`,
   deadlines: `SELECT count(*)::int AS cases, coalesce(sum(c.actionable_cents), 0)::text AS cents
@@ -47,10 +48,7 @@ export const DIGEST_QUERIES = {
       WHERE c.practice_id = $1 AND c.state = 'open' AND c.deadline_on BETWEEN $2::date AND $2::date + $3::int`,
   coverage: `SELECT count(*)::int AS lines, (count(*) FILTER (WHERE latest.unpriced_reason IS NULL))::int AS priced_lines,
             coalesce(sum(l.charge_cents), 0)::text AS billed, coalesce(sum(l.charge_cents) FILTER (WHERE latest.unpriced_reason IS NULL), 0)::text AS priced_billed
-       FROM (SELECT DISTINCT ON (p.service_line_id) p.service_line_id, p.unpriced_reason
-               FROM priced_line p JOIN pricing_run r ON r.id = p.pricing_run_id
-              WHERE p.practice_id = $1 AND r.status = 'complete' AND (r.rerun_of_id IS NULL OR r.accepted_at IS NOT NULL)
-              ORDER BY p.service_line_id, coalesce(r.accepted_at, r.completed_at) DESC, r.id DESC) latest
+       FROM (${PRICED_IN_EFFECT('$1', 'true')}) latest
        JOIN service_line l ON l.id = latest.service_line_id`,
   previous: `SELECT d.counts, d.totals_cents FROM digest d WHERE d.practice_id = $1 AND d.period < $2 ORDER BY d.period DESC LIMIT 1`,
   contracts: `SELECT count(DISTINCT v.contract_id)::int AS contracts

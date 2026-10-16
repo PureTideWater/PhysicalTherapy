@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { Field, SelectField } from '../../../../components/field';
@@ -55,7 +56,10 @@ export default async function OrganizationPage(props: { readonly params: Promise
               <ul className="flex flex-col gap-1 text-sm" aria-label="Practices">
                 {practices.map((practice) => (
                   <li key={practice.id}>
-                    {practice.name} <span className="text-muted-foreground">· {practice.status}</span>
+                    {practice.name} <span className="text-muted-foreground">· {practice.status}</span> ·{' '}
+                    <Link className="underline" href={`/console/practices/${practice.id}`}>
+                      Pricing and triage settings
+                    </Link>
                   </li>
                 ))}
               </ul>

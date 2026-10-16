@@ -13,7 +13,7 @@ import { SESSION_COOKIE, openSession, resolveSession } from '../auth/sessions';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
-import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, organizationPage, recordAgreement, supportPage, unlockUser } from './console';
+import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, organizationPage, practiceSettingsPage, recordAgreement, setPracticeSettings, supportPage, unlockUser } from './console';
 import { practiceHome, supportAccessPage } from './practice';
 
 /**
@@ -264,6 +264,105 @@ describe('agreements', () => {
       status: 'invalid',
       issues: expect.arrayContaining([expect.objectContaining({ field: 'signedOn' }), expect.objectContaining({ field: 'documentRef' }), expect.objectContaining({ field: 'sha256' })]),
     });
+  });
+});
+
+describe('practice settings (PRD 5, J8; PRD 11, Inputs; PRD 12)', () => {
+  it('sets a practice’s billing ZIP and its pricing and triage settings, keeping its other settings, and audits it', async () => {
+    const practice = await createTenantWorld(owner, 'settings');
+    await owner.query(`UPDATE practice SET settings = '{"kept_elsewhere": true, "line_materiality_cents": "900"}'::jsonb WHERE id = $1`, [practice.practiceId]);
+    const set = await run(setPracticeSettings, admin.token, {
+      practiceId: practice.practiceId,
+      zip: '00011',
+      facilityPlaces: '22, 21',
+      nonFacilityPlaces: '11',
+      defaultRounding: 'HALF_UP_CENT',
+      lineMateriality: '5.00',
+      caseMateriality: '250.00',
+      anomalyMinimumCohort: '',
+      anomalyThreshold: '',
+      staffRatePerHour: '60.00',
+      minutesPerPacket: '45',
+      minutesPerFollowUp: '15',
+    });
+    expect(set).toMatchObject({ status: 'ok', data: { objectId: practice.practiceId, redirect: `/console/practices/${practice.practiceId}?saved=1` } });
+    const { rows } = await owner.query('SELECT zip, settings FROM practice WHERE id = $1', [practice.practiceId]);
+    expect(rows).toEqual([
+      {
+        zip: '00011',
+        settings: {
+          kept_elsewhere: true,
+          place_of_service_settings: { '11': 'non_facility', '21': 'facility', '22': 'facility' },
+          default_rounding: 'HALF_UP_CENT',
+          line_materiality_cents: '500',
+          case_materiality_cents: '25000',
+          staff_rate_cents_per_hour: '6000',
+          minutes_per_packet: 45,
+          minutes_per_follow_up: 15,
+        },
+      },
+    ]);
+    const audit = await owner.query("SELECT object_type, object_id, practice_id FROM audit_event WHERE actor_id = $1 AND action = 'practice_settings_set'", [admin.id]);
+    expect(audit.rows).toEqual([{ object_type: 'practice', object_id: practice.practiceId, practice_id: null }]);
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: practice.practiceId, saved: '1' })).toMatchObject({
+      status: 'ok',
+      data: {
+        practice: { id: practice.practiceId, organizationId: practice.organizationId, name: expect.any(String) },
+        form: {
+          zip: '00011',
+          facilityPlaces: '21, 22',
+          nonFacilityPlaces: '11',
+          defaultRounding: 'HALF_UP_CENT',
+          lineMateriality: '5.00',
+          caseMateriality: '250.00',
+          anomalyMinimumCohort: '',
+          anomalyThreshold: '',
+          staffRatePerHour: '60.00',
+          minutesPerPacket: '45',
+          minutesPerFollowUp: '15',
+        },
+        saved: true,
+      },
+    });
+    // A field left blank returns to its default.
+    expect((await run(setPracticeSettings, admin.token, { practiceId: practice.practiceId, zip: '00011' })).status).toBe('ok');
+    expect((await owner.query('SELECT settings FROM practice WHERE id = $1', [practice.practiceId])).rows).toEqual([{ settings: { kept_elsewhere: true } }]);
+  });
+
+  it('refuses settings the engine or triage would refuse, naming the field', async () => {
+    expect(await run(setPracticeSettings, admin.token, { practiceId: world.practiceId, facilityPlaces: '11', nonFacilityPlaces: '11' })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'facilityPlaces', message: 'place of service 11 is listed as both facility and non-facility' }],
+    });
+    expect(await run(setPracticeSettings, admin.token, { practiceId: world.practiceId, staffRatePerHour: '60.00' })).toMatchObject({ status: 'invalid', issues: [{ field: 'staffRatePerHour' }] });
+    expect(await run(setPracticeSettings, admin.token, { practiceId: world.practiceId, zip: '2760' })).toMatchObject({ status: 'invalid', issues: [{ field: 'zip' }] });
+    expect(await run(setPracticeSettings, admin.token, { practiceId: randomUUID(), zip: '27601' })).toEqual({ status: 'not_found' });
+    expect(await run(practiceSettingsPage, admin.token, undefined, { practiceId: randomUUID() })).toEqual({ status: 'not_found' });
+  });
+
+  it('is the platform administrator’s alone, in the routes and in the database', async () => {
+    const adminToken = await sessionFor(world.adminUserId, 'totp');
+    expect(await run(setPracticeSettings, adminToken, { practiceId: world.practiceId, zip: '00011' })).toMatchObject({ status: 'forbidden' });
+    expect(await run(practiceSettingsPage, adminToken, undefined, { practiceId: world.practiceId })).toMatchObject({ status: 'forbidden' });
+    // The practice's own administrator, as the application, cannot reach the functions either.
+    const client = await app.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [world.adminUserId, `{${world.practiceId}}`]);
+      await expect(client.query("SELECT console_set_practice_settings($1, '00011', '{}'::jsonb)", [world.practiceId])).rejects.toMatchObject({ code: '42501' });
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [world.adminUserId, `{${world.practiceId}}`]);
+      expect((await client.query('SELECT * FROM console_practice_settings($1)', [world.practiceId])).rows).toEqual([]);
+      await client.query('ROLLBACK');
+      // And the platform administrator's function sets only the pricing and triage settings.
+      await client.query('BEGIN');
+      await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [admin.id]);
+      await expect(client.query(`SELECT console_set_practice_settings($1, '00011', '{"data_key_ref": "x"}'::jsonb)`, [world.practiceId])).rejects.toMatchObject({ code: '23514' });
+      await client.query('ROLLBACK');
+    } finally {
+      client.release();
+    }
   });
 });
 

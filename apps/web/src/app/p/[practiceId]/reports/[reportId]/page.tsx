@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Headline, ReleaseState, ReportSections, ReportStatusBadge } from '../../../../../components/reports/display';
+import { Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { reportPage } from '../../../../../lib/routes/reports';
@@ -118,17 +119,18 @@ export default async function ReportPage(props: Props) {
       )}
       <section aria-label="Export history" className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Export history</h2>
-        {history.length === 0 ? (
+        {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No file of this report has been downloaded.</p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
-            {history.map((entry) => (
+            {history.items.map((entry) => (
               <li key={`${entry.file}:${entry.downloadedAt}:${entry.downloadedBy ?? ''}`}>
                 {utc(entry.downloadedAt)}: {entry.file === 'csv' ? 'line CSV' : 'PDF'} by {entry.downloadedBy ?? 'a member of the practice'}
               </li>
             ))}
           </ul>
         )}
+        <Pager path={path} query={{}} page={history.page} pages={history.pages} total={history.total} noun="Downloads" param="history" />
       </section>
     </AppShell>
   );

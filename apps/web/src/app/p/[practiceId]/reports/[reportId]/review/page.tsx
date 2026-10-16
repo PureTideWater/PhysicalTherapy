@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -9,7 +9,7 @@ import { utc } from '../../../../../../components/format';
 import { Headline, ReportSections } from '../../../../../../components/reports/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { loadPage } from '../../../../../../lib/http/next';
-import { reviewChecklistPage } from '../../../../../../lib/routes/reports';
+import { ATTESTATION_TEXT, reviewChecklistPage } from '../../../../../../lib/routes/reports';
 import { attestReportFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Reviewer checklist' };
@@ -38,11 +38,15 @@ export default async function ReviewChecklistPage(props: Props) {
         </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Reviewer checklist</h1>
         <p className="text-sm text-muted-foreground">
-          Service {report.periodFrom} to {report.periodTo}; windows judged on {report.asOf ?? '—'}. Read the report and its{' '}
+          Service {report.periodFrom} to {report.periodTo}; windows judged on {report.asOf ?? '—'}. Read the report, its{' '}
           <a className="underline" href={`${path}/pdf`}>
             PDF
-          </a>
-          , check each finding against the practice’s contracts, then sign.
+          </a>{' '}
+          and its{' '}
+          <a className="underline" href={`${path}/review/csv`}>
+            line CSV
+          </a>{' '}
+          (line-level PHI: the download is recorded), check each finding against the practice’s contracts, then sign.
         </p>
       </div>
       {report.content === null ? (
@@ -62,11 +66,14 @@ export default async function ReviewChecklistPage(props: Props) {
             </CardHeader>
             <CardContent>
               {report.attestedAt !== null ? (
-                <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-                  {checklist.map((item) => (
-                    <li key={item.id}>{item.text}</li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+                    {checklist.map((item) => (
+                      <li key={item.id}>{item.text}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-2 text-sm">{ATTESTATION_TEXT}</p>
+                </>
               ) : (
                 <ActionForm action={attestReportFormAction} submit="Sign the attestation" className="flex flex-col gap-3">
                   <input type="hidden" name="requestKey" value={randomUUID()} />
@@ -80,10 +87,7 @@ export default async function ReviewChecklistPage(props: Props) {
                       <span>{item.text}</span>
                     </label>
                   ))}
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="attestation-statement">Statement (optional)</Label>
-                    <Input id="attestation-statement" name="statement" maxLength={1000} />
-                  </div>
+                  <p className="text-sm">{ATTESTATION_TEXT}</p>
                 </ActionForm>
               )}
             </CardContent>

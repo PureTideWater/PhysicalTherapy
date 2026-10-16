@@ -7,7 +7,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * persona of PRD 3, plus a few the e2e tests use alone (an invited user without MFA, one to lock out,
  * one to let sit idle, a second support engineer, a billing manager and a viewer for the remittances
  * journey, a billing manager for the mapping journey, a billing manager, a platform administrator
- * and a contract specialist for the contracts journey, and a billing manager for the pricing journey,
+ * and a contract specialist for the contracts journey, and a billing manager and a platform
+ * administrator (who sets the practice's pricing settings in the console) for the pricing journey,
  * whose sign-ins never share a TOTP step or a hardware key with another spec's; the three billing
  * managers of the other group upload into its practice and never into the rows another spec counts).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
@@ -59,6 +60,7 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'contracts-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'contracts-specialist', organization: 'internal', role: 'contract_specialist' },
   { key: 'pricing-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'pricing-admin', organization: 'internal', role: 'platform_admin' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

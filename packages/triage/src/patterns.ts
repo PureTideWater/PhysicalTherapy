@@ -15,7 +15,8 @@ import { type AdjustmentBehavior } from './behavior';
  * Which lines a case holds: its pattern's actionable lines, and its lines that would be actionable but
  * for a window that has passed, which join it struck through (written off, window passed) and out of
  * its actionable total (J8). Lines below the line materiality, of a reversed or superseded claim, of a
- * version no longer signed off, or written off already stay validated and join no case.
+ * version no longer signed off, of a per-visit visit or with an NCCI review flag (for a person's review,
+ * docs/adr/0040), or written off already stay validated and join no case.
  */
 
 /** A payer pattern (stored as case.pattern_key). */
@@ -104,7 +105,7 @@ export function planCases(candidates: readonly CandidateLine[], openCases: Reado
     }
     const id = patternId(line.pattern);
     const group = groups.get(id) ?? { pattern: line.pattern, lines: [] };
-    group.lines.push({ serviceLineId: line.serviceLineId, pricedLineId: line.pricedLineId, varianceCents: cents(line.varianceCents ?? 0n), windowPassed });
+    group.lines.push({ serviceLineId: line.serviceLineId, pricedLineId: line.pricedLineId, varianceCents: cents(judgement.validatedCents ?? 0n), windowPassed });
     groups.set(id, group);
   }
   const created: PlannedCase[] = [];

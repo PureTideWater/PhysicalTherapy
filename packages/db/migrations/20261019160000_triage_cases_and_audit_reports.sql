@@ -266,12 +266,12 @@ CREATE TABLE audit_report_download (
 CREATE INDEX audit_report_download_by_report ON audit_report_download (practice_id, audit_report_id, downloaded_at DESC);
 
 INSERT INTO phi_table_registry (table_name, registered_by, policy_name) VALUES
-  ('anomaly', '20261018120000_triage_cases_and_audit_reports', 'anomaly_tenant'),
-  ('line_status', '20261018120000_triage_cases_and_audit_reports', 'line_status_tenant'),
-  ('case', '20261018120000_triage_cases_and_audit_reports', 'case_tenant'),
-  ('case_line', '20261018120000_triage_cases_and_audit_reports', 'case_line_tenant'),
-  ('audit_report', '20261018120000_triage_cases_and_audit_reports', 'audit_report_tenant'),
-  ('audit_report_download', '20261018120000_triage_cases_and_audit_reports', 'audit_report_download_tenant');
+  ('anomaly', '20261019160000_triage_cases_and_audit_reports', 'anomaly_tenant'),
+  ('line_status', '20261019160000_triage_cases_and_audit_reports', 'line_status_tenant'),
+  ('case', '20261019160000_triage_cases_and_audit_reports', 'case_tenant'),
+  ('case_line', '20261019160000_triage_cases_and_audit_reports', 'case_line_tenant'),
+  ('audit_report', '20261019160000_triage_cases_and_audit_reports', 'audit_report_tenant'),
+  ('audit_report_download', '20261019160000_triage_cases_and_audit_reports', 'audit_report_download_tenant');
 
 CREATE TRIGGER anomaly_updated_at BEFORE UPDATE ON anomaly FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER case_updated_at BEFORE UPDATE ON "case" FOR EACH ROW EXECUTE FUNCTION set_updated_at();

@@ -6,7 +6,8 @@ import { parseCoverage } from '../price/coverage';
  * The monitoring chain's links between steps (PRD 5, J11; docs/adr/0039): which runs the chain created
  * (a run a person created is not chained: its creator triages it from the Cases screen, ADR 0038), and
  * the in-app notification a chained run leaves once it is priced and triaged. Counts and totals only:
- * the run's lines, priced and unpriced, the validated lines and their variance, the flagged lines and
+ * the run's lines, priced and unpriced, the validated lines and their shortfall (a per-visit line's at
+ * most its visit's net), the flagged lines and
  * the cases its lines are in, read from the run's own aggregates; no PHI column is read (JOB-03).
  */
 
@@ -35,8 +36,8 @@ interface FiguresRow {
 export async function runFigures(client: ScopeClient, practiceId: string, pricingRunId: string): Promise<RunFigures | undefined> {
   const { rows } = await client.query<FiguresRow>(
     `SELECT r.coverage,
-            (SELECT count(*)::int FROM priced_line p WHERE p.pricing_run_id = r.id AND p.variance_cents > 0) AS validated_lines,
-            (SELECT coalesce(sum(p.variance_cents), 0)::text FROM priced_line p WHERE p.pricing_run_id = r.id AND p.variance_cents > 0) AS validated_cents,
+            (SELECT count(*)::int FROM priced_line p WHERE p.pricing_run_id = r.id AND p.variance_cents > 0 AND priced_line_shortfall_cents(p.id) IS NOT NULL) AS validated_lines,
+            (SELECT coalesce(sum(priced_line_shortfall_cents(p.id)), 0)::text FROM priced_line p WHERE p.pricing_run_id = r.id AND p.variance_cents > 0) AS validated_cents,
             (SELECT coalesce(sum(cardinality(a.line_ids)), 0)::int FROM anomaly a WHERE a.pricing_run_id = r.id) AS flagged_lines,
             (SELECT count(DISTINCT cl.case_id)::int FROM case_line cl JOIN priced_line p ON p.id = cl.priced_line_id WHERE p.pricing_run_id = r.id) AS cases
        FROM pricing_run r WHERE r.id = $1 AND r.practice_id = $2 AND r.status = 'complete'`,

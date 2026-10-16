@@ -481,19 +481,26 @@ describe('digests and notifications carry counts and totals only (JOB-03)', () =
           () => 'accepted',
           (error: { code?: string; constraint?: string }) => `${error.code ?? ''} ${error.constraint ?? ''}`,
         );
-    expect(await attempt({ lines: 1, by_payer: { [randomUUID()]: 2 } }, { variance: '-1250', by_payer: { [randomUUID()]: '300' } })).toBe('accepted');
+    expect(await attempt({ validated_lines: 1, validated_lines_by_payer: { [randomUUID()]: 2 } }, { validated_variance: '-1250', validated_variance_by_payer: { [randomUUID()]: '300' } })).toBe('accepted');
     for (const [counts, totals] of [
       [{ patient: 'SYNTHETIC NAME' }, {}],
-      [{ lines: 1.5 }, {}],
-      [{ lines: -1 }, {}],
+      [{ validated_lines: 1.5 }, {}],
+      [{ validated_lines: -1 }, {}],
       [{ 'SYNTHLAST SYNTHFIRST': 1 }, {}],
-      [{ by_payer: { 'SYNTHETIC PAYER Q': 1 } }, {}],
+      // Keys shaped like a code but carrying a name, a member ID or a date of birth: not on the closed list.
+      [{ jane_doe_member_w123456789: 1 }, {}],
+      [{ synthlast_synthfirst_dob_19800101: 1 }, {}],
+      [{ by_patient: { synthlast_synthfirst_dob_19800101: 1 } }, {}],
+      [{ validated_lines_by_payer: { synthlast_synthfirst: 1 } }, {}],
+      [{ validated_lines_by_payer: { 'SYNTHETIC PAYER Q': 1 } }, {}],
+      [{ validated_lines_by_payer: 1 }, {}],
+      [{ validated_lines: { [randomUUID()]: 1 } }, {}],
       [{ deeper: { a: { b: 1 } } }, {}],
       [[1, 2], {}],
     ] as const) {
       expect(await attempt(counts, totals), JSON.stringify(counts)).toBe('23514 digest_counts_only');
     }
-    for (const totals of [{ variance: 1250 }, { variance: '12.50' }, { variance: 'SYNPCNCAS03001' }, { note: { a: 'SYNTHETIC' } }]) {
+    for (const totals of [{ validated_variance: 1250 }, { validated_variance: '12.50' }, { validated_variance: 'SYNPCNCAS03001' }, { note: { a: 'SYNTHETIC' } }, { jane_doe: '12345' }, { recovered_by_payer: { [randomUUID()]: '1' } }]) {
       expect(await attempt({}, totals), JSON.stringify(totals)).toBe('23514 digest_totals_only');
     }
   });

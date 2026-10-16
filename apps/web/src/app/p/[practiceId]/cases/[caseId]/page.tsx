@@ -7,11 +7,11 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
-import { Fact, Money } from '../../../../../components/remittances/display';
+import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { CaseStateBadge, Deadline, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
-import { casePage } from '../../../../../lib/routes/triage';
+import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import type { CaseEvent } from '../../../../../lib/triage/queries';
 import { reopenFormAction, writeOffFormAction } from './actions';
 
@@ -77,7 +77,7 @@ export default async function CasePage(props: Props) {
         </CardContent>
       </Card>
       <section aria-label="Lines" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Lines</h2>
+        <h2 className="text-lg font-semibold">Lines ({detail.totalLines})</h2>
         <ul className="flex flex-col gap-3" aria-label="Case lines">
           {detail.lines.map((line) => (
             <li key={line.id} className="rounded-md border p-4" data-case-line={line.id} data-actionable={line.actionable ? 'yes' : 'no'}>
@@ -129,6 +129,10 @@ export default async function CasePage(props: Props) {
                       <Label htmlFor={`text-${line.id}`}>Why (for “Other” only)</Label>
                       <Input id={`text-${line.id}`} name="text" maxLength={500} />
                     </div>
+                    <label className="flex items-start gap-2 text-sm">
+                      <input type="checkbox" name="confirm" required className="mt-1" />
+                      <span>{WRITE_OFF_CONSEQUENCE} Write it off.</span>
+                    </label>
                   </ActionForm>
                 </details>
               ) : line.windowPassed || line.windowEndsOn === null ? null : (
@@ -148,11 +152,14 @@ export default async function CasePage(props: Props) {
             </li>
           ))}
         </ul>
+        <Pager path={`/p/${practiceId}/cases/${item.id}`} query={{}} page={detail.page} pages={detail.pages} total={detail.totalLines} noun="Lines" />
       </section>
       <Card role="region" aria-label="Timeline">
         <CardHeader>
           <CardTitle>Timeline</CardTitle>
-          <CardDescription>Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered come from the recovery ledger.</CardDescription>
+          <CardDescription>
+            Of the lines on this page. Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered come from the recovery ledger.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <ol className="flex flex-col gap-1 text-sm">

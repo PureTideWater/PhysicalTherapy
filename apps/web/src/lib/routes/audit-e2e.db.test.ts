@@ -26,9 +26,10 @@ import { MemoryQueue } from '../uploads/queue';
 import { LocalUploadTargets } from '../uploads/targets';
 import { mapPlanAction } from './mapping';
 import { createPricingRunAction } from './pricing';
-import { attestReportAction, generateReportAction, releaseReportAction, reportCsv, reportPage, reportPdf, reviewChecklistPage } from './reports';
+import { attestReportAction, generateReportAction, releaseReportAction, reportCsv, reportPage, reportPdf, reviewChecklistPage, reviewCsv } from './reports';
 import { loadRouteRelease } from './test-support/pricing-world';
-import { anomaliesPage, casePage, casesPage, triageRunAction } from './triage';
+import { claimsPage } from './remittances';
+import { anomaliesPage, casePage, casesPage, reopenLineAction, triageRunAction, writeOffLineAction } from './triage';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
 
 /**
@@ -410,6 +411,24 @@ describe('the synthetic audit, end to end (upload, parse, mapping, signed-off co
     expect(anomalies.anomalies.map((item) => [item.plan, item.procedureCode, item.quarter, item.cohortSize, item.modalAllowedCents, item.stats.flagged_lines])).toEqual(
       expectedReport.anomalies.map((item) => [item.plan, item.procedure_code, item.quarter, item.cohort_size, item.modal_allowed_cents, item.flagged_lines]),
     );
+    // The lists page and filter in SQL, the filters in the URL.
+    expect(ok(await call(casesPage, manager, { ...P(), state: 'closed_written_off' }))).toMatchObject({ cases: [], total: 0, openCases: 0, actionableCents: '0' });
+    expect(ok(await call(casesPage, manager, { ...P(), deadline: '14' }))).toMatchObject({ cases: [], total: 0 });
+    expect(ok(await call(casesPage, manager, { ...P(), state: 'open', payer: payerId, page: '9' }))).toMatchObject({ total: 1, page: 1, pages: 1, actionableCents: expectedReport.headline.actionable_cents });
+    expect(ok(await call(anomaliesPage, manager, { ...P(), run: runId })).total).toBe(expectedReport.anomalies.length);
+    expect(ok(await call(anomaliesPage, manager, { ...P(), run: randomUUID() }))).toMatchObject({ anomalies: [], total: 0 });
+    // Claims and lines shows each line's stage as triage left it (flagged, validated, actionable), else unpriced, line for line as the worksheet has them.
+    const [header = '', ...expectedRows] = expectedLines.split('\r\n').filter((row) => row !== '');
+    const at = (name: string) => header.split(',').indexOf(name);
+    const expectedChips = expectedRows
+      .map((row) => row.split(','))
+      .map((fields) => [fields[at('payer_claim_control_number')], fields[at('stage')] !== '' ? fields[at('stage')] : fields[at('counted_as')] === 'unpriced' ? 'unpriced' : null])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const first = ok(await call(claimsPage, manager, { ...P(), view: 'all', page: '1' })).list;
+    const rest = first.pages > 1 ? ok(await call(claimsPage, manager, { ...P(), view: 'all', page: '2' })).list.rows : [];
+    const chips = [...first.rows, ...rest].map((row) => [row.identifiers?.payerClaimControlNumber, row.status]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    expect(chips).toEqual(expectedChips);
+    expect(new Set(chips.map((chip) => chip[1]))).toEqual(new Set(['actionable', 'validated', 'flagged', 'unpriced', null]));
   }, 300_000);
 
   it('generates the audit report, its numbers by stage as the independent worksheet computed them', async () => {
@@ -464,14 +483,20 @@ describe('the synthetic audit, end to end (upload, parse, mapping, signed-off co
     // A viewer reads the report but never exports its lines.
     expect((await call(reportCsv, viewer, { ...P(), reportId })).status).toBe('forbidden');
     const history = ok(await call(reportPage, manager, { ...P(), reportId })).history;
-    expect(history.map((entry) => entry.file).sort()).toEqual(['csv', 'pdf']);
+    expect(history.items.map((entry) => entry.file).sort()).toEqual(['csv', 'pdf']);
   }, 300_000);
 
   it('is released only once the reimbursement reviewer has signed the checklist over its files', async () => {
     expect((await call(releaseReportAction, manager, P(), { reportId })).status).toBe('invalid');
     // The reviewer, under a support grant, reads the checklist and signs; the billing manager cannot sign.
     const review = ok(await call(reviewChecklistPage, reviewer, { ...P(), reportId }));
-    const signed = { reportId, pdfSha256: review.report.pdfSha256, csvSha256: review.report.csvSha256, statement: 'SYNTHETIC: reviewed against the synthetic contracts', ...Object.fromEntries(review.checklist.map((item) => [`confirm_${item.id}`, 'on'])) };
+    // The reviewer opens the line CSV they sign over (read-only, from the checklist), and the download is recorded;
+    // the export route itself stays the PHI exporters'.
+    expect((await call(reportCsv, reviewer, { ...P(), reportId })).status).toBe('forbidden');
+    const reviewed = bodyText(ok(await call(reviewCsv, reviewer, { ...P(), reportId })));
+    expect(createHash('sha256').update(reviewed).digest('hex')).toBe(review.report.csvSha256);
+    expect((await call(reviewCsv, manager, { ...P(), reportId })).status).toBe('forbidden');
+    const signed = { reportId, pdfSha256: review.report.pdfSha256, csvSha256: review.report.csvSha256, ...Object.fromEntries(review.checklist.map((item) => [`confirm_${item.id}`, 'on'])) };
     expect((await call(attestReportAction, manager, P(), signed)).status).toBe('forbidden');
     expect((await call(attestReportAction, reviewer, P(), { ...signed, confirm_independent: '' })).status).toBe('invalid');
     ok(await call(attestReportAction, reviewer, P(), signed));
@@ -482,6 +507,22 @@ describe('the synthetic audit, end to end (upload, parse, mapping, signed-off co
     // Who signed shows to those the user directory lets see the reviewer; when is on the report for everyone.
     expect(released).toMatchObject({ attestedAt: expect.any(String) as string, releasedAt: expect.any(String) as string, content });
     expect(ok(await call(reportPage, reviewer, { ...P(), reportId })).report.attestedAt).toBe(released.attestedAt);
-    expect(released.attestation).toMatchObject({ format: 'tp-attestation/1', pdf_sha256: released.pdfSha256, csv_sha256: released.csvSha256 });
+    expect(released.attestation).toEqual({ format: 'tp-attestation/1', checklist: review.checklist.map((item) => item.id), pdf_sha256: released.pdfSha256, csv_sha256: released.csvSha256 });
+    // The reviewer's read of the lines is in the export history.
+    expect(ok(await call(reportPage, manager, { ...P(), reportId })).history.items.filter((entry) => entry.file === 'csv')).toHaveLength(2);
+  }, 300_000);
+
+  it('writes a case line off only once the person confirms what it does, and reopens it with a reason; the released report keeps its numbers', async () => {
+    const [found] = ok(await call(casesPage, manager, P())).cases;
+    const before = ok(await call(casePage, manager, { ...P(), caseId: found?.id }));
+    const line = before.detail.lines[0];
+    const writeOff = { caseLineId: line?.id, reason: 'not_worth_pursuit', text: '' };
+    expect(await call(writeOffLineAction, manager, P(), writeOff)).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
+    ok(await call(writeOffLineAction, manager, P(), { ...writeOff, confirm: 'on' }));
+    const after = ok(await call(casePage, manager, { ...P(), caseId: found?.id }));
+    expect(BigInt(after.case.actionableCents)).toBe(BigInt(before.case.actionableCents) - BigInt(line?.varianceCents ?? '0'));
+    ok(await call(reopenLineAction, manager, P(), { caseLineId: line?.id, reason: 'SYNTHETIC: the payer asked for it again' }));
+    expect(ok(await call(casePage, manager, { ...P(), caseId: found?.id })).case.actionableCents).toBe(before.case.actionableCents);
+    expect(ok(await call(reportPage, manager, { ...P(), reportId })).report.content).toEqual(content);
   }, 300_000);
 });

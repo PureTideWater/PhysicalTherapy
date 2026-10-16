@@ -1,7 +1,7 @@
 import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 
-import { ELIGIBLE_RUN, IN_EFFECT_SINCE } from '../pricing/queries';
-import { stageOf } from '../pricing/view';
+import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '../pricing/queries';
+import { lineStatusOf } from '../pricing/view';
 
 /**
  * The Remittances and Claims and lines screens' reads (PRD 7; PRD 6, Canonical model and matching;
@@ -416,9 +416,9 @@ export interface ClaimLine {
   readonly observedAllowedCents: string | null;
   readonly observedAllowedBasis: string | null;
   readonly observedAllowedAllocated: boolean;
-  /** From the latest complete pricing run that priced the line; null when none has, or it left the line unpriced. */
+  /** From the line's pricing in effect; null when no run in effect priced it, or it left the line unpriced. */
   readonly expectedAllowedCents: string | null;
-  /** Unpriced, or validated (priced with positive variance), from that run; null when no run gave the line a stage. */
+  /** The stage the line has reached (its latest stage event), else unpriced from its pricing in effect; null otherwise. */
   readonly status: LineStatus | null;
   /** That run, and what it found: null when no complete run has priced the line. */
   readonly pricing: { readonly pricingRunId: string; readonly varianceCents: string | null; readonly unpricedReason: string | null } | null;
@@ -467,31 +467,33 @@ interface ClaimLineRow {
   readonly expected_allowed_cents: string | null;
   readonly variance_cents: string | null;
   readonly unpriced_reason: string | null;
+  readonly stage: string | null;
 }
 
 /**
- * The line's result in the pricing run that priced it and took effect last (PRD 7, Claims and lines:
- * expected allowed, status): a complete first run, or a re-run once accepted (docs/adr/0037).
+ * The line's pricing in effect (PRD 7, Claims and lines: expected allowed, status): its priced line in
+ * the run in effect that took effect last (a complete first run, or a re-run once accepted, never one
+ * a re-run replaced; docs/adr/0037), and its stage now (its latest stage event, PRD 8).
  */
 const LATEST_PRICING = `LEFT JOIN LATERAL (
     SELECT p.pricing_run_id, p.expected_allowed_cents::text AS expected_allowed_cents, p.variance_cents::text AS variance_cents, p.unpriced_reason
       FROM priced_line p JOIN pricing_run pr ON pr.id = p.pricing_run_id
-     WHERE p.practice_id = l.practice_id AND p.service_line_id = l.id AND ${ELIGIBLE_RUN('pr')}
+     WHERE p.practice_id = l.practice_id AND p.service_line_id = l.id AND ${RUN_IN_EFFECT('pr')}
      ORDER BY ${IN_EFFECT_SINCE('pr')} DESC, pr.id DESC
      LIMIT 1
-  ) priced ON true`;
+  ) priced ON true
+  LEFT JOIN LATERAL (
+    SELECT s.stage FROM line_status s WHERE s.practice_id = l.practice_id AND s.service_line_id = l.id ORDER BY s.seq DESC LIMIT 1
+  ) staged ON true`;
 
-const PRICING_COLUMNS = 'priced.pricing_run_id, priced.expected_allowed_cents, priced.variance_cents, priced.unpriced_reason';
+const PRICING_COLUMNS = 'priced.pricing_run_id, priced.expected_allowed_cents, priced.variance_cents, priced.unpriced_reason, staged.stage';
 
-function pricingOf(row: Pick<ClaimLineRow, 'pricing_run_id' | 'expected_allowed_cents' | 'variance_cents' | 'unpriced_reason'>): Pick<ClaimLine, 'expectedAllowedCents' | 'status' | 'pricing'> {
-  if (row.pricing_run_id === null) {
-    return { expectedAllowedCents: null, status: null, pricing: null };
-  }
-  const result = { expectedAllowedCents: row.expected_allowed_cents, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason };
+function pricingOf(row: Pick<ClaimLineRow, 'pricing_run_id' | 'expected_allowed_cents' | 'variance_cents' | 'unpriced_reason' | 'stage'>): Pick<ClaimLine, 'expectedAllowedCents' | 'status' | 'pricing'> {
+  const result = row.pricing_run_id === null ? null : { expectedAllowedCents: row.expected_allowed_cents, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason };
   return {
-    expectedAllowedCents: row.expected_allowed_cents,
-    status: stageOf(result),
-    pricing: { pricingRunId: row.pricing_run_id, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason },
+    expectedAllowedCents: row.pricing_run_id === null ? null : row.expected_allowed_cents,
+    status: lineStatusOf(row.stage, result),
+    pricing: row.pricing_run_id === null ? null : { pricingRunId: row.pricing_run_id, varianceCents: row.variance_cents, unpricedReason: row.unpriced_reason },
   };
 }
 

@@ -7,7 +7,7 @@ import { STAGE_LABELS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import type { AuditReportContent, ReportLine } from './content';
-import { CSV_COLUMNS, auditCsv, csvField } from './csv';
+import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
 import { auditHtml, escapeHtml } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
@@ -95,6 +95,9 @@ const CONTENT: AuditReportContent = {
       actionable_cents: '28000',
       written_off_lines: 0,
       written_off_cents: '0',
+      case_lines: 11,
+      case_actionable_cents: '34000',
+      case_deadline_on: '2026-12-01',
       materiality_cents: '25000',
       pursuit_cost_cents: '8250',
       net_expected_cents: '19750',
@@ -120,11 +123,14 @@ const LINE: ReportLine = {
   observed_allowed_cents: '6500',
   expected_allowed_cents: '10000',
   variance_cents: '3500',
+  validated_cents: '3500',
+  visit_variance_cents: null,
   unpriced_reason: null,
   window_ends_on: '2027-01-15',
   stage: 'actionable',
   status: 'actionable',
   reasons: [],
+  review_flags: [],
   behavior: 'BELOW_CONTRACT_RATE',
   case_id: '3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d',
   anomaly_id: null,
@@ -132,23 +138,35 @@ const LINE: ReportLine = {
 
 describe('the line CSV', () => {
   it('writes a header and one row per line, amounts in dollars, CRLF line ends', () => {
-    const csv = auditCsv([LINE, { ...LINE, variance_cents: '-1200', status: 'overpaid', stage: '', case_id: null, behavior: null, expected_allowed_cents: '5300' }]);
+    const csv = auditCsv([
+      LINE,
+      { ...LINE, variance_cents: '-1200', validated_cents: null, status: 'overpaid', stage: '', case_id: null, behavior: null, expected_allowed_cents: '5300' },
+      { ...LINE, payer_claim_control_number: "-2+3+cmd|' /C calc'!A0", status: 'not_actionable', reasons: ['NCCI_REVIEW'], review_flags: [{ flag: 'NCCI_PTP', column1_line_no: 3 }], case_id: null },
+    ]);
     const rows = csv.split('\r\n');
     expect(rows[0]).toBe(CSV_COLUMNS.join(','));
     expect(rows[1]).toBe(
-      `'=SYNTHETIC PAYER Q,SYNPLAN-FIX-ONE,"SYNCCN,""CAS03""0001",1,2026-03-02,97110,GP KX,2,150.00,65.00,100.00,35.00,,2027-01-15,actionable,actionable,,BELOW_CONTRACT_RATE,3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d,,11111111-2222-4333-8444-555555555555`,
+      `'=SYNTHETIC PAYER Q,SYNPLAN-FIX-ONE,"SYNCCN,""CAS03""0001",1,2026-03-02,97110,GP KX,2,150.00,65.00,100.00,35.00,35.00,,,2027-01-15,actionable,actionable,,,BELOW_CONTRACT_RATE,3a4b5c6d-7e8f-4a1b-9c2d-3e4f5a6b7c8d,,11111111-2222-4333-8444-555555555555`,
     );
-    expect(rows[2]).toContain(',-12.00,');
+    // A negative amount stays a number; a text field starting with a minus is defused.
+    expect(rows[2]).toContain(',-12.00,,,');
+    expect(rows[3]).toContain(`,'-2+3+cmd|' /C calc'!A0,`);
+    expect(rows[3]).toContain(',not_actionable,NCCI_REVIEW,NCCI_PTP:3,');
     expect(rows.at(-1)).toBe('');
   });
 
-  it('quotes what CSV needs quoted and defuses spreadsheet formulas', () => {
-    expect(csvField('plain')).toBe('plain');
-    expect(csvField('a,b')).toBe('"a,b"');
-    expect(csvField('a\nb')).toBe('"a\nb"');
-    expect(csvField('+1')).toBe("'+1");
-    expect(csvField('@x')).toBe("'@x");
-    expect(csvField('-12.00')).toBe('-12.00');
+  it('quotes what CSV needs quoted and defuses spreadsheet formulas in text, never in a figure', () => {
+    expect(csvText('plain')).toBe('plain');
+    expect(csvText('a,b')).toBe('"a,b"');
+    expect(csvText('a\nb')).toBe('"a\nb"');
+    for (const formula of ['=1+1', '+1', '-1', '@x', '\tx', '\rx']) {
+      expect(csvText(formula)).toBe(/[\r]/.test(formula) ? `"'${formula}"` : `'${formula}`);
+    }
+    expect(csvText('=HYPERLINK("http://attacker.example/","Open")')).toBe(`"'=HYPERLINK(""http://attacker.example/"",""Open"")"`);
+    expect(csvNumber('-12.00')).toBe('-12.00');
+    expect(csvNumber('')).toBe('');
+    expect(() => csvNumber('=1')).toThrow('a CSV number');
+    expect(csvDocument(['a', 'b'], [[{ text: '-x' }, { number: '-1' }]])).toBe("a,b\r\n'-x,-1\r\n");
   });
 });
 
@@ -178,7 +196,7 @@ describe('the report HTML', () => {
   });
 
   it('shows the cases with their totals, deadlines, pursuit cost and net expected value, and the evidence gaps', () => {
-    expect(html).toContain('<td>$280.00</td><td>2027-01-15</td><td>$82.50</td><td>$197.50</td>');
+    expect(html).toContain('<td>$280.00</td><td>2027-01-15</td><td>11 lines, $340.00</td><td>$82.50</td><td>$197.50</td>');
     expect(html).toContain('Pursuit cost of the open cases: $82.50; net expected value $197.50.');
     expect(html).toContain('Below the per-line materiality');
     expect(html).toContain('Overpayments: 1 line, -$12.00; recorded and shown, never pursued.');

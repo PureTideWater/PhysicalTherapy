@@ -4,6 +4,7 @@ import { AGREEMENT_KINDS, MEMBERSHIP_ROLES, type MembershipRole, provisionPracti
 import { z } from 'zod';
 
 import { revokeUserSessions } from '../auth/sessions';
+import { PracticeSettingsError, type PracticeSettingsForm, practiceSettingsInput, settingsDocument, settingsForm } from '../console/practice-settings';
 import { platformRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { opaqueId, optionalText, requiredText } from './schemas';
@@ -222,6 +223,76 @@ export const createPractice = platformRoute({
     return { objectId: id, redirect: `/console/organizations/${input.organizationId}` };
   },
   sample: { params: () => ({}), input: (refs) => ({ organizationId: refs.organizationId, name: 'SYNTHETIC CONSOLE PRACTICE' }) },
+});
+
+export interface PracticeSettingsPageData {
+  readonly practice: { readonly id: string; readonly organizationId: string; readonly name: string };
+  readonly form: PracticeSettingsForm;
+  readonly saved: boolean;
+}
+
+/**
+ * A practice's pricing and triage settings in the console (PRD 5, J8: "materiality thresholds ... are
+ * practice settings with defaults"; PRD 11, Inputs; PRD 12, Deadlines and pursuit cost; ADR 0040): the
+ * billing ZIP, the place-of-service split, the default rounding, the line and case materiality, the
+ * anomaly cohort minimum and threshold, and the staff rate and minutes the pursuit-cost estimate uses.
+ * None is a patient's data; read through console_practice_settings(), never the practice's records.
+ */
+export const practiceSettingsPage = platformRoute({
+  id: 'console.practice',
+  kind: 'page',
+  path: '/console/practices/[practiceId]',
+  phi: false,
+  permission: 'organization.manage',
+  params: z.object({ practiceId: opaqueId, saved: optionalText(z.literal('1')) }),
+  handle: async ({ scope, params }): Promise<PracticeSettingsPageData> => {
+    const { rows } = await scope.client.query<{ practice_id: string; organization_id: string; name: string; zip: string | null; settings: unknown }>(
+      'SELECT practice_id, organization_id, name, zip, settings FROM console_practice_settings($1)',
+      [params.practiceId],
+    );
+    const row = rows[0];
+    if (row === undefined) {
+      throw new NotFoundError();
+    }
+    return { practice: { id: row.practice_id, organizationId: row.organization_id, name: row.name }, form: settingsForm(row.zip, row.settings), saved: params.saved !== undefined };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+/**
+ * Sets a practice's billing ZIP and its pricing and triage settings (a blank field returns it to its
+ * default; the practice's other settings stay). Validated here as the engine and triage read them,
+ * written by console_set_practice_settings() in the practice's one scope, and audited.
+ */
+export const setPracticeSettings = platformRoute({
+  id: 'console.practice_settings',
+  kind: 'action',
+  path: '/console/practices/[practiceId]',
+  phi: false,
+  permission: 'organization.manage',
+  params: z.object({}),
+  input: practiceSettingsInput.extend({ practiceId: opaqueId }),
+  audit: { action: 'practice_settings_set', objectType: 'practice' },
+  handle: async ({ scope, input }): Promise<MutationResult> => {
+    let document;
+    try {
+      document = settingsDocument(input);
+    } catch (error) {
+      if (error instanceof PracticeSettingsError) {
+        throw new InputError([{ field: error.field, message: error.message }]);
+      }
+      throw error;
+    }
+    const { rows } = await scope.client.query<{ changed: boolean }>('SELECT console_set_practice_settings($1, $2, $3) AS changed', [input.practiceId, document.zip, JSON.stringify(document.settings)]);
+    if (rows[0]?.changed !== true) {
+      throw new NotFoundError();
+    }
+    return { objectId: input.practiceId, redirect: `/console/practices/${input.practiceId}?saved=1` };
+  },
+  sample: {
+    params: () => ({}),
+    input: (refs) => ({ practiceId: refs.practiceId, zip: '00011', facilityPlaces: '22', nonFacilityPlaces: '11', defaultRounding: 'HALF_UP_CENT', lineMateriality: '5.00', caseMateriality: '250.00' }),
+  },
 });
 
 function isUniqueViolation(error: unknown): boolean {
@@ -604,6 +675,8 @@ export const CONSOLE_ROUTES = [
   createOrganization,
   organizationPage,
   createPractice,
+  practiceSettingsPage,
+  setPracticeSettings,
   inviteMember,
   endMembership,
   unlockUser,

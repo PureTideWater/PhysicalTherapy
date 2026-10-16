@@ -8,7 +8,8 @@ import { type Download, InputError, type MutationResult, NotFoundError } from '.
 import type { Services } from '../server/services';
 import { type Attestation, type DownloadRecord, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
 import { RUN_NOT_IN_EFFECT, type RunChoice, isRunInEffect, runsInEffect } from '../triage/queries';
-import { opaqueId, optionalText } from './schemas';
+import { type ListPage, pageParam } from '../http/paging';
+import { opaqueId } from './schemas';
 
 /**
  * The Reports screen, the audit report and the independent reviewer's checklist (PRD 7, Reports:
@@ -18,7 +19,8 @@ import { opaqueId, optionalText } from './schemas';
  * read-only with a signed attestation"; docs/adr/0038).
  *
  * Reading reports and the PDF is report.read; the line CSV is line-level PHI, so phi.export (never
- * a viewer's) and every download is recorded and audited. Generating and releasing a report are
+ * a viewer's), and the reviewer reads it from the checklist (audit_finding.validate); every download is
+ * recorded and audited. Generating and releasing a report are
  * case.work. The checklist and its attestation are the reimbursement reviewer's
  * (audit_finding.validate), reached under a support grant: the reviewer signs over the SHA-256 of the
  * files the checklist showed, once, and edits nothing else; a report is released only once signed.
@@ -36,13 +38,20 @@ export const CHECKLIST = [
 
 export type ChecklistItem = (typeof CHECKLIST)[number]['id'];
 
+/**
+ * The sentence an attestation stands for, shown beside it. The attestation itself holds no words a
+ * person typed (the database refuses any): the checklist's item codes and the two files' SHA-256.
+ */
+export const ATTESTATION_TEXT = 'I attest that I reviewed this report, its PDF and its line CSV against the checklist above.';
+
 const confirmed = z.literal('on', 'confirm this item');
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256');
 
 export interface ReportsPageData {
   readonly practiceId: string;
-  readonly reports: readonly ReportSummary[];
-  readonly history: readonly DownloadRecord[];
+  /** A page of the reports, newest first, and a page of the export history (each pages on its own). */
+  readonly reports: ListPage<ReportSummary>;
+  readonly history: ListPage<DownloadRecord>;
   readonly runs: readonly RunChoice[];
   readonly canGenerate: boolean;
   readonly canExport: boolean;
@@ -55,13 +64,13 @@ export const reportsPage = practiceRoute({
   path: '/p/[practiceId]/reports',
   phi: true,
   permission: 'report.read',
-  params: z.object({ practiceId: opaqueId }),
-  handle: async ({ scope, practiceId, request, access }): Promise<ReportsPageData> => {
+  params: z.object({ practiceId: opaqueId, page: pageParam, history: pageParam }),
+  handle: async ({ scope, practiceId, params, request, access }): Promise<ReportsPageData> => {
     const canGenerate = rolesPermit(access.roles, 'case.work');
     return {
       practiceId,
-      reports: await listReports(scope, practiceId, request.requestId),
-      history: await downloads(scope, practiceId, null, request.requestId),
+      reports: await listReports(scope, practiceId, request.requestId, params.page),
+      history: await downloads(scope, practiceId, null, request.requestId, params.history),
       runs: canGenerate ? await runsInEffect(scope, practiceId) : [],
       canGenerate,
       canExport: rolesPermit(access.roles, 'phi.export'),
@@ -101,7 +110,7 @@ export const generateReportAction = practiceRoute({
 export interface ReportPageData {
   readonly practiceId: string;
   readonly report: ReportDetail;
-  readonly history: readonly DownloadRecord[];
+  readonly history: ListPage<DownloadRecord>;
   readonly canExport: boolean;
   readonly canRelease: boolean;
   readonly canReview: boolean;
@@ -121,11 +130,11 @@ export const reportPage = practiceRoute({
   path: '/p/[practiceId]/reports/[reportId]',
   phi: true,
   permission: 'report.read',
-  params: z.object({ practiceId: opaqueId, reportId: opaqueId }),
+  params: z.object({ practiceId: opaqueId, reportId: opaqueId, history: pageParam }),
   handle: async ({ scope, practiceId, params, request, access }): Promise<ReportPageData> => ({
     practiceId,
     report: await report(scope, practiceId, params.reportId, request.requestId),
-    history: await downloads(scope, practiceId, params.reportId, request.requestId),
+    history: await downloads(scope, practiceId, params.reportId, request.requestId, params.history),
     canExport: rolesPermit(access.roles, 'phi.export'),
     canRelease: rolesPermit(access.roles, 'case.work'),
     canReview: rolesPermit(access.roles, 'audit_finding.validate'),
@@ -165,8 +174,8 @@ async function lockedReport(scope: PracticeScope<ScopeClient>, practiceId: strin
 
 /**
  * The reviewer signs the attestation (once; a report already signed is left as it is): every item
- * confirmed, an optional statement, and the SHA-256 of the PDF and the CSV the checklist showed, which
- * must be the report's own.
+ * confirmed and the SHA-256 of the PDF and the CSV the checklist showed, which must be the report's
+ * own. No free text: an attestation holds no words a person typed (docs/adr/0040).
  */
 export const attestReportAction = practiceRoute({
   id: 'practice.reports.attest',
@@ -179,7 +188,6 @@ export const attestReportAction = practiceRoute({
     reportId: opaqueId,
     pdfSha256: sha256,
     csvSha256: sha256,
-    statement: optionalText(z.string().max(1000)),
     confirm_coverage: confirmed,
     confirm_anomalies: confirmed,
     confirm_validated: confirmed,
@@ -200,7 +208,6 @@ export const attestReportAction = practiceRoute({
       const attestation: Attestation = {
         format: 'tp-attestation/1',
         checklist: CHECKLIST.map((item) => item.id),
-        statement: input.statement ?? 'I attest that I reviewed this report against the checklist above.',
         pdf_sha256: input.pdfSha256,
         csv_sha256: input.csvSha256,
       };
@@ -214,7 +221,6 @@ export const attestReportAction = practiceRoute({
       reportId: refs.auditReportId,
       pdfSha256: refs.auditReportPdfSha256,
       csvSha256: refs.auditReportCsvSha256,
-      statement: '',
       ...Object.fromEntries(CHECKLIST.map((item) => [`confirm_${item.id}`, 'on'])),
     }),
   },
@@ -282,4 +288,24 @@ export const reportCsv = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId, reportId: refs.auditReportId }) },
 });
 
-export const REPORT_ROUTES = [reportsPage, generateReportAction, reportPage, reviewChecklistPage, attestReportAction, releaseReportAction, reportPdf, reportCsv] as const;
+/**
+ * The line CSV for the reimbursement reviewer the checklist names it to (audit_finding.validate, under a
+ * support grant; PRD 2: the reviewer "independently validates audit findings"): the reviewer signs over
+ * the CSV's SHA-256, so the checklist links to the file itself, read-only. The download is recorded and
+ * audited like every other (a line-level export).
+ */
+export const reviewCsv = practiceRoute({
+  id: 'practice.reports.review_csv',
+  kind: 'handler',
+  method: 'GET',
+  path: '/p/[practiceId]/reports/[reportId]/review/csv',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId, reportId: opaqueId }),
+  handle: async ({ scope, practiceId, params, request, services }): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
+    download: { filename: `audit-report-lines-${params.reportId}.csv`, contentType: 'text/csv; charset=utf-8', body: await file(scope, services, practiceId, params.reportId, 'csv', request.requestId) },
+  }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, reportId: refs.auditReportId }) },
+});
+
+export const REPORT_ROUTES = [reportsPage, generateReportAction, reportPage, reviewChecklistPage, attestReportAction, releaseReportAction, reportPdf, reportCsv, reviewCsv] as const;

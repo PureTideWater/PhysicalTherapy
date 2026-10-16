@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { NotificationText } from '../../../../components/monitoring/display';
+import { Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { notificationsPage } from '../../../../lib/routes/monitoring';
@@ -24,7 +25,7 @@ export default async function NotificationsPage(props: { readonly params: Promis
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="notifications" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, notifications, unread } = page.data;
+  const { practiceId, notifications, unread, total } = page.data;
   return (
     <AppShell shell={page.shell} section="notifications">
       <div className="flex flex-col gap-1">
@@ -58,6 +59,7 @@ export default async function NotificationsPage(props: { readonly params: Promis
           ))}
         </ul>
       )}
+      <Pager path={`/p/${practiceId}/notifications`} query={{}} page={page.data.page} pages={page.data.pages} total={total} noun="Notifications" />
     </AppShell>
   );
 }

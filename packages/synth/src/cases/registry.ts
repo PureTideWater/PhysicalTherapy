@@ -40,6 +40,14 @@ function par29(b: CaseBuilder): void {
  */
 export const BUILT_THROUGH_MILESTONE = 5;
 
+/**
+ * The milestones whose code is in the repository though their done check still waits on people
+ * (milestones 6 and 7: the three hand-run audits and the specialist's review of the golden lines; see
+ * the README). Their cases are traced to their tests all the same: the fixtures test fails while a
+ * case completing in one of them names none.
+ */
+export const CODE_BUILT_THROUGH_MILESTONE = 7;
+
 /** Every test-matrix case, by ID. */
 const ENTRIES: Readonly<Record<string, Entry>> = {
   'PAR-01': { completesIn: 2, build: par.par01, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
@@ -88,13 +96,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'PRC-02': { completesIn: 5, build: pricing.prc02, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
   'PRC-03': { completesIn: 5, build: pricing.prc03, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
   'PRC-04': { completesIn: 5, build: pricing.prc04, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
-  'PRC-05': { completesIn: 7, build: pricing.prc05 },
-  'PRC-06': { completesIn: 7, build: pricing.prc06 },
-  'PRC-07': { completesIn: 7, build: pricing.prc07 },
+  'PRC-05': { completesIn: 7, build: pricing.prc05, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-06': { completesIn: 7, build: pricing.prc06, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-07': { completesIn: 7, build: pricing.prc07, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
   'PRC-08': { completesIn: 5, build: pricing.prc08, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
   'PRC-09': { completesIn: 5, build: pricing.prc09, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
-  'PRC-10': { completesIn: 7, build: pricing.prc10 },
-  'PRC-11': { completesIn: 7, build: pricing.prc11 },
+  'PRC-10': { completesIn: 7, build: pricing.prc10, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-11': { completesIn: 7, build: pricing.prc11, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
   'PRC-12': { completesIn: 5, build: pricing.prc12, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/contracts/src/resolver.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
   'PRC-13': { completesIn: 5, build: pricing.prc13, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/money/src/rounding.test.ts'] },
   'PRC-14': { completesIn: 6, build: pricing.prc14, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/pricing/src/properties.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },

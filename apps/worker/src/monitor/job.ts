@@ -1,4 +1,5 @@
 import type { JobHandler } from '../jobs/handlers';
+import { closePassedWindows, todayUtc } from '../triage/execute';
 import { type MonitorPlan, planMonitoring } from './plan';
 
 /**
@@ -7,9 +8,18 @@ import { type MonitorPlan, planMonitoring } from './plan';
  * schedule), three attempts with the operator's alert on the third (the worker's, ADR 0019). It plans
  * in one transaction (plan.ts) and then queues the price job of every run the chain created that is
  * still queued: the run is committed before its job can start. A replay plans nothing new (JOB-01).
+ *
+ * First, in its own transaction, it writes off every open case's line whose dispute window closed
+ * before today (window passed; PRD 12, Deadlines), so a case's actionable total and deadline follow the
+ * calendar on the daily schedule even when no new file arrives. Again the same day, it writes off
+ * nothing more.
  */
 export function monitorHandler(): JobHandler<'monitor'> {
   return async (payload, context) => {
+    const closed = await context.transaction((scope) => closePassedWindows(scope, payload.practice_id, todayUtc()));
+    if (closed > 0) {
+      context.logger.info('monitoring wrote off case lines whose windows closed');
+    }
     const plan: MonitorPlan = await context.transaction((scope) => planMonitoring(scope, payload.practice_id, context.jobId));
     if (plan.outcome === 'batch_loading') {
       // The parse of each document still on its way queues this step again when it is done.

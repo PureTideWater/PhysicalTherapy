@@ -2,7 +2,7 @@ import { type Cents } from '@tp/money';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { NOT_ACTIONABLE_REASONS, type TriageFacts, judgeLine, windowOpen } from './actionable';
+import { NOT_ACTIONABLE_REASONS, type TriageFacts, judgeLine, shortfallOf, windowOpen } from './actionable';
 
 const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   varianceCents: 3000n as Cents,
@@ -12,6 +12,8 @@ const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   mappingKind: 'contract',
   contractVersionStatus: 'signed_off',
   writtenOff: false,
+  visitVarianceCents: null,
+  reviewFlags: [],
   ...overrides,
 });
 const FIVE = 500n as Cents;
@@ -19,17 +21,17 @@ const AS_OF = '2026-10-15';
 
 describe('from validated to actionable (PRD 12)', () => {
   it('makes a material, open, signed-off line of a standing claim actionable', () => {
-    expect(judgeLine(facts(), FIVE, AS_OF)).toEqual({ validated: true, actionable: true, reasons: [] });
+    expect(judgeLine(facts(), FIVE, AS_OF)).toEqual({ validated: true, actionable: true, reasons: [], validatedCents: 3000n });
   });
 
   it('never validates an unpriced line, a line paid exactly, or an overpayment (PRC-15)', () => {
     for (const varianceCents of [null, 0n as Cents, -1200n as Cents]) {
-      expect(judgeLine(facts({ varianceCents }), FIVE, AS_OF)).toEqual({ validated: false, actionable: false, reasons: [] });
+      expect(judgeLine(facts({ varianceCents }), FIVE, AS_OF)).toEqual({ validated: false, actionable: false, reasons: [], validatedCents: null });
     }
   });
 
   it('keeps a line below the line materiality validated, not actionable, and actionable at it exactly (CAS-05)', () => {
-    expect(judgeLine(facts({ varianceCents: 300n as Cents }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['BELOW_LINE_MATERIALITY'] });
+    expect(judgeLine(facts({ varianceCents: 300n as Cents }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['BELOW_LINE_MATERIALITY'], validatedCents: 300n });
     expect(judgeLine(facts({ varianceCents: 500n as Cents }), FIVE, AS_OF).actionable).toBe(true);
   });
 
@@ -46,6 +48,35 @@ describe('from validated to actionable (PRD 12)', () => {
     expect(judgeLine(facts({ contractVersionStatus: 'superseded' }), FIVE, AS_OF).reasons).toEqual(['VERSION_NOT_SIGNED_OFF']);
     expect(judgeLine(facts({ mappingKind: 'ma_noncontracted', contractVersionStatus: null }), FIVE, AS_OF).actionable).toBe(true);
     expect(judgeLine(facts({ writtenOff: true }), FIVE, AS_OF).reasons).toEqual(['WRITTEN_OFF']);
+  });
+
+  it('judges a per-visit line with its visit: at most the visit’s net shortfall, none when the visit was paid in full, and held for review (Q44)', () => {
+    // The payer spread the visit over its lines: the carrier looks short, the visit as a whole is not.
+    expect(judgeLine(facts({ varianceCents: 4566n as Cents, visitVarianceCents: -234n as Cents }), FIVE, AS_OF)).toEqual({ validated: false, actionable: false, reasons: [], validatedCents: null });
+    expect(judgeLine(facts({ varianceCents: 4236n as Cents, visitVarianceCents: 0n as Cents }), FIVE, AS_OF).validated).toBe(false);
+    // Short as a visit: validated at the visit's shortfall, never more than the carrier's own, and not actionable.
+    expect(judgeLine(facts({ varianceCents: 1996n as Cents, visitVarianceCents: 496n as Cents }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['BELOW_LINE_MATERIALITY', 'PER_VISIT_REVIEW'], validatedCents: 496n });
+    expect(judgeLine(facts({ varianceCents: 1996n as Cents, visitVarianceCents: 9000n as Cents }), FIVE, AS_OF)).toMatchObject({ reasons: ['PER_VISIT_REVIEW'], validatedCents: 1996n });
+    // A line the visit expects zero of is overpaid when paid anything: never validated.
+    expect(judgeLine(facts({ varianceCents: -2500n as Cents, visitVarianceCents: 496n as Cents }), FIVE, AS_OF).validated).toBe(false);
+  });
+
+  it('holds a line with an NCCI procedure-to-procedure review flag for a person’s review (Q41)', () => {
+    expect(judgeLine(facts({ reviewFlags: ['NCCI_PTP'] }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['NCCI_REVIEW'], validatedCents: 3000n });
+  });
+
+  it('takes the visit’s shortfall only where the visit as a whole was paid short (property)', () => {
+    fc.assert(
+      fc.property(fc.option(fc.bigInt({ min: -10_000n, max: 10_000n }), { nil: null }), fc.option(fc.bigInt({ min: -10_000n, max: 10_000n }), { nil: null }), (variance, visit) => {
+        const shortfall = shortfallOf(variance as Cents | null, visit as Cents | null);
+        if (variance === null || variance <= 0n || (visit !== null && visit <= 0n)) {
+          expect(shortfall).toBeNull();
+        } else {
+          expect(shortfall).toBe(visit === null || visit > variance ? variance : visit);
+          expect((shortfall as bigint) > 0n && (shortfall as bigint) <= variance).toBe(true);
+        }
+      }),
+    );
   });
 
   it('is actionable exactly when no reason holds, and lists every reason that does in order (property)', () => {

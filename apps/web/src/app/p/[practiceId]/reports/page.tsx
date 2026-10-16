@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { ReleaseState, ReportStatusBadge } from '../../../../components/reports/display';
-import { Money } from '../../../../components/remittances/display';
+import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { reportsPage } from '../../../../lib/routes/reports';
@@ -80,11 +80,11 @@ export default async function ReportsPage(props: Props) {
       ) : null}
       <section aria-label="Audit reports" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Audit reports</h2>
-        {reports.length === 0 ? (
+        {reports.total === 0 ? (
           <EmptyState title="No audit report yet" nextStep="Generate one from the pricing run in effect for its period." />
         ) : (
           <ul className="flex flex-col gap-3" aria-label="Reports">
-            {reports.map((report) => (
+            {reports.items.map((report) => (
               <li key={report.id} className="rounded-md border p-4" data-report={report.id} data-status={report.status}>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link className="font-medium underline" href={`${path}/${report.id}`}>
@@ -124,14 +124,15 @@ export default async function ReportsPage(props: Props) {
             ))}
           </ul>
         )}
+        <Pager path={path} query={{ history: String(history.page) }} page={reports.page} pages={reports.pages} total={reports.total} noun="Reports" />
       </section>
       <section aria-label="Export history" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">Export history</h2>
-        {history.length === 0 ? (
+        {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No report file has been downloaded.</p>
         ) : (
           <ul className="flex flex-col gap-1 text-sm">
-            {history.map((entry) => (
+            {history.items.map((entry) => (
               <li key={`${entry.reportId}:${entry.file}:${entry.downloadedAt}:${entry.downloadedBy ?? ''}`}>
                 {utc(entry.downloadedAt)}: {entry.file === 'csv' ? 'line CSV' : 'PDF'} of{' '}
                 <Link className="underline" href={`${path}/${entry.reportId}`}>
@@ -142,6 +143,7 @@ export default async function ReportsPage(props: Props) {
             ))}
           </ul>
         )}
+        <Pager path={path} query={{ page: String(reports.page) }} page={history.page} pages={history.pages} total={history.total} noun="Downloads" param="history" />
       </section>
     </AppShell>
   );
