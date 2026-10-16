@@ -10,7 +10,7 @@ import { type ContractSetManifest, type ContractTruth, TRUTH_FIELDS } from './fo
 import { NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetFiles } from './narrative-set';
 
 /**
- * The evaluation sets' generators (test matrix MOD-01 and MOD-03; docs/adr/0050): deterministic,
+ * The evaluation sets' generators (test matrix MOD-01 and MOD-03; docs/adr/0051): deterministic,
  * SYNTHETIC, scans without a text layer, truth that quotes its own pages, and narrative cases whose
  * required facts are the sums of their own lines. The harness tests in packages/model-gateway/eval
  * read the committed files through intake's readers; these check the generators themselves.

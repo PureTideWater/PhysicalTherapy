@@ -14,7 +14,7 @@ import type { LoadedContractSet, LoadedNarrativeSet } from './sets';
 import { TRUTH_FIELDS } from '@tp/synth';
 
 /**
- * The evaluation harness (PRD 14, Logging and evaluation; PRD 18, Layers: Model; docs/adr/0050):
+ * The evaluation harness (PRD 14, Logging and evaluation; PRD 18, Layers: Model; docs/adr/0051):
  * runs one provider over the synthetic sets through the gateway itself, as synthetic evaluation calls
  * (no practice; an evaluation actor), and reports field-level precision and recall for contract
  * extraction and every narrative's verifier result and required facts. The report holds counts, codes

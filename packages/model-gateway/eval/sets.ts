@@ -26,7 +26,7 @@ import type { NarrativeInput } from '../src/functions/narrative';
 
 /**
  * Reading the gateway's synthetic evaluation sets as packages/synth wrote them under
- * fixtures/synthetic (MOD-01: 40 contracts and exhibits; MOD-03: 300 narratives; docs/adr/0050). A
+ * fixtures/synthetic (MOD-01: 40 contracts and exhibits; MOD-03: 300 narratives; docs/adr/0051). A
  * contract's pages are read the way intake reads them (@tp/contracts/pages: pdf.js in a bounded thread
  * for a text PDF, the CSV reader for a CSV), and a scanned document's pages, which hold no text, by the
  * Textract page reader over the scan reader's recorded answer instead of the service. A narrative case

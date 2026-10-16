@@ -11,7 +11,7 @@ import { type Counts, below, precision, recall } from './score';
 /**
  * The committed baseline and the gate (PRD 14: "the gate for a prompt or model change is field-level
  * precision and recall on that set with no regression ... Narrative drafting has a zero-tolerance
- * gate: any verifier failure on the 300-case synthetic set blocks the change"; docs/adr/0050).
+ * gate: any verifier failure on the 300-case synthetic set blocks the change"; docs/adr/0051).
  *
  * baseline.json holds one entry per purpose, prompt version, provider and model it was recorded for,
  * with the counts it scored and the SHA-256 of the set it scored them on. A report passes when:

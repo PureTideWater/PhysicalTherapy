@@ -1,6 +1,6 @@
 /**
  * The model gateway's synthetic evaluation sets as files (PRD 14, Logging and evaluation; test matrix
- * MOD-01 and MOD-03; docs/adr/0050). packages/synth writes them under fixtures/synthetic; the
+ * MOD-01 and MOD-03; docs/adr/0051). packages/synth writes them under fixtures/synthetic; the
  * evaluation harness (packages/model-gateway/eval) reads them. Every value is invented and every file
  * says SYNTHETIC.
  *

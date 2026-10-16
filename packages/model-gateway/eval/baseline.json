@@ -1,7 +1,7 @@
 {
   "format": "tp-model-eval-baseline/1",
   "synthetic": true,
-  "note": "The scores the gate holds a prompt or model change to, on the synthetic sets (docs/adr/0050). Recorded with pnpm --filter @tp/model-gateway eval --record and reviewed before commit; entries for a real provider are recorded from a run where it can be called.",
+  "note": "The scores the gate holds a prompt or model change to, on the synthetic sets (docs/adr/0051). Recorded with pnpm --filter @tp/model-gateway eval --record and reviewed before commit; entries for a real provider are recorded from a run where it can be called.",
   "entries": [
     {
       "purpose": "proposeContractTerms",

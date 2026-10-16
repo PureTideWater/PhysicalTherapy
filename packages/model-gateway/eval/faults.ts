@@ -2,7 +2,7 @@ import type { CompleteOptions, ModelProvider, ModelRequest, ModelResponse, Provi
 import { PROMPTS } from '../src/prompts';
 
 /**
- * Injected faults, to prove the gate fails when it should (docs/adr/0050): providers that answer as
+ * Injected faults, to prove the gate fails when it should (docs/adr/0051): providers that answer as
  * the provider they wrap would, then spoil the answer the way a weaker prompt or model would. Used by
  * the gate's own tests only; nothing in the product uses them.
  *

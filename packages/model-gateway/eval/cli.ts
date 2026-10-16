@@ -15,7 +15,7 @@ import { loadContractSet, loadNarrativeSet } from './sets';
 
 /**
  * `pnpm --filter @tp/model-gateway eval [--provider local|configured] [--only contracts|narratives]
- * [--report <file>] [--record]` (docs/adr/0050).
+ * [--report <file>] [--record]` (docs/adr/0051).
  *
  * - local (the default, and what CI's golden test runs): the local deterministic provider answering
  *   with the sets' reference answers. It proves the path, not a model.

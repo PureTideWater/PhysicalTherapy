@@ -9,7 +9,7 @@ import type { NarrativeProposal } from '../src/functions/narrative';
 /**
  * Scoring the gateway's answers on the synthetic sets (PRD 14: "the gate for a prompt or model change
  * is field-level precision and recall on that set with no regression"; "any verifier failure on the
- * 300-case synthetic set blocks the change"; docs/adr/0050). Counts only, and whole numbers: a
+ * 300-case synthetic set blocks the change"; docs/adr/0051). Counts only, and whole numbers: a
  * precision is compared as the fraction it is, never as a float.
  *
  * Contracts, field by field. A field the answer states is right (a true positive) when the gateway's

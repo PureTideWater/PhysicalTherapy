@@ -15,7 +15,7 @@ import { type LoadedContractSet, type LoadedNarrativeSet, loadContractSet, loadN
 
 /**
  * The model gate in CI (PRD 14, Logging and evaluation; PRD 18, Layers: Model; test matrix MOD-01 and
- * MOD-03; docs/adr/0050), in the golden project that `pnpm test:golden` runs.
+ * MOD-03; docs/adr/0051), in the golden project that `pnpm test:golden` runs.
  *
  * CI has no model: the gateway runs here on the local deterministic provider, which answers each case
  * with its reference answer (./reference.ts). That proves the whole path a model's answer takes, from
