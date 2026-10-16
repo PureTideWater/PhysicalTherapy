@@ -109,9 +109,13 @@ chain queues for a document.
 The chain test (`apps/worker/src/reconcile/chain.db.test.ts`) runs every LED case through the worker loop and intake
 on SYNTHETIC files, the quarterly statement and its print, and the digest's recoveries.
 `apps/web/src/lib/routes/reconciliation-routes.db.test.ts` runs the screens' routes. The generated route tests cover
-the twelve new routes with a ledger seeded in every world. A practice-management system without a template waits for its mapping,
-stored. The administrator still sets the proof level only through `setLedgerSettings` until the practice's Settings
-screen (milestone 11). Fees and pursuit hours stay behind ADR 0042's seams.
+the twelve new routes with a ledger seeded in every world. A practice-management system without a template waits for
+its mapping, stored. The administrator still sets the proof level only through `setLedgerSettings` until the
+practice's Settings screen (milestone 11): a change of proof level after entries exist needs a rule for the lines
+already moved to recovered, which that screen settles. Fees and pursuit hours stay behind ADR 0042's seams. The
+migration's timestamp follows the workbench's (`20261024110000_case_workbench.sql`), since the runner refuses a new
+file that sorts before one already applied. With milestones 8 and 9 built, `packages/synth` requires every case
+through milestone 9 to name the tests that assert it (`CODE_BUILT_THROUGH_MILESTONE`).
 
 ## Revisit when
 
