@@ -2,6 +2,7 @@ import { recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
 import { type LedgerTotals, type RoiStatement, caseEntries, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, parseCents } from '@tp/money';
 
+import { PAID_INVOICE_FEES } from '../billing/fees';
 import { type Scope, ledgerEntries, practiceLedgerSettings } from './ledger';
 
 /**
@@ -11,12 +12,12 @@ import { type Scope, ledgerEntries, practiceLedgerSettings } from './ledger';
  * proof stage and interest are their own figures, never in it.
  */
 
-/** Fees paid to the product in a period: billing's (milestone 11 wires Stripe); until then nothing. */
+/** Fees paid to the product in a period: billing's, from the practice's group's paid invoices (docs/adr/0050). */
 export interface FeeSource {
   feesPaid(scope: Scope, practiceId: string, from: string, to: string): Promise<Cents>;
 }
 
-/** No billing yet: fees are zero, and the statement says no ratio can be given. */
+/** No fees at all: the statement then says no ratio can be given (tests that leave billing out). */
 export const NO_BILLING: FeeSource = { feesPaid: () => Promise.resolve(ZERO_CENTS) };
 
 /** Pursuit hours logged in a period: the cases' time log; none is kept yet, so none are logged. */
@@ -31,7 +32,7 @@ export interface StatementSources {
   readonly pursuitHours: PursuitHoursSource;
 }
 
-export const DEFAULT_STATEMENT_SOURCES: StatementSources = { fees: NO_BILLING, pursuitHours: NO_TIME_LOG };
+export const DEFAULT_STATEMENT_SOURCES: StatementSources = { fees: PAID_INVOICE_FEES, pursuitHours: NO_TIME_LOG };
 
 /** The practice's ledger totals, for its cases named (all by default) and the period named (all time by default). */
 export async function practiceLedgerTotals(scope: Scope, practiceId: string, filter: { readonly caseIds?: readonly string[]; readonly from?: string; readonly to?: string } = {}): Promise<LedgerTotals> {

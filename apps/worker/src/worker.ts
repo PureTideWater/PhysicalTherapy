@@ -2,6 +2,7 @@ import { type ScopeClient, type ScopePool, withJobScope } from '@tp/db';
 import type { Logger } from '@tp/observability';
 import type { PgBoss } from 'pg-boss';
 
+import { SUSPENDED_ERROR_CODE, practiceRunRefusal, startsRun } from './billing/refusal';
 import { startHeartbeat } from './heartbeat';
 import type { JobHandlers } from './jobs/handlers';
 import { PLATFORM_JOB_TYPES, PLATFORM_SCHEDULES, type PlatformHandlers, type PlatformJobType, parsePlatformPayload } from './jobs/platform';
@@ -117,6 +118,13 @@ async function runJob<T extends JobType>(type: T, job: QueuedJob, options: Worke
   const practiceId = payload.practice_id;
   const lastAttempt = (job.retryCount ?? 0) >= QUEUE_OPTIONS.retryLimit;
   await runs?.started({ jobId: job.id, practiceId, type, singletonKey: singletonKey(type, payload), subject: jobSubject(type, payload), attempt: (job.retryCount ?? 0) + 1 });
+  // A suspended organization's practice starts no new work (PRD 5, J18; docs/adr/0050): the chain's own
+  // run-starting steps ask the database first and, refused, do nothing, are not retried and raise no alert.
+  if (startsRun(type) && (await withJobScope(pool, { jobId: job.id, practiceId }, (scope) => practiceRunRefusal(scope.client, practiceId))) !== null) {
+    jobLogger.info('job refused: the organization may not start new runs', { error_code: SUSPENDED_ERROR_CODE });
+    await recordEnd(runs, jobLogger, { jobId: job.id, practiceId, outcome: 'refused', errorCode: SUSPENDED_ERROR_CODE });
+    return;
+  }
   try {
     await handlers[type](payload, {
       jobId: job.id,

@@ -23,8 +23,11 @@ export interface JobRunStart {
 export interface JobRunEnd {
   readonly jobId: string;
   readonly practiceId: string;
-  /** retrying: this attempt failed and another follows; failed: the last attempt failed. */
-  readonly outcome: 'succeeded' | 'retrying' | 'failed';
+  /**
+   * retrying: this attempt failed and another follows; failed: the last attempt failed; refused: the
+   * practice's organization may not start new work, so the job did nothing (docs/adr/0050).
+   */
+  readonly outcome: 'succeeded' | 'retrying' | 'failed' | 'refused';
   readonly errorCode: string | null;
 }
 

@@ -1,3 +1,4 @@
+import type { ScopeClient, ScopePool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -164,8 +165,11 @@ describe('startWorker', () => {
       heartbeatMs: 60_000,
     });
     await handlers.get('digest')?.([{ id: jobId, data: { practice_id: PRACTICE, period: '2026-10' } }]);
-    expect(recorder.queries.map((query) => query.text)).toEqual(['BEGIN', expect.stringContaining("set_config('app.practice_ids', ARRAY[$2::uuid]::text, true)"), 'COMMIT']);
+    // A digest starts new work, so its practice's standing is asked first, in the same job scope (docs/adr/0050).
+    const scoped = expect.stringContaining("set_config('app.practice_ids', ARRAY[$2::uuid]::text, true)");
+    expect(recorder.queries.map((query) => query.text)).toEqual(['BEGIN', scoped, 'SELECT practice_run_refusal($1) AS reason', 'COMMIT', 'BEGIN', scoped, 'COMMIT']);
     expect(recorder.queries[1]?.values).toEqual([jobId, PRACTICE]);
+    expect(recorder.queries[5]?.values).toEqual([jobId, PRACTICE]);
     await worker.stop();
   });
 
@@ -178,7 +182,7 @@ describe('startWorker', () => {
       pool,
       logger,
       handlers: { ...placeholderHandlers, price: failing },
-      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing },
+      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing, billing_dunning: failing, usage_snapshot: failing },
       heartbeatMs: 60_000,
     });
     const job = (retryCount: number) => ({ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
@@ -264,8 +268,43 @@ describe('startWorker', () => {
     const { handlers, client } = fakeBoss();
     const { lines, logger } = capture();
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, heartbeatMs: 60_000 });
-    await handlers.get('digest')?.([{ id: 'job-3', data: { practice_id: PRACTICE, period: '2026-10' } }]);
-    expect(lines.some((line) => line.job_type === 'digest' && line.job_id === 'job-3')).toBe(true);
+    const jobId = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382703';
+    await handlers.get('digest')?.([{ id: jobId, data: { practice_id: PRACTICE, period: '2026-10' } }]);
+    expect(lines.some((line) => line.job_type === 'digest' && line.job_id === jobId)).toBe(true);
+    await worker.stop();
+  });
+
+  it('refuses a run-starting job of a suspended organization: nothing runs, the run is recorded refused, no retry and no alert', async () => {
+    const { handlers, client } = fakeBoss();
+    const { lines, logger } = capture();
+    const queries: string[] = [];
+    const suspended = {
+      connect: () =>
+        Promise.resolve({
+          query: (text: string) => {
+            queries.push(text);
+            const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: 'the organization is suspended for nonpayment' }] : [];
+            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+          },
+          release: () => undefined,
+        }),
+    } as unknown as ScopePool<ScopeClient>;
+    const ends: unknown[] = [];
+    const runs: JobRunRecorder = { started: () => Promise.resolve(), finished: (end) => Promise.resolve(void ends.push(end)) };
+    const monitor = vi.fn(() => Promise.resolve());
+    const parse = vi.fn(() => Promise.resolve());
+    const worker = await startWorker({ boss: client, pool: suspended, logger, runs, handlers: { ...placeholderHandlers, monitor, parse_835: parse }, heartbeatMs: 60_000 });
+    const jobId = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382704';
+    await handlers.get('monitor')?.([{ id: jobId, retryCount: QUEUE_OPTIONS.retryLimit, data: { practice_id: PRACTICE, day: '2026-10-16' } }]);
+    expect(monitor).not.toHaveBeenCalled();
+    expect(ends).toEqual([{ jobId, practiceId: PRACTICE, outcome: 'refused', errorCode: 'ORGANIZATION_SUSPENDED' }]);
+    expect(lines.find((line) => line.msg === 'job refused: the organization may not start new runs')).toMatchObject({ job_id: jobId, job_type: 'monitor', error_code: 'ORGANIZATION_SUSPENDED' });
+    expect(lines.some((line) => line.msg === JOB_FAILED_MESSAGE)).toBe(false);
+    // Work started before the suspension (an upload's parse) is not asked and finishes.
+    queries.length = 0;
+    await handlers.get('parse_835')?.([{ id: '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382705', data: { practice_id: PRACTICE, document_id: DOCUMENT } }]);
+    expect(parse).toHaveBeenCalled();
+    expect(queries.some((text) => text.includes('practice_run_refusal'))).toBe(false);
     await worker.stop();
   });
 
@@ -315,7 +354,14 @@ describe('startWorker', () => {
       context.logger.info('copying');
       return Promise.resolve();
     });
-    const platform: PlatformHandlers = { audit_copy: auditCopy, restore_drill: () => Promise.resolve(), support_grant_notices: () => Promise.resolve(), monitoring_schedule: () => Promise.resolve() };
+    const platform: PlatformHandlers = {
+      audit_copy: auditCopy,
+      restore_drill: () => Promise.resolve(),
+      support_grant_notices: () => Promise.resolve(),
+      monitoring_schedule: () => Promise.resolve(),
+      billing_dunning: () => Promise.resolve(),
+      usage_snapshot: () => Promise.resolve(),
+    };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
       expect(calls).toEqual(expect.arrayContaining([`createQueue:${type}`, `schedule:${type}`, `work:${type}`]));
@@ -338,6 +384,8 @@ describe('startWorker', () => {
       restore_drill: () => Promise.resolve(),
       support_grant_notices: () => Promise.resolve(),
       monitoring_schedule: () => Promise.resolve(),
+      billing_dunning: () => Promise.resolve(),
+      usage_snapshot: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
     for (const type of JOB_TYPES) {

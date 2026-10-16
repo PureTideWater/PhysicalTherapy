@@ -1,6 +1,8 @@
 import type { Logger } from '@tp/observability';
 import { z } from 'zod';
 
+import { runDunning } from '../billing/dunning';
+import { recordUsageSnapshots } from '../billing/usage';
 import { copyAuditDay, previousDay } from '../platform/audit-copy';
 import type { MailSender } from '../mail/mail';
 import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
@@ -16,12 +18,15 @@ import type { JobSender } from './enqueue';
  * notices read IDs, counts of reads and the administrators' email addresses (docs/adr/0017) through
  * three narrow functions, one practice per transaction; the monitoring schedule reads the active
  * practices' IDs through one more and queues each practice's own monitor and digest jobs (docs/adr/0039).
+ * Billing's two (docs/adr/0050) run as tp_billing, which the operator login switches to: the dunning
+ * notices read invoices and the organization administrators' addresses, and the nightly usage snapshot
+ * counts each organization's practices through one function that returns counts only.
  * They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
  * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
  */
-export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule'] as const;
+export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot'] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
 const day = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'a calendar day, YYYY-MM-DD');
@@ -33,6 +38,9 @@ export const PLATFORM_JOB_PAYLOADS = {
   support_grant_notices: z.strictObject({}),
   /** The day to schedule; the scheduled run omits it and takes today (UTC). */
   monitoring_schedule: z.strictObject({ day: day.optional() }),
+  billing_dunning: z.strictObject({}),
+  /** The day to count; the scheduled run omits it and takes today (UTC). */
+  usage_snapshot: z.strictObject({ day: day.optional() }),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -45,13 +53,16 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * When each runs, in UTC: the audit copy nightly at 01:20, after the day it copies has closed; the
  * restore drill on the first Monday of each month at 06:00 (PRD 19 Runbooks, Restore drill); the
  * support-grant notices every minute, so a notice goes out within a minute of a grant opening or
- * ending; the monitoring schedule daily at 05:10, so the month's digest goes out on its first morning.
+ * ending; the monitoring schedule daily at 05:10, so the month's digest goes out on its first morning;
+ * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40.
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
   restore_drill: 'FREQ=MONTHLY;BYDAY=1MO;BYHOUR=6;BYMINUTE=0;BYSECOND=0',
   support_grant_notices: '* * * * *',
   monitoring_schedule: '10 5 * * *',
+  billing_dunning: '10 14 * * *',
+  usage_snapshot: '40 0 * * *',
 };
 
 export interface PlatformContext {
@@ -131,6 +142,23 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
         context.logger.info('monitoring schedule queued the practices’ jobs', { job_id: context.jobId });
       } else {
         context.logger.info('monitoring schedule found no active practice', { job_id: context.jobId });
+      }
+    },
+    billing_dunning: async (_payload, context) => {
+      const result = await runDunning({ pool: dependencies.operator, mail: dependencies.mail, origin: dependencies.appOrigin, requestId: context.jobId, now: now() });
+      if (result.undeliverable > 0) {
+        context.logger.error('dunning notice had no organization administrator to send to', { job_id: context.jobId, error_code: 'NOTICE_UNDELIVERABLE' });
+      }
+      if (result.notices > 0) {
+        context.logger.info('dunning notices sent', { job_id: context.jobId });
+      }
+    },
+    usage_snapshot: async (payload, context) => {
+      const result = await recordUsageSnapshots({ pool: dependencies.operator, day: payload.day ?? now().toISOString().slice(0, 10), requestId: context.jobId });
+      if (result.recorded > 0) {
+        context.logger.info('usage snapshot recorded', { job_id: context.jobId });
+      } else {
+        context.logger.info('usage snapshot already recorded', { job_id: context.jobId });
       }
     },
     support_grant_notices: async (_payload, context) => {

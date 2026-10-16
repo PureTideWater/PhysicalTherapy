@@ -17,7 +17,10 @@ const JOB = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
 
 describe('platform job registry', () => {
   it('names the platform jobs and validates their payloads', () => {
-    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule']);
+    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot']);
+    expect(parsePlatformPayload('billing_dunning', {})).toEqual({});
+    expect(parsePlatformPayload('usage_snapshot', { day: '2026-11-01' })).toEqual({ day: '2026-11-01' });
+    expect(() => parsePlatformPayload('billing_dunning', { organization_id: JOB })).toThrow(ZodError);
     expect(parsePlatformPayload('monitoring_schedule', {})).toEqual({});
     expect(parsePlatformPayload('monitoring_schedule', { day: '2026-11-01' })).toEqual({ day: '2026-11-01' });
     expect(() => parsePlatformPayload('monitoring_schedule', { practice_id: JOB })).toThrow(ZodError);
@@ -42,6 +45,13 @@ describe('platform job registry', () => {
     const boss = new PgBoss('postgres://nobody@localhost:1/none');
     const from = new Date('2026-10-31T06:00:00Z');
     expect(boss.previewSchedule(PLATFORM_SCHEDULES.monitoring_schedule, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-11-01T05:10:00Z'), new Date('2026-11-02T05:10:00Z')]);
+  });
+
+  it('sends the dunning notices daily at 14:10 UTC and takes the usage snapshot nightly at 00:40 UTC', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-31T06:00:00Z');
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.billing_dunning, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-31T14:10:00Z'), new Date('2026-11-01T14:10:00Z')]);
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.usage_snapshot, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-11-01T00:40:00Z'), new Date('2026-11-02T00:40:00Z')]);
   });
 
   it('sends the support-grant notices every minute', () => {

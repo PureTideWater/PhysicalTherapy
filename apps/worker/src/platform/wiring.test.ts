@@ -60,7 +60,7 @@ describe('platform wiring', () => {
 
   it('builds every handler over one small operator pool', async () => {
     const runtime = platformRuntime(local);
-    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'monitoring_schedule', 'restore_drill', 'support_grant_notices']);
+    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'billing_dunning', 'monitoring_schedule', 'restore_drill', 'support_grant_notices', 'usage_snapshot']);
     expect(runtime.operator.options.max).toBe(2);
     await runtime.operator.end();
     // With the queue, the monitoring schedule queues each practice's jobs; without it, it refuses (platform.test.ts).
