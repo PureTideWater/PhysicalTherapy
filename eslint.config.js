@@ -33,8 +33,8 @@ const modelSdkSyntax = [
  * are Decimal, all through @tp/money. See packages/money/README.md for what to write instead. Beside
  * the engine, ledger and packets: packages/rules (rule records carry cents, rates and relative
  * values), packages/contracts (rate records; .claude/rules/money-and-contracts.md), packages/edi835
- * (it parses every remittance amount), packages/triage (materiality and pursuit-cost cents) and
- * packages/synth (the amounts it generates).
+ * (it parses every remittance amount), packages/triage (materiality and pursuit-cost cents),
+ * packages/synth (the amounts it generates) and packages/billing (plan prices and invoice cents).
  */
 export const MONEY_PACKAGES = [
   'packages/money',
@@ -46,6 +46,7 @@ export const MONEY_PACKAGES = [
   'packages/edi835',
   'packages/triage',
   'packages/synth',
+  'packages/billing',
 ];
 const MONEY_MESSAGE = 'Money is bigint cents and rates are Decimal (packages/money/README.md).';
 const moneySyntax = [

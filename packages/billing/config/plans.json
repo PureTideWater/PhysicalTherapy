@@ -1,0 +1,11 @@
+{
+  "format": "tp-billing-plans/1",
+  "currency": "usd",
+  "confirmed": false,
+  "source": "SYNTHETIC placeholder amounts: the plan sets no prices (PRD 4 names the plans, not their amounts). Production refuses Stripe until a person sets the amounts the company sells at and confirms them here.",
+  "plans": {
+    "monthly": { "lookup_key": "tp_monitoring_monthly", "name": "Monitoring, monthly", "interval": "month", "amount_cents": "50000" },
+    "annual": { "lookup_key": "tp_monitoring_annual", "name": "Monitoring, annual", "interval": "year", "amount_cents": "540000" }
+  },
+  "audit": { "lookup_key": "tp_audit", "name": "Contract-payment audit", "amount_cents": "250000" }
+}
