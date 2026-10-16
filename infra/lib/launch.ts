@@ -34,12 +34,15 @@ const WORD = /^[A-Za-z0-9_./=-]+$/;
 const ROLE = /^[a-z_][a-z0-9_]*$/;
 
 /**
- * The script a container runs (`/bin/sh -c <script>`): builds each URL, then replaces the shell with
- * `command`. `set -u` stops the task, naming the variable and never a value, if a part is missing.
+ * The script a container runs (`/bin/sh -c <script>`): builds each URL, runs each of `before` in
+ * turn (`set -e` stops at the first that fails), then replaces the shell with `command`. `set -u`
+ * stops the task, naming the variable and never a value, if a part is missing.
  */
-export function launchScript(urls: readonly ConnectionUrl[], command: readonly string[]): string {
-  if (command.length === 0 || command.some((word) => !WORD.test(word))) {
-    throw new Error('the command is plain words: letters, digits and _./=-');
+export function launchScript(urls: readonly ConnectionUrl[], command: readonly string[], before: readonly (readonly string[])[] = []): string {
+  for (const words of [...before, command]) {
+    if (words.length === 0 || words.some((word) => !WORD.test(word))) {
+      throw new Error('the command is plain words: letters, digits and _./=-');
+    }
   }
   const lines = ['set -eu'];
   for (const url of urls) {
@@ -55,6 +58,9 @@ export function launchScript(urls: readonly ConnectionUrl[], command: readonly s
       `export ${url.variable}`,
       `unset ${username} ${password}`,
     );
+  }
+  for (const words of before) {
+    lines.push(words.join(' '));
   }
   lines.push(`exec ${command.join(' ')}`);
   return lines.join('\n');

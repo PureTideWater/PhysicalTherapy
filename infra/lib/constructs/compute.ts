@@ -31,6 +31,17 @@ export const COMMANDS = {
   web: ['node', 'apps/web/server.js'],
   worker: ['node', '--enable-source-maps', 'dist/main.js'],
   migrate: ['node', '--enable-source-maps', 'dist/migrate.js'],
+  logins: ['node', '--enable-source-maps', 'dist/logins.js'],
+} as const;
+
+/**
+ * The secret fields the migration task's second step reads (apps/worker/src/deploy/logins.ts
+ * LOGIN_VARIABLES): the current username and password of the logins it creates when missing.
+ */
+export const LOGIN_SECRET_VARIABLES = {
+  app: { username: 'TP_APP_LOGIN_USERNAME', password: 'TP_APP_LOGIN_PASSWORD' },
+  operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
+  queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
 } as const;
 
 /** The worker's job split (apps/worker/src/config.ts readWorkerJobs): practice jobs, or platform jobs. */
@@ -66,6 +77,8 @@ interface ContainerSpec {
   readonly image: ecs.ContainerImage;
   readonly logGroup: logs.ILogGroup;
   readonly command: readonly string[];
+  /** Commands run to completion, in order, before `command`. */
+  readonly before?: readonly (readonly string[])[];
   readonly urls: readonly { readonly url: ConnectionUrl; readonly secret: secretsmanager.ISecret }[];
   readonly environment: Readonly<Record<string, string>>;
   readonly secrets?: Readonly<Record<string, ecs.Secret>>;
@@ -86,7 +99,9 @@ interface ContainerSpec {
  * - platform: the platform jobs (WORKER_JOBS=platform: the audit copy, the restore drill, the support
  *   notices, the monitoring schedule), as OperatorRole, with the operator and queue logins; the only
  *   task with the operator login, and without the application login.
- * - migration: the worker image's migrator with the owner login, the only task with it, run by the
+ * - migration: the worker image's migrator with the owner login, the only task with it, then the
+ *   logins the services connect as, created from their secrets when missing (it reads their current
+ *   username and password, and sets a password only when it creates the login); run by the
  *   migration run before any service moves to a new task definition.
  *
  * Secrets reach a container only from Secrets Manager (ECS reads them at start through each task's
@@ -213,13 +228,24 @@ export class Compute extends Construct {
     });
 
     this.migrationTask = this.taskDefinition('Migration', `tp-${environmentName}-migration`, compute.migration);
+    const loginField = (secret: secretsmanager.ISecret, variables: { readonly username: string; readonly password: string }) => ({
+      [variables.username]: ecs.Secret.fromSecretsManager(secret, 'username'),
+      [variables.password]: ecs.Secret.fromSecretsManager(secret, 'password'),
+    });
     this.container(this.migrationTask, {
       name: 'migrate',
       image: workerImage,
       logGroup: props.logGroups.migration,
-      command: COMMANDS.migrate,
+      // The migrations, then the logins the services connect as (created when missing).
+      before: [COMMANDS.migrate],
+      command: COMMANDS.logins,
       urls: [{ url: { variable: 'DATABASE_URL' }, secret: database.ownerSecret }],
       environment: common,
+      secrets: {
+        ...loginField(database.appSecret, LOGIN_SECRET_VARIABLES.app),
+        ...loginField(database.operatorSecret, LOGIN_SECRET_VARIABLES.operator),
+        ...loginField(database.queueSecret, LOGIN_SECRET_VARIABLES.queue),
+      },
     });
     const appSubnets = network.vpc.selectSubnets(network.appSubnets).subnets;
     this.migrationRun = new MigrationRun(this, 'MigrationRun', {
@@ -265,7 +291,7 @@ export class Compute extends Construct {
       image: spec.image,
       essential: true,
       entryPoint: ['/bin/sh', '-c'],
-      command: [launchScript(spec.urls.map((entry) => entry.url), spec.command)],
+      command: [launchScript(spec.urls.map((entry) => entry.url), spec.command, spec.before)],
       environment: { ...spec.environment },
       secrets,
       logging: ecs.LogDrivers.awsLogs({

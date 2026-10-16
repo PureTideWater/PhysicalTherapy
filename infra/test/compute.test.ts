@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { SKIP_MIGRATIONS_CONTEXT } from '../lib/app';
-import { COMMANDS, WORKER_JOBS, WORKER_STOP_TIMEOUT } from '../lib/constructs/compute';
+import { COMMANDS, LOGIN_SECRET_VARIABLES, WORKER_JOBS, WORKER_STOP_TIMEOUT } from '../lib/constructs/compute';
 import { WEB_PORT } from '../lib/constructs/edge';
 import { MIGRATION_POLL_INTERVAL, MIGRATION_RUN_TYPE, MIGRATION_TIMEOUT } from '../lib/constructs/migration-run';
 import { PARAMETER_NAMES } from '../lib/deploy-parameters';
@@ -173,6 +173,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
   });
 
   it('gives each container exactly its logins from Secrets Manager: the operator login to the platform jobs only, the owner login to the migration only', () => {
+    const loginFields = (variables: { username: string; password: string }, login: string) => ({
+      [variables.username]: field(login, 'username'),
+      [variables.password]: field(login, 'password'),
+    });
     const urlSecrets = (variable: string, login: string) => ({ [`${variable}_USERNAME`]: field(login, 'username'), [`${variable}_PASSWORD`]: field(login, 'password') });
     expect(secretsOf(definitions.web)).toEqual({
       ...urlSecrets('DATABASE_URL', secret.app),
@@ -181,7 +185,13 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     });
     expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.app), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
     expect(secretsOf(definitions.platform)).toEqual({ ...urlSecrets('OPERATOR_DATABASE_URL', secret.operator), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
-    expect(secretsOf(definitions.migration)).toEqual(urlSecrets('DATABASE_URL', secret.owner));
+    // The migration also reads the three service logins, which it creates when they are missing.
+    expect(secretsOf(definitions.migration)).toEqual({
+      ...urlSecrets('DATABASE_URL', secret.owner),
+      ...loginFields(LOGIN_SECRET_VARIABLES.app, secret.app),
+      ...loginFields(LOGIN_SECRET_VARIABLES.operator, secret.operator),
+      ...loginFields(LOGIN_SECRET_VARIABLES.queue, secret.queue),
+    });
   });
 
   it('lets each task\'s execution role read only the secrets its container names, and decrypt them only through Secrets Manager', () => {
@@ -189,7 +199,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       web: [secret.app, secret.queue, logicalIdOf(stack, stack.compute.cookieSecret)],
       worker: [secret.app, secret.queue],
       platform: [secret.operator, secret.queue],
-      migration: [secret.owner],
+      migration: [secret.owner, secret.app, secret.operator, secret.queue],
     };
     for (const name of TASKS) {
       const roleId = (propertiesOf(tasks[name][1]).ExecutionRoleArn as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0];
@@ -209,7 +219,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     for (const name of TASKS) {
       const plain = environmentOf(definitions[name]);
       for (const variable of Object.keys(plain)) {
-        expect(variable, name).not.toMatch(/PASSWORD|SECRET|_URL$|USERNAME/);
+        expect(variable, name).not.toMatch(/PASSWORD|SECRET|_URL$|USERNAME|LOGIN/);
       }
       expect(JSON.stringify(plain), name).not.toMatch(/SecretString|resolve:secretsmanager/);
     }
@@ -229,7 +239,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(definitions.platform.Command).toEqual([
       launchScript([{ variable: 'OPERATOR_DATABASE_URL' }, { variable: 'QUEUE_DATABASE_URL', role: 'tp_queue' }], COMMANDS.worker),
     ]);
-    expect(definitions.migration.Command).toEqual([launchScript([{ variable: 'DATABASE_URL' }], COMMANDS.migrate)]);
+    expect(definitions.migration.Command).toEqual([launchScript([{ variable: 'DATABASE_URL' }], COMMANDS.logins, [COMMANDS.migrate])]);
   });
 
   it('runs the release named by ImageTag: the web image for the web app, the worker image for the rest', () => {
@@ -405,7 +415,7 @@ describe('the compute contract with the applications', () => {
   const infrastructure = new Set(['NODE_ENV', 'AWS_REGION', 'NODE_EXTRA_CA_CERTS', 'DATABASE_HOST', 'DATABASE_PORT', 'DATABASE_NAME']);
   const configured = (definition: ContainerDefinition) => [
     ...Object.keys(environmentOf(definition)).filter((name) => !infrastructure.has(name)),
-    ...Object.keys(secretsOf(definition)).filter((name) => !/_URL_(USERNAME|PASSWORD)$/.test(name)),
+    ...Object.keys(secretsOf(definition)).filter((name) => !/_URL_(USERNAME|PASSWORD)$/.test(name) && !/^TP_[A-Z]+_LOGIN_(USERNAME|PASSWORD)$/.test(name)),
   ];
 
   it('sets only settings the web app reads (apps/web/src/lib/server/config.ts)', () => {
@@ -434,6 +444,20 @@ describe('the compute contract with the applications', () => {
     expect(source('apps/worker/build.ts')).toMatch(/migrate: '\.\.\/\.\.\/packages\/db\/src\/cli\/migrate\.ts'/);
     expect(source('apps/worker/Dockerfile')).toContain('/repo/packages/db/migrations ./migrations');
     expect(source('packages/db/src/migrate.ts')).toContain("path.resolve(import.meta.dirname, '../migrations')");
+  });
+
+  it('gives the migration task\'s login step exactly the secret fields it reads, and bundles it beside the migrator', () => {
+    const logins = source('apps/worker/src/deploy/logins.ts');
+    for (const variables of Object.values(LOGIN_SECRET_VARIABLES)) {
+      expect(logins).toContain(`{ username: '${variables.username}', password: '${variables.password}' }`);
+    }
+    expect(Object.keys(secretsOf(definitionOf('tp-staging-migration'))).filter((name) => name.startsWith('TP_')).sort()).toEqual(
+      Object.values(LOGIN_SECRET_VARIABLES).flatMap((variables) => [variables.username, variables.password]).sort(),
+    );
+    expect(source('apps/worker/build.ts')).toContain("logins: 'src/deploy/logins-cli.ts'");
+    expect(COMMANDS.logins).toEqual(['node', '--enable-source-maps', 'dist/logins.js']);
+    // The queue role the login step creates is the one every queue connection sets.
+    expect(logins).toContain("export const QUEUE_ROLE = 'tp_queue';");
   });
 
   it('points Node at the RDS certificate bundle both images carry', () => {

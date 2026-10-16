@@ -6,7 +6,8 @@ import { build } from 'esbuild';
  * starts from dist/page-thread.js for every contract document it reads (docs/adr/0033), and the
  * migrator (`pnpm db:migrate`'s CLI), which the one-off migration task runs from the same image as
  * dist/migrate.js before a release receives traffic; it reads the migrations from ../migrations,
- * where the image puts them (docs/adr/0049). pg's optional native binding is left out; the pure
+ * where the image puts them, and then dist/logins.js, which creates the logins from their secrets
+ * (src/deploy/logins.ts; docs/adr/0049). pg's optional native binding is left out; the pure
  * JavaScript client is used.
  */
 await build({
@@ -14,6 +15,7 @@ await build({
     main: 'src/main.ts',
     'page-thread': '../../packages/contracts/src/evidence/page-thread.ts',
     migrate: '../../packages/db/src/cli/migrate.ts',
+    logins: 'src/deploy/logins-cli.ts',
   },
   outdir: 'dist',
   bundle: true,

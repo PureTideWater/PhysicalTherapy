@@ -89,6 +89,7 @@ export class PlatformStack extends Stack {
       documents: this.storage.documents,
       packets: this.storage.packets,
       appSecret: this.database.appSecret,
+      userPool: this.identity.userPool,
     });
     this.operator = new OperatorRole(this, 'Operator', {
       key,

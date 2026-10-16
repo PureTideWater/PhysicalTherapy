@@ -70,6 +70,16 @@ describe('launchScript', () => {
     expect(launchScript([], ['node', 'dist/main.js']).split('\n').at(-1)).toBe('exec node dist/main.js');
   });
 
+  it('runs the commands before the last one to completion, in order, and stops at the first that fails', () => {
+    const ok = run(launchScript([], ['echo', 'third'], [['echo', 'first'], ['echo', 'second']]), {});
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toBe('first\nsecond\nthird\n');
+    const failed = run(launchScript([], ['echo', 'never'], [['false'], ['echo', 'skipped']]), {});
+    expect(failed.status).not.toBe(0);
+    expect(failed.stdout).toBe('');
+    expect(() => launchScript([], ['node'], [[]])).toThrow(/plain words/);
+  });
+
   it('refuses a command or a role that is not plain words', () => {
     expect(() => launchScript([], [])).toThrow(/plain words/);
     expect(() => launchScript([], ['node', 'a;b'])).toThrow(/plain words/);

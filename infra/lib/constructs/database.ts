@@ -32,7 +32,8 @@ export const OPERATOR_LOGIN = 'tp_operator_login';
  * role QUEUE_ROLE, which owns pg-boss's own schema and nothing else. Every queue connection sets that
  * role at sign-in (connection option `role`), so whatever pg-boss creates is owned by the role whichever
  * of the alternating rotation users is current. It is a member of neither tp_app nor tp_operator, so
- * it reads no practice table, and the web app, the worker and the platform jobs share it.
+ * it reads no practice table, and the web app, the worker and the platform jobs share it. The
+ * migration task creates the role, the schema and the login (apps/worker/src/deploy/logins.ts).
  */
 export const QUEUE_LOGIN = 'tp_queue_login';
 export const QUEUE_ROLE = 'tp_queue';

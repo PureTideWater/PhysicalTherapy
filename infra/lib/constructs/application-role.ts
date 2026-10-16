@@ -1,14 +1,22 @@
-import { Stack, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3, type aws_secretsmanager as secretsmanager } from 'aws-cdk-lib';
+import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3, type aws_secretsmanager as secretsmanager } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 /** The only encryption-context key the application may use with the environment key directly. */
 export const PRACTICE_CONTEXT_KEY = 'practice_id';
+
+/**
+ * The Cognito calls the web app makes with its own AWS credentials (apps/web/src/lib/auth/
+ * cognito-provider.ts): inviting a user, reading one, and signing one out everywhere. Every other
+ * call it makes (sign-in, MFA, passkeys, token revocation) is authorized by the user's own tokens.
+ */
+export const USER_POOL_ADMIN_ACTIONS = ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut'] as const;
 
 export interface ApplicationRoleProps {
   readonly key: kms.IKey;
   readonly documents: s3.IBucket;
   readonly packets: s3.IBucket;
   readonly appSecret: secretsmanager.ISecret;
+  readonly userPool: cognito.IUserPool;
 }
 
 /**
@@ -32,6 +40,8 @@ export interface ApplicationRoleProps {
  * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
  *   (SESv2 SendEmail) from this account's verified identities in this region only. A digest carries
  *   counts and a sign-in link, never a patient's data.
+ * - The user pool (docs/adr/0049): the three administrative calls the web app makes, on this
+ *   environment's pool only (USER_POOL_ADMIN_ACTIONS).
  */
 export class ApplicationRole extends Construct {
   readonly role: iam.Role;
@@ -86,6 +96,11 @@ export class ApplicationRole extends Construct {
         sid: 'DigestEmail',
         actions: ['ses:SendEmail'],
         resources: [`arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/*`],
+      }),
+      new iam.PolicyStatement({
+        sid: 'UserPoolAdministration',
+        actions: [...USER_POOL_ADMIN_ACTIONS],
+        resources: [props.userPool.userPoolArn],
       }),
       new iam.PolicyStatement({
         sid: 'ApplicationLoginDecrypt',

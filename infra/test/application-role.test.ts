@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { PRACTICE_CONTEXT_KEY } from '../lib/constructs/application-role';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { PRACTICE_CONTEXT_KEY, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
 
@@ -9,6 +12,14 @@ import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf,
  * and decrypt data keys only with an encryption context of practice_id alone; every other use of
  * the key is through S3 or Secrets Manager for named resources.
  */
+describe('the application role\'s Cognito actions match what the web app sends', () => {
+  it('covers every administrative (IAM-signed) command of the Cognito provider, and no other', () => {
+    const source = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/cognito-provider.ts'), 'utf8');
+    const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
+    expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
+  });
+});
+
 describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
   const { stack, template } = synthesized(environment);
   const roleId = logicalIdOf(stack, stack.application.role);
@@ -88,6 +99,13 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(resource).toContain(':identity/*');
     expect(resource).toContain('AWS::AccountId');
     expect(resource).toContain('AWS::Region');
+  });
+
+  it('makes the web app\'s administrative Cognito calls on this environment\'s user pool only', () => {
+    const cognito = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('cognito-idp:')));
+    expect(cognito).toEqual([
+      { Sid: 'UserPoolAdministration', Effect: 'Allow', Action: [...USER_POOL_ADMIN_ACTIONS], Resource: getAtt(logicalIdOf(stack, stack.identity.userPool), 'Arn') },
+    ]);
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {
