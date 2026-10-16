@@ -19,6 +19,7 @@ import { type Services, createServices } from '../server/services';
 import { digestPage, markNotificationsReadAction, monthlySummaryCsvRoute, monthlySummaryPage, notificationPreferencesPage, notificationsPage, saveNotificationPreferencesAction } from './monitoring';
 import { practiceHome } from './practice';
 import { pricingRunsPage } from './pricing';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * Monitoring's screens against PostgreSQL (PRD 5, J11 and J12; PRD 7, Practice dashboard, Reports and
@@ -63,7 +64,7 @@ async function sessionOf(userId: string): Promise<string> {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 function ok<R>(outcome: Outcome<R>): R {

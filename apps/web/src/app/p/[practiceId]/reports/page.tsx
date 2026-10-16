@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -16,6 +14,7 @@ import type { ExportRecord } from '../../../../lib/reports/documents';
 import { reportsPage } from '../../../../lib/routes/reports';
 import { generateReportFormAction } from './actions';
 import { generateReportDocumentFormAction } from './documents/actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Reports' };
 
@@ -105,7 +104,7 @@ export default async function ReportsPage(props: Props) {
                 <p className="text-sm text-muted-foreground">No pricing run in effect yet: a complete run, or a re-run once it is accepted.</p>
               ) : (
                 <ActionForm action={generateReportFormAction} submit="Generate the report" className="flex max-w-xl flex-col gap-3">
-                  <input type="hidden" name="requestKey" value={randomUUID()} />
+                  <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="report-run">Pricing run</Label>
@@ -203,7 +202,7 @@ export default async function ReportsPage(props: Props) {
             </Link>
             {canGenerate ? (
               <ActionForm action={generateReportDocumentFormAction} submit="Generate the month’s PDF" variant="outline" className="flex flex-col gap-2">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="kind" value="monthly_summary" />
                 <div className="flex flex-col gap-1.5">
@@ -236,7 +235,7 @@ export default async function ReportsPage(props: Props) {
             </Link>
             {canGenerate ? (
               <ActionForm action={generateReportDocumentFormAction} submit="Generate the coverage report" variant="outline">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="kind" value="coverage" />
               </ActionForm>

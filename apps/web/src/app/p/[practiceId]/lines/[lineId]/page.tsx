@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { linePage } from '../../../../../lib/routes/remittances';
 import { addLineNoteAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Line trace' };
 
@@ -278,7 +277,7 @@ export default async function LinePage(props: {
             )}
             {canNote ? (
               <ActionForm action={addLineNoteAction} submit="Add the note">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="lineId" value={line.lineId} />
                 <div className="flex flex-col gap-1.5">

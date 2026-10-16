@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { QUESTION_TOPICS } from '@tp/db/runtime';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -28,6 +26,7 @@ import {
   updateVersionFormAction,
   withdrawQuestionFormAction,
 } from '../../actions';
+import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Abstract a version' };
 
@@ -78,7 +77,7 @@ export default async function AbstractionVersionPage(props: Props) {
   // Each form carries its own request key.
   const hidden = () => (
     <>
-      <input type="hidden" name="requestKey" value={randomUUID()} />
+      <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
     </>
   );

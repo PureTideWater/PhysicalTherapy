@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import { COVERAGE_REPORT_FORMAT } from '@tp/worker/reports';
 import type { Metadata } from 'next';
@@ -13,6 +11,7 @@ import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { loadPage } from '../../../../../../lib/http/next';
 import { reportDocumentPage } from '../../../../../../lib/routes/report-documents';
 import { generateReportDocumentFormAction } from '../actions';
+import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Report' };
 
@@ -91,7 +90,7 @@ export default async function ReportDocumentPage(props: Props) {
           </CardHeader>
           <CardContent>
             <ActionForm action={generateReportDocumentFormAction} submit="Generate a new one" variant="outline">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="kind" value={document.kind} />
               {document.period === null ? null : <input type="hidden" name="month" value={document.period} />}

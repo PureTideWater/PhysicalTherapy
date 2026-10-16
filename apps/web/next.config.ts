@@ -2,11 +2,16 @@ import path from 'node:path';
 
 import type { NextConfig } from 'next';
 
+import { STATIC_SECURITY_HEADERS } from './src/lib/http/security-headers';
+
 const monorepoRoot = path.resolve(import.meta.dirname, '../..');
 
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The fixed security headers on every response, static assets included; the per-request CSP with its nonce
+  // comes from src/proxy.ts (docs/adr/0053).
+  headers: () => Promise.resolve([{ source: '/:path*', headers: [...STATIC_SECURITY_HEADERS] }]),
   // No generated agent-instruction file (AGENTS.md): CLAUDE.md and .claude/ are the repository's.
   agentRules: false,
   // A self-contained server for the container image (apps/web/Dockerfile).

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 
@@ -10,6 +8,7 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { SUPPORT_GRANT_HOURS, supportPage } from '../../../lib/routes/console';
 import { createSupportGrantAction, endSupportGrantAction } from '../actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Support' };
 
@@ -47,7 +46,7 @@ export default async function SupportPage() {
             />
           ) : (
             <ActionForm action={createSupportGrantAction} submit="Create support grant" className="grid max-w-xl gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <SelectField label="Practice" name="practiceId" options={practices.map((practice) => ({ value: practice.id, label: practice.name }))} />
               <SelectField
                 label="Support engineer or contract specialist"
@@ -98,7 +97,7 @@ export default async function SupportPage() {
                 <td className="py-1">
                   {grant.open ? (
                     <ActionForm action={endSupportGrantAction} submit="End now" variant="outline" className="flex items-center gap-2">
-                      <input type="hidden" name="requestKey" value={randomUUID()} />
+                      <FormKeys />
                       <input type="hidden" name="supportGrantId" value={grant.id} />
                     </ActionForm>
                   ) : null}

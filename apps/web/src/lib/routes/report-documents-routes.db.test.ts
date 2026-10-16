@@ -22,6 +22,7 @@ import { monthlySummaryCsvRoute, monthlySummaryPage } from './monitoring';
 import { practiceHome } from './practice';
 import { generateReportDocumentAction, reportDocumentCsvRoute, reportDocumentPage, reportDocumentPdfRoute } from './report-documents';
 import { reportCsv, reportPdf, reportsPage } from './reports';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The Reports screen's documents and export history against PostgreSQL (PRD 5, J12; PRD 6, Reports and
@@ -74,7 +75,7 @@ async function sessionOf(userId: string): Promise<string> {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 function ok<R>(outcome: Outcome<R>): R {

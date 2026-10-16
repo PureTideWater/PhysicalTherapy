@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@tp/ui';
 import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
@@ -14,6 +12,7 @@ import { loadPage } from '../../../../lib/http/next';
 import { LINE_STAGE_FILTERS } from '../../../../lib/remittances/queries';
 import { claimsPage } from '../../../../lib/routes/remittances';
 import { findClaimAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Claims and lines' };
 
@@ -104,7 +103,7 @@ export default async function ClaimsPage(props: Props) {
       </form>
       {canReadPhi ? (
         <ActionForm action={findClaimAction} submit="Find the claim" className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="requestKey" value={randomUUID()} />
+          <FormKeys />
           <input type="hidden" name="practiceId" value={practiceId} />
           <Field label="Payer claim control number" name="payerClaimControlNumber" autoComplete="off" />
         </ActionForm>

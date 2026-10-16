@@ -42,6 +42,8 @@ export interface UploadKind {
 export interface UploaderProps {
   readonly practiceId: string;
   readonly canUpload: boolean;
+  /** The session's CSRF token, sent with every request this form makes (docs/adr/0053). */
+  readonly csrfToken: string;
   readonly roleNames: string;
   readonly gate: { readonly open: boolean; readonly reason: string | null };
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
@@ -73,12 +75,12 @@ interface Refusal {
   readonly reason?: string;
 }
 
-async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+async function post<T>(path: string, csrfToken: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ requestKey: crypto.randomUUID(), ...body }),
+    body: JSON.stringify({ requestKey: crypto.randomUUID(), csrfToken, ...body }),
   });
   const answer = (await response.json()) as T & Refusal;
   if (!response.ok) {
@@ -89,12 +91,17 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
 }
 
 /** PUTs the file, reporting progress; a 409 or 412 means its bytes were already stored. */
-function put(file: File, target: UploadTarget, onProgress: (share: number) => void): Promise<void> {
+function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (share: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open(target.method, target.url);
     for (const [name, value] of Object.entries(target.headers)) {
       request.setRequestHeader(name, value);
+    }
+    // The local receiver is this server's own route and checks the session's CSRF token; a presigned S3 PUT
+    // goes elsewhere and carries none.
+    if (new URL(target.url, window.location.href).origin === window.location.origin) {
+      request.setRequestHeader('x-csrf-token', csrfToken);
     }
     request.upload.onprogress = (event) => {
       if (event.lengthComputable) {
@@ -116,7 +123,7 @@ function put(file: File, target: UploadTarget, onProgress: (share: number) => vo
 }
 
 export function Uploader(props: UploaderProps) {
-  const { practiceId, canUpload, gate, limits, kinds } = props;
+  const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
   const router = useRouter();
   const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
   const [batch, setBatch] = useState<BatchFile[]>([]);
@@ -135,18 +142,18 @@ export function Uploader(props: UploaderProps) {
     async (item: BatchFile, documentId: string, target: UploadTarget) => {
       update(item.key, { phase: 'uploading', progress: 0, documentId, target });
       try {
-        await put(item.file, target, (progress) => {
+        await put(item.file, target, csrfToken, (progress) => {
           update(item.key, { progress });
         });
         update(item.key, { phase: 'completing', progress: 1 });
-        await post(`/p/${practiceId}/uploads/complete`, { documentId });
+        await post(`/p/${practiceId}/uploads/complete`, csrfToken, { documentId });
         update(item.key, { phase: 'sent' });
       } catch (error) {
         update(item.key, { phase: 'failed', error: (error as Error).message });
       }
       setRefreshKey((key) => key + 1);
     },
-    [practiceId, update],
+    [csrfToken, practiceId, update],
   );
 
   const start = useCallback(
@@ -170,7 +177,7 @@ export function Uploader(props: UploaderProps) {
       setBatch(items);
       let answer: { documents: { documentId: string; upload: UploadTarget }[] };
       try {
-        answer = await post(`/p/${practiceId}/uploads/request`, {
+        answer = await post(`/p/${practiceId}/uploads/request`, csrfToken, {
           files: chosen.map((file) => ({ kind: kind.kind, contentType: declaredType(file, kind.contentTypes), sizeBytes: file.size })),
         });
       } catch (error) {
@@ -188,7 +195,7 @@ export function Uploader(props: UploaderProps) {
       });
       await Promise.all(workers);
     },
-    [kind, limits, practiceId, send],
+    [csrfToken, kind, limits, practiceId, send],
   );
 
   const retry = useCallback(
@@ -197,7 +204,7 @@ export function Uploader(props: UploaderProps) {
         return;
       }
       try {
-        const answer = await post<{ upload?: UploadTarget }>(`/p/${practiceId}/uploads/retry`, { documentId: item.documentId });
+        const answer = await post<{ upload?: UploadTarget }>(`/p/${practiceId}/uploads/retry`, csrfToken, { documentId: item.documentId });
         if (answer.upload !== undefined) {
           await send(item, item.documentId, answer.upload);
         } else {
@@ -208,7 +215,7 @@ export function Uploader(props: UploaderProps) {
         update(item.key, { phase: 'failed', error: (error as Error).message });
       }
     },
-    [practiceId, send, update],
+    [csrfToken, practiceId, send, update],
   );
 
   // The batch's server receipts, while any of them is still in progress.
@@ -379,7 +386,7 @@ export function Uploader(props: UploaderProps) {
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold">Receipts</h2>
-          <ReceiptList practiceId={practiceId} canUpload={canUpload} refreshKey={refreshKey} title="Receipts" />
+          <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" />
         </div>
       )}
     </div>

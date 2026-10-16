@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -10,6 +8,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { practiceSettingsPage } from '../../../../lib/routes/console';
 import { setPracticeSettingsAction } from '../../actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Practice settings' };
 
@@ -58,7 +57,7 @@ export default async function PracticeSettingsPage(props: Props) {
         </CardHeader>
         <CardContent>
           <ActionForm action={setPracticeSettingsAction} submit="Save the settings" className="grid max-w-xl gap-3">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <input type="hidden" name="practiceId" value={practice.id} />
             <Field label="Billing ZIP" name="zip" inputMode="numeric" pattern="[0-9]{5}" defaultValue={form.zip} hint="The billing address ZIP, which gives the fee schedule's locality." />
             <Field label="Places of service priced as facility" name="facilityPlaces" defaultValue={form.facilityPlaces} hint="Two-digit codes, separated by commas (for example 19, 22)." />

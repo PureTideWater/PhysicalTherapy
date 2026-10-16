@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { NARRATIVE_MAX_LENGTH } from '@tp/worker/packets';
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -19,6 +17,7 @@ import { BLOCKED_TEXT, waitText } from '../../../../../../lib/packets/approval';
 import type { AttachableDocument, BuilderView, VersionView } from '../../../../../../lib/packets/queries';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
+import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Packet builder' };
 
@@ -44,7 +43,7 @@ function VersionFields({ practiceId, caseId, builder, version }: { readonly prac
   const attached = new Set(version?.attachedDocumentIds ?? []);
   return (
     <>
-      <input type="hidden" name="requestKey" value={randomUUID()} />
+      <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="caseId" value={caseId} />
       <input type="hidden" name="basedOnVersionId" value={version?.id ?? ''} />
@@ -287,7 +286,7 @@ export default async function PacketPage(props: Props) {
               )}
               {approval !== null && approval.status !== 'approved' && approval.status !== 'blocked' && builder.approvalRequest === null && version.current ? (
                 <ActionForm action={requestApprovalFormAction} submit="Request approval" variant="outline" className="flex max-w-xl flex-col gap-2">
-                  <input type="hidden" name="requestKey" value={randomUUID()} />
+                  <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="caseId" value={item.id} />
                   <input type="hidden" name="versionId" value={version.id} />
@@ -298,7 +297,7 @@ export default async function PacketPage(props: Props) {
               {canApprove && approval !== null && approval.status !== 'approved' ? (
                 approval.status === 'ready' || approval.status === 'drafter' ? (
                   <ActionForm action={approveFormAction} submit="Approve this version" className="flex flex-col gap-2">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseId" value={item.id} />
                     <input type="hidden" name="versionId" value={version.id} />
@@ -333,7 +332,7 @@ export default async function PacketPage(props: Props) {
               ) : approval?.status === 'approved' && version.current ? (
                 canExport ? (
                   <ActionForm action={exportFormAction} submit="Export PDF and CSV" className="flex flex-col gap-2">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseId" value={item.id} />
                     <input type="hidden" name="versionId" value={version.id} />

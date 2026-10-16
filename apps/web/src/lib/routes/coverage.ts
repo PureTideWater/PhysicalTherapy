@@ -157,6 +157,7 @@ export const payerLetter = practiceRoute({
   kind: 'handler',
   method: 'GET',
   path: '/p/[practiceId]/coverage/letter',
+  rateLimit: 'export',
   phi: true,
   permission: 'practice.open',
   params: z.object({

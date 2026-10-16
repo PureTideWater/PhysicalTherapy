@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { MAPPING_KINDS } from '@tp/db/runtime';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -17,6 +15,7 @@ import { unpricedReasonText } from '../../../../../lib/contracts/remedies';
 import { loadPage } from '../../../../../lib/http/next';
 import { planPage } from '../../../../../lib/routes/mapping';
 import { mapPlanFormAction } from '../actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Plan mapping' };
 
@@ -151,7 +150,7 @@ export default async function PlanPage(props: Props) {
             <PermissionState role={roleNames(roles)} cannot="map payer plans" nextStep="The billing manager or the firm principal maps plans." />
           ) : (
             <ActionForm action={mapPlanFormAction} submit="Save the mapping" className="grid max-w-xl gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="planId" value={plan.id} />
               <SelectField label="Agreement" name="kind" options={kinds.map((kind) => ({ value: kind, label: MAPPING_KIND_NAMES[kind] }))} />

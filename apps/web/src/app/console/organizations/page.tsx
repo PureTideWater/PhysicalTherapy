@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { organizationsPage } from '../../../lib/routes/console';
 import { createOrganizationAction } from '../actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Organizations' };
 
@@ -33,7 +32,7 @@ export default async function OrganizationsPage() {
         </CardHeader>
         <CardContent>
           <ActionForm action={createOrganizationAction} submit="Create organization" className="grid max-w-xl gap-4">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <SelectField
               label="Kind"
               name="kind"

@@ -22,6 +22,8 @@ import { type ActiveSession, SESSION_COOKIE, resolveSession } from '../auth/sess
 import { RUN_STARTING_ROUTES, SuspendedError } from '../billing/runs';
 import { cookieToken } from '../auth/tokens';
 import type { Services } from '../server/services';
+import { CSRF_FIELD, csrfTokenMatches, sameOrigin } from './csrf';
+import { type RateBucket, takeRateLimit } from './rate-limit';
 import {
   type Access,
   type Actor,
@@ -62,6 +64,15 @@ import {
  *    suspended (docs/adr/0050).
  * 6. A mutation records its request key in the same transaction (a replay does nothing), runs, and
  *    records its audit event; pages get the application shell.
+ *
+ * Production readiness (milestone 11; docs/adr/0053) adds, for every mutation: the origin check (a browser's
+ * Origin and Sec-Fetch-Site must name the application) before anything else, the session's CSRF token once the
+ * session is known, and the rate limit of the route's bucket per user and per client address before the
+ * transaction opens. Public POSTs (the sign-in steps, the audit request) get the origin check and their own
+ * limits, per address and per account; a webhook its sender signs gets neither check but its limit. Inside the
+ * transaction, before the permission check: the maintenance flag (every route but the console's and the terms'
+ * answers "maintenance") and the terms of use in force (a customer who has not accepted them reaches only the
+ * terms and sign-out).
  *
  * Responses that can carry PHI are sent with Cache-Control: private, no-store by the adapters
  * (src/lib/http/next.ts); every authenticated response is.
@@ -109,6 +120,78 @@ function parse<P, I>(spec: { params: z.ZodType<P>; input?: z.ZodType<I> }, reque
 
 function isOutcome(value: unknown): value is Outcome<never> {
   return typeof value === 'object' && value !== null && 'status' in value;
+}
+
+/** Refused by the route wrapper inside the transaction: the terms of use in force wait for acceptance. */
+class TermsRequiredError extends Error {
+  override readonly name = 'TermsRequiredError';
+}
+
+/** Refused by the route wrapper inside the transaction: the platform is in maintenance. */
+class MaintenanceError extends Error {
+  override readonly name = 'MaintenanceError';
+}
+
+/** The CSRF token the request presents: a form's field, a script's JSON body field, or its header. */
+function presentedToken(request: RouteRequest): unknown {
+  const fromInput = typeof request.input === 'object' && request.input !== null ? (request.input as Record<string, unknown>)[CSRF_FIELD] : undefined;
+  return fromInput ?? request.csrfToken ?? undefined;
+}
+
+/**
+ * The checks that run before any transaction: the origin (for every mutation and public POST), the session's
+ * CSRF token (for a signed-in user's mutation) and the rate limit (per user, address and account).
+ */
+async function guard(
+  route: Pick<Route, 'originChecked' | 'csrfToken' | 'rateLimit'>,
+  request: RouteRequest,
+  services: Services,
+  subjects: { readonly userId?: string; readonly account?: string | null },
+): Promise<Outcome<never> | undefined> {
+  if (route.originChecked && !sameOrigin(request, services.origin)) {
+    return { status: 'csrf_refused' };
+  }
+  if (route.csrfToken && !csrfTokenMatches(services.sealer, request.cookies.get(SESSION_COOKIE), presentedToken(request))) {
+    return { status: 'csrf_refused' };
+  }
+  if (route.rateLimit !== null) {
+    const verdict = await takeRateLimit(services.pool, services.sealer, route.rateLimit, { ...subjects, address: request.clientAddress ?? null });
+    if (!verdict.allowed) {
+      return { status: 'rate_limited', retryAfterSeconds: verdict.retryAfterSeconds };
+    }
+  }
+  return undefined;
+}
+
+const maintenanceCache = { until: 0, on: false };
+
+/** The maintenance flag, read at most every five seconds per server process (every task sees a change within that). */
+async function maintenanceOn(scope: AnyScope<ScopeClient>, now: number): Promise<boolean> {
+  if (now < maintenanceCache.until) {
+    return maintenanceCache.on;
+  }
+  const { rows } = await scope.client.query<{ on: boolean }>('SELECT maintenance_on() AS on');
+  maintenanceCache.on = rows[0]?.on === true;
+  maintenanceCache.until = now + 5000;
+  return maintenanceCache.on;
+}
+
+/** Forgets the cached maintenance flag (a platform administrator just changed it; tests). */
+export function forgetMaintenanceFlag(): void {
+  maintenanceCache.until = 0;
+}
+
+/** Inside the transaction, before the permission check: maintenance (unless exempt) and the terms of use (unless exempt). */
+async function gates(scope: AnyScope<ScopeClient>, route: { readonly termsExempt: boolean; readonly maintenanceExempt: boolean }): Promise<void> {
+  if (!route.maintenanceExempt && (await maintenanceOn(scope, Date.now()))) {
+    throw new MaintenanceError();
+  }
+  if (!route.termsExempt) {
+    const { rows } = await scope.client.query<{ required: boolean }>('SELECT app_actor_terms_required() AS required');
+    if (rows[0]?.required === true) {
+      throw new TermsRequiredError();
+    }
+  }
 }
 
 /** The session, with MFA (and the hardware key, where required) checked. */
@@ -188,6 +271,12 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
   if (error instanceof NotFoundError) {
     return { status: 'not_found' };
   }
+  if (error instanceof TermsRequiredError) {
+    return { status: 'terms_required' };
+  }
+  if (error instanceof MaintenanceError) {
+    return { status: 'maintenance' };
+  }
   if (error instanceof SuspendedError) {
     return { status: 'suspended', reason: error.message };
   }
@@ -231,6 +320,9 @@ interface Shape {
   readonly phi: boolean;
   readonly audit?: Route['audit'];
   readonly sample?: Route['sample'];
+  readonly rateLimit?: RateBucket;
+  readonly termsExempt?: boolean;
+  readonly signedBySender?: boolean;
 }
 
 /** What every route records about itself; a mutation without an audit event is refused at definition. */
@@ -240,7 +332,27 @@ function common(spec: Shape, access: Access): Omit<Route, 'invoke'> {
   if (mutation && access.kind !== 'public' && spec.audit === undefined) {
     throw new Error(`route ${spec.id} changes records but names no audit event`);
   }
-  return { id: spec.id, kind: spec.kind, path: spec.path, method, access, phi: spec.phi, mutation, audit: spec.audit, sample: spec.sample };
+  if (mutation && access.kind === 'public' && spec.rateLimit === undefined) {
+    throw new Error(`public route ${spec.id} takes a POST but names no rate limit`);
+  }
+  if (spec.signedBySender === true && (access.kind !== 'public' || !mutation)) {
+    throw new Error(`route ${spec.id}: only a public POST is signed by its sender`);
+  }
+  return {
+    id: spec.id,
+    kind: spec.kind,
+    path: spec.path,
+    method,
+    access,
+    phi: spec.phi,
+    mutation,
+    audit: spec.audit,
+    sample: spec.sample,
+    rateLimit: spec.rateLimit ?? (mutation ? 'mutation' : null),
+    originChecked: mutation && spec.signedBySender !== true,
+    csrfToken: mutation && access.kind !== 'public',
+    termsExempt: spec.termsExempt === true,
+  };
 }
 
 /** A route anyone may call: sign-in. It opens no scope; its steps write their own audit events. */
@@ -253,6 +365,10 @@ export function publicRoute<P, I, R>(spec: PublicSpec<P, I, R>): Route<R> {
       const parsed = parse(spec, request, false);
       if (isOutcome(parsed)) {
         return parsed;
+      }
+      const refused = await guard(shape, request, services, { account: spec.rateAccount?.(parsed.input, request) });
+      if (refused !== undefined) {
+        return refused;
       }
       try {
         return { status: 'ok', data: await spec.handle({ params: parsed.params, input: parsed.input, request, services }) };
@@ -275,13 +391,23 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
       if (isOutcome(parsed)) {
         return parsed;
       }
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {
         return session;
       }
       const actor = actorOf(session);
+      const refused = await guard(shape, request, services, { userId: actor.userId });
+      if (refused !== undefined) {
+        return refused;
+      }
       try {
         return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+          // The console stays open in maintenance (its administrators turn the flag off there); the terms of use
+          // bind customers only, whom no platform route serves.
+          await gates(scope, { termsExempt: shape.termsExempt || access.kind === 'platform', maintenanceExempt: access.kind === 'platform' || shape.termsExempt });
           const roles = access.kind === 'platform' ? await requirePlatformPermission(scope, access.permission) : await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
             spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles }),
@@ -314,14 +440,22 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
       if (isOutcome(parsed)) {
         return parsed;
       }
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {
         return session;
       }
       const actor = actorOf(session);
+      const refused = await guard(shape, request, services, { userId: actor.userId });
+      if (refused !== undefined) {
+        return refused;
+      }
       const practiceId = parsed.params.practiceId;
       try {
         return await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId] }, async (scope) => {
+          await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if (scope.access(practiceId) === undefined) {
             throw new NotFoundError();
           }
@@ -359,14 +493,22 @@ export function organizationRoute<P extends { readonly organizationId: string },
       if (isOutcome(parsed)) {
         return parsed;
       }
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {
         return session;
       }
       const actor = actorOf(session);
+      const refused = await guard(shape, request, services, { userId: actor.userId });
+      if (refused !== undefined) {
+        return refused;
+      }
       const organizationId = parsed.params.organizationId;
       try {
         return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+          await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if ((await organizationRoles(scope, organizationId)).length === 0) {
             throw new NotFoundError();
           }

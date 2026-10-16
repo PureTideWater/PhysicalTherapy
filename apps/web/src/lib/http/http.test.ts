@@ -28,8 +28,19 @@ describe('route definitions', () => {
     expect(page).toMatchObject({ method: 'GET', mutation: false, access: { kind: 'practice', permission: 'practice.open' } });
     const action = selfRoute({ id: 'test.action', kind: 'action', path: '/x', phi: false, params: z.object({}), audit: { action: 'x', objectType: 'y' }, handle: () => Promise.resolve({}) });
     expect(action).toMatchObject({ method: 'POST', mutation: true, access: { kind: 'self' } });
-    const sign = publicRoute({ id: 'test.public', kind: 'action', path: '/sign-in', phi: false, params: z.object({}), handle: () => Promise.resolve({}) });
-    expect(sign).toMatchObject({ method: 'POST', mutation: false, access: { kind: 'public' } });
+    const sign = publicRoute({ id: 'test.public', kind: 'action', path: '/sign-in', phi: false, rateLimit: 'sign_in', params: z.object({}), handle: () => Promise.resolve({}) });
+    expect(sign).toMatchObject({ method: 'POST', mutation: false, access: { kind: 'public' }, rateLimit: 'sign_in', originChecked: true, csrfToken: false, termsExempt: false });
+    expect(action).toMatchObject({ rateLimit: 'mutation', originChecked: true, csrfToken: true });
+    expect(page).toMatchObject({ rateLimit: null, originChecked: false, csrfToken: false });
+  });
+
+  it('refuse a public POST without a rate limit, and a sender’s signature on anything but a public POST (docs/adr/0053)', () => {
+    expect(() => publicRoute({ id: 'test.unlimited', kind: 'action', path: '/sign-in', phi: false, params: z.object({}), handle: () => Promise.resolve({}) })).toThrow('names no rate limit');
+    expect(() =>
+      selfRoute({ id: 'test.signed', kind: 'action', path: '/x', phi: false, signedBySender: true, params: z.object({}), audit: { action: 'x', objectType: 'y' }, handle: () => Promise.resolve({}) }),
+    ).toThrow('only a public POST is signed by its sender');
+    const webhook = publicRoute({ id: 'test.webhook', kind: 'handler', method: 'POST', path: '/api/x', phi: false, rateLimit: 'webhook', signedBySender: true, params: z.object({}), handle: () => Promise.resolve({}) });
+    expect(webhook).toMatchObject({ originChecked: false, csrfToken: false, rateLimit: 'webhook' });
   });
 });
 
@@ -39,6 +50,7 @@ describe('public routes', () => {
     kind: 'action',
     path: '/sign-in',
     phi: false,
+    rateLimit: 'sign_in',
     params: z.object({}),
     input: z.object({ value: z.string().min(2) }),
     handle: ({ input }) => {
@@ -61,13 +73,21 @@ describe('public routes', () => {
     await expect(route.invoke(request({ value: 'boom' }), services)).rejects.toThrow('server error');
   });
 
+  it('refuse a POST another origin sent, before the handler runs (login CSRF; docs/adr/0053)', async () => {
+    const appServices = { origin: 'http://localhost:3100' } as Services;
+    expect(await route.invoke({ ...request({ value: 'ok' }), origin: 'https://attacker.example' }, appServices)).toEqual({ status: 'csrf_refused' });
+    expect(await route.invoke({ ...request({ value: 'ok' }), origin: 'null' }, appServices)).toEqual({ status: 'csrf_refused' });
+    expect(await route.invoke({ ...request({ value: 'ok' }), fetchSite: 'cross-site' }, appServices)).toEqual({ status: 'csrf_refused' });
+    expect(await route.invoke({ ...request({ value: 'ok' }), origin: 'http://localhost:3100', fetchSite: 'same-origin' }, appServices)).toEqual({ status: 'ok', data: { echoed: 'ok' } });
+  });
+
   it('answer a malformed URL parameter as not found', async () => {
     const page = publicRoute({ id: 'test.page', kind: 'page', path: '/sign-in', phi: false, params: z.object({ id: z.uuid() }), handle: () => Promise.resolve({}) });
     expect(await page.invoke(request(undefined, { id: 'SYN-123' }), services)).toEqual({ status: 'not_found' });
   });
 
   it('name a field-less issue after the input', async () => {
-    const whole = publicRoute({ id: 'test.whole', kind: 'action', path: '/sign-in', phi: false, params: z.object({}), input: z.string(), handle: () => Promise.resolve({}) });
+    const whole = publicRoute({ id: 'test.whole', kind: 'action', path: '/sign-in', phi: false, rateLimit: 'sign_in', params: z.object({}), input: z.string(), handle: () => Promise.resolve({}) });
     expect(await whole.invoke(request(42), services)).toMatchObject({ status: 'invalid', issues: [{ field: 'input' }] });
   });
 });
@@ -90,6 +110,14 @@ describe('authenticated routes refuse before any database work', () => {
       handle: () => Promise.resolve({}),
     });
     expect(await withInput.invoke({ ...request, input: { requestKey: '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60' } }, services)).toMatchObject({ status: 'invalid', issues: [{ field: 'name' }] });
+  });
+
+  it('a mutation from another origin, before the session is looked up (docs/adr/0053)', async () => {
+    const action = selfRoute({ id: 'test.action', kind: 'action', path: '/x', phi: false, params: z.object({}), audit: { action: 'x', objectType: 'y' }, handle: () => Promise.resolve({}) });
+    const request = { cookies: new ResponseCookies(null), params: {}, input: { requestKey: '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60' }, requestId: 'r', userAgent: null };
+    const appServices = { origin: 'https://app.synthetic.test' } as Services;
+    expect(await action.invoke({ ...request, origin: 'https://attacker.example' }, appServices)).toEqual({ status: 'csrf_refused' });
+    expect(await action.invoke({ ...request, fetchSite: 'same-site' }, appServices)).toEqual({ status: 'csrf_refused' });
   });
 });
 
@@ -117,6 +145,9 @@ describe('the route-handler adapter', () => {
     [{ status: 'forbidden', permission: 'phi.read', message: 'm', roles: [] }, 403, { status: 'forbidden', permission: 'phi.read', message: 'm', roles: [] }],
     [{ status: 'not_found' }, 404, { status: 'not_found' }],
     [{ status: 'duplicate' }, 409, { status: 'duplicate' }],
+    [{ status: 'csrf_refused' }, 403, { status: 'csrf_refused' }],
+    [{ status: 'terms_required' }, 403, { status: 'terms_required' }],
+    [{ status: 'maintenance' }, 503, { status: 'maintenance' }],
   ] as const)('answers %o with %i, private and no-store', async (outcome, status, body) => {
     const cookies = new ResponseCookies(null);
     cookies.set('c', 'v');
@@ -126,6 +157,13 @@ describe('the route-handler adapter', () => {
     expect(response.headers.get('content-type')).toBe('application/json');
     expect(response.headers.getSetCookie()).toEqual(['c=v; Path=/; HttpOnly; Secure; SameSite=Lax']);
     expect(await response.json()).toEqual(body);
+  });
+
+  it('answers a rate-limited request with 429 and when to try again', async () => {
+    const response = outcomeResponse({ status: 'rate_limited', retryAfterSeconds: 42 }, new ResponseCookies(null));
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('42');
+    expect(await response.json()).toEqual({ status: 'rate_limited', retryAfterSeconds: 42 });
   });
 
   it('passes the URL’s and the route’s parameters and a JSON body to the route', async () => {
@@ -138,18 +176,24 @@ describe('the route-handler adapter', () => {
       params: z.object({ a: z.string(), b: z.string() }),
       input: z.unknown(),
       handle: ({ params, input, request }) => {
-        seen.push(params, input, request.userAgent, request.requestId);
+        seen.push(params, input, request.userAgent, request.requestId, request.origin, request.fetchSite, request.clientAddress, request.csrfToken);
         return Promise.resolve({ ok: true });
       },
     });
-    const handler = routeHandler(route, () => services);
-    const get = await handler(new Request('http://localhost/x?a=1', { headers: { 'user-agent': 'agent' } }), { params: Promise.resolve({ b: '2' }) });
+    const handler = routeHandler(route, () => ({ ...services, trustedProxyHops: 1 }));
+    const get = await handler(
+      new Request('http://localhost/x?a=1', {
+        headers: { 'user-agent': 'agent', origin: 'http://localhost', 'sec-fetch-site': 'same-origin', 'x-forwarded-for': '198.51.100.7, 203.0.113.9', 'x-csrf-token': 't' },
+      }),
+      { params: Promise.resolve({ b: '2' }) },
+    );
     expect(get.status).toBe(200);
     expect(seen.slice(0, 3)).toEqual([{ a: '1', b: '2' }, undefined, 'agent']);
+    expect(seen.slice(4, 8)).toEqual(['http://localhost', 'same-origin', '203.0.113.9', 't']);
     const post = await handler(new Request('http://localhost/x?a=1&b=2', { method: 'POST', body: JSON.stringify({ x: 1 }) }));
     expect(post.status).toBe(200);
-    expect(seen[5]).toEqual({ x: 1 });
-    expect(typeof seen[7]).toBe('string');
+    expect(seen[9]).toEqual({ x: 1 });
+    expect(typeof seen[11]).toBe('string');
     const broken = await handler(new Request('http://localhost/x?a=1&b=2', { method: 'POST', body: '{' }));
     expect(broken.status).toBe(400);
   });
@@ -273,6 +317,7 @@ describe('the web configuration', () => {
       TP_KEY_PROVIDER: 'kms',
       KMS_KEY_ID: 'alias/tp-production',
       AUTH_COOKIE_SECRET: key,
+      TRUSTED_PROXY_HOPS: '1',
       APP_ORIGIN: 'https://app.synthetic.test/ignored',
       DOCUMENTS_BUCKET: 'tp-production-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp-production',
@@ -285,6 +330,7 @@ describe('the web configuration', () => {
       keys: { kind: 'kms', keyId: 'alias/tp-production' },
       documents: { kind: 's3', bucket: 'tp-production-documents', kmsKeyId: 'alias/tp-production' },
       queueDatabaseUrl: 'postgres://tp_queue:x@db.internal:5432/tp',
+      trustedProxyHops: 1,
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
@@ -309,6 +355,25 @@ describe('the web configuration', () => {
     expect(() => readWebConfig({ ...production, DOCUMENTS_DIR: '/d' })).toThrow(new ConfigError('DOCUMENTS_DIR is refused in production (S3 only, outside the e2e suite)'));
     expect(readWebConfig({ ...production, TP_ALLOW_LOCAL_PROVIDERS: 'e2e', DOCUMENTS_DIR: '/d' }).documents).toEqual({ kind: 'local', dir: '/d' });
     expect(readWebConfig({ ...production, TP_ALLOW_LOCAL_PROVIDERS: 'e2e' }).documents).toEqual({ kind: 'local', dir: defaultDocumentsDirectory() });
+  });
+
+  it('trusts no proxy for the client’s address by default, and requires the count in production (docs/adr/0053)', () => {
+    expect(readWebConfig(base).trustedProxyHops).toBe(0);
+    expect(readWebConfig({ ...base, TRUSTED_PROXY_HOPS: '2' }).trustedProxyHops).toBe(2);
+    expect(() => readWebConfig({ ...base, TRUSTED_PROXY_HOPS: '9' })).toThrow('invalid settings: TRUSTED_PROXY_HOPS');
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+      DOCUMENTS_BUCKET: 'tp-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+    };
+    expect(() => readWebConfig(production)).toThrow(new ConfigError('TRUSTED_PROXY_HOPS is required in production'));
   });
 
   it('names the settings it refuses, never their values', () => {

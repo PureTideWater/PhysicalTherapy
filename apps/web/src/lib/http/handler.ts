@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Services } from '../server/services';
+import { CSRF_HEADER } from './csrf';
+import { clientAddress } from './rate-limit';
 import type { CookieJar, Download, Outcome, Route, RouteRequest, UploadBody } from './route';
 
 /**
@@ -22,6 +24,10 @@ const STATUS: Readonly<Record<Outcome<unknown>['status'], number>> = {
   not_found: 404,
   duplicate: 409,
   suspended: 402,
+  csrf_refused: 403,
+  rate_limited: 429,
+  terms_required: 403,
+  maintenance: 503,
 };
 
 function readCookies(header: string | null): Map<string, string> {
@@ -68,6 +74,9 @@ export class ResponseCookies implements CookieJar {
 export function outcomeResponse(outcome: Outcome<unknown>, cookies: ResponseCookies): Response {
   const body = outcome.status === 'ok' ? outcome.data : outcome;
   const headers = new Headers({ 'content-type': 'application/json', 'cache-control': PRIVATE_NO_STORE });
+  if (outcome.status === 'rate_limited') {
+    headers.set('retry-after', String(outcome.retryAfterSeconds));
+  }
   for (const cookie of cookies.written) {
     headers.append('set-cookie', cookie);
   }
@@ -105,7 +114,13 @@ export interface RawBodyOptions {
 }
 
 /** The route request for a Web Request: GET reads the URL; POST also a JSON body (or its raw text); PUT streams its body. */
-async function routeRequest(request: Request, cookies: ResponseCookies, context: { readonly params?: Params } | undefined, options?: RawBodyOptions): Promise<RouteRequest | Response> {
+async function routeRequest(
+  request: Request,
+  cookies: ResponseCookies,
+  context: { readonly params?: Params } | undefined,
+  options: RawBodyOptions | undefined,
+  trustedProxyHops: number,
+): Promise<RouteRequest | Response> {
   const query = Object.fromEntries(new URL(request.url).searchParams);
   const params = { ...query, ...((await context?.params) ?? {}) };
   let input: unknown;
@@ -132,7 +147,18 @@ async function routeRequest(request: Request, cookies: ResponseCookies, context:
       body: request.body === null ? streamOf(new Blob([]).stream()) : streamOf(request.body),
     };
   }
-  return { cookies, params, input, ...(upload === undefined ? {} : { upload }), requestId: randomUUID(), userAgent: request.headers.get('user-agent') };
+  return {
+    cookies,
+    params,
+    input,
+    ...(upload === undefined ? {} : { upload }),
+    requestId: randomUUID(),
+    userAgent: request.headers.get('user-agent'),
+    origin: request.headers.get('origin'),
+    fetchSite: request.headers.get('sec-fetch-site'),
+    clientAddress: clientAddress(request.headers.get('x-forwarded-for'), trustedProxyHops),
+    csrfToken: request.headers.get(CSRF_HEADER),
+  };
 }
 
 /**
@@ -142,11 +168,12 @@ async function routeRequest(request: Request, cookies: ResponseCookies, context:
 export function routeHandler(route: Route, servicesOf: () => Services, options?: RawBodyOptions) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
-    const built = await routeRequest(request, cookies, context, options);
+    const services = servicesOf();
+    const built = await routeRequest(request, cookies, context, options, services.trustedProxyHops);
     if (built instanceof Response) {
       return built;
     }
-    return outcomeResponse(await route.invoke(built, servicesOf()), cookies);
+    return outcomeResponse(await route.invoke(built, services), cookies);
   };
 }
 
@@ -161,11 +188,12 @@ function isDownload(data: unknown): data is Download<string | Uint8Array<ArrayBu
 export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayBuffer>>>, servicesOf: () => Services) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
-    const built = await routeRequest(request, cookies, context);
+    const services = servicesOf();
+    const built = await routeRequest(request, cookies, context, undefined, services.trustedProxyHops);
     if (built instanceof Response) {
       return built;
     }
-    const outcome = await route.invoke(built, servicesOf());
+    const outcome = await route.invoke(built, services);
     if (outcome.status !== 'ok' || !isDownload(outcome.data)) {
       return outcomeResponse(outcome, cookies);
     }

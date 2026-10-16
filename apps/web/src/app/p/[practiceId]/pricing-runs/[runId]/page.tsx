@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -14,6 +12,7 @@ import { unpricedReasonText } from '../../../../../lib/contracts/remedies';
 import { loadPage } from '../../../../../lib/http/next';
 import { pricingRunPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction, rerunPricingRunFormAction } from '../actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Pricing run' };
 
@@ -98,7 +97,7 @@ export default async function PricingRunPage(props: Props) {
               </p>
             ) : run.status === 'complete' && run.withdrawal === null && canRerun ? (
               <ActionForm action={acceptPricingRunFormAction} submit="Accept this run" className="flex flex-col gap-2">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="runId" value={run.id} />
                 <p className="text-sm">Accepting makes this run the one in effect for its period: Claims and lines and Coverage read it from then on.</p>
@@ -137,7 +136,7 @@ export default async function PricingRunPage(props: Props) {
           )}
           {run.status !== 'complete' || release === null ? null : canRerun ? (
             <ActionForm action={rerunPricingRunFormAction} submit={`Re-run under release ${String(release.releaseNo)}`} variant="outline" className="flex flex-col gap-2 pt-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="runId" value={run.id} />
               <input type="hidden" name="releaseNo" value={release.releaseNo} />

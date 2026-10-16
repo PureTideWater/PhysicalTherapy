@@ -51,6 +51,11 @@ export interface Services {
   readonly contentRoot: string | null;
   /** Stripe, or the local test-mode simulator (docs/adr/0050). */
   readonly billing: BillingProvider;
+  /**
+   * How many proxies in front of the server append to X-Forwarded-For (the load balancer: 1), so the rate limits
+   * know the client's address; 0 trusts none (docs/adr/0053).
+   */
+  readonly trustedProxyHops: number;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -97,6 +102,7 @@ export interface ServiceParts {
   readonly contentRoot?: string | null;
   /** Tests that bill give their own; otherwise an in-memory simulator delivering its events to the pool. */
   readonly billing?: BillingProvider;
+  readonly trustedProxyHops?: number;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -121,6 +127,7 @@ export function createServices(parts: ServiceParts): Services {
     documents,
     contentRoot: parts.contentRoot ?? null,
     billing: parts.billing ?? memoryBillingProvider(parts.pool),
+    trustedProxyHops: parts.trustedProxyHops ?? 0,
   };
 }
 
@@ -142,6 +149,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     documents: store,
     contentRoot: config.contentRoot,
     billing: billingProvider(readBillingConfig(), pool),
+    trustedProxyHops: config.trustedProxyHops,
   });
 }
 

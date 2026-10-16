@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,6 +10,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { notificationsPage } from '../../../../lib/routes/monitoring';
 import { markNotificationsReadFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Notifications' };
 
@@ -40,7 +39,7 @@ export default async function NotificationsPage(props: { readonly params: Promis
       </div>
       {unread === 0 ? null : (
         <ActionForm action={markNotificationsReadFormAction} submit={`Mark ${String(unread)} as read`} variant="outline">
-          <input type="hidden" name="requestKey" value={randomUUID()} />
+          <FormKeys />
           <input type="hidden" name="practiceId" value={practiceId} />
         </ActionForm>
       )}

@@ -304,6 +304,8 @@ export const billingWebhook = publicRoute({
   kind: 'handler',
   method: 'POST',
   path: '/api/billing/webhook',
+  rateLimit: 'webhook',
+  signedBySender: true,
   phi: false,
   params: z.object({}),
   input: z.object({ payload: z.string().min(1).max(WEBHOOK_MAX_BYTES), signature: z.string().max(2048).nullable() }),

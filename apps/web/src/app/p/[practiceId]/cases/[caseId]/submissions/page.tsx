@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { SUBMISSION_CHANNELS } from '@tp/packets';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -15,6 +13,7 @@ import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../../../../../lib/cases/timelin
 import { loadPage } from '../../../../../../lib/http/next';
 import { DENIAL_CATEGORIES, PERSON_RESPONSE_KINDS, submissionsPage } from '../../../../../../lib/routes/submissions';
 import { logSubmissionFormAction, recordResponseFormAction } from './actions';
+import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Submissions and responses' };
 
@@ -98,7 +97,7 @@ export default async function SubmissionsPage(props: Props) {
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
               </p>
               <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="caseId" value={item.id} />
                 <input type="hidden" name="versionId" value={submittable.versionId} />
@@ -145,7 +144,7 @@ export default async function SubmissionsPage(props: Props) {
               />
             ) : (
               <ActionForm action={recordResponseFormAction} submit="Record the response" className="flex max-w-xl flex-col gap-3">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="caseId" value={item.id} />
                 <input type="hidden" name="submissionId" value={latest.submissionId} />

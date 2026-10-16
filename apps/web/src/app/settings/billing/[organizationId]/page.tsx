@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { formatUsd, parseCents } from '@tp/money';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -12,6 +10,8 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationBillingPage } from '../../../../lib/routes/billing';
 import { addSimulatedPaymentMethod, choosePlan, payInvoice, settleSimulatedPayments } from '../actions';
+import { FormKeys } from '../../../../components/form-keys';
+import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Organization billing' };
 
@@ -64,7 +64,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
         <CardContent className="flex flex-col gap-4 text-sm">
           {billing.subscription === null ? (
             <ActionForm action={choosePlan} submit="Choose plan" className="grid max-w-md gap-4">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="organizationId" value={organizationId} />
               <SelectField
                 label="Plan"
@@ -97,7 +97,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
             {paymentMethod === null ? 'No payment method on file.' : `${METHOD[paymentMethod.kind] ?? paymentMethod.kind} ending ${paymentMethod.last4}${paymentMethod.label === null ? '' : ` (${paymentMethod.label})`}`}
           </p>
           {provider === 'stripe' ? (
-            <StripePaymentMethod organizationId={organizationId} />
+            <StripePaymentMethod organizationId={organizationId} csrfToken={await pageCsrfToken()} />
           ) : (
             <div className="flex flex-col gap-4" aria-label="Test mode">
               <p className="text-xs text-muted-foreground">
@@ -105,20 +105,20 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                 000222222227 (fails, insufficient funds); card 4242424242424242 (succeeds) or 4000000000000341 (declined).
               </p>
               <ActionForm action={addSimulatedPaymentMethod} submit="Add test bank account (ACH)" className="grid max-w-md gap-3">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="organizationId" value={organizationId} />
                 <input type="hidden" name="method" value="us_bank_account" />
                 <Field label="Routing number" name="routingNumber" id="field-routing" inputMode="numeric" defaultValue={testRouting} required />
                 <Field label="Account number" name="accountNumber" id="field-account" inputMode="numeric" defaultValue="000123456789" required />
               </ActionForm>
               <ActionForm action={addSimulatedPaymentMethod} submit="Add test card" className="grid max-w-md gap-3">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="organizationId" value={organizationId} />
                 <input type="hidden" name="method" value="card" />
                 <Field label="Card number" name="cardNumber" id="field-card" inputMode="numeric" defaultValue="4242424242424242" required />
               </ActionForm>
               <ActionForm action={settleSimulatedPayments} submit="Settle pending test ACH payments" variant="outline">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="organizationId" value={organizationId} />
               </ActionForm>
             </div>
@@ -175,7 +175,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
             <div className="mt-4 flex flex-col gap-2">
               {open.map((invoice) => (
                 <ActionForm key={invoice.id} action={payInvoice} submit={`Pay ${invoice.number ?? 'the open invoice'} now (${formatUsd(parseCents(invoice.amountRemainingCents))})`} variant="outline">
-                  <input type="hidden" name="requestKey" value={randomUUID()} />
+                  <FormKeys />
                   <input type="hidden" name="organizationId" value={organizationId} />
                   <input type="hidden" name="invoiceId" value={invoice.id} />
                 </ActionForm>

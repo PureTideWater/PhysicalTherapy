@@ -22,6 +22,7 @@ import { MemoryQueue } from '../uploads/queue';
 import type { Receipt } from '../uploads/receipt-labels';
 import { LocalUploadTargets, S3UploadTargets } from '../uploads/targets';
 import { completeUpload, requestUploads, retryUpload, uploadContent, uploadDocumentPage, uploadReceipts, uploadReport, uploadsPage } from './uploads';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The Uploads API end to end against PostgreSQL, with the worker's intake job behind it (PRD 5, J1 and
@@ -121,7 +122,7 @@ async function call<R>(route: Route<R>, userId: string, params: Record<string, u
     {
       cookies: new Jar(await sessionOf(userId)),
       params,
-      input: route.mutation ? { requestKey: randomUUID(), ...input } : input,
+      input: route.mutation ? { requestKey: randomUUID(), csrfToken: csrfTokenFor(using.sealer, await sessionOf(userId)), ...input } : input,
       ...(upload === undefined ? {} : { upload }),
       requestId: `test-${randomUUID()}`,
       userAgent: null,

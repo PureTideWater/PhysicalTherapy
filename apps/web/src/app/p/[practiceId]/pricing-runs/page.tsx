@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,6 +10,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { pricingRunsPage } from '../../../../lib/routes/pricing';
 import { createPricingRunFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Pricing runs' };
 
@@ -79,7 +78,7 @@ export default async function PricingRunsPage(props: Props) {
           )}
           {release === null ? null : canCreate ? (
             <ActionForm action={createPricingRunFormAction} submit="Create the run" className="grid max-w-xl gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="releaseNo" value={release.releaseNo} />
               <div className="grid grid-cols-2 gap-3">

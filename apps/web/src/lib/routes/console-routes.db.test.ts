@@ -15,6 +15,7 @@ import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, organizationPage, practiceSettingsPage, recordAgreement, setPracticeSettings, supportPage, unlockUser } from './console';
 import { practiceHome, supportAccessPage } from './practice';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * What the internal console and the practice workspace do, beyond who may use them (which
@@ -87,7 +88,7 @@ async function platformAdmin(): Promise<{ id: string; token: string; internalId:
 }
 
 function run<R>(route: Route<R>, token: string, input?: Record<string, unknown>, params: Record<string, unknown> = {}) {
-  return route.invoke({ cookies: new Jar(token), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(token), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, token), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 let admin: { id: string; token: string; internalId: string };

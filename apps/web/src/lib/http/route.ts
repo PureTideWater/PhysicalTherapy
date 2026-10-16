@@ -3,6 +3,7 @@ import type { z } from 'zod';
 
 import type { EndedReason } from '../auth/sessions';
 import type { Services } from '../server/services';
+import type { RateBucket } from './rate-limit';
 
 /**
  * Every page, server action and route handler is a Route: an ID, its path, who may use it (public,
@@ -53,6 +54,13 @@ export interface RouteRequest {
   /** An opaque ID for this request: the audit events' request_id. */
   readonly requestId: string;
   readonly userAgent: string | null;
+  /** The Origin header a browser sends on a POST or PUT, and its Sec-Fetch-Site (the CSRF origin check). */
+  readonly origin?: string | null;
+  readonly fetchSite?: string | null;
+  /** The client's address, as the trusted proxy names it (rate limits); null when none is trusted. */
+  readonly clientAddress?: string | null;
+  /** The CSRF token a script sent in the x-csrf-token header (a form sends it as input.csrfToken). */
+  readonly csrfToken?: string | null;
 }
 
 export interface Actor {
@@ -89,7 +97,15 @@ export type Outcome<R> =
    * A run the practice's organization may not start now (suspended for nonpayment, or by a platform
    * administrator), with the database's reason; data stays readable (PRD 5, J18; docs/adr/0050).
    */
-  | { readonly status: 'suspended'; readonly reason: string };
+  | { readonly status: 'suspended'; readonly reason: string }
+  /** A mutation without the session's CSRF token, or from another origin (docs/adr/0053). */
+  | { readonly status: 'csrf_refused' }
+  /** Past a rate limit: try again after the seconds given. */
+  | { readonly status: 'rate_limited'; readonly retryAfterSeconds: number }
+  /** The terms of use in force have not been accepted by this customer yet. */
+  | { readonly status: 'terms_required' }
+  /** The platform is in maintenance (the platform.maintenance flag). */
+  | { readonly status: 'maintenance' };
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {
@@ -266,6 +282,20 @@ interface CommonSpec<P, I> {
   readonly input?: z.ZodType<I>;
   readonly audit?: AuditSpec;
   readonly sample?: RouteSample;
+  /**
+   * The rate limit it counts against (docs/adr/0053): a mutation counts against 'mutation' unless it names
+   * another; a download names 'export'; a public step names its own. Pages count against none.
+   */
+  readonly rateLimit?: RateBucket;
+  /** For a public sign-in step: the account it names (an email, a pending step), the per-account subject. */
+  readonly rateAccount?: (input: I, request: RouteRequest) => string | null | undefined;
+  /** Reachable before the terms of use in force are accepted (the terms themselves, signing out). */
+  readonly termsExempt?: boolean;
+  /**
+   * A public POST another server sends, authenticated by its own signature (a webhook), not a browser's: no
+   * origin check. Every other public POST is checked for the application's origin.
+   */
+  readonly signedBySender?: boolean;
 }
 
 export interface PublicSpec<P, I, R> extends CommonSpec<P, I> {
@@ -308,5 +338,12 @@ export interface Route<R = unknown> {
   readonly mutation: boolean;
   readonly audit?: AuditSpec;
   readonly sample?: RouteSample;
+  /** The rate limit it counts against, or null. */
+  readonly rateLimit: RateBucket | null;
+  /** Whether the CSRF origin check applies (every action, POST and PUT but a signed webhook). */
+  readonly originChecked: boolean;
+  /** Whether a session's CSRF token is required (every mutation of a signed-in user). */
+  readonly csrfToken: boolean;
+  readonly termsExempt: boolean;
   invoke(request: RouteRequest, services: Services): Promise<Outcome<R>>;
 }

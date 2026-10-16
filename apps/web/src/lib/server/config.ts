@@ -39,6 +39,7 @@ const schema = z.object({
   DOCUMENTS_KMS_KEY_ID: z.string().min(1).optional(),
   DOCUMENTS_DIR: z.string().min(1).optional(),
   CONTENT_ROOT: z.string().min(1).optional(),
+  TRUSTED_PROXY_HOPS: z.enum(['0', '1', '2', '3']).optional(),
 });
 
 export type AuthProviderSettings =
@@ -85,6 +86,11 @@ export interface WebConfig {
    * the release commands (docs/adr/0037).
    */
   readonly contentRoot: string | null;
+  /**
+   * The proxies in front of the server that append the client's address to X-Forwarded-For (TRUSTED_PROXY_HOPS:
+   * the load balancer, 1, in staging and production, where it is required; 0 elsewhere, trusting none).
+   */
+  readonly trustedProxyHops: number;
 }
 
 export class ConfigError extends Error {
@@ -172,5 +178,6 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     queueDatabaseUrl: settings.QUEUE_DATABASE_URL ?? settings.DATABASE_URL,
     documents,
     contentRoot: settings.CONTENT_ROOT ?? (production ? null : defaultContentRoot()),
+    trustedProxyHops: Number.parseInt(production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TRUSTED_PROXY_HOPS, 'TRUSTED_PROXY_HOPS') : (settings.TRUSTED_PROXY_HOPS ?? '0'), 10),
   };
 }

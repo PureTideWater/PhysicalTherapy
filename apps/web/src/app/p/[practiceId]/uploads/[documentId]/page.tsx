@@ -7,6 +7,7 @@ import { ReceiptList, ReceiptStatus } from '../../../../../components/uploads/re
 import { loadPage } from '../../../../../lib/http/next';
 import { uploadDocumentPage } from '../../../../../lib/routes/uploads';
 import { KIND_NAMES, type ParsedTransaction, centsText, errorPosition, errorText, formatBytes, shortId, utcMinute } from '../../../../../lib/uploads/receipt-labels';
+import { pageCsrfToken } from '../../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Upload receipt' };
 
@@ -162,7 +163,7 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
       {receipt.entries === null ? null : (
         <div className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold">Files in this zip</h2>
-          <ReceiptList practiceId={practiceId} parentId={receipt.documentId} canUpload={canUpload} title="Files in this zip" />
+          <ReceiptList csrfToken={await pageCsrfToken()} practiceId={practiceId} parentId={receipt.documentId} canUpload={canUpload} title="Files in this zip" />
         </div>
       )}
     </AppShell>

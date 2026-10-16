@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,6 +10,7 @@ import { Investigatory } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
 import { anomaliesPage } from '../../../../lib/routes/triage';
 import { requestValidationFormAction, reviewAnomalyFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Anomalies' };
 
@@ -103,14 +102,14 @@ export default async function AnomaliesPage(props: Props) {
                 <div className="flex flex-wrap gap-3">
                   {open.anomaly.reviewedAt === null ? (
                     <ActionForm action={reviewAnomalyFormAction} submit="Mark reviewed" variant="outline">
-                      <input type="hidden" name="requestKey" value={randomUUID()} />
+                      <FormKeys />
                       <input type="hidden" name="practiceId" value={practiceId} />
                       <input type="hidden" name="anomalyId" value={open.anomaly.id} />
                     </ActionForm>
                   ) : null}
                   {open.anomaly.validationRequestedAt === null ? (
                     <ActionForm action={requestValidationFormAction} submit="Convert to a validation request">
-                      <input type="hidden" name="requestKey" value={randomUUID()} />
+                      <FormKeys />
                       <input type="hidden" name="practiceId" value={practiceId} />
                       <input type="hidden" name="anomalyId" value={open.anomaly.id} />
                     </ActionForm>

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -13,6 +11,7 @@ import { windowText } from '../../../../lib/contracts/display';
 import { loadPage } from '../../../../lib/http/next';
 import { abstractionPage } from '../../../../lib/routes/abstraction';
 import { startAbstractionFormAction, withdrawQuestionFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Contract abstraction' };
 
@@ -147,7 +146,7 @@ export default async function AbstractionPage(props: Props) {
               link={(question) => (question.versionId === null ? null : `${path}/versions/${question.versionId}`)}
               answer={(question) => (
                 <ActionForm action={withdrawQuestionFormAction} submit="Withdraw the question" variant="outline">
-                  <input type="hidden" name="requestKey" value={randomUUID()} />
+                  <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="questionId" value={question.id} />
                 </ActionForm>

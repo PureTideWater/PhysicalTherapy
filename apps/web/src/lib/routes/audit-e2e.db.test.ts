@@ -31,6 +31,7 @@ import { loadRouteRelease } from './test-support/pricing-world';
 import { claimsPage } from './remittances';
 import { anomaliesPage, casePage, casesPage, reopenLineAction, triageRunAction, writeOffLineAction } from './triage';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The synthetic end-to-end audit (milestone 6): fixtures/synthetic/audit/AUDIT-01 is uploaded through
@@ -188,7 +189,7 @@ async function sessionOf(userId: string): Promise<string> {
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
   return route.invoke(
-    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null },
+    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null },
     services,
   );
 }
@@ -271,7 +272,7 @@ async function send(file: string): Promise<void> {
       {
         cookies: new Jar(await sessionOf(manager)),
         params: { ...P(), documentId: document.documentId },
-        input: { requestKey: randomUUID(), token },
+        input: { requestKey: randomUUID(), csrfToken: csrfTokenFor(services.sealer, await sessionOf(manager)), token },
         upload: { contentType: 'application/octet-stream', contentLength: bytes.length, body: Readable.from([bytes]) },
         requestId: `test-${randomUUID()}`,
         userAgent: null,

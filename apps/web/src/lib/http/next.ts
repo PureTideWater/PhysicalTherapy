@@ -5,7 +5,8 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
-import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell } from './route';
+import { clientAddress, retryMinutes } from './rate-limit';
+import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
 
 /**
  * The Next.js adapters for pages (server components) and server actions; route handlers use
@@ -30,8 +31,19 @@ async function nextCookies(): Promise<CookieJar> {
   };
 }
 
-async function nextRequest(params: unknown, input?: unknown): Promise<RouteRequest> {
-  return { cookies: await nextCookies(), params, input, requestId: randomUUID(), userAgent: (await headers()).get('user-agent') };
+async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody): Promise<RouteRequest> {
+  const sent = await headers();
+  return {
+    cookies: await nextCookies(),
+    params,
+    input,
+    ...(upload === undefined ? {} : { upload }),
+    requestId: randomUUID(),
+    userAgent: sent.get('user-agent'),
+    origin: sent.get('origin'),
+    fetchSite: sent.get('sec-fetch-site'),
+    clientAddress: clientAddress(sent.get('x-forwarded-for'), services().trustedProxyHops),
+  };
 }
 
 /** Where a refused request goes to sign in again; the reason is a code, never an identifier. */
@@ -44,6 +56,24 @@ function signInFor(outcome: Outcome<unknown>): string | undefined {
   }
   if (outcome.status === 'hardware_key_required') {
     return '/sign-in/hardware-key?reason=hardware_key_required';
+  }
+  // A customer who has not accepted the terms of use in force accepts them first; maintenance shows its page.
+  if (outcome.status === 'terms_required') {
+    return '/terms';
+  }
+  if (outcome.status === 'maintenance') {
+    return '/maintenance';
+  }
+  return undefined;
+}
+
+/** What a refused form says when the wrapper's own checks refused it (CSRF, rate limits). */
+export function guardMessage(outcome: Outcome<unknown>): string | undefined {
+  if (outcome.status === 'csrf_refused') {
+    return 'This form could not be checked against your session (it may have come from another site, or your session changed). Reload the page and try again.';
+  }
+  if (outcome.status === 'rate_limited') {
+    return `Too many attempts in a short time. Wait ${String(retryMinutes(outcome.retryAfterSeconds))} minute${retryMinutes(outcome.retryAfterSeconds) === 1 ? '' : 's'} and try again.`;
   }
   return undefined;
 }
@@ -104,19 +134,35 @@ function formInput(form: FormData): Record<string, string> {
   return input;
 }
 
+/** A form's file field as the route's streamed upload (an agreement's signed copy), or none. */
+function formUpload(form: FormData, field: string | undefined): UploadBody | undefined {
+  if (field === undefined) {
+    return undefined;
+  }
+  const file = form.get(field);
+  if (file === null || typeof file === 'string') {
+    return undefined;
+  }
+  return { contentType: file.type === '' ? null : file.type, contentLength: file.size, body: file.stream() as unknown as AsyncIterable<Uint8Array> };
+}
+
 /**
  * Runs a mutation's route from a form. Success redirects (Post/Redirect/Get); a refusal returns the
  * form's state. A practice action names its practice and records in `params` (opaque IDs the form
  * carries), which its route checks like a page's.
  */
-export async function runAction(route: Route<MutationResult>, form: FormData, params: Record<string, unknown> = {}): Promise<ActionState> {
-  const outcome = await route.invoke(await nextRequest(params, formInput(form)), services());
+export async function runAction(route: Route<MutationResult>, form: FormData, params: Record<string, unknown> = {}, options: { readonly fileField?: string } = {}): Promise<ActionState> {
+  const outcome = await route.invoke(await nextRequest(params, formInput(form), formUpload(form, options.fileField)), services());
   const signIn = signInFor(outcome);
   if (signIn !== undefined) {
     redirect(signIn);
   }
   if (outcome.status === 'ok') {
     redirect(outcome.data.redirect ?? '/');
+  }
+  const guarded = guardMessage(outcome);
+  if (guarded !== undefined) {
+    return { error: guarded };
   }
   if (outcome.status === 'invalid') {
     return { error: 'Check the fields marked below.', issues: outcome.issues };
@@ -138,6 +184,10 @@ export async function runSignInStep(route: Route<StepResult>, form: FormData): P
   const outcome = await route.invoke(await nextRequest({}, formInput(form)), services());
   if (outcome.status === 'invalid') {
     return { error: 'Check the fields marked below.', issues: outcome.issues };
+  }
+  const guarded = guardMessage(outcome);
+  if (guarded !== undefined) {
+    return { error: guarded };
   }
   if (outcome.status !== 'ok') {
     return { error: 'Sign-in could not continue. Start again.' };

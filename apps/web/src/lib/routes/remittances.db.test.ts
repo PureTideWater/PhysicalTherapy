@@ -24,6 +24,7 @@ import { LocalUploadTargets } from '../uploads/targets';
 import { practiceHome } from './practice';
 import { addLineNote, claimsPage, findClaim, linePage, remittancePage, remittancesPage } from './remittances';
 import { completeUpload, requestUploads, uploadContent, uploadDocumentPage, uploadReport } from './uploads';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * Every PAR case of the test matrix end to end (PRD 10, Pipeline steps 1 to 10; test matrix PAR-01 to
@@ -259,7 +260,7 @@ async function sessionOf(userId: string): Promise<string> {
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>, upload?: UploadBody): Promise<Outcome<R>> {
   return route.invoke(
-    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, ...(upload === undefined ? {} : { upload }), requestId: `test-${randomUUID()}`, userAgent: null },
+    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, ...(upload === undefined ? {} : { upload }), requestId: `test-${randomUUID()}`, userAgent: null },
     services,
   );
 }

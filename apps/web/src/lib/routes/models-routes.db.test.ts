@@ -31,6 +31,7 @@ import { coveragePage } from './coverage';
 import { draftNarrativeAction, proposeTermsAction, rejectProposalAction, reviewEvidenceAction, suggestEvidenceAction } from './models';
 import { approvePacketVersionAction, packetPage, requestApprovalAction, writeVersionAction } from './packets';
 import { CONTRACT_PAGES, storeContractDocument } from './test-support/contract-world';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The model features on their screens, through the routes against PostgreSQL (PRD 14; PRD 5, J5 in v1
@@ -94,7 +95,7 @@ async function sessionOf(userId: string): Promise<string> {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>, requestKey: string = randomUUID()): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey, ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey, ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 function ok<R>(outcome: Outcome<R>): R {

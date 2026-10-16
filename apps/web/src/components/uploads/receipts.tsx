@@ -38,11 +38,11 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function retryIntake(practiceId: string, documentId: string): Promise<void> {
+export async function retryIntake(practiceId: string, documentId: string, csrfToken: string): Promise<void> {
   await json(`/p/${practiceId}/uploads/retry`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ requestKey: crypto.randomUUID(), documentId }),
+    body: JSON.stringify({ requestKey: crypto.randomUUID(), csrfToken, documentId }),
   });
 }
 
@@ -59,7 +59,15 @@ export function ReceiptStatus({ receipt }: { readonly receipt: Receipt }) {
   );
 }
 
-export function ReceiptList(props: { readonly practiceId: string; readonly parentId?: string; readonly canUpload: boolean; readonly refreshKey?: number; readonly title: string }) {
+export function ReceiptList(props: {
+  readonly practiceId: string;
+  readonly parentId?: string;
+  readonly canUpload: boolean;
+  /** The session's CSRF token, for a retry (docs/adr/0053). */
+  readonly csrfToken: string;
+  readonly refreshKey?: number;
+  readonly title: string;
+}) {
   const { practiceId, parentId, canUpload, refreshKey } = props;
   const [page, setPage] = useState(1);
   const [data, setData] = useState<ReceiptPage | undefined>();
@@ -168,7 +176,7 @@ export function ReceiptList(props: { readonly practiceId: string; readonly paren
                       Report
                     </a>
                     {canUpload && state.retry === 'intake' && state.settled ? (
-                      <Button variant="outline" size="sm" onClick={() => void retryIntake(practiceId, receipt.documentId).then(reload, reload)}>
+                      <Button variant="outline" size="sm" onClick={() => void retryIntake(practiceId, receipt.documentId, props.csrfToken).then(reload, reload)}>
                         Retry
                       </Button>
                     ) : null}

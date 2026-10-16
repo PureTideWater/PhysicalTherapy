@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -13,6 +11,7 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { reportPage } from '../../../../../lib/routes/reports';
 import { releaseReportFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Audit report' };
 
@@ -108,7 +107,7 @@ export default async function ReportPage(props: Props) {
                   </p>
                 ) : (
                   <ActionForm action={releaseReportFormAction} submit="Release the report">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="reportId" value={report.id} />
                   </ActionForm>

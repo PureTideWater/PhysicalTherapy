@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -13,6 +11,7 @@ import { loadPage } from '../../../../../lib/http/next';
 import { FIELD_LABELS } from '../../../../../lib/reconciliation/template';
 import { templatePage } from '../../../../../lib/routes/reconciliation';
 import { saveTemplateFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Posting template' };
 
@@ -77,7 +76,7 @@ export default async function TemplatePage(props: Props) {
           </CardHeader>
           <CardContent>
             <ActionForm action={saveTemplateFormAction} submit="Save the template">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <TemplateMapper builtIn={builtIn} current={current} />
             </ActionForm>

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 
@@ -8,6 +6,7 @@ import { AppShell } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { notificationPreferencesPage } from '../../../lib/routes/monitoring';
 import { saveNotificationPreferences } from './actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Notification preferences' };
 
@@ -41,7 +40,7 @@ export default async function NotificationPreferencesPage(props: { readonly sear
         </CardHeader>
         <CardContent>
           <ActionForm action={saveNotificationPreferences} submit="Save preferences">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" name="digestEmail" defaultChecked={preferences.digestEmail} />
               The monthly digest by email

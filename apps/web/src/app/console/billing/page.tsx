@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { formatUsd, parseCents } from '@tp/money';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { consoleBillingPage } from '../../../lib/routes/billing';
 import { issueAuditInvoice } from './actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Billing status' };
 
@@ -78,7 +77,7 @@ export default async function ConsoleBillingPage() {
             </CardHeader>
             <CardContent>
               <ActionForm action={issueAuditInvoice} submit="Issue audit invoice" className="grid max-w-md gap-4">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <SelectField label="Organization" name="organizationId" options={organizations.map((row) => ({ value: row.organizationId, label: row.name }))} />
               </ActionForm>
             </CardContent>

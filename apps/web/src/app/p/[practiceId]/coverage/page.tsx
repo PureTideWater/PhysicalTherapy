@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -16,6 +14,7 @@ import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
 import { generateReportDocumentFormAction } from '../reports/documents/actions';
 import { reviewEvidenceFormAction, suggestEvidenceFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Coverage' };
 
@@ -216,7 +215,7 @@ export default async function CoveragePage(props: Props) {
         )}
         {canSuggest ? (
           <ActionForm action={suggestEvidenceFormAction} submit="Suggest what to obtain with the model" variant="outline">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <input type="hidden" name="practiceId" value={practiceId} />
             <p className="text-sm text-muted-foreground">
               The model is given the unpriced reasons’ counts and codes and the specialist’s open questions, nothing about a patient or a claim; each item it suggests must name one of
@@ -235,7 +234,7 @@ export default async function CoveragePage(props: Props) {
         <CardContent className="flex flex-wrap items-end gap-3">
           {canGenerateReport ? (
             <ActionForm action={generateReportDocumentFormAction} submit="Generate the coverage report" variant="outline">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="kind" value="coverage" />
             </ActionForm>

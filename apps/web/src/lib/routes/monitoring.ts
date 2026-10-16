@@ -161,6 +161,7 @@ export const monthlySummaryCsvRoute = practiceRoute({
   kind: 'handler',
   method: 'GET',
   path: '/p/[practiceId]/reports/monthly/csv',
+  rateLimit: 'export',
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, month: optionalText(month) }),

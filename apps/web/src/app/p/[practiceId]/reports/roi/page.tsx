@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -13,6 +11,7 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { roiStatementsPage } from '../../../../../lib/routes/roi';
 import { generateRoiFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'ROI statements' };
 
@@ -49,7 +48,7 @@ export default async function RoiStatementsPage(props: Props) {
           </CardHeader>
           <CardContent>
             <ActionForm action={generateRoiFormAction} submit="Generate the statement" className="flex flex-wrap items-end gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <Field label="First day" name="periodFrom" type="date" defaultValue={suggested.from} required />
               <Field label="Last day" name="periodTo" type="date" defaultValue={suggested.to} required />

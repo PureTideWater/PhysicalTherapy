@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationPage } from '../../../../lib/routes/console';
 import { createPracticeAction, endMembershipAction, inviteMemberAction, recordAgreementAction, unlockUserAction } from '../../actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Organization' };
 
@@ -65,7 +64,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
               </ul>
             )}
             <ActionForm action={createPracticeAction} submit="Create practice" className="grid max-w-xl gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="organizationId" value={organization.id} />
               <Field label="Practice name" name="name" required maxLength={200} />
               <Field label="NPI (optional)" name="npi" inputMode="numeric" pattern="[0-9]{10}" />
@@ -108,14 +107,14 @@ export default async function OrganizationPage(props: { readonly params: Promise
                     <td className="flex flex-wrap gap-2 py-1">
                       {member.locked ? (
                         <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
-                          <input type="hidden" name="requestKey" value={randomUUID()} />
+                          <FormKeys />
                           <input type="hidden" name="organizationId" value={organization.id} />
                           <input type="hidden" name="userId" value={member.userId} />
                         </ActionForm>
                       ) : null}
                       {member.current ? (
                         <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
-                          <input type="hidden" name="requestKey" value={randomUUID()} />
+                          <FormKeys />
                           <input type="hidden" name="membershipId" value={member.membershipId} />
                         </ActionForm>
                       ) : null}
@@ -126,7 +125,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
             </table>
           )}
           <ActionForm action={inviteMemberAction} submit="Send invitation" className="grid max-w-xl gap-3">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <input type="hidden" name="organizationId" value={organization.id} />
             <Field label="Email" name="email" type="email" required />
             <SelectField label="Role" name="role" options={roles.map((role) => ({ value: role, label: roleName(role) }))} />
@@ -173,7 +172,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
             </table>
           )}
           <ActionForm action={recordAgreementAction} submit="Record agreement" className="grid max-w-xl gap-3">
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <input type="hidden" name="organizationId" value={organization.id} />
             <SelectField label="Kind" name="kind" options={AGREEMENT_KINDS} />
             <SelectField label="Practice" name="practiceId" options={[{ value: '', label: 'Whole organization' }, ...practices.map((practice) => ({ value: practice.id, label: practice.name }))]} />

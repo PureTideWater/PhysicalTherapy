@@ -20,12 +20,12 @@ interface SetupIntentAnswer {
   readonly issues?: readonly { readonly message: string }[];
 }
 
-async function startSetup(organizationId: string): Promise<{ clientSecret: string; publishableKey: string }> {
+async function startSetup(organizationId: string, csrfToken: string): Promise<{ clientSecret: string; publishableKey: string }> {
   const response = await fetch(`/api/billing/${organizationId}/setup-intent`, {
     method: 'POST',
     credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ requestKey: crypto.randomUUID() }),
+    body: JSON.stringify({ requestKey: crypto.randomUUID(), csrfToken }),
   });
   const answer = (await response.json()) as SetupIntentAnswer;
   if (!response.ok || answer.clientSecret === undefined || answer.publishableKey === undefined || answer.publishableKey === null) {
@@ -71,7 +71,7 @@ function ConfirmForm({ onDone }: { readonly onDone: () => void }) {
   );
 }
 
-export function StripePaymentMethod({ organizationId }: { readonly organizationId: string }) {
+export function StripePaymentMethod({ organizationId, csrfToken }: { readonly organizationId: string; readonly csrfToken: string }) {
   const [setup, setSetup] = useState<{ clientSecret: string; stripe: Promise<Stripe | null> } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -96,7 +96,7 @@ export function StripePaymentMethod({ organizationId }: { readonly organizationI
             type="button"
             onClick={() => {
               setError(null);
-              startSetup(organizationId)
+              startSetup(organizationId, csrfToken)
                 .then((started) => setSetup({ clientSecret: started.clientSecret, stripe: loadStripe(started.publishableKey) }))
                 .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'The payment method form could not start.'));
             }}

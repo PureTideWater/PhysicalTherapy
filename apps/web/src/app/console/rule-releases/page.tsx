@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { ruleReleasesPage } from '../../../lib/routes/rule-releases';
 import { prepareRuleReleaseFormAction } from './actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Rule releases' };
 
@@ -220,7 +219,7 @@ export default async function RuleReleasesPage(props: Props) {
             </div>
             {nextRelease === null ? null : (
               <ActionForm action={prepareRuleReleaseFormAction} submit={`Prepare release ${String(nextRelease)}`} variant="outline" className="flex flex-col gap-2">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <p className="text-sm text-muted-foreground">
                   Copies the drafts at L2 or higher into content/outgoing/{nextRelease} with RELEASE.md and MANIFEST.json, refused when the drafts fail the checker. Drafts below L2 stay where they are.
                 </p>

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, EmptyState, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,6 +10,7 @@ import { loadPage } from '../../../../../lib/http/next';
 import type { EntryView } from '../../../../../lib/reconciliation/queries';
 import { ADJUSTMENT_CONSEQUENCE, ledgerReviewPage } from '../../../../../lib/routes/specialist';
 import { adjustEntryFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Ledger corrections' };
 
@@ -24,7 +23,7 @@ function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: stri
     <details>
       <summary className="cursor-pointer text-xs underline">Adjust</summary>
       <ActionForm action={adjustEntryFormAction} submit="Adjust the amount" variant="destructive" className="flex max-w-md flex-col gap-2 pt-2">
-        <input type="hidden" name="requestKey" value={randomUUID()} />
+        <FormKeys />
         <input type="hidden" name="practiceId" value={practiceId} />
         <input type="hidden" name="entryId" value={entry.id} />
         <div className="flex flex-col gap-1.5">

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -14,6 +12,7 @@ import { loadPage } from '../../../../../lib/http/next';
 import type { RunSummary } from '../../../../../lib/pricing/queries';
 import { comparePricingRunsPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction } from '../actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Compare pricing runs' };
 
@@ -108,7 +107,7 @@ export default async function ComparePricingRunsPage(props: Props) {
           </CardHeader>
           <CardContent>
             <ActionForm action={acceptPricingRunFormAction} submit="Accept the second run">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="runId" value={after.id} />
             </ActionForm>

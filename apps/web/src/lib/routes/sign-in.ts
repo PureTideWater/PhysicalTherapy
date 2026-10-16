@@ -2,11 +2,11 @@ import { z } from 'zod';
 
 import { clearPending, readPending, writePending, writeSession } from '../auth/pending';
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '../auth/provider';
-import { DEVICE_COOKIE } from '../auth/sessions';
+import { DEVICE_COOKIE, SIGN_IN_COOKIE } from '../auth/sessions';
 import type { FlowResult, Pending, SignInContext } from '../auth/sign-in';
 import { cookieToken } from '../auth/tokens';
 import { publicRoute } from '../http/invoke';
-import type { PublicContext } from '../http/route';
+import type { PublicContext, RouteRequest } from '../http/route';
 import { emailAddress, sixDigitCode } from './schemas';
 
 /**
@@ -113,6 +113,9 @@ function pendingOf<S extends Pending['step']>(context: PublicContext<unknown, un
 
 const RESTART: StepResult = { redirect: '/sign-in?reason=step_expired' };
 
+/** A step after the password names its account by the pending step the browser carries (rate limits per account). */
+const pendingAccount = (_input: unknown, request: RouteRequest): string | undefined => request.cookies.get(SIGN_IN_COOKIE);
+
 export const signInPage = publicRoute({
   id: 'sign_in.page',
   kind: 'page',
@@ -126,6 +129,8 @@ export const signInWithPassword = publicRoute({
   id: 'sign_in.password',
   kind: 'action',
   path: '/sign-in',
+  rateLimit: 'sign_in',
+  rateAccount: (input) => input.email,
   phi: false,
   params: noParams,
   input: z.object({ email: emailAddress, password: z.string().min(1, 'required').max(256) }),
@@ -148,6 +153,8 @@ export const chooseNewPassword = publicRoute({
   id: 'sign_in.new_password',
   kind: 'action',
   path: '/sign-in/new-password',
+  rateLimit: 'sign_in',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z
@@ -175,6 +182,8 @@ export const enrollTotp = publicRoute({
   id: 'sign_in.enroll',
   kind: 'action',
   path: '/sign-in/enroll',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z.object({ code: sixDigitCode }),
@@ -200,6 +209,8 @@ export const answerMfa = publicRoute({
   id: 'sign_in.mfa',
   kind: 'action',
   path: '/sign-in/mfa',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z.object({ code: sixDigitCode }),
@@ -225,6 +236,8 @@ export const hardwareKeyOptions = publicRoute({
   kind: 'handler',
   method: 'POST',
   path: '/api/sign-in/hardware-key/options',
+  rateLimit: 'sign_in',
+  rateAccount: (input) => input.email,
   phi: false,
   params: noParams,
   input: z.object({ email: emailAddress }),
@@ -258,6 +271,8 @@ export const verifyHardwareKey = publicRoute({
   kind: 'handler',
   method: 'POST',
   path: '/api/sign-in/hardware-key/verify',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z.object({ response: credentialJson }),
@@ -288,6 +303,8 @@ export const hardwareKeyRegistrationOptions = publicRoute({
   kind: 'handler',
   method: 'POST',
   path: '/api/sign-in/register-key/options',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z.object({}),
@@ -310,6 +327,8 @@ export const registerHardwareKey = publicRoute({
   kind: 'handler',
   method: 'POST',
   path: '/api/sign-in/register-key/verify',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
   phi: false,
   params: noParams,
   input: z.object({ response: credentialJson }),

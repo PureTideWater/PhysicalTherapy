@@ -32,6 +32,7 @@ import {
 import { practiceHome } from './practice';
 import { pricingRunsPage } from './pricing';
 import { requestUploads, uploadsPage } from './uploads';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * Billing's routes against PostgreSQL and the local Stripe test-mode simulator (PRD 5, J18; PRD 6, Billing
@@ -129,7 +130,7 @@ async function sessionOf(userId: string, method: 'totp' | 'webauthn' = 'totp'): 
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 function ok<R>(outcome: Outcome<R>): R {
@@ -356,7 +357,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
       new Request(`http://localhost:3100/p/${world.practiceId}/uploads/request`, {
         method: 'POST',
         headers: { cookie: `${SESSION_COOKIE}=${await sessionOf(uploader)}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ requestKey: randomUUID(), files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] }),
+        body: JSON.stringify({ requestKey: randomUUID(), csrfToken: csrfTokenFor(services.sealer, await sessionOf(uploader)), files: [{ kind: 'x12_835', contentType: 'application/octet-stream', sizeBytes: 1200 }] }),
       }),
       { params: Promise.resolve(P) },
     );

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import { monthName } from '@tp/worker/digests';
 import type { Metadata } from 'next';
@@ -14,6 +12,7 @@ import { loadPage } from '../../../../../lib/http/next';
 import { monthlyContent } from '../../../../../lib/reports/documents';
 import { monthlySummaryPage } from '../../../../../lib/routes/monitoring';
 import { generateReportDocumentFormAction } from '../documents/actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Monthly variance summary' };
 
@@ -62,7 +61,7 @@ export default async function MonthlySummaryPage(props: Props) {
       </form>
       {canGenerate ? (
         <ActionForm action={generateReportDocumentFormAction} submit="Generate the month’s PDF" variant="outline" className="flex flex-wrap items-end gap-3">
-          <input type="hidden" name="requestKey" value={randomUUID()} />
+          <FormKeys />
           <input type="hidden" name="practiceId" value={practiceId} />
           <input type="hidden" name="kind" value="monthly_summary" />
           <input type="hidden" name="month" value={month} />

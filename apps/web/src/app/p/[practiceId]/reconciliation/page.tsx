@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -16,6 +14,8 @@ import { loadPage } from '../../../../lib/http/next';
 import type { EntryView, LinkageLine, MatchView, RemittanceChoice } from '../../../../lib/reconciliation/queries';
 import { REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
 import { matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
+import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Reconciliation' };
 
@@ -33,7 +33,7 @@ function ReverseForm({ practiceId, matchId, label = 'Reverse this match', idSuff
     <details className="pt-1">
       <summary className="cursor-pointer text-xs underline">{label}</summary>
       <ActionForm action={reverseMatchFormAction} submit="Reverse the match" variant="destructive" className="flex max-w-xl flex-col gap-2 pt-2">
-        <input type="hidden" name="requestKey" value={randomUUID()} />
+        <FormKeys />
         <input type="hidden" name="practiceId" value={practiceId} />
         <input type="hidden" name="matchId" value={matchId} />
         <div className="flex flex-col gap-1.5">
@@ -260,6 +260,7 @@ export default async function ReconciliationPage(props: Props) {
             </CardHeader>
             <CardContent>
               <Uploader
+                csrfToken={await pageCsrfToken()}
                 practiceId={practiceId}
                 canUpload={data.upload.canUpload}
                 roleNames={roleNames(data.roles)}
@@ -346,7 +347,7 @@ export default async function ReconciliationPage(props: Props) {
                                 </Link>
                                 {canReconcile ? (
                                   <ActionForm action={matchClaimFormAction} submit="Match to this case line" variant="outline" className="flex">
-                                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                                    <FormKeys />
                                     <input type="hidden" name="practiceId" value={practiceId} />
                                     <input type="hidden" name="claimId" value={payment.claimId} />
                                     <input type="hidden" name="serviceLineId" value={candidate.serviceLineId} />
@@ -445,7 +446,7 @@ export default async function ReconciliationPage(props: Props) {
 function MatchForm({ action, practiceId, hidden }: { readonly action: typeof matchPostingFormAction; readonly practiceId: string; readonly hidden: Readonly<Record<string, string>> }) {
   return (
     <ActionForm action={action} submit="Match to this remittance" variant="outline" className="flex">
-      <input type="hidden" name="requestKey" value={randomUUID()} />
+      <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       {Object.entries(hidden).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />

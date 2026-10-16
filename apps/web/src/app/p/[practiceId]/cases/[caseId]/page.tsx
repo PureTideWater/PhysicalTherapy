@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { WRITE_OFF_REASONS } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
@@ -15,6 +13,7 @@ import { loadPage } from '../../../../../lib/http/next';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Case' };
 
@@ -101,7 +100,7 @@ export default async function CasePage(props: Props) {
           </dl>
           {canWork ? (
             <ActionForm action={assignFormAction} submit="Assign" variant="outline" className="flex flex-wrap items-end gap-3 pt-4">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="caseId" value={item.id} />
               <div className="flex flex-col gap-1.5">
@@ -184,7 +183,7 @@ export default async function CasePage(props: Props) {
                 <details className="pt-2">
                   <summary className="cursor-pointer text-sm underline">Write this line off</summary>
                   <ActionForm action={writeOffFormAction} submit="Write off" variant="destructive" className="flex max-w-xl flex-col gap-3 pt-2">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
                     <div className="flex flex-col gap-1.5">
@@ -211,7 +210,7 @@ export default async function CasePage(props: Props) {
                 <details className="pt-2">
                   <summary className="cursor-pointer text-sm underline">Reopen this line</summary>
                   <ActionForm action={reopenFormAction} submit="Reopen" className="flex max-w-xl flex-col gap-3 pt-2">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="caseLineId" value={line.id} />
                     <div className="flex flex-col gap-1.5">
@@ -248,7 +247,7 @@ export default async function CasePage(props: Props) {
           )}
           {canWork ? (
             <ActionForm action={noteFormAction} submit="Add the note" variant="outline" className="flex max-w-xl flex-col gap-2">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <input type="hidden" name="caseId" value={item.id} />
               <Label htmlFor="case-note">A note</Label>

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -11,6 +9,7 @@ import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { CONFIRMATION_CONSEQUENCE, regulationsPage } from '../../../../../lib/routes/specialist';
 import { confirmRegulationFormAction } from './actions';
+import { FormKeys } from '../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Regulations to confirm' };
 
@@ -74,7 +73,7 @@ export default async function RegulationsPage(props: Props) {
                 <CardContent className="flex flex-col gap-3">
                   <blockquote className="border-l-2 pl-3 text-sm">{item.statement}</blockquote>
                   <ActionForm action={confirmRegulationFormAction} submit="Confirm the regulation applies" className="flex max-w-xl flex-col gap-2">
-                    <input type="hidden" name="requestKey" value={randomUUID()} />
+                    <FormKeys />
                     <input type="hidden" name="practiceId" value={practiceId} />
                     <input type="hidden" name="versionId" value={item.versionId} />
                     <label className="flex items-start gap-2 text-sm">

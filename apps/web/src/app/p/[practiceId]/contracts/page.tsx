@@ -13,6 +13,7 @@ import { loadPage } from '../../../../lib/http/next';
 import { contractsPage } from '../../../../lib/routes/contracts';
 import { KIND_NAMES } from '../../../../lib/uploads/receipt-labels';
 import { answerQuestionFormAction, tagDocumentFormAction } from './actions';
+import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Contracts' };
 
@@ -188,6 +189,7 @@ export default async function ContractsPage(props: Props) {
         </CardHeader>
         <CardContent>
           <Uploader
+            csrfToken={await pageCsrfToken()}
             practiceId={practiceId}
             canUpload={upload.canUpload}
             roleNames={roleNames(roles)}

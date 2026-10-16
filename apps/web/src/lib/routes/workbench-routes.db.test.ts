@@ -25,6 +25,7 @@ import { practiceHome } from './practice';
 import { logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
 import { casePage, casesPage } from './triage';
 import { addNoteAction, assignCaseAction, openCaseAction, setMaterialityAction } from './workbench';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The case workbench, the packet builder and the submissions screens through their routes against
@@ -72,7 +73,7 @@ async function sessionOf(userId: string): Promise<string> {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>, requestKey: string = randomUUID()): Promise<Outcome<R>> {
-  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey, ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return route.invoke({ cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey, ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
 function ok<R>(outcome: Outcome<R>): R {

@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -12,6 +10,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { releasesPage } from '../../../../lib/routes/releases';
 import { rerunPricingRunFormAction } from '../pricing-runs/actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Rule release notes' };
 
@@ -95,7 +94,7 @@ export default async function ReleasesPage(props: Props) {
                             How many lines would change?
                           </Link>
                           <ActionForm action={rerunPricingRunFormAction} submit={`Re-run under release ${String(note.releaseNo)}`} variant="outline" className="flex flex-col gap-2">
-                            <input type="hidden" name="requestKey" value={randomUUID()} />
+                            <FormKeys />
                             <input type="hidden" name="practiceId" value={practiceId} />
                             <input type="hidden" name="runId" value={run.id} />
                             <input type="hidden" name="releaseNo" value={note.releaseNo} />

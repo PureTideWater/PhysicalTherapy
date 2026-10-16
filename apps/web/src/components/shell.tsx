@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Button, PermissionState, Separator, cn } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -7,6 +5,7 @@ import type { ReactNode } from 'react';
 import { signOut } from '../app/account/actions';
 import type { Shell } from '../lib/http/route';
 import { roleNames } from './format';
+import { FormKeys } from './form-keys';
 
 /**
  * The application shell (PRD 7): a left rail with the practice switcher at the top, listing only the
@@ -200,7 +199,7 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           </p>
           {shell.platformRoles.length === 0 ? null : <p className="text-xs text-muted-foreground">{roleNames(shell.platformRoles)}</p>}
           <form action={signOut}>
-            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <FormKeys />
             <Button type="submit" variant="outline" size="sm">
               Sign out
             </Button>

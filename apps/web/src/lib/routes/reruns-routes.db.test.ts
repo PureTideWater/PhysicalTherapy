@@ -31,6 +31,7 @@ import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease } from './test-support/pricing-world';
 import { casesPage, triageRunAction } from './triage';
 import { completeUpload, requestUploads, uploadContent } from './uploads';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * Re-runs under a new release through the screens (PRD 5, J17; PRD 7, Pricing runs and Internal console
@@ -90,7 +91,7 @@ async function sessionOf(userId: string): Promise<string> {
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>, input?: Record<string, unknown>): Promise<Outcome<R>> {
   return route.invoke(
-    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null },
+    { cookies: new Jar(await sessionOf(userId)), params, input: route.mutation ? { csrfToken: csrfTokenFor(services.sealer, await sessionOf(userId)), requestKey: randomUUID(), ...input } : input, requestId: `test-${randomUUID()}`, userAgent: null },
     services,
   );
 }
@@ -149,7 +150,7 @@ async function send(file: string): Promise<void> {
       {
         cookies: new Jar(await sessionOf(manager)),
         params: { ...P(), documentId: document.documentId },
-        input: { requestKey: randomUUID(), token },
+        input: { requestKey: randomUUID(), csrfToken: csrfTokenFor(services.sealer, await sessionOf(manager)), token },
         upload: { contentType: 'application/octet-stream', contentLength: bytes.length, body: Readable.from([bytes]) },
         requestId: `test-${randomUUID()}`,
         userAgent: null,
@@ -376,7 +377,7 @@ describe('the console’s Rule releases screen', () => {
     const session = await sessionOf(admin);
     const page = await ruleReleasesPage.invoke({ cookies: new Jar(session), params: { check: '1' }, requestId: `test-${randomUUID()}`, userAgent: null }, without);
     expect(page).toMatchObject({ status: 'ok', data: { workspace: null, check: null, nextRelease: null } });
-    const prepared = await prepareRuleReleaseAction.invoke({ cookies: new Jar(session), params: {}, input: { requestKey: randomUUID() }, requestId: `test-${randomUUID()}`, userAgent: null }, without);
+    const prepared = await prepareRuleReleaseAction.invoke({ cookies: new Jar(session), params: {}, input: { requestKey: randomUUID(), csrfToken: csrfTokenFor(services.sealer, session) }, requestId: `test-${randomUUID()}`, userAgent: null }, without);
     expect(refusedWith(prepared)).toMatch(/^release: this server has no content checkout/);
   });
 });

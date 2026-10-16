@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 
@@ -9,6 +7,7 @@ import { AppShell } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { devicesPage } from '../../../lib/routes/account';
 import { revokeDevice } from '../actions';
+import { FormKeys } from '../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Devices' };
 
@@ -45,7 +44,7 @@ export default async function DevicesPage() {
                 {device.revokedAt === null ? (
                   <CardContent>
                     <ActionForm action={revokeDevice} submit={device.id === currentDeviceId ? 'Revoke this device and sign out' : 'Revoke device'} variant="outline">
-                      <input type="hidden" name="requestKey" value={randomUUID()} />
+                      <FormKeys />
                       <input type="hidden" name="deviceId" value={device.id} />
                     </ActionForm>
                   </CardContent>

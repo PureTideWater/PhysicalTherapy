@@ -46,6 +46,7 @@ import { seedModelProposals } from './test-support/model-world';
 import { seedPacketLine, seedPackets } from './test-support/packet-world';
 import { seedReportDocument } from './test-support/report-world';
 import { seedBilling } from './test-support/billing-world';
+import { csrfTokenFor } from '../http/csrf';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -447,7 +448,7 @@ async function rawSession(userId: string, method: 'totp' | 'webauthn'): Promise<
 
 function call<R>(route: Route<R>, session: SignedIn | undefined, refs: SampleRefs, requestKey: string = randomUUID()): Promise<Outcome<R>> {
   const params = route.sample?.params(refs) ?? {};
-  const input = route.mutation ? { ...(route.sample?.input?.(refs) ?? {}), requestKey } : route.sample?.input?.(refs);
+  const input = route.mutation ? { ...(route.sample?.input?.(refs) ?? {}), requestKey, csrfToken: csrfTokenFor(services.sealer, session?.token) } : route.sample?.input?.(refs);
   const upload = route.sample?.upload?.(refs);
   const request: RouteRequest = {
     cookies: new MemoryJar(session === undefined ? {} : { [SESSION_COOKIE]: session.token }),
@@ -672,7 +673,7 @@ describe.each(ROUTES.filter((route) => route.access.kind === 'practice').map((ro
         {
           cookies: new MemoryJar({ [SESSION_COOKIE]: adminSession.token }),
           params: {},
-          input: { requestKey: randomUUID(), organizationId: worldA.refs.organizationId, email, role: memberRole },
+          input: { requestKey: randomUUID(), csrfToken: csrfTokenFor(services.sealer, adminSession.token), organizationId: worldA.refs.organizationId, email, role: memberRole },
           requestId: `test-${randomUUID()}`,
           userAgent: null,
         },

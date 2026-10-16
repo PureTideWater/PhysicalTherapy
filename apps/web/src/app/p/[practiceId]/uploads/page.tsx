@@ -5,6 +5,7 @@ import { AppShell, Forbidden } from '../../../../components/shell';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { loadPage } from '../../../../lib/http/next';
 import { uploadsPage } from '../../../../lib/routes/uploads';
+import { pageCsrfToken } from '../../../../lib/http/csrf-page';
 
 export const metadata: Metadata = { title: 'Uploads' };
 
@@ -26,7 +27,7 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
         <h1 className="text-2xl font-semibold tracking-tight">Uploads</h1>
         <p className="text-sm text-muted-foreground">835 remittances: received, scanned, parsed, balanced and loaded, or held with a reason.</p>
       </div>
-      <Uploader practiceId={data.practiceId} canUpload={data.canUpload} roleNames={roleNames(data.roles)} gate={data.gate} limits={data.limits} />
+      <Uploader csrfToken={await pageCsrfToken()} practiceId={data.practiceId} canUpload={data.canUpload} roleNames={roleNames(data.roles)} gate={data.gate} limits={data.limits} />
     </AppShell>
   );
 }

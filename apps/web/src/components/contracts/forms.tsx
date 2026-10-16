@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import type { ActionState } from '../../lib/http/next';
 import type { ContractOption, DocumentSummary } from '../../lib/contracts/contract-queries';
 import { KIND_NAMES, formatBytes } from '../../lib/uploads/receipt-labels';
@@ -7,6 +5,7 @@ import type { PayerOption } from '../../lib/remittances/queries';
 import { ActionForm } from '../action-form';
 import { Field, SelectField } from '../field';
 import { utc } from '../format';
+import { FormKeys } from '../form-keys';
 
 /**
  * The forms of the contract screens, rendered on the server with a fresh request key each time (PRD 6,
@@ -43,7 +42,7 @@ export function TagForm({
   const id = (name: string) => `${name}-${document.id}`;
   return (
     <ActionForm action={action} submit={fixedContract === undefined ? 'Tag to the payer' : 'Add to this contract'} className="grid gap-3 sm:grid-cols-2">
-      <input type="hidden" name="requestKey" value={randomUUID()} />
+      <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="documentId" value={document.id} />
       {fixedContract === undefined ? (
@@ -76,7 +75,7 @@ export function TagForm({
 export function AnswerForm({ action, practiceId, questionId }: { readonly action: Action; readonly practiceId: string; readonly questionId: string }) {
   return (
     <ActionForm action={action} submit="Send the answer" className="flex flex-col gap-2">
-      <input type="hidden" name="requestKey" value={randomUUID()} />
+      <FormKeys />
       <input type="hidden" name="practiceId" value={practiceId} />
       <input type="hidden" name="questionId" value={questionId} />
       <label htmlFor={`answer-${questionId}`} className="text-sm font-medium">

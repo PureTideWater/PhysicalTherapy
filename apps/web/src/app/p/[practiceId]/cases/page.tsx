@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { formatCents, parseCents } from '@tp/money';
 import { CASE_STATES } from '@tp/triage';
 import { Alert, AlertDescription, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
@@ -14,6 +12,7 @@ import { loadPage } from '../../../../lib/http/next';
 import { casesPage } from '../../../../lib/routes/triage';
 import { MATERIALITY_CONSEQUENCE } from '../../../../lib/routes/workbench';
 import { openCaseFormAction, setMaterialityFormAction, triageRunFormAction } from './actions';
+import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Cases' };
 
@@ -70,7 +69,7 @@ export default async function CasesPage(props: Props) {
               <p className="text-sm text-muted-foreground">No pricing run in effect yet: a complete run, or a re-run once it is accepted.</p>
             ) : (
               <ActionForm action={triageRunFormAction} submit="Triage the run" className="flex max-w-xl flex-col gap-3">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="triage-run">Pricing run</Label>
@@ -122,7 +121,7 @@ export default async function CasesPage(props: Props) {
                     ) : null}
                     {pattern.status === 'ready' ? (
                       <ActionForm action={openCaseFormAction} submit="Open the case" className="flex flex-wrap items-end gap-3 pt-2">
-                        <input type="hidden" name="requestKey" value={randomUUID()} />
+                        <FormKeys />
                         <input type="hidden" name="practiceId" value={practiceId} />
                         <input type="hidden" name="payerId" value={pattern.key.payerId} />
                         <input type="hidden" name="planId" value={pattern.key.planId} />
@@ -160,7 +159,7 @@ export default async function CasesPage(props: Props) {
         {canTriage ? (
           <CardContent>
             <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3">
-              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <FormKeys />
               <input type="hidden" name="practiceId" value={practiceId} />
               <div className="flex flex-wrap gap-3">
                 <div className="flex flex-col gap-1.5">

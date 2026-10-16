@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -14,6 +12,7 @@ import { windowText } from '../../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../../lib/http/next';
 import { versionPage } from '../../../../../../lib/routes/contracts';
 import { answerQuestionFormAction, signOffFormAction } from '../../actions';
+import { FormKeys } from '../../../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Rate record review' };
 
@@ -69,7 +68,7 @@ export default async function VersionPage(props: Props) {
               <p className="text-sm text-destructive">A rate record no longer resolves to its page; ask the contract specialist before signing off.</p>
             ) : (
               <ActionForm action={signOffFormAction} submit="Sign off this version">
-                <input type="hidden" name="requestKey" value={randomUUID()} />
+                <FormKeys />
                 <input type="hidden" name="practiceId" value={practiceId} />
                 <input type="hidden" name="versionId" value={version.id} />
               </ActionForm>
