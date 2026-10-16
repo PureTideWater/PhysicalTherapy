@@ -184,7 +184,9 @@ lines and submissions. Recording a response writes no ledger entry and no stage.
 (`writePacketVersion`, `approvePacketVersion`, `confirmRegulation`, `requestPacketExport`, `logSubmission`,
 `recordPayerResponse`, `submissionLog`, `followUpsDue`, `acceptedPayerResponses` for the ledger); its screens are
 the workbench below. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
-fixtures.
+fixtures. Mutation testing of the verifier (`pnpm stryker run stryker.verifier.config.mjs`, Stryker's command runner over
+the packets unit suite, since under Vitest 5 the vitest runner reports these mutants survived without running a test)
+scored 86.17% on 2026-10-16: 1,377 of 1,598 mutants killed (ADR 0047).
 
 The workbench (ADR 0044; migration `20261024110000_case_workbench.sql`) is three screens under each case, every
 filter and page in the URL with opaque IDs only:

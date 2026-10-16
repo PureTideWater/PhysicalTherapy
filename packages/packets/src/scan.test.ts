@@ -136,6 +136,113 @@ describe('scanText', () => {
   });
 });
 
+describe('every word, form and abbreviation the scanner knows', () => {
+  it('reads each ordinal word as the number it orders', () => {
+    const ordinals: readonly (readonly [string, string])[] = [
+      ['first', '1'],
+      ['second', '2'],
+      ['third', '3'],
+      ['fourth', '4'],
+      ['fifth', '5'],
+      ['sixth', '6'],
+      ['seventh', '7'],
+      ['eighth', '8'],
+      ['ninth', '9'],
+      ['tenth', '10'],
+      ['eleventh', '11'],
+      ['twelfth', '12'],
+      ['thirteenth', '13'],
+      ['fourteenth', '14'],
+      ['fifteenth', '15'],
+      ['sixteenth', '16'],
+      ['seventeenth', '17'],
+      ['eighteenth', '18'],
+      ['nineteenth', '19'],
+      ['twentieth', '20'],
+      ['thirtieth', '30'],
+      ['fortieth', '40'],
+      ['fiftieth', '50'],
+      ['sixtieth', '60'],
+      ['seventieth', '70'],
+      ['eightieth', '80'],
+      ['ninetieth', '90'],
+      ['hundredth', '100'],
+      ['thousandth', '1000'],
+      ['millionth', '1000000'],
+    ];
+    for (const [word, value] of ordinals) {
+      expect(figures(`The ${word} claim.`), word).toEqual([['number', value, word]]);
+    }
+  });
+
+  it('reads a list of modifiers however it is joined, and a modifier named after it', () => {
+    for (const list of ['modifiers GP/KX', 'modifiers GP or KX', 'modifiers GP and KX', 'modifiers GP, and KX', 'modifiers GP , KX', 'modifiers  GP / KX']) {
+      expect(figures(`${list}.`), list).toEqual([
+        ['modifier', 'GP', 'GP'],
+        ['modifier', 'KX', 'KX'],
+      ]);
+    }
+    expect(figures('Modifier   GP; the KX   modifiers; modifierGP.')).toEqual([
+      ['modifier', 'GP', 'GP'],
+      ['modifier', 'KX', 'KX'],
+    ]);
+  });
+
+  it('reads the other written forms of figures as they are written', () => {
+    expect(figures('12 / 34 of them, the 1,234th claim, 1,234,567 units, x12 units, \u00d73 lines; claim (SYN123), [AB12] and "Q9"; Level  IV.')).toEqual([
+      ['identifier', '12/34', '12 / 34'],
+      ['number', '1234', '1,234th'],
+      ['number', '1234567', '1,234,567'],
+      ['number', '12', 'x12'],
+      ['number', '3', '\u00d73'],
+      ['identifier', 'SYN123', 'SYN123'],
+      ['identifier', 'AB12', 'AB12'],
+      ['identifier', 'Q9', 'Q9'],
+      ['number', '4', 'IV'],
+    ]);
+    expect(figures('Member SYN123AB and 9Z9.')).toEqual([
+      ['identifier', 'SYN123AB', 'SYN123AB'],
+      ['identifier', '9Z9', '9Z9'],
+    ]);
+    expect(figures('March 5th, March 31, 2026, April 31, 2026, 5 March 2026, 31 April 2026, Dec 5, 2026, the second of June 2026 and June twenty first.')).toEqual([
+      ['month_day', '03-05', 'March 5th'],
+      ['date', '2026-03-31', 'March 31, 2026'],
+      ['identifier', 'April 31, 2026', 'April 31, 2026'],
+      ['date', '2026-03-05', '5 March 2026'],
+      ['identifier', '31 April 2026', '31 April 2026'],
+      ['date', '2026-12-05', 'Dec 5, 2026'],
+      ['date', '2026-06-02', 'second of June 2026'],
+      ['month_day', '06-21', 'June twenty first'],
+    ]);
+  });
+
+  it('keeps every listed abbreviation inside its sentence, and ends one at any other word', () => {
+    const listed = ['etc', 'vs', 'no', 'nos', 'inc', 'co', 'corp', 'ltd', 'llc', 'dr', 'mr', 'mrs', 'ms', 'st', 'sec', 'ch', 'art', 'para', 'pp', 'cf', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec'];
+    for (const abbreviation of listed) {
+      const text = `Under ${abbreviation}. 4 it pays [1].`;
+      expect(sentences(text), abbreviation).toEqual([text]);
+    }
+    expect(sentences('See Sec. 4 [1]. A.B. c [1].')).toEqual(['See Sec. 4 [1].', 'A.B. c [1].']);
+    expect(sentences('Under claim. 4 it pays [1].')).toEqual(['Under claim.', '4 it pays [1].']);
+    expect(sentences('See sec. Four [1].')).toEqual(['See sec.', 'Four [1].']);
+  });
+
+  it('ends a sentence with its run of marks, a closing quote and the markers after it, and at every paragraph', () => {
+    expect(sentences('Paid short!! [1] Next [2]. Paid "short." [1] Paid short.  [1] Paid [12]. Next [1 , 2]. Ends here.[1] Next.')).toEqual([
+      'Paid short!! [1]',
+      'Next [2].',
+      'Paid "short." [1]',
+      'Paid short.  [1]',
+      'Paid [12].',
+      'Next [1 , 2].',
+      'Ends here.[1]',
+      'Next.',
+    ]);
+    expect(sentences('First part\n\nSecond part [1].\n \t\nThird [2]')).toEqual(['First part', 'Second part [1].', 'Third [2]']);
+    expect(sentences('One [1].\n\n[2]')).toEqual(['One [1].\n\n[2]']);
+  });
+});
+
 describe('numbersInWords', () => {
   it('joins what the grammar joins and splits the rest', () => {
     expect(words('two three')).toEqual([2, 3]);
@@ -182,6 +289,8 @@ describe('helpers', () => {
     expect(isoDate(2028, 2, 29)).toBe('2028-02-29');
     expect(isoDate(2026, 2, 29)).toBeNull();
     expect(isoDate(2026, 13, 1)).toBeNull();
+    expect([isoDate(2026, 12, 31), isoDate(2026, 1, 1), isoDate(999, 1, 1)]).toEqual(['2026-12-31', '2026-01-01', '0999-01-01']);
+    expect([isoDate(2026, 0, 1), isoDate(2026, 4, 31), isoDate(2026, 4, 0)]).toEqual([null, null, null]);
   });
 
   it('reads Roman numerals, and only numerals', () => {

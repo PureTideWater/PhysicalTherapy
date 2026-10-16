@@ -66,5 +66,10 @@ describe('readableText', () => {
     expect(read.original(lines, lines + 2)).toEqual({ start: text.indexOf('1', 8), end: text.indexOf(' lines') });
     expect(read.original(3, 3)).toEqual({ start: 3, end: 3 });
     expect(read.original(read.text.length, read.text.length)).toEqual({ start: text.length, end: text.length });
+    // An empty span inside what one character expands to (a vulgar fraction) is where that character starts.
+    const fraction = readableText(`a${cp(0xbd)}`);
+    expect(fraction.text).toBe(`a1${cp(0x2044)}2`);
+    expect(fraction.original(2, 2)).toEqual({ start: 1, end: 1 });
+    expect(fraction.original(1, 3)).toEqual({ start: 1, end: 2 });
   });
 });

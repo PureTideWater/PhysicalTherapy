@@ -10,8 +10,9 @@ import { draftNarrative } from './draft';
 import { narrativeFacts } from './facts';
 import type { PacketContent } from './format';
 import { scanText } from './scan';
-import { assemblyInput, line } from './test-support';
-import { type VerifierReport, verifyNarrative } from './verifier';
+import { assemblyInput, contractCitation, line } from './test-support';
+import { type VerifierReport, identifierForms, verifyNarrative } from './verifier';
+import { identifierSpans } from './verifier/mismatches';
 
 /**
  * The verifier (PRD 12; PRD 14, draftPacketNarrative's verifier; test matrix CAS-08): every figure of
@@ -194,6 +195,91 @@ describe('the case’s own identifiers', () => {
     expect(verify('Claim {{claim_control_number:1}} for {{patient_name:1}} was paid short [3].', content, identifiers).passed).toBe(true);
     expect(verify('The plan paid short [1].', content, ['Q', 'A.', '']).passed).toBe(true);
     expect(verify(`J${cp(0xff41)}ne was underpaid [1].`, content, ['JANE']).passed).toBe(false);
+  });
+});
+
+describe('the edges of the check', () => {
+  const at = (narrative: string, report: VerifierReport) => report.mismatches.map((item) => [item.code, item.sentence, narrative.slice(item.start, item.end)]);
+
+  it('says where each mismatch is, in the order the narrative holds them', () => {
+    expect(verify('').mismatches).toEqual([{ code: 'empty_narrative', kind: null, sentence: -1, start: 0, end: 0 }]);
+    expect(verify('  \n\n ').mismatches).toEqual([{ code: 'empty_narrative', kind: null, sentence: -1, start: 0, end: 5 }]);
+    const second = 'The lines were paid short [3]. 1234.56 was withheld [3].';
+    expect(at(second, verify(second))).toEqual([['figure_not_in_input', 1, '1234.56']]);
+    // A hidden character is found before the figures are read, and still reported after an earlier figure.
+    const hidden = `Paid 1234.56 short${cp(0x200b)} [3].`;
+    expect(at(hidden, verify(hidden))).toEqual([
+      ['figure_not_in_input', 0, '1234.56'],
+      ['hidden_character', 0, cp(0x200b)],
+    ]);
+    // A figure and its uncited sentence start together: the shorter span first.
+    const uncited = '1234.56 was withheld.';
+    expect(at(uncited, verify(uncited))).toEqual([
+      ['figure_not_in_input', 0, '1234.56'],
+      ['sentence_without_citation', 0, uncited],
+    ]);
+  });
+
+  it('takes a marker at a sentence’s start as its citation, and fails any marker naming a source the version lacks', () => {
+    expect(verify('[3] The lines were paid short.').passed).toBe(true);
+    expect(codes(verify('The lines were paid short [1, 9].'))).toEqual(['unknown_citation']);
+    expect(codes(verify('The lines were paid short [1, 13].'))).toEqual(['unknown_citation']);
+    expect(codes(verify('The lines were paid short [12].'))).toEqual(['unknown_citation']);
+    for (const marker of ['[1, 3]', '[1 ,3]', '[1,  3]', '[1,3]']) {
+      expect(verify(`The lines were paid short ${marker}.`).passed, marker).toBe(true);
+    }
+    expect(codes(verify('Claim {{patient_name:0}} was paid short [3].'))).toEqual(['unknown_placeholder']);
+  });
+
+  it('names the kind of each mismatch, and counts the figures, placeholders and markers it checked', () => {
+    const narrative = 'Claim {{patient_name:9}} of Jane was paid 1234.56 short [9].';
+    const report = verify(narrative, content, ['JANE']);
+    expect(report.mismatches.map((item) => [item.code, item.kind, narrative.slice(item.start, item.end)])).toEqual([
+      ['unknown_placeholder', 'placeholder', '{{patient_name:9}}'],
+      ['identifier_in_narrative', 'identifier', 'Jane'],
+      ['figure_not_in_input', 'amount', '1234.56'],
+      ['unknown_citation', 'citation', '[9]'],
+    ]);
+    expect(report.checked).toBe(3);
+    expect(verify('Claim {{patient_name:1}} and {{member_id:2}} were paid 70.00 and 90.00 short [1] [3].').checked).toBe(6);
+  });
+
+  it('orders mismatches that start together by where they end', () => {
+    const narrative = 'Claim 12345-678 was paid short [3].';
+    const report = verify(narrative, content, ['12345']);
+    expect(report.mismatches.map((item) => [item.code, narrative.slice(item.start, item.end)])).toEqual([
+      ['identifier_in_narrative', '12345'],
+      ['figure_not_in_input', '12345-678'],
+    ]);
+    expect(identifierSpans('Jo and Jane Synthetic', ['JANE SYNTHETIC', 'JO'], [])).toEqual([
+      { start: 0, end: 2 },
+      { start: 7, end: 21 },
+    ]);
+  });
+
+  it('accepts a five-digit figure read as a code when the inputs hold it as a number', () => {
+    const paged = assemblePacket(assemblyInput({ citation: contractCitation({ page: 12345 }) }));
+    expect(verify('The clause is on page 12345 [1].', paged).passed).toBe(true);
+    expect(verify('The clause is on page 12345 [1].').mismatches.map((item) => [item.code, item.kind])).toEqual([['figure_not_in_input', 'code']]);
+  });
+
+  it('compares each identifier whole and word by word, in NFKC, longest first', () => {
+    expect(identifierForms([' Synthetic, Jane ', 'Jo', 'AB/CD;EF', 'Q R'])).toEqual(['Synthetic, Jane', 'Synthetic', 'AB/CD;EF', 'Jane', 'Q R', 'AB', 'CD', 'EF', 'Jo']);
+    expect(identifierForms([cp(0xff2a, 0xff21, 0xff2e, 0xff25)])).toEqual(['JANE']);
+    const spans = (narrative: string, identifiers: readonly string[]) =>
+      verify(narrative, content, identifiers)
+        .mismatches.filter((item) => item.code === 'identifier_in_narrative')
+        .map((item) => narrative.slice(item.start, item.end));
+    expect(spans('Jane Synthetic was underpaid [1].', ['JANE  SYNTHETIC'])).toEqual(['Jane Synthetic']);
+    expect(spans('Jane   Synthetic was underpaid [1].', ['JANE SYNTHETIC'])).toEqual(['Jane   Synthetic']);
+    expect(spans('Synthetic, Jane was underpaid [1].', ['SYNTHETIC, JANE'])).toEqual(['Synthetic, Jane']);
+    expect(spans('Jo was underpaid [1].', ['JO SYNTHETIC'])).toEqual(['Jo']);
+    // Right beside a marker it is still a word of its own.
+    expect(spans('The lines of Jane[3] were paid short.', ['JANE'])).toEqual(['Jane']);
+    expect(spans('[3]Jane was paid short.', ['JANE'])).toEqual(['Jane']);
+    // A month's name in any date is the date.
+    expect(verify('A line was billed on March 5 [3].', content, ['MARCH']).passed).toBe(true);
+    expect(verify('A line was billed on March 5, 2026 [3].', content, ['MARCH']).passed).toBe(true);
   });
 });
 

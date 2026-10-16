@@ -88,7 +88,12 @@ practice approved alone, as of the day generated. The daily monitor tells a case
 once in the app when a submission's follow-up date has come with no response (`follow_up` notifications, counts
 only). The audit report is milestone 6's, checked figure by figure against its worksheet, and keeps its contents.
 
-**Mutation testing covers the verifier's reader** (`readable.ts`, `scan.ts`, `facts.ts`, `placeholders.ts`).
+**Mutation testing covers the verifier's reader** (`readable.ts`, `scan.ts`, `facts.ts`, `placeholders.ts`), in
+`stryker.config.mjs`'s globs and in `stryker.verifier.config.mjs`, which measures the verifier alone. Under Vitest 5 the
+vitest runner reports most of these mutants as survived without running a test (a reported survivor, applied by hand,
+fails the packets suite), so the verifier's configuration uses Stryker's command runner over the packets unit suite.
+Run on 2026-10-16, it scored 86.17%: 1,377 of 1,598 mutants killed or timed out, against the 85% PRD 18 asks before
+Monitoring v1 (the first measurement, before `facts.test.ts` and the scanner's table tests, was 70.34%).
 
 ## Alternatives considered
 
@@ -102,6 +107,7 @@ only). The audit report is milestone 6's, checked figure by figure against its w
 | Change `pricing.answer` to a practice permission | It is the specialist's platform permission, checked as `rate_record.approve` is; the route needs `rate_record.edit` |
 | A deferred constraint trigger for the line bound | Errors at commit lose the form's message; the reconcile writes approvals before postings, so a row trigger holds |
 | Show the gap in the audit report | Its contents are checked against the independent worksheet line for line; the monthly summary is the recurring report |
+| Switch `stryker.config.mjs` to the command runner | Every pricing and ledger mutant would run every test of the three packages; that runner's report on them is not this change's to judge |
 
 ## Consequences
 
@@ -109,7 +115,10 @@ only). The audit report is milestone 6's, checked figure by figure against its w
 and ledger database tests run the review's probes; the generated route tests cover the four new routes (the route-test
 world seeds a Medicare Advantage case waiting for confirmation). Versions written before this change cannot be
 approved until written again. A name equal to a common word (a patient named May) fails a narrative that uses the
-word outside a date; the person rephrases. The time log the ROI statement's pursuit hours need is scheduled by no
+word outside a date; the person rephrases. The 221 surviving mutants are mostly the scanner's regular expressions
+(quantifiers and lookarounds no narrative of the tests tells apart) and fact sources that repeat another source's value
+(a pattern's first service date is a line's). Whether `stryker.config.mjs`'s vitest runner scores the pricing engine and
+the ledger truly under Vitest 5 is not checked here. The time log the ROI statement's pursuit hours need is scheduled by no
 milestone of the plan: it stays an open decision, and pursuit hours stay zero, stated on the statement.
 
 ## Revisit when
