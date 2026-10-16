@@ -5,7 +5,11 @@
   "assertion": "Listed for manual match; no entry",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": ["apps/worker/src/reconcile/ledger.db.test.ts","packages/ledger/src/matching.test.ts"],
+  "assertedBy": [
+    "apps/worker/src/reconcile/ledger.db.test.ts",
+    "packages/ledger/src/matching.test.ts",
+    "apps/worker/src/reconcile/chain.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

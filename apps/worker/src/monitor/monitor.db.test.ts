@@ -153,12 +153,15 @@ describe('the monitoring chain on an upload batch (J11)', () => {
       expect(c.logs.filter((line) => line.msg === 'monitoring waits for the rest of the upload batch')).toHaveLength(1);
       expect((await effects(practice.practiceId)).runs).toBe(0);
 
-      // The last file of the batch: now the month is planned, and refused while its plans are unmapped (MAP-01).
+      // The last file of the batch: now the month is planned, and refused while its plans are unmapped
+      // (MAP-01); with nothing to price, the ledger reconciles the document at once (docs/adr/0043).
       await parse(practice, second)(c.queue);
       expect((await c.queue.drain()).map((job) => [job.name, job.outcome])).toEqual([
         ['parse_835', 'succeeded'],
         ['monitor', 'succeeded'],
+        ['reconcile', 'succeeded'],
       ]);
+      expect(c.queue.sent.filter((job) => job.name === 'reconcile').map((job) => job.data)).toEqual([{ practice_id: practice.practiceId, document_id: second }]);
       expect(c.logs.find((line) => line.error_code === 'UNMAPPED_PLAN')).toMatchObject({ msg: 'monitoring left months waiting on a plan mapping', release_no: RELEASE });
       expect((await effects(practice.practiceId)).runs).toBe(0);
 
@@ -215,12 +218,16 @@ describe('the monitoring chain on an upload batch (J11)', () => {
         key('monitor', first),
         key('parse_835', second),
         key('monitor', second),
+        key('reconcile', second),
         key('monitor', todayUtc()),
         key('price', runId),
         key('triage', runId),
         key('reconcile', runId),
       ]);
-      expect(c.logs.find((line) => line.msg === 'reconcile complete')).toMatchObject({ job_type: 'reconcile', pricing_run_id: runId });
+      expect(c.logs.filter((line) => line.msg === 'reconcile complete')).toEqual([
+        expect.objectContaining({ job_type: 'reconcile', document_id: second }),
+        expect.objectContaining({ job_type: 'reconcile', pricing_run_id: runId }),
+      ]);
       expect(c.logs.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
     } finally {
       await c.worker.stop();

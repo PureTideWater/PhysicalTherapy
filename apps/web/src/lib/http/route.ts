@@ -168,6 +168,18 @@ export interface SampleRefs {
   /** A sent monthly digest of the practice; the administrator holds a notification of it and of the pricing run (docs/adr/0039). */
   readonly digestId: string;
   /**
+   * The recovery ledger (docs/adr/0042, 0043): an unmatched posting row and an unmatched EFT row, each
+   * the whole of the loaded remittance above; an adjusted payment no case line was matched to, of the
+   * case line's code and date (the case line's service line); a standing match a person may reverse;
+   * and a printed ROI statement.
+   */
+  readonly postingRowId: string;
+  readonly eftRowId: string;
+  readonly adjustedClaimId: string;
+  readonly caseServiceLineId: string;
+  readonly reversibleMatchId: string;
+  readonly roiStatementId: string;
+  /**
    * The workbench (docs/adr/0044): the case's rate record (its pattern names it); the case's packet's
    * current version, written by an analyst and passing the verifier, unapproved, with the hash an
    * approval names; a second case with an approved, exported version and its submission; and a payer

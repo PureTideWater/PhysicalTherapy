@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/worker/src/reconcile/ledger.db.test.ts",
     "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-    "packages/ledger/src/templates.test.ts"
+    "packages/ledger/src/templates.test.ts",
+    "apps/worker/src/reconcile/chain.db.test.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

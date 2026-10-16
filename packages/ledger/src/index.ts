@@ -21,7 +21,8 @@ export {
   preferredCandidates,
   reprocessing,
 } from './matching';
-export { type OpenCase, type RoiInput, type RoiStatement, previousQuarter, quarterOf, quarterPeriod, ratioText, roiStatement } from './roi';
+export { type OpenCase, type RoiInput, type RoiStatement, approvedUnproved, previousQuarter, quarterOf, quarterPeriod, ratioText, roiStatement } from './roi';
+export { type FigureCheck, ROI_CSV_COLUMNS, type StatementCheck, type StoredStatement, csvField, recomputeStatement, roiStatementCsv } from './statement';
 export { type LedgerSettings, LedgerSettingsError, POSTING_TEMPLATE_KEY, PROOF_LEVEL_KEY, ledgerSettings, postingTemplateOf, postingTemplateSetting } from './settings';
 export {
   ALLOCATABLE_STAGES,
@@ -66,6 +67,7 @@ export {
   type RowProblem,
   SYNTHETIC_BANK_EXPORT_V1,
   SYNTHETIC_PM_EXPORT_V1,
+  exportColumns,
   readDate,
   readEftExport,
   readPostingExport,

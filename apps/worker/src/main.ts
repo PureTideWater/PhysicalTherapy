@@ -26,6 +26,7 @@ import { parseHandler } from './parse/job';
 import { mailSender, platformRuntime } from './platform/wiring';
 import { priceHandler } from './price/job';
 import { reconcileHandler } from './reconcile/job';
+import { roiStatementHandler } from './reconcile/print';
 import { auditReportHandler } from './report/generate';
 import { ChromiumPdfRenderer } from './report/pdf';
 import { installShutdownHandlers } from './shutdown';
@@ -70,8 +71,8 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
     // the monitoring chain: monitor plans the months to price, price executes a pricing run, triage
     // screens a complete run and groups its lines into cases, reconcile is the ledger's step; digest
     // sends a practice's monthly digest; audit_report triages a run and prints its report;
-    // packet_export prints an approved packet's PDF and CSV with its identifiers inserted; export
-    // arrives with its milestone. Every practice job's attempts are recorded in job_run.
+    // packet_export prints an approved packet's PDF and CSV with its identifiers inserted;
+    // roi_statement prints an ROI statement's PDF; export arrives with its milestone. Every practice job's attempts are recorded in job_run.
     const services = intakeServices(intake);
     const handlers: JobHandlers = {
       ...placeholderHandlers,
@@ -84,6 +85,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       digest: digestHandler({ mail: mailSender(notifications), appOrigin: notifications.appOrigin }),
       audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
       packet_export: packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
+      roi_statement: roiStatementHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     };
     const worker = await startWorker({
       boss,

@@ -32,6 +32,7 @@ export const ALLOWED_LOG_FIELDS = [
   'packet_id',
   'packet_version_id',
   'ledger_entry_id',
+  'roi_statement_id',
   'contract_version_id',
   'rate_record_id',
   'release_no',

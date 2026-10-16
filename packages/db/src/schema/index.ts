@@ -73,6 +73,7 @@ export {
   ledgerMatch,
   postingRow,
   roiStatement,
+  roiStatementKey,
 } from './ledger';
 export {
   type AdjustmentRow,

@@ -50,6 +50,17 @@ export default async function ReportsPage(props: Props) {
           </Link>
         </CardContent>
       </Card>
+      <Card role="region" aria-label="ROI statements">
+        <CardHeader>
+          <CardTitle>ROI statements</CardTitle>
+          <CardDescription>Recovered cash net of recoupments against the fees paid, quarterly and on demand, every figure with the ledger entries it sums.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link className="text-sm underline" href={`${path}/roi`}>
+            Open the ROI statements
+          </Link>
+        </CardContent>
+      </Card>
       {canGenerate ? (
         <Card role="region" aria-label="Generate an audit report">
           <CardHeader>

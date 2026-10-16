@@ -226,11 +226,33 @@ a person (LED-03), posts each case line's share of a matched check (LED-04, allo
 in part, LED-09) and deposits by TRN02 and amount (LED-05), takes back PLB WO and reversals at once, reopening the line
 and its case and telling the owner (LED-06), records interest beside principal, and writes the quarter before's ROI
 statement once, which the database checks against the entries it links (LED-11). A person with `posting.reconcile`
-matches by hand and reverses a match with an exactly offsetting entry (LED-07) through `@tp/worker/ledger`, whose
-screens are milestone 9's second part; the dashboard's recovered this quarter and the digest's recoveries now read the
+matches by hand and reverses a match with an exactly offsetting entry (LED-07) through `@tp/worker/ledger` and
+the Reconciliation screen below; the dashboard's recovered this quarter and the digest's recoveries now read the
 ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
 `apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): five synthetic export scenarios
 whose known outcomes are compared with plain SQL sums.
+
+Reconciliation in the product (ADR 0043): the monitoring chain reconciles every upload batch. After a document whose
+batch prices nothing, `monitor` queues `reconcile` keyed by the document; otherwise triage queues it after the run. So
+an adjusted remittance or a PLB take-back reaches the ledger after its parse. The Reconciliation screen
+(`/p/<practice>/reconciliation`, `?case=<case>` for one case's ledger) shows:
+
+- the ledger's totals by stage, recovered with its proof level;
+- the uploader for posting and EFT exports (the same scanned intake) and what became of each export;
+- what matches nothing, beside its candidates and counted in no total;
+- each case line's linkage from its remittance (ERA) to its posting and deposit, with recoupments, interest and entries;
+- the ledger's entries.
+
+A billing manager or firm principal (`posting.reconcile`) matches by hand and reverses a match with a reason and a
+confirmation. The posting template is mapped once at `/p/<practice>/reconciliation/template`, by the same people, through
+`set_practice_posting_template` (migration `20261024120000_reconciliation_and_roi_documents.sql`; the proof level stays
+the administrator's). It is a built-in template or the practice's own column mapping, previewed on a sample read in the
+browser and never uploaded. ROI statements (`/p/<practice>/reports/roi`) are quarterly (the daily reconcile) or on
+demand. Each figure is recomputed on its page from the entries it links. The worker's `roi_statement` job prints the
+PDF through the audit report's Chromium pipeline and records its key and SHA-256 once; the CSV (`roiStatementCsv`)
+lists each figure's entries. `apps/worker/src/reconcile/chain.db.test.ts` runs every LED case through the worker loop
+and intake on SYNTHETIC files, and `apps/web/e2e/reconciliation.spec.ts` is J10 in the browser: payer approved, posted,
+deposited, a recoupment, the ROI statement and a reversal.
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its

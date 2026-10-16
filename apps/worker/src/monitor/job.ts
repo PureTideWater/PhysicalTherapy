@@ -13,6 +13,12 @@ import { type MonitorPlan, planMonitoring } from './plan';
  * before today (window passed; PRD 12, Deadlines), so a case's actionable total and deadline follow the
  * calendar on the daily schedule even when no new file arrives. Again the same day, it writes off
  * nothing more.
+ *
+ * After a document, when the plan prices nothing (no month to price, a month waiting on a mapping, no
+ * rule release in force), it queues the recovery ledger's reconcile keyed by the document
+ * (reconcile:<practice>:<document>; docs/adr/0043): a remittance that reprocesses a case line or takes
+ * money back by PLB is matched to the open case lines after its parse, not on the next day's schedule.
+ * When it prices a run, triage queues the reconcile once the run is triaged.
  */
 export function monitorHandler(): JobHandler<'monitor'> {
   return async (payload, context) => {
@@ -28,15 +34,18 @@ export function monitorHandler(): JobHandler<'monitor'> {
     }
     if (plan.outcome === 'no_release') {
       context.logger.warn('monitoring found no rule release in force; nothing was priced', { error_code: 'NO_RULE_RELEASE' });
-      return;
+    } else {
+      for (const pricingRunId of plan.queued) {
+        await context.enqueue('price', { practice_id: payload.practice_id, pricing_run_id: pricingRunId });
+      }
+      if (plan.waitingOnMapping.length > 0) {
+        // Coverage shows the dollars waiting on mappings; a month is planned again on the next trigger.
+        context.logger.info('monitoring left months waiting on a plan mapping', { release_no: plan.releaseNo, error_code: 'UNMAPPED_PLAN' });
+      }
+      context.logger.info('monitoring planned the practice’s months', { release_no: plan.releaseNo });
     }
-    for (const pricingRunId of plan.queued) {
-      await context.enqueue('price', { practice_id: payload.practice_id, pricing_run_id: pricingRunId });
+    if ('document_id' in payload && (plan.outcome === 'no_release' || plan.queued.length === 0)) {
+      await context.enqueue('reconcile', { practice_id: payload.practice_id, document_id: payload.document_id });
     }
-    if (plan.waitingOnMapping.length > 0) {
-      // Coverage shows the dollars waiting on mappings; a month is planned again on the next trigger.
-      context.logger.info('monitoring left months waiting on a plan mapping', { release_no: plan.releaseNo, error_code: 'UNMAPPED_PLAN' });
-    }
-    context.logger.info('monitoring planned the practice’s months', { release_no: plan.releaseNo });
   };
 }
