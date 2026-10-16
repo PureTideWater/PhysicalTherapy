@@ -6,9 +6,11 @@ import { z } from 'zod';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError } from '../http/route';
 import type { Services } from '../server/services';
+import { type ExportRecord, type ReportDocumentSummary, exportHistory, listReportDocuments } from '../reports/documents';
 import { type Attestation, type DownloadRecord, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
 import { RUN_NOT_IN_EFFECT, type RunChoice, isRunInEffect, runsInEffect } from '../triage/queries';
 import { type ListPage, pageParam } from '../http/paging';
+import { lastMonth } from '../monitoring/queries';
 import { opaqueId } from './schemas';
 
 /**
@@ -49,13 +51,24 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256');
 
 export interface ReportsPageData {
   readonly practiceId: string;
-  /** A page of the reports, newest first, and a page of the export history (each pages on its own). */
+  /**
+   * A page of the audit reports, newest first, a page of the coverage reports and monthly summaries
+   * generated (documents), and a page of the export history: every download of a report's file and
+   * every line-level export (each pages on its own).
+   */
   readonly reports: ListPage<ReportSummary>;
-  readonly history: ListPage<DownloadRecord>;
+  readonly documents: ListPage<ReportDocumentSummary>;
+  readonly history: ListPage<ExportRecord>;
   readonly runs: readonly RunChoice[];
   readonly canGenerate: boolean;
   readonly canExport: boolean;
   readonly canReview: boolean;
+  /** The month the monthly summary offers first: the month before today's. */
+  readonly lastMonth: string;
+  /** The server's origin, for the links shared within the organization. */
+  readonly origin: string;
+  /** The person's roles on the practice (the permission state names them). */
+  readonly roles: readonly string[];
 }
 
 export const reportsPage = practiceRoute({
@@ -64,17 +77,21 @@ export const reportsPage = practiceRoute({
   path: '/p/[practiceId]/reports',
   phi: true,
   permission: 'report.read',
-  params: z.object({ practiceId: opaqueId, page: pageParam, history: pageParam }),
-  handle: async ({ scope, practiceId, params, request, access }): Promise<ReportsPageData> => {
+  params: z.object({ practiceId: opaqueId, page: pageParam, documents: pageParam, history: pageParam }),
+  handle: async ({ scope, practiceId, params, request, access, services }): Promise<ReportsPageData> => {
     const canGenerate = rolesPermit(access.roles, 'case.work');
     return {
       practiceId,
       reports: await listReports(scope, practiceId, request.requestId, params.page),
-      history: await downloads(scope, practiceId, null, request.requestId, params.history),
+      documents: await listReportDocuments(scope, practiceId, params.documents, request.requestId),
+      history: await exportHistory(scope, practiceId, params.history, request.requestId),
       runs: canGenerate ? await runsInEffect(scope, practiceId) : [],
       canGenerate,
       canExport: rolesPermit(access.roles, 'phi.export'),
       canReview: rolesPermit(access.roles, 'audit_finding.validate'),
+      lastMonth: lastMonth(services.now()),
+      origin: services.origin,
+      roles: access.roles,
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
@@ -114,6 +131,8 @@ export interface ReportPageData {
   readonly canExport: boolean;
   readonly canRelease: boolean;
   readonly canReview: boolean;
+  /** The server's origin, for the link shared within the organization. */
+  readonly origin: string;
 }
 
 async function report(scope: PracticeScope<ScopeClient>, practiceId: string, reportId: string, requestId: string): Promise<ReportDetail> {
@@ -131,13 +150,14 @@ export const reportPage = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, reportId: opaqueId, history: pageParam }),
-  handle: async ({ scope, practiceId, params, request, access }): Promise<ReportPageData> => ({
+  handle: async ({ scope, practiceId, params, request, access, services }): Promise<ReportPageData> => ({
     practiceId,
     report: await report(scope, practiceId, params.reportId, request.requestId),
     history: await downloads(scope, practiceId, params.reportId, request.requestId, params.history),
     canExport: rolesPermit(access.roles, 'phi.export'),
     canRelease: rolesPermit(access.roles, 'case.work'),
     canReview: rolesPermit(access.roles, 'audit_finding.validate'),
+    origin: services.origin,
   }),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, reportId: refs.auditReportId }) },
 });

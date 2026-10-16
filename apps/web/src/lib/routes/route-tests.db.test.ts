@@ -42,6 +42,7 @@ import { seedTriage, seedTriageLine } from './test-support/triage-world';
 import { seedMonitoring } from './test-support/monitoring-world';
 import { seedLedger } from './test-support/ledger-world';
 import { seedPacketLine, seedPackets } from './test-support/packet-world';
+import { seedReportDocument } from './test-support/report-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -376,6 +377,7 @@ async function buildWorld(name: string): Promise<World> {
     remittanceId: loaded.remittanceId,
     caseServiceLineId: triageLineId,
   });
+  const reportDocument = await seedReportDocument({ app, keys, documents, practiceId: tenant.practiceId, managerId: manager });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -400,6 +402,7 @@ async function buildWorld(name: string): Promise<World> {
     ...monitoring,
     ...ledger,
     ...packets,
+    ...reportDocument,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

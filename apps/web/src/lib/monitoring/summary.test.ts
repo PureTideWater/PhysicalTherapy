@@ -5,7 +5,7 @@ import { type MonthlySummary, SUMMARY_BUCKETS, type SummaryBucket, type SummaryF
 
 const zero = (dollars: boolean): SummaryFigure => ({ lines: 0, billedCents: '0', varianceCents: dollars ? '0' : null });
 const figures = (overrides: Partial<Record<SummaryBucket, SummaryFigure>> = {}) =>
-  Object.fromEntries(SUMMARY_BUCKETS.map((bucket) => [bucket, overrides[bucket] ?? zero(['validated', 'actionable', 'payer_approved', 'recovered'].includes(bucket))])) as Record<SummaryBucket, SummaryFigure>;
+  Object.fromEntries(SUMMARY_BUCKETS.map((bucket) => [bucket, overrides[bucket] ?? zero(['validated', 'actionable'].includes(bucket))])) as Record<SummaryBucket, SummaryFigure>;
 
 describe('the monthly variance summary as CSV', () => {
   it('writes one row per payer and stage, counts and totals only, never a stage added to another', () => {

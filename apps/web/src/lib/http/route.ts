@@ -192,6 +192,8 @@ export interface SampleRefs {
   readonly exportedVersionId: string;
   readonly submissionId: string;
   readonly responseDocumentId: string;
+  /** A printed coverage report of the practice (docs/adr/0045). */
+  readonly reportDocumentId: string;
 }
 
 export interface RouteSample {

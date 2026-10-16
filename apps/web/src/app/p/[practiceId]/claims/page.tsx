@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Badge, Button, Card, CardContent, EmptyState, Input, Label } from '@tp/ui';
+import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -10,6 +11,7 @@ import { roleNames } from '../../../../components/format';
 import { LineStatusChip, Money, Pager, basisName, period } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
+import { LINE_STAGE_FILTERS } from '../../../../lib/remittances/queries';
 import { claimsPage } from '../../../../lib/routes/remittances';
 import { findClaimAction } from './actions';
 
@@ -34,7 +36,7 @@ export default async function ClaimsPage(props: Props) {
   }
   const { practiceId, filters, payers, list, canReadPhi, roles } = page.data;
   const path = `/p/${practiceId}/claims`;
-  const narrowed = [filters.payer, filters.remittance, filters.claim, filters.patient, filters.code, filters.from, filters.to].some((value) => value !== undefined);
+  const narrowed = [filters.payer, filters.remittance, filters.claim, filters.patient, filters.code, filters.from, filters.to, filters.stage].some((value) => value !== undefined);
   const query = { ...filters };
   return (
     <AppShell shell={page.shell} section="claims">
@@ -79,6 +81,17 @@ export default async function ClaimsPage(props: Props) {
         <div className="flex flex-col gap-1">
           <Label htmlFor="to">Service to (month)</Label>
           <Input id="to" name="to" type="month" defaultValue={filters.to ?? ''} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="stage">Stage now</Label>
+          <select id="stage" name="stage" defaultValue={filters.stage ?? ''} className="h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="">Any stage, or none</option>
+            {LINE_STAGE_FILTERS.map((stage) => (
+              <option key={stage} value={stage}>
+                {STAGE_LABELS[stage]}
+              </option>
+            ))}
+          </select>
         </div>
         <Button type="submit" variant="outline">
           Filter

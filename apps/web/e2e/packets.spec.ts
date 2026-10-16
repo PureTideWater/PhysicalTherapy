@@ -3,9 +3,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { type Page, expect, test } from '@playwright/test';
+import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
 
 import { refusal, signInWithTotp } from './helpers';
+import { queue } from './journeys';
 import { openPacketCase, packetPractice } from './packets';
 import { startLocalWorker } from './worker';
 
@@ -19,7 +21,12 @@ import { startLocalWorker } from './worker';
  * writes a passing version again and is refused approval as its drafter, with the reason; a second
  * billing manager approves it and exports it, the worker printing the PDF and CSV with the identifiers
  * inserted; and the submission logged carries the export's SHA-256. Identifiers stay placeholders on
- * screen. Synthetic data only.
+ * screen. The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
+ * payer letter is uploaded on the Contracts screen and recorded as a partial acceptance of 60.00, which
+ * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
+ * the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
+ * remittance, posting, deposit, recovered and recoupment steps of J10 are e2e/reconciliation.spec.ts.
+ * Synthetic data only.
  */
 
 const REMITTANCE = readFileSync(path.resolve(import.meta.dirname, '../../../fixtures/synthetic/CAS-08/remit.835'));
@@ -163,6 +170,39 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(page.locator('[data-packet="approved"]')).toContainText('approved; exported');
       await expect(page.getByRole('heading', { level: 1 }).locator('[data-state="submitted"]')).toBeVisible();
       assertNoPhi('url', page.url(), { known: KNOWN });
+    });
+
+    await test.step('the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {
+      await withWorker(async () => {
+        await approver.goto(`/p/${practiceId}/contracts`);
+        await approver.getByLabel('Kind of document').selectOption('payer_letter');
+        const letter = Buffer.from(syntheticPdf([['SYNTHETIC PAYER LETTER - INVENTED TEXT', 'On reconsideration the payer accepts 60.00 of the amount disputed.']]));
+        await approver.getByLabel('Choose files to upload').setInputFiles([{ name: 'letter.pdf', mimeType: 'application/pdf', buffer: letter }]);
+        await expect(approver.getByRole('region', { name: 'This batch' }).getByRole('listitem').filter({ hasText: 'letter.pdf' })).toContainText('Stored', { timeout: 90_000 });
+      });
+      await approver.goto(`${casePath}/submissions`);
+      const form = approver.getByRole('region', { name: 'Log a payer response' });
+      await form.getByLabel('Response', { exact: true }).selectOption('partial');
+      await form.getByLabel('Amount accepted (accepted or partial only, dollars)').fill('60.00');
+      await form.getByRole('button', { name: 'Record the response' }).click();
+      await expect(approver.locator('[data-notice="recorded"]')).toBeVisible();
+      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('$60.00 accepted');
+      await expect(approver.getByRole('region', { name: 'Submission log' }).locator('[data-response="partial"]')).toContainText('(with its document)');
+      // Recording the response writes no ledger entry (LED-01): nothing is approved until the reconcile.
+      await approver.goto(`/p/${practiceId}/reconciliation`);
+      await expect(approver.locator('[data-figure="approved"]')).toContainText('$0.00');
+      await withWorker(async () => {
+        await queue('reconcile', { practice_id: practiceId, day: new Date().toISOString().slice(0, 10) });
+        await expect(async () => {
+          await approver.goto(`/p/${practiceId}/reconciliation`);
+          await expect(approver.locator('[data-figure="approved"]')).toContainText('$60.00', { timeout: 1_000 });
+        }).toPass({ timeout: 90_000 });
+      });
+      await expect(approver.locator('[data-figure="recovered"]')).toContainText('$0.00');
+      await approver.goto(`/p/${practiceId}`);
+      await expect(approver.locator('[data-figure="payer-approved"]')).toContainText('$60.00');
+      await expect(approver.locator('[data-figure="recovered-total"]')).toContainText('$0.00');
+      assertNoPhi('url', approver.url(), { known: KNOWN });
     });
   } finally {
     await approver.close();

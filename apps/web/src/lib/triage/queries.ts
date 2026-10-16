@@ -310,8 +310,8 @@ interface CaseRow {
   readonly closed_at: Date | null;
 }
 
-/** A case's stage-three figure: the variance of its lines not written off whose stage is still actionable. */
-const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
+/** A case's stage-three figure: the variance of its lines not written off whose stage is still actionable (the Cases screen's and the dashboard's). */
+export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
     WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
       AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable')`;
 

@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
 import { utc } from '../../../../components/format';
 import { Money, Pager } from '../../../../components/remittances/display';
@@ -10,6 +13,7 @@ import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remed
 import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
+import { generateReportDocumentFormAction } from '../reports/documents/actions';
 
 export const metadata: Metadata = { title: 'Coverage' };
 
@@ -27,7 +31,7 @@ export default async function CoveragePage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts } = page.data;
+  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport } = page.data;
   // The shares are of the latest complete run's lines; before one, of every line the practice holds.
   const of = run === null ? { lines: lines.lines, chargeCents: lines.chargeCents } : { lines: run.lines, chargeCents: run.chargeCents };
   const path = `/p/${practiceId}/coverage`;
@@ -182,6 +186,26 @@ export default async function CoveragePage(props: Props) {
           <QuestionList questions={obtain} practiceId={practiceId} />
         )}
       </section>
+      <Card role="region" aria-label="Coverage report">
+        <CardHeader>
+          <CardTitle>Coverage report</CardTitle>
+          <CardDescription>This screen as a PDF and a CSV, with its figures fixed as they stand now (no patient, claim or line in either). It is listed under Reports, with its downloads in the export history.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-3">
+          {canGenerateReport ? (
+            <ActionForm action={generateReportDocumentFormAction} submit="Generate the coverage report" variant="outline">
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <input type="hidden" name="practiceId" value={practiceId} />
+              <input type="hidden" name="kind" value="coverage" />
+            </ActionForm>
+          ) : (
+            <p className="text-sm text-muted-foreground">A billing manager or analyst generates it; every generated report is on the Reports screen.</p>
+          )}
+          <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
+            Reports
+          </Link>
+        </CardContent>
+      </Card>
       <Card role="region" aria-label="Request-to-payer letter">
         <CardHeader>
           <CardTitle>Request a missing fee schedule from a payer</CardTitle>

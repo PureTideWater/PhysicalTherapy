@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/worker/src/packets/packets.db.test.ts",
     "apps/worker/src/reconcile/ledger.db.test.ts",
-    "apps/worker/src/reconcile/chain.db.test.ts"
+    "apps/worker/src/reconcile/chain.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "A packet marked submitted: an action that must create no entry; no file.",

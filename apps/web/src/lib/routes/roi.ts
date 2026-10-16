@@ -75,6 +75,8 @@ export const generateRoiAction = practiceRoute({
 export interface RoiStatementPageData {
   readonly practiceId: string;
   readonly detail: StatementDetail;
+  /** The server's origin, for the link shared within the organization. */
+  readonly origin: string;
 }
 
 export const roiStatementPage = practiceRoute({
@@ -84,12 +86,12 @@ export const roiStatementPage = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, statementId: opaqueId }),
-  handle: async ({ scope, practiceId, params, request }): Promise<RoiStatementPageData> => {
+  handle: async ({ scope, practiceId, params, request, services }): Promise<RoiStatementPageData> => {
     const detail = await statementOf(scope, practiceId, params.statementId, request.requestId);
     if (detail === undefined) {
       throw new NotFoundError();
     }
-    return { practiceId, detail };
+    return { practiceId, detail, origin: services.origin };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, statementId: refs.roiStatementId }) },
 });

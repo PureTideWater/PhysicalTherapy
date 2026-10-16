@@ -61,6 +61,8 @@ export interface CoveragePageData {
   readonly payers: readonly PayerOption[];
   readonly contracts: readonly ContractOption[];
   readonly canMap: boolean;
+  /** Whether the person may generate the coverage report (its PDF and CSV; case.work, as every report document). */
+  readonly canGenerateReport: boolean;
 }
 
 export const coveragePage = practiceRoute({
@@ -92,6 +94,7 @@ export const coveragePage = practiceRoute({
       payers: await payerOptions(scope, practiceId),
       contracts: await contractOptions(scope, practiceId, request.requestId),
       canMap: rolesPermit(access.roles, 'mapping.edit'),
+      canGenerateReport: rolesPermit(access.roles, 'case.work'),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },

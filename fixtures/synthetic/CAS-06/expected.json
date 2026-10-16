@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/worker/src/triage/triage.db.test.ts",
     "packages/triage/src/cases.test.ts",
-    "apps/web/src/lib/routes/workbench-routes.db.test.ts"
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+    "apps/web/e2e/triage.spec.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Writes off a line of a case built from the CAS-03 fixture; no file of its own.",

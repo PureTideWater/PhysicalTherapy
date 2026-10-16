@@ -5,7 +5,11 @@
   "assertion": "Counts and totals only; no PHI column referenced",
   "synthetic": true,
   "completesIn": 7,
-  "assertedBy": ["apps/worker/src/monitor/monitor.db.test.ts","apps/worker/src/digest/view.test.ts"],
+  "assertedBy": [
+    "apps/worker/src/monitor/monitor.db.test.ts",
+    "apps/worker/src/digest/view.test.ts",
+    "apps/web/e2e/monitoring.spec.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "A digest is built from counts and totals in the database; no file.",
   "files": [],

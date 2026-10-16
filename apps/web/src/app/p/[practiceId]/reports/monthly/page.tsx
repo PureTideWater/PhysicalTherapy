@@ -1,70 +1,54 @@
+import { randomUUID } from 'node:crypto';
+
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import { monthName } from '@tp/worker/digests';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
-import { Money } from '../../../../../components/remittances/display';
+import { MonthlyFigures } from '../../../../../components/reports/documents';
+import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import type { SummaryBucket, SummaryFigure } from '../../../../../lib/monitoring/queries';
-import { SUMMARY_LABELS, monthlySummaryPage } from '../../../../../lib/routes/monitoring';
+import { monthlyContent } from '../../../../../lib/reports/documents';
+import { monthlySummaryPage } from '../../../../../lib/routes/monitoring';
+import { generateReportDocumentFormAction } from '../documents/actions';
 
 export const metadata: Metadata = { title: 'Monthly variance summary' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-const STAGES: readonly SummaryBucket[] = ['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'];
-const OTHERS: readonly SummaryBucket[] = ['priced', 'overpaid', 'unpriced', 'not_priced'];
-
-/** Each stage's figure links to the screen it comes from. */
-function stageHref(practiceId: string, bucket: SummaryBucket, month: string): string {
-  switch (bucket) {
-    case 'flagged':
-      return `/p/${practiceId}/anomalies`;
-    case 'actionable':
-    case 'payer_approved':
-    case 'recovered':
-      return `/p/${practiceId}/cases`;
-    case 'unpriced':
-    case 'not_priced':
-      return `/p/${practiceId}/coverage`;
-    case 'validated':
-    case 'priced':
-    case 'overpaid':
-      return `/p/${practiceId}/claims?from=${month}&to=${month}`;
-  }
-}
-
-function Dollars({ figure, bucket }: { readonly figure: SummaryFigure; readonly bucket: SummaryBucket }) {
-  if (bucket === 'flagged') {
-    return <span className="text-muted-foreground">a count, never a dollar claim</span>;
-  }
-  return figure.varianceCents === null ? <span className="text-muted-foreground">—</span> : <Money value={figure.varianceCents} />;
-}
-
 /**
- * The monthly variance summary (PRD 5, J12; PRD 7, Reports: "monthly summary ... every total links to
- * its stage"): the month's lines by service date, each counted once at the furthest stage it has
- * reached, with counts, billed charges and, for validated and actionable, the variance; by payer
- * beside it. Headline totals never mix stages: no figure here adds one stage to another.
+ * The monthly variance summary (PRD 5, J12; PRD 7, Reports: "monthly summary ... generate, download,
+ * share within the organization ... every total links to its stage"): the month's lines by service
+ * date, each counted once at the furthest stage it has reached, with counts, billed charges and, for
+ * validated and actionable, the variance; by payer beside it. Every figure links to the lines or cases
+ * it counts; no figure adds one stage to another. Payer approved and recovered are counts here: their
+ * dollars are the recovery ledger's. The month's CSV downloads now; its PDF is a document printed by the
+ * worker with the figures as they stand when it is generated (docs/adr/0045).
  */
 export default async function MonthlySummaryPage(props: Props) {
   const page = await loadPage(monthlySummaryPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, summary, digests } = page.data;
-  const { month, total, byPayer } = summary;
+  const { practiceId, summary, digests, canGenerate, origin } = page.data;
+  const { month } = summary;
+  const path = `/p/${practiceId}/reports/monthly`;
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
+        <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
+          Reports
+        </Link>
         <h1 className="text-2xl font-semibold tracking-tight">Monthly variance summary, {monthName(month)}</h1>
         <p className="text-sm text-muted-foreground">
-          Lines with a service date in the month, each counted once at the furthest stage it has reached. Every figure carries its stage; none is added to another. Payer approved and recovered come from the recovery ledger.
+          Lines with a service date in the month, each counted once at the furthest stage it has reached. Every figure carries its stage; none is added to another. Payer approved and recovered are counts of lines here; their dollars are
+          the recovery ledger’s, on Reconciliation.
         </p>
       </div>
-      <form className="flex flex-wrap items-end gap-3" method="get">
+      <form className="flex flex-wrap items-end gap-3" method="get" aria-label="Choose the month">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="summary-month">Month of service</Label>
           <Input id="summary-month" name="month" type="month" defaultValue={month} className="w-44" />
@@ -72,107 +56,19 @@ export default async function MonthlySummaryPage(props: Props) {
         <Button type="submit" variant="outline">
           Show the month
         </Button>
-        <a className="text-sm underline" href={`/p/${practiceId}/reports/monthly/csv?month=${month}`}>
+        <a className="text-sm underline" href={`${path}/csv?month=${month}`}>
           Download the summary CSV
         </a>
       </form>
-      <Card role="region" aria-label="By stage">
-        <CardHeader>
-          <CardTitle>By stage</CardTitle>
-          <CardDescription>Variance is expected allowed less observed allowed on the priced line the stage names.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <table className="w-full text-left text-sm" aria-label="Lines by stage">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="py-1 font-medium">Stage</th>
-                <th className="py-1 font-medium">Lines</th>
-                <th className="py-1 font-medium">Billed</th>
-                <th className="py-1 font-medium">Variance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {STAGES.map((bucket) => (
-                <tr key={bucket} className="border-t" data-stage={bucket}>
-                  <td className="py-1">
-                    <Link className="underline" href={stageHref(practiceId, bucket, month)}>
-                      {SUMMARY_LABELS[bucket]}
-                    </Link>
-                  </td>
-                  <td className="py-1 tabular-nums">{total.figures[bucket].lines}</td>
-                  <td className="py-1">
-                    <Money value={total.figures[bucket].billedCents} />
-                  </td>
-                  <td className="py-1">
-                    <Dollars figure={total.figures[bucket]} bucket={bucket} />
-                  </td>
-                </tr>
-              ))}
-              <tr className="border-t text-muted-foreground" data-stage="actionable_written_off">
-                <td className="py-1">Written off from a case (not in the actionable total)</td>
-                <td className="py-1 tabular-nums">{total.writtenOff.lines}</td>
-                <td className="py-1">
-                  <Money value={total.writtenOff.billedCents} />
-                </td>
-                <td className="py-1">
-                  <Money value={total.writtenOff.varianceCents} />
-                </td>
-              </tr>
-              {OTHERS.map((bucket) => (
-                <tr key={bucket} className="border-t text-muted-foreground" data-stage={bucket}>
-                  <td className="py-1">
-                    <Link className="underline" href={stageHref(practiceId, bucket, month)}>
-                      {SUMMARY_LABELS[bucket]}
-                    </Link>
-                  </td>
-                  <td className="py-1 tabular-nums">{total.figures[bucket].lines}</td>
-                  <td className="py-1">
-                    <Money value={total.figures[bucket].billedCents} />
-                  </td>
-                  <td className="py-1">—</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-      <Card role="region" aria-label="By payer">
-        <CardHeader>
-          <CardTitle>By payer</CardTitle>
-          <CardDescription>Lines and dollars at each stage, each stage on its own.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {byPayer.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No line has a service date in {monthName(month)}.</p>
-          ) : (
-            <table className="w-full text-left text-sm" aria-label="Stages by payer">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 font-medium">Payer</th>
-                  <th className="py-1 font-medium">{SUMMARY_LABELS.flagged}</th>
-                  <th className="py-1 font-medium">{SUMMARY_LABELS.validated}</th>
-                  <th className="py-1 font-medium">{SUMMARY_LABELS.actionable}</th>
-                  <th className="py-1 font-medium">{SUMMARY_LABELS.payer_approved}</th>
-                  <th className="py-1 font-medium">{SUMMARY_LABELS.recovered}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {byPayer.map((row) => (
-                  <tr key={row.payerId ?? 'none'} className="border-t" data-payer={row.payerId ?? ''}>
-                    <td className="py-1">{row.payerName ?? 'Unnamed payer'}</td>
-                    <td className="py-1 tabular-nums">{row.figures.flagged.lines} lines</td>
-                    {(['validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => (
-                      <td key={bucket} className="py-1">
-                        {row.figures[bucket].lines} lines, <Money value={row.figures[bucket].varianceCents} />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+      {canGenerate ? (
+        <ActionForm action={generateReportDocumentFormAction} submit="Generate the month’s PDF" variant="outline" className="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="requestKey" value={randomUUID()} />
+          <input type="hidden" name="practiceId" value={practiceId} />
+          <input type="hidden" name="kind" value="monthly_summary" />
+          <input type="hidden" name="month" value={month} />
+        </ActionForm>
+      ) : null}
+      <MonthlyFigures practiceId={practiceId} content={monthlyContent(summary, '')} />
       <section aria-label="Monthly digests" className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Monthly digests</h2>
         {digests.length === 0 ? (
@@ -190,6 +86,15 @@ export default async function MonthlySummaryPage(props: Props) {
           </ul>
         )}
       </section>
+      <Card role="region" aria-label="Share">
+        <CardHeader>
+          <CardTitle>Share within the organization</CardTitle>
+          <CardDescription>The month is in the link, so a colleague opens the same summary.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ShareLink href={`${origin}${path}?month=${month}`} />
+        </CardContent>
+      </Card>
     </AppShell>
   );
 }

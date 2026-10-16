@@ -18,7 +18,7 @@ pnpm install
 pnpm typecheck && pnpm lint && pnpm lint:logs
 pnpm test            # unit and property tests, with the 100% branch gates
 pnpm test:db         # database tests (each creates and drops its own database)
-pnpm test:e2e        # builds the web app and runs the Playwright smoke test
+pnpm test:e2e        # builds the web app and runs the Playwright journeys, with the axe check
 pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
 pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
@@ -258,6 +258,32 @@ milestones 8 and 9 built, `packages/synth` traces every case through milestone 9
 (`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement, until billing and the
 time log (milestone 11). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
 (milestone 11).
+
+The practice dashboard and the Reports screen (ADR 0045; migration
+`20261025090000_report_documents_and_export_history.sql`):
+
+- **The dashboard** (`/p/<practice>`) shows the headline as three numbers, each linking to its stage: actionable (the
+  Cases screen's figure), payer approved and recovered (the ledger's, at the practice's proof level). Flagged and
+  validated sit below them with their labels and link to Claims and lines filtered to the stage (`?stage=`). Beside
+  them are the data freshness (the last file, the last run, and the run-failed banner with its job reference), the
+  coverage, cases by state, deadlines in 14 days, overdue follow-ups, recovered this quarter (the ledger's alone) and
+  each queue with its count. With no file yet it shows "Upload your first 835 files".
+- **The Reports screen** (`/p/<practice>/reports`) generates, lists and links every report:
+  - audit reports, released once the reviewer signs;
+  - the monthly summary;
+  - ROI statements;
+  - the coverage report, new: the Coverage screen as a PDF and a CSV.
+
+  A coverage report or a month's summary (`report_document`) stores its figures as generated. The worker's
+  `report_document` job prints the PDF; the CSV is computed from the stored figures. Each report's page has a link to
+  share within the organization, with opaque IDs only. The export history lists every download of every report file
+  from the audit log (`practice_export_history`), the line-level exports marked. The line CSV and a packet's export
+  stay `phi.export`: a viewer is refused them and exports nothing.
+
+The Playwright journeys run on a fresh e2e database in practices of their own: J8 (`triage.spec.ts`), J11
+(`monitoring.spec.ts`, the digest landing in the local outbox) and J12 (`reports.spec.ts`). J10's payer response is a
+step in `packets.spec.ts`. Each journey runs axe-core's WCAG 2.1 AA rules on the screens it touches and moves through
+one control by keyboard (`e2e/a11y.ts`).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its

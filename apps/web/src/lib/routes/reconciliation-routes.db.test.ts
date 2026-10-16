@@ -297,7 +297,10 @@ describe('the Reconciliation screen (PRD 7)', () => {
     const [line] = page.linkage.items;
     expect(line?.recoupments).toEqual([expect.objectContaining({ kind: 'recoupment', source: 'plb', trace: 'SYNEFTLED06003', standing: true })]);
     expect(line?.stage).toBe('actionable');
-    // The dashboard's recovered this quarter reads the ledger: nothing moved in this quarter.
-    expect(ok(await call(practiceHome, viewer, P())).dashboard.recoveredCents).toBe('0');
+    // The dashboard reads the ledger: recovered to date is the ledger's net of the recoupment, beside
+    // payer approved as its own figure; recovered this quarter is zero, since nothing moved in this quarter.
+    const home = ok(await call(practiceHome, viewer, P())).dashboard;
+    expect(home.headline).toMatchObject({ payerApprovedCents: '3000', recoveredCents: '1200', proofLevel: 'deposited' });
+    expect(home.recoveredQuarter.cents).toBe('0');
   });
 });

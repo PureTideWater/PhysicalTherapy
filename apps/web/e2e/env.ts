@@ -26,6 +26,8 @@ const DIRECTORY = E2E_DATABASE === 'tp_e2e' ? 'tp-e2e' : `tp-e2e-${E2E_DATABASE}
 export const E2E_DEV_AUTH_DIR = path.join(tmpdir(), `${DIRECTORY}-dev-auth`);
 /** Where the e2e server's local upload receiver and the in-test worker keep sealed documents. */
 export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-documents`);
+/** Where the in-test worker's digests are emailed (the local mail sender's outbox: one JSON file per message). */
+export const E2E_MAIL_OUTBOX_DIR = path.join(tmpdir(), `${DIRECTORY}-mail`);
 
 /** The superuser (or CREATEDB and owner-capable) login the run prepares its database with. */
 export function e2eAdminUrl(): string {

@@ -1,7 +1,6 @@
-import type { UserSettings } from '@tp/db/runtime';
-import { formatCents, parseCents } from '@tp/money';
+import { type UserSettings, recordAuditEvent, rolesPermit } from '@tp/db/runtime';
 import { STAGE_LABELS } from '@tp/triage';
-import { type CsvCell, csvDocument } from '@tp/worker/reports';
+import { monthlySummaryCsv as summaryCsv } from '@tp/worker/reports';
 import { z } from 'zod';
 
 import { practiceRoute, selfRoute } from '../http/invoke';
@@ -13,9 +12,7 @@ import {
   type MonthlySummary,
   type NotificationView,
   NOTIFICATIONS_PER_PAGE,
-  SUMMARY_BUCKETS,
   type SummaryBucket,
-  type SummaryFigure,
   countNotifications,
   digestOf,
   lastMonth,
@@ -25,6 +22,7 @@ import {
   monthlySummary,
   unreadNotifications,
 } from '../monitoring/queries';
+import { monthlyContent } from '../reports/documents';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -115,6 +113,10 @@ export interface MonthlySummaryPageData {
   readonly practiceId: string;
   readonly summary: MonthlySummary;
   readonly digests: readonly DigestSummary[];
+  /** Whether the person may generate the month's PDF (case.work, as every report document). */
+  readonly canGenerate: boolean;
+  /** The server's origin, for the link shared within the organization. */
+  readonly origin: string;
 }
 
 export const monthlySummaryPage = practiceRoute({
@@ -124,10 +126,12 @@ export const monthlySummaryPage = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, month: optionalText(month) }),
-  handle: async ({ scope, practiceId, params }): Promise<MonthlySummaryPageData> => ({
+  handle: async ({ scope, practiceId, params, access, services }): Promise<MonthlySummaryPageData> => ({
     practiceId,
     summary: await monthlySummary(scope, practiceId, params.month ?? lastMonth()),
     digests: await listDigests(scope, practiceId),
+    canGenerate: rolesPermit(access.roles, 'case.work'),
+    origin: services.origin,
   }),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, month: '2026-03' }) },
 });
@@ -141,33 +145,15 @@ export const SUMMARY_LABELS: Readonly<Record<SummaryBucket, string>> = {
   not_priced: 'Not priced by a run yet',
 };
 
-const CSV_HEADER = ['month', 'payer', 'stage', 'lines', 'billed', 'variance'] as const;
-
-function dollars(cents: string | null): CsvCell {
-  return { number: cents === null ? '' : formatCents(parseCents(cents)) };
-}
-
 /**
  * The summary as CSV: one row per payer (and "all payers") and stage, counts and totals only, never a
- * stage added to another. A stage without dollars (flagged, the unstaged lines) leaves variance blank.
- * Payer names come from the 835s a practice uploaded, so every text field goes through the exports'
- * one encoder (csvText: a leading =, +, -, @, tab or carriage return is defused); counts and dollars,
- * built from integers and cents, stay numbers.
+ * stage added to another, written by the exports' one builder (@tp/worker/reports, which a month's
+ * printed document's CSV uses too): a stage without dollars here (flagged, payer approved, recovered,
+ * the unstaged lines) leaves variance blank, and every text field goes through the one encoder
+ * (csvText: a leading =, +, -, @, tab or carriage return is defused); counts and dollars stay numbers.
  */
 export function monthlySummaryCsv(summary: MonthlySummary): string {
-  const rows: CsvCell[][] = [];
-  const write = (payer: string, figures: Readonly<Record<SummaryBucket, SummaryFigure>>, writtenOff: SummaryFigure) => {
-    for (const bucket of SUMMARY_BUCKETS) {
-      const figure = figures[bucket];
-      rows.push([{ text: summary.month }, { text: payer }, { text: bucket }, { number: String(figure.lines) }, dollars(figure.billedCents), dollars(figure.varianceCents)]);
-    }
-    rows.push([{ text: summary.month }, { text: payer }, { text: 'actionable_written_off' }, { number: String(writtenOff.lines) }, dollars(writtenOff.billedCents), dollars(writtenOff.varianceCents)]);
-  };
-  write('all payers', summary.total.figures, summary.total.writtenOff);
-  for (const payer of summary.byPayer) {
-    write(payer.payerName ?? payer.payerId ?? 'unknown payer', payer.figures, payer.writtenOff);
-  }
-  return csvDocument(CSV_HEADER, rows);
+  return summaryCsv(monthlyContent(summary, ''));
 }
 
 export const monthlySummaryCsvRoute = practiceRoute({
@@ -178,8 +164,10 @@ export const monthlySummaryCsvRoute = practiceRoute({
   phi: true,
   permission: 'report.read',
   params: z.object({ practiceId: opaqueId, month: optionalText(month) }),
-  handle: async ({ scope, practiceId, params }): Promise<Download> => {
+  handle: async ({ scope, practiceId, params, request }): Promise<Download> => {
     const summary = await monthlySummary(scope, practiceId, params.month ?? lastMonth());
+    // Every report file's download is in the export history (counts and totals: no line-level PHI).
+    await recordAuditEvent(scope, { action: 'monthly_summary_downloaded', objectType: 'report', practiceId, purpose: 'report_csv', requestId: request.requestId });
     // The file's name is the month, never the practice's or a payer's name.
     return { download: { filename: `monthly-summary-${summary.month}.csv`, contentType: 'text/csv; charset=utf-8', body: monthlySummaryCsv(summary) } };
   },

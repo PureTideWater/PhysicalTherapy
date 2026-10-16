@@ -173,7 +173,11 @@ export interface MonthlySummary {
   readonly byPayer: readonly SummaryRow[];
 }
 
-/** Stages whose figure carries dollars: validated and actionable are variance; payer approved and recovered come from the ledger (milestone 9). */
+/**
+ * Stages whose figure carries dollars here: validated and actionable are variance. Payer approved and
+ * recovered are counts: their dollars are the recovery ledger's (the Reconciliation screen and the ROI
+ * statements), which a case-level entry (a payer's response) ties to no month of service.
+ */
 const DOLLAR_STAGES: ReadonlySet<SummaryBucket> = new Set(['validated', 'actionable']);
 
 interface BucketRow {
@@ -198,7 +202,7 @@ const SUMMARY = `
     SELECT l.id, l.charge_cents, pl.payer_id
       FROM service_line l JOIN claim c ON c.id = l.claim_id JOIN plan pl ON pl.id = l.payer_plan_key
      WHERE l.practice_id = $1 AND c.claim_status_code <> '22' AND c.superseded_by_claim_id IS NULL
-       AND coalesce(l.service_date, c.service_from) >= $2::date AND coalesce(l.service_date, c.service_from) < ($2::date + interval '1 month')
+       AND ($2::date IS NULL OR (coalesce(l.service_date, c.service_from) >= $2::date AND coalesce(l.service_date, c.service_from) < ($2::date + interval '1 month')))
   ), latest AS (
     SELECT p.service_line_id, p.unpriced_reason, p.variance_cents, priced_line_shortfall_cents(p.id) AS shortfall
       FROM (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT id FROM lines)')}) p
@@ -240,7 +244,7 @@ function add(a: SummaryFigure, lines: number, billed: string, variance: string |
 }
 
 function emptyRow(payerId: string | null, payerName: string | null): { payerId: string | null; payerName: string | null; figures: Record<SummaryBucket, SummaryFigure>; writtenOff: SummaryFigure } {
-  const figures = Object.fromEntries(SUMMARY_BUCKETS.map((bucket) => [bucket, DOLLAR_STAGES.has(bucket) || bucket === 'payer_approved' || bucket === 'recovered' ? { ...EMPTY, varianceCents: '0' } : EMPTY])) as Record<SummaryBucket, SummaryFigure>;
+  const figures = Object.fromEntries(SUMMARY_BUCKETS.map((bucket) => [bucket, DOLLAR_STAGES.has(bucket) ? { ...EMPTY, varianceCents: '0' } : EMPTY])) as Record<SummaryBucket, SummaryFigure>;
   return { payerId, payerName, figures, writtenOff: { ...EMPTY, varianceCents: '0' } };
 }
 
@@ -248,10 +252,23 @@ function emptyRow(payerId: string | null, payerName: string | null): { payerId: 
  * The month's lines (service dates in it; reversals and superseded claims left out, as a run leaves
  * them), each counted once, at the furthest stage it has reached, by payer and in all: counts, billed
  * charges and, for validated and actionable, their dollars (SUMMARY says which). Stages are never added
- * together. Payer approved and recovered stay zero until the recovery ledger posts.
+ * together. Payer approved and recovered are counts of lines at those stages; their dollars are the
+ * recovery ledger's.
  */
 export async function monthlySummary(scope: Scope, practiceId: string, month: string): Promise<MonthlySummary> {
-  const { rows } = await scope.client.query<BucketRow>(SUMMARY, [practiceId, `${month}-01`]);
+  return { month, ...(await summaryOf(scope, practiceId, month)) };
+}
+
+/**
+ * Every line of the practice, whatever its month, counted the same way (the dashboard's stage figures
+ * below the headline: flagged and validated, each at the stage it has reached now).
+ */
+export async function practiceStageSummary(scope: Scope, practiceId: string): Promise<SummaryRow> {
+  return (await summaryOf(scope, practiceId, null)).total;
+}
+
+async function summaryOf(scope: Scope, practiceId: string, month: string | null): Promise<Omit<MonthlySummary, 'month'>> {
+  const { rows } = await scope.client.query<BucketRow>(SUMMARY, [practiceId, month === null ? null : `${month}-01`]);
   const names = await payerNames(scope, practiceId, [...new Set(rows.map((row) => row.payer_id))]);
   const total = emptyRow(null, null);
   const byPayer = new Map<string, ReturnType<typeof emptyRow>>();
@@ -267,7 +284,7 @@ export async function monthlySummary(scope: Scope, practiceId: string, month: st
       }
     }
   }
-  return { month, total, byPayer: [...byPayer.values()].sort((a, b) => (a.payerName ?? '').localeCompare(b.payerName ?? '') || String(a.payerId).localeCompare(String(b.payerId))) };
+  return { total, byPayer: [...byPayer.values()].sort((a, b) => (a.payerName ?? '').localeCompare(b.payerName ?? '') || String(a.payerId).localeCompare(String(b.payerId))) };
 }
 
 /** The month before the current one (UTC), the summary's default. */

@@ -13,7 +13,10 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * managers of the other group upload into its practice and never into the rows another spec counts;
  * and a billing manager and a viewer of the other group for the recovery journey, in a practice of
  * its own that the journey adds; and two billing managers of the other group for the packet journey,
- * one who drafts and one who approves, in a practice of its own that the journey adds).
+ * one who drafts and one who approves, in a practice of its own that the journey adds; and, each in a
+ * practice of its own its journey adds, a billing manager for the triage journey, one for the monthly
+ * monitoring journey, and a billing manager, a viewer and a reimbursement reviewer for the reporting
+ * journey).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -68,6 +71,11 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'ledger-viewer', organization: 'other_group', role: 'viewer' },
   { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
+  { key: 'triage-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'monitoring-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'reports-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'reports-viewer', organization: 'other_group', role: 'viewer' },
+  { key: 'reports-reviewer', organization: 'internal', role: 'reviewer' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

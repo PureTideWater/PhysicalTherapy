@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/worker/src/worker.db.test.ts",
     "apps/worker/src/price/price.db.test.ts",
-    "apps/worker/src/monitor/monitor.db.test.ts"
+    "apps/worker/src/monitor/monitor.db.test.ts",
+    "apps/web/e2e/monitoring.spec.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

@@ -9,6 +9,7 @@
     "apps/worker/src/worker.test.ts",
     "apps/worker/src/monitor/monitor.db.test.ts",
     "apps/web/src/lib/routes/monitoring-routes.db.test.ts",
+    "apps/web/e2e/monitoring.spec.ts",
     "infra/test/monitoring.test.ts"
   ],
   "codeListRelease": null,

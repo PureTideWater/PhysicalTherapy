@@ -512,7 +512,15 @@ export interface WaitingPage {
 export async function waitingPlans(scope: Scope, practiceId: string, page: number, requestId: string): Promise<WaitingPage> {
   const all = await dollarsWaitingOnMapping(scope, practiceId);
   const { page: current, pages, offset } = pageOf(all.length, PLANS_PER_PAGE, page);
-  const shown = all.slice(offset, offset + PLANS_PER_PAGE);
+  return { plans: await namedPlans(scope, practiceId, all.slice(offset, offset + PLANS_PER_PAGE), requestId), total: all.length, page: current, pages };
+}
+
+/** Every plan's dollars waiting on mappings, largest billed total first (the coverage report lists them all). */
+export async function allWaitingPlans(scope: Scope, practiceId: string, requestId: string): Promise<readonly WaitingPlan[]> {
+  return namedPlans(scope, practiceId, await dollarsWaitingOnMapping(scope, practiceId), requestId);
+}
+
+async function namedPlans(scope: Scope, practiceId: string, shown: Awaited<ReturnType<typeof dollarsWaitingOnMapping>>, requestId: string): Promise<WaitingPlan[]> {
   const names = await readWithAudit(
     scope,
     { objectType: 'plan', purpose: 'coverage', requestId },
@@ -528,17 +536,12 @@ export async function waitingPlans(scope: Scope, practiceId: string, page: numbe
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
   const byId = new Map(names.map((row) => [row.id, row]));
-  return {
-    plans: shown.map((plan) => ({
-      planId: plan.planId,
-      payerName: byId.get(plan.planId)?.payer_name ?? '',
-      planKey: byId.get(plan.planId)?.plan_key ?? '',
-      waiting: { lines: plan.lines, claims: plan.claims, chargeCents: centsToString(plan.chargeCents), paidCents: centsToString(plan.paidCents) },
-    })),
-    total: all.length,
-    page: current,
-    pages,
-  };
+  return shown.map((plan) => ({
+    planId: plan.planId,
+    payerName: byId.get(plan.planId)?.payer_name ?? '',
+    planKey: byId.get(plan.planId)?.plan_key ?? '',
+    waiting: { lines: plan.lines, claims: plan.claims, chargeCents: centsToString(plan.chargeCents), paidCents: centsToString(plan.paidCents) },
+  }));
 }
 
 /** Whether a pricing run over every line of the practice would start now (MAP-01), by the run's own guard. */

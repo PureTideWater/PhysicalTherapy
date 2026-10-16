@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { utc } from '../../../../../../components/format';
 import { entryStage, proofLevelWords } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
+import { ShareLink } from '../../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { loadPage } from '../../../../../../lib/http/next';
 import type { FigureView } from '../../../../../../lib/reconciliation/queries';
@@ -82,7 +83,7 @@ export default async function RoiStatementPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, detail } = page.data;
+  const { practiceId, detail, origin } = page.data;
   const path = `/p/${practiceId}/reports/roi/${detail.id}`;
   return (
     <AppShell shell={page.shell} section="reports">
@@ -134,6 +135,7 @@ export default async function RoiStatementPage(props: Props) {
               CSV
             </a>
           </p>
+          <ShareLink href={`${origin}${path}`} />
         </CardContent>
       </Card>
       <Card role="region" aria-label="Fees paid">

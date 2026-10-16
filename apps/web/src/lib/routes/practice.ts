@@ -1,14 +1,10 @@
 import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
-import { quarterOf, quarterPeriod } from '@tp/ledger';
-import { centsToString } from '@tp/money';
-import { practiceLedgerTotals } from '@tp/worker/ledger';
-import { followUpsDue } from '@tp/worker/packets';
 import { z } from 'zod';
 
+import { dashboard } from '../dashboard/queries';
 import { practiceRoute } from '../http/invoke';
 import { NotFoundError } from '../http/route';
 import { type NotificationView, listNotifications, unreadNotifications } from '../monitoring/queries';
-import { latestRunInEffect } from '../pricing/queries';
 import { opaqueId } from './schemas';
 
 /**
@@ -18,7 +14,7 @@ import { opaqueId } from './schemas';
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
  * here), the dashboard's counts and totals (coverage of the run in effect, cases by state, deadlines
  * in 14 days, recovered this quarter), and the person's latest in-app notifications from monitoring
- * (docs/adr/0039). Every read of
+ * (docs/adr/0039), and the dashboard's headline and queues (lib/dashboard/queries.ts; docs/adr/0045). Every read of
  * the practice record goes through readWithAudit, so a support engineer's view of it appears in that
  * list.
  */
@@ -115,54 +111,6 @@ export async function freshness(scope: PracticeScope<ScopeClient>, practiceId: s
     [practiceId],
   );
   return { lastFileAt: file.rows[0]?.at ?? null, lastRun: jobRun(last.rows[0]), failedRun: jobRun(failed.rows[0]) };
-}
-
-/** How many days ahead the dashboard's deadlines look (PRD 7: "deadlines in 14 days"; the digest's own window). */
-export const DEADLINE_WINDOW_DAYS = 14;
-
-export interface Dashboard {
-  /** The coverage of the latest run in effect (Coverage's own), or null before any run is in effect. */
-  readonly coverage: { readonly runId: string; readonly periodFrom: string; readonly periodTo: string; readonly lines: number; readonly pricedLines: number; readonly chargeCents: string; readonly pricedChargeCents: string } | null;
-  /** The practice's cases by state, with each state's actionable total (the cases' own, derived in SQL). */
-  readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
-  /** Open cases whose deadline falls today or within DEADLINE_WINDOW_DAYS, with their actionable total. */
-  readonly deadlines: { readonly cases: number; readonly actionableCents: string; readonly earliest: string | null };
-  /** Cases whose latest submission has no response and whose follow-up date has come (PRD 7: "overdue follow-ups surface on the dashboard"; CAS-14). */
-  readonly followUps: { readonly due: number; readonly earliest: string | null; readonly first: readonly { readonly caseId: string; readonly followUpOn: string }[] };
-  /**
-   * Recovered this quarter: from the recovery ledger's entries dated in the quarter (the practice's proof
-   * level, net of recoupments and reversals; docs/adr/0042), never an estimate and never approved.
-   */
-  readonly recoveredCents: string;
-}
-
-/** The dashboard's counts and totals (PRD 7, Practice dashboard): coverage, open cases by stage, deadlines in 14 days, recovered this quarter. */
-export async function dashboard(scope: PracticeScope<ScopeClient>, practiceId: string, today: string, requestId: string): Promise<Dashboard> {
-  const latest = await latestRunInEffect(scope, practiceId, requestId);
-  const states = await scope.client.query<{ state: string; cases: number; actionable: string }>(
-    'SELECT state, count(*)::int AS cases, coalesce(sum(actionable_cents), 0)::text AS actionable FROM "case" WHERE practice_id = $1 GROUP BY state ORDER BY state',
-    [practiceId],
-  );
-  const near = await scope.client.query<{ cases: number; actionable: string; earliest: string | null }>(
-    `SELECT count(*)::int AS cases, coalesce(sum(actionable_cents), 0)::text AS actionable, min(deadline_on)::text AS earliest
-       FROM "case" WHERE practice_id = $1 AND state = 'open' AND deadline_on BETWEEN $2::date AND $2::date + $3::int`,
-    [practiceId, today, DEADLINE_WINDOW_DAYS],
-  );
-  const coverage = latest?.coverage ?? null;
-  return {
-    coverage:
-      latest === undefined || coverage === null
-        ? null
-        : { runId: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, lines: coverage.lines, pricedLines: coverage.priced.lines, chargeCents: coverage.charge_cents, pricedChargeCents: coverage.priced.charge_cents },
-    casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
-    deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },
-    followUps: await followUpsDue(scope, { practiceId, asOf: today }).then((due) => ({
-      due: due.length,
-      earliest: due[0]?.followUpOn ?? null,
-      first: due.slice(0, 5).map((item) => ({ caseId: item.caseId, followUpOn: item.followUpOn })),
-    })),
-    recoveredCents: centsToString((await practiceLedgerTotals(scope, practiceId, quarterPeriod(quarterOf(today)))).recoveredCents),
-  };
 }
 
 function supportGrant(row: SupportGrantRow): SupportGrantSummary {

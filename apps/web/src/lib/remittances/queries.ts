@@ -386,9 +386,15 @@ export interface ClaimLineQuery {
   /** Service months. */
   readonly from?: Month;
   readonly to?: Month;
+  /** The lines at a stage now (their latest stage event): where a stage's figure on the dashboard and the reports links. */
+  readonly stage?: LineStage;
   readonly page: number;
   readonly requestId: string;
 }
+
+/** The five line stages (PRD 8, The status machine). */
+export const LINE_STAGE_FILTERS = ['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const;
+export type LineStage = (typeof LINE_STAGE_FILTERS)[number];
 
 /** The five line stages plus unpriced (PRD 8, The status machine; PRD 7: "status chips"). */
 export const LINE_STATUSES = ['flagged', 'validated', 'actionable', 'payer_approved', 'recovered', 'unpriced'] as const;
@@ -529,6 +535,9 @@ function claimLineFilters(query: ClaimLineQuery): Filters {
   }
   if (query.to !== undefined) {
     filters.add((at) => `coalesce(l.service_date, c.service_from) < ${at}::date`, monthEnd(query.to));
+  }
+  if (query.stage !== undefined) {
+    filters.add((at) => `(SELECT s.stage FROM line_status s WHERE s.practice_id = l.practice_id AND s.service_line_id = l.id ORDER BY s.seq DESC LIMIT 1) = ${at}`, query.stage);
   }
   return filters;
 }

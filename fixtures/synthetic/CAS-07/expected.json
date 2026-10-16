@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/worker/src/triage/triage.db.test.ts",
     "apps/worker/src/report/report.db.test.ts",
-    "packages/triage/src/stages.test.ts"
+    "packages/triage/src/stages.test.ts",
+    "apps/web/e2e/triage.spec.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Reopens a line written off in CAS-06; no file of its own.",

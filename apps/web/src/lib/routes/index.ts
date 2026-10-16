@@ -15,6 +15,7 @@ import { PRICING_ROUTES } from './pricing';
 import { RECONCILIATION_ROUTES } from './reconciliation';
 import { RELEASE_ROUTES } from './releases';
 import { REMITTANCE_ROUTES } from './remittances';
+import { REPORT_DOCUMENT_ROUTES } from './report-documents';
 import { REPORT_ROUTES } from './reports';
 import { ROI_ROUTES } from './roi';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
@@ -58,6 +59,7 @@ export const ROUTES: readonly Route[] = [
   ...PACKET_ROUTES,
   ...SUBMISSION_ROUTES,
   ...REPORT_ROUTES,
+  ...REPORT_DOCUMENT_ROUTES,
   ...RECONCILIATION_ROUTES,
   ...ROI_ROUTES,
   ...MONITORING_ROUTES,

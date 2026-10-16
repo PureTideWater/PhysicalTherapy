@@ -9,7 +9,8 @@
     "apps/worker/src/triage/triage.db.test.ts",
     "packages/triage/src/patterns.test.ts",
     "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-    "apps/web/src/lib/routes/workbench-routes.db.test.ts"
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+    "apps/web/e2e/triage.spec.ts"
   ],
   "codeListRelease": 900001,
   "noFileReason": null,

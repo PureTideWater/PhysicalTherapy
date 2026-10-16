@@ -8,6 +8,7 @@ import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Headline, ReleaseState, ReportSections, ReportStatusBadge } from '../../../../../components/reports/display';
 import { Pager } from '../../../../../components/remittances/display';
+import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
 import { reportPage } from '../../../../../lib/routes/reports';
@@ -28,7 +29,7 @@ export default async function ReportPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="reports" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, report, history, canExport, canRelease, canReview } = page.data;
+  const { practiceId, report, history, canExport, canRelease, canReview, origin } = page.data;
   const path = `/p/${practiceId}/reports/${report.id}`;
   return (
     <AppShell shell={page.shell} section="reports">
@@ -81,6 +82,7 @@ export default async function ReportPage(props: Props) {
                 )}{' '}
                 <span className="font-mono text-xs">SHA-256 {report.csvSha256}</span>
               </p>
+              <ShareLink href={`${origin}${path}`} />
             </CardContent>
           </Card>
           <Card role="region" aria-label="Attestation and release">

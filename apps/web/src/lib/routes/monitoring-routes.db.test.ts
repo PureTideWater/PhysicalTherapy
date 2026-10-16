@@ -141,13 +141,25 @@ describe('the practice dashboard (JOB-02)', () => {
     expect(home.freshness.failedRun).toBeNull();
     // The dashboard's counts and totals: coverage of the run in effect, the cases by state, deadlines in 14 days (none: 2036),
     // follow-ups due (none: nothing is submitted), recovered zero (the ledger holds no entry).
-    expect(home.dashboard).toEqual({
+    expect(home.dashboard).toMatchObject({
       coverage: { runId, periodFrom: '2026-03-01', periodTo: '2026-03-31', lines: 17, pricedLines: 17, chargeCents: '255500', pricedChargeCents: '255500' },
       casesByState: [{ state: 'open', cases: 2, actionableCents: '55200' }],
       deadlines: { cases: 0, actionableCents: '0', earliest: null },
       followUps: { due: 0, earliest: null, first: [] },
-      recoveredCents: '0',
+      recoveredQuarter: { cents: '0' },
     });
+    // The headline: three numbers, each its own stage (actionable is the Cases screen's figure; payer
+    // approved and recovered the ledger's, which holds no entry), and the stages below it: the one line
+    // of the pattern below materiality is validated, its shortfall beside it, never added to actionable.
+    expect(home.dashboard.headline).toEqual({
+      actionable: { lines: 16, cents: '55200' },
+      payerApprovedCents: '0',
+      recoveredCents: '0',
+      proofLevel: 'posted',
+      flagged: { lines: 0 },
+      validated: { lines: 1, cents: '300' },
+    });
+    expect(home.dashboard.queues).toEqual({ heldFiles: 0, plansWaiting: 0, openQuestions: 0, anomaliesToReview: 0, unassignedCases: 2, unmatched: 0 });
 
     const jobId = randomUUID();
     const key = `monitor:${practice.practiceId}:2026-11-01`;
@@ -217,8 +229,9 @@ describe('the monthly variance summary (J12)', () => {
       flagged: { lines: 0, billedCents: '0', varianceCents: null },
       validated: { lines: 1, billedCents: billed?.validated, varianceCents: '300' },
       actionable: { lines: 16, billedCents: billed?.actionable, varianceCents: '55200' },
-      payer_approved: { lines: 0, billedCents: '0', varianceCents: '0' },
-      recovered: { lines: 0, billedCents: '0', varianceCents: '0' },
+      // Payer approved and recovered are counted here; their dollars are the recovery ledger's alone.
+      payer_approved: { lines: 0, billedCents: '0', varianceCents: null },
+      recovered: { lines: 0, billedCents: '0', varianceCents: null },
       priced: { lines: 0, billedCents: '0', varianceCents: null },
       overpaid: { lines: 0, billedCents: '0', varianceCents: null },
       unpriced: { lines: 0, billedCents: '0', varianceCents: null },

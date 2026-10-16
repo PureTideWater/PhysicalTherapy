@@ -6,7 +6,9 @@ import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import {
   type ClaimLinePage,
   type ClaimsView,
+  LINE_STAGE_FILTERS,
   type LineDetail,
+  type LineStage,
   type PayerOption,
   type RemittanceDetail,
   type RemittancePage,
@@ -113,6 +115,7 @@ export interface ClaimFilters {
   readonly code?: string;
   readonly from?: string;
   readonly to?: string;
+  readonly stage?: LineStage;
 }
 
 export interface ClaimsPageData {
@@ -145,10 +148,11 @@ export const claimsPage = practiceRoute({
     ),
     from: month,
     to: month,
+    stage: optionalText(z.enum(LINE_STAGE_FILTERS)),
     page,
   }),
   handle: async ({ scope, practiceId, params, request, services, access }): Promise<ClaimsPageData> => {
-    const { view, payer, remittance, claim, patient, code, from, to } = params;
+    const { view, payer, remittance, claim, patient, code, from, to, stage } = params;
     const filters: ClaimFilters = {
       view,
       ...(payer === undefined ? {} : { payer }),
@@ -158,6 +162,7 @@ export const claimsPage = practiceRoute({
       ...(code === undefined ? {} : { code }),
       ...(from === undefined ? {} : { from }),
       ...(to === undefined ? {} : { to }),
+      ...(stage === undefined ? {} : { stage }),
     };
     const cipher = await phiCipher(scope, services, practiceId, access.roles);
     const list = await listClaimLines(
@@ -174,6 +179,7 @@ export const claimsPage = practiceRoute({
         ...(code === undefined ? {} : { procedureCode: code }),
         ...(from === undefined ? {} : { from }),
         ...(to === undefined ? {} : { to }),
+        ...(stage === undefined ? {} : { stage }),
       },
       cipher,
     );
