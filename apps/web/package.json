@@ -23,6 +23,7 @@
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/ledger": "workspace:*",
+    "@tp/model-gateway": "workspace:*",
     "@tp/money": "workspace:*",
     "@tp/observability": "workspace:*",
     "@tp/packets": "workspace:*",

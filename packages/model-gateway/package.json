@@ -24,6 +24,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@tp/synth": "workspace:*",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "fast-check": "catalog:",

@@ -18,6 +18,7 @@ const config: NextConfig = {
     '@tp/contracts',
     '@tp/db',
     '@tp/ledger',
+    '@tp/model-gateway',
     '@tp/money',
     '@tp/observability',
     '@tp/packets',
