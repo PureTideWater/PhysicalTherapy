@@ -1,49 +1,44 @@
 import { randomUUID } from 'node:crypto';
 
 import { WRITE_OFF_REASONS } from '@tp/triage';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../components/action-form';
+import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { CaseStateBadge, Deadline, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
-import type { CaseEvent } from '../../../../../lib/triage/queries';
-import { reopenFormAction, writeOffFormAction } from './actions';
+import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
+import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Case' };
 
 type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-function eventText(event: CaseEvent): string {
-  if (event.kind === 'stage' && event.stage !== null) {
-    return `${stageLabel(event.stage)}`;
-  }
-  if (event.kind === 'reopened_stage' && event.stage !== null && event.reopenedFrom !== null) {
-    return `Reopened from ${stageLabel(event.reopenedFrom)} to ${stageLabel(event.stage)}, with a reason`;
-  }
-  if (event.kind === 'written_off' && event.writeOffReason !== null) {
-    return `Written off: ${writeOffText(event.writeOffReason)}`;
-  }
-  return 'Reopened into the case, with a reason';
-}
+const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the practice’s payment posting', deposited: 'deposited in the practice’s bank' };
 
 /**
- * A case (PRD 7, Cases: "detail with lines, trace, deadline, pursuit cost, notes, timeline ... write
- * off a line with reason ... a line past its window is struck through"; PRD 12, Write-offs and
- * reopening): its pattern, total, deadline and pursuit cost; every line with its trace, struck through
- * when written off (with its reason, kept visible); and the timeline of stages, write-offs and reopens.
+ * A case (PRD 7, Cases: "detail with lines, trace, deadline, pursuit cost, notes, timeline"; "assign;
+ * write off a line with reason; open the packet"; "a line past its window is struck through"; PRD 12,
+ * Write-offs and reopening, and the headline's three numbers): its pattern and totals at their own
+ * stages (actionable here, payer approved and recovered from the recovery ledger), deadline, pursuit
+ * cost and owner; every line with its trace, struck through when written off (with its reason, kept
+ * visible: WINDOW_PASSED when its window closed); its notes; its packet and dispute; and the timeline
+ * of everything recorded on it.
  */
 export default async function CasePage(props: Props) {
   const page = await loadPage(casePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, case: item, detail, canWork, canReadPhi } = page.data;
+  const { practiceId, case: item, detail, activity, timeline, workers, dispute, ledger, canWork, canDraft, canReadPhi } = page.data;
+  const base = `/p/${practiceId}/cases/${item.id}`;
+  const notes = activity.filter((entry) => entry.kind === 'note');
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
@@ -55,25 +50,101 @@ export default async function CasePage(props: Props) {
         </h1>
         <p className="text-sm text-muted-foreground">{item.behaviorText}.</p>
       </div>
+      {dispute.latestSubmission?.followUpDue === true ? (
+        <Alert variant="destructive" data-follow-up="due">
+          <AlertTitle>Follow-up due</AlertTitle>
+          <AlertDescription>
+            The payer has not answered the submission of {dispute.latestSubmission.submittedOn}; its follow-up was due {dispute.latestSubmission.followUpOn}.{' '}
+            <Link className="underline" href={`${base}/submissions`}>
+              Submissions and responses
+            </Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Card role="region" aria-label="Case summary">
-        <CardContent className="grid gap-3 pt-6 sm:grid-cols-3">
-          <Fact label={stageLabel('actionable')}>
-            <Money value={item.actionableCents} /> ({item.openLines} of {item.lines} lines)
-          </Fact>
-          <Fact label="Written off">
-            <Money value={item.writtenOffCents} /> ({item.lines - item.openLines} lines)
-          </Fact>
-          <Fact label="Deadline (earliest open window)">
-            <Deadline on={item.deadlineOn} state={item.deadline} />
-          </Fact>
-          <Fact label="Case materiality">
-            <Money value={item.materialityCents} />
-          </Fact>
-          <Fact label="Pursuit cost">{item.pursuitCostCents === null ? 'Not estimated (no staff rate and minutes in the practice’s settings)' : <Money value={item.pursuitCostCents} />}</Fact>
-          <Fact label="Net expected value">{item.netExpectedCents === null ? '—' : <Money value={item.netExpectedCents} />}</Fact>
-          <Fact label="Owner">{item.owner ?? 'Unassigned (assignment comes with the workbench)'}</Fact>
-          <Fact label="Opened">{utc(item.openedAt)}</Fact>
-          <Fact label="Closed">{item.closedAt === null ? '—' : utc(item.closedAt)}</Fact>
+        <CardContent className="pt-6">
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
+            <Fact label={stageLabel('actionable')}>
+              <span data-figure="actionable">
+                <Money value={item.actionableNowCents} />
+              </span>{' '}
+              ({item.openLines} of {item.lines} lines not written off)
+            </Fact>
+            <Fact label="Written off">
+              <Money value={item.writtenOffCents} /> ({item.lines - item.openLines} lines, struck through below)
+            </Fact>
+            <Fact label={stageLabel('payer_approved')}>
+              <span data-figure="payer-approved">
+                <Money value={ledger.approvedCents} />
+              </span>{' '}
+              (from the recovery ledger)
+            </Fact>
+            <Fact label={stageLabel('recovered')}>
+              <span data-figure="recovered">
+                <Money value={ledger.recoveredCents} />
+              </span>{' '}
+              (stage five: cash {PROOF_TEXT[ledger.proofLevel] ?? ledger.proofLevel}, net of recoupments and reversals)
+            </Fact>
+            <Fact label="Deadline (earliest open window)">
+              <Deadline on={item.deadlineOn} state={item.deadline} />
+            </Fact>
+            <Fact label="Case materiality">
+              <Money value={item.materialityCents} />
+            </Fact>
+            <Fact label="Pursuit cost (estimate)">{item.pursuitCostCents === null ? 'Not estimated (no staff rate and minutes in the practice’s settings)' : <Money value={item.pursuitCostCents} />}</Fact>
+            <Fact label="Net expected value">{item.netExpectedCents === null ? '—' : <Money value={item.netExpectedCents} />}</Fact>
+            <Fact label="Owner">
+              <span data-owner={item.ownerUserId ?? 'none'}>{item.owner ?? 'Unassigned'}</span>
+            </Fact>
+            <Fact label="Opened">{utc(item.openedAt)}</Fact>
+            <Fact label="Closed">{item.closedAt === null ? '—' : utc(item.closedAt)}</Fact>
+          </dl>
+          {canWork ? (
+            <ActionForm action={assignFormAction} submit="Assign" variant="outline" className="flex flex-wrap items-end gap-3 pt-4">
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <input type="hidden" name="practiceId" value={practiceId} />
+              <input type="hidden" name="caseId" value={item.id} />
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="case-owner">Owner</Label>
+                <select id="case-owner" name="ownerUserId" defaultValue={item.ownerUserId ?? ''} className="h-9 rounded-md border bg-background px-2 text-sm">
+                  <option value="">Unassigned</option>
+                  {workers.map((person) => (
+                    <option key={person.userId} value={person.userId}>
+                      {person.email}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </ActionForm>
+          ) : null}
+        </CardContent>
+      </Card>
+      <Card role="region" aria-label="Packet and dispute">
+        <CardHeader>
+          <CardTitle>Packet and dispute</CardTitle>
+          <CardDescription>The packet presents the pattern once and the lines as a schedule; the practice submits it through the payer’s own channel and logs the submission and the payer’s response.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          <p data-packet={dispute.packet === null ? 'none' : dispute.packet.approved ? 'approved' : 'draft'}>
+            {dispute.packet === null
+              ? 'No packet yet.'
+              : `Packet version ${String(dispute.packet.versionNo)}: ${dispute.packet.verifierPassed ? 'the verifier passed it' : 'the verifier failed it'}; ${dispute.packet.approved ? 'approved' : 'not approved'}; ${dispute.packet.exported ? 'exported' : 'not exported'}.`}
+          </p>
+          <p>
+            {dispute.latestSubmission === null
+              ? 'Not submitted yet.'
+              : `Last submitted ${dispute.latestSubmission.submittedOn}; ${dispute.latestSubmission.answered ? 'the payer has answered' : `follow-up ${dispute.latestSubmission.followUpOn}`}.`}
+          </p>
+          <div className="flex flex-wrap gap-4">
+            {canDraft ? (
+              <Link className="underline" href={`${base}/packet`}>
+                {dispute.packet === null ? 'Build the packet' : 'Open the packet'}
+              </Link>
+            ) : null}
+            <Link className="underline" href={`${base}/submissions`}>
+              Submissions and responses
+            </Link>
+          </div>
         </CardContent>
       </Card>
       <section aria-label="Lines" className="flex flex-col gap-3">
@@ -93,10 +164,11 @@ export default async function CasePage(props: Props) {
                   Expected <Money value={line.expectedAllowedCents} />, observed <Money value={line.observedAllowedCents} />, variance <Money value={line.varianceCents} />
                 </span>
                 <span>Window ends {line.windowEndsOn ?? '—'}</span>
+                {line.stage === null ? null : <Badge variant="outline">{stageLabel(line.stage)}</Badge>}
               </div>
               {line.writtenOffReason === null ? null : (
                 <p className="pt-1 text-sm" data-reason={line.writtenOffReason}>
-                  {line.writtenOffReason === 'window_passed' && line.writtenOffBy === null ? 'WINDOW_PASSED: struck through by triage once its window closed.' : `Written off: ${writeOffText(line.writtenOffReason)}`}
+                  {line.writtenOffReason === 'window_passed' && line.writtenOffBy === null ? 'WINDOW_PASSED: struck through by triage once its window closed; out of the actionable total.' : `Written off: ${writeOffText(line.writtenOffReason)}`}
                   {line.writtenOffText === null ? '' : ` (${line.writtenOffText})`}
                   {line.writtenOffBy === null ? '' : `, by ${line.writtenOffBy}`}
                   {line.writtenOffAt === null ? '' : `, ${utc(line.writtenOffAt)}`}.
@@ -152,23 +224,48 @@ export default async function CasePage(props: Props) {
             </li>
           ))}
         </ul>
-        <Pager path={`/p/${practiceId}/cases/${item.id}`} query={{}} page={detail.page} pages={detail.pages} total={detail.totalLines} noun="Lines" />
+        <Pager path={base} query={{}} page={detail.page} pages={detail.pages} total={detail.totalLines} noun="Lines" />
       </section>
+      <Card role="region" aria-label="Notes" id="notes">
+        <CardHeader>
+          <CardTitle>Notes</CardTitle>
+          <CardDescription>Kept encrypted with the practice’s key; their words show to the roles that read PHI.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {notes.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No note yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2 text-sm" aria-label="Case notes">
+              {notes.map((note) => (
+                <li key={note.id} className="rounded-md border p-2">
+                  <p className="text-muted-foreground">
+                    {utc(note.at)}, {note.by ?? '—'}
+                  </p>
+                  <p className="whitespace-pre-wrap">{note.text ?? 'Its words show to the roles that read PHI.'}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+          {canWork ? (
+            <ActionForm action={noteFormAction} submit="Add the note" variant="outline" className="flex max-w-xl flex-col gap-2">
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <input type="hidden" name="practiceId" value={practiceId} />
+              <input type="hidden" name="caseId" value={item.id} />
+              <Label htmlFor="case-note">A note</Label>
+              <textarea id="case-note" name="text" required maxLength={NOTE_MAX_LENGTH} rows={3} className="w-full rounded-md border bg-background p-2 text-sm" />
+            </ActionForm>
+          ) : null}
+        </CardContent>
+      </Card>
       <Card role="region" aria-label="Timeline">
         <CardHeader>
           <CardTitle>Timeline</CardTitle>
           <CardDescription>
-            Of the lines on this page. Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered come from the recovery ledger.
+            Everything recorded on the case, oldest first (line events of the lines on this page). Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered come from the recovery ledger.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ol className="flex flex-col gap-1 text-sm">
-            {detail.events.map((event) => (
-              <li key={`${event.at}:${event.serviceLineId}:${event.kind}:${event.stage ?? ''}`}>
-                {utc(event.at)}: line {event.lineNo}, {eventText(event)} ({event.by ?? 'triage'})
-              </li>
-            ))}
-          </ol>
+          <CaseTimeline events={timeline} />
         </CardContent>
       </Card>
     </AppShell>

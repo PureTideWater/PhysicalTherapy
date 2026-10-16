@@ -113,7 +113,7 @@ interface ScreenRow {
   readonly observed_allowed_cents: string;
 }
 
-interface CandidateRow {
+export interface CandidateRow {
   readonly priced_line_id: string;
   readonly practice_id: string;
   readonly service_line_id: string;
@@ -193,10 +193,11 @@ async function screenedLines(scope: PracticeScope<ScopeClient>, practiceId: stri
 /**
  * The lines that may be validated and in no case yet, each from its pricing in effect with positive
  * variance: the run's own lines, and the lines an earlier triage validated whose pattern was held below
- * the case materiality. A line whose pricing in effect no longer shows a shortfall (an accepted re-run
- * priced it again at what was paid) or that no run in effect prices is left out.
+ * the case materiality (only those when no run is named: the workbench's patterns waiting for a case).
+ * A line whose pricing in effect no longer shows a shortfall (an accepted re-run priced it again at
+ * what was paid) or that no run in effect prices is left out.
  */
-async function candidateRows(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string, requestId: string): Promise<CandidateRow[]> {
+export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceId: string, pricingRunId: string | null, requestId: string): Promise<CandidateRow[]> {
   return readWithAudit(
     scope,
     { objectType: 'priced_line', purpose: 'triage', requestId },
@@ -248,7 +249,7 @@ function referencesByRelease(client: ScopeClient): (releaseNo: number) => Promis
   };
 }
 
-async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
+export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
   const references = referencesByRelease(client);
   const lines: CandidateLine[] = [];
   for (const row of rows) {
@@ -326,12 +327,12 @@ async function storeAnomalies(client: ScopeClient, practiceId: string, pricingRu
   return rowCount ?? 0;
 }
 
-async function openCases(client: ScopeClient, practiceId: string): Promise<Map<string, string>> {
+export async function openCases(client: ScopeClient, practiceId: string): Promise<Map<string, string>> {
   const { rows } = await client.query<{ id: string; pattern_key: PatternKey }>(`SELECT id, pattern_key FROM "case" WHERE practice_id = $1 AND state = 'open'`, [practiceId]);
   return new Map(rows.map((row) => [patternId(row.pattern_key), row.id]));
 }
 
-async function insertCaseLines(client: ScopeClient, practiceId: string, caseId: string, lines: readonly { readonly serviceLineId: string; readonly pricedLineId: string; readonly windowPassed: boolean }[]): Promise<void> {
+export async function insertCaseLines(client: ScopeClient, practiceId: string, caseId: string, lines: readonly { readonly serviceLineId: string; readonly pricedLineId: string; readonly windowPassed: boolean }[]): Promise<void> {
   await client.query(
     `INSERT INTO case_line (practice_id, case_id, service_line_id, priced_line_id, written_off_reason)
      SELECT $1, $2, t.service_line_id, t.priced_line_id, CASE WHEN t.window_passed THEN 'window_passed' END
@@ -341,7 +342,7 @@ async function insertCaseLines(client: ScopeClient, practiceId: string, caseId: 
   );
 }
 
-async function openCase(client: ScopeClient, practiceId: string, pattern: PatternKey, settings: TriageSettings, pursuit: Cents | null): Promise<string> {
+export async function openCase(client: ScopeClient, practiceId: string, pattern: PatternKey, settings: TriageSettings, pursuit: Cents | null): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
     `INSERT INTO "case" (practice_id, pattern_key, payer_id, plan_id, rate_record_id, materiality_cents, pursuit_cost_cents) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [practiceId, JSON.stringify(pattern), pattern.payer_id, pattern.plan_id, pattern.rate_record_id, centsToString(settings.caseMaterialityCents), pursuit === null ? null : centsToString(pursuit)],
@@ -350,7 +351,7 @@ async function openCase(client: ScopeClient, practiceId: string, pattern: Patter
 }
 
 /** One triage of a practice at a time, whatever the queue does (and the daily monitor's window closing beside it). */
-async function lockPractice(client: ScopeClient, practiceId: string): Promise<void> {
+export async function lockPractice(client: ScopeClient, practiceId: string): Promise<void> {
   await client.query("SELECT pg_advisory_xact_lock(hashtextextended('triage:' || $1::text, 0))", [practiceId]);
 }
 

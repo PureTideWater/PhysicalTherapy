@@ -105,6 +105,7 @@ describe('migrate', () => {
           'audit_report',
           'audit_report_download',
           'case',
+          'case_activity',
           'case_line',
           'claim',
           'contract',

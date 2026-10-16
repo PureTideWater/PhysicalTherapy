@@ -3,6 +3,7 @@ import { parseCents } from '@tp/money';
 import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineStage, type WriteOffReason, deadlineState, netExpectedValue, triageSettings } from '@tp/triage';
 import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '@tp/worker/pricing';
 
+import { peopleEmails } from '../cases/people';
 import { type ListPage, pageWindow } from '../http/paging';
 
 /**
@@ -14,6 +15,8 @@ import { type ListPage, pageWindow } from '../http/paging';
  *
  * Claim control numbers and the words people wrote (a write-off's "other", a reopen's reason) are
  * decrypted only for the roles that read PHI; the others see the line by date, code and amounts.
+ * People are named by email through the database's people functions (src/lib/cases/people.ts), since
+ * nobody reads another person's user row.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -270,14 +273,19 @@ export interface CaseSummary {
   readonly behaviorText: string;
   readonly lines: number;
   readonly openLines: number;
+  /** What the case asks for: the variance of its lines not written off (the case's own total, derived in SQL). */
   readonly actionableCents: string;
+  /** Stage three now: the part of it whose lines are still actionable (none moved on to payer approved or recovered). */
+  readonly actionableNowCents: string;
   readonly writtenOffCents: string;
   readonly deadlineOn: string | null;
   readonly deadline: DeadlineState;
   readonly materialityCents: string;
   readonly pursuitCostCents: string | null;
   readonly netExpectedCents: string | null;
+  /** The owner's email, and their opaque ID (null when unassigned). */
   readonly owner: string | null;
+  readonly ownerUserId: string | null;
   readonly openedAt: string;
   readonly closedAt: string | null;
 }
@@ -292,28 +300,33 @@ interface CaseRow {
   readonly lines: string;
   readonly open_lines: string;
   readonly actionable_cents: string;
+  readonly actionable_now_cents: string;
   readonly written_off_cents: string;
   readonly deadline_on: string | null;
   readonly materiality_cents: string;
   readonly pursuit_cost_cents: string | null;
-  readonly owner: string | null;
+  readonly owner_user_id: string | null;
   readonly opened_at: Date;
   readonly closed_at: Date | null;
 }
+
+/** A case's stage-three figure: the variance of its lines not written off whose stage is still actionable. */
+const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
+    WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
+      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable')`;
 
 const CASES = `
   SELECT c.id, c.practice_id, c.state, py.name_raw AS payer, coalesce(pl.name, pl.plan_key) AS plan, c.pattern_key,
          (SELECT count(*) FROM case_line x WHERE x.case_id = c.id)::text AS lines,
          (SELECT count(*) FROM case_line x WHERE x.case_id = c.id AND x.written_off_reason IS NULL)::text AS open_lines,
-         c.actionable_cents::text,
+         c.actionable_cents::text, ${ACTIONABLE_NOW('c')}::text AS actionable_now_cents,
          (SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id WHERE x.case_id = c.id AND x.written_off_reason IS NOT NULL)::text AS written_off_cents,
-         c.deadline_on::text, c.materiality_cents::text, c.pursuit_cost_cents::text, u.email AS owner, c.opened_at, c.closed_at
+         c.deadline_on::text, c.materiality_cents::text, c.pursuit_cost_cents::text, c.owner_user_id, c.opened_at, c.closed_at
     FROM "case" c
     JOIN payer py ON py.id = c.payer_id
-    JOIN plan pl ON pl.id = c.plan_id
-    LEFT JOIN "user" u ON u.id = c.owner_user_id`;
+    JOIN plan pl ON pl.id = c.plan_id`;
 
-function caseSummary(row: CaseRow, asOf: string): CaseSummary {
+function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, string>): CaseSummary {
   const net = netExpectedValue(parseCents(row.actionable_cents), row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents));
   return {
     id: row.id,
@@ -326,13 +339,15 @@ function caseSummary(row: CaseRow, asOf: string): CaseSummary {
     lines: Number.parseInt(row.lines, 10),
     openLines: Number.parseInt(row.open_lines, 10),
     actionableCents: row.actionable_cents,
+    actionableNowCents: row.actionable_now_cents,
     writtenOffCents: row.written_off_cents,
     deadlineOn: row.deadline_on,
     deadline: deadlineState(row.deadline_on, asOf),
     materialityCents: row.materiality_cents,
     pursuitCostCents: row.pursuit_cost_cents,
     netExpectedCents: net === null ? null : net.toString(),
-    owner: row.owner,
+    owner: row.owner_user_id === null ? null : (emails.get(row.owner_user_id) ?? 'a former member of the practice'),
+    ownerUserId: row.owner_user_id,
     openedAt: row.opened_at.toISOString(),
     closedAt: row.closed_at?.toISOString() ?? null,
   };
@@ -340,27 +355,40 @@ function caseSummary(row: CaseRow, asOf: string): CaseSummary {
 
 export const CASES_PER_PAGE = 50;
 
-/** The Cases screen's filters (in the URL): the state, the payer, and a deadline within so many days of today. */
+/** Whose cases the list shows: the viewer's own, the unassigned, or one person's (an opaque ID). */
+export type OwnerFilter = 'mine' | 'none' | { readonly userId: string };
+
+/** The Cases screen's filters (in the URL): the state, the payer, the owner, and a deadline within so many days of today. */
 export interface CaseQuery {
   readonly state?: CaseState;
   readonly payerId?: string;
+  readonly owner?: OwnerFilter;
   readonly deadlineWithinDays?: number;
   readonly page: number;
 }
 
 export interface CasePage extends ListPage<CaseSummary> {
-  /** The open cases the filters admit, and their actionable total (stage three only), over every page. */
+  /** The cases still being worked (not resolved or closed) the filters admit, and their stage-three total, over every page. */
   readonly openCases: number;
   readonly openActionableCents: string;
 }
 
-/** The practice's cases, open ones first by deadline, then the closed: a page at a time, filtered in SQL. */
+/**
+ * The practice's cases, those still being worked first by deadline, then the resolved and closed: a
+ * page at a time, filtered in SQL. The deadline filter admits the cases still being worked (any state
+ * but resolved and closed) whose deadline falls within so many days, passed ones included.
+ */
 export async function listCases(scope: Scope, practiceId: string, asOf: string, requestId: string, query: CaseQuery = { page: 1 }): Promise<CasePage> {
+  const owner = query.owner;
+  const ownerKind = owner === undefined ? null : typeof owner === 'string' ? owner : 'person';
+  const ownerId = owner !== undefined && typeof owner !== 'string' ? owner.userId : null;
   const where = `c.practice_id = $1 AND ($2::text IS NULL OR c.state = $2) AND ($3::uuid IS NULL OR c.payer_id = $3)
-    AND ($4::int IS NULL OR (c.state = 'open' AND c.deadline_on <= $5::date + $4::int))`;
-  const values = [practiceId, query.state ?? null, query.payerId ?? null, query.deadlineWithinDays ?? null, asOf];
+    AND ($4::int IS NULL OR (c.state NOT IN ('resolved', 'closed_written_off') AND c.deadline_on <= $5::date + $4::int))
+    AND ($6::text IS NULL OR ($6 = 'none' AND c.owner_user_id IS NULL) OR ($6 = 'mine' AND c.owner_user_id = app_actor_id()) OR ($6 = 'person' AND c.owner_user_id = $7::uuid))`;
+  const values = [practiceId, query.state ?? null, query.payerId ?? null, query.deadlineWithinDays ?? null, asOf, ownerKind, ownerId];
   const { rows: counted } = await scope.client.query<{ n: number; open: number; open_cents: string }>(
-    `SELECT count(*)::int AS n, (count(*) FILTER (WHERE c.state = 'open'))::int AS open, coalesce(sum(c.actionable_cents) FILTER (WHERE c.state = 'open'), 0)::text AS open_cents
+    `SELECT count(*)::int AS n, (count(*) FILTER (WHERE c.state NOT IN ('resolved', 'closed_written_off')))::int AS open,
+            coalesce(sum(${ACTIONABLE_NOW('c')}) FILTER (WHERE c.state NOT IN ('resolved', 'closed_written_off')), 0)::text AS open_cents
        FROM "case" c WHERE ${where}`,
     values,
   );
@@ -372,13 +400,14 @@ export async function listCases(scope: Scope, practiceId: string, asOf: string, 
     async (client) =>
       (
         await client.query<CaseRow>(
-          `${CASES} WHERE ${where} ORDER BY (c.state = 'open') DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id LIMIT ${String(CASES_PER_PAGE)} OFFSET ${String(at.offset)}`,
+          `${CASES} WHERE ${where} ORDER BY (c.state NOT IN ('resolved', 'closed_written_off')) DESC, c.deadline_on ASC NULLS LAST, c.opened_at, c.id LIMIT ${String(CASES_PER_PAGE)} OFFSET ${String(at.offset)}`,
           values,
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
-  return { items: rows.map((row) => caseSummary(row, asOf)), page: at.page, pages: at.pages, total, openCases: counted[0]?.open ?? 0, openActionableCents: counted[0]?.open_cents ?? '0' };
+  const emails = await peopleEmails(scope, practiceId, rows.map((row) => row.owner_user_id));
+  return { items: rows.map((row) => caseSummary(row, asOf, emails)), page: at.page, pages: at.pages, total, openCases: counted[0]?.open ?? 0, openActionableCents: counted[0]?.open_cents ?? '0' };
 }
 
 export async function caseOf(scope: Scope, practiceId: string, caseId: string, asOf: string, requestId: string): Promise<CaseSummary | undefined> {
@@ -388,7 +417,7 @@ export async function caseOf(scope: Scope, practiceId: string, caseId: string, a
     async (client) => (await client.query<CaseRow>(`${CASES} WHERE c.id = $1 AND c.practice_id = $2`, [caseId, practiceId])).rows,
     (found) => ({ objectId: found.id, practiceId: found.practice_id }),
   );
-  return row === undefined ? undefined : caseSummary(row, asOf);
+  return row === undefined ? undefined : caseSummary(row, asOf, await peopleEmails(scope, practiceId, [row.owner_user_id]));
 }
 
 export interface CaseLineView {
@@ -407,6 +436,8 @@ export interface CaseLineView {
   /** Whether its window has closed (it is struck through, out of the total: WINDOW_PASSED). */
   readonly windowPassed: boolean;
   readonly actionable: boolean;
+  /** The line's stage now (its last stage event). */
+  readonly stage: LineStage | null;
   readonly writtenOffReason: WriteOffReason | null;
   /** The "other" reason's words, for the roles that read PHI. */
   readonly writtenOffText: string | null;
@@ -459,6 +490,7 @@ interface CaseLineRow {
   readonly window_ends_on: string | null;
   readonly window_passed: boolean;
   readonly actionable: boolean;
+  readonly stage: LineStage | null;
   readonly written_off_reason: WriteOffReason | null;
   readonly written_off_text: string | null;
   readonly written_off_by: string | null;
@@ -484,14 +516,13 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
                   l.procedure_code, l.modifiers, trim_scale(coalesce(l.units, 1))::text AS units,
                   p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text, p.window_ends_on::text,
                   (p.window_ends_on IS NOT NULL AND p.window_ends_on < (now() AT TIME ZONE 'UTC')::date) AS window_passed,
-                  cl.actionable, cl.written_off_reason, cl.written_off_text, wu.email AS written_off_by, cl.written_off_at,
-                  cl.reopen_reason, ru.email AS reopened_by, cl.reopened_at, c.payer_claim_control_number
+                  cl.actionable, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage,
+                  cl.written_off_reason, cl.written_off_text, cl.written_off_by, cl.written_off_at,
+                  cl.reopen_reason, cl.reopened_by, cl.reopened_at, c.payer_claim_control_number
              FROM case_line cl
              JOIN priced_line p ON p.id = cl.priced_line_id
              JOIN service_line l ON l.id = cl.service_line_id
              JOIN claim c ON c.id = l.claim_id
-             LEFT JOIN "user" wu ON wu.id = cl.written_off_by
-             LEFT JOIN "user" ru ON ru.id = cl.reopened_by
             WHERE cl.case_id = $1 AND cl.practice_id = $2
             ORDER BY coalesce(l.service_date, c.service_from), l.line_no, cl.id
             LIMIT ${String(CASE_LINES_PER_PAGE)} OFFSET ${String(at.offset)}`,
@@ -501,6 +532,14 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
   const decrypt = (column: EncryptedColumn, value: string | null) => (cipher === null || value === null ? null : cipher.decrypt(column, value));
+  const { rows: stages } = await scope.client.query<{ service_line_id: string; stage: LineStage; reopened_from: LineStage | null; set_at: Date; set_by: string | null }>(
+    `SELECT s.service_line_id, s.stage, s.reopened_from, s.set_at, s.set_by
+       FROM line_status s
+      WHERE s.practice_id = $2 AND s.service_line_id = ANY ($1::uuid[]) ORDER BY s.seq`,
+    [rows.map((row) => row.service_line_id), practiceId],
+  );
+  const emails = await peopleEmails(scope, practiceId, [...rows.flatMap((row) => [row.written_off_by, row.reopened_by]), ...stages.map((row) => row.set_by)]);
+  const person = (id: string | null) => (id === null ? null : (emails.get(id) ?? 'a former member of the practice'));
   const lines: CaseLineView[] = rows.map((row) => ({
     id: row.id,
     serviceLineId: row.service_line_id,
@@ -516,22 +555,17 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     windowEndsOn: row.window_ends_on,
     windowPassed: row.window_passed,
     actionable: row.actionable,
+    stage: row.stage,
     writtenOffReason: row.written_off_reason,
     writtenOffText: decrypt('case_line.written_off_text', row.written_off_text),
-    writtenOffBy: row.written_off_by,
+    writtenOffBy: person(row.written_off_by),
     writtenOffAt: row.written_off_at?.toISOString() ?? null,
     reopenReason: decrypt('case_line.reopen_reason', row.reopen_reason),
-    reopenedBy: row.reopened_by,
+    reopenedBy: person(row.reopened_by),
     reopenedAt: row.reopened_at?.toISOString() ?? null,
     payerClaimControlNumber: decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
   }));
   const lineNo = new Map(lines.map((line) => [line.serviceLineId, line.lineNo]));
-  const { rows: stages } = await scope.client.query<{ service_line_id: string; stage: LineStage; reopened_from: LineStage | null; set_at: Date; set_by: string | null }>(
-    `SELECT s.service_line_id, s.stage, s.reopened_from, s.set_at, u.email AS set_by
-       FROM line_status s LEFT JOIN "user" u ON u.id = s.set_by
-      WHERE s.practice_id = $2 AND s.service_line_id = ANY ($1::uuid[]) ORDER BY s.seq`,
-    [lines.map((line) => line.serviceLineId), practiceId],
-  );
   const events: CaseEvent[] = stages.map((row) => ({
     at: row.set_at.toISOString(),
     serviceLineId: row.service_line_id,
@@ -540,7 +574,7 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     stage: row.stage,
     reopenedFrom: row.reopened_from,
     writeOffReason: null,
-    by: row.set_by,
+    by: person(row.set_by),
   }));
   for (const line of lines) {
     if (line.writtenOffAt !== null) {

@@ -5,7 +5,10 @@
   "assertion": "New version; approval cleared",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts"],
+  "assertedBy": [
+    "apps/worker/src/packets/packets.db.test.ts",
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "Edits any approved packet: an action, no file.",
   "files": [],

@@ -9,6 +9,7 @@ import { CONTRACT_ROUTES } from './contracts';
 import { COVERAGE_ROUTES } from './coverage';
 import { MAPPING_ROUTES } from './mapping';
 import { MONITORING_ROUTES } from './monitoring';
+import { PACKET_ROUTES } from './packets';
 import { PRACTICE_ROUTES } from './practice';
 import { PRICING_ROUTES } from './pricing';
 import { RELEASE_ROUTES } from './releases';
@@ -16,8 +17,10 @@ import { REMITTANCE_ROUTES } from './remittances';
 import { REPORT_ROUTES } from './reports';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
 import { SIGN_IN_ROUTES } from './sign-in';
+import { SUBMISSION_ROUTES } from './submissions';
 import { TRIAGE_ROUTES } from './triage';
 import { UPLOAD_ROUTES } from './uploads';
+import { WORKBENCH_ROUTES } from './workbench';
 
 /**
  * The route registry: every page, server action and route handler of apps/web, with its access
@@ -49,6 +52,9 @@ export const ROUTES: readonly Route[] = [
   ...COVERAGE_ROUTES,
   ...PRICING_ROUTES,
   ...TRIAGE_ROUTES,
+  ...WORKBENCH_ROUTES,
+  ...PACKET_ROUTES,
+  ...SUBMISSION_ROUTES,
   ...REPORT_ROUTES,
   ...MONITORING_ROUTES,
   ...RELEASE_ROUTES,

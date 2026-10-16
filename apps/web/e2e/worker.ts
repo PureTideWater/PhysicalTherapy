@@ -7,6 +7,7 @@ import {
   databaseJobRuns,
   intakeHandler,
   intakeServices,
+  packetExportHandler,
   parseHandler,
   placeholderHandlers,
   priceHandler,
@@ -38,6 +39,8 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
       price: priceHandler(),
       triage: triageHandler(),
       audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
+      // A packet's export is real too (docs/adr/0041): it prints only a version a person approved and exports.
+      packet_export: packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     },
     runs: databaseJobRuns(pool),
     heartbeatMs: 60_000,

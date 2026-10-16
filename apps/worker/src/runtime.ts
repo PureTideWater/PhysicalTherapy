@@ -14,6 +14,7 @@ export { monitorHandler } from './monitor/job';
 export { BATCH_WINDOW_MINUTES, MONITOR_DELAY_SECONDS, type MonitorPlan, planMonitoring } from './monitor/plan';
 export { reconcileHandler } from './reconcile/job';
 export { type JobContext, type JobHandlers, placeholderHandlers } from './jobs/handlers';
+export { type PacketExportServices, packetExportHandler } from './packets/export';
 export { type JobRunEnd, type JobRunRecorder, type JobRunStart, databaseJobRuns } from './jobs/runs';
 export { type IntakeServices, intakeHandler } from './intake/intake';
 export { intakeServices } from './intake/wiring';

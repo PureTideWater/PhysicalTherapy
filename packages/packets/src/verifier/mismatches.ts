@@ -1,14 +1,13 @@
-import { createHash } from 'node:crypto';
-
-import { type NarrativeFacts, PLACEHOLDER_KINDS } from './facts';
-import { VERIFIER_FORMAT } from './format';
-import { type Figure, type FigureKind, scanText, sentenceSpans } from './scan';
+import { type NarrativeFacts, PLACEHOLDER_KINDS } from '../facts';
+import { type Figure, type FigureKind, scanText, sentenceSpans } from '../scan';
 
 /**
- * The deterministic verifier, a hard gate (PRD 12: "any figure that is not in the input fails
- * verification, and a failed verification cannot be approved"; PRD 14, draftPacketNarrative; test
- * matrix CAS-08). It has no options and no bypass: every narrative a version stores goes through it,
- * the version stores its result, and the database refuses an approval of a version that did not pass.
+ * The verifier's check itself (PRD 12: "any figure that is not in the input fails verification, and a
+ * failed verification cannot be approved"; PRD 14, draftPacketNarrative; test matrix CAS-08), with no
+ * options and nothing but the narrative and its version's facts in: the same code verifyNarrative
+ * (./index.ts) runs when a version is written, and the packet builder runs in the browser while a
+ * person types, so what the screen shows is what the stored result will say. It holds no hash and reads
+ * no Node module, which is all that keeps it out of the browser.
  *
  * It fails:
  * - every figure (date, code, modifier, unit, amount, percentage, count, number or identifier) whose
@@ -18,8 +17,7 @@ import { type Figure, type FigureKind, scanText, sentenceSpans } from './scan';
  * - every placeholder naming an identifier kind or a schedule row that does not exist;
  * - an empty narrative.
  *
- * The report holds codes and positions only, never the narrative's text, so it can be stored and
- * shown beside the (encrypted) narrative without repeating anything a person typed.
+ * Mismatches hold codes and positions only, never the narrative's text.
  */
 
 export const MISMATCH_CODES = ['figure_not_in_input', 'sentence_without_citation', 'unknown_citation', 'unknown_placeholder', 'empty_narrative'] as const;
@@ -36,18 +34,13 @@ export interface Mismatch {
   readonly end: number;
 }
 
-export interface VerifierReport {
-  readonly format: typeof VERIFIER_FORMAT;
+/** What the check found: how many sentences and figures it read, and every mismatch in text order. */
+export interface NarrativeCheck {
   readonly passed: boolean;
-  readonly narrative_sha256: string;
   readonly sentences: number;
   /** How many figures, placeholders and markers were checked. */
   readonly checked: number;
   readonly mismatches: readonly Mismatch[];
-}
-
-export function narrativeSha256(narrative: string): string {
-  return createHash('sha256').update(narrative, 'utf8').digest('hex');
 }
 
 function months(dates: ReadonlySet<string>): Set<string> {
@@ -82,7 +75,7 @@ function inInputs(figure: Figure, facts: NarrativeFacts, derived: { readonly mon
   }
 }
 
-export function verifyNarrative(narrative: string, facts: NarrativeFacts): VerifierReport {
+export function findMismatches(narrative: string, facts: NarrativeFacts): NarrativeCheck {
   const sentences = sentenceSpans(narrative);
   const scan = scanText(narrative);
   const sentenceOf = (position: number) => sentences.findIndex((span) => position >= span.start && position < span.end);
@@ -113,12 +106,5 @@ export function verifyNarrative(narrative: string, facts: NarrativeFacts): Verif
     }
   });
   mismatches.sort((a, b) => a.start - b.start || a.end - b.end || a.code.localeCompare(b.code));
-  return {
-    format: VERIFIER_FORMAT,
-    passed: mismatches.length === 0,
-    narrative_sha256: narrativeSha256(narrative),
-    sentences: sentences.length,
-    checked: scan.figures.length + scan.placeholders.length + scan.markers.length,
-    mismatches,
-  };
+  return { passed: mismatches.length === 0, sentences: sentences.length, checked: scan.figures.length + scan.placeholders.length + scan.markers.length, mismatches };
 }

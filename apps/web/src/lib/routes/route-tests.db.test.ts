@@ -40,6 +40,7 @@ import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 import { seedTriage, seedTriageLine } from './test-support/triage-world';
 import { seedMonitoring } from './test-support/monitoring-world';
+import { seedPacketLine, seedPackets } from './test-support/packet-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -326,6 +327,7 @@ async function buildWorld(name: string): Promise<World> {
   });
   const manager = actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'billing_manager')?.userId ?? '';
   const triageLineId = await seedTriageLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
+  const packetLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
   const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
   const triage = await seedTriage({
     owner,
@@ -341,6 +343,22 @@ async function buildWorld(name: string): Promise<World> {
     signedOffVersionId: contracts.signedOffVersionId,
     managerId: manager,
     reviewerId,
+  });
+  const packets = await seedPackets({
+    owner,
+    app,
+    keys,
+    documents,
+    practiceId: tenant.practiceId,
+    pricingRunId,
+    caseId: triage.caseId,
+    packetLineServiceLineId: packetLineId,
+    payerId: loaded.payerId,
+    planId: loaded.planId,
+    signedOffVersionId: contracts.signedOffVersionId,
+    analystId: actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'analyst')?.userId ?? '',
+    managerId: manager,
+    uploaderId: tenant.adminUserId,
   });
   const monitoring = await seedMonitoring({ owner, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, pricingRunId, payerId: loaded.payerId });
   const locked = await lockedUser(tenant.organizationId);
@@ -365,6 +383,7 @@ async function buildWorld(name: string): Promise<World> {
     rerunId,
     ...triage,
     ...monitoring,
+    ...packets,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

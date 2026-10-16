@@ -120,6 +120,10 @@ const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = {
   packet_version: 'billing_manager',
   submission: 'billing_manager',
   payer_response: 'billing_manager',
+  // A person opens a case, adds its lines and writes its notes only as a case worker (migration 20261024110000).
+  case: 'billing_manager',
+  case_line: 'billing_manager',
+  case_activity: 'billing_manager',
   // A person's ledger match, entry or ROI statement is one who reconciles postings (migration 20261023120000).
   ledger_match: 'billing_manager',
   ledger_entry: 'billing_manager',
@@ -143,6 +147,10 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'packet_version.content': () => JSON.stringify(SYNTHETIC_PACKET_CONTENT),
   'packet_version.verifier_passed': () => true,
   'packet_version.verifier_report': () => JSON.stringify({ format: 'tp-packet-verifier/1', passed: true, narrative_sha256: '0'.repeat(64), sentences: 0, checked: 0, mismatches: [] }),
+  // A note: its words, and no owner or packet version (those are an assignment's and an approval request's).
+  'case_activity.kind': () => 'note',
+  'case_activity.owner_user_id': () => null,
+  'case_activity.packet_version_id': () => null,
   // A denial that does not reopen the case: no amount, no next window.
   'payer_response.kind': () => 'denied',
   'payer_response.amount_cents': () => null,

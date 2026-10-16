@@ -233,6 +233,25 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                   </>
                 )}
               </dd>
+              <dt className="text-muted-foreground">Follow-ups due</dt>
+              <dd data-figure="follow-ups">
+                {dashboard.followUps.due === 0 ? (
+                  'No submission is waiting past its follow-up date.'
+                ) : (
+                  <>
+                    {dashboard.followUps.due} {dashboard.followUps.due === 1 ? 'case has' : 'cases have'} a submission the payer has not answered by its follow-up date, the first due {dashboard.followUps.earliest}:{' '}
+                    {dashboard.followUps.first.map((item, index) => (
+                      <span key={item.caseId}>
+                        {index === 0 ? '' : ', '}
+                        <Link className="underline" href={`/p/${practice.id}/cases/${item.caseId}/submissions`}>
+                          due {item.followUpOn}
+                        </Link>
+                      </span>
+                    ))}
+                    .
+                  </>
+                )}
+              </dd>
               <dt className="text-muted-foreground">Recovered this quarter</dt>
               <dd data-figure="recovered">
                 <Money value={dashboard.recoveredCents} /> (stage five: cash posted or deposited, as the practice proves recovery, net of recoupments and reversals, from the recovery ledger).

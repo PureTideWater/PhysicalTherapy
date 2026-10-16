@@ -13,6 +13,7 @@ import * as coverage from './coverage';
 import * as registry from './index';
 import * as mapping from './mapping';
 import * as monitoring from './monitoring';
+import * as packets from './packets';
 import * as practice from './practice';
 import * as pricing from './pricing';
 import * as releases from './releases';
@@ -20,8 +21,10 @@ import * as remittances from './remittances';
 import * as reports from './reports';
 import * as ruleReleases from './rule-releases';
 import * as signIn from './sign-in';
+import * as submissions from './submissions';
 import * as triage from './triage';
 import * as uploads from './uploads';
+import * as workbench from './workbench';
 
 /**
  * Nothing reaches the browser without the registry: every page.tsx, route.ts and server action in
@@ -39,7 +42,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [abstraction, account, consoleRoutes, contracts, coverage, mapping, monitoring, practice, pricing, releases, remittances, reports, ruleReleases, signIn, triage, uploads, registry].flatMap((module) =>
+  [abstraction, account, consoleRoutes, contracts, coverage, mapping, monitoring, packets, practice, pricing, releases, remittances, reports, ruleReleases, signIn, submissions, triage, uploads, workbench, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );

@@ -1,45 +1,62 @@
 import { randomUUID } from 'node:crypto';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Label } from '@tp/ui';
+import { formatCents, parseCents } from '@tp/money';
+import { CASE_STATES } from '@tp/triage';
+import { Alert, AlertDescription, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
-import { CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
+import { CASE_STATE_TEXT, CaseStateBadge, Deadline, stageLabel } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
 import { casesPage } from '../../../../lib/routes/triage';
-import { triageRunFormAction } from './actions';
+import { MATERIALITY_CONSEQUENCE } from '../../../../lib/routes/workbench';
+import { openCaseFormAction, setMaterialityFormAction, triageRunFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Cases' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+const dollars = (cents: string) => formatCents(parseCents(cents));
+
+const WAITING_TEXT = {
+  ready: 'Reaches the case materiality: open its case now',
+  held: 'Below the case materiality: its lines accumulate',
+  joins_open_case: 'Joins its open case at the next triage',
+} as const;
+
 /**
- * The Cases screen, v0 report-only (PRD 7, Cases: "list by stage, payer, owner, deadline, actionable
- * total"; PRD 12; milestone 6: "case grouping (report-only)"): one case per payer pattern, opened by
- * triage once the pattern's actionable lines reach the case materiality; its total is the sum of its
- * lines not written off and its deadline the earliest open window among them. Triaging a run is the
- * roles' that work cases; assignment, packets and submissions are the workbench's (milestone 8).
+ * The Cases screen (PRD 7, Cases: "list by stage, payer, owner, deadline, actionable total"; "create
+ * from a pattern; assign; set materiality"; "deadline colors"; PRD 5, J8; PRD 12): one case per payer
+ * pattern, its total the sum of its lines not written off and its deadline the earliest open window
+ * among them, filtered in the URL by state, payer, owner and deadline. The roles that work cases triage
+ * a run, open a case on a waiting pattern that reaches the case materiality, and set the practice's
+ * materiality thresholds; the case's own page assigns it, keeps its notes and opens its packet.
  */
 export default async function CasesPage(props: Props) {
   const page = await loadPage(casesPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, total } = page.data;
+  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, workers, total, waiting, materiality, notice } = page.data;
   const path = `/p/${practiceId}/cases`;
+  const filtered = filters.state !== undefined || filters.payer !== undefined || filters.owner !== undefined || filters.deadline !== undefined;
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
         <p className="text-sm text-muted-foreground">
-          {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} open {openCases === 1 ? 'case' : 'cases'}
-          {filters.state === undefined && filters.payer === undefined && filters.deadline === undefined ? '' : ' the filters admit'}, as of {asOf}. Each total is the sum of its lines not written off; a line past its window is
-          struck through and out of it.
+          {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. A case’s total is the sum of its lines not written off;
+          a line past its window is struck through and out of it. Payer approved and recovered amounts come from the recovery ledger, on each case’s page.
         </p>
       </div>
+      {notice === 'materiality' ? (
+        <Alert data-notice="materiality">
+          <AlertDescription>The materiality thresholds are saved. Triage uses them from its next run.</AlertDescription>
+        </Alert>
+      ) : null}
       {canTriage ? (
         <Card role="region" aria-label="Triage a run">
           <CardHeader>
@@ -70,6 +87,96 @@ export default async function CasesPage(props: Props) {
           </CardContent>
         </Card>
       ) : null}
+      {canTriage ? (
+        <Card role="region" aria-label="Patterns waiting for a case">
+          <CardHeader>
+            <CardTitle>Patterns waiting for a case</CardTitle>
+            <CardDescription>
+              Validated lines in no case, by payer pattern, judged on today’s date. A pattern whose actionable lines reach the case materiality ({dollars(materiality.caseCents)}) can be opened now, with its owner; a smaller one keeps
+              accumulating.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {waiting.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No validated line is waiting for a case. Triage a run to judge its lines.</p>
+            ) : (
+              <ul className="flex flex-col gap-3" aria-label="Waiting patterns">
+                {waiting.map((pattern) => (
+                  <li key={JSON.stringify(pattern.key)} className="rounded-md border p-3 text-sm" data-waiting={pattern.status}>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">
+                        {pattern.payer}, {pattern.plan}
+                      </span>
+                      <span>{pattern.behaviorText}</span>
+                      <Badge variant={pattern.status === 'ready' ? 'default' : 'outline'}>{WAITING_TEXT[pattern.status]}</Badge>
+                    </p>
+                    <p className="pt-1 text-muted-foreground">
+                      {stageLabel('validated')}, to be {stageLabel('actionable').toLowerCase()} in its case: <Money value={pattern.actionableCents} /> on {pattern.actionableLines} {pattern.actionableLines === 1 ? 'line' : 'lines'}
+                      {pattern.earliestWindow === null ? '' : `, the earliest window closing ${pattern.earliestWindow}`}
+                      {pattern.windowPassedLines === 0 ? '' : `; ${String(pattern.windowPassedLines)} more past their windows (WINDOW_PASSED, out of the total)`}.
+                    </p>
+                    {pattern.status === 'joins_open_case' && pattern.openCaseId !== null ? (
+                      <Link className="underline" href={`${path}/${pattern.openCaseId}`}>
+                        Its open case
+                      </Link>
+                    ) : null}
+                    {pattern.status === 'ready' ? (
+                      <ActionForm action={openCaseFormAction} submit="Open the case" className="flex flex-wrap items-end gap-3 pt-2">
+                        <input type="hidden" name="requestKey" value={randomUUID()} />
+                        <input type="hidden" name="practiceId" value={practiceId} />
+                        <input type="hidden" name="payerId" value={pattern.key.payerId} />
+                        <input type="hidden" name="planId" value={pattern.key.planId} />
+                        <input type="hidden" name="mappingKind" value={pattern.key.mappingKind} />
+                        <input type="hidden" name="contractVersionId" value={pattern.key.contractVersionId ?? ''} />
+                        <input type="hidden" name="rateRecordId" value={pattern.key.rateRecordId ?? ''} />
+                        <input type="hidden" name="behavior" value={pattern.key.behavior} />
+                        <div className="flex flex-col gap-1.5">
+                          <Label htmlFor={`owner-${pattern.key.planId}-${pattern.key.behavior}`}>Owner</Label>
+                          <select id={`owner-${pattern.key.planId}-${pattern.key.behavior}`} name="ownerUserId" className="h-9 rounded-md border bg-background px-2 text-sm" defaultValue="">
+                            <option value="">Unassigned</option>
+                            {workers.map((person) => (
+                              <option key={person.userId} value={person.userId}>
+                                {person.email}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </ActionForm>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+      <Card role="region" aria-label="Materiality">
+        <CardHeader>
+          <CardTitle>Materiality</CardTitle>
+          <CardDescription>
+            A validated line is actionable at or above the per-line threshold ({dollars(materiality.lineCents)}); a payer pattern becomes a case at or above the per-case threshold ({dollars(materiality.caseCents)}). The defaults are $5.00 and $250.00.
+          </CardDescription>
+        </CardHeader>
+        {canTriage ? (
+          <CardContent>
+            <ActionForm action={setMaterialityFormAction} submit="Save the thresholds" className="flex max-w-xl flex-col gap-3">
+              <input type="hidden" name="requestKey" value={randomUUID()} />
+              <input type="hidden" name="practiceId" value={practiceId} />
+              <div className="flex flex-wrap gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="line-materiality">Per line (dollars)</Label>
+                  <Input id="line-materiality" name="lineMateriality" defaultValue={dollars(materiality.lineCents)} inputMode="decimal" required />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="case-materiality">Per case (dollars)</Label>
+                  <Input id="case-materiality" name="caseMateriality" defaultValue={dollars(materiality.caseCents)} inputMode="decimal" required />
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">{MATERIALITY_CONSEQUENCE}</p>
+            </ActionForm>
+          </CardContent>
+        ) : null}
+      </Card>
       <section aria-label="Case list" className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold">By deadline</h2>
         <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cases">
@@ -77,8 +184,11 @@ export default async function CasesPage(props: Props) {
             <Label htmlFor="cases-state">State</Label>
             <select id="cases-state" name="state" defaultValue={filters.state ?? ''} className="h-9 rounded-md border bg-background px-2">
               <option value="">Any state</option>
-              <option value="open">Open</option>
-              <option value="closed_written_off">Closed, written off</option>
+              {CASE_STATES.map((state) => (
+                <option key={state} value={state}>
+                  {CASE_STATE_TEXT[state]}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex flex-col gap-1">
@@ -93,20 +203,33 @@ export default async function CasesPage(props: Props) {
             </select>
           </div>
           <div className="flex flex-col gap-1">
+            <Label htmlFor="cases-owner">Owner</Label>
+            <select id="cases-owner" name="owner" defaultValue={filters.owner ?? ''} className="h-9 rounded-md border bg-background px-2">
+              <option value="">Anyone</option>
+              <option value="mine">Mine</option>
+              <option value="none">Unassigned</option>
+              {workers.map((person) => (
+                <option key={person.userId} value={person.userId}>
+                  {person.email}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
             <Label htmlFor="cases-deadline">Deadline</Label>
             <select id="cases-deadline" name="deadline" defaultValue={filters.deadline ?? ''} className="h-9 rounded-md border bg-background px-2">
               <option value="">Any deadline</option>
-              <option value="14">Open, within 14 days</option>
-              <option value="30">Open, within 30 days</option>
-              <option value="90">Open, within 90 days</option>
+              <option value="14">Within 14 days (or passed)</option>
+              <option value="30">Within 30 days (or passed)</option>
+              <option value="90">Within 90 days (or passed)</option>
             </select>
           </div>
           <button type="submit" className="h-9 rounded-md border px-3">
             Filter
           </button>
         </form>
-        {cases.length === 0 && total === 0 && filters.state === undefined && filters.payer === undefined && filters.deadline === undefined ? (
-          <EmptyState title="No case yet" nextStep="Triage a complete pricing run: a payer pattern whose actionable lines reach the case materiality opens a case." />
+        {cases.length === 0 && total === 0 && !filtered ? (
+          <EmptyState title="No case yet" nextStep="Triage a complete pricing run: a payer pattern whose actionable lines reach the case materiality opens a case, or opens from the waiting patterns above." />
         ) : cases.length === 0 ? (
           <p className="text-sm text-muted-foreground">No case matches these filters.</p>
         ) : (
@@ -118,7 +241,7 @@ export default async function CasesPage(props: Props) {
                   <th className="px-2 py-1 font-medium">Pattern</th>
                   <th className="px-2 py-1 font-medium">State</th>
                   <th className="px-2 py-1 font-medium">Lines</th>
-                  <th className="px-2 py-1 font-medium">Actionable total</th>
+                  <th className="px-2 py-1 font-medium">{stageLabel('actionable')} total</th>
                   <th className="px-2 py-1 font-medium">Deadline</th>
                   <th className="px-2 py-1 font-medium">Pursuit cost</th>
                   <th className="px-2 py-1 font-medium">Owner</th>
@@ -128,7 +251,7 @@ export default async function CasesPage(props: Props) {
                 {cases.map((item) => (
                   <tr key={item.id} className="border-b last:border-0" data-case={item.id} data-state={item.state}>
                     <td className="px-2 py-1">
-                      <Link className="underline" href={`/p/${practiceId}/cases/${item.id}`}>
+                      <Link className="underline" href={`${path}/${item.id}`}>
                         {item.payer}, {item.plan}
                       </Link>
                     </td>
@@ -140,10 +263,10 @@ export default async function CasesPage(props: Props) {
                       {item.openLines} of {item.lines}
                     </td>
                     <td className="px-2 py-1">
-                      <Money value={item.actionableCents} />
+                      <Money value={item.actionableNowCents} />
                     </td>
                     <td className="px-2 py-1">
-                      <Deadline on={item.deadlineOn} state={item.deadline} />
+                      <Deadline on={item.deadlineOn} state={item.state === 'resolved' || item.state === 'closed_written_off' ? 'none' : item.deadline} />
                     </td>
                     <td className="px-2 py-1">{item.pursuitCostCents === null ? 'not estimated' : <Money value={item.pursuitCostCents} />}</td>
                     <td className="px-2 py-1">{item.owner ?? 'Unassigned'}</td>

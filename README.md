@@ -173,8 +173,40 @@ within its window. A case's state (submitted, awaiting response, partially resol
 lines and submissions. Recording a response writes no ledger entry and no stage. The workflow is `@tp/worker/packets`
 (`writePacketVersion`, `approvePacketVersion`, `confirmRegulation`, `requestPacketExport`, `logSubmission`,
 `recordPayerResponse`, `submissionLog`, `followUpsDue`, `acceptedPayerResponses` for the ledger); its screens are
-milestone 8's second part. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
+the workbench below. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
 fixtures.
+
+The workbench (ADR 0044; migration `20261024110000_case_workbench.sql`) is three screens under each case, every
+filter and page in the URL with opaque IDs only:
+
+- **Cases** (`/p/<practice>/cases`) lists cases by state, payer, owner and deadline (colored: passed, within 14 days,
+  later) with their actionable totals. Beside them are the payer patterns waiting in the run in effect: ready, held
+  below the case materiality, or joining an open case. A person with `case.work` opens a ready pattern as a case
+  (`openCaseOnPattern`; a held one is refused, CAS-04) and sets the practice's per-line and per-case materiality, told
+  the consequence first.
+- **The case** (`/p/<practice>/cases/<case>`) shows its lines with their traces. A line past its window is struck
+  through, marked `WINDOW_PASSED` and out of the actionable total. The case also shows its deadline, pursuit cost, the
+  ledger's payer approved and recovered, its packet and dispute, its notes and a timeline read from every record of
+  the case. People assign its owner, add notes, write a line off with a reason from the closed list (confirmed with
+  its consequence) and reopen one with a reason. Notes, assignments and approval requests are `case_activity`,
+  append-only, the words encrypted with the practice's key.
+- **The packet builder** (`/p/<practice>/cases/<case>/packet`) shows the citation, the line schedule with traces,
+  interest as its own line, the evidence list and the numbered sources. Identifiers show as placeholders. The narrative
+  editor runs the server's own verifier check (`@tp/packets/check`) on every keystroke and lists the mismatches; the
+  stored result of a saved version alone gates approval. The approval panel says what the database will answer:
+  blocked with its reason, the drafter refused, a single-user practice's 24-hour countdown with its audit flag, or
+  ready for a second person. A person requests approval; an approver approves; the export (PDF and CSV, `phi.export`)
+  runs in the worker, and its history lists each version's SHA-256.
+- **Submissions and responses** (`/p/<practice>/cases/<case>/submissions`) logs the submission (date, channel,
+  reference, the export's hash attached) and the payer's response with its document (accepted, partial, denied, more
+  information requested). Follow-ups default to 45 days and surface overdue on the dashboard. A denial with a reason
+  can reopen the case for a second-level dispute within its window.
+
+Every mutation is a route in the registry with a Zod schema, a role check in the handler and in Postgres, an audit
+event, and no effect when repeated. `apps/web/src/lib/routes/workbench-routes.db.test.ts` runs the screens' cases
+through the routes. `apps/web/e2e/packets.spec.ts` is the milestone 8 done check in the browser: a figure not in the
+input blocks approval, the drafter cannot approve, a second person approves and exports, and the export's hash is in
+the submission log.
 
 The recovery ledger (ADR 0042): `ledger_entry` (`20261023120000_recovery_ledger.sql`) holds signed integer cents by
 stage (approved, posted, deposited, recouped, reversed, adjusted, interest), each with its evidence, and no role can

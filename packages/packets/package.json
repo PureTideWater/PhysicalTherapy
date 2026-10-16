@@ -6,6 +6,7 @@
   "description": "Packet assembly, the verifier, and PDF and CSV export (milestone 8).",
   "exports": {
     ".": "./src/index.ts",
+    "./check": "./src/check.ts",
     "./testing": "./src/test-support.ts"
   },
   "scripts": {

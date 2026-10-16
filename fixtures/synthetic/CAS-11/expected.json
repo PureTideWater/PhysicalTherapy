@@ -5,7 +5,12 @@
   "assertion": "Placeholders; inserted at export only",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts","packages/packets/src/placeholders.test.ts"],
+  "assertedBy": [
+    "apps/worker/src/packets/packets.db.test.ts",
+    "packages/packets/src/placeholders.test.ts",
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "Identifier placeholders belong to every draft built from the CAS-03 or CAS-08 lines; no file of its own.",
   "files": [],

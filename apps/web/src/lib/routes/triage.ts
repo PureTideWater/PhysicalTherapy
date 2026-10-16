@@ -1,5 +1,9 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, rolesPermit } from '@tp/db/runtime';
-import { WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
+import { centsToString } from '@tp/money';
+import { CASE_STATES, WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
+import { practiceLedgerTotals } from '@tp/worker/ledger';
+import { packetOfCase } from '@tp/worker/packets';
+import { waitingPatterns } from '@tp/worker/triage';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -26,15 +30,19 @@ import {
 } from '../triage/queries';
 import { pageParam } from '../http/paging';
 import { type PayerOption, payerOptions } from '../remittances/queries';
+import { type Person, caseWorkers } from '../cases/people';
+import type { TimelineEvent } from '../cases/timeline';
+import { type ActivityView, caseActivity, caseTimeline } from '../cases/workbench';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
  * The Anomalies and Cases screens (PRD 7: Anomalies "open a cohort; mark reviewed; convert to a
  * validation request; hidden for cohorts under the minimum size", Cases "list by stage, payer, owner,
- * deadline, actionable total; detail with lines, trace, deadline, pursuit cost ... write off a line
- * with reason ... a line past its window is struck through"; PRD 12; docs/adr/0038). In v0 a case is
- * report-only: triage opens it from a payer pattern; the workbench (assignment, packets, notes) is
- * milestone 8.
+ * deadline, actionable total; detail with lines, trace, deadline, pursuit cost, notes, timeline ...
+ * write off a line with reason ... a line past its window is struck through"; PRD 12; docs/adr/0038 and
+ * 0044). Triage opens cases from payer patterns; the workbench (src/lib/routes/workbench.ts) opens one
+ * by hand, assigns it, sets the materiality and keeps notes; the packet and the submissions have their
+ * own screens under the case (packets.ts, submissions.ts).
  *
  * Reading needs the workspace (practice.open); claim control numbers and people's words show to the
  * roles that read PHI. Working anomalies is anomaly.work; triaging a run, writing a case line off and
@@ -162,8 +170,32 @@ export const requestValidationAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ anomalyId: refs.anomalyId }) },
 });
 
-/** The Cases screen's deadline filter: open cases whose deadline falls within so many days. */
+/** The Cases screen's deadline filter: cases still being worked whose deadline falls within so many days (passed ones included). */
 export const DEADLINE_FILTERS = ['14', '30', '90'] as const;
+
+/** The owner filter: the viewer's own cases, the unassigned, or one person's (an opaque ID). */
+const ownerParam = optionalText(z.union([z.enum(['mine', 'none']), opaqueId]));
+
+/** A payer pattern waiting for a case, as the Cases screen shows it (cents as text). */
+export interface WaitingPatternView {
+  readonly key: {
+    readonly payerId: string;
+    readonly planId: string;
+    readonly mappingKind: string;
+    readonly contractVersionId: string | null;
+    readonly rateRecordId: string | null;
+    readonly behavior: string;
+  };
+  readonly status: 'ready' | 'held' | 'joins_open_case';
+  readonly payer: string;
+  readonly plan: string;
+  readonly behaviorText: string;
+  readonly actionableLines: number;
+  readonly actionableCents: string;
+  readonly windowPassedLines: number;
+  readonly earliestWindow: string | null;
+  readonly openCaseId: string | null;
+}
 
 export interface CasesPageData {
   readonly practiceId: string;
@@ -173,12 +205,19 @@ export interface CasesPageData {
   readonly page: number;
   readonly pages: number;
   readonly total: number;
-  readonly filters: { readonly state?: string; readonly payer?: string; readonly deadline?: string };
+  readonly filters: { readonly state?: string; readonly payer?: string; readonly owner?: string; readonly deadline?: string };
   readonly payers: readonly PayerOption[];
-  /** The open cases the filters admit, over every page, and their actionable total (stage three only). */
+  /** The people who work the practice's cases now: the owner filter's and an opened case's owners. */
+  readonly workers: readonly Person[];
+  /** The cases still being worked the filters admit, over every page, and their stage-three total. */
   readonly openCases: number;
   readonly actionableCents: string;
   readonly runs: readonly RunChoice[];
+  /** The payer patterns waiting for a case (for the roles that work cases). */
+  readonly waiting: readonly WaitingPatternView[];
+  /** The practice's materiality thresholds in force, in cents (PRD 12 defaults $5 and $250). */
+  readonly materiality: { readonly lineCents: string; readonly caseCents: string };
+  readonly notice: 'materiality' | null;
   readonly canTriage: boolean;
 }
 
@@ -190,20 +229,26 @@ export const casesPage = practiceRoute({
   permission: 'practice.open',
   params: z.object({
     practiceId: opaqueId,
-    state: optionalText(z.enum(['open', 'submitted', 'awaiting_response', 'partially_resolved', 'resolved', 'closed_written_off'])),
+    state: optionalText(z.enum(CASE_STATES)),
     payer: optionalText(opaqueId),
+    owner: ownerParam,
     deadline: optionalText(z.enum(DEADLINE_FILTERS)),
+    notice: optionalText(z.enum(['materiality'])),
     page: pageParam,
   }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<CasesPageData> => {
     const asOf = today(services.now());
+    const owner = params.owner === undefined ? undefined : params.owner === 'mine' || params.owner === 'none' ? params.owner : { userId: params.owner };
     const listed = await listCases(scope, practiceId, asOf, request.requestId, {
       ...(params.state === undefined ? {} : { state: params.state }),
       ...(params.payer === undefined ? {} : { payerId: params.payer }),
+      ...(owner === undefined ? {} : { owner }),
       ...(params.deadline === undefined ? {} : { deadlineWithinDays: Number.parseInt(params.deadline, 10) }),
       page: params.page,
     });
     const canTriage = rolesPermit(access.roles, 'case.work');
+    const waiting = canTriage ? await waitingPatterns(scope, practiceId, asOf, request.requestId) : null;
+    const settings = waiting?.settings ?? (await practiceTriageSettings(scope, practiceId));
     return {
       practiceId,
       asOf,
@@ -214,25 +259,86 @@ export const casesPage = practiceRoute({
       filters: {
         ...(params.state === undefined ? {} : { state: params.state }),
         ...(params.payer === undefined ? {} : { payer: params.payer }),
+        ...(params.owner === undefined ? {} : { owner: params.owner }),
         ...(params.deadline === undefined ? {} : { deadline: params.deadline }),
       },
       payers: await payerOptions(scope, practiceId),
+      workers: await caseWorkers(scope, practiceId),
       openCases: listed.openCases,
       actionableCents: listed.openActionableCents,
       runs: canTriage ? await runsInEffect(scope, practiceId) : [],
+      waiting: (waiting?.patterns ?? []).map((pattern) => ({
+        key: {
+          payerId: pattern.pattern.payer_id,
+          planId: pattern.pattern.plan_id,
+          mappingKind: pattern.pattern.mapping_kind,
+          contractVersionId: pattern.pattern.contract_version_id,
+          rateRecordId: pattern.pattern.rate_record_id,
+          behavior: pattern.pattern.behavior,
+        },
+        status: pattern.status,
+        payer: pattern.payer,
+        plan: pattern.plan,
+        behaviorText: pattern.behaviorText,
+        actionableLines: pattern.actionableLines,
+        actionableCents: centsToString(pattern.actionableCents),
+        windowPassedLines: pattern.windowPassedLines,
+        earliestWindow: pattern.earliestWindow,
+        openCaseId: pattern.openCaseId,
+      })),
+      materiality: { lineCents: centsToString(settings.lineMaterialityCents), caseCents: centsToString(settings.caseMaterialityCents) },
+      notice: params.notice ?? null,
       canTriage,
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
 
+/** A case's packet and dispute, as its page summarizes them (the builder and the submissions screen hold the rest). */
+export interface CaseDispute {
+  readonly packet: { readonly versionNo: number; readonly verifierPassed: boolean; readonly approved: boolean; readonly exported: boolean } | null;
+  readonly latestSubmission: { readonly submittedOn: string; readonly followUpOn: string; readonly answered: boolean; readonly followUpDue: boolean } | null;
+}
+
+/** What the payer approved and what was recovered on the case, from the recovery ledger (stages four and five). */
+export interface CaseLedger {
+  readonly approvedCents: string;
+  readonly recoveredCents: string;
+  readonly proofLevel: string;
+}
+
 export interface CasePageData {
   readonly practiceId: string;
   readonly asOf: string;
   readonly case: CaseSummary;
   readonly detail: CaseDetail;
+  readonly activity: readonly ActivityView[];
+  readonly timeline: readonly TimelineEvent[];
+  readonly workers: readonly Person[];
+  readonly dispute: CaseDispute;
+  readonly ledger: CaseLedger;
   readonly canWork: boolean;
+  readonly canDraft: boolean;
   readonly canReadPhi: boolean;
+}
+
+async function caseDispute(scope: PracticeScope<ScopeClient>, practiceId: string, caseId: string, asOf: string): Promise<CaseDispute> {
+  const found = await packetOfCase(scope, { practiceId, caseId });
+  const { rows: versions } = await scope.client.query<{ version_no: number; verifier_passed: boolean; approved: boolean; exported: boolean }>(
+    `SELECT v.version_no, v.verifier_passed, v.approved_by IS NOT NULL AS approved, v.exported_at IS NOT NULL AS exported FROM packet_version v WHERE v.id = $1 AND v.practice_id = $2`,
+    [found?.currentVersionId ?? null, practiceId],
+  );
+  const { rows: submissions } = await scope.client.query<{ submitted_on: string; follow_up_on: string; answered: boolean }>(
+    `SELECT s.submitted_on::text, s.follow_up_on::text, EXISTS (SELECT 1 FROM payer_response r WHERE r.submission_id = s.id) AS answered
+       FROM submission s WHERE s.id = case_latest_submission($1) AND s.practice_id = $2`,
+    [caseId, practiceId],
+  );
+  const version = versions[0];
+  const latest = submissions[0];
+  return {
+    packet: version === undefined ? null : { versionNo: version.version_no, verifierPassed: version.verifier_passed, approved: version.approved, exported: version.exported },
+    latestSubmission: latest === undefined ? null : { submittedOn: latest.submitted_on, followUpOn: latest.follow_up_on, answered: latest.answered, followUpDue: !latest.answered && latest.follow_up_on <= asOf },
+  };
 }
 
 export const casePage = practiceRoute({
@@ -249,8 +355,25 @@ export const casePage = practiceRoute({
       throw new NotFoundError();
     }
     const canReadPhi = rolesPermit(access.roles, 'phi.read');
+    const canWork = rolesPermit(access.roles, 'case.work');
     const cipher = canReadPhi ? await loadPracticeCipher(scope, services.keys, practiceId) : null;
-    return { practiceId, asOf, case: found, detail: await caseDetail(scope, practiceId, params.caseId, cipher, request.requestId, params.page), canWork: rolesPermit(access.roles, 'case.work'), canReadPhi };
+    const detail = await caseDetail(scope, practiceId, params.caseId, cipher, request.requestId, params.page);
+    const activity = await caseActivity(scope, practiceId, params.caseId, cipher, request.requestId);
+    const totals = await practiceLedgerTotals(scope, practiceId, { caseIds: [params.caseId] });
+    return {
+      practiceId,
+      asOf,
+      case: found,
+      detail,
+      activity,
+      timeline: await caseTimeline(scope, { practiceId, caseId: params.caseId, openedAt: found.openedAt, lineEvents: detail.events, activity }),
+      workers: canWork ? await caseWorkers(scope, practiceId) : [],
+      dispute: await caseDispute(scope, practiceId, params.caseId, asOf),
+      ledger: { approvedCents: centsToString(totals.approvedCents), recoveredCents: centsToString(totals.recoveredCents), proofLevel: totals.proofLevel },
+      canWork,
+      canDraft: rolesPermit(access.roles, 'packet.draft'),
+      canReadPhi,
+    };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
 });

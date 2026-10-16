@@ -33,7 +33,9 @@ export const CONTRACT_PAGES: readonly (readonly string[])[] = [
 ];
 
 export const QUOTE_97110 = '97110 Therapeutic exercise $32.00 per unit';
-export const FIXED_97110 = { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' } };
+// Each unit of each code counts on its own ("per unit"), so the world's 97110 lines are priced at an
+// expected amount (an UNKNOWN units rule would leave them unpriced, UNITS_RULE_UNKNOWN).
+export const FIXED_97110 = { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' }, flags: { timed_units_rule: 'PER_CODE' } };
 
 export interface ContractWorld {
   readonly contractDocumentId: string;

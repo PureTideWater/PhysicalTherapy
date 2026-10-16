@@ -10,7 +10,9 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * and a contract specialist for the contracts journey, and a billing manager and a platform
  * administrator (who sets the practice's pricing settings in the console) for the pricing journey,
  * whose sign-ins never share a TOTP step or a hardware key with another spec's; the three billing
- * managers of the other group upload into its practice and never into the rows another spec counts).
+ * managers of the other group upload into its practice and never into the rows another spec counts;
+ * and two billing managers of the other group for the packet journey, one who drafts and one who
+ * approves, in a practice of its own that the journey adds).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -61,6 +63,8 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'contracts-specialist', organization: 'internal', role: 'contract_specialist' },
   { key: 'pricing-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'pricing-admin', organization: 'internal', role: 'platform_admin' },
+  { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
+  { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

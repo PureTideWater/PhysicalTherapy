@@ -161,8 +161,10 @@ describe('repository scan', () => {
     expect(scanRepository(root)).toEqual({ files: 0, violations: [] });
   });
 
+  // It walks the whole repository, which grows with every milestone: about a second alone, longer
+  // beside the rest of the suite under coverage.
   it('finds nothing to fix in this repository', () => {
     const repository = path.resolve(import.meta.dirname, '../..');
     expect(scanRepository(repository).violations).toEqual([]);
-  });
+  }, 30_000);
 });

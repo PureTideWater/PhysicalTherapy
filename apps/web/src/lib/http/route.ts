@@ -167,6 +167,19 @@ export interface SampleRefs {
   readonly attestedReportId: string;
   /** A sent monthly digest of the practice; the administrator holds a notification of it and of the pricing run (docs/adr/0039). */
   readonly digestId: string;
+  /**
+   * The workbench (docs/adr/0044): the case's rate record (its pattern names it); the case's packet's
+   * current version, written by an analyst and passing the verifier, unapproved, with the hash an
+   * approval names; a second case with an approved, exported version and its submission; and a payer
+   * letter a response carries.
+   */
+  readonly caseRateRecordId: string;
+  readonly packetVersionId: string;
+  readonly packetVersionSha256: string;
+  readonly submittedCaseId: string;
+  readonly exportedVersionId: string;
+  readonly submissionId: string;
+  readonly responseDocumentId: string;
 }
 
 export interface RouteSample {

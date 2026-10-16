@@ -9,7 +9,8 @@ import type { CaseState } from '../../lib/triage/queries';
  * claim; recovered only beside stage five) and the write-off reasons in words.
  */
 
-const STATE_TEXT: Readonly<Record<CaseState, string>> = {
+/** A case's state in words. */
+export const CASE_STATE_TEXT: Readonly<Record<CaseState, string>> = {
   open: 'Open',
   submitted: 'Submitted',
   awaiting_response: 'Awaiting response',
@@ -20,8 +21,8 @@ const STATE_TEXT: Readonly<Record<CaseState, string>> = {
 
 export function CaseStateBadge({ state }: { readonly state: CaseState }) {
   return (
-    <Badge variant={state === 'open' ? 'default' : 'outline'} data-state={state}>
-      {STATE_TEXT[state]}
+    <Badge variant={state === 'open' || state === 'awaiting_response' ? 'default' : 'outline'} data-state={state}>
+      {CASE_STATE_TEXT[state]}
     </Badge>
   );
 }

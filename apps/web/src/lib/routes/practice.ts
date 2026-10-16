@@ -2,6 +2,7 @@ import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from
 import { quarterOf, quarterPeriod } from '@tp/ledger';
 import { centsToString } from '@tp/money';
 import { practiceLedgerTotals } from '@tp/worker/ledger';
+import { followUpsDue } from '@tp/worker/packets';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -126,6 +127,8 @@ export interface Dashboard {
   readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
   /** Open cases whose deadline falls today or within DEADLINE_WINDOW_DAYS, with their actionable total. */
   readonly deadlines: { readonly cases: number; readonly actionableCents: string; readonly earliest: string | null };
+  /** Cases whose latest submission has no response and whose follow-up date has come (PRD 7: "overdue follow-ups surface on the dashboard"; CAS-14). */
+  readonly followUps: { readonly due: number; readonly earliest: string | null; readonly first: readonly { readonly caseId: string; readonly followUpOn: string }[] };
   /**
    * Recovered this quarter: from the recovery ledger's entries dated in the quarter (the practice's proof
    * level, net of recoupments and reversals; docs/adr/0042), never an estimate and never approved.
@@ -153,6 +156,11 @@ export async function dashboard(scope: PracticeScope<ScopeClient>, practiceId: s
         : { runId: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, lines: coverage.lines, pricedLines: coverage.priced.lines, chargeCents: coverage.charge_cents, pricedChargeCents: coverage.priced.charge_cents },
     casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
     deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },
+    followUps: await followUpsDue(scope, { practiceId, asOf: today }).then((due) => ({
+      due: due.length,
+      earliest: due[0]?.followUpOn ?? null,
+      first: due.slice(0, 5).map((item) => ({ caseId: item.caseId, followUpOn: item.followUpOn })),
+    })),
     recoveredCents: centsToString((await practiceLedgerTotals(scope, practiceId, quarterPeriod(quarterOf(today)))).recoveredCents),
   };
 }

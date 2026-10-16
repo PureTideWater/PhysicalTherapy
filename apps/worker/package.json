@@ -12,6 +12,7 @@
     "./digests": "./src/digest/public.ts",
     "./packets": "./src/packets/public.ts",
     "./ledger": "./src/reconcile/public.ts",
+    "./triage": "./src/triage/public.ts",
     "./runtime": "./src/runtime.ts",
     "./testing": "./src/price/test-support/pricing-world.ts",
     "./testing/triage": "./src/triage/test-support/triage-world.ts"

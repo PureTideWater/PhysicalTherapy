@@ -213,3 +213,4 @@ export {
   caseTable,
   lineStatus,
 } from './triage';
+export { CASE_ACTIVITY_KINDS, type CaseActivityKind, type CaseActivityRow, caseActivity } from './workbench';
