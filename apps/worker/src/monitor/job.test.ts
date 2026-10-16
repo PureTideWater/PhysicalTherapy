@@ -2,7 +2,6 @@ import { createLogger } from '@tp/observability';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
-import { reconcileHandler } from '../reconcile/job';
 import { monitorHandler } from './job';
 import type * as Plan from './plan';
 import { type MonitorPlan, planMonitoring } from './plan';
@@ -66,23 +65,5 @@ describe('queueing the monitoring chain after a document', () => {
     const down = context(undefined, () => Promise.reject(new Error('queue down')));
     await expect(queueMonitoring(down.job, PRACTICE, DOCUMENT)).resolves.toBeUndefined();
     expect(down.lines).toEqual([expect.objectContaining({ error_code: 'MONITOR_NOT_QUEUED', document_id: DOCUMENT })]);
-  });
-});
-
-describe('the reconcile step (the ledger’s, milestone 9)', () => {
-  it.each([
-    [undefined, 'RECONCILE_RUN_NOT_FOUND'],
-    [{ status: 'running' }, 'RECONCILE_RUN_NOT_COMPLETE'],
-  ])('leaves a run that is not complete (%j)', async (answer, code) => {
-    const { job, lines } = context(answer);
-    await reconcileHandler()({ practice_id: PRACTICE, pricing_run_id: RUN }, job);
-    expect(lines).toEqual([expect.objectContaining({ msg: 'reconcile found no complete pricing run', error_code: code, pricing_run_id: RUN })]);
-  });
-
-  it('records that it ran for a complete run, and posts nothing', async () => {
-    const { job, lines, queued } = context({ status: 'complete' });
-    await reconcileHandler()({ practice_id: PRACTICE, pricing_run_id: RUN }, job);
-    expect(lines).toEqual([expect.objectContaining({ msg: 'reconcile ran; the recovery ledger has no entries to post yet', pricing_run_id: RUN })]);
-    expect(queued).toEqual([]);
   });
 });

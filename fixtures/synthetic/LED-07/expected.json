@@ -5,7 +5,11 @@
   "assertion": "`reversed` offsets exactly",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/reconcile/ledger.db.test.ts",
+    "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
+    "packages/ledger/src/totals.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

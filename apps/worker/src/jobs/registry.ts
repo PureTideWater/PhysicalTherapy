@@ -11,7 +11,8 @@ import { z } from 'zod';
  * done, which creates a pricing run under the release in force for each service month whose lines no
  * run covers yet (or, on the daily schedule, for the day) and queues `price` for it; a price job that
  * completes a run the chain created queues `triage`, and triage queues `reconcile` (the recovery
- * ledger's step, milestone 9). `digest` sends a practice's monthly digest.
+ * ledger's step, docs/adr/0042), which intake also queues for a stored posting or EFT export and the
+ * daily schedule for the day. `digest` sends a practice's monthly digest.
  */
 export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
@@ -33,8 +34,12 @@ export const JOB_PAYLOADS = {
   price: z.strictObject({ practice_id: id, pricing_run_id: id }),
   triage: z.strictObject({ practice_id: id, pricing_run_id: id }),
   audit_report: z.strictObject({ practice_id: id, audit_report_id: id }),
-  /** After triage of a run the monitoring chain priced: the ledger's step for that run (milestone 9). */
-  reconcile: z.strictObject({ practice_id: id, pricing_run_id: id }),
+  /**
+   * The recovery ledger's step: after triage of a run the monitoring chain priced, once a posting or EFT
+   * export is stored, or on the daily schedule (the day, UTC; it also generates the quarter before's ROI
+   * statement).
+   */
+  reconcile: z.union([z.strictObject({ practice_id: id, pricing_run_id: id }), z.strictObject({ practice_id: id, document_id: id }), z.strictObject({ practice_id: id, day })]),
   digest: z.strictObject({ practice_id: id, period: month }),
   export: z.strictObject({ practice_id: id, export_job_id: id }),
 } satisfies Record<JobType, z.ZodType<{ practice_id: string }>>;
@@ -49,7 +54,7 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   price: (payload) => payload.pricing_run_id,
   triage: (payload) => payload.pricing_run_id,
   audit_report: (payload) => payload.audit_report_id,
-  reconcile: (payload) => payload.pricing_run_id,
+  reconcile: (payload) => ('pricing_run_id' in payload ? payload.pricing_run_id : 'document_id' in payload ? payload.document_id : payload.day),
   digest: (payload) => payload.period,
   export: (payload) => payload.export_job_id,
 };

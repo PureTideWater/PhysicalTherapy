@@ -18,7 +18,8 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it, and a column whose value the
  * row's other constraints decide (FIXED_VALUES) gets that value, and one that must match a column of a
  * row another column references (SAME_AS) is read from that row; a row a column references that must
- * have taken a further step first (PREPARED_REFERENCES) takes it once created. It first fills only NOT
+ * have taken a further step first (PREPARED_REFERENCES) takes it once created, and a row that only makes
+ * sense as a link in a chain of rows (CHAINED_ROWS: the ledger's) is built with its chain. It first fills only NOT
  * NULL columns without defaults, and if a constraint refuses that row, fills every column it can. Rows
  * are written as the owner role inside the world's practice scope.
  *
@@ -109,7 +110,15 @@ const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.u
  * worker's. Their actor columns name, and the row is written by, a user of the world's organization
  * who holds the role, so the probe differs from an accepted row in its practice only.
  */
-const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = { line_status: 'billing_manager', pricing_run: 'billing_manager', audit_report: 'billing_manager' };
+const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = {
+  line_status: 'billing_manager',
+  pricing_run: 'billing_manager',
+  audit_report: 'billing_manager',
+  // A person's ledger match, entry or ROI statement is one who reconciles postings (migration 20261023120000).
+  ledger_match: 'billing_manager',
+  ledger_entry: 'billing_manager',
+  roi_statement: 'billing_manager',
+};
 
 /**
  * Columns whose value the row's other constraints decide, so no generic value fits: a priced line is
@@ -148,6 +157,70 @@ const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: 
       world.adminUserId,
     );
   },
+};
+
+/** What a chained row's builder is given: the world, the row's actor, and rows of other tables made in the same world. */
+interface Chain {
+  readonly client: OwnerClient;
+  readonly world: TenantWorld;
+  readonly actor: string;
+  create(table: string): Promise<Row>;
+}
+
+/**
+ * Tables whose rows only make sense as a link in a chain of other rows the generic fill cannot line up
+ * (migration 20261023120000): a ledger match names a claim of the remittance it matches, and a ledger
+ * entry carries its standing match's evidence for a line of its case. Each builder makes the rows its
+ * row needs in the world (kept) and returns the row's values; as the actor, a person who reconciles
+ * postings matches, enters and generates in their own name.
+ */
+const CHAINED_ROWS: Readonly<Record<string, (chain: Chain) => Promise<Row>>> = {
+  ledger_match: async ({ world, actor, create }) => {
+    const claim = await create('claim');
+    const line = await create('service_line');
+    return { practice_id: world.practiceId, kind: 'claim', claim_id: claim.id, remittance_id: claim.remittance_id, service_line_id: line.id, outcome: 'approved', matched_by: actor };
+  },
+  ledger_entry: async ({ client, world, actor, create }) => {
+    const caseLine = await create('case_line');
+    const claim = await create('claim');
+    const match = await asOwner(
+      client,
+      [world.practiceId],
+      () =>
+        client.query(
+          `INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id, outcome, matched_by) VALUES ($1, 'claim', $2, $3, $4, 'approved', $5) RETURNING id`,
+          [world.practiceId, claim.id, claim.remittance_id, caseLine.service_line_id, actor],
+        ),
+      actor,
+    );
+    return {
+      practice_id: world.practiceId,
+      case_id: caseLine.case_id,
+      service_line_id: caseLine.service_line_id,
+      stage: 'approved',
+      amount_cents: '100',
+      evidence_kind: 'claim',
+      evidence_id: claim.id,
+      match_id: (match.rows[0] as Row).id,
+      effective_on: new Date().toISOString().slice(0, 10),
+      created_by: actor,
+    };
+  },
+  roi_statement: ({ world, actor }) =>
+    Promise.resolve({
+      practice_id: world.practiceId,
+      period_from: '2026-04-01',
+      period_to: '2026-06-30',
+      proof_level: 'posted',
+      fees_cents: '0',
+      recovered_cents: '0',
+      interest_cents: '0',
+      approved_unposted_cents: '0',
+      actionable_open_cents: '0',
+      pursuit_hours: '0.00',
+      links: JSON.stringify({ recovered: [], interest: [], approved_unposted: [], actionable_open: [] }),
+      generated_by: actor,
+    }),
 };
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
@@ -272,8 +345,10 @@ export class RowFactory {
     }
     let failure: unknown;
     const actor = await this.actorFor(client, table, world);
+    const chained = CHAINED_ROWS[table];
     for (const full of [false, true, true, true]) {
-      const values = await this.values(client, table, world, full, depth, actor);
+      const values =
+        chained === undefined ? await this.values(client, table, world, full, depth, actor) : await chained({ client, world, actor, create: (other) => this.create(client, other, world, depth + 1) });
       const scope = table === TENANT_TABLE ? [world.practiceId, String(values.id)] : [world.practiceId];
       const columns = Object.keys(values);
       const sql = `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(', ')}) RETURNING *`;

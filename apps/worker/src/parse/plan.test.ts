@@ -52,6 +52,10 @@ function planned(result: PlanResult): LoadPlan {
 const fixture = (relative: string) => readFileSync(path.join(FIXTURES, relative), 'latin1');
 
 describe('the load plan', () => {
+  it('keeps the interest a payer paid on a claim (AMT I), which the recovery ledger records beside principal', () => {
+    expect(planned(loadPlan(only(fixture('variants/V07-plb-l6-interest/remit.835')))).claims.map((claim) => claim.interestCents)).toEqual([411n, null]);
+  });
+
   it('maps a transaction set to its remittance, payer, claim, line and adjustments', () => {
     const plan = planned(loadPlan(only(syntheticInterchange())));
     expect(plan.remittance).toEqual({

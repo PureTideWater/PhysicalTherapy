@@ -25,6 +25,7 @@ import { parseHandler } from './parse/job';
 import { mailSender, platformRuntime } from './platform/wiring';
 import { priceHandler } from './price/job';
 import { reconcileHandler } from './reconcile/job';
+import { NO_SUBMISSIONS } from './reconcile/pass';
 import { auditReportHandler } from './report/generate';
 import { ChromiumPdfRenderer } from './report/pdf';
 import { installShutdownHandlers } from './shutdown';
@@ -78,7 +79,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       monitor: monitorHandler(),
       price: priceHandler(),
       triage: triageHandler(),
-      reconcile: reconcileHandler(),
+      reconcile: reconcileHandler({ documents: services.documents, keys: services.keys, ...NO_SUBMISSIONS }),
       digest: digestHandler({ mail: mailSender(notifications), appOrigin: notifications.appOrigin }),
       audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     };

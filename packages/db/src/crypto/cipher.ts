@@ -31,8 +31,9 @@ import { DATA_KEY_BYTES, DataKeyError, requirePractice } from './key-provider';
 /**
  * Every column the data dictionary marks (enc), and the free text people write that can hold anything
  * they type: a note on a service line (docs/adr/0027), a contract specialist's question to the
- * practice and its answer (docs/adr/0030), and the reasons a person gives for reopening a line and for
- * writing one off as "other" (docs/adr/0038).
+ * practice and its answer (docs/adr/0030), the reasons a person gives for reopening a line and for
+ * writing one off as "other" (docs/adr/0038), and for reversing a ledger match or correcting a ledger
+ * entry (docs/adr/0041).
  */
 export const ENCRYPTED_COLUMNS = [
   'claim.patient_control_number',
@@ -49,14 +50,18 @@ export const ENCRYPTED_COLUMNS = [
   'line_status.reason',
   'case_line.written_off_text',
   'case_line.reopen_reason',
+  'ledger_entry.reason',
+  'ledger_match.reversal_reason',
 ] as const;
 export type EncryptedColumn = (typeof ENCRYPTED_COLUMNS)[number];
 
 /**
- * The keyed hashes: the encrypted column with an indexed lookup on its deterministic hash, and
- * patient_ref's pseudonym, the "stable hash" of the payer-independent patient key (docs/adr/0027).
+ * The keyed hashes: the encrypted column with an indexed lookup on its deterministic hash, patient_ref's
+ * pseudonym, the "stable hash" of the payer-independent patient key (docs/adr/0027), and the
+ * fingerprints of posting and EFT export rows, which store a row once however often it is exported (a
+ * posting row's holds its claim reference; docs/adr/0041).
  */
-export const LOOKUP_COLUMNS = ['claim.payer_claim_control_number', 'patient_ref.pseudonym'] as const;
+export const LOOKUP_COLUMNS = ['claim.payer_claim_control_number', 'patient_ref.pseudonym', 'posting_row.fingerprint', 'eft_row.fingerprint'] as const;
 export type LookupColumn = (typeof LOOKUP_COLUMNS)[number];
 
 const PREFIX = 'enc:v1:';

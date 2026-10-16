@@ -141,6 +141,8 @@ export const claim = pgTable(
     allowedCents: bigint('allowed_cents', { mode: 'bigint' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** AMT I: the interest the payer paid on the claim (migration 20261023120000). */
+    interestCents: bigint('interest_cents', { mode: 'bigint' }),
   },
   (table) => [
     unique('claim_once').on(table.remittanceId, table.claimNo),
