@@ -140,6 +140,7 @@ describe('migrate', () => {
           'provider_adjustment',
           'rate_record',
           'remittance',
+          'report_document',
           'restore_drill',
           'roi_statement',
           'role_permission',

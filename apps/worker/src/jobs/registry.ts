@@ -15,9 +15,11 @@ import { z } from 'zod';
  * daily schedule for the day. `digest` sends a practice's monthly digest. `packet_export` prints an
  * approved packet version's PDF and CSV schedule, its identifiers inserted from the canonical records
  * (docs/adr/0041). `roi_statement` prints an ROI statement's PDF (docs/adr/0043): on demand, once a
- * person generates one, and after the daily reconcile writes the quarter before's.
+ * person generates one, and after the daily reconcile writes the quarter before's. `report_document`
+ * prints a coverage report's or a monthly summary's PDF from the figures a person generated it with
+ * (docs/adr/0045).
  */
-export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export', 'roi_statement'] as const;
+export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export', 'roi_statement', 'report_document'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
@@ -49,6 +51,8 @@ export const JOB_PAYLOADS = {
   packet_export: z.strictObject({ practice_id: id, packet_version_id: id }),
   /** A generated ROI statement to print and store (the statement records who generated it). */
   roi_statement: z.strictObject({ practice_id: id, roi_statement_id: id }),
+  /** A generated coverage report or monthly summary to print and store (the document records who generated it). */
+  report_document: z.strictObject({ practice_id: id, report_document_id: id }),
 } satisfies Record<JobType, z.ZodType<{ practice_id: string }>>;
 
 export type JobPayload<T extends JobType> = z.infer<(typeof JOB_PAYLOADS)[T]>;
@@ -66,6 +70,7 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   export: (payload) => payload.export_job_id,
   packet_export: (payload) => payload.packet_version_id,
   roi_statement: (payload) => payload.roi_statement_id,
+  report_document: (payload) => payload.report_document_id,
 };
 
 /** The job's idempotency subject inside its practice (job_run.idempotency_key). */

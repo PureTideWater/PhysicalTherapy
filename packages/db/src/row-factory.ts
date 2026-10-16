@@ -128,6 +128,8 @@ const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = {
   ledger_match: 'billing_manager',
   ledger_entry: 'billing_manager',
   roi_statement: 'billing_manager',
+  // A person generates a coverage report or a monthly summary only as a case worker (migration 20261025090000).
+  report_document: 'billing_manager',
 };
 
 /**
@@ -155,6 +157,10 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'payer_response.kind': () => 'denied',
   'payer_response.amount_cents': () => null,
   'payer_response.next_window_ends_on': () => null,
+  // A coverage report (its kind names its format) with no figures, reading no run.
+  'report_document.kind': () => 'coverage',
+  'report_document.content': () => JSON.stringify({ format: 'tp-coverage-report/1' }),
+  'report_document.period': () => null,
 };
 
 /**

@@ -162,6 +162,7 @@ export {
   pricedLine,
   pricingRun,
 } from './pricing';
+export { REPORT_DOCUMENT_KINDS, REPORT_DOCUMENT_STATUSES, type ReportDocumentKind, type ReportDocumentRow, type ReportDocumentStatus, reportDocument, reportDocumentKey } from './reports';
 export { type RuleRecordRow, type RuleReleaseRow, type RuleReleaseWithdrawalRow, ruleRecord, ruleRelease, ruleReleaseWithdrawal } from './rules';
 export {
   AGREEMENT_KINDS,

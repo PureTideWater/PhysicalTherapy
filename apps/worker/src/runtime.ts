@@ -2,7 +2,7 @@
  * The worker as a library (@tp/worker/runtime), for the end-to-end suite, which runs it beside the web
  * app against the same local document directory and database, and for the web app's database tests:
  * the worker loop, the intake job, the parse_835 job (the parser and the loader), the monitoring chain
- * (monitor, price, triage, reconcile), the digest job, the audit report job and the ROI statement job as they run in
+ * (monitor, price, triage, reconcile), the digest job, the audit report job, the ROI statement job and the report document job as they run in
  * production, wired to their local implementations.
  */
 export { type IntakeConfig, type NotificationConfig, readIntakeConfig, readNotificationConfig } from './config';
@@ -27,6 +27,7 @@ export { ENGINE_ERRORS_MESSAGE, type ExecuteOptions, type ExecuteOutcome, type P
 export { priceHandler } from './price/job';
 export { type ReportOptions, type ReportOutcome, type ReportServices, auditReportHandler, generateAuditReport } from './report/generate';
 export { ChromiumPdfRenderer, type PdfRenderer } from './report/pdf';
+export { type DocumentPrintOutcome, type DocumentPrintServices, printReportDocument, reportDocumentHandler } from './report/print-document';
 export { type TriageJobContext, type TriageOptions, type TriageOutcome, executeTriage, todayUtc } from './triage/execute';
 export { triageHandler } from './triage/job';
 export { type QueueClient, type RunningWorker, startWorker } from './worker';
