@@ -30,10 +30,13 @@ import { type VersionReview, versionReview } from '../contracts/review';
 import { tagDocument, tagInput } from '../contracts/tagging';
 import { termsFromForm } from '../contracts/terms-form';
 import { practiceRoute } from '../http/invoke';
+import { type ProposalView, reviewVersionProposals, versionProposals } from '../models/contract-proposals';
+import { modelFeatures } from '../models/path';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
 import type { Services } from '../server/services';
 import { pageSelection } from './contracts';
+import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -110,6 +113,10 @@ export interface AbstractionVersionPageData {
   readonly practiceId: string;
   readonly review: VersionReview;
   readonly questions: readonly QuestionView[];
+  /** The model's proposals of the version's terms, and whether a model may propose them now (the kill switch off: MOD-06). */
+  readonly proposals: readonly ProposalView[];
+  readonly canPropose: boolean;
+  readonly modelNotice: ModelNotice | null;
 }
 
 export const abstractionVersionPage = practiceRoute({
@@ -118,7 +125,7 @@ export const abstractionVersionPage = practiceRoute({
   path: '/p/[practiceId]/abstraction/versions/[versionId]',
   phi: true,
   permission: 'rate_record.edit',
-  params: z.object({ practiceId: opaqueId, versionId: opaqueId, ...pageSelection }),
+  params: z.object({ practiceId: opaqueId, versionId: opaqueId, ...pageSelection, model: z.enum(MODEL_NOTICES).optional().catch(undefined) }),
   handle: async ({ scope, practiceId, params, request, services }): Promise<AbstractionVersionPageData> => {
     const review = await versionReview(scope, services, practiceId, params.versionId, request.requestId, {
       ...(params.record === undefined ? {} : { record: params.record }),
@@ -129,7 +136,14 @@ export const abstractionVersionPage = practiceRoute({
       throw new NotFoundError();
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
-    return { practiceId, review, questions: await listQuestions(scope, practiceId, cipher, request.requestId, { contractId: review.version.contractId, openOnly: false }) };
+    return {
+      practiceId,
+      review,
+      questions: await listQuestions(scope, practiceId, cipher, request.requestId, { contractId: review.version.contractId, openOnly: false }),
+      proposals: await versionProposals(scope, practiceId, params.versionId),
+      canPropose: (await modelFeatures(scope, services, practiceId)).proposeContractTerms,
+      modelNotice: params.model ?? null,
+    };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, versionId: refs.draftVersionId }) },
 });
@@ -297,6 +311,8 @@ export const approveVersionAction = practiceRoute({
   audit: { action: 'contract_version_approval_requested', objectType: 'contract_version' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
     await approveVersion(await workflow(scope, services, practiceId, request.requestId), { practiceId, versionId: input.versionId });
+    // The specialist is done with the version: each model proposal's decision is what they did with it (docs/adr/0052).
+    await reviewVersionProposals(scope, { practiceId, versionId: input.versionId, requestId: request.requestId });
     return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ versionId: refs.readyVersionId }) },

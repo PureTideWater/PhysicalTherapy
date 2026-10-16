@@ -6,8 +6,11 @@ import { underPacketRules } from '../cases/refusals';
 import { requestApproval } from '../cases/workbench';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
+import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
+import { modelFeatures } from '../models/path';
 import { NOT_EXPORTABLE, type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
 import { type CaseSummary, caseOf } from '../triage/queries';
+import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -37,6 +40,10 @@ export interface BuilderPageData {
   readonly canApprove: boolean;
   readonly canExport: boolean;
   readonly canReadPhi: boolean;
+  /** Whether the person may have a model draft the narrative now (packet.draft, the kill switch off: MOD-06), and the versions models drafted. */
+  readonly canDraftWithModel: boolean;
+  readonly drafts: readonly DraftView[];
+  readonly modelNotice: ModelNotice | null;
 }
 
 export const packetPage = practiceRoute({
@@ -50,6 +57,7 @@ export const packetPage = practiceRoute({
     caseId: opaqueId,
     version: optionalText(opaqueId),
     notice: optionalText(z.enum(['written', 'unchanged', 'requested', 'approved', 'export_requested', 'exported'])),
+    model: z.enum(MODEL_NOTICES).optional().catch(undefined),
   }),
   handle: async ({ scope, practiceId, params, request, access, actor, services }): Promise<BuilderPageData> => {
     const now = services.now();
@@ -73,7 +81,20 @@ export const packetPage = practiceRoute({
     if (builder === undefined) {
       throw new NotFoundError();
     }
-    return { practiceId, asOf, case: found, builder, notice: params.notice ?? null, viewerId: actor.userId, canApprove, canExport: rolesPermit(access.roles, 'phi.export'), canReadPhi };
+    return {
+      practiceId,
+      asOf,
+      case: found,
+      builder,
+      notice: params.notice ?? null,
+      viewerId: actor.userId,
+      canApprove,
+      canExport: rolesPermit(access.roles, 'phi.export'),
+      canReadPhi,
+      canDraftWithModel: rolesPermit(access.roles, 'packet.draft') && (await modelFeatures(scope, services, practiceId)).draftPacketNarrative,
+      drafts: await packetDrafts(scope, practiceId, params.caseId),
+      modelNotice: params.model ?? null,
+    };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
 });
@@ -151,9 +172,11 @@ export const requestApprovalAction = practiceRoute({
   params: z.object({ practiceId: opaqueId }),
   input: z.object({ caseId: opaqueId, versionId: opaqueId, message: optionalText(z.string().max(REQUEST_MESSAGE_MAX_LENGTH)) }),
   audit: { action: 'packet_approval_requested', objectType: 'packet_version' },
-  handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
+  handle: async ({ scope, practiceId, input, services, request }): Promise<MutationResult> => {
     await versionOfCase(scope, practiceId, input.caseId, input.versionId);
     await underPacketRules(() => requestApproval(scope, services.keys, { practiceId, caseId: input.caseId, versionId: input.versionId, message: input.message ?? null }));
+    // The drafter is done with any model draft of the packet: its decision is what this version says (docs/adr/0052).
+    await reviewNarrativeDrafts(scope, services.keys, { practiceId, versionId: input.versionId, requestId: request.requestId });
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?notice=requested` };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.caseId, versionId: refs.packetVersionId, message: '' }) },
@@ -175,8 +198,12 @@ export const approvePacketVersionAction = practiceRoute({
   params: z.object({ practiceId: opaqueId }),
   input: z.object({ caseId: opaqueId, versionId: opaqueId, versionSha256: z.string().regex(/^[0-9a-f]{64}$/, 'the version’s SHA-256') }),
   audit: { action: 'packet_approved', objectType: 'packet_version' },
-  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+  handle: async ({ scope, practiceId, input, request, services, access }): Promise<MutationResult> => {
     await underPacketRules(() => approveOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, versionSha256: input.versionSha256, requestId: request.requestId }));
+    // A model draft not yet reviewed is decided by the version approved, by an approver who may review drafts.
+    if (rolesPermit(access.roles, 'packet.draft')) {
+      await reviewNarrativeDrafts(scope, services.keys, { practiceId, versionId: input.versionId, requestId: request.requestId });
+    }
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?notice=approved` };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.caseId, versionId: refs.packetVersionId, versionSha256: refs.packetVersionSha256 }) },

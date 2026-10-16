@@ -184,21 +184,36 @@ const FIELD_PATH = /^[a-z][a-z0-9_.[\]]{0,127}$/;
  * review the call's purpose in its practice and that nothing else of the row changes.
  */
 export async function recordReviewerDecision(pool: ScopePool<ScopeClient>, input: ReviewerDecisionInput): Promise<void> {
+  const { userId, ...decision } = input;
+  await withPracticeScope(pool, { actorId: userId, practiceIds: [input.practiceId] }, (scope) => recordReviewerDecisionIn(scope, decision));
+}
+
+/**
+ * The same, in a transaction the caller holds (a server action's own scope, as the person acting), so
+ * the decision commits or rolls back with what the person did: a version approved, a packet sent for
+ * approval, a checklist kept.
+ */
+export async function recordReviewerDecisionIn(scope: PracticeScope<ScopeClient>, input: Omit<ReviewerDecisionInput, 'userId'>): Promise<void> {
   if (!REVIEWER_DECISIONS.includes(input.decision) || !input.changedFields.every((path) => FIELD_PATH.test(path)) || (input.decision === 'accepted_with_changes') !== input.changedFields.length > 0) {
     throw new GatewayError('decision_invalid', 'a decision is accepted, rejected, or accepted with the changed fields named');
   }
-  await withPracticeScope(pool, { actorId: input.userId, practiceIds: [input.practiceId] }, async (scope) => {
-    const { rows } = await scope.client.query<{ id: string }>('UPDATE model_call SET reviewer_decision = $3, reviewer_changed_fields = $4 WHERE id = $1 AND practice_id = $2 RETURNING id', [
-      input.modelCallId,
-      input.practiceId,
-      input.decision,
-      [...input.changedFields],
-    ]);
-    if (rows.length === 0) {
-      throw new GatewayError('not_found', 'no such model call in the practice');
-    }
-    await recordAuditEvent(scope, { action: 'model_call_reviewed', objectType: 'model_call', objectId: input.modelCallId, practiceId: input.practiceId, requestId: input.requestId });
-  });
+  const { rows } = await scope.client.query<{ id: string }>('UPDATE model_call SET reviewer_decision = $3, reviewer_changed_fields = $4 WHERE id = $1 AND practice_id = $2 RETURNING id', [
+    input.modelCallId,
+    input.practiceId,
+    input.decision,
+    [...input.changedFields],
+  ]);
+  if (rows.length === 0) {
+    throw new GatewayError('not_found', 'no such model call in the practice');
+  }
+  await recordAuditEvent(scope, { action: 'model_call_reviewed', objectType: 'model_call', objectId: input.modelCallId, practiceId: input.practiceId, requestId: input.requestId });
+}
+
+/** What the gateway's flags allow for a practice, read in a transaction the caller holds (a page's own scope). */
+export async function featuresIn(client: ScopeClient, practiceId: string): Promise<GatewayFeatures> {
+  const { rows } = await client.query<{ organization_id: string | null }>('SELECT organization_id FROM practice WHERE id = $1', [practiceId]);
+  const organizationId = rows[0]?.organization_id ?? null;
+  return resolveFeatures(await flagRows(client, practiceId, organizationId), practiceId, organizationId);
 }
 
 export interface FeatureFlagInput {
@@ -230,17 +245,33 @@ const INPUT_REF = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;
 
 /** A reviewer's correction kept as an evaluation example, under the practice's data-rights agreement (PRD 14). */
 export function recordPermittedExample(pool: ScopePool<ScopeClient>, actor: PracticeActor, example: PermittedExampleInput): Promise<string> {
-  if (!(MODEL_PURPOSES as readonly string[]).includes(example.purpose) || example.purpose === ('readDenialLetter' as string) || !INPUT_REF.test(example.inputRef)) {
-    return Promise.reject(new GatewayError('example_invalid', 'an example names its purpose (a denial letter’s are synthetic only) and an opaque reference to its input'));
+  if (!validExample(example)) {
+    return Promise.reject(exampleInvalid());
   }
-  return inPracticeScope(pool, actor, example.practiceId, async (client) => {
-    const { rows } = await client.query<{ id: string }>("INSERT INTO eval_example (source, purpose, input_ref, expected, practice_id, permission_ref) VALUES ('permitted', $1, $2, $3, $4, $5) RETURNING id", [
-      example.purpose,
-      example.inputRef,
-      JSON.stringify(example.expected),
-      example.practiceId,
-      example.permissionRef,
-    ]);
-    return (rows[0] as { id: string }).id;
-  });
+  return inPracticeScope(pool, actor, example.practiceId, (client) => insertExample(client, example));
+}
+
+/** The same, in a transaction the caller holds. */
+export async function recordPermittedExampleIn(scope: PracticeScope<ScopeClient>, example: PermittedExampleInput): Promise<string> {
+  if (!validExample(example)) {
+    throw exampleInvalid();
+  }
+  return insertExample(scope.client, example);
+}
+
+function validExample(example: PermittedExampleInput): boolean {
+  return (MODEL_PURPOSES as readonly string[]).includes(example.purpose) && example.purpose !== ('readDenialLetter' as string) && INPUT_REF.test(example.inputRef);
+}
+
+const exampleInvalid = () => new GatewayError('example_invalid', 'an example names its purpose (a denial letter’s are synthetic only) and an opaque reference to its input');
+
+async function insertExample(client: ScopeClient, example: PermittedExampleInput): Promise<string> {
+  const { rows } = await client.query<{ id: string }>("INSERT INTO eval_example (source, purpose, input_ref, expected, practice_id, permission_ref) VALUES ('permitted', $1, $2, $3, $4, $5) RETURNING id", [
+    example.purpose,
+    example.inputRef,
+    JSON.stringify(example.expected),
+    example.practiceId,
+    example.permissionRef,
+  ]);
+  return (rows[0] as { id: string }).id;
 }

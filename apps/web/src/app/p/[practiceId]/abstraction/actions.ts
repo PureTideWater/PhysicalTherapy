@@ -13,6 +13,7 @@ import {
   updateVersionAction,
   withdrawQuestionAction,
 } from '../../../../lib/routes/abstraction';
+import { proposeTermsAction, rejectProposalAction } from '../../../../lib/routes/models';
 
 /** The contract specialist's server actions in a practice; each runs its registered route (src/lib/routes/abstraction.ts). */
 
@@ -56,4 +57,14 @@ export async function askQuestionFormAction(_state: ActionState, form: FormData)
 
 export async function withdrawQuestionFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(withdrawQuestionAction, form, practice(form));
+}
+
+/** Asks the model to propose a draft version's terms from one of its documents (docs/adr/0052). */
+export async function proposeTermsFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(proposeTermsAction, form, practice(form));
+}
+
+/** Discards a model proposal: its records not yet verified are removed. */
+export async function rejectProposalFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(rejectProposalAction, form, practice(form));
 }

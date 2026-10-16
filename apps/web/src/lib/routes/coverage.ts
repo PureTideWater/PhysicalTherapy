@@ -7,10 +7,13 @@ import { letterCodes, requestToPayerLetter } from '../contracts/letter';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
 import { practiceRoute } from '../http/invoke';
+import { type ChecklistView, latestChecklist } from '../models/evidence-checklist';
+import { modelFeatures } from '../models/path';
 import { latestRunInEffect, runCount } from '../pricing/queries';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
 import type { Services } from '../server/services';
+import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -63,6 +66,10 @@ export interface CoveragePageData {
   readonly canMap: boolean;
   /** Whether the person may generate the coverage report (its PDF and CSV; case.work, as every report document). */
   readonly canGenerateReport: boolean;
+  /** The model's checklist of what to obtain (kept or awaiting review), whether a model may suggest one now (MOD-06), and whether the person may ask. */
+  readonly checklist: ChecklistView | null;
+  readonly canSuggest: boolean;
+  readonly modelNotice: ModelNotice | null;
 }
 
 export const coveragePage = practiceRoute({
@@ -71,7 +78,7 @@ export const coveragePage = practiceRoute({
   path: '/p/[practiceId]/coverage',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, page }),
+  params: z.object({ practiceId: opaqueId, page, model: z.enum(MODEL_NOTICES).optional().catch(undefined) }),
   handle: async ({ scope, practiceId, params, request, services, access }): Promise<CoveragePageData> => {
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const latest = await latestRunInEffect(scope, practiceId, request.requestId);
@@ -95,6 +102,9 @@ export const coveragePage = practiceRoute({
       contracts: await contractOptions(scope, practiceId, request.requestId),
       canMap: rolesPermit(access.roles, 'mapping.edit'),
       canGenerateReport: rolesPermit(access.roles, 'case.work'),
+      checklist: await latestChecklist(scope, practiceId),
+      canSuggest: rolesPermit(access.roles, 'case.work') && (await modelFeatures(scope, services, practiceId)).suggestEvidenceRequests,
+      modelNotice: params.model ?? null,
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },

@@ -10,6 +10,8 @@
 export {
   type AcceptingResponse,
   type ApprovedVersion,
+  type DraftInputs,
+  type DraftInputsRequest,
   type FollowUp,
   type LogSubmissionInput,
   type LoggedSubmission,
@@ -29,6 +31,7 @@ export {
   defaultFollowUp,
   followUpsDue,
   logSubmission,
+  packetDraftInputs,
   packetOfCase,
   packetVersionOf,
   recordPayerResponse,

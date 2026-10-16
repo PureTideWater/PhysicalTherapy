@@ -197,6 +197,12 @@ export interface SampleRefs {
   readonly regulationVersionId: string;
   /** A printed coverage report of the practice (docs/adr/0045). */
   readonly reportDocumentId: string;
+  /**
+   * Model proposals (docs/adr/0052): the specialist's proposal of the draft version's terms, its one
+   * candidate held, and the billing manager's evidence checklist awaiting review.
+   */
+  readonly contractProposalId: string;
+  readonly checklistProposalId: string;
 }
 
 export interface RouteSample {

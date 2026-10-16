@@ -10,6 +10,7 @@ import { QuestionList } from '../../../../../../components/contracts/display';
 import { documentLabel } from '../../../../../../components/contracts/forms';
 import { ReviewBody, VersionFacts, VersionStateNotice, reviewHref } from '../../../../../../components/contracts/review';
 import { Field, SelectField } from '../../../../../../components/field';
+import { HandEntryNotice, ModelNoticeAlert, ProposalList } from '../../../../../../components/models/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { TOPIC_NAMES } from '../../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../../lib/http/next';
@@ -20,6 +21,8 @@ import {
   approveFieldFormAction,
   approveVersionFormAction,
   askQuestionFormAction,
+  proposeTermsFormAction,
+  rejectProposalFormAction,
   removeRateRecordFormAction,
   supersedeVersionFormAction,
   updateVersionFormAction,
@@ -68,7 +71,7 @@ export default async function AbstractionVersionPage(props: Props) {
       />
     );
   }
-  const { practiceId, review, questions } = page.data;
+  const { practiceId, review, questions, proposals, canPropose, modelNotice } = page.data;
   const { version, documents } = review;
   const path = `/p/${practiceId}/abstraction/versions/${version.id}`;
   const editable = version.status === 'draft' || version.status === 'proposed';
@@ -93,7 +96,44 @@ export default async function AbstractionVersionPage(props: Props) {
         <p className="text-sm text-muted-foreground">With {version.payerName}.</p>
       </div>
       <VersionStateNotice review={review} />
+      <ModelNoticeAlert notice={modelNotice} />
       <VersionFacts review={review} versionHref={(versionId) => `/p/${practiceId}/abstraction/versions/${versionId}`} />
+      {version.status === 'draft' && documents.length > 0 && proposals.length === 0 ? (
+        <Card role="region" aria-label="Propose the terms">
+          <CardHeader>
+            <CardTitle>Have the model propose the terms</CardTitle>
+            <CardDescription>
+              The model reads one of the version’s documents and proposes its rate records, each field with its page and quote. Code checks every field against its page; you
+              then approve each field yourself, and nothing prices until the practice signs the version off.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {canPropose ? (
+              <ActionForm action={proposeTermsFormAction} submit="Propose the terms" className="flex max-w-xl flex-col gap-3">
+                {hidden()}
+                <input type="hidden" name="versionId" value={version.id} />
+                <SelectField label="Document to read" name="documentId" id="propose-document" options={documents.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
+              </ActionForm>
+            ) : (
+              <HandEntryNotice what="enter the rate records below" />
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+      <ProposalList
+        proposals={proposals}
+        {...(editable
+          ? {
+              reject: (proposal) => (
+                <ActionForm action={rejectProposalFormAction} submit="Discard this proposal" variant="outline">
+                  {hidden()}
+                  <input type="hidden" name="versionId" value={version.id} />
+                  <input type="hidden" name="proposalId" value={proposal.id} />
+                </ActionForm>
+              ),
+            }
+          : {})}
+      />
       <ReviewBody
         review={review}
         href={reviewHref(path)}

@@ -9,6 +9,7 @@ import { ActionForm } from '../../../../../../components/action-form';
 import { utc } from '../../../../../../components/format';
 import { Countdown } from '../../../../../../components/packets/countdown';
 import { Citation, EvidenceList, Hash, InterestSection, LineSchedule, Sources, StoredNarrative } from '../../../../../../components/packets/display';
+import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
 import { NarrativeEditor } from '../../../../../../components/packets/narrative-editor';
 import { Money } from '../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
@@ -17,7 +18,7 @@ import { loadPage } from '../../../../../../lib/http/next';
 import { BLOCKED_TEXT, waitText } from '../../../../../../lib/packets/approval';
 import type { AttachableDocument, BuilderView, VersionView } from '../../../../../../lib/packets/queries';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
-import { approveFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
+import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Packet builder' };
 
@@ -86,7 +87,7 @@ export default async function PacketPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="A billing manager, an analyst or a firm principal builds packets; open the case to see its state." />;
   }
-  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf } = page.data;
+  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
@@ -108,6 +109,7 @@ export default async function PacketPage(props: Props) {
           <AlertDescription>{NOTICES[notice]}</AlertDescription>
         </Alert>
       )}
+      <ModelNoticeAlert notice={modelNotice} />
       {version === null ? (
         <Card role="region" aria-label="First version">
           <CardHeader>
@@ -121,6 +123,11 @@ export default async function PacketPage(props: Props) {
               <VersionFields practiceId={practiceId} caseId={item.id} builder={builder} version={null} />
               <input type="hidden" name="useDraft" value="on" />
             </ActionForm>
+            {canDraftWithModel ? (
+              <ActionForm action={draftNarrativeFormAction} submit="Write the first version with the model's narrative" variant="outline" className="mt-4 flex max-w-xl flex-col gap-3">
+                <VersionFields practiceId={practiceId} caseId={item.id} builder={builder} version={null} />
+              </ActionForm>
+            ) : null}
           </CardContent>
         </Card>
       ) : (
@@ -128,7 +135,7 @@ export default async function PacketPage(props: Props) {
           <Card role="region" aria-label="Version">
             <CardHeader>
               <CardTitle>
-                Version {version.versionNo} {version.current ? <Badge>Current</Badge> : <Badge variant="outline">Earlier version</Badge>}
+                Version {version.versionNo} {version.current ? <Badge>Current</Badge> : <Badge variant="outline">Earlier version</Badge>} <DraftBadge draft={draftOf(drafts, version.id)} />
               </CardTitle>
               <CardDescription>
                 Written {utc(version.writtenAt)} by {version.writtenBy ?? '—'}. Version SHA-256 (what an approval names): <Hash value={version.contentSha256} label="Version SHA-256" />. Dispute level {version.content.dispute_level}.
@@ -213,6 +220,20 @@ export default async function PacketPage(props: Props) {
                     <VersionFields practiceId={practiceId} caseId={item.id} builder={builder} version={version} />
                     <input type="hidden" name="useDraft" value="on" />
                   </ActionForm>
+                  <div className="flex flex-col gap-2 border-t pt-4" role="group" aria-label="Draft with the model">
+                    <p className="text-sm font-medium">Draft the narrative with the model</p>
+                    <p className="text-sm text-muted-foreground">
+                      The model is given the pattern statement’s figures and sources only, never an identifier. Its narrative is written as a new version and verified as any; edit it before
+                      you request approval. A second person approves it as always.
+                    </p>
+                    {canDraftWithModel ? (
+                      <ActionForm action={draftNarrativeFormAction} submit="Draft the narrative with the model" variant="outline" className="flex flex-col gap-3">
+                        <VersionFields practiceId={practiceId} caseId={item.id} builder={builder} version={version} />
+                      </ActionForm>
+                    ) : (
+                      <HandEntryNotice what="write the narrative above" />
+                    )}
+                  </div>
                 </>
               ) : null}
             </CardContent>
@@ -356,6 +377,7 @@ export default async function PacketPage(props: Props) {
                           Version {entry.versionNo}
                         </Link>
                         {entry.current ? ' (current)' : ''}
+                        {draftOf(drafts, entry.id) === undefined ? '' : ', drafted by the model'}
                       </td>
                       <td className="px-2 py-1">
                         {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}

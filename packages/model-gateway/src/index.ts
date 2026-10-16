@@ -48,8 +48,11 @@ export {
   PostgresModelCallStore,
   type PracticeActor,
   type ReviewerDecisionInput,
+  featuresIn,
   recordPermittedExample,
+  recordPermittedExampleIn,
   recordReviewerDecision,
+  recordReviewerDecisionIn,
   setFeatureFlag,
 } from './postgres-store';
 export { PURPOSE_SPECS, type PurposeInputs, type PurposeOutputs, type PurposeProposals, requestFor } from './specs';

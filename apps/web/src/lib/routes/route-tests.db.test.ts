@@ -41,6 +41,7 @@ import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 import { seedTriage, seedTriageLine } from './test-support/triage-world';
 import { seedMonitoring } from './test-support/monitoring-world';
 import { seedLedger } from './test-support/ledger-world';
+import { seedModelProposals } from './test-support/model-world';
 import { seedPacketLine, seedPackets } from './test-support/packet-world';
 import { seedReportDocument } from './test-support/report-world';
 
@@ -380,6 +381,7 @@ async function buildWorld(name: string): Promise<World> {
     caseServiceLineId: triageLineId,
   });
   const reportDocument = await seedReportDocument({ app, keys, documents, practiceId: tenant.practiceId, managerId: manager });
+  const models = await seedModelProposals({ app, keys, documents, practiceId: tenant.practiceId, specialistId, managerId: manager, draftVersionId: contracts.draftVersionId, contractDocumentId: contracts.contractDocumentId });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -405,6 +407,7 @@ async function buildWorld(name: string): Promise<World> {
     ...ledger,
     ...packets,
     ...reportDocument,
+    ...models,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }

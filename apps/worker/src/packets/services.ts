@@ -104,23 +104,12 @@ export interface WrittenVersion {
  * CAS-08). Opens the case's packet on its first version.
  */
 export async function writePacketVersion(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: WriteVersionInput): Promise<WrittenVersion> {
-  const asOf = input.asOf ?? todayUtc();
   if (input.narrative !== undefined && input.narrative.normalize('NFKC').length > NARRATIVE_MAX_LENGTH) {
     throw new PacketRefusedError('narrative_too_long', `a narrative is at most ${String(NARRATIVE_MAX_LENGTH)} characters`);
   }
-  const assembly = await loadAssembly(scope, {
-    practiceId: input.practiceId,
-    caseId: input.caseId,
-    asOf,
-    promptPayState: input.promptPayState ?? null,
-    attachedDocumentIds: input.attachedDocumentIds ?? [],
-    requestId: input.requestId,
-  });
-  const content = assemblePacket(assembly);
+  const { content, identifiers, cipher } = await assembleVersion(scope, keys, input);
   const narrative = (input.narrative ?? draftNarrative(content)).normalize('NFKC');
-  const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
-  const identifiers = await scheduleIdentifiers(scope, cipher, content, { purpose: 'packet_verification', requestId: input.requestId });
-  const verifier = verifyNarrative(narrative, narrativeFacts(content), identifiers.all);
+  const verifier = verifyNarrative(narrative, narrativeFacts(content), identifiers);
 
   const { client } = scope;
   const existing = await client.query<{ id: string; current_version_id: string | null }>('SELECT id, current_version_id FROM packet WHERE case_id = $1 AND practice_id = $2', [input.caseId, input.practiceId]);
@@ -143,6 +132,42 @@ export async function writePacketVersion(scope: PracticeScope<ScopeClient>, keys
     ),
   );
   return { packetId, versionId: (written.rows[0] as { id: string }).id, versionNo, contentSha256, content, verifier };
+}
+
+/** The case's next version's content and the schedule rows' identifiers, as writePacketVersion assembles and checks them. */
+async function assembleVersion(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: DraftInputsRequest) {
+  const assembly = await loadAssembly(scope, {
+    practiceId: input.practiceId,
+    caseId: input.caseId,
+    asOf: input.asOf ?? todayUtc(),
+    promptPayState: input.promptPayState ?? null,
+    attachedDocumentIds: input.attachedDocumentIds ?? [],
+    requestId: input.requestId,
+  });
+  const content = assemblePacket(assembly);
+  const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
+  const identifiers = await scheduleIdentifiers(scope, cipher, content, { purpose: 'packet_verification', requestId: input.requestId });
+  return { content, identifiers: identifiers.all, cipher };
+}
+
+export type DraftInputsRequest = Pick<WriteVersionInput, 'practiceId' | 'caseId' | 'promptPayState' | 'attachedDocumentIds' | 'requestId' | 'asOf'>;
+
+export interface DraftInputs {
+  /** The content the case's next version would hold (identifiers as placeholders). */
+  readonly content: PacketContent;
+  /** The schedule rows' own identifiers (an audited read): a draft is checked against them, never given them. */
+  readonly identifiers: readonly string[];
+}
+
+/**
+ * What a narrative drafter is given for the case's next version (docs/adr/0052): the content
+ * writePacketVersion would assemble with the same choices on the same day, and the identifiers its
+ * verifier checks a narrative against. The model gateway's drafter sends the pattern-level facts only;
+ * the identifiers stay here, for the check.
+ */
+export async function packetDraftInputs(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: DraftInputsRequest): Promise<DraftInputs> {
+  const { content, identifiers } = await assembleVersion(scope, keys, input);
+  return { content, identifiers };
 }
 
 export interface PacketVersionDetail {

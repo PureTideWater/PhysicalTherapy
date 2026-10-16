@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
 import { utc } from '../../../../components/format';
+import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
@@ -14,6 +15,7 @@ import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
 import { coveragePage } from '../../../../lib/routes/coverage';
 import { generateReportDocumentFormAction } from '../reports/documents/actions';
+import { reviewEvidenceFormAction, suggestEvidenceFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Coverage' };
 
@@ -31,7 +33,7 @@ export default async function CoveragePage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport } = page.data;
+  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
   // The shares are of the latest complete run's lines; before one, of every line the practice holds.
   const of = run === null ? { lines: lines.lines, chargeCents: lines.chargeCents } : { lines: run.lines, chargeCents: run.chargeCents };
   const path = `/p/${practiceId}/coverage`;
@@ -41,6 +43,7 @@ export default async function CoveragePage(props: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">Coverage</h1>
         <p className="text-sm text-muted-foreground">How much of the practice’s billing the platform can price under its agreements, why the rest is unpriced, and what raises it.</p>
       </div>
+      <ModelNoticeAlert notice={modelNotice} />
       <Card role="region" aria-label="Priced share">
         <CardHeader>
           <CardTitle>
@@ -185,6 +188,44 @@ export default async function CoveragePage(props: Props) {
         ) : (
           <QuestionList questions={obtain} practiceId={practiceId} />
         )}
+        {checklist === null ? null : (
+          <ChecklistCard
+            checklist={checklist}
+            review={(shown) => (
+              <ActionForm action={reviewEvidenceFormAction} submit="Keep the checked items" className="flex flex-col gap-3">
+                <input type="hidden" name="practiceId" value={practiceId} />
+                <input type="hidden" name="proposalId" value={shown.id} />
+                <fieldset className="flex flex-col gap-2 text-sm">
+                  <legend className="font-medium">Keep the items that apply</legend>
+                  {shown.items.map((item, index) => (
+                    <label key={`${item.reason}:${String(index)}`} className="flex items-start gap-2" data-item={index}>
+                      <input type="checkbox" name={`keep:${String(index)}`} value="on" defaultChecked />
+                      <span>
+                        <span className="font-medium">{item.document}</span> ({item.reason}): {item.why}
+                      </span>
+                    </label>
+                  ))}
+                  <label className="flex items-center gap-2 border-t pt-2">
+                    <input type="checkbox" name="dismiss" value="on" />
+                    Dismiss the whole checklist
+                  </label>
+                </fieldset>
+              </ActionForm>
+            )}
+          />
+        )}
+        {canSuggest ? (
+          <ActionForm action={suggestEvidenceFormAction} submit="Suggest what to obtain with the model" variant="outline">
+            <input type="hidden" name="requestKey" value={randomUUID()} />
+            <input type="hidden" name="practiceId" value={practiceId} />
+            <p className="text-sm text-muted-foreground">
+              The model is given the unpriced reasons’ counts and codes and the specialist’s open questions, nothing about a patient or a claim; each item it suggests must name one of
+              them. You keep the items that apply.
+            </p>
+          </ActionForm>
+        ) : canGenerateReport ? (
+          <HandEntryNotice what="use each reason's remedy above and the specialist's questions" />
+        ) : null}
       </section>
       <Card role="region" aria-label="Coverage report">
         <CardHeader>
