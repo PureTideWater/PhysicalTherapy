@@ -110,7 +110,7 @@ describe('the catalog test', () => {
       { table_name: 'submission', policy_name: 'submission_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
     ]);
-    expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event']);
+    expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event', 'eval_example', 'model_call']);
     expect(await tenantTables(client)).toEqual([
       { table: 'adjustment', tenantColumn: 'practice_id' },
       { table: 'agreement', tenantColumn: 'practice_id' },
@@ -128,12 +128,14 @@ describe('the catalog test', () => {
       { table: 'contract_version', tenantColumn: 'practice_id' },
       { table: 'digest', tenantColumn: 'practice_id' },
       { table: 'eft_row', tenantColumn: 'practice_id' },
+      { table: 'eval_example', tenantColumn: 'practice_id' },
       { table: 'grant', tenantColumn: 'practice_id' },
       { table: 'job_run', tenantColumn: 'practice_id' },
       { table: 'ledger_entry', tenantColumn: 'practice_id' },
       { table: 'ledger_match', tenantColumn: 'practice_id' },
       { table: 'line_note', tenantColumn: 'practice_id' },
       { table: 'line_status', tenantColumn: 'practice_id' },
+      { table: 'model_call', tenantColumn: 'practice_id' },
       { table: 'notification', tenantColumn: 'practice_id' },
       { table: 'packet', tenantColumn: 'practice_id' },
       { table: 'packet_version', tenantColumn: 'practice_id' },

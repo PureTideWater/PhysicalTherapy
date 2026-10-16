@@ -33,8 +33,8 @@ import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
  * The two lists below are not exemptions from the PHI-table rules (.claude/rules/privacy-and-tenant.md:
  * "The catalog test lists exceptions; there are none"): no PHI table is exempt from practice_id NOT
  * NULL, the registry or a forced tenant policy. They classify what the data dictionary itself defines
- * (two non-PHI tables whose practice_id is nullable; the platform administrators' directory reads).
- * docs/adr/0013 records the reading for the owner to confirm.
+ * (non-PHI tables whose practice_id is nullable; the platform administrators' directory reads).
+ * docs/adr/0013 records the reading for the owner to confirm, and docs/adr/0048 the model gateway's two.
  */
 
 export const TENANT_TABLE = 'practice';
@@ -54,6 +54,8 @@ export function tenantPolicyExpression(column: string): string {
 export const NULLABLE_PRACTICE_ID_TABLES: Readonly<Record<string, string>> = {
   agreement: 'an agreement with an organization as a whole (terms, a firm’s own BAA) names no practice',
   audit_event: 'events outside any practice (sign-ins, administration) have no practice; no PHI by design',
+  eval_example: 'Data dictionary, eval_example: "practice_id (nullable)"; a synthetic example names no practice (PHI references only)',
+  model_call: 'Data dictionary, model_call: "practice_id (nullable for synthetic evaluation)"; hashes, counts and codes only, never text',
 };
 
 /**

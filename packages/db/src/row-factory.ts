@@ -99,9 +99,10 @@ const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
 /**
  * Nullable actor columns that a row's other constraints require all the same: a pricing run is created
  * by a person (created_by) or by the monitoring job (created_by_job_id), exactly one; the factory's run
- * is a person's, so its creator is filled in the first, minimal row too.
+ * is a person's, so its creator is filled in the first, minimal row too. A model call names its user or
+ * job (only a synthetic evaluation call names no one), and the factory's call is its administrator's.
  */
-const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by', 'line_status.set_by', 'payer_response.recorded_by']);
+const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by', 'line_status.set_by', 'payer_response.recorded_by', 'model_call.actor_id']);
 
 /** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
 const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
@@ -162,6 +163,18 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'report_document.kind': () => 'coverage',
   'report_document.content': () => JSON.stringify({ format: 'tp-coverage-report/1' }),
   'report_document.period': () => null,
+  // A completed call of the world's administrator, unreviewed, at no cost (migration 20261029090000).
+  'model_call.outcome': () => 'completed',
+  'model_call.output_sha256': () => 'a'.repeat(64),
+  'model_call.verifier_passed': () => true,
+  'model_call.error_code': () => null,
+  'model_call.input_hashes': () => ['b'.repeat(64)],
+  'model_call.cost_cents': () => '0',
+  'model_call.cost_unrounded': () => '0',
+  'model_call.citations': () => JSON.stringify([]),
+  'model_call.attempts': () => 1,
+  // A practice's example is a permitted one, under the data-rights agreement the factory signs for it.
+  'eval_example.source': () => 'permitted',
 };
 
 /**
@@ -248,7 +261,21 @@ const DERIVED_VALUES: Readonly<Record<string, (context: DeriveContext) => Promis
   'submission.export_sha256': async (context) => (await exportedVersion(context)).export_sha256,
   'submission.export_csv_sha256': async (context) => (await exportedVersion(context)).export_csv_sha256,
   'payer_response.document_id': async (context) => (await context.create('source_document')).id,
+  'eval_example.permission_ref': (context) => dataRightsAgreement(context.client, context.world),
 };
+
+/** A signed data-rights agreement of the world's practice: what a permitted evaluation example rests on (migration 20261029090000). */
+async function dataRightsAgreement(client: OwnerClient, world: TenantWorld): Promise<string> {
+  const id = randomUUID();
+  await asOwner(client, [world.practiceId], () =>
+    client.query(
+      `INSERT INTO agreement (id, organization_id, practice_id, kind, version, signed_at, signer, document_ref, sha256)
+       VALUES ($1, $2, $3, 'data_rights', '1', now(), 'SYNTHETIC SIGNER', $4, $5)`,
+      [id, world.organizationId, world.practiceId, `agreements/${id}`, 'd'.repeat(64)],
+    ),
+  );
+  return id;
+}
 
 /** What a chained row's builder is given: the world, the row's actor, and rows of other tables made in the same world. */
 interface Chain {
