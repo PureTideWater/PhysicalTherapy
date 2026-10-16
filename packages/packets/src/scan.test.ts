@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { canonicalNumber, isoDate, numbersInWords, scanText, sentenceSpans } from './scan';
+import { canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
 
 const figures = (text: string) => scanText(text).figures.map((figure) => [figure.kind, figure.value, text.slice(figure.start, figure.end)]);
 const sentences = (text: string) => sentenceSpans(text).map((span) => text.slice(span.start, span.end));
@@ -75,6 +75,56 @@ describe('scanText', () => {
     ]);
   });
 
+  it('reads counts, multiples and fractions in words: dozen, score, half, twice, thrice', () => {
+    expect(figures('A dozen claims, two dozen lines, a score of visits, four score and seven units.')).toEqual([
+      ['number', '12', 'dozen'],
+      ['number', '24', 'two dozen'],
+      ['number', '20', 'score'],
+      ['number', '87', 'four score and seven'],
+    ]);
+    expect(figures('Twice the contract rate, thrice over, half the contract rate, on behalf of the plan.')).toEqual([
+      ['number', '2', 'Twice'],
+      ['number', '3', 'thrice'],
+      ['number', '0.5', 'half'],
+    ]);
+  });
+
+  it('reads ordinal words as the numbers they order, and a month with an ordinal day as a day', () => {
+    expect(figures('The first, second and fifth disputes; the twenty-first line; the twelfth and hundredth; the third time.')).toEqual([
+      ['number', '1', 'first'],
+      ['number', '2', 'second'],
+      ['number', '5', 'fifth'],
+      ['number', '21', 'twenty-first'],
+      ['number', '12', 'twelfth'],
+      ['number', '100', 'hundredth'],
+      ['number', '3', 'third'],
+    ]);
+    expect(figures('Paid on March fifth, the twenty-first of May, 2026, June the second 2026 and the thirtieth of February.')).toEqual([
+      ['month_day', '03-05', 'March fifth'],
+      ['date', '2026-05-21', 'twenty-first of May, 2026'],
+      ['date', '2026-06-02', 'June the second 2026'],
+      ['identifier', 'thirtieth of February', 'thirtieth of February'],
+    ]);
+    expect(figures('February thirtieth, 2026 does not exist.')).toEqual([['identifier', 'February thirtieth, 2026', 'February thirtieth, 2026']]);
+    // A month's name in lower case is a word ("may"), and the ordinal after it is a number.
+    expect(figures('The payer may first review it.')).toEqual([['number', '1', 'first']]);
+  });
+
+  it('reads Roman numerals after level, appeal or tier, and fractions in digits as identifiers', () => {
+    expect(figures('A level IV appeal, appeal II, tier iii, levels X; the level ILL is no numeral.')).toEqual([
+      ['number', '4', 'IV'],
+      ['number', '2', 'II'],
+      ['number', '3', 'iii'],
+      ['number', '10', 'X'],
+    ]);
+    expect(figures('1/2 the rate, 3 / 4 of it, and 1\u20442 more; 3/8/2026 is a date.')).toEqual([
+      ['identifier', '1/2', '1/2'],
+      ['identifier', '3/4', '3 / 4'],
+      ['identifier', '1/2', `1${String.fromCodePoint(0x2044)}2`],
+      ['date', '2026-03-08', '3/8/2026'],
+    ]);
+  });
+
   it('reads placeholders and citation markers apart from figures', () => {
     const scan = scanText('Claim {{claim_control_number:2}} for {{patient_name:12}} is short [1, 3].');
     expect(scan.figures).toEqual([]);
@@ -99,6 +149,13 @@ describe('numbersInWords', () => {
     expect(words('hundred hundred')).toEqual([100, 100]);
     expect(words('ninety nine')).toEqual([99]);
     expect(words('twenty thirty')).toEqual([20, 30]);
+    expect(words('first second')).toEqual([1, 2]);
+    expect(words('twenty first')).toEqual([21]);
+    expect(words('one hundred and fifth')).toEqual([105]);
+    expect(words('two hundredth')).toEqual([200]);
+    expect(words('two thousandth')).toEqual([2000]);
+    expect(words('three dozen')).toEqual([36]);
+    expect(words('dozen dozen')).toEqual([12, 12]);
   });
 });
 
@@ -125,5 +182,10 @@ describe('helpers', () => {
     expect(isoDate(2028, 2, 29)).toBe('2028-02-29');
     expect(isoDate(2026, 2, 29)).toBeNull();
     expect(isoDate(2026, 13, 1)).toBeNull();
+  });
+
+  it('reads Roman numerals, and only numerals', () => {
+    expect(['I', 'IV', 'ix', 'XL', 'MCMXCIX', 'CD', 'MMXXVI'].map(romanValue)).toEqual([1, 4, 9, 40, 1999, 400, 2026]);
+    expect(['', 'IIII', 'IC', 'VX', 'ILL', 'MMMM'].map(romanValue)).toEqual([null, null, null, null, null, null]);
   });
 });

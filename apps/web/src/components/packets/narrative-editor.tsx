@@ -5,7 +5,7 @@ import { checkNarrative } from '@tp/packets/check';
 import { Badge, Label } from '@tp/ui';
 import { useMemo, useState } from 'react';
 
-import { mismatchText } from '../../lib/packets/view';
+import { mismatchShown, mismatchText } from '../../lib/packets/view';
 
 /**
  * The packet builder's narrative editor (PRD 7, Packet builder: "narrative editor with verifier
@@ -44,13 +44,17 @@ export function NarrativeEditor({ name, initial, content, maxLength }: { readonl
           <ul className="list-disc pl-5" aria-label="Live mismatches">
             {check.mismatches.map((mismatch) => (
               <li key={`${String(mismatch.start)}:${String(mismatch.end)}:${mismatch.code}`}>
-                Sentence {mismatch.sentence + 1}: {mismatchText(mismatch.code, mismatch.kind)}
-                {mismatch.code === 'figure_not_in_input' || mismatch.code === 'unknown_placeholder' || mismatch.code === 'unknown_citation' ? (
-                  <>
-                    {' '}
-                    <mark className="rounded bg-destructive/15 px-1 font-mono">{text.slice(mismatch.start, mismatch.end)}</mark>
-                  </>
-                ) : null}
+                {mismatch.sentence < 0 ? '' : `Sentence ${String(mismatch.sentence + 1)}: `}
+                {mismatchText(mismatch.code, mismatch.kind)}
+                {(() => {
+                  const shown = mismatchShown(mismatch.code, text.slice(mismatch.start, mismatch.end));
+                  return shown === null ? null : (
+                    <>
+                      {' '}
+                      <mark className="rounded bg-destructive/15 px-1 font-mono">{shown}</mark>
+                    </>
+                  );
+                })()}
               </li>
             ))}
           </ul>

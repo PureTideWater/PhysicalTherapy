@@ -16,7 +16,7 @@ import { type Mismatch, findMismatches } from './mismatches';
  * shown beside the (encrypted) narrative without repeating anything a person typed.
  */
 
-export { MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, findMismatches } from './mismatches';
+export { MISMATCH_CODES, type Mismatch, type MismatchCode, type NarrativeCheck, findMismatches, identifierForms } from './mismatches';
 
 export interface VerifierReport {
   readonly format: typeof VERIFIER_FORMAT;
@@ -32,8 +32,13 @@ export function narrativeSha256(narrative: string): string {
   return createHash('sha256').update(narrative, 'utf8').digest('hex');
 }
 
-export function verifyNarrative(narrative: string, facts: NarrativeFacts): VerifierReport {
-  const check = findMismatches(narrative, facts);
+/**
+ * Verifies a narrative against its version's facts and the case's own identifiers (the schedule rows'
+ * patient names, member IDs and claim numbers, read from the canonical records): an identifier the
+ * narrative holds fails it, and the report says where, never what.
+ */
+export function verifyNarrative(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): VerifierReport {
+  const check = findMismatches(narrative, facts, identifiers);
   return {
     format: VERIFIER_FORMAT,
     passed: check.passed,

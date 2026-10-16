@@ -19,6 +19,7 @@ import {
 
 import { type JobSender, enqueue } from '../jobs/enqueue';
 import { todayUtc } from '../triage/execute';
+import { scheduleIdentifiers } from './identifiers';
 import { PacketRefusedError, loadAssembly } from './records';
 
 /**
@@ -86,13 +87,16 @@ export interface WrittenVersion {
 
 /**
  * Writes a packet version (CAS-13: an edit is a new version, which clears the packet's approval): the
- * case's lines not written off and its approved records, assembled by @tp/packets; the narrative
- * checked by the verifier, whose result and report the version stores (a failing one is stored too, and
- * the database refuses to approve it, CAS-08). Opens the case's packet on its first version.
+ * case's lines not written off and its approved records, assembled by @tp/packets; the narrative, put
+ * in its NFKC form (so the stored text, the verifier's positions and the export are the same
+ * characters), checked by the verifier against the version's facts and against the schedule rows' own
+ * identifiers (read from the canonical records, an audited read, and never stored), whose result and
+ * report the version stores (a failing one is stored too, and the database refuses to approve it,
+ * CAS-08). Opens the case's packet on its first version.
  */
 export async function writePacketVersion(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: WriteVersionInput): Promise<WrittenVersion> {
   const asOf = input.asOf ?? todayUtc();
-  if (input.narrative !== undefined && input.narrative.length > NARRATIVE_MAX_LENGTH) {
+  if (input.narrative !== undefined && input.narrative.normalize('NFKC').length > NARRATIVE_MAX_LENGTH) {
     throw new PacketRefusedError('narrative_too_long', `a narrative is at most ${String(NARRATIVE_MAX_LENGTH)} characters`);
   }
   const assembly = await loadAssembly(scope, {
@@ -104,9 +108,10 @@ export async function writePacketVersion(scope: PracticeScope<ScopeClient>, keys
     requestId: input.requestId,
   });
   const content = assemblePacket(assembly);
-  const narrative = input.narrative ?? draftNarrative(content);
-  const verifier = verifyNarrative(narrative, narrativeFacts(content));
+  const narrative = (input.narrative ?? draftNarrative(content)).normalize('NFKC');
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
+  const identifiers = await scheduleIdentifiers(scope, cipher, content, { purpose: 'packet_verification', requestId: input.requestId });
+  const verifier = verifyNarrative(narrative, narrativeFacts(content), identifiers.all);
 
   const { client } = scope;
   const existing = await client.query<{ id: string; current_version_id: string | null }>('SELECT id, current_version_id FROM packet WHERE case_id = $1 AND practice_id = $2', [input.caseId, input.practiceId]);

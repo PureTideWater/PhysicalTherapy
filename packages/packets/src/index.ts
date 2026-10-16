@@ -57,6 +57,7 @@ export {
   lineHoldsOnlyPlaceholders,
   placeholder,
 } from './placeholders';
-export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, scanText, sentenceSpans } from './scan';
-export { MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, narrativeSha256, verifyNarrative } from './verifier';
+export { type ReadableText, type TextSpan, readableText } from './readable';
+export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
+export { MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
 export { type AppealLevel, type NextWindow, type NextWindowBasis, type WindowLength, nextDisputeWindow } from './windows';

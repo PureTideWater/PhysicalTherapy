@@ -1,4 +1,5 @@
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
+import { readableText } from './readable';
 import { type FigureKind, canonicalNumber, scanText } from './scan';
 
 /**
@@ -71,7 +72,8 @@ class FactSets {
       number: (value) => this.numbers.add(value),
       identifier: (value) => this.identifiers.add(value),
     };
-    for (const figure of scanText(text).figures) {
+    // Read as the narrative is read (./readable.ts), so a figure is the same figure in both.
+    for (const figure of scanText(readableText(text).text).figures) {
       into[figure.kind](figure.value);
     }
   }

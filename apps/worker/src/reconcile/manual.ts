@@ -1,4 +1,4 @@
-import { type KeyProvider, type PracticeCipher, recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
+import { type KeyProvider, type Permission, type PracticeCipher, recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
 import { type Cents, ZERO_CENTS, negateCents, parseCents } from '@tp/money';
 
 import { EMPTY_LINE_LEDGER, type Scope, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, lockLedger } from './ledger';
@@ -43,8 +43,8 @@ export interface ManualContext {
   readonly requestId: string;
 }
 
-async function begin(context: ManualContext, practiceId: string): Promise<string> {
-  requirePracticePermission(context.scope, practiceId, 'posting.reconcile');
+async function begin(context: ManualContext, practiceId: string, permission: Permission = 'posting.reconcile'): Promise<string> {
+  requirePracticePermission(context.scope, practiceId, permission);
   await lockLedger(context.scope, practiceId);
   return context.scope.actorId;
 }
@@ -180,7 +180,7 @@ export async function matchClaimByHand(
 
 /**
  * Reverses a standing match with a reason: an exactly offsetting reversed entry for each of its entries
- * and each adjustment of them not yet reversed (a reversed manual match nets to zero, LED-07, its
+ * and each adjustment of them not yet reversed, the latest first (a reversed manual match nets to zero, LED-07, its
  * adjustments included), and the match reversed, so its evidence is listed unmatched again and never
  * matched to the same thing automatically; its entries are never corrected again. A claim's approval
  * whose remittance has posted or deposited it is refused until those matches are reversed first.
@@ -206,7 +206,10 @@ export async function reverseMatch(context: ManualContext, input: { readonly pra
   const reversedIds = new Set(entries.filter((entry) => entry.stage === 'reversed').map((entry) => entry.evidenceId));
   const reason = (column: 'ledger_entry.reason' | 'ledger_match.reversal_reason') => cipher.encrypt(column, input.reason);
   let reversedEntries = 0;
-  for (const entry of entries.filter((item) => item.matchId === match.id && item.stage !== 'reversed' && !reversedIds.has(item.id))) {
+  // The latest first, an adjustment before the entry it corrects: what the match proved never nets below
+  // zero on the way (the database refuses a row's entries netting below nothing).
+  const undoing = entries.filter((item) => item.matchId === match.id && item.stage !== 'reversed' && !reversedIds.has(item.id)).reverse();
+  for (const entry of undoing) {
     await insertEntry(scope, input.practiceId, {
       caseId: entry.caseId,
       serviceLineId: entry.serviceLineId,
@@ -226,12 +229,15 @@ export async function reverseMatch(context: ManualContext, input: { readonly pra
 }
 
 /**
- * Corrects an entry's amount after review, with a reason (PRD 13, Entries: adjusted, signed): an entry of
- * a counted stage, not reversed, whose match (if it has one) still stands; for example an approval a payer
- * response made that the payer's remittance paid in part (the shortfall the Reconciliation screen shows).
+ * Corrects an entry's amount after review, with a reason (PRD 13, Entries: "adjusted | A specialist
+ * corrects an amount after review, with a reason | The user action | Signed"): an entry of a counted
+ * stage, not reversed, whose match (if it has one) still stands; for example an approval a payer response
+ * made that the payer's remittance paid in part (the shortfall the Reconciliation screen shows). It needs
+ * ledger.adjust, which only the contract specialist holds (under a support grant), checked here and by the
+ * database, which also keeps the entry between zero and what its evidence shows (docs/adr/0047).
  */
 export async function adjustEntry(context: ManualContext, input: { readonly practiceId: string; readonly entryId: string; readonly amountCents: Cents; readonly reason: string }): Promise<{ readonly entryId: string }> {
-  const actor = await begin(context, input.practiceId);
+  const actor = await begin(context, input.practiceId, 'ledger.adjust');
   const { scope, cipher } = context;
   const entries = await ledgerEntries(scope, input.practiceId);
   const target = entries.find((entry) => entry.id === input.entryId);

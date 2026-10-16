@@ -29,7 +29,7 @@ describe('checkNarrative', () => {
     fc.assert(
       fc.property(fc.array(words, { maxLength: 40 }), (parts) => {
         const narrative = parts.join(' ');
-        const stored = verifyNarrative(narrative, narrativeFacts(content));
+        const stored = verifyNarrative(narrative, narrativeFacts(content), []);
         const check = checkNarrative(narrative, content);
         expect(check).toEqual({ passed: stored.passed, sentences: stored.sentences, checked: stored.checked, mismatches: stored.mismatches });
       }),

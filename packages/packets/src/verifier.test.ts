@@ -26,7 +26,7 @@ const EXPECTED = JSON.parse(readFileSync(fileURLToPath(new URL('../../../fixture
 
 const content = assemblePacket(assemblyInput());
 const facts = narrativeFacts(content);
-const verify = (narrative: string, of: PacketContent = content) => verifyNarrative(narrative, narrativeFacts(of));
+const verify = (narrative: string, of: PacketContent = content, identifiers: readonly string[] = []) => verifyNarrative(narrative, narrativeFacts(of), identifiers);
 const codes = (report: VerifierReport) => report.mismatches.map((mismatch) => mismatch.code);
 
 /** The figures the report flags, as the narrative writes them. */
@@ -113,6 +113,87 @@ describe('verifyNarrative', () => {
       expect(stored).not.toContain(word);
     }
     expect(Object.keys(report).sort()).toEqual(['checked', 'format', 'mismatches', 'narrative_sha256', 'passed', 'sentences']);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// What a figure looks like, not how it is coded (the review's probes). Every non-ASCII character is
+// written as a code point.
+// ---------------------------------------------------------------------------------------------------
+
+const cp = (...points: number[]) => String.fromCodePoint(...points);
+/** Digits of `text` in the alphabet whose zero is `zero` (superscripts are not contiguous). */
+const SUPERSCRIPT = [0x2070, 0xb9, 0xb2, 0xb3, 0x2074, 0x2075, 0x2076, 0x2077, 0x2078, 0x2079];
+const inDigits = (zero: number | 'superscript', text: string) =>
+  [...text].map((char) => (/\d/.test(char) ? cp(zero === 'superscript' ? (SUPERSCRIPT[Number.parseInt(char, 10)] ?? 0) : zero + Number.parseInt(char, 10)) : char)).join('');
+/** Alphabets NFKC reads as 0 to 9 (fullwidth, mathematical bold, double-struck, monospace, subscript, superscript). */
+const READ_ALPHABETS = [0xff10, 0x1d7ce, 0x1d7d8, 0x1d7f6, 0x2080, 'superscript'] as const;
+/** Alphabets it does not (Arabic-Indic, extended Arabic-Indic, Devanagari, Bengali, Thai). */
+const OTHER_ALPHABETS = [0x660, 0x6f0, 0x966, 0x9e6, 0xe50] as const;
+const HIDDEN = [0x200b, 0x200c, 0x200d, 0x2060, 0xad, 0xfeff, 0x202a, 0x202e, 0x2066, 0x2069, 0x180e, 0x034f, 0xfe0f, 0xe000, 0x7, 0x2029] as const;
+
+describe('figures in other characters', () => {
+  it('fails every probe of the review: other digits, hidden characters, and figures in words', () => {
+    const probes: readonly (readonly [string, string])[] = [
+      [`The payer withheld $${inDigits(0xff10, '1,234.56')} [3].`, 'figure_not_in_input'],
+      [`It affected ${inDigits(0xff10, '47')} claims [3].`, 'figure_not_in_input'],
+      [`It affected ${inDigits(0x660, '47')} claims [3].`, 'unreadable_figure'],
+      [`It affected ${inDigits('superscript', '47')} claims [3].`, 'figure_not_in_input'],
+      [`It affected ${inDigits(0x1d7ce, '47')} claims [3].`, 'figure_not_in_input'],
+      [`It affected 1${cp(0x200b)}11 claims [3].`, 'hidden_character'],
+      [`It affected 1${cp(0xad)}1 claims [3].`, 'hidden_character'],
+      ['It affected a dozen claims [3].', 'figure_not_in_input'],
+      ['This is the fifth dispute [3].', 'figure_not_in_input'],
+      ['It was billed on March ninth [3].', 'figure_not_in_input'],
+      ['A score of claims were short [3].', 'figure_not_in_input'],
+      ['It paid half the contract rate [1].', 'figure_not_in_input'],
+      ['This is a level IV appeal [1].', 'figure_not_in_input'],
+      [`It paid ${cp(0xbd)} the contract rate [1].`, 'figure_not_in_input'],
+    ];
+    for (const [narrative, code] of probes) {
+      const report = verify(narrative);
+      expect(report.passed, narrative).toBe(false);
+      expect(codes(report), narrative).toContain(code);
+    }
+    // Read, a figure in words is checked like any other: twice is 2 (each line's units) and March fifth
+    // a service date, both of which this content holds.
+    expect(verify('Each line billed twice [3].').passed).toBe(true);
+    expect(verify('A line was billed on March fifth [3].').passed).toBe(true);
+  });
+
+  it('reads a figure the input holds in compatibility digits as that figure, and says where a hidden one is', () => {
+    expect(verify(`The shortfall is $${inDigits(0xff10, '90.00')} on ${inDigits(0x1d7ce, '3')} claims [3].`).passed).toBe(true);
+    const split = `The shortfall is $9${cp(0x200b)}0.00 [3].`;
+    const report = verify(split);
+    expect(report.mismatches.map((item) => [item.code, split.slice(item.start, item.end)])).toEqual([['hidden_character', cp(0x200b)]]);
+    const arabic = `The shortfall is ${inDigits(0x660, '90')} dollars [3].`;
+    expect(verify(arabic).mismatches.map((item) => [item.code, item.sentence, arabic.slice(item.start, item.end)])).toEqual([['unreadable_figure', 0, inDigits(0x660, '90')]]);
+  });
+});
+
+describe('the case’s own identifiers', () => {
+  const identifiers = ['SYNTHETIC', 'JANE', 'ABCDEFGH', 'SYNCCN0001', 'SYNPCN0001', 'APRIL'];
+
+  it('fails a narrative that names a patient, a member ID or a claim, whatever its case, and says only where', () => {
+    for (const narrative of ['Jane Synthetic, a member of the plan, was underpaid [1].', 'Member ABCDEFGH was underpaid [1].', 'Claim syncCn0001 was paid short [3].', 'APRIL asked for the review [1].']) {
+      const report = verify(narrative, content, identifiers);
+      expect(report.passed, narrative).toBe(false);
+      expect(codes(report).filter((code) => code === 'identifier_in_narrative').length, narrative).toBeGreaterThan(0);
+      for (const identifier of identifiers) {
+        expect(JSON.stringify(report).toLowerCase()).not.toContain(identifier.toLowerCase());
+      }
+    }
+    const named = 'Jane Synthetic was underpaid [1].';
+    expect(verify(named, content, identifiers).mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => named.slice(item.start, item.end))).toEqual(['Jane', 'Synthetic']);
+    expect(verify(named, content, ['JANE SYNTHETIC']).mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => named.slice(item.start, item.end))).toEqual(['Jane Synthetic']);
+  });
+
+  it('matches whole words only, leaves a month of a date alone, and ignores placeholders and one-letter parts', () => {
+    expect(verify('The synthetics were reviewed [1].', content, identifiers).passed).toBe(true);
+    expect(verify('It was paid in April 2026 [3].', content, identifiers).passed).toBe(true);
+    expect(verify('Claim {{claim_control_number:1}} for {{patient_name:1}} was paid short [3].', content, identifiers).passed).toBe(true);
+    expect(verify('The plan paid short [1].', content, ['Q', 'A.', '']).passed).toBe(true);
+    expect(verify(`J${cp(0xff41)}ne was underpaid [1].`, content, ['JANE']).passed).toBe(false);
   });
 });
 
@@ -237,6 +318,47 @@ describe('properties of the verifier', () => {
           expect(verify(narrative, generated).mismatches).toEqual([]);
         },
       ),
+    );
+  });
+
+  it('fails a draft into which a count not in the input is written in any other digits', () => {
+    fc.assert(
+      fc.property(contentArbitrary, fc.integer({ min: 2, max: 100_000 }), fc.constantFrom(...READ_ALPHABETS, ...OTHER_ALPHABETS), (generated, count, alphabet) => {
+        fc.pre(!narrativeFacts(generated).numbers.has(String(count)));
+        const report = verify(`${draftNarrative(generated)} It affected ${inDigits(alphabet, String(count))} visits [3].`, generated);
+        expect(report.passed).toBe(false);
+        expect(codes(report)).toContain((OTHER_ALPHABETS as readonly (number | string)[]).includes(alphabet) ? 'unreadable_figure' : 'figure_not_in_input');
+      }),
+    );
+  });
+
+  it('fails a passing draft into which any hidden character is put anywhere', () => {
+    fc.assert(
+      fc.property(contentArbitrary, fc.constantFrom(...HIDDEN), fc.nat(), (generated, hidden, pick) => {
+        const draft = draftNarrative(generated);
+        const index = pick % (draft.length + 1);
+        const report = verify(`${draft.slice(0, index)}${cp(hidden)}${draft.slice(index)}`, generated);
+        expect(report.passed).toBe(false);
+        // The span is the character's cluster: a joiner or a selector belongs to the character before it.
+        const spans = report.mismatches.filter((item) => item.code === 'hidden_character');
+        expect(spans).toHaveLength(1);
+        expect(spans[0]?.start).toBeLessThanOrEqual(index);
+        expect(spans[0]?.end).toBeGreaterThanOrEqual(index + cp(hidden).length);
+      }),
+    );
+  });
+
+  it('fails a passing draft into which any of the case’s identifiers is written, in any case', () => {
+    const name = fc.string({ unit: fc.constantFrom(...'BCDFGHJKLMNPQRSTVWXZ'), minLength: 4, maxLength: 12 }).map((letters) => `QZ${letters}`);
+    fc.assert(
+      fc.property(contentArbitrary, name, fc.array(fc.boolean(), { minLength: 14, maxLength: 14 }), (generated, identifier, lower) => {
+        const written = [...identifier].map((char, at) => (lower[at] === true ? char.toLowerCase() : char)).join('');
+        const draft = draftNarrative(generated);
+        expect(verify(draft, generated, [identifier]).passed).toBe(true);
+        const narrative = `${draft} The payer told ${written} so [3].`;
+        const report = verify(narrative, generated, [identifier]);
+        expect(report.mismatches.map((item) => [item.code, narrative.slice(item.start, item.end)])).toEqual([['identifier_in_narrative', written]]);
+      }),
     );
   });
 

@@ -3,7 +3,7 @@ import { Badge } from '@tp/ui';
 import Link from 'next/link';
 
 import { Money } from '../remittances/display';
-import { EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, SOURCE_KIND_TEXT, mismatchText } from '../../lib/packets/view';
+import { EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
 
 /**
  * Display pieces of the packet builder (PRD 7, Packet builder; PRD 12, The packet): the citation, the
@@ -224,12 +224,15 @@ export function StoredNarrative({ narrative, verifier }: { readonly narrative: s
             <li key={`${String(mismatch.start)}:${String(mismatch.end)}:${mismatch.code}`} data-mismatch={mismatch.code}>
               {mismatch.sentence < 0 ? '' : `Sentence ${String(mismatch.sentence + 1)}: `}
               {mismatchText(mismatch.code, mismatch.kind)}
-              {mismatch.code === 'figure_not_in_input' || mismatch.code === 'unknown_placeholder' || mismatch.code === 'unknown_citation' ? (
-                <>
-                  {' '}
-                  <mark className="rounded bg-destructive/20 px-1 font-mono">{narrative.slice(mismatch.start, mismatch.end)}</mark>
-                </>
-              ) : null}
+              {(() => {
+                const shown = mismatchShown(mismatch.code, narrative.slice(mismatch.start, mismatch.end));
+                return shown === null ? null : (
+                  <>
+                    {' '}
+                    <mark className="rounded bg-destructive/20 px-1 font-mono">{shown}</mark>
+                  </>
+                );
+              })()}
             </li>
           ))}
         </ul>

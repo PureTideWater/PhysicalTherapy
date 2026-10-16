@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-import { type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, packetExportKey, readWithAudit } from '@tp/db/runtime';
-import { type PacketContent, type RowIdentifiers, insertIdentifiers } from '@tp/packets';
+import { type KeyProvider, loadPracticeCipher, packetExportKey } from '@tp/db/runtime';
+import { type PacketContent, insertIdentifiers } from '@tp/packets';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
@@ -10,6 +10,7 @@ import type { DocumentStore } from '../storage/documents';
 import type { TriageJobContext } from '../triage/execute';
 import { packetCsv } from './csv';
 import { packetHtml } from './html';
+import { scheduleIdentifiers } from './identifiers';
 
 /**
  * The packet export job (PRD 12: "Identifiers ... inserted from the record at export"; "Export
@@ -52,55 +53,6 @@ interface ExportRow {
   readonly regulation_confirmed_by_email: string | null;
 }
 
-interface IdentifierRow {
-  readonly service_line_id: string;
-  readonly practice_id: string;
-  readonly patient_control_number: string;
-  readonly payer_claim_control_number: string;
-  readonly last_name: string | null;
-  readonly first_name: string | null;
-  readonly member_id: string | null;
-  readonly insured_member_id: string | null;
-}
-
-/** Each schedule row's identifiers from its claim and patient records (the canonical record), decrypted. */
-async function identifiersOf(scope: PracticeScope<ScopeClient>, cipher: PracticeCipher, content: PacketContent, requestId: string): Promise<Map<number, RowIdentifiers>> {
-  const lineIds = content.lines.map((line) => line.service_line_id);
-  const rows = await readWithAudit(
-    scope,
-    { objectType: 'claim', purpose: 'packet_export', requestId },
-    async (client) =>
-      (
-        await client.query<IdentifierRow>(
-          `SELECT sl.id AS service_line_id, c.practice_id, c.patient_control_number, c.payer_claim_control_number, pr.last_name, pr.first_name, pr.member_id,
-                  ir.member_id AS insured_member_id
-             FROM service_line sl JOIN claim c ON c.id = sl.claim_id JOIN patient_ref pr ON pr.id = c.patient_ref_id LEFT JOIN patient_ref ir ON ir.id = c.insured_ref_id
-            WHERE sl.id = ANY ($1::uuid[])`,
-          [lineIds],
-        )
-      ).rows,
-    (row) => ({ objectId: row.service_line_id, practiceId: row.practice_id }),
-  );
-  const byLine = new Map(rows.map((row) => [row.service_line_id, row]));
-  const decrypt = (column: 'patient_ref.last_name' | 'patient_ref.first_name' | 'patient_ref.member_id', value: string | null) => (value === null ? null : cipher.decrypt(column, value));
-  const identifiers = new Map<number, RowIdentifiers>();
-  for (const line of content.lines) {
-    const row = byLine.get(line.service_line_id);
-    if (row === undefined) {
-      continue;
-    }
-    const last = decrypt('patient_ref.last_name', row.last_name);
-    const first = decrypt('patient_ref.first_name', row.first_name);
-    identifiers.set(line.row, {
-      claim_control_number: cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
-      patient_control_number: cipher.decrypt('claim.patient_control_number', row.patient_control_number),
-      patient_name: last === null && first === null ? null : [last, first].filter((part) => part !== null).join(', '),
-      member_id: decrypt('patient_ref.member_id', row.member_id) ?? decrypt('patient_ref.member_id', row.insured_member_id),
-    });
-  }
-  return identifiers;
-}
-
 export async function exportPacketVersion(context: TriageJobContext, services: PacketExportServices, practiceId: string, versionId: string): Promise<PacketExportOutcome> {
   return context.transaction(async (scope) => {
     // One export of a version at a time, whatever the queue does.
@@ -131,7 +83,8 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
-    const exported = insertIdentifiers(version.content, narrative, await identifiersOf(scope, cipher, version.content, context.jobId));
+    const { rows: identifiers } = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
+    const exported = insertIdentifiers(version.content, narrative, identifiers);
     const pdf = await services.pdf.render(
       packetHtml(exported, {
         versionNo: version.version_no,

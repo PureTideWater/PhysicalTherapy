@@ -19,10 +19,18 @@ import { PLACEHOLDER_PATTERN } from './placeholders';
  * - procedure codes (97110, G0283, 0001F) with any attached modifiers (97110-GP-59), and modifiers named
  *   as such ("modifier 59", "modifiers GP and KX", "the GP modifier");
  * - digit groups joined by hyphens (58-3-225) are one identifier;
+ * - fractions in digits (1/2, and a vulgar fraction once normalized) are identifiers;
  * - other numbers: 3, 1,200, 2.5, 3rd, x2;
  * - anything else holding a digit is an identifier;
- * - numbers in words (twelve, twenty-one, two hundred and five; "one" and "zero" alone are prose), and
- *   with "percent" after them, percentages.
+ * - a day of a month written as an ordinal word (March fifth, the twenty-first of May 2026);
+ * - Roman numerals after level, appeal or tier (a level IV appeal);
+ * - numbers in words (twelve, twenty-one, two hundred and five, a dozen, two score; "one" and "zero"
+ *   alone are prose), ordinal words (first to twentieth, thirtieth, hundredth, thousandth: the number
+ *   they order), half, twice and thrice, and with "percent" after them, percentages.
+ *
+ * scanText reads the text it is given; the verifier gives it the narrative as readableText
+ * (./readable.ts) normalizes it, so a figure written in fullwidth, superscript or mathematical digits,
+ * or split by a hidden character, is read as the figure it shows.
  */
 
 export type FigureKind = 'amount' | 'percent' | 'date' | 'month' | 'month_day' | 'code' | 'modifier' | 'number' | 'identifier';
@@ -138,11 +146,68 @@ const TEENS: Readonly<Record<string, number>> = {
   nineteen: 19,
 };
 const TENS: Readonly<Record<string, number>> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+/** Words that multiply the number before them (or one): two hundred, a dozen, four score. */
+const MULTIPLIERS: Readonly<Record<string, number>> = { hundred: 100, dozen: 12, score: 20 };
 const SCALES: Readonly<Record<string, number>> = { thousand: 1000, million: 1_000_000 };
-const NUMBER_WORD = `(?:${[...Object.keys(UNITS), ...Object.keys(TEENS), ...Object.keys(TENS), 'hundred', ...Object.keys(SCALES)].join('|')})`;
+/** Ordinal words, each with the number word it orders; an ordinal ends the number it is part of. */
+const ORDINALS: Readonly<Record<string, string>> = {
+  first: 'one',
+  second: 'two',
+  third: 'three',
+  fourth: 'four',
+  fifth: 'five',
+  sixth: 'six',
+  seventh: 'seven',
+  eighth: 'eight',
+  ninth: 'nine',
+  tenth: 'ten',
+  eleventh: 'eleven',
+  twelfth: 'twelve',
+  thirteenth: 'thirteen',
+  fourteenth: 'fourteen',
+  fifteenth: 'fifteen',
+  sixteenth: 'sixteen',
+  seventeenth: 'seventeen',
+  eighteenth: 'eighteen',
+  nineteenth: 'nineteen',
+  twentieth: 'twenty',
+  thirtieth: 'thirty',
+  fortieth: 'forty',
+  fiftieth: 'fifty',
+  sixtieth: 'sixty',
+  seventieth: 'seventy',
+  eightieth: 'eighty',
+  ninetieth: 'ninety',
+  hundredth: 'hundred',
+  thousandth: 'thousand',
+  millionth: 'million',
+};
+/** Words that are a figure on their own: a fraction or a multiple. */
+const MULTIPLES: Readonly<Record<string, string>> = { half: '0.5', twice: '2', thrice: '3' };
+const NUMBER_WORD = `(?:${[...Object.keys(UNITS), ...Object.keys(TEENS), ...Object.keys(TENS), ...Object.keys(MULTIPLIERS), ...Object.keys(SCALES), ...Object.keys(ORDINALS)].join('|')})`;
 const NUMBER_WORDS = new RegExp(`\\b${NUMBER_WORD}(?:(?:\\s+and\\s+|\\s*-\\s*|\\s+)${NUMBER_WORD})*\\b(\\s*(?:percent|per\\s+cent)\\b)?`, 'gi');
+/** A day of a month as an ordinal word: first to thirty-first. */
+const ORDINAL_DAY =
+  '(?:(?:twenty|thirty)(?:\\s*-\\s*|\\s+))?(?:first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|thirtieth';
+const ROMAN = /^M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})$/;
+const ROMAN_VALUES: Readonly<Record<string, number>> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
 
-type WordClass = 'unit' | 'teen' | 'tens' | 'hundred' | 'scale';
+/** A Roman numeral's value, or null when the letters are not a numeral. */
+export function romanValue(text: string): number | null {
+  const upper = text.toUpperCase();
+  if (upper === '' || !ROMAN.test(upper)) {
+    return null;
+  }
+  let total = 0;
+  for (let index = 0; index < upper.length; index += 1) {
+    const value = ROMAN_VALUES[upper.charAt(index)] ?? 0;
+    const next = ROMAN_VALUES[upper.charAt(index + 1)] ?? 0;
+    total += value < next ? -value : value;
+  }
+  return total;
+}
+
+type WordClass = 'unit' | 'teen' | 'tens' | 'multiplier' | 'scale';
 
 function classOf(word: string): WordClass | null {
   if (word in UNITS) {
@@ -154,8 +219,8 @@ function classOf(word: string): WordClass | null {
   if (word in TENS) {
     return 'tens';
   }
-  if (word === 'hundred') {
-    return 'hundred';
+  if (word in MULTIPLIERS) {
+    return 'multiplier';
   }
   return word in SCALES ? 'scale' : null;
 }
@@ -167,8 +232,10 @@ interface WordNumber {
 
 /**
  * Splits a run of number words into the numbers it writes: "twenty-one" is 21, "two hundred and
- * five" 205, "twelve thousand" 12000; a word the grammar cannot join to the one before starts a new
- * number ("two three" is 2 and 3), and "and" joins only after hundred, thousand or million.
+ * five" 205, "twelve thousand" 12000, "two dozen" 24; a word the grammar cannot join to the one before
+ * starts a new number ("two three" is 2 and 3), and "and" joins only after hundred, thousand or million.
+ * An ordinal word is the number it orders ("twenty-first" is 21) and ends its number ("first second" is
+ * 1 and 2).
  */
 export function numbersInWords(words: readonly { readonly word: string; readonly start: number; readonly end: number }[]): WordNumber[] {
   const numbers: WordNumber[] = [];
@@ -188,9 +255,11 @@ export function numbersInWords(words: readonly { readonly word: string; readonly
     group = [];
   };
   for (const entry of words) {
-    const word = entry.word.toLowerCase();
+    const written = entry.word.toLowerCase();
+    const ends = written in ORDINALS;
+    const word = ORDINALS[written] ?? written;
     if (word === 'and') {
-      if (last !== 'hundred' && last !== 'scale') {
+      if (last !== 'multiplier' && last !== 'scale') {
         flush();
       }
       continue;
@@ -203,11 +272,11 @@ export function numbersInWords(words: readonly { readonly word: string; readonly
     const joins = (() => {
       switch (kind) {
         case 'unit':
-          return last === null || last === 'tens' || last === 'hundred' || last === 'scale';
+          return last === null || last === 'tens' || last === 'multiplier' || last === 'scale';
         case 'teen':
         case 'tens':
-          return last === null || last === 'hundred' || last === 'scale';
-        case 'hundred':
+          return last === null || last === 'multiplier' || last === 'scale';
+        case 'multiplier':
           return (last === 'unit' || last === 'teen' || last === 'tens') && current > 0 && current < 100;
         case 'scale':
           return last !== null && last !== 'scale' && current > 0 && (SCALES[word] ?? 0) < smallestScale;
@@ -222,8 +291,8 @@ export function numbersInWords(words: readonly { readonly word: string; readonly
       current += TEENS[word] ?? 0;
     } else if (kind === 'tens') {
       current += TENS[word] ?? 0;
-    } else if (kind === 'hundred') {
-      current = (current === 0 ? 1 : current) * 100;
+    } else if (kind === 'multiplier') {
+      current = (current === 0 ? 1 : current) * (MULTIPLIERS[word] ?? 0);
     } else {
       const scale = SCALES[word] ?? 0;
       total += (current === 0 ? 1 : current) * scale;
@@ -232,6 +301,9 @@ export function numbersInWords(words: readonly { readonly word: string; readonly
     }
     last = kind;
     group.push(entry);
+    if (ends) {
+      flush();
+    }
   }
   flush();
   return numbers;
@@ -285,6 +357,32 @@ export function scanText(text: string): Scan {
     masked.take(match.index, match.index + match[0].length);
   });
 
+  // A day of a month written as an ordinal word, with or without its year: "March fifth", "the
+  // twenty-first of May, 2026". The month's name is capitalized, so "may first" is prose.
+  const ordinalDay = (month: string, day: string, year: string | undefined, written: string, start: number) => {
+    const monthNo = MONTHS[month.toLowerCase()] ?? 0;
+    const dayNo = numbersInWords([...day.matchAll(/[A-Za-z]+/g)].map((word) => ({ word: word[0], start: 0, end: 0 })))[0]?.value ?? 0;
+    const end = start + written.length;
+    if (year !== undefined) {
+      const date = isoDate(int(year), monthNo, dayNo);
+      figure(date === null ? 'identifier' : 'date', date ?? written, start, end);
+      return;
+    }
+    const valid = isoDate(2000, monthNo, dayNo) !== null;
+    figure(valid ? 'month_day' : 'identifier', valid ? `${pad(monthNo)}-${pad(dayNo)}` : written, start, end);
+  };
+  each(new RegExp(`\\b${MONTH}\\.?\\s+(?:the\\s+)?(${ORDINAL_DAY})\\b(?:,?\\s+(\\d{4})\\b)?`, 'gi'), (match) => {
+    const month = match[1] ?? '';
+    if (/^[A-Z]/.test(month)) {
+      ordinalDay(month, match[2] ?? '', match[3], match[0], match.index);
+    }
+  });
+  each(new RegExp(`\\b(${ORDINAL_DAY})\\s+(?:of\\s+)?${MONTH}\\b(?:\\.?,?\\s+(\\d{4})\\b)?`, 'gi'), (match) => {
+    const month = match[2] ?? '';
+    if (/^[A-Z]/.test(month)) {
+      ordinalDay(month, match[1] ?? '', match[3], match[0], match.index);
+    }
+  });
   // Dates written with a month's name.
   each(new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, 'gi'), (match) => {
     const date = isoDate(int(match[3] ?? ''), MONTHS[(match[1] ?? '').toLowerCase()] ?? 0, int(match[2] ?? ''));
@@ -347,6 +445,11 @@ export function scanText(text: string): Scan {
   each(/(?<![\w-])([0-9A-Z]{2})\s+modifiers?\b/g, (match) => {
     figure('modifier', match[1] ?? '', match.index, match.index + 2);
   });
+  // Fractions in digits (1/2; a vulgar fraction is digits around a fraction slash once normalized): an
+  // identifier, so only a fraction a quoted text holds may be repeated.
+  each(/(?<![\w./-])(\d+)\s?[/\u2044\u2215]\s?(\d+)(?![\w/]|[.,]\d)/g, (match) => {
+    figure('identifier', `${match[1] ?? ''}/${match[2] ?? ''}`, match.index, match.index + match[0].length);
+  });
   // Digit groups joined by hyphens: one identifier (a statute section, a reference).
   each(/(?<![\w.,-])\d+(?:-\d+)+(?![\w-])/g, (match) => {
     figure('identifier', match[0], match.index, match.index + match[0].length);
@@ -366,6 +469,19 @@ export function scanText(text: string): Scan {
     if (/\d/.test(value)) {
       figure('identifier', value, match.index + leading, match.index + leading + value.length);
     }
+  });
+  // Roman numerals after level, appeal or tier: "a level IV appeal" is the number 4.
+  each(/\b(?:level|appeal|tier)s?\s+([IVXLCDM]+)\b/gi, (match) => {
+    const numeral = match[1] ?? '';
+    const value = romanValue(numeral);
+    if (value !== null) {
+      const start = match.index + match[0].length - numeral.length;
+      figure('number', String(value), start, start + numeral.length);
+    }
+  });
+  // A fraction or a multiple in a word: half, twice, thrice.
+  each(new RegExp(`\\b(?:${Object.keys(MULTIPLES).join('|')})\\b`, 'gi'), (match) => {
+    figure('number', MULTIPLES[match[0].toLowerCase()] ?? match[0], match.index, match.index + match[0].length);
   });
   // Numbers in words.
   each(NUMBER_WORDS, (match) => {

@@ -149,7 +149,7 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'packet_version.version_no': () => 1,
   'packet_version.content': () => JSON.stringify(SYNTHETIC_PACKET_CONTENT),
   'packet_version.verifier_passed': () => true,
-  'packet_version.verifier_report': () => JSON.stringify({ format: 'tp-packet-verifier/1', passed: true, narrative_sha256: '0'.repeat(64), sentences: 0, checked: 0, mismatches: [] }),
+  'packet_version.verifier_report': () => JSON.stringify({ format: 'tp-packet-verifier/2', passed: true, narrative_sha256: '0'.repeat(64), sentences: 0, checked: 0, mismatches: [] }),
   // A note: its words, and no owner or packet version (those are an assignment's and an approval request's).
   'case_activity.kind': () => 'note',
   'case_activity.owner_user_id': () => null,

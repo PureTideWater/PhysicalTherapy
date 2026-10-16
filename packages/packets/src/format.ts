@@ -13,7 +13,7 @@
  */
 
 export const PACKET_FORMAT = 'tp-packet/1';
-export const VERIFIER_FORMAT = 'tp-packet-verifier/1';
+export const VERIFIER_FORMAT = 'tp-packet-verifier/2';
 
 /** Kinds of payer response a submission can receive (Data dictionary, `payer_response.kind`). */
 export const PAYER_RESPONSE_KINDS = ['accepted', 'partial', 'denied', 'info_requested', 'reprocessed_no_change'] as const;

@@ -12,6 +12,9 @@ export const MISMATCH_TEXT: Readonly<Record<MismatchCode, string>> = {
   unknown_citation: 'a citation marker that names no source of this version',
   unknown_placeholder: 'an identifier placeholder that names no schedule row or kind',
   empty_narrative: 'an empty narrative',
+  hidden_character: 'a hidden character, one that prints as nothing or as something else (a zero-width space, a soft hyphen, a direction control); delete it',
+  unreadable_figure: 'a figure in digits other than 0 to 9, which the verifier cannot check; write it in 0 to 9',
+  identifier_in_narrative: 'one of this case’s identifiers (a patient’s name, a member ID or a claim number); write its placeholder, which the export fills in from the record',
 };
 
 export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
@@ -27,6 +30,27 @@ export const FIGURE_KIND_TEXT: Readonly<Record<string, string>> = {
   placeholder: 'placeholder',
   citation: 'citation',
 };
+
+/**
+ * What a mismatch's list item shows beside its words: the figure, placeholder or marker as written, a
+ * hidden character as its code points (it shows as nothing), and nothing for an identifier (the stored
+ * narrative marks it where it is) or a sentence.
+ */
+export function mismatchShown(code: MismatchCode, written: string): string | null {
+  switch (code) {
+    case 'figure_not_in_input':
+    case 'unknown_placeholder':
+    case 'unknown_citation':
+    case 'unreadable_figure':
+      return written;
+    case 'hidden_character':
+      return [...written].map((char) => `U+${(char.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, '0')}`).join(' ');
+    case 'identifier_in_narrative':
+    case 'sentence_without_citation':
+    case 'empty_narrative':
+      return null;
+  }
+}
 
 /** A mismatch in words: what it is, and of what kind. */
 export function mismatchText(code: MismatchCode, kind: string | null): string {

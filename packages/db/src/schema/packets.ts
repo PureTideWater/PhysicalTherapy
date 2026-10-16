@@ -77,7 +77,7 @@ export const packetVersion = pgTable(
     narrative: text('narrative').notNull(),
     contentSha256: text('content_sha256').notNull(),
     verifierPassed: boolean('verifier_passed').notNull(),
-    /** tp-packet-verifier/1: codes and positions only. */
+    /** tp-packet-verifier/2 (or /1, written before 20261027090000): codes and positions only. */
     verifierReport: jsonb('verifier_report').$type<Readonly<Record<string, unknown>>>().notNull(),
     draftedBy: uuid('drafted_by')
       .notNull()

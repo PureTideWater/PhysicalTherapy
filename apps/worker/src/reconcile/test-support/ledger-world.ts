@@ -78,6 +78,11 @@ export class LedgerWorld {
     return this.triage.keys;
   }
 
+  /** The contract specialist, who reaches every practice of the world under a support grant (and alone adjusts an entry). */
+  get specialist(): string {
+    return this.triage.pricing.specialist;
+  }
+
   practice(label: string, settings: object = ledSettings()): Promise<Practice> {
     return this.triage.practice(label, settings);
   }

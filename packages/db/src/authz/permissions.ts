@@ -16,6 +16,9 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  * - The reimbursement reviewer validates a practice's audit findings inside that practice, reached
  *   through a support grant (docs/adr/0038), so audit_finding.validate is a practice permission; signing
  *   the attestation is the only record it writes, and the permission does not count as a write.
+ * - A ledger entry's amount is corrected by the contract specialist (PRD 13, Entries: "A specialist
+ *   corrects an amount after review"; ledger.adjust, under a support grant like everything the specialist
+ *   does in a practice); a billing manager reconciles postings and never adjusts (docs/adr/0047).
  * - The practice administrator and the billing manager sign off contract versions (PRD 5, J5:
  *   contract.sign_off), and so does the firm principal, who does everything a billing manager does.
  *   A contract specialist reaches a practice only under a support grant (docs/adr/0028).
@@ -55,6 +58,7 @@ export const PERMISSIONS = {
   'packet.approve_own_draft': { scope: 'practice', writes: true, description: 'approve a packet you drafted' },
   'submission.log': { scope: 'practice', writes: true, description: 'log submissions' },
   'posting.reconcile': { scope: 'practice', writes: true, description: 'reconcile postings' },
+  'ledger.adjust': { scope: 'practice', writes: true, description: 'correct a ledger entry’s amount after review' },
   'rate_record.edit': { scope: 'practice', writes: true, description: 'edit rate records' },
   'contract.sign_off': { scope: 'practice', writes: true, description: 'sign off a contract version' },
   'firm_user.manage': { scope: 'organization', writes: true, description: 'manage firm users' },
@@ -161,7 +165,8 @@ export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
   },
   contract_specialist: {
     persona: 'Contract specialist',
-    does: ['contract.review', 'rate_record.edit', 'rate_record.approve', 'pricing.answer'],
+    // PRD 13, Entries: "adjusted | A specialist corrects an amount after review, with a reason" (docs/adr/0047).
+    does: ['contract.review', 'rate_record.edit', 'rate_record.approve', 'pricing.answer', 'ledger.adjust'],
     mustNot: [{ rule: 'Edit a published rate version (a new version supersedes it)', denies: ['rate_record.edit_published'] }],
   },
   reviewer: {
