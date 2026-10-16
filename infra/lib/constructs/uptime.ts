@@ -87,6 +87,7 @@ export class Uptime extends Construct {
       ],
     });
     this.role = this.canaryRole(props.key);
+    // Names stay within 21 characters: Synthetics names the canary's function after it.
     const canary = (construct: string, name: string, schedule: Duration, environmentVariables: Record<string, string>) =>
       new synthetics.Canary(this, construct, {
         canaryName: `tp-${props.environmentName}-${name}`,
@@ -104,7 +105,7 @@ export class Uptime extends Construct {
       });
     this.web = canary('Web', 'web', UPTIME_INTERVAL, { TP_HOST: props.appDomainName, TP_CHECK: JSON.stringify(UPTIME_CHECKS.web) });
     this.api = canary('Api', 'api', UPTIME_INTERVAL, { TP_HOST: props.appDomainName, TP_CHECK: JSON.stringify(UPTIME_CHECKS.api) });
-    this.certificates = canary('Certificates', 'certificates', CERTIFICATE_CHECK_INTERVAL, {
+    this.certificates = canary('Certificates', 'certs', CERTIFICATE_CHECK_INTERVAL, {
       TP_CERTIFICATE_HOSTS: `${props.appDomainName},${props.staticDomainName}`,
       TP_CERTIFICATE_MIN_DAYS: String(CERTIFICATE_MIN_DAYS),
     });

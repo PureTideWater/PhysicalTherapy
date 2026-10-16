@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { PASSWORD_MIN_LENGTH, TOKEN_LIFETIMES } from '../lib/constructs/identity';
+import { PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { ENVIRONMENTS } from '../lib/environments';
 import { onlyResource, propertiesOf, synthesized } from './synth';
 
@@ -37,6 +38,34 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
   it('allows passkeys (WebAuthn) with user verification required, beside passwords', () => {
     expect(poolProperties.Policies).toMatchObject({ SignInPolicy: { AllowedFirstAuthFactors: ['PASSWORD', 'WEB_AUTHN'] } });
     expect(poolProperties.WebAuthnUserVerification).toBe('required');
+  });
+
+  it('binds passkeys to the application host, the relying-party ID the web app gives WebAuthn', () => {
+    expect(poolProperties.WebAuthnRelyingPartyID).toEqual({ Ref: PARAMETER_NAMES.appDomainName });
+    const config = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/server/config.ts'), 'utf8');
+    expect(config).toContain('rpId: settings.WEBAUTHN_RP_ID ?? new URL(settings.APP_ORIGIN).hostname');
+  });
+
+  it('sends Cognito\'s email through SES from MailFromAddress, under the SES identity of its domain in this region', () => {
+    expect(poolProperties.EmailConfiguration).toEqual({
+      EmailSendingAccount: 'DEVELOPER',
+      From: { Ref: PARAMETER_NAMES.mailFromAddress },
+      SourceArn: {
+        'Fn::Join': [
+          '',
+          [
+            'arn:',
+            { Ref: 'AWS::Partition' },
+            ':ses:',
+            { Ref: 'AWS::Region' },
+            ':',
+            { Ref: 'AWS::AccountId' },
+            ':identity/',
+            { 'Fn::Select': [1, { 'Fn::Split': ['@', { Ref: PARAMETER_NAMES.mailFromAddress }] }] },
+          ],
+        ],
+      },
+    });
   });
 
   it('has no self sign-up in v0', () => {
