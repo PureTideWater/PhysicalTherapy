@@ -311,14 +311,12 @@ export function changedFields(candidates: readonly StoredCandidate[], finals: re
   return [...new Set(changed)];
 }
 
-/** The practice's signed data-rights agreement, the one a permitted example rests on; null without one. */
+/**
+ * The practice's signed data-rights agreement, the one a permitted example rests on; null without one. Read
+ * through practice_data_rights_agreement (its ID only): the specialist approving a version reads no agreement.
+ */
 async function dataRightsAgreement(scope: PracticeScope<ScopeClient>, practiceId: string): Promise<string | null> {
-  const { rows } = await scope.client.query<{ id: string }>(
-    `SELECT a.id FROM agreement a JOIN practice p ON p.id = $1
-      WHERE a.kind = 'data_rights' AND a.signed_at <= now() AND (a.practice_id = p.id OR (a.practice_id IS NULL AND a.organization_id = p.organization_id))
-      ORDER BY a.signed_at DESC, a.id LIMIT 1`,
-    [practiceId],
-  );
+  const { rows } = await scope.client.query<{ id: string | null }>('SELECT practice_data_rights_agreement($1) AS id', [practiceId]);
   return rows[0]?.id ?? null;
 }
 
