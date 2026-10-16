@@ -27,6 +27,16 @@ export const APP_LOGIN = 'tp_app_login';
  */
 export const OPERATOR_LOGIN = 'tp_operator_login';
 
+/**
+ * pg-boss's login (ADR 0004 left its owner open; docs/adr/0049 settles it): a member of the NOLOGIN
+ * role QUEUE_ROLE, which owns pg-boss's own schema and nothing else. Every queue connection sets that
+ * role at sign-in (connection option `role`), so whatever pg-boss creates is owned by the role whichever
+ * of the alternating rotation users is current. It is a member of neither tp_app nor tp_operator, so
+ * it reads no practice table, and the web app, the worker and the platform jobs share it.
+ */
+export const QUEUE_LOGIN = 'tp_queue_login';
+export const QUEUE_ROLE = 'tp_queue';
+
 /** The restore drill's scratch instance in an environment: one at a time, deleted after each drill. */
 export function restoreDrillInstanceId(environment: string): string {
   return `tp-${environment}-restore-drill`;
@@ -46,17 +56,18 @@ export interface DatabaseProps {
 /**
  * RDS PostgreSQL (PRD 15, Stack: database; PRD 16, backups and restore).
  *
- * In the `data` subnets, never publicly accessible, admitting PostgreSQL only from the web and
- * worker security groups and the rotation functions. Storage is encrypted under the environment
+ * In the `data` subnets, never publicly accessible, admitting PostgreSQL only from the web, worker,
+ * operator and migration security groups and the rotation functions. Storage is encrypted under the environment
  * key; connections must use TLS 1.2 or later. Automated backups give point-in-time recovery and a
  * daily snapshot, both kept 35 days, and survive the instance's deletion. Multi-AZ and deletion
  * protection follow the environment's settings (production has both).
  *
- * Three logins, three secrets, all encrypted under the environment key: the owner (master) login,
- * which only migrations use; the application login; and the operator login of the platform jobs.
+ * Four logins, four secrets, all encrypted under the environment key: the owner (master) login,
+ * which only the migration task uses; the application login; the operator login of the platform
+ * jobs; and pg-boss's queue login (QUEUE_LOGIN).
  * They rotate every 30 days through Secrets Manager's hosted PostgreSQL rotation functions, which run
  * in the app subnets and reach Secrets Manager through its endpoint. The owner rotates itself (single
- * user). The application and operator logins use the alternating-users scheme, so a running task's
+ * user). The application, operator and queue logins use the alternating-users scheme, so a running task's
  * password stays valid through a rotation; their first rotation waits for the schedule because each
  * login exists only after the deploy job has created it.
  *
@@ -69,6 +80,7 @@ export class Database extends Construct {
   readonly ownerSecret: secretsmanager.ISecret;
   readonly appSecret: secretsmanager.ISecret;
   readonly operatorSecret: secretsmanager.ISecret;
+  readonly queueSecret: secretsmanager.ISecret;
   /** The subnet group the instance (and the drill's scratch instance) lives in. */
   readonly subnetGroup: rds.ISubnetGroup;
   readonly restoreDrillInstanceId: string;
@@ -80,7 +92,7 @@ export class Database extends Construct {
 
     this.securityGroup = new ec2.SecurityGroup(this, 'SecurityGroup', {
       vpc,
-      description: 'PostgreSQL: from the web, worker, operator and rotation security groups only',
+      description: 'PostgreSQL: from the web, worker, operator, migration and rotation security groups only',
       allowAllOutbound: false,
     });
 
@@ -142,6 +154,12 @@ export class Database extends Construct {
       excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
       masterSecret: this.ownerSecret,
     }).attach(this.instance);
+    this.queueSecret = new rds.DatabaseSecret(this, 'QueueLoginSecret', {
+      username: QUEUE_LOGIN,
+      encryptionKey: key,
+      excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
+      masterSecret: this.ownerSecret,
+    }).attach(this.instance);
 
     const rotationSecurityGroup = appTierSecurityGroup(this, 'RotationSecurityGroup', vpc, 'Secrets Manager rotation functions');
     const rotation = {
@@ -154,7 +172,7 @@ export class Database extends Construct {
       hostedRotation: secretsmanager.HostedRotation.postgreSqlSingleUser(rotation),
       automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),
     });
-    for (const secret of [this.appSecret, this.operatorSecret]) {
+    for (const secret of [this.appSecret, this.operatorSecret, this.queueSecret]) {
       secret.addRotationSchedule('Rotation', {
         hostedRotation: secretsmanager.HostedRotation.postgreSqlMultiUser({ ...rotation, masterSecret: this.ownerSecret }),
         automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),
@@ -162,7 +180,8 @@ export class Database extends Construct {
       });
     }
 
-    for (const client of [network.webSecurityGroup, network.workerSecurityGroup, network.operatorSecurityGroup, rotationSecurityGroup]) {
+    const clients = [network.webSecurityGroup, network.workerSecurityGroup, network.operatorSecurityGroup, network.migrationSecurityGroup, rotationSecurityGroup];
+    for (const client of clients) {
       this.instance.connections.allowFrom(client, ec2.Port.tcp(DATABASE_PORT), `PostgreSQL from ${client.node.id}`);
     }
   }

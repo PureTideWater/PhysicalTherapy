@@ -19,8 +19,11 @@ import {
   HEARTBEAT_MESSAGE,
   HEARTBEAT_METRIC,
   MISSED_HEARTBEATS_TO_ALARM,
+  PLATFORM_HEARTBEAT_METRIC,
   workerLogGroupName,
 } from '../heartbeat';
+import { logGroupName } from '../log-groups';
+import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../security-events';
 
 /** Where operator alerts are delivered; both optional, set at deploy time (never in the repository). */
 export interface OperatorEndpoints {
@@ -52,13 +55,28 @@ export interface MonitoringProps {
  *
  * A third counts the line a pricing run logs when it recorded an ENGINE_ERROR line that pages the
  * operator (the closed list's remedy for ENGINE_ERROR); its alarm tells the operator the same way.
+ *
+ * With the compute (milestone 11, docs/adr/0049) each service has its own log group under the same
+ * key, kept a year: the web app's, the platform jobs' and the migration task's beside the worker's.
+ * The platform jobs log the same heartbeat and final-failure lines as the worker: their heartbeat is
+ * its own metric and alarm, and their final failures count toward the same job-failure metric and
+ * alarm. The web app's failed sign-in bursts (a second-factor burst, a lockout) are counted from
+ * its log group and alarm at once. Alarm text is fixed: an alarm name, the environment and a reason,
+ * never a value from a log line.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
   readonly workerLogGroup: logs.LogGroup;
+  readonly webLogGroup: logs.LogGroup;
+  readonly platformLogGroup: logs.LogGroup;
+  readonly migrationLogGroup: logs.LogGroup;
   readonly heartbeatAlarm: cloudwatch.Alarm;
+  readonly platformHeartbeatAlarm: cloudwatch.Alarm;
   readonly jobFailedAlarm: cloudwatch.Alarm;
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
+  readonly failedSignInBurstAlarm: cloudwatch.Alarm;
+  /** Notifies the operator topic; every alarm in the stack uses it. */
+  readonly notify: cloudwatchActions.SnsAction;
 
   constructor(scope: Construct, id: string, props: MonitoringProps) {
     super(scope, id);
@@ -99,26 +117,26 @@ export class Monitoring extends Construct {
       this.operatorTopic.addSubscription(new subscriptions.SmsSubscription(props.operator.sms));
     }
 
-    const logGroupName = workerLogGroupName(props.environmentName);
+    // CloudWatch Logs encrypts the stack's log groups, all named /tp/<environment>/..., and no other.
     props.key.addToResourcePolicy(
       new iam.PolicyStatement({
-        sid: 'CloudWatchLogsWorkerLogGroup',
+        sid: 'CloudWatchLogsPlatformLogGroups',
         principals: [new iam.ServicePrincipal(`logs.${stack.region}.amazonaws.com`)],
         actions: ['kms:Encrypt*', 'kms:Decrypt*', 'kms:ReEncrypt*', 'kms:GenerateDataKey*', 'kms:Describe*'],
         resources: ['*'],
         conditions: {
-          ArnEquals: {
-            'kms:EncryptionContext:aws:logs:arn': `arn:${stack.partition}:logs:${stack.region}:${stack.account}:log-group:${logGroupName}`,
+          ArnLike: {
+            'kms:EncryptionContext:aws:logs:arn': `arn:${stack.partition}:logs:${stack.region}:${stack.account}:log-group:/tp/${props.environmentName}/*`,
           },
         },
       }),
     );
-    this.workerLogGroup = new logs.LogGroup(this, 'WorkerLogs', {
-      logGroupName,
-      encryptionKey: props.key,
-      retention: logs.RetentionDays.ONE_YEAR,
-      removalPolicy: RemovalPolicy.RETAIN,
-    });
+    const logGroup = (id: string, name: string) =>
+      new logs.LogGroup(this, id, { logGroupName: name, encryptionKey: props.key, retention: logs.RetentionDays.ONE_YEAR, removalPolicy: RemovalPolicy.RETAIN });
+    this.workerLogGroup = logGroup('WorkerLogs', workerLogGroupName(props.environmentName));
+    this.webLogGroup = logGroup('WebLogs', logGroupName(props.environmentName, 'web'));
+    this.platformLogGroup = logGroup('PlatformLogs', logGroupName(props.environmentName, 'platform'));
+    this.migrationLogGroup = logGroup('MigrationLogs', logGroupName(props.environmentName, 'migration'));
 
     const heartbeats = this.workerLogGroup.addMetricFilter('Heartbeat', {
       filterPattern: logs.FilterPattern.stringValue('$.msg', '=', HEARTBEAT_MESSAGE),
@@ -138,10 +156,38 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
     const notify = new cloudwatchActions.SnsAction(this.operatorTopic);
+    this.notify = notify;
     this.heartbeatAlarm.addAlarmAction(notify);
     this.heartbeatAlarm.addOkAction(notify);
 
+    const platformHeartbeats = this.platformLogGroup.addMetricFilter('Heartbeat', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', HEARTBEAT_MESSAGE),
+      metricNamespace: PLATFORM_HEARTBEAT_METRIC.namespace,
+      metricName: PLATFORM_HEARTBEAT_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    this.platformHeartbeatAlarm = new cloudwatch.Alarm(this, 'PlatformHeartbeatMissed', {
+      alarmDescription: `The ${props.environmentName} platform jobs missed ${String(MISSED_HEARTBEATS_TO_ALARM)} consecutive heartbeats.`,
+      metric: platformHeartbeats.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(HEARTBEAT_INTERVAL_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: MISSED_HEARTBEATS_TO_ALARM,
+      datapointsToAlarm: MISSED_HEARTBEATS_TO_ALARM,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+    this.platformHeartbeatAlarm.addAlarmAction(notify);
+    this.platformHeartbeatAlarm.addOkAction(notify);
+
     const failures = this.workerLogGroup.addMetricFilter('JobFailedOnLastAttempt', {
+      filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_FAILED_MESSAGE),
+      metricNamespace: JOB_FAILED_METRIC.namespace,
+      metricName: JOB_FAILED_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    // The platform jobs' final failures (the restore drill, the audit copy) count toward the same metric.
+    this.platformLogGroup.addMetricFilter('JobFailedOnLastAttempt', {
       filterPattern: logs.FilterPattern.stringValue('$.msg', '=', JOB_FAILED_MESSAGE),
       metricNamespace: JOB_FAILED_METRIC.namespace,
       metricName: JOB_FAILED_METRIC.metricName,
@@ -174,5 +220,22 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.pricingEngineErrorsAlarm.addAlarmAction(notify);
+
+    const signInBursts = this.webLogGroup.addMetricFilter('FailedSignInBursts', {
+      filterPattern: logs.FilterPattern.any(...SIGN_IN_BURST_MESSAGES.map((message) => logs.FilterPattern.stringValue('$.msg', '=', message))),
+      metricNamespace: SIGN_IN_BURST_METRIC.namespace,
+      metricName: SIGN_IN_BURST_METRIC.metricName,
+      metricValue: '1',
+      unit: cloudwatch.Unit.COUNT,
+    });
+    this.failedSignInBurstAlarm = new cloudwatch.Alarm(this, 'FailedSignInBurst', {
+      alarmDescription: `A ${props.environmentName} account had a burst of failed second factors or was locked after ten failed sign-ins.`,
+      metric: signInBursts.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(SECURITY_ALARM_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.failedSignInBurstAlarm.addAlarmAction(notify);
   }
 }

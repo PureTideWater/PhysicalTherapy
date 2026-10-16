@@ -25,15 +25,18 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
 
 /**
  * The VPC (PRD 16, network): two availability zones; private subnets for the database and the
- * worker with no route to the internet; public `edge` subnets that hold nothing until the load
- * balancer arrives with the compute in milestone 11 (they assign no public addresses). There is no
- * NAT gateway: every AWS service the private subnets use has an endpoint. The default security
- * group is stripped of its rules.
+ * tasks; public `edge` subnets for the load balancer and the NAT gateways (they assign no public
+ * addresses). The `data` subnets have no route out of the VPC at all. The `app` subnets reach AWS
+ * through the endpoints and S3 through its gateway, and the internet only through NAT gateways in
+ * the edge subnets, for what has no endpoint the platform can rely on: Cognito's API and the JWKS
+ * its tokens are verified against, Stripe's API for billing and the compliance platform's API
+ * (docs/adr/0049). The default security group is stripped of its rules.
  *
- * The web, worker and operator security groups exist now so the database and the endpoints can admit
- * them; the Fargate services attach to them in milestone 11 (the operator group carries the platform
- * jobs: the audit copy, the restore drill and the support notices). Their egress is HTTPS only (the
- * endpoints and S3), plus PostgreSQL to the database, which the Database construct adds.
+ * Every task has its own security group with no ingress (the web group admits the load balancer
+ * only, added by the compute) and HTTPS egress only, plus PostgreSQL to the database, which the
+ * Database construct adds: web, worker (practice jobs), operator (the platform jobs: the audit copy,
+ * the restore drill, the support notices and the monitoring schedule) and migration (the one-off
+ * migration task, the only one holding the owner login).
  */
 export class Network extends Construct {
   readonly vpc: ec2.Vpc;
@@ -43,17 +46,19 @@ export class Network extends Construct {
   readonly webSecurityGroup: ec2.SecurityGroup;
   readonly workerSecurityGroup: ec2.SecurityGroup;
   readonly operatorSecurityGroup: ec2.SecurityGroup;
+  readonly migrationSecurityGroup: ec2.SecurityGroup;
 
-  constructor(scope: Construct, id: string, props: { readonly cidr: string }) {
+  constructor(scope: Construct, id: string, props: { readonly cidr: string; readonly natGateways: number }) {
     super(scope, id);
     this.vpc = new ec2.Vpc(this, 'Vpc', {
       ipAddresses: ec2.IpAddresses.cidr(props.cidr),
       maxAzs: 2,
-      natGateways: 0,
+      natGateways: props.natGateways,
+      natGatewaySubnets: { subnetGroupName: SUBNET_GROUPS.edge },
       restrictDefaultSecurityGroup: true,
       subnetConfiguration: [
         { name: SUBNET_GROUPS.edge, subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24, mapPublicIpOnLaunch: false },
-        { name: SUBNET_GROUPS.app, subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 22 },
+        { name: SUBNET_GROUPS.app, subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 22 },
         { name: SUBNET_GROUPS.data, subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
       ],
       gatewayEndpoints: {
@@ -80,15 +85,16 @@ export class Network extends Construct {
     this.webSecurityGroup = appTierSecurityGroup(this, 'WebSecurityGroup', this.vpc, 'Web tasks (milestone 11)');
     this.workerSecurityGroup = appTierSecurityGroup(this, 'WorkerSecurityGroup', this.vpc, 'Worker tasks (milestone 11)');
     this.operatorSecurityGroup = appTierSecurityGroup(this, 'OperatorSecurityGroup', this.vpc, 'Platform jobs: audit copy, restore drill, support notices (milestone 11)');
+    this.migrationSecurityGroup = appTierSecurityGroup(this, 'MigrationSecurityGroup', this.vpc, 'The one-off migration task before each release');
   }
 }
 
 /**
- * A security group for something in the app subnets: no ingress, HTTPS egress only. The subnets
- * have no internet route, so HTTPS reaches only the endpoints and the S3 gateway.
+ * A security group for something in the app subnets: no ingress, HTTPS egress only: the endpoints,
+ * the S3 gateway and, through the NAT gateways, the few internet APIs the tasks call.
  */
 export function appTierSecurityGroup(scope: Construct, id: string, vpc: ec2.IVpc, description: string): ec2.SecurityGroup {
   const group = new ec2.SecurityGroup(scope, id, { vpc, description, allowAllOutbound: false });
-  group.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS to the VPC endpoints and S3');
+  group.addEgressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS to the VPC endpoints, S3 and the NAT gateways');
   return group;
 }

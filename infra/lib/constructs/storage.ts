@@ -49,9 +49,20 @@ export function denyOverwrites(bucket: s3.Bucket): void {
 /** Where browsers upload documents before their malware scan (documentIntakeKey in packages/db). */
 export const INTAKE_PREFIX = 'intake/';
 
+/**
+ * The headers a presigned upload PUT carries from the browser (apps/web/src/lib/uploads/targets.ts,
+ * SIGNED_HEADERS; Content-Length is the browser's own and never needs CORS).
+ */
+export const UPLOAD_HEADERS = ['content-type', 'if-none-match', 'x-amz-server-side-encryption', 'x-amz-server-side-encryption-aws-kms-key-id'] as const;
+
+/** How long a browser may keep the documents bucket's CORS answer. */
+export const UPLOAD_CORS_MAX_AGE_SECONDS = 600;
+
 export interface StorageProps {
   readonly key: kms.IKey;
   readonly objectLockMode: 'COMPLIANCE' | 'GOVERNANCE';
+  /** The application's origin, the only one whose pages may PUT presigned uploads (https://<AppDomainName>). */
+  readonly uploadOrigin: string;
 }
 
 /**
@@ -63,7 +74,9 @@ export interface StorageProps {
  *   (AccountSecurity). Incomplete multipart uploads are aborted after a week. Browsers upload under
  *   `intake/` (presigned PUTs), where GuardDuty scans the plaintext before the worker seals it under
  *   the practice's key elsewhere; nothing reads an intake object again, so it, its noncurrent
- *   version and its delete marker expire after a day (docs/adr/0018 and 0026).
+ *   version and its delete marker expire after a day (docs/adr/0018 and 0026). CORS admits a PUT
+ *   from the application's origin alone, with exactly the headers the presigned PUT signs, and
+ *   exposes nothing (docs/adr/0049).
  * - `packets` and `auditCopies`: exported packets and the nightly audit_event copies. Versioned
  *   with Object Lock and a default retention of seven years (PRD 19: write-once, seven years), and
  *   written once per key as well.
@@ -92,6 +105,15 @@ export class Storage extends Construct {
           id: 'intake-delete-markers-expire',
           prefix: INTAKE_PREFIX,
           expiredObjectDeleteMarker: true,
+        },
+      ],
+      cors: [
+        {
+          id: 'presigned-uploads-from-the-application',
+          allowedOrigins: [props.uploadOrigin],
+          allowedMethods: [s3.HttpMethods.PUT],
+          allowedHeaders: [...UPLOAD_HEADERS],
+          maxAge: UPLOAD_CORS_MAX_AGE_SECONDS,
         },
       ],
     });

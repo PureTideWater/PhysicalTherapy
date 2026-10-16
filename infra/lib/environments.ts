@@ -27,6 +27,34 @@ export interface DatabaseSettings {
   readonly maxAllocatedStorageGiB: number;
 }
 
+/** One Fargate task's size (CPU units of 1024 per vCPU, memory in MiB) and how many run. */
+export interface TaskSize {
+  readonly cpu: number;
+  readonly memoryMiB: number;
+}
+
+export interface ServiceSettings extends TaskSize {
+  /** Tasks the service runs once an image is released (ImageTag set); none before. */
+  readonly desiredCount: number;
+}
+
+/**
+ * The compute (PRD 15, Stack: compute; PRD 19, Monthly costs: about $55 a month of Fargate at ten
+ * customers). The web app runs two tasks in production, one per availability zone; the worker's
+ * practice jobs and its platform jobs run one task each (docs/adr/0049).
+ */
+export interface ComputeSettings {
+  readonly web: ServiceSettings;
+  readonly worker: ServiceSettings;
+  readonly platform: ServiceSettings;
+  readonly migration: TaskSize;
+  /**
+   * NAT gateways for the app subnets' internet egress (Cognito, Stripe, the compliance platform;
+   * docs/adr/0049): one per zone in production, so a zone's loss does not stop sign-in, one elsewhere.
+   */
+  readonly natGateways: number;
+}
+
 export interface EnvironmentSettings {
   readonly name: EnvironmentName;
   /** Real PHI exists in production only (PRD 16, development data boundary). */
@@ -45,9 +73,19 @@ export interface EnvironmentSettings {
   readonly protectFromDeletion: boolean;
   /** The read-only role pull requests assume for `cdk diff` (staging only, ADR 0006). */
   readonly pullRequestDiffRole: boolean;
+  readonly compute: ComputeSettings;
 }
 
 const burstable = (size: ec2.InstanceSize) => ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE4_GRAVITON, size);
+
+/** Quarter-vCPU web and platform tasks and a half-vCPU worker (Chromium prints its PDFs). */
+const compute = (webTasks: number, natGateways: number): ComputeSettings => ({
+  web: { cpu: 256, memoryMiB: 512, desiredCount: webTasks },
+  worker: { cpu: 512, memoryMiB: 1024, desiredCount: 1 },
+  platform: { cpu: 256, memoryMiB: 512, desiredCount: 1 },
+  migration: { cpu: 256, memoryMiB: 512 },
+  natGateways,
+});
 
 const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
   dev: {
@@ -64,6 +102,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'GOVERNANCE',
     protectFromDeletion: false,
     pullRequestDiffRole: false,
+    compute: compute(1, 1),
   },
   staging: {
     name: 'staging',
@@ -79,6 +118,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'GOVERNANCE',
     protectFromDeletion: false,
     pullRequestDiffRole: true,
+    compute: compute(1, 1),
   },
   production: {
     name: 'production',
@@ -94,6 +134,7 @@ const SETTINGS: Readonly<Record<EnvironmentName, EnvironmentSettings>> = {
     objectLockMode: 'COMPLIANCE',
     protectFromDeletion: true,
     pullRequestDiffRole: false,
+    compute: compute(2, 2),
   },
 };
 

@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, aws_cognito as cognito } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, aws_cognito as cognito } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 /**
@@ -16,6 +16,14 @@ export const TOKEN_LIFETIMES = {
 
 export const PASSWORD_MIN_LENGTH = 12;
 
+export interface IdentityProps {
+  readonly deletionProtection: boolean;
+  /** The passkey relying-party ID: the application's host name. */
+  readonly relyingPartyId: string;
+  /** The sender of Cognito's email, and the domain whose verified SES identity sends it. */
+  readonly mailFrom: { readonly address: string; readonly domain: string };
+}
+
 /**
  * The Cognito user pool (PRD 3 and 16, authentication; docs/product/sessions.md).
  *
@@ -31,6 +39,12 @@ export const PASSWORD_MIN_LENGTH = 12;
  *   with its cost (docs/adr/0012), not built in.
  * - Deletion protection follows the environment (production on); the pool is retained if the
  *   stack is deleted.
+ * - Passkeys are bound to the application's own host: the relying-party ID is AppDomainName, the
+ *   same value the web app gives WebAuthn (WEBAUTHN_RP_ID), so a browser on the application's origin
+ *   can use them (docs/adr/0049).
+ * - Cognito's own email (invitations, verification and recovery codes) goes through SES from
+ *   MailFromAddress, the worker's sender too, under the SES identity of its domain in this region
+ *   (the DEVELOPER sending account), not Cognito's capped default sender.
  *
  * Lockout after ten failures, the 30-minute idle limit and the device list are application rules
  * (sessions.md); Cognito's own lockout sits beneath them.
@@ -39,8 +53,9 @@ export class Identity extends Construct {
   readonly userPool: cognito.UserPool;
   readonly webClient: cognito.UserPoolClient;
 
-  constructor(scope: Construct, id: string, props: { readonly deletionProtection: boolean }) {
+  constructor(scope: Construct, id: string, props: IdentityProps) {
     super(scope, id);
+    const stack = Stack.of(this);
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
@@ -51,6 +66,7 @@ export class Identity extends Construct {
       mfaSecondFactor: { otp: true, sms: false, email: false },
       signInPolicy: { allowedFirstAuthFactors: { password: true, passkey: true } },
       passkeyUserVerification: cognito.PasskeyUserVerification.REQUIRED,
+      passkeyRelyingPartyId: props.relyingPartyId,
       passwordPolicy: {
         minLength: PASSWORD_MIN_LENGTH,
         requireLowercase: true,
@@ -64,6 +80,13 @@ export class Identity extends Construct {
       deletionProtection: props.deletionProtection,
       removalPolicy: RemovalPolicy.RETAIN,
     });
+    // Written to the resource directly: the L2 SES option checks the address's domain at synth time,
+    // and both are deploy-time parameters here.
+    (this.userPool.node.defaultChild as cognito.CfnUserPool).emailConfiguration = {
+      emailSendingAccount: 'DEVELOPER',
+      from: props.mailFrom.address,
+      sourceArn: `arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/${props.mailFrom.domain}`,
+    };
 
     // The web app's server signs users in with SRP or the choice-based flow (passkeys); there is no
     // hosted UI and no OAuth flow, and no client secret to store.
