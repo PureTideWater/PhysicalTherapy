@@ -1,0 +1,26 @@
+{
+  "name": "@tp/billing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Billing (PRD 4, 5 J18, 6 Billing): the BillingProvider interface, its Stripe implementation and the local Stripe test-mode simulator, the plan catalog and the dunning schedule. No PHI.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./stripe": "./src/stripe.ts",
+    "./local": "./src/local.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*",
+    "stripe": "^23.0.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

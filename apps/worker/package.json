@@ -15,7 +15,8 @@
     "./triage": "./src/triage/public.ts",
     "./runtime": "./src/runtime.ts",
     "./testing": "./src/price/test-support/pricing-world.ts",
-    "./testing/triage": "./src/triage/test-support/triage-world.ts"
+    "./testing/triage": "./src/triage/test-support/triage-world.ts",
+    "./billing": "./src/billing/public.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
@@ -27,6 +28,7 @@
     "@aws-sdk/client-rds": "^3.1152.0",
     "@aws-sdk/client-s3": "^3.1152.0",
     "@aws-sdk/client-sesv2": "^3.1152.0",
+    "@tp/billing": "workspace:*",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/edi835": "workspace:*",
