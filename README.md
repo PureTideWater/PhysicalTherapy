@@ -314,6 +314,22 @@ and `packets.spec.ts` the day's reconcile, each as `queueMonitoringSchedule` que
 WCAG 2.1 AA rules on the screens it touches and moves through
 one control by keyboard (`e2e/a11y.ts`).
 
+The model gateway (ADR 0048; `packages/model-gateway`; migrations `20261029090000_model_gateway.sql` and
+`20261029100000_model_gateway_operator.sql`) is the only code that calls a model; the lint refuses the provider SDKs
+anywhere else, and `src/lint.test.ts` proves it on a fixture test file. `ModelGateway` exposes the four purposes
+(`proposeContractTerms`, `readDenialLetter`, `draftPacketNarrative`, `suggestEvidenceRequests`), each with a pinned
+prompt version under `prompts/<purpose>/v<n>/` (with a changelog per prompt), an output schema and a verifier, and
+each call logs one `model_call` row of hashes, counts and codes (never text). The provider is configuration:
+`MODEL_PROVIDER=bedrock` (the production default: `BEDROCK_REGION` or `AWS_REGION`, optionally `BEDROCK_ENDPOINT` for
+the VPC endpoint), `anthropic` (`ANTHROPIC_API_KEY`) or `local` (the default elsewhere: the deterministic provider,
+which answers only outputs registered for the exact request, from code or `MODEL_LOCAL_FIXTURES_DIR`). Model
+identifiers are pinned per prompt version in its `prompt.json`; prices are in `config/models.json`, and production
+refuses a real provider until a person confirms them there. Outside production the gateway sends no practice's material
+to a real provider. The kill switch (`model.kill_switch`), the denial-letter reader (`model.read_denial_letter`, v1.5,
+off by default) and the daily budget (`model.daily_budget_cents`, 500 by default) are rows in `feature_flag`, set by a
+platform administrator through `set_feature_flag()` (`setFeatureFlag` in the gateway); each attempt is cut at 60
+seconds with one retry under the same idempotency key. Nothing in the product calls the gateway yet.
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data
@@ -361,6 +377,15 @@ application, operator and queue logins from their secrets) runs before any servi
 connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
 certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
 image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
+
+**Milestone 10 is not complete.** Its done check is "every quote verifies, the narrative gate passes with zero
+failures, and the lint fails a test file that imports the provider directly". The lint check is met
+(`packages/model-gateway/src/lint.test.ts`). The quote verifier and the narrative verifier are built and tested on
+synthetic contracts and packets (MOD-01, MOD-02, MOD-04 to MOD-06), but the evaluation harness with the 40 synthetic
+contracts and the 300-case narrative set (MOD-03) is the milestone's second part, and no real model has been called:
+the build has no model access, so the Bedrock and Anthropic providers are tested against their SDKs with mocked
+clients, and their pinned prices are unconfirmed (ADR 0048). PRD 20's choice of model path waits on counsel's read of
+both agreements; Bedrock is the default until then.
 
 **Milestone 9: the proof level cannot yet be set in the product.** PRD 13 has practices set their proof level
 (posted or deposited) and PRD 20 revisits it at milestone 9. The ledger, the totals, the ROI statement and the
