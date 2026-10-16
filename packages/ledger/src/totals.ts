@@ -32,6 +32,11 @@ export interface LedgerTotals extends StageTotals {
   readonly proofLevel: ProofLevel;
   /** The proof level's stage plus the recoupments: the only "recovered". */
   readonly recoveredCents: Cents;
+  /**
+   * Payer approved as the headline shows it (PRD 12: "what has been accepted"): per line, its approvals
+   * net of what recoupments took back of them before they were proved (lineFigures, payerApproved).
+   */
+  readonly payerApprovedCents: Cents;
   /** The entries each figure sums, in ledger order (every figure links to its entries, PRD 13, ROI statement). */
   readonly entryIds: { readonly recovered: readonly string[]; readonly approved: readonly string[]; readonly interest: readonly string[] };
 }
@@ -41,6 +46,60 @@ const EMPTY: Record<CountedStage, Cents> = { approved: ZERO_CENTS, posted: ZERO_
 /** Every entry the ledger holds by ID: the targets of corrections are looked up here. */
 export function entriesById(entries: readonly LedgerEntry[]): Map<string, LedgerEntry> {
   return new Map(entries.map((entry) => [entry.id, entry]));
+}
+
+/** A line's figures (or a case's, for an approval of the case as a whole): its approvals, proof and recoupments, and their entries. */
+export interface LineFigures {
+  readonly approvedCents: Cents;
+  readonly provedCents: Cents;
+  /** Zero or negative. */
+  readonly recoupedCents: Cents;
+  /** The entries of those three stages, in ledger order. */
+  readonly entryIds: readonly string[];
+}
+
+/** Each line's figures among `entries` (by service line, or by case for an entry of no line). */
+export function lineFigures(entries: readonly LedgerEntry[], proofLevel: ProofLevel, ledger: ReadonlyMap<string, LedgerEntry>): Map<string, LineFigures> {
+  const groups = new Map<string, { approved: bigint; proved: bigint; recouped: bigint; ids: string[] }>();
+  for (const entry of entries) {
+    const stage = countedStage(entry, ledger);
+    if (stage !== 'approved' && stage !== proofLevel && stage !== 'recouped') {
+      continue;
+    }
+    const key = entry.serviceLineId ?? `case:${entry.caseId}`;
+    const group = groups.get(key) ?? { approved: 0n, proved: 0n, recouped: 0n, ids: [] };
+    if (stage === 'approved') {
+      group.approved += entry.amountCents;
+    } else if (stage === 'recouped') {
+      group.recouped += entry.amountCents;
+    } else {
+      group.proved += entry.amountCents;
+    }
+    group.ids.push(entry.id);
+    groups.set(key, group);
+  }
+  return new Map([...groups].map(([key, group]) => [key, { approvedCents: cents(group.approved), provedCents: cents(group.proved), recoupedCents: cents(group.recouped), entryIds: group.ids }]));
+}
+
+/**
+ * What stays approved for a line: its approvals less what recoupments took back of them before they
+ * were proved (a recoupment after the proof reduces recovered, and the approval stands). Never below
+ * zero: min(approved, max(proved, approved + recouped)).
+ */
+export function payerApproved(line: LineFigures): Cents {
+  const standing = line.approvedCents + line.recoupedCents;
+  const kept = line.provedCents > standing ? line.provedCents : standing;
+  const value = line.approvedCents < kept ? line.approvedCents : kept;
+  return cents(value > 0n ? value : 0n);
+}
+
+/**
+ * What is approved for a line and not yet proved, net of recoupments: max(0, approved + recouped -
+ * proved) (PRD 13, ROI statement: "approved but not yet posted").
+ */
+export function approvedNotProved(line: LineFigures): Cents {
+  const value = line.approvedCents + line.recoupedCents - line.provedCents;
+  return cents(value > 0n ? value : 0n);
 }
 
 /**
@@ -72,6 +131,7 @@ export function ledgerTotals(entries: readonly LedgerEntry[], proofLevel: ProofL
     recoupedCents: sums.recouped,
     interestCents: sums.interest,
     recoveredCents: addCents(sums[proofLevel], sums.recouped),
+    payerApprovedCents: cents([...lineFigures(entries, proofLevel, ledger).values()].reduce((total, line) => total + payerApproved(line), 0n)),
     entryIds: { recovered, approved, interest },
   };
 }

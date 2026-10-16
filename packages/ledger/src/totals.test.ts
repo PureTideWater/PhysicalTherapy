@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { type CountedStage, type LedgerEntry, type ProofLevel } from './stages';
-import { caseEntries, entriesById, ledgerTotals, lineEntries, lineLedgerStage, pendingForwardBalanceCents, periodEntries, recoveredCents } from './totals';
+import { approvedNotProved, caseEntries, entriesById, ledgerTotals, lineEntries, lineFigures, lineLedgerStage, payerApproved, pendingForwardBalanceCents, periodEntries, recoveredCents } from './totals';
 
 let counter = 0;
 const id = (prefix: string) => {
@@ -108,6 +108,34 @@ describe('a line’s stage from the ledger (PRD 8, The status machine; PRD 13, R
     expect(lineLedgerStage(entries, 'posted')).toBe('recovered');
     const posted = make('posted', 3000n);
     expect(lineLedgerStage([make('approved', 3000n), posted, reverse(posted)], 'posted')).toBe('payer_approved');
+  });
+});
+
+describe('payer approved as the headline shows it (PRD 12; PRD 13, ROI statement)', () => {
+  const figures = (approved: bigint, proved: bigint, recouped: bigint) => ({ approvedCents: cents(approved), provedCents: cents(proved), recoupedCents: cents(-recouped), entryIds: [] });
+
+  it('takes back from payer approved only what was recouped before it was proved', () => {
+    // A recoupment after the proof reduces recovered; the approval stands (LED-06).
+    expect(payerApproved(figures(3000n, 3000n, 1800n))).toBe(3000n);
+    // Taken back before it posted: nothing is left approved, and nothing waits to post.
+    expect(payerApproved(figures(3000n, 0n, 3000n))).toBe(0n);
+    expect(approvedNotProved(figures(3000n, 0n, 3000n))).toBe(0n);
+    expect(payerApproved(figures(3000n, 0n, 1800n))).toBe(1200n);
+    expect(approvedNotProved(figures(3000n, 0n, 1800n))).toBe(1200n);
+    expect(payerApproved(figures(3000n, 1000n, 3000n))).toBe(1000n);
+    expect(approvedNotProved(figures(3000n, 1000n, 0n))).toBe(2000n);
+    expect(payerApproved(figures(0n, 0n, 0n))).toBe(0n);
+    expect(payerApproved(figures(-100n, 0n, 0n))).toBe(0n);
+  });
+
+  it('sums it per line in the totals, and groups a case’s own approval by its case', () => {
+    const entries = [make('approved', 3000n), make('recouped', 3000n), make('approved', 2000n, { line: 'line-2' }), make('posted', 2000n, { line: 'line-2' }), make('recouped', 500n, { line: 'line-2' })];
+    const totals = ledgerTotals(entries, 'posted');
+    expect(totals).toMatchObject({ approvedCents: 5000n, payerApprovedCents: 2000n, recoveredCents: -1500n });
+    const caseLevel: LedgerEntry = { ...make('approved', 900n), serviceLineId: null, caseId: 'case-2' };
+    const groups = lineFigures([...entries, caseLevel, make('interest', 10n)], 'posted', entriesById([...entries, caseLevel]));
+    expect([...groups.keys()]).toEqual(['line-1', 'line-2', 'case:case-2']);
+    expect(groups.get('line-2')).toMatchObject({ approvedCents: 2000n, provedCents: 2000n, recoupedCents: -500n });
   });
 });
 

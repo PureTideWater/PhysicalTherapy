@@ -1,7 +1,7 @@
 import { type Cents, ZERO_CENTS, cents, formatCents, negateCents, sumCents } from '@tp/money';
 
-import { LedgerError, type LedgerEntry, type ProofLevel, countedStage } from './stages';
-import { entriesById, ledgerTotals, periodEntries } from './totals';
+import { LedgerError, type LedgerEntry, type ProofLevel } from './stages';
+import { approvedNotProved, entriesById, ledgerTotals, lineFigures, periodEntries } from './totals';
 
 /**
  * The ROI statement (PRD 13, ROI statement: "quarterly and on demand per practice: fees paid to the
@@ -72,29 +72,14 @@ export function ratioText(recovered: Cents, fees: Cents): string | null {
 }
 
 /**
- * What is approved and not yet proved, per line (or per case for a case's own approval), at or above
- * zero, and the entries of the lines (or cases) still open: the statement's "approved but not yet
- * posted", and its recomputation from the entries it links.
+ * What is approved and not yet proved, per line (or per case for a case's own approval), net of what
+ * recoupments took back (approvedNotProved: max(0, approved + recouped - proved)), and the entries of
+ * the lines (or cases) still open: the statement's "approved but not yet posted", and its recomputation
+ * from the entries it links.
  */
 export function approvedUnproved(entries: readonly LedgerEntry[], proofLevel: ProofLevel, ledger: ReadonlyMap<string, LedgerEntry>): { readonly cents: Cents; readonly links: string[] } {
-  const groups = new Map<string, { approved: bigint; proved: bigint; ids: string[] }>();
-  for (const entry of entries) {
-    const stage = countedStage(entry, ledger);
-    if (stage !== 'approved' && stage !== proofLevel) {
-      continue;
-    }
-    const key = entry.serviceLineId ?? `case:${entry.caseId}`;
-    const group = groups.get(key) ?? { approved: 0n, proved: 0n, ids: [] };
-    if (stage === 'approved') {
-      group.approved += entry.amountCents;
-    } else {
-      group.proved += entry.amountCents;
-    }
-    group.ids.push(entry.id);
-    groups.set(key, group);
-  }
-  const open = [...groups.values()].filter((group) => group.approved > group.proved);
-  return { cents: sumCents(open.map((group) => cents(group.approved - group.proved))), links: open.flatMap((group) => group.ids) };
+  const open = [...lineFigures(entries, proofLevel, ledger).values()].filter((line) => approvedNotProved(line) > ZERO_CENTS);
+  return { cents: sumCents(open.map(approvedNotProved)), links: open.flatMap((line) => [...line.entryIds]) };
 }
 
 export function roiStatement(input: RoiInput): RoiStatement {

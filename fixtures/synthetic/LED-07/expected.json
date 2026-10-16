@@ -9,6 +9,7 @@
     "apps/worker/src/reconcile/ledger.db.test.ts",
     "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
     "packages/ledger/src/totals.test.ts",
+    "packages/ledger/src/stages.test.ts",
     "apps/worker/src/reconcile/chain.db.test.ts",
     "apps/web/src/lib/routes/reconciliation-routes.db.test.ts"
   ],

@@ -43,6 +43,7 @@ export function proofLevelWords(level: 'posted' | 'deposited'): string {
 export interface TotalsFigures {
   readonly proofLevel: 'posted' | 'deposited';
   readonly approvedCents: string;
+  readonly payerApprovedCents: string;
   readonly postedCents: string;
   readonly depositedCents: string;
   readonly recoupedCents: string;
@@ -53,7 +54,12 @@ export interface TotalsFigures {
 /** The ledger's totals, each its own stage; recovered last, with its proof level. */
 export function LedgerTotals({ totals, title, description }: { readonly totals: TotalsFigures; readonly title: string; readonly description: string }) {
   const figures: readonly { readonly key: string; readonly label: string; readonly cents: string; readonly note: string }[] = [
-    { key: 'approved', label: 'Payer approved', cents: totals.approvedCents, note: 'approved by the payer, net of reversals; not recovered until it posts' },
+    {
+      key: 'approved',
+      label: 'Payer approved',
+      cents: totals.payerApprovedCents,
+      note: 'accepted by the payer, net of reversals and of what was taken back before it posted; not recovered until it posts',
+    },
     { key: 'posted', label: 'Posted', cents: totals.postedCents, note: 'posting export rows matched to the remittance' },
     { key: 'deposited', label: 'Deposited', cents: totals.depositedCents, note: 'bank export rows matched to the remittance' },
     { key: 'recouped', label: 'Recouped', cents: totals.recoupedCents, note: 'taken back by PLB WO or a reversal' },

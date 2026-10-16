@@ -1,10 +1,9 @@
 import { type KeyProvider, type PracticeCipher, recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
-import { reprocessing } from '@tp/ledger';
-import { type Cents, ZERO_CENTS, cents, negateCents, parseCents } from '@tp/money';
+import { type Cents, ZERO_CENTS, negateCents, parseCents } from '@tp/money';
 
-import { EMPTY_LINE_LEDGER, type Scope, approvedRemaining, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, lockLedger } from './ledger';
+import { EMPTY_LINE_LEDGER, type Scope, insertEntry, insertMatch, ledgerEntries, ledgerMatches, lineLedgers, lockLedger } from './ledger';
 import { depositDecision, postingDecision, postingRow, settleMatches } from './postings';
-import { caseLines, comparableAllowed, confirmsResponse } from './remittances';
+import { caseLines, comparableAllowed, compareWithLine, remittanceBaseline } from './remittances';
 import { recordReprocessedNoChange } from './responses';
 import { syncLineStages } from './stages';
 
@@ -154,16 +153,16 @@ export async function matchClaimByHand(
   if (allowed === null) {
     throw new ReconciliationError('not_comparable');
   }
-  const ledger = lineLedgers(await ledgerEntries(scope, input.practiceId)).get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
-  const baseline = cents(line.observedAllowedCents + ledger.approvedCents + ledger.recoupedCents);
-  const outcome = reprocessing({ baselineAllowedCents: baseline, newAllowedCents: allowed, approvedRemainingCents: approvedRemaining(ledger) });
-  const confirms = confirmsResponse(outcome, allowed, baseline, ledger);
-  const outcomeCode = confirms ? 'approved' : outcome.kind;
+  const entries = await ledgerEntries(scope, input.practiceId);
+  const ledger = lineLedgers(entries).get(line.serviceLineId) ?? EMPTY_LINE_LEDGER;
+  const baseline = await remittanceBaseline(scope, line, await ledgerMatches(scope, input.practiceId), entries);
+  const outcome = compareWithLine(line, ledger, baseline, allowed);
+  const outcomeCode = outcome.kind === 'confirmed' ? 'approved' : outcome.kind;
   const matchId = (await insertMatch(scope, input.practiceId, { kind: 'claim', claimId: input.claimId, remittanceId: claim.remittance_id, serviceLineId: line.serviceLineId, outcome: outcomeCode, matchedBy: actor })) as string;
   // A claim that confirms a payer response's approval writes nothing more: the response approved the amount.
-  if (outcome.kind === 'no_change' && !confirms) {
+  if (outcome.kind === 'no_change') {
     await recordReprocessedNoChange(scope, context.keys, { practiceId: input.practiceId, caseId: line.caseId, remittanceId: claim.remittance_id, receivedOn: claim.paid_on, requestId: context.requestId });
-  } else if (outcome.kind !== 'no_change') {
+  } else if (outcome.kind !== 'confirmed') {
     await insertEntry(scope, input.practiceId, {
       caseId: line.caseId,
       serviceLineId: line.serviceLineId,
@@ -181,9 +180,10 @@ export async function matchClaimByHand(
 
 /**
  * Reverses a standing match with a reason: an exactly offsetting reversed entry for each of its entries
- * standing (a reversed manual match nets to zero, LED-07), and the match reversed, so its evidence is
- * listed unmatched again and never matched to the same thing automatically. A claim's approval whose
- * remittance has posted or deposited it is refused until those matches are reversed first.
+ * and each adjustment of them not yet reversed (a reversed manual match nets to zero, LED-07, its
+ * adjustments included), and the match reversed, so its evidence is listed unmatched again and never
+ * matched to the same thing automatically; its entries are never corrected again. A claim's approval
+ * whose remittance has posted or deposited it is refused until those matches are reversed first.
  */
 export async function reverseMatch(context: ManualContext, input: { readonly practiceId: string; readonly matchId: string; readonly reason: string }): Promise<{ readonly reversedEntries: number }> {
   const actor = await begin(context, input.practiceId);
@@ -206,7 +206,7 @@ export async function reverseMatch(context: ManualContext, input: { readonly pra
   const reversedIds = new Set(entries.filter((entry) => entry.stage === 'reversed').map((entry) => entry.evidenceId));
   const reason = (column: 'ledger_entry.reason' | 'ledger_match.reversal_reason') => cipher.encrypt(column, input.reason);
   let reversedEntries = 0;
-  for (const entry of entries.filter((item) => item.matchId === match.id && item.stage !== 'reversed' && item.stage !== 'adjusted' && !reversedIds.has(item.id))) {
+  for (const entry of entries.filter((item) => item.matchId === match.id && item.stage !== 'reversed' && !reversedIds.has(item.id))) {
     await insertEntry(scope, input.practiceId, {
       caseId: entry.caseId,
       serviceLineId: entry.serviceLineId,
@@ -225,13 +225,23 @@ export async function reverseMatch(context: ManualContext, input: { readonly pra
   return { reversedEntries };
 }
 
-/** Corrects an entry's amount after review, with a reason (PRD 13, Entries: adjusted, signed). */
+/**
+ * Corrects an entry's amount after review, with a reason (PRD 13, Entries: adjusted, signed): an entry of
+ * a counted stage, not reversed, whose match (if it has one) still stands; for example an approval a payer
+ * response made that the payer's remittance paid in part (the shortfall the Reconciliation screen shows).
+ */
 export async function adjustEntry(context: ManualContext, input: { readonly practiceId: string; readonly entryId: string; readonly amountCents: Cents; readonly reason: string }): Promise<{ readonly entryId: string }> {
   const actor = await begin(context, input.practiceId);
   const { scope, cipher } = context;
-  const target = (await ledgerEntries(scope, input.practiceId)).find((entry) => entry.id === input.entryId);
+  const entries = await ledgerEntries(scope, input.practiceId);
+  const target = entries.find((entry) => entry.id === input.entryId);
   if (target === undefined || target.stage === 'reversed' || target.stage === 'adjusted') {
     throw new ReconciliationError('not_found');
+  }
+  const reversed = entries.some((entry) => entry.stage === 'reversed' && entry.evidenceId === target.id);
+  const standing = target.matchId === null || (await ledgerMatches(scope, input.practiceId)).some((match) => match.id === target.matchId && match.standing);
+  if (reversed || !standing) {
+    throw new ReconciliationError('not_standing');
   }
   if (input.amountCents === ZERO_CENTS) {
     throw new ReconciliationError('no_change_in_amount');

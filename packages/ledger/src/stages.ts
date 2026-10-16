@@ -128,8 +128,8 @@ export function entryProblems(entry: LedgerEntry, target?: LedgerEntry): string[
     if (target === undefined || target.id !== entry.evidenceId) {
       problems.push(`a ${entry.stage} entry names the entry it corrects`);
     } else {
-      if (isCorrecting(target.stage)) {
-        problems.push('a correction corrects an entry of a counted stage');
+      if (isCorrecting(target.stage) && !(entry.stage === 'reversed' && target.stage === 'adjusted')) {
+        problems.push('a correction corrects an entry of a counted stage, or a reversal an adjustment');
       }
       if (target.caseId !== entry.caseId || target.serviceLineId !== entry.serviceLineId) {
         problems.push('a correction is of its own case and line');
@@ -143,16 +143,26 @@ export function entryProblems(entry: LedgerEntry, target?: LedgerEntry): string[
 }
 
 /**
- * The stage an entry counts toward: its own, or for a reversal or adjustment the stage of the entry it
- * corrects, found in `byId`.
+ * The counted entry an entry finally corrects: itself for an entry of a counted stage; for a reversal or
+ * an adjustment, the entry it names; for a reversal of an adjustment (a reversed match nets its
+ * adjustments to zero too, LED-07), the entry the adjustment corrects. The targets are found in `byId`.
  */
-export function countedStage(entry: LedgerEntry, byId: ReadonlyMap<string, LedgerEntry>): CountedStage {
+export function correctedEntry(entry: LedgerEntry, byId: ReadonlyMap<string, LedgerEntry>): LedgerEntry & { readonly stage: CountedStage } {
   if (!isCorrecting(entry.stage)) {
-    return entry.stage;
+    return entry as LedgerEntry & { readonly stage: CountedStage };
   }
   const target = byId.get(entry.evidenceId);
-  if (target === undefined || isCorrecting(target.stage)) {
+  const root = target !== undefined && target.stage === 'adjusted' && entry.stage === 'reversed' ? byId.get(target.evidenceId) : target;
+  if (root === undefined || isCorrecting(root.stage)) {
     throw new LedgerError('a correction counts toward the stage of the entry it corrects, which the ledger must hold');
   }
-  return target.stage;
+  return root as LedgerEntry & { readonly stage: CountedStage };
+}
+
+/**
+ * The stage an entry counts toward: its own, or for a reversal or adjustment the stage of the entry it
+ * corrects (correctedEntry), found in `byId`.
+ */
+export function countedStage(entry: LedgerEntry, byId: ReadonlyMap<string, LedgerEntry>): CountedStage {
+  return correctedEntry(entry, byId).stage;
 }

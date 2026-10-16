@@ -219,15 +219,20 @@ net of reversals; approved and interest are their own figures; a forward balance
 decisions with a tolerance of zero, pro-rata allocation, the posting and EFT templates and the ROI statement. The
 `reconcile` job (after triage, after intake stores a posting or EFT export, and daily) reads waiting exports into rows
 once per fingerprint (LED-08), approves what accepted payer responses accept (`acceptedPayerResponses`), matches new
-claims to open case lines by payer claim control number, then patient control number, service date and code
-(approved for a higher allowed, LED-02; a recoupment for a lower one; a payment of what a response accepted confirms
-it; otherwise a payer response "reprocessed, no change" through `recordPayerResponse`), lists what matches nothing for
-a person (LED-03), posts each case line's share of a matched check (LED-04, allocated pro rata when the check posted
-in part, LED-09) and deposits by TRN02 and amount (LED-05), takes back PLB WO and reversals at once, reopening the line
+claims to open case lines by payer claim control number, then patient control number, service date and code, each
+case line against its own line of the claim (`pairLines`: the same code, modifiers, units and date, else the same code
+and date, one to one; ADR 0046) and against what the remittances have paid it (approved for a higher allowed, LED-02;
+a recoupment for a lower one; a payment of what a response accepted confirms it, and a payment of part of it leaves a
+shortfall for a person, never a take-back; otherwise a payer response "reprocessed, no change" through
+`recordPayerResponse`), lists what matches nothing for a person (LED-03), posts each case line's share of a matched
+check (LED-04, allocated pro rata when the check posted in part, LED-09; a row with line detail posts only its line;
+no row proves more than its amount, which Postgres holds too) and deposits by TRN02 and amount (LED-05), takes back PLB WO and reversals at once, reopening the line
 and its case and telling the owner (LED-06), records interest beside principal, and writes the quarter before's ROI
 statement once, which the database checks against the entries it links (LED-11). A person with `posting.reconcile`
-matches by hand and reverses a match with an exactly offsetting entry (LED-07) through `@tp/worker/ledger` and
-the Reconciliation screen below; the dashboard's recovered this quarter and the digest's recoveries now read the
+matches by hand, reverses a match with an exactly offsetting entry for each of its entries and their adjustments
+(LED-07) and adjusts an entry with a reason through `@tp/worker/ledger` and the Reconciliation screen below; only
+the reconcile job writes posting and EFT rows, from a stored clean export of their kind, and an export the database
+refuses a row of is unreadable without stopping the rest (ADR 0046); the dashboard's recovered this quarter and the digest's recoveries now read the
 ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
 `apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): five synthetic export scenarios
 whose known outcomes are compared with plain SQL sums.
@@ -243,8 +248,9 @@ an adjusted remittance or a PLB take-back reaches the ledger after its parse. Th
 - each case line's linkage from its remittance (ERA) to its posting and deposit, with recoupments, interest and entries;
 - the ledger's entries.
 
-A billing manager or firm principal (`posting.reconcile`) matches by hand and reverses a match with a reason and a
-confirmation. The posting template is mapped once at `/p/<practice>/reconciliation/template`, by the same people, through
+A billing manager or firm principal (`posting.reconcile`) matches by hand, reverses a match, and adjusts an entry
+(an approval a remittance paid in part, shown as its line's shortfall), each with a reason and a confirmation; a
+corrected posting export's take-back row is listed beside the match it offsets. The posting template is mapped once at `/p/<practice>/reconciliation/template`, by the same people, through
 `set_practice_posting_template` (migration `20261024120000_reconciliation_and_roi_documents.sql`; the proof level stays
 the administrator's). It is a built-in template or the practice's own column mapping, previewed on a sample read in the
 browser and never uploaded. ROI statements (`/p/<practice>/reports/roi`) are quarterly (the daily reconcile) or on
@@ -257,7 +263,7 @@ shortcut fails, a recoupment reduces recovered by its amount, and the ROI statem
 milestones 8 and 9 built, `packages/synth` traces every case through milestone 9 to its tests
 (`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement, until billing and the
 time log (milestone 11). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
-(milestone 11).
+(milestone 11): see the milestone 9 note below.
 
 The practice dashboard and the Reports screen (ADR 0045; migration
 `20261025090000_report_documents_and_export_history.sql`):
@@ -323,6 +329,13 @@ pnpm release:dry-run <n>           # what release n changes, and how many lines 
 pnpm release:load <n> [--dir <d>]  # load a published release (or a directory outside fixtures/) into DATABASE_URL
 pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in force, loading the published release before it if needed
 ```
+
+**Milestone 9: the proof level cannot yet be set in the product.** PRD 13 has practices set their proof level
+(posted or deposited) and PRD 20 revisits it at milestone 9. The ledger, the totals, the ROI statement and the
+database all read `proof_level` from `practice.settings` (posted by default), but no route sets it: only
+`setLedgerSettings` (`@tp/worker/ledger`, the practice administrator), which the tests call. A change of proof level
+after entries exist needs a rule for the lines already at recovered, and the practice's Settings screen (milestone 11)
+brings both (ADRs 0043 and 0046). Until then a practice that uploads EFT exports still proves recovery by posting.
 
 **Milestone 1 is not complete.** Its done check includes "the restore job runs on staging", and nothing can be deployed
 from the environment the repository was built in (no AWS credentials, and the compute arrives in milestone 11). The

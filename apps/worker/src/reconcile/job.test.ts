@@ -2,7 +2,7 @@ import { createLogger } from '@tp/observability';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JobContext } from '../jobs/handlers';
-import { reconcileHandler } from './job';
+import { ExportLoadFailed, reconcileHandler } from './job';
 import { type ReconcileServices, reconcilePractice } from './pass';
 import { queueUnprinted } from './print';
 import { generateRoiStatement } from './statements';
@@ -35,7 +35,7 @@ function context(answer: unknown = undefined) {
 
 describe('the reconcile job', () => {
   beforeEach(() => {
-    vi.mocked(reconcilePractice).mockReset().mockResolvedValue({} as never);
+    vi.mocked(reconcilePractice).mockReset().mockResolvedValue({ exports: [] } as never);
     vi.mocked(generateRoiStatement).mockReset();
     vi.mocked(queueUnprinted).mockReset().mockResolvedValue(0);
   });
@@ -75,5 +75,16 @@ describe('the reconcile job', () => {
     await reconcileHandler(services)({ practice_id: PRACTICE, day: '2026-07-02' }, again.job);
     expect(again.lines.map((line) => line.msg)).toEqual(['reconcile complete']);
     expect(queueUnprinted).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails the attempt after the rest of its work when an export failed to load, so it is retried', async () => {
+    vi.mocked(reconcilePractice).mockResolvedValue({ exports: [{ documentId: DOCUMENT, kind: 'posting_export', outcome: 'failed', stored: 0, repeated: 0, problems: 0 }] } as never);
+    vi.mocked(generateRoiStatement).mockResolvedValueOnce(null);
+    const daily = context();
+    await expect(reconcileHandler(services)({ practice_id: PRACTICE, day: '2026-07-01' }, daily.job)).rejects.toThrow(ExportLoadFailed);
+    // The quarter's statement and the prints were still seen to first.
+    expect(generateRoiStatement).toHaveBeenCalledTimes(1);
+    expect(queueUnprinted).toHaveBeenCalledTimes(1);
+    expect(daily.lines).toEqual([]);
   });
 });

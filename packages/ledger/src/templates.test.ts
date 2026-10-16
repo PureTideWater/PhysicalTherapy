@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { EFT_FIELDS, POSTING_FIELDS, REQUIRED_EFT_FIELDS, REQUIRED_POSTING_FIELDS, SYNTHETIC_BANK_EXPORT_V1, SYNTHETIC_PM_EXPORT_V1, type PostingTemplate, exportColumns, readDate, readEftExport, readPostingExport, templateProblems } from './templates';
+import { EFT_FIELDS, POSTING_FIELDS, REQUIRED_EFT_FIELDS, REQUIRED_POSTING_FIELDS, SYNTHETIC_BANK_EXPORT_V1, SYNTHETIC_PM_EXPORT_V1, type PostingTemplate, exportColumns, procedureCodeOf, readDate, readEftExport, readPostingExport, templateProblems } from './templates';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 const fixture = (name: string) => readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -74,6 +74,48 @@ describe('reading an export row by row', () => {
       ],
     });
     expect(read.kind === 'read' && read.rows.map((row) => row.rowNo)).toEqual([6]);
+  });
+
+  it('reads a CPT written with its modifiers as its code, keeps the cell in raw, and leaves out a row its table could not hold', () => {
+    const rows = [
+      '06/11/2026,1,P,SYNPCN0001,97110-GP,03/09/2026,30.00,B',
+      '06/11/2026,1,P,SYNPCN0001,97110:59:KX,03/09/2026,30.00,B',
+      '06/11/2026,1,P,SYNPCN0001,97110 GP,03/09/2026,30.00,B',
+      '06/11/2026,1,P,SYNPCN0001,97110-G,03/09/2026,30.00,B',
+      '06/11/2026,1,P,SYNPCN0001,9711O/GP,03/09/2026,30.00,B',
+      `06/11/2026,1,${'P'.repeat(201)},,,,30.00,B`,
+      `06/11/2026,1,${'P'.repeat(200)},,,,30.00,${'B'.repeat(101)}`,
+      `06/11/2026,1,${'P'.repeat(200)},,,,30.00,${'B'.repeat(100)}`,
+    ];
+    const read = readPostingExport(`${SYNTHETIC_HEADER}\n${rows.join('\n')}\n`, SYNTHETIC_PM_EXPORT_V1);
+    expect(read).toMatchObject({
+      kind: 'read',
+      problems: [
+        { rowNo: 4, field: 'procedure_code' },
+        { rowNo: 5, field: 'procedure_code' },
+        { rowNo: 6, field: 'payer' },
+        { rowNo: 7, field: 'batch' },
+      ],
+    });
+    if (read.kind !== 'read') {
+      throw new Error('the export reads');
+    }
+    expect(read.rows.map((row) => [row.rowNo, row.procedureCode])).toEqual([
+      [1, '97110'],
+      [2, '97110'],
+      [3, '97110'],
+      [8, null],
+    ]);
+    expect(read.rows[0]?.raw.procedure_code).toBe('97110-GP');
+    // Rows that differ only by modifier are two rows, never one row repeated.
+    expect(new Set(read.rows.slice(0, 3).map((row) => row.fingerprint)).size).toBe(3);
+    expect([procedureCodeOf('G0283'), procedureCodeOf('97110-GP-59-KX-XU'), procedureCodeOf('97110-GP-59-KX-XU-AB'), procedureCodeOf('')]).toEqual(['G0283', '97110', null, null]);
+  });
+
+  it('leaves out a bank row whose batch reference is too long for its table', () => {
+    const header = 'Date,Description,Trace Number,Amount,Batch Reference';
+    const read = readEftExport(`${header}\n2026-06-09,D,SYNEFT1,30.00,${'B'.repeat(101)}\n2026-06-09,D,SYNEFT2,30.00,${'B'.repeat(100)}\n`);
+    expect(read).toMatchObject({ kind: 'read', problems: [{ rowNo: 1, field: 'batch_reference' }], rows: [{ rowNo: 2, trace: 'SYNEFT2' }] });
   });
 
   it('reads a bank export row by row, with its batch reference', () => {

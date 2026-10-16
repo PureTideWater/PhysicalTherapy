@@ -20,7 +20,8 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * row another column references (SAME_AS) is read from that row, or from rows further along or made for
  * it (DERIVED_VALUES); a row a column references that must have taken a further step first
  * (PREPARED_REFERENCES) takes it once created, and a row that only makes sense as a link in a chain of
- * rows (CHAINED_ROWS: the ledger's) is built with its chain. It first fills only NOT
+ * rows (CHAINED_ROWS: the ledger's) is built with its chain; a table only a practice job writes
+ * (JOB_WRITTEN: the export rows) is written as a job of the world. It first fills only NOT
  * NULL columns without defaults, and if a constraint refuses that row, fills every column it can. Rows
  * are written as the owner role inside the world's practice scope.
  *
@@ -33,7 +34,7 @@ export type Row = Record<string, unknown>;
 export interface BuiltRow {
   readonly table: string;
   readonly values: Readonly<Row>;
-  /** The user the row is written as: the world's administrator, or a holder of the role its table needs (ROLE_BOUND_ACTORS). */
+  /** The actor the row is written as: the world's administrator, a holder of the role its table needs (ROLE_BOUND_ACTORS), or a job of the world for a table only jobs write (JOB_WRITTEN). */
   readonly actorId: string;
 }
 
@@ -265,6 +266,27 @@ interface Chain {
  * postings matches, enters and generates in their own name.
  */
 const CHAINED_ROWS: Readonly<Record<string, (chain: Chain) => Promise<Row>>> = {
+  // A posting or EFT row is read from a stored export of its kind with a clean scan (migration 20261026090000).
+  posting_row: async ({ client, world }) => ({
+    practice_id: world.practiceId,
+    source_document_id: await storedExport(client, world, 'posting_export'),
+    row_no: 1,
+    check_or_trace: 'SYNTHETIC-CHECK-1',
+    posted_on: new Date().toISOString().slice(0, 10),
+    amount_cents: '100',
+    raw: JSON.stringify({}),
+    template: 'synthetic_pm_export_v1',
+    fingerprint: randomUUID().replaceAll('-', '').padEnd(64, '0'),
+  }),
+  eft_row: async ({ client, world }) => ({
+    practice_id: world.practiceId,
+    source_document_id: await storedExport(client, world, 'eft_export'),
+    row_no: 1,
+    trace: 'SYNTHETIC-TRACE-1',
+    deposited_on: new Date().toISOString().slice(0, 10),
+    amount_cents: '100',
+    fingerprint: randomUUID().replaceAll('-', '').padEnd(64, '0'),
+  }),
   ledger_match: async ({ world, actor, create }) => {
     const claim = await create('claim');
     const line = await create('service_line');
@@ -312,6 +334,28 @@ const CHAINED_ROWS: Readonly<Record<string, (chain: Chain) => Promise<Row>>> = {
       generated_by: actor,
     }),
 };
+
+/** A posting or EFT export of the world as intake leaves one: uploaded by its administrator, scanned clean and stored. */
+async function storedExport(client: OwnerClient, world: TenantWorld, kind: 'posting_export' | 'eft_export'): Promise<string> {
+  const { rows } = await asOwner(
+    client,
+    [world.practiceId],
+    () =>
+      client.query(
+        `INSERT INTO source_document (practice_id, kind, size_bytes, content_type, uploaded_by, sha256, scan_status, scan_at, status)
+         VALUES ($1, $2, 100, 'text/csv', $3, $4, 'clean', now(), 'stored') RETURNING id`,
+        [world.practiceId, kind, world.adminUserId, randomUUID().replaceAll('-', '').padEnd(64, '0')],
+      ),
+    world.adminUserId,
+  );
+  return (rows[0] as { id: string }).id;
+}
+
+/**
+ * Tables only a practice job writes (no person may: migration 20261026090000): a posting or EFT row is
+ * read from its export by the reconcile job. Their rows are written, and probed, as a job of the world.
+ */
+const JOB_WRITTEN: ReadonlySet<string> = new Set(['posting_row', 'eft_row']);
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
 const LITERAL = /'((?:[^']|'')*)'::[\w ]+/g;
@@ -413,8 +457,14 @@ export class RowFactory {
     return { table, values, actorId: await this.actorFor(client, table, world) };
   }
 
-  /** Who writes a row of `table` for `world`: its administrator, or a holder of the role the table needs. */
+  /** Who writes a row of `table` for `world`: its administrator, a holder of the role the table needs, or a job of the world. */
   async actorFor(client: OwnerClient, table: string, world: TenantWorld): Promise<string> {
+    if (JOB_WRITTEN.has(table)) {
+      const key = `${world.practiceId} job`;
+      const job = this.worldActors.get(key) ?? randomUUID();
+      this.worldActors.set(key, job);
+      return job;
+    }
     const role = ROLE_BOUND_ACTORS[table];
     if (role === undefined) {
       return world.adminUserId;

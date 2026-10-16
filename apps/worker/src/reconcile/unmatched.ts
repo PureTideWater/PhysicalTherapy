@@ -5,7 +5,9 @@ import type { Scope } from './ledger';
 /**
  * What matches nothing, with the evidence side by side (PRD 13, Matching step 4: "adjusted payments,
  * postings and deposits that match nothing are listed for manual matching with the evidence side by
- * side ... Nothing unmatched counts"; PRD 5, J10; test matrix LED-03, LED-07). Each item carries its own
+ * side ... Nothing unmatched counts"; PRD 5, J10; test matrix LED-03, LED-07). A take-back row of a
+ * corrected posting export is listed with the standing match it offsets, for a person to reverse
+ * (PRD 13, Entries: "reversed ... or a posting export is corrected"). Each item carries its own
  * evidence and the candidates a person may match it to, by opaque ID with amounts, dates, codes and
  * trace numbers; no patient identifier is read (a claim reference stays encrypted in its row).
  */
@@ -31,6 +33,12 @@ export interface UnmatchedPosting {
   readonly lineLevel: boolean;
   /** A person reversed an earlier match of it. */
   readonly reversed: boolean;
+  /**
+   * A take-back row (a negative amount) that exactly offsets a row of the same check or trace number,
+   * code and date of service whose posting match stands: a corrected posting export (PRD 13, Entries:
+   * reversed). A person reverses that match, with a reason; nothing reverses it by itself.
+   */
+  readonly correctionOf: { readonly matchId: string; readonly postingRowId: string } | null;
   /** Remittances of its check or trace number, or of its amount. */
   readonly candidates: readonly RemittanceCandidate[];
 }
@@ -105,10 +113,19 @@ export async function unmatchedItems(scope: Scope, practiceId: string): Promise<
     batch: string | null;
     line_level: boolean;
     reversed: boolean;
+    corrected_match_id: string | null;
+    corrected_row_id: string | null;
   }>(
     `SELECT p.id, p.source_document_id, p.row_no, p.check_or_trace, p.posted_on::text AS posted_on, p.amount_cents::text AS amount_cents, p.payer_name, p.batch,
-            p.claim_reference IS NOT NULL AS line_level, EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id) AS reversed
+            p.claim_reference IS NOT NULL AS line_level, EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id) AS reversed,
+            corrected.match_id AS corrected_match_id, corrected.row_id AS corrected_row_id
        FROM posting_row p
+       LEFT JOIN LATERAL (
+         SELECT m.id AS match_id, o.id AS row_id FROM posting_row o JOIN ledger_match m ON m.posting_row_id = o.id AND m.kind = 'posting' AND m.reversed_at IS NULL
+          WHERE p.amount_cents < 0 AND o.practice_id = p.practice_id AND o.check_or_trace = p.check_or_trace AND o.amount_cents = -p.amount_cents
+            AND o.procedure_code IS NOT DISTINCT FROM p.procedure_code AND o.service_date IS NOT DISTINCT FROM p.service_date
+          ORDER BY o.posted_on, o.created_at, o.row_no LIMIT 1
+       ) corrected ON true
       WHERE p.practice_id = $1 AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id AND m.reversed_at IS NULL)
       ORDER BY p.posted_on, p.created_at, p.row_no`,
     [practiceId],
@@ -126,6 +143,7 @@ export async function unmatchedItems(scope: Scope, practiceId: string): Promise<
       batch: row.batch,
       lineLevel: row.line_level,
       reversed: row.reversed,
+      correctionOf: row.corrected_match_id === null || row.corrected_row_id === null ? null : { matchId: row.corrected_match_id, postingRowId: row.corrected_row_id },
       candidates: await remittanceCandidates(scope, practiceId, row.check_or_trace, row.amount_cents),
     });
   }

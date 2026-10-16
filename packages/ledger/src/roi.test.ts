@@ -83,6 +83,15 @@ describe('the ROI statement (PRD 13, ROI statement; LED-11)', () => {
     expect(statement).toMatchObject({ recoveredCents: 0n, approvedUnpostedCents: 3000n, recoveredToFees: '0.00' });
   });
 
+  it('nets what a recoupment took back of an approval that never posted out of approved but not posted', () => {
+    const approved = make('approved', 3000n);
+    const taken = make('recouped', -3000n);
+    const input = { periodFrom: '2026-04-01', periodTo: '2026-06-30', proofLevel: 'posted' as const, feesCents: cents(0n), pursuitHours: '0.00', openCases: [] };
+    expect(roiStatement({ ...input, entries: [approved, taken] })).toMatchObject({ approvedUnpostedCents: 0n, recoveredCents: -3000n, links: { approvedUnposted: [] } });
+    const part = make('recouped', -1800n);
+    expect(roiStatement({ ...input, entries: [approved, part] })).toMatchObject({ approvedUnpostedCents: 1200n, links: { approvedUnposted: [approved.id, part.id] } });
+  });
+
   it('writes the ratio with two places, half up, whatever its sign', () => {
     expect(ratioText(cents(1n), cents(3n))).toBe('0.33');
     expect(ratioText(cents(2n), cents(3n))).toBe('0.67');

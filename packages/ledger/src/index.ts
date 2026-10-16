@@ -7,6 +7,7 @@
  */
 export { allocateByWeight, cumulativeShare, partialShare, takeInOrder } from './allocation';
 export { parseCsv } from './csv';
+export { type PairableLine, pairLines, pairedLine } from './pairing';
 export {
   type CheckPosting,
   type ClaimCandidate,
@@ -18,6 +19,7 @@ export {
   checkPosting,
   depositMatches,
   linePosting,
+  postsLine,
   preferredCandidates,
   reprocessing,
 } from './matching';
@@ -42,6 +44,7 @@ export {
   STAGE_EVIDENCE,
   STAGE_SIGN,
   type StageSign,
+  correctedEntry,
   countedStage,
   entryProblems,
   isCorrecting,
@@ -71,17 +74,22 @@ export {
   readDate,
   readEftExport,
   readPostingExport,
+  procedureCodeOf,
   templateProblems,
 } from './templates';
 export {
   type ForwardBalance,
   type LedgerTotals,
+  type LineFigures,
+  approvedNotProved,
   type StageTotals,
   caseEntries,
   entriesById,
   ledgerTotals,
   lineEntries,
+  lineFigures,
   lineLedgerStage,
+  payerApproved,
   pendingForwardBalanceCents,
   periodEntries,
   recoveredCents,

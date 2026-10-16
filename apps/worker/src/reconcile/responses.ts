@@ -34,7 +34,9 @@ export async function acceptedResponses(scope: Scope, practiceId: string): Promi
 
 /**
  * Approvals from payer responses: a response that accepts an amount approves it for the lines its
- * submission asked for, split by their variance (allocated when it covers several), and only what no
+ * submission asked for, split by their variance (allocated when it covers several), each line at most
+ * what it asked (its variance: an acceptance that includes the packet's interest line approves no
+ * interest as principal, and the database refuses an acceptance above what was asked), and only what no
  * approval already stands for: a line a reprocessed remittance already approved is not approved twice,
  * and a later remittance paying it is compared with what is approved, so it is not approved again either
  * (it posts against the approval).
@@ -44,6 +46,9 @@ export async function approveFromResponses(scope: Scope, practiceId: string, res
     return 0;
   }
   const ledgers = lineLedgers(await ledgerEntries(scope, practiceId));
+  // What each line has approved, as this pass approves more (a later response of the same submission
+  // approves only what the earlier ones did not).
+  const approvedNow = new Map([...ledgers].map(([lineId, ledger]) => [lineId, ledger.approvedCents]));
   const { rows } = await scope.client.query<{ case_id: string; service_line_id: string }>('SELECT case_id, service_line_id FROM case_line WHERE practice_id = $1 AND written_off_reason IS NULL', [practiceId]);
   let written = 0;
   for (const response of responses) {
@@ -53,8 +58,9 @@ export async function approveFromResponses(scope: Scope, practiceId: string, res
     }
     const parts = allocateByWeight(response.amountCents, lines.map((line) => line.varianceCents));
     for (const [index, line] of lines.entries()) {
-      const standing = (ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER).approvedCents;
-      const amount = cents((parts[index] as Cents) - standing);
+      const standing = approvedNow.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER.approvedCents;
+      const part = parts[index] as Cents;
+      const amount = cents((part < line.varianceCents ? part : line.varianceCents) - standing);
       if (amount <= ZERO_CENTS) {
         continue;
       }
@@ -69,7 +75,10 @@ export async function approveFromResponses(scope: Scope, practiceId: string, res
         allocated: lines.length > 1,
         createdBy: null,
       });
-      written += id === null ? 0 : 1;
+      if (id !== null) {
+        approvedNow.set(line.serviceLineId, cents(standing + amount));
+        written += 1;
+      }
     }
   }
   return written;

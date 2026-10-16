@@ -1,5 +1,5 @@
 import type { LedgerMatchKind, PracticeScope, ScopeClient } from '@tp/db/runtime';
-import { type EvidenceKind, type LedgerEntry, type LedgerSettings, type LedgerStage, countedStage, entriesById, ledgerSettings } from '@tp/ledger';
+import { type EvidenceKind, type LedgerEntry, type LedgerSettings, type LedgerStage, correctedEntry, entriesById, ledgerSettings } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
 /**
@@ -222,16 +222,16 @@ export function lineLedgers(entries: readonly StoredEntry[]): Map<string, LineLe
     if (entry.serviceLineId === null) {
       continue;
     }
-    const stage = countedStage(entry, ledger);
+    // A correction counts as the entry it finally corrects, with that entry's evidence.
+    const corrected = correctedEntry(entry, ledger);
+    const stage = corrected.stage;
     if (stage !== 'approved' && stage !== 'recouped') {
       continue;
     }
     const line = lines.get(entry.serviceLineId) ?? { approved: 0n, recouped: 0n, byResponses: 0n, byMatch: new Map<string, Cents>() };
     if (stage === 'approved') {
       line.approved += entry.amountCents;
-      // A correction names the entry it corrects: the evidence is that entry's.
-      const evidence = entry.evidenceKind === 'ledger_entry' ? ledger.get(entry.evidenceId)?.evidenceKind : entry.evidenceKind;
-      if (evidence === 'payer_response') {
+      if (corrected.evidenceKind === 'payer_response') {
         line.byResponses += entry.amountCents;
       }
       if (entry.matchId !== null) {

@@ -87,7 +87,8 @@ async function headlineOf(scope: Scope, practiceId: string): Promise<Headline> {
   const stages = await practiceStageSummary(scope, practiceId);
   return {
     actionable: { lines: actionable.rows[0]?.lines ?? 0, cents: actionable.rows[0]?.cents ?? '0' },
-    payerApprovedCents: centsToString(ledger.approvedCents),
+    // Approvals net of what recoupments took back of them before they were proved (PRD 12: what has been accepted).
+    payerApprovedCents: centsToString(ledger.payerApprovedCents),
     recoveredCents: centsToString(ledger.recoveredCents),
     proofLevel: ledger.proofLevel,
     flagged: { lines: stages.figures.flagged.lines },

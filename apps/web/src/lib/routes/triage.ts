@@ -369,7 +369,7 @@ export const casePage = practiceRoute({
       timeline: await caseTimeline(scope, { practiceId, caseId: params.caseId, openedAt: found.openedAt, lineEvents: detail.events, activity }),
       workers: canWork ? await caseWorkers(scope, practiceId) : [],
       dispute: await caseDispute(scope, practiceId, params.caseId, asOf),
-      ledger: { approvedCents: centsToString(totals.approvedCents), recoveredCents: centsToString(totals.recoveredCents), proofLevel: totals.proofLevel },
+      ledger: { approvedCents: centsToString(totals.payerApprovedCents), recoveredCents: centsToString(totals.recoveredCents), proofLevel: totals.proofLevel },
       canWork,
       canDraft: rolesPermit(access.roles, 'packet.draft'),
       canReadPhi,

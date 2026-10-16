@@ -20,8 +20,14 @@ import { DEFAULT_STATEMENT_SOURCES, type StatementSources, generateRoiStatement 
  *   job) queued, and the print of any statement of the practice not printed yet queued again.
  *
  * Whichever set it off, it runs the whole reconcile of the practice (pass.ts), which is idempotent: a
- * replay, or two reconciles one after the other, add nothing twice (JOB-01).
+ * replay, or two reconciles one after the other, add nothing twice (JOB-01). One export that cannot be
+ * loaded never stops the rest: it stays stored, and the attempt fails once everything else is done.
  */
+/** A waiting export failed to load (named in the log by its document ID, never in the message). */
+export class ExportLoadFailed extends Error {
+  override readonly name = 'ExportLoadFailed';
+}
+
 export function reconcileHandler(services: ReconcileServices, sources: StatementSources = DEFAULT_STATEMENT_SOURCES): JobHandler<'reconcile'> {
   return async (payload, context) => {
     if ('pricing_run_id' in payload) {
@@ -33,7 +39,7 @@ export function reconcileHandler(services: ReconcileServices, sources: Statement
         return;
       }
     }
-    await reconcilePractice(context, services, payload.practice_id, 'document_id' in payload ? { documentId: payload.document_id } : {});
+    const summary = await reconcilePractice(context, services, payload.practice_id, 'document_id' in payload ? { documentId: payload.document_id } : {});
     if ('day' in payload) {
       const period = quarterPeriod(previousQuarter(payload.day));
       const generated = await context.transaction((scope) =>
@@ -44,6 +50,12 @@ export function reconcileHandler(services: ReconcileServices, sources: Statement
       }
       // The new quarter's statement, and any whose print never ran (a queue that refused it, three failed attempts).
       await queueUnprinted(context, payload.practice_id);
+    }
+    // An export that failed to load (not one the template or the database refused: those are unreadable)
+    // stays stored; with the rest of the reconcile done, the attempt fails so it is retried, and the third
+    // failure raises the operator's alert (ADR 0019).
+    if (summary.exports.some((load) => load.outcome === 'failed')) {
+      throw new ExportLoadFailed('an export could not be loaded; it stays stored for the next attempt');
     }
     if ('pricing_run_id' in payload) {
       context.logger.info('reconcile complete', { pricing_run_id: payload.pricing_run_id });

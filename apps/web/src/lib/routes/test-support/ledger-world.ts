@@ -14,7 +14,8 @@ import { printRoiStatement } from '@tp/worker/runtime';
  * line yet; a posting export with one row posting the whole of the world's first remittance
  * (SYNEFTROUTE0001, 88.00), unmatched, and one posting the adjusted remittance, matched by the billing
  * manager (a match a person may reverse); a bank export with one row depositing the first remittance,
- * unmatched; and an ROI statement of 2026 the billing manager generated, printed by the statement job's
+ * unmatched; 0.50 of interest a claim of the adjusted remittance paid, recorded against the case line by
+ * the reconcile job (an entry a person may adjust, which moves no stage); and an ROI statement of 2026 the billing manager generated, printed by the statement job's
  * code with a stand-in printer.
  */
 
@@ -41,6 +42,7 @@ export interface SeededLedger {
   readonly adjustedClaimId: string;
   readonly caseServiceLineId: string;
   readonly reversibleMatchId: string;
+  readonly adjustableEntryId: string;
   readonly roiStatementId: string;
 }
 
@@ -54,11 +56,11 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
     [practiceId],
     async () => {
       const one = async (sql: string, values: unknown[]) => ((await owner.query<{ id: string }>(sql, values)).rows[0] as { id: string }).id;
-      const document = (kind: string, contentType: string) =>
+      const document = (kind: string, contentType: string, status: 'loaded' | 'stored' = 'loaded') =>
         one(
           `INSERT INTO source_document (practice_id, kind, size_bytes, content_type, uploaded_by, sha256, scan_status, scan_at, status)
-           VALUES ($1, $2, 600, $3, $4, $5, 'clean', now(), 'loaded') RETURNING id`,
-          [practiceId, kind, contentType, options.uploaderId, hex()],
+           VALUES ($1, $2, 600, $3, $4, $5, 'clean', now(), $6) RETURNING id`,
+          [practiceId, kind, contentType, options.uploaderId, hex(), status],
         );
       const remittanceDocument = await document('x12_835', 'application/octet-stream');
       // The corrected claim is the same patient's as the world's loaded claim.
@@ -89,29 +91,66 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
          VALUES ($1, $2, 1, 'HC', '97110', '{GP}', 8000, 1200, 1, '2026-03-16', 3200, 'paid_plus_pr', 2000, $3)`,
         [practiceId, adjustedClaimId, options.planId],
       );
-      const postings = await document('posting_export', 'text/csv');
+      // A claim of the same remittance on which the payer paid 0.50 of interest (AMT I), which the reconcile job records against the case line below.
+      const interestClaimId = await one(
+        `INSERT INTO claim (practice_id, remittance_id, claim_no, patient_control_number, payer_claim_control_number, payer_claim_control_number_hash, claim_status_code,
+           charge_cents, paid_cents, patient_resp_cents, filing_indicator, frequency_code, patient_ref_id, service_from, service_to, interest_cents)
+         VALUES ($1, $2, 2, $3, $4, $5, '1', 0, 0, 0, '12', '1', $6, '2026-03-16', '2026-03-16', 50) RETURNING id`,
+        [
+          practiceId,
+          adjustedRemittanceId,
+          cipher.encrypt('claim.patient_control_number', 'SYNPCNROUTE0001'),
+          cipher.encrypt('claim.payer_claim_control_number', 'SYNCCNROUTE0003'),
+          cipher.lookupHash('claim.payer_claim_control_number', 'SYNCCNROUTE0003'),
+          patientRefId,
+        ],
+      );
+      const postings = await document('posting_export', 'text/csv', 'stored');
+      const deposits = await document('eft_export', 'text/csv', 'stored');
+      return { adjustedRemittanceId, adjustedClaimId, interestClaimId, postings, deposits };
+    },
+    options.uploaderId,
+  );
+  // The exports' rows, read by the reconcile job (in no one's name) from the stored exports, which it then marks loaded.
+  const rows = await asOwner(
+    owner,
+    [practiceId],
+    async () => {
+      const one = async (sql: string, values: unknown[]) => ((await owner.query<{ id: string }>(sql, values)).rows[0] as { id: string }).id;
       const postingRow = (rowNo: number, check: string, cents: number) =>
         one(
           `INSERT INTO posting_row (practice_id, source_document_id, row_no, check_or_trace, posted_on, amount_cents, raw, template, fingerprint)
            VALUES ($1, $2, $3, $4, '2026-06-10', $5, '{}', 'synthetic_pm_export_v1', $6) RETURNING id`,
-          [practiceId, postings, rowNo, check, cents, hex()],
+          [practiceId, seeded.postings, rowNo, check, cents, hex()],
         );
       const postingRowId = await postingRow(1, 'SYNEFTROUTE0001', 8800);
       const reversiblePostingRowId = await postingRow(2, 'SYNEFTROUTE0002', 1200);
-      const deposits = await document('eft_export', 'text/csv');
       const eftRowId = await one(
         `INSERT INTO eft_row (practice_id, source_document_id, row_no, trace, deposited_on, amount_cents, fingerprint) VALUES ($1, $2, 1, 'SYNEFTROUTE0001', '2026-04-09', 8800, $3) RETURNING id`,
-        [practiceId, deposits, hex()],
+        [practiceId, seeded.deposits, hex()],
       );
-      return { adjustedRemittanceId, adjustedClaimId, postingRowId, reversiblePostingRowId, eftRowId };
+      await owner.query("UPDATE source_document SET status = 'loaded' WHERE id = ANY ($1::uuid[])", [[seeded.postings, seeded.deposits]]);
+      // The claim's interest against the case line, an entry a person may adjust (in no one's name, as the job writes; interest moves no stage).
+      const caseId = (await owner.query<{ case_id: string }>('SELECT case_id FROM case_line WHERE service_line_id = $1', [options.caseServiceLineId])).rows[0]?.case_id;
+      const interestMatchId = await one("INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id) VALUES ($1, 'interest', $2, $3, $4) RETURNING id", [
+        practiceId,
+        seeded.interestClaimId,
+        seeded.adjustedRemittanceId,
+        options.caseServiceLineId,
+      ]);
+      const adjustableEntryId = await one(
+        "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, effective_on) VALUES ($1, $2, $3, 'interest', 50, 'claim', $4, $5, '2026-06-08') RETURNING id",
+        [practiceId, caseId, options.caseServiceLineId, seeded.interestClaimId, interestMatchId],
+      );
+      return { postingRowId, reversiblePostingRowId, eftRowId, adjustableEntryId };
     },
-    options.uploaderId,
+    randomUUID(),
   );
   const asManager = <T>(run: (scope: Scope) => Promise<T>) => withPracticeScope(options.app, { actorId: options.managerId, practiceIds: [practiceId] }, (scope) => run(scope as Scope));
   const { matchId } = await asManager(async (scope) =>
     matchPostingByHand(
       { scope, cipher: await loadPracticeCipher(scope, options.keys, practiceId), keys: options.keys, requestId: `test-${randomUUID()}` },
-      { practiceId, postingRowId: seeded.reversiblePostingRowId, remittanceId: seeded.adjustedRemittanceId },
+      { practiceId, postingRowId: rows.reversiblePostingRowId, remittanceId: seeded.adjustedRemittanceId },
     ),
   );
   const statement = await asManager((scope) => generateRoiStatement(scope, { practiceId, periodFrom: '2026-01-01', periodTo: '2026-12-31', requestId: `test-${randomUUID()}` }));
@@ -129,11 +168,12 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
     throw new Error('the seeded statement was not printed');
   }
   return {
-    postingRowId: seeded.postingRowId,
-    eftRowId: seeded.eftRowId,
+    postingRowId: rows.postingRowId,
+    eftRowId: rows.eftRowId,
     adjustedClaimId: seeded.adjustedClaimId,
     caseServiceLineId: options.caseServiceLineId,
     reversibleMatchId: matchId,
+    adjustableEntryId: rows.adjustableEntryId,
     roiStatementId: statement.statementId,
   };
 }

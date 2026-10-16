@@ -136,6 +136,34 @@ function recoveryPair(b: CaseBuilder, method: 'ACH' | 'CHK', options: { extraCla
   return { base, original, corrected, originalFile, adjustedFile, adjusted, later, difference, check, trace: traceNumber(b.info.id, 2, method) };
 }
 
+/**
+ * One claim of several 97110 x 2 lines allowed 70.00 each against an expected 100.00 (each a case line),
+ * and a check that reverses it and pays a correction, each line allowed what `lines` says: the scenarios
+ * where a reprocessing must be compared, posted and deposited line by line (docs/adr/0046).
+ */
+function multiLineRecovery(b: CaseBuilder, first: number, lines: readonly { readonly date: CalendarDate; readonly modifiers?: readonly string[]; readonly corrected: bigint }[]) {
+  const base = { ...basics(b, 'L'), date: calendarDate(2026, 3, 9), paid: calendarDate(2026, 4, 6) };
+  const patient = b.world.patient();
+  const lineOf = (line: (typeof lines)[number], allowed: bigint) =>
+    therapyLine(b.world, { code: '97110', units: 2, modifiers: line.modifiers, date: line.date, unitCharge: 7500n, allowed, b6: true, share: 'none' });
+  const original = therapyClaim(b.world, { caseId: b.info.id, n: first, patient, plan: 'SYNPLAN-FIX-LED', lines: lines.map((line) => lineOf(line, 7000n)) });
+  const originalFile = file(b, oneRemittance(b, base, [original], first), first, base.paid);
+  const later = calendarDate(2026, 6, 8);
+  const corrected = therapyClaim(b.world, {
+    caseId: b.info.id,
+    n: first + 1,
+    patient,
+    patientControlNumber: original.patientControlNumber,
+    plan: 'SYNPLAN-FIX-LED',
+    frequencyCode: '7',
+    refs: [{ qualifier: 'F8', value: original.payerClaimControlNumber }],
+    lines: lines.map((line) => lineOf(line, line.corrected)),
+  });
+  const adjusted = oneRemittance(b, { ...base, paid: later }, [reversalOf(original), corrected], first + 1, { method: 'CHK' });
+  const check = sumCents([reversalOf(original).paid, corrected.paid]);
+  return { base, original, corrected, originalFile, adjustedFile: file(b, adjusted, first + 1, later), later, check, trace: traceNumber(b.info.id, first + 1, 'CHK') };
+}
+
 function recoveryScenario(b: CaseBuilder): void {
   b.scenario({ contract: { plan: 'SYNPLAN-FIX-LED', method: 'FIXED_SCHEDULE', schedule: [{ code: '97110', amountCents: '5000' }] }, caseLine: { file: 'original.835', transaction: 0, claim: 0, line: 0 }, packet: 'submitted for the 97110 line before the adjusted remittance arrives', proofLevel: 'deposited' });
 }
@@ -162,6 +190,29 @@ export function led04(b: CaseBuilder): void {
   b.addFile('posting-export.csv', postingExport([{ postedOn: addDays(pair.later, 3), checkOrTrace: pair.trace, payerName: pair.base.payer.name, amount: pair.check, batch: 'SYNBATCH-0401' }]), 'csv', 'The practice posting export: one row posting the check, matched by check number and amount.');
   recoveryScenario(b);
   b.outcome({ entries: [{ stage: 'approved', amountCents: centsToString(pair.difference) }, { stage: 'posted', amountCents: centsToString(pair.difference), evidence: 'posting-export.csv row 1' }] });
+  // Two case lines of one code and date (97110 and 97110-59); the correction pays only the first more.
+  const sameDay = multiLineRecovery(b, 3, [
+    { date: pair.base.date, corrected: 10000n },
+    { date: pair.base.date, modifiers: ['59'], corrected: 7000n },
+  ]);
+  b.add835('same-day-original.835', sameDay.originalFile, 'The original payment of two case lines on one day: 97110 x 2 and 97110-59 x 2, each allowed 70.00.');
+  b.add835('same-day-adjusted.835', sameDay.adjustedFile, `The adjusted remittance paid by check ${sameDay.trace}: the 97110 line allowed 100.00, the 97110-59 line still 70.00.`);
+  b.addFile(
+    'same-day-posting-export.csv',
+    postingExport([{ postedOn: addDays(sameDay.later, 3), checkOrTrace: sameDay.trace, payerName: sameDay.base.payer.name, amount: sameDay.check, batch: 'SYNBATCH-0402' }]),
+    'csv',
+    'The posting export for the same-day check: one check-level row.',
+  );
+  b.outcome({
+    sameDay: {
+      checkCents: centsToString(sameDay.check),
+      lines: [
+        { line: 1, procedure: '97110', entries: [{ stage: 'approved', amountCents: '3000' }, { stage: 'posted', amountCents: '3000' }] },
+        { line: 2, procedure: '97110-59', entries: [] },
+      ],
+      note: 'each case line is compared with, and posted from, its own line of the correction; the check proves 30.00, once',
+    },
+  });
 }
 
 export function led05(b: CaseBuilder): void {
@@ -241,6 +292,31 @@ export function led09(b: CaseBuilder): void {
     caseShareCents: centsToString(pair.difference),
     entries: [{ stage: 'approved', amountCents: centsToString(pair.difference) }, { stage: 'posted', amountCents: centsToString(allocated), allocated: true }],
     allocation: 'the case share times the posted amount over the check total, flagged allocated',
+  });
+  // A claim of two case lines on two days, both paid 100.00 by the correction, and a posting export with
+  // line detail that posts only the first line.
+  const lines = multiLineRecovery(b, 3, [
+    { date: pair.base.date, corrected: 10000n },
+    { date: addDays(pair.base.date, 1), corrected: 10000n },
+  ]);
+  b.add835('lines-original.835', lines.originalFile, 'The original payment of two case lines: 97110 x 2 on 2026-03-09 and on 2026-03-10, each allowed 70.00.');
+  b.add835('lines-adjusted.835', lines.adjustedFile, `The adjusted remittance paid by check ${lines.trace}: both lines allowed 100.00.`);
+  b.addFile(
+    'lines-posting-export.csv',
+    postingExport([
+      { postedOn: addDays(lines.later, 3), checkOrTrace: lines.trace, payerName: lines.base.payer.name, claimReference: lines.corrected.patientControlNumber, procedureCode: '97110', serviceDate: pair.base.date, amount: dollars('100.00'), batch: 'SYNBATCH-0902' },
+    ]),
+    'csv',
+    'A posting export with line detail: one row posting the corrected claim’s 2026-03-09 line, none for the 2026-03-10 line.',
+  );
+  b.outcome({
+    lineLevel: {
+      lines: [
+        { serviceDate: '2026-03-09', entries: [{ stage: 'approved', amountCents: '3000' }, { stage: 'posted', amountCents: '3000' }], stage: 'recovered at the posted proof level' },
+        { serviceDate: '2026-03-10', entries: [{ stage: 'approved', amountCents: '3000' }], stage: 'payer approved' },
+      ],
+      note: 'a row with line detail posts only the line it posts; the other line waits for its own row',
+    },
   });
 }
 

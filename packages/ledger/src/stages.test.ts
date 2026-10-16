@@ -1,7 +1,7 @@
 import { cents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
-import { type LedgerEntry, LedgerError, countedStage, entryProblems, isCorrecting, isLedgerStage, isProofLevel } from './stages';
+import { type LedgerEntry, LedgerError, correctedEntry, countedStage, entryProblems, isCorrecting, isLedgerStage, isProofLevel } from './stages';
 
 const entry = (overrides: Partial<LedgerEntry>): LedgerEntry => ({
   id: 'e1',
@@ -46,7 +46,13 @@ describe('entry rules (PRD 13, Entries)', () => {
     expect(entryProblems(reversal, { ...posted, serviceLineId: 'line-2' })).toEqual(['a correction is of its own case and line']);
     expect(entryProblems(reversal, { ...posted, caseId: 'case-2' })).toEqual(['a correction is of its own case and line']);
     const doubled = entry({ id: 'x', stage: 'reversed', evidenceKind: 'ledger_entry', evidenceId: 'r', amountCents: cents(3000n) });
-    expect(entryProblems(doubled, reversal)).toEqual(['a correction corrects an entry of a counted stage']);
+    expect(entryProblems(doubled, reversal)).toEqual(['a correction corrects an entry of a counted stage, or a reversal an adjustment']);
+    // A reversal may offset an adjustment exactly (a reversed match nets its adjustments to zero); an adjustment of one may not.
+    const adjustment = entry({ id: 'a', stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: 'p', amountCents: cents(-1000n) });
+    expect(entryProblems(entry({ id: 'ra', stage: 'reversed', evidenceKind: 'ledger_entry', evidenceId: 'a', amountCents: cents(1000n) }), adjustment)).toEqual([]);
+    expect(entryProblems(entry({ id: 'aa', stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: 'a', amountCents: cents(5n) }), adjustment)).toEqual([
+      'a correction corrects an entry of a counted stage, or a reversal an adjustment',
+    ]);
   });
 
   it('lets an adjustment change an amount either way, never by nothing', () => {
@@ -64,6 +70,19 @@ describe('entry rules (PRD 13, Entries)', () => {
     expect(countedStage(reversal, ledger)).toBe('posted');
     expect(() => countedStage(reversal, new Map())).toThrow(LedgerError);
     expect(() => countedStage(entry({ stage: 'reversed', evidenceKind: 'ledger_entry', evidenceId: 'r' }), ledger)).toThrow(LedgerError);
+  });
+
+  it('counts a reversal of an adjustment toward the stage the adjustment corrects', () => {
+    const posted = entry({ id: 'p', stage: 'posted', evidenceKind: 'posting_row' });
+    const adjustment = entry({ id: 'a', stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: 'p', amountCents: cents(-1000n) });
+    const undo = entry({ id: 'u', stage: 'reversed', evidenceKind: 'ledger_entry', evidenceId: 'a', amountCents: cents(1000n) });
+    const ledger = new Map([posted, adjustment, undo].map((item) => [item.id, item]));
+    expect(countedStage(undo, ledger)).toBe('posted');
+    expect(correctedEntry(undo, ledger)).toBe(posted);
+    expect(correctedEntry(posted, ledger)).toBe(posted);
+    // An adjustment of an adjustment, or a reversal whose adjustment's target is gone, counts toward nothing.
+    expect(() => countedStage(entry({ id: 'x', stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: 'a', amountCents: cents(1n) }), ledger)).toThrow(LedgerError);
+    expect(() => countedStage(undo, new Map([[adjustment.id, adjustment]]))).toThrow(LedgerError);
   });
 
   it('names its stages and proof levels', () => {

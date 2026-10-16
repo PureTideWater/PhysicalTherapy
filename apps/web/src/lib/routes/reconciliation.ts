@@ -1,6 +1,7 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, rolesPermit } from '@tp/db/runtime';
 import { BUILT_IN_POSTING_TEMPLATES, LedgerSettingsError, type PostingTemplate } from '@tp/ledger';
-import { type ManualContext, ReconciliationError, type ReconciliationRefusal, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch, setPostingTemplate } from '@tp/worker/ledger';
+import { parseAmount } from '@tp/money';
+import { type ManualContext, ReconciliationError, type ReconciliationRefusal, adjustEntry, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch, setPostingTemplate } from '@tp/worker/ledger';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -23,7 +24,8 @@ import { NO_BAA, baaOnFile } from './uploads';
  * reversing a match and mapping the posting template are posting.reconcile, checked here, in
  * @tp/worker/ledger and again by the database, and each is in the person's own name: a manual match
  * records the person, with a tolerance of zero still; a reversal needs a reason and the person's
- * confirmation of what it does, and writes an exactly offsetting entry. Uploading the exports is the
+ * confirmation of what it does, and writes an exactly offsetting entry; an adjustment of an entry needs
+ * the same, and writes a signed correction beside it. Uploading the exports is the
  * Uploads screen's own (file.upload), embedded here; the worker's intake scans and sniffs each one and
  * queues the reconcile. The template is previewed on a sample in the browser, which never leaves it.
  */
@@ -54,7 +56,7 @@ export interface ReconciliationPageData {
   readonly notice: ReconciliationNotice | null;
 }
 
-export const RECONCILIATION_NOTICES = ['matched', 'reversed', 'already_matched', 'already_reversed'] as const;
+export const RECONCILIATION_NOTICES = ['matched', 'reversed', 'adjusted', 'already_matched', 'already_reversed'] as const;
 export type ReconciliationNotice = (typeof RECONCILIATION_NOTICES)[number];
 
 async function caseOfPractice(scope: Scope, practiceId: string, caseId: string): Promise<void> {
@@ -122,7 +124,14 @@ const REFUSALS: Readonly<Record<Exclude<ReconciliationRefusal, 'not_found'>, { r
   no_change_in_amount: { field: 'amount', message: 'an adjustment changes the amount' },
 };
 
-async function manual<T>(scope: Scope, services: Services, practiceId: string, requestId: string, run: (context: ManualContext) => Promise<T>): Promise<T> {
+async function manual<T>(
+  scope: Scope,
+  services: Services,
+  practiceId: string,
+  requestId: string,
+  run: (context: ManualContext) => Promise<T>,
+  refusals: Partial<typeof REFUSALS> = {},
+): Promise<T> {
   const context: ManualContext = { scope, cipher: await loadPracticeCipher(scope, services.keys, practiceId), keys: services.keys, requestId };
   try {
     return await run(context);
@@ -131,7 +140,7 @@ async function manual<T>(scope: Scope, services: Services, practiceId: string, r
       if (error.code === 'not_found') {
         throw new NotFoundError();
       }
-      throw new InputError([REFUSALS[error.code]]);
+      throw new InputError([refusals[error.code] ?? REFUSALS[error.code]]);
     }
     throw error;
   }
@@ -212,7 +221,7 @@ export const matchClaimAction = practiceRoute({
 
 /** What a reversal does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 export const REVERSAL_CONSEQUENCE =
-  'Reversing writes an entry that offsets each of this match’s entries exactly, in your name with your reason; the match stays in the ledger as reversed, its evidence is listed unmatched again, and the reconcile job never matches it the same way again. Recovered and the line’s stage move back with it.';
+  'Reversing writes an entry that offsets each of this match’s entries, and each adjustment of them, exactly, in your name with your reason; the match stays in the ledger as reversed, its evidence is listed unmatched again, and the reconcile job never matches it the same way again. Recovered and the line’s stage move back with it.';
 
 /** Reverses a standing match with the person's reason; a match already reversed is left as it is. */
 export const reverseMatchAction = practiceRoute({
@@ -240,6 +249,44 @@ export const reverseMatchAction = practiceRoute({
     return { objectId: input.matchId, redirect: back(practiceId, 'reversed') };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ matchId: refs.reversibleMatchId, reason: 'SYNTHETIC matched to the wrong check', confirm: 'on' }) },
+});
+
+/** What an adjustment does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
+export const ADJUSTMENT_CONSEQUENCE =
+  'Adjusting writes a new entry in your name with your reason that changes this entry’s amount by what you enter, up or down; the entry itself never changes, and an adjustment is undone only by reversing its match. The totals and the line’s stage follow the ledger.';
+
+const DOLLARS = /^-?\d{1,9}(?:\.\d{1,2})?$/;
+
+/**
+ * Corrects a ledger entry's amount after review, with the person's reason and confirmation (PRD 13,
+ * Entries: "adjusted | A specialist corrects an amount after review, with a reason | The user action |
+ * Signed"): for example an approval a payer response made that the payer's remittance paid in part (the
+ * shortfall the screen shows). The amount is the change, in dollars and cents, signed. It needs
+ * posting.reconcile here, in @tp/worker/ledger and in the database, whose rules write it in the person's
+ * own name; an entry reversed, or of a reversed match, is never adjusted.
+ */
+export const adjustEntryAction = practiceRoute({
+  id: 'practice.reconciliation.adjust',
+  kind: 'action',
+  path: '/p/[practiceId]/reconciliation/adjust',
+  phi: true,
+  permission: 'posting.reconcile',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({
+    entryId: opaqueId,
+    amount: z.string().trim().regex(DOLLARS, 'the change in dollars and cents, with a minus sign to lower the amount'),
+    reason: z.string().trim().min(1, 'say why the amount is corrected').max(2000, 'at most 2,000 characters'),
+    confirm: z.literal('on', 'confirm what an adjustment does'),
+  }),
+  audit: { action: 'reconciliation_adjustment', objectType: 'ledger_entry' },
+  handle: async ({ scope, practiceId, input, services, request }): Promise<MutationResult> => {
+    const amountCents = parseAmount(input.amount);
+    const { entryId } = await manual(scope, services, practiceId, request.requestId, (context) => adjustEntry(context, { practiceId, entryId: input.entryId, amountCents, reason: input.reason }), {
+      not_standing: { field: 'entryId', message: 'the entry, or the match it came from, was reversed; it is never adjusted again' },
+    });
+    return { objectId: entryId, redirect: back(practiceId, 'adjusted') };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ entryId: refs.adjustableEntryId, amount: '-0.01', reason: 'SYNTHETIC specialist review', confirm: 'on' }) },
 });
 
 export interface TemplatePageData {
@@ -316,4 +363,4 @@ export const saveTemplateAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ template: 'synthetic_pm_export_v1' }) },
 });
 
-export const RECONCILIATION_ROUTES = [reconciliationPage, matchPostingAction, matchDepositAction, matchClaimAction, reverseMatchAction, templatePage, saveTemplateAction] as const;
+export const RECONCILIATION_ROUTES = [reconciliationPage, matchPostingAction, matchDepositAction, matchClaimAction, reverseMatchAction, adjustEntryAction, templatePage, saveTemplateAction] as const;

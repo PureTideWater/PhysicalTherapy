@@ -171,13 +171,14 @@ export interface SampleRefs {
    * The recovery ledger (docs/adr/0042, 0043): an unmatched posting row and an unmatched EFT row, each
    * the whole of the loaded remittance above; an adjusted payment no case line was matched to, of the
    * case line's code and date (the case line's service line); a standing match a person may reverse;
-   * and a printed ROI statement.
+   * an interest entry of the case line a person may adjust; and a printed ROI statement.
    */
   readonly postingRowId: string;
   readonly eftRowId: string;
   readonly adjustedClaimId: string;
   readonly caseServiceLineId: string;
   readonly reversibleMatchId: string;
+  readonly adjustableEntryId: string;
   readonly roiStatementId: string;
   /**
    * The workbench (docs/adr/0044): the case's rate record (its pattern names it); the case's packet's

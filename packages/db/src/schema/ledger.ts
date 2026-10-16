@@ -155,6 +155,8 @@ export const ledgerEntry = pgTable(
     index('ledger_entry_by_case').on(table.practiceId, table.caseId, table.stage),
     index('ledger_entry_by_line').on(table.practiceId, table.serviceLineId, table.seq),
     index('ledger_entry_by_date').on(table.practiceId, table.effectiveOn),
+    // Corrections and the evidence sums look entries up by what they name (migration 20261026090000).
+    index('ledger_entry_by_evidence').on(table.evidenceId),
   ],
 );
 

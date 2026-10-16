@@ -15,6 +15,7 @@ import { reconcileHandler } from './job';
 import type { Scope } from './ledger';
 import { ReconciliationError, adjustEntry, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch } from './manual';
 import { setLedgerSettings } from './settings';
+import { approvalShortfalls } from './shortfalls';
 import { REOPEN_NOTES } from './stages';
 import { generateRoiStatement, practiceLedgerTotals } from './statements';
 import { LedgerWorld, ledSettings } from './test-support/ledger-world';
@@ -152,6 +153,26 @@ describe('remittance to posting and deposit (LED-04, LED-05, LED-08, LED-09)', (
     );
     const [match] = await w.rows<{ level: string; allocated: boolean }>(practice, "SELECT level, allocated FROM ledger_match WHERE kind = 'posting'");
     expect(match).toEqual({ level: 'check', allocated: true });
+  });
+
+  it('lists a corrected posting export’s take-back row with the match it offsets, for a person to reverse (PRD 13, Entries: reversed)', async () => {
+    const { practice, serviceLineId } = await scenario('LED-04', ledSettings('posted'));
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-04/posting-export.csv', 'posting_export') });
+    const [match] = await w.rows<{ id: string; posting_row_id: string }>(practice, "SELECT id, posting_row_id FROM ledger_match WHERE kind = 'posting'");
+    const corrected = Buffer.from('Post Date,Check/EFT #,Payer,Claim Ref,CPT,DOS,Paid Amount,Batch\r\n06/15/2026,880060040002,SYNTHETIC PAYER L,,,,-30.00,SYNBATCH-0402\r\n');
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-04/posting-export.csv', 'posting_export', corrected) });
+    const unmatched = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => unmatchedItems(scope as Scope, practice.practiceId));
+    const [takeBack] = (await unmatched()).postings;
+    expect(takeBack).toMatchObject({ amountCents: -3000n, correctionOf: { matchId: match?.id, postingRowId: match?.posting_row_id } });
+    // Counted in no total until a person reverses the match it corrects.
+    expect((await jobTotals(practice)).recoveredCents).toBe(3000n);
+    await w.manual(practice, (context) => reverseMatch(context, { practiceId: practice.practiceId, matchId: takeBack?.correctionOf?.matchId ?? '', reason: 'SYNTHETIC the practice corrected its posting export' }));
+    expect(await jobTotals(practice)).toMatchObject({ postedCents: 0n, recoveredCents: 0n });
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+    expect((await unmatched()).postings.map((row) => ({ amount: row.amountCents, correction: row.correctionOf }))).toEqual([
+      { amount: 3000n, correction: null },
+      { amount: -3000n, correction: null },
+    ]);
   });
 
   it('refuses a posting that names a case line’s claim with a different amount, and waits for the template it needs', async () => {
@@ -301,6 +322,41 @@ describe('manual matching and its reversal (LED-07)', () => {
     expect(again.postings).toMatchObject([{ postingRowId: row?.postingRowId, reversed: true }]);
     expect((await w.entries(practice)).length).toBe(3);
     await expect(w.manual(practice, (context) => reverseMatch(context, { practiceId: practice.practiceId, matchId, reason: 'again' }))).rejects.toThrow(new ReconciliationError('not_standing'));
+  });
+
+  it('nets a reversed match to zero with the adjustments of its entries, and never corrects a reversed match’s entries again (LED-07)', async () => {
+    const { practice, caseId, serviceLineId } = await scenario('LED-04', ledSettings('posted'));
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-04/posting-export.csv', 'posting_export') });
+    const [posted] = await w.rows<{ id: string; match_id: string }>(practice, "SELECT id, match_id FROM ledger_entry WHERE stage = 'posted'");
+    // An adjustment never proves more than the 30.00 row posted.
+    await expect(w.manual(practice, (context) => adjustEntry(context, { practiceId: practice.practiceId, entryId: posted?.id ?? '', amountCents: cents(99999900n), reason: 'SYNTHETIC' }))).rejects.toThrow(
+      /never sum past the row's amount/,
+    );
+    await w.manual(practice, (context) => adjustEntry(context, { practiceId: practice.practiceId, entryId: posted?.id ?? '', amountCents: cents(-1000n), reason: 'SYNTHETIC review' }));
+    expect(await jobTotals(practice)).toMatchObject({ postedCents: 2000n, recoveredCents: 2000n });
+    const reversed = await w.manual(practice, (context) => reverseMatch(context, { practiceId: practice.practiceId, matchId: posted?.match_id ?? '', reason: 'SYNTHETIC wrong check' }));
+    // The posting and its adjustment, each offset exactly.
+    expect(reversed).toEqual({ reversedEntries: 2 });
+    expect((await w.stages(practice)).slice(1)).toEqual([
+      { stage: 'posted', amountCents: '3000' },
+      { stage: 'adjusted', amountCents: '-1000' },
+      { stage: 'reversed', amountCents: '-3000' },
+      { stage: 'reversed', amountCents: '1000' },
+    ]);
+    expect(await jobTotals(practice)).toMatchObject({ approvedCents: 3000n, postedCents: 0n, recoveredCents: 0n });
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+    // The reversed match's entry is never adjusted again, by the service or straight in SQL.
+    await expect(w.manual(practice, (context) => adjustEntry(context, { practiceId: practice.practiceId, entryId: posted?.id ?? '', amountCents: cents(500n), reason: 'again' }))).rejects.toThrow(
+      new ReconciliationError('not_standing'),
+    );
+    await expect(
+      withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
+        scope.client.query(
+          "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, created_by, reason) VALUES ($1, $2, $3, 'adjusted', 500, 'ledger_entry', $4, $5, $6, $7)",
+          [practice.practiceId, caseId, serviceLineId, posted?.id, posted?.match_id, practice.manager, practice.cipher.encrypt('ledger_entry.reason', 'SYNTHETIC')],
+        ),
+      ),
+    ).rejects.toThrow(/whose match stands/);
   });
 
   it('moves a line it recovered back to payer approved when the proof is reversed, and refuses one who does not reconcile postings', async () => {
@@ -462,6 +518,61 @@ describe('submissions and payer responses (milestone 8’s records; LED-01, J10)
     expect(await jobTotals(practice)).toMatchObject({ approvedCents: 3000n, depositedCents: 3000n, recoveredCents: 3000n });
     expect(await w.lineStage(practice, serviceLineId)).toBe('recovered');
     expect(await w.caseState(practice, caseId)).toBe('resolved');
+  });
+
+  /** LED-05's adjusted remittance with the correction paying 85.00 instead of 100.00 (a 15.00 check). */
+  const partialPayment = [
+    ['BPR*C*30.00', 'BPR*C*15.00'],
+    ['CLP*SYNPCNLED05001*1*150.00*100.00', 'CLP*SYNPCNLED05001*1*150.00*85.00'],
+    ['SVC*HC:97110*150.00*100.00**2', 'SVC*HC:97110*150.00*85.00**2'],
+    ['CAS*CO*45*50.00', 'CAS*CO*45*65.00'],
+    ['AMT*B6*100.00', 'AMT*B6*85.00'],
+  ] as const;
+
+  it('confirms what a reprocessing pays of an acceptance and leaves the rest a shortfall for a person, never a take-back', async () => {
+    const practice = await w.practice(`shortfall ${randomUUID().slice(0, 8)}`);
+    const { caseId, serviceLineId } = await w.caseFor(practice, 'LED-05/original.835');
+    const { submissionId } = await w.submit(practice, caseId, '2026-05-04');
+    await w.respond(practice, submissionId, { kind: 'accepted', amountCents: 3000n, receivedOn: '2026-05-20' });
+    await w.reconcile(practice);
+    // The payer reprocesses for 85.00 against the original 70.00: 15.00 of the 30.00 accepted is paid.
+    await w.triage.pricing.loadVariant(practice, 'LED-05/adjusted.835', partialPayment);
+    const summary = await w.reconcile(practice);
+    expect(summary.remittances).toMatchObject({ approved: 0, confirmed: 1, decreased: 0, recoupments: 0, recouped: [] });
+    expect(await w.stages(practice)).toEqual([{ stage: 'approved', amountCents: '3000' }]);
+    expect(await w.rows(practice, "SELECT outcome FROM ledger_match WHERE kind = 'claim'")).toEqual([{ outcome: 'approved' }]);
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+    expect(await w.caseState(practice, caseId)).toBe('resolved');
+    expect((await asOwner(w.owner, [practice.practiceId], () => w.owner.query("SELECT 1 FROM notification WHERE practice_id = $1 AND kind = 'recoupment'", [practice.practiceId]))).rowCount).toBe(0);
+    const shortfall = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) => approvalShortfalls(scope as Scope, practice.practiceId, [serviceLineId]));
+    expect(await shortfall()).toEqual(new Map([[serviceLineId, 1500n]]));
+    // The 15.00 check deposits 15.00 against the approval; the shortfall waits for a person.
+    const deposit = Buffer.from('Date,Description,Trace Number,Amount,Batch Reference\r\n2026-06-09,SYNTHETIC PAYER L HCCLAIMPMT,SYNEFTLED05002,15.00,\r\n');
+    await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-05/eft-export.csv', 'eft_export', deposit) });
+    expect(await jobTotals(practice)).toMatchObject({ approvedCents: 3000n, depositedCents: 1500n, recoupedCents: 0n, recoveredCents: 1500n, payerApprovedCents: 3000n });
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
+    // A person adjusts the approval to what was paid, with a reason: the line is recovered.
+    const [approval] = await w.entries(practice);
+    await w.manual(practice, (context) => adjustEntry(context, { practiceId: practice.practiceId, entryId: approval?.id ?? '', amountCents: cents(-1500n), reason: 'SYNTHETIC payer paid 15.00 of the 30.00 accepted' }));
+    expect(await shortfall()).toEqual(new Map());
+    expect(await jobTotals(practice)).toMatchObject({ approvedCents: 1500n, depositedCents: 1500n, recoveredCents: 1500n });
+    expect(await w.lineStage(practice, serviceLineId)).toBe('recovered');
+  });
+
+  it('refuses an acceptance of more than the submission asked, and approves no line past what it asked', async () => {
+    const practice = await w.practice(`asked ${randomUUID().slice(0, 8)}`);
+    const { caseId, serviceLineId } = await w.caseFor(practice, 'LED-04/original.835');
+    const { submissionId } = await w.submit(practice, caseId, '2026-05-01');
+    await expect(w.respond(practice, submissionId, { kind: 'accepted', amountCents: 300000n, receivedOn: '2026-05-15' })).rejects.toThrow(/accepts at most what its submission asked/);
+    await expect(w.respond(practice, submissionId, { kind: 'partial', amountCents: 3001n, receivedOn: '2026-05-15' })).rejects.toThrow(/accepts at most what its submission asked/);
+    await w.respond(practice, submissionId, { kind: 'partial', amountCents: 1000n, receivedOn: '2026-05-15' });
+    await w.respond(practice, submissionId, { kind: 'accepted', amountCents: 3000n, receivedOn: '2026-05-16' });
+    await w.reconcile(practice);
+    expect(await w.stages(practice)).toEqual([
+      { stage: 'approved', amountCents: '1000' },
+      { stage: 'approved', amountCents: '2000' },
+    ]);
+    expect(await w.lineStage(practice, serviceLineId)).toBe('payer_approved');
   });
 
   it('reopens a resolved case when a recoupment takes back what was recovered, whatever the payer answered, as @tp/triage derives it (LED-06)', async () => {

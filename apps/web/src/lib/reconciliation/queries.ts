@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { type DocumentStatus, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import { type FigureCheck, type LedgerEntry, type ProofLevel, type StoredStatement, entriesById, ratioText, recomputeStatement, roiStatementCsv } from '@tp/ledger';
 import { centsToString, parseCents } from '@tp/money';
-import { STATEMENT_COLUMNS, practiceLedgerSettings, practiceLedgerTotals, storedStatement, unmatchedItems } from '@tp/worker/ledger';
+import { STATEMENT_COLUMNS, approvalShortfalls, practiceLedgerSettings, practiceLedgerTotals, storedStatement, unmatchedItems } from '@tp/worker/ledger';
 
 import { type ListPage, pageWindow } from '../http/paging';
 import type { Services } from '../server/services';
@@ -24,7 +24,10 @@ type Scope = PracticeScope<ScopeClient>;
 /** A total as text cents, from the ledger. */
 export interface TotalsView {
   readonly proofLevel: ProofLevel;
+  /** The approved stage, net of its reversals and adjustments. */
   readonly approvedCents: string;
+  /** Payer approved as the headline shows it: the approvals net of what was taken back before they were proved. */
+  readonly payerApprovedCents: string;
   readonly postedCents: string;
   readonly depositedCents: string;
   readonly recoupedCents: string;
@@ -37,6 +40,7 @@ export async function ledgerTotalsView(scope: Scope, practiceId: string, caseId:
   return {
     proofLevel: totals.proofLevel,
     approvedCents: centsToString(totals.approvedCents),
+    payerApprovedCents: centsToString(totals.payerApprovedCents),
     postedCents: centsToString(totals.postedCents),
     depositedCents: centsToString(totals.depositedCents),
     recoupedCents: centsToString(totals.recoupedCents),
@@ -138,6 +142,8 @@ export interface EntryView {
   readonly byJob: boolean;
   /** A correction's reason (PHI roles only). */
   readonly reason: string | null;
+  /** An entry of a counted stage, not reversed, whose match (if any) stands: a person may adjust it. */
+  readonly adjustable: boolean;
 }
 
 /** A case line's linkage: the remittance that reprocessed it (ERA), its posting and its deposit, and its entries. */
@@ -154,6 +160,11 @@ export interface LinkageLine {
   readonly recoupments: readonly MatchView[];
   readonly interest: readonly MatchView[];
   readonly entries: readonly EntryView[];
+  /**
+   * What a payer response accepted that the remittance reprocessing the line paid only in part, as
+   * text cents, or null: approved still, never taken back, for a person to adjust or dispute.
+   */
+  readonly shortfallCents: string | null;
 }
 
 interface MatchRow {
@@ -246,10 +257,13 @@ interface EntryRow {
   readonly created_by: string | null;
   readonly created_by_email: string | null;
   readonly reason: string | null;
+  readonly adjustable: boolean;
 }
 
 const ENTRY_SELECT = `SELECT e.id, e.practice_id, e.seq::text AS seq, e.case_id, e.service_line_id, e.stage, e.amount_cents::text AS amount_cents, e.evidence_kind, e.evidence_id, e.match_id, e.allocated,
-         e.effective_on::text AS effective_on, e.created_by, u.email AS created_by_email, e.reason
+         e.effective_on::text AS effective_on, e.created_by, u.email AS created_by_email, e.reason,
+         (e.stage NOT IN ('reversed', 'adjusted') AND NOT EXISTS (SELECT 1 FROM ledger_entry x WHERE x.stage = 'reversed' AND x.evidence_id = e.id)
+           AND (e.match_id IS NULL OR EXISTS (SELECT 1 FROM ledger_match m WHERE m.id = e.match_id AND m.reversed_at IS NULL))) AS adjustable
     FROM ledger_entry e LEFT JOIN "user" u ON u.id = e.created_by`;
 
 function entryOf(row: EntryRow, cipher: PracticeCipher | null): EntryView {
@@ -268,6 +282,7 @@ function entryOf(row: EntryRow, cipher: PracticeCipher | null): EntryView {
     createdBy: row.created_by === null ? null : (row.created_by_email ?? 'a member of the practice'),
     byJob: row.created_by === null,
     reason: row.reason === null || cipher === null ? null : cipher.decrypt('ledger_entry.reason', row.reason),
+    adjustable: row.adjustable,
   };
 }
 
@@ -299,6 +314,8 @@ export interface UnmatchedPostingView {
   readonly batch: string | null;
   readonly lineLevel: boolean;
   readonly reversed: boolean;
+  /** A take-back row of a corrected export: the standing match it offsets, which a person reverses. */
+  readonly correctionOf: { readonly matchId: string } | null;
   readonly candidates: readonly RemittanceChoice[];
 }
 
@@ -376,6 +393,7 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
     await scope.client.query<MatchRow>(`${MATCH_SELECT} WHERE m.practice_id = $1 AND m.kind IN ('posting', 'deposit') AND m.remittance_id = ANY ($2::uuid[]) ORDER BY m.matched_at, m.id`, [practiceId, remittances])
   ).rows;
   const lineEntries = (await scope.client.query<EntryRow>(`${ENTRY_SELECT} WHERE e.practice_id = $1 AND e.service_line_id = ANY ($2::uuid[]) ORDER BY e.seq`, [practiceId, lineIds])).rows;
+  const shortfalls = await approvalShortfalls(scope, practiceId, lineIds);
   const linkage: LinkageLine[] = lines.map((line) => {
     const own = lineMatches.filter((match) => match.service_line_id === line.service_line_id);
     const era = own.filter((match) => match.kind === 'claim');
@@ -394,6 +412,7 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
       recoupments: own.filter((match) => match.kind === 'recoupment').map((match) => matchOf(match, cipher)),
       interest: own.filter((match) => match.kind === 'interest').map((match) => matchOf(match, cipher)),
       entries: lineEntries.filter((entry) => entry.service_line_id === line.service_line_id).map((entry) => entryOf(entry, cipher)),
+      shortfallCents: shortfallText(shortfalls, line.service_line_id),
     };
   });
   const { rows: entryCount } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM ledger_entry e WHERE e.practice_id = $1 AND ($2::uuid IS NULL OR e.case_id = $2)', [
@@ -422,6 +441,11 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
   };
 }
 
+function shortfallText(shortfalls: ReadonlyMap<string, bigint>, serviceLineId: string): string | null {
+  const shortfall = shortfalls.get(serviceLineId);
+  return shortfall === undefined ? null : shortfall.toString();
+}
+
 /** What matches nothing, its reads audited; the adjusted payments' dates of service and codes for PHI roles only. */
 async function unmatchedWithAudit(scope: Scope, practiceId: string, phi: boolean, requestId: string): Promise<UnmatchedView> {
   const items = await unmatchedItems(scope, practiceId);
@@ -442,6 +466,7 @@ async function unmatchedWithAudit(scope: Scope, practiceId: string, phi: boolean
       batch: row.batch,
       lineLevel: row.lineLevel,
       reversed: row.reversed,
+      correctionOf: row.correctionOf === null ? null : { matchId: row.correctionOf.matchId },
       candidates: row.candidates.map(choice),
     })),
     deposits: deposits.map((row) => ({

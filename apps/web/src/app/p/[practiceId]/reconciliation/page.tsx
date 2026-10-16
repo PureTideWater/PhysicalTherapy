@@ -14,8 +14,8 @@ import { stageLabel } from '../../../../components/triage/display';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { loadPage } from '../../../../lib/http/next';
 import type { EntryView, LinkageLine, MatchView, RemittanceChoice } from '../../../../lib/reconciliation/queries';
-import { REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
-import { matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
+import { ADJUSTMENT_CONSEQUENCE, REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
+import { adjustEntryFormAction, matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Reconciliation' };
 
@@ -23,22 +23,23 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 
 const NOTICES: Readonly<Record<ReconciliationNotice, { readonly title: string; readonly text: string }>> = {
   matched: { title: 'Matched', text: 'The match is recorded in your name with its evidence; the ledger entries it owes follow from it.' },
-  reversed: { title: 'Reversed', text: 'Each entry of the match is offset exactly by a reversed entry in your name; its evidence is unmatched again.' },
+  reversed: { title: 'Reversed', text: 'Each entry of the match, and each adjustment of one, is offset exactly by a reversed entry in your name; its evidence is unmatched again.' },
+  adjusted: { title: 'Adjusted', text: 'The correction is an entry of its own in your name, with your reason; the entry it corrects is unchanged.' },
   already_matched: { title: 'Already matched', text: 'That match already stands; nothing was recorded twice.' },
   already_reversed: { title: 'Already reversed', text: 'That match was already reversed; nothing changed.' },
 };
 
-function ReverseForm({ practiceId, match }: { readonly practiceId: string; readonly match: MatchView }) {
+function ReverseForm({ practiceId, matchId, label = 'Reverse this match', idSuffix = '' }: { readonly practiceId: string; readonly matchId: string; readonly label?: string; readonly idSuffix?: string }) {
   return (
     <details className="pt-1">
-      <summary className="cursor-pointer text-xs underline">Reverse this match</summary>
+      <summary className="cursor-pointer text-xs underline">{label}</summary>
       <ActionForm action={reverseMatchFormAction} submit="Reverse the match" variant="destructive" className="flex max-w-xl flex-col gap-2 pt-2">
         <input type="hidden" name="requestKey" value={randomUUID()} />
         <input type="hidden" name="practiceId" value={practiceId} />
-        <input type="hidden" name="matchId" value={match.id} />
+        <input type="hidden" name="matchId" value={matchId} />
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`reason-${match.id}`}>Why it is reversed</Label>
-          <textarea id={`reason-${match.id}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
+          <Label htmlFor={`reason-${matchId}${idSuffix}`}>Why it is reversed</Label>
+          <textarea id={`reason-${matchId}${idSuffix}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
         </div>
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" name="confirm" required className="mt-1" />
@@ -80,7 +81,7 @@ function MatchItem({ practiceId, match, canReconcile, phi }: { readonly practice
           {phi && match.reversalReason !== null ? `: ${match.reversalReason}` : ''}.
         </span>
       )}
-      {match.standing && canReconcile && match.kind !== 'recoupment' && match.kind !== 'interest' ? <ReverseForm practiceId={practiceId} match={match} /> : null}
+      {match.standing && canReconcile && match.kind !== 'recoupment' && match.kind !== 'interest' ? <ReverseForm practiceId={practiceId} matchId={match.id} /> : null}
     </li>
   );
 }
@@ -102,7 +103,34 @@ function Matches({ title, matches, empty, ...rest }: { readonly title: string; r
   );
 }
 
-function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean }) {
+/** Corrects an entry's amount, up or down, with a reason and the person's confirmation of what it does. */
+function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: string; readonly entry: EntryView; readonly idPrefix: string }) {
+  const id = `${idPrefix}-${entry.id}`;
+  return (
+    <details>
+      <summary className="cursor-pointer text-xs underline">Adjust</summary>
+      <ActionForm action={adjustEntryFormAction} submit="Adjust the amount" variant="destructive" className="flex max-w-md flex-col gap-2 pt-2">
+        <input type="hidden" name="requestKey" value={randomUUID()} />
+        <input type="hidden" name="practiceId" value={practiceId} />
+        <input type="hidden" name="entryId" value={entry.id} />
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`amount-${id}`}>Change in dollars (a minus sign lowers it)</Label>
+          <input id={`amount-${id}`} name="amount" required inputMode="decimal" pattern="-?[0-9]{1,9}([.][0-9]{1,2})?" className="rounded-md border bg-background p-2 text-sm" />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`adjust-reason-${id}`}>Why the amount is corrected</Label>
+          <textarea id={`adjust-reason-${id}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
+        </div>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="confirm" required className="mt-1" />
+          <span>{ADJUSTMENT_CONSEQUENCE} Adjust it.</span>
+        </label>
+      </ActionForm>
+    </details>
+  );
+}
+
+function EntryRows({ entries, practiceId, phi, canReconcile, idPrefix }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly canReconcile: boolean; readonly idPrefix: string }) {
   return (
     <>
       {entries.map((entry) => (
@@ -123,14 +151,15 @@ function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly En
           </td>
           <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
           <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
-          <td className="py-1">{phi ? (entry.reason ?? '') : ''}</td>
+          <td className="py-1 pr-3">{phi ? (entry.reason ?? '') : ''}</td>
+          <td className="py-1">{canReconcile && entry.adjustable ? <AdjustForm practiceId={practiceId} entry={entry} idPrefix={idPrefix} /> : null}</td>
         </tr>
       ))}
     </>
   );
 }
 
-function EntryTable({ entries, practiceId, phi, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string }) {
+function EntryTable({ entries, practiceId, phi, label, canReconcile }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string; readonly canReconcile: boolean }) {
   return (
     <div className="overflow-x-auto">
       <table aria-label={label} className="w-full text-sm">
@@ -143,11 +172,12 @@ function EntryTable({ entries, practiceId, phi, label }: { readonly entries: rea
             <th className="py-1 pr-3">Case</th>
             <th className="py-1 pr-3">Evidence</th>
             <th className="py-1 pr-3">Written by</th>
-            <th className="py-1">{phi ? 'Reason' : ''}</th>
+            <th className="py-1 pr-3">{phi ? 'Reason' : ''}</th>
+            <th className="py-1">{canReconcile ? 'Correct' : ''}</th>
           </tr>
         </thead>
         <tbody>
-          <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
+          <EntryRows entries={entries} practiceId={practiceId} phi={phi} canReconcile={canReconcile} idPrefix={label === 'Ledger entries' ? 'ledger' : 'line'} />
         </tbody>
       </table>
     </div>
@@ -179,7 +209,13 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
           <Matches title="Interest" matches={line.interest} empty="No interest paid." {...shared} />
         </div>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" />
+      {line.shortfallCents === null ? null : (
+        <p className="rounded-md border border-dashed p-2 text-sm" data-shortfall={line.shortfallCents}>
+          Shortfall: the payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this line. It stays approved and is never taken back as a recoupment; adjust the approval
+          below with your reason, or dispute it with a further submission.
+        </p>
+      )}
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" canReconcile={canReconcile} />
     </li>
   );
 }
@@ -372,6 +408,12 @@ export default async function ReconciliationPage(props: Props) {
                           {row.lineLevel ? ', with line detail' : ', at the check level'}
                           {row.reversed ? '; a person reversed its earlier match' : ''}.
                         </p>
+                        {row.correctionOf === null ? null : (
+                          <div data-correction-of={row.correctionOf.matchId}>
+                            <p>A take-back that offsets a posted row of the same check exactly: the export was corrected. It counts in no total; reverse the match it corrects.</p>
+                            {canReconcile ? <ReverseForm practiceId={practiceId} matchId={row.correctionOf.matchId} label="Reverse the match this row corrects" idSuffix={`-${row.postingRowId}`} /> : null}
+                          </div>
+                        )}
                       </div>
                       <RemittanceCandidates candidates={row.candidates} form={(remittanceId) => (canReconcile ? <MatchForm action={matchPostingFormAction} practiceId={practiceId} hidden={{ postingRowId: row.postingRowId, remittanceId }} /> : null)} />
                     </li>
@@ -419,7 +461,11 @@ export default async function ReconciliationPage(props: Props) {
       <section aria-label="Ledger entries" className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Ledger entries</h2>
         <p className="text-sm text-muted-foreground">Newest first. An entry never changes; a correction is an entry of its own, with its reason.</p>
-        {data.entries.total === 0 ? <EmptyState title="No entry yet" nextStep="Entries appear when a remittance, a posting or a deposit is matched to a case line." /> : <EntryTable entries={data.entries.items} practiceId={practiceId} phi={phi} label="Ledger entries" />}
+        {data.entries.total === 0 ? (
+          <EmptyState title="No entry yet" nextStep="Entries appear when a remittance, a posting or a deposit is matched to a case line." />
+        ) : (
+          <EntryTable entries={data.entries.items} practiceId={practiceId} phi={phi} label="Ledger entries" canReconcile={canReconcile} />
+        )}
         <Pager path={path} query={query} page={data.entries.page} pages={data.entries.pages} total={data.entries.total} noun="Entries" param="entries" />
       </section>
     </AppShell>

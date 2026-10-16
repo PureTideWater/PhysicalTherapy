@@ -19,7 +19,7 @@ import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
-import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
+import { adjustEntryAction, matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
 
 /**
@@ -151,7 +151,7 @@ afterAll(async () => {
 describe('the Reconciliation screen (PRD 7)', () => {
   it('shows the approval of the adjusted remittance with its evidence, its line’s linkage and its entry, and the viewer no PHI column (LED-02)', async () => {
     const page = ok(await call(reconciliationPage, practice.manager, P()));
-    expect(page.totals).toEqual({ proofLevel: 'deposited', approvedCents: '3000', postedCents: '0', depositedCents: '0', recoupedCents: '0', interestCents: '0', recoveredCents: '0' });
+    expect(page.totals).toEqual({ proofLevel: 'deposited', approvedCents: '3000', payerApprovedCents: '3000', postedCents: '0', depositedCents: '0', recoupedCents: '0', interestCents: '0', recoveredCents: '0' });
     expect(page.linkage.items).toHaveLength(1);
     const [line] = page.linkage.items;
     expect(line).toMatchObject({ caseId, procedureCode: '97110', serviceDate: '2026-03-09', stage: 'payer_approved', postings: [], deposits: [] });
@@ -302,5 +302,25 @@ describe('the Reconciliation screen (PRD 7)', () => {
     const home = ok(await call(practiceHome, viewer, P())).dashboard;
     expect(home.headline).toMatchObject({ payerApprovedCents: '3000', recoveredCents: '1200', proofLevel: 'deposited' });
     expect(home.recoveredQuarter.cents).toBe('0');
+  });
+
+  it('adjusts an entry with the person’s reason and confirmation, as its own signed entry, and never one that was reversed (PRD 13, Entries: adjusted)', async () => {
+    const page = ok(await call(reconciliationPage, practice.manager, P()));
+    expect(page.linkage.items[0]?.shortfallCents).toBeNull();
+    const approval = page.entries.items.find((entry) => entry.stage === 'approved');
+    const undone = page.entries.items.find((entry) => entry.stage === 'deposited' && !entry.adjustable);
+    expect(approval?.adjustable).toBe(true);
+    expect(undone).toBeDefined();
+    expect(page.entries.items.filter((entry) => entry.stage === 'reversed').every((entry) => !entry.adjustable)).toBe(true);
+    const input = { entryId: approval?.id, amount: '-5.00', reason: 'SYNTHETIC specialist review of the approval' };
+    expect((await call(adjustEntryAction, viewer, P(), { ...input, confirm: 'on' })).status).toBe('forbidden');
+    expect(await call(adjustEntryAction, practice.manager, P(), input)).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
+    expect(await call(adjustEntryAction, practice.manager, P(), { ...input, amount: '0.00', confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'amount' }] });
+    expect(await call(adjustEntryAction, practice.manager, P(), { ...input, amount: '5', confirm: 'on', entryId: undone?.id })).toMatchObject({ status: 'invalid', issues: [{ field: 'entryId' }] });
+    const adjusted = ok(await call(adjustEntryAction, practice.manager, P(), { ...input, confirm: 'on' }));
+    expect(adjusted.redirect).toBe(`/p/${practice.practiceId}/reconciliation?notice=adjusted`);
+    const after = ok(await call(reconciliationPage, practice.manager, P()));
+    expect(after.totals).toMatchObject({ approvedCents: '2500' });
+    expect(after.entries.items[0]).toMatchObject({ id: adjusted.objectId, stage: 'adjusted', amountCents: '-500', reason: 'SYNTHETIC specialist review of the approval', byJob: false, adjustable: false });
   });
 });

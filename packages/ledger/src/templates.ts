@@ -220,6 +220,23 @@ export interface PostingExportRow {
 type Read<V> = { readonly problem: string } | { readonly values: V };
 
 const LONGEST_TRACE = 64;
+/** The longest payer name, batch and bank batch reference a row keeps (the posting_row and eft_row CHECKs). */
+const LONGEST_PAYER = 200;
+const LONGEST_BATCH = 100;
+const PROCEDURE_CODE = /^[A-Za-z0-9]{1,20}$/;
+/** A code followed by up to four two-character modifiers, as practice-management systems write them: 97110-GP, 97110:59, 97110 GP 59. */
+const CODE_WITH_MODIFIERS = /^([A-Za-z0-9]{1,20})(?:[-: ][A-Za-z0-9]{2}){1,4}$/;
+
+/**
+ * A CPT or HCPCS cell as the row's procedure code: the code alone, or the code of a code written with
+ * its modifiers (the cell, modifiers and all, stays in the row's raw cells); anything else is no code.
+ */
+export function procedureCodeOf(text: string): string | null {
+  if (PROCEDURE_CODE.test(text)) {
+    return text;
+  }
+  return CODE_WITH_MODIFIERS.exec(text)?.[1] ?? null;
+}
 
 function postingValues(row: Cells, template: PostingTemplate): Read<Omit<PostingExportRow, 'rowNo' | 'raw' | 'fingerprint'>> {
   const postedOn = readDate(row.get('posted_on'), template.dateFormat);
@@ -239,18 +256,20 @@ function postingValues(row: Cells, template: PostingTemplate): Read<Omit<Posting
   if (serviceText !== '' && serviceDate === null) {
     return { problem: 'service_date' };
   }
-  return {
-    values: {
-      postedOn,
-      checkOrTrace,
-      amountCents,
-      payerName: optional(row.get('payer')),
-      claimReference: optional(row.get('claim_reference')),
-      procedureCode: optional(row.get('procedure_code')),
-      serviceDate,
-      batch: optional(row.get('batch')),
-    },
-  };
+  const codeText = row.get('procedure_code');
+  const procedureCode = codeText === '' ? null : procedureCodeOf(codeText);
+  if (codeText !== '' && procedureCode === null) {
+    return { problem: 'procedure_code' };
+  }
+  const payerName = optional(row.get('payer'));
+  if (payerName !== null && payerName.length > LONGEST_PAYER) {
+    return { problem: 'payer' };
+  }
+  const batch = optional(row.get('batch'));
+  if (batch !== null && batch.length > LONGEST_BATCH) {
+    return { problem: 'batch' };
+  }
+  return { values: { postedOn, checkOrTrace, amountCents, payerName, claimReference: optional(row.get('claim_reference')), procedureCode, serviceDate, batch } };
 }
 
 /** Reads a posting export with the practice's template; a row with an unreadable field is left out and counted. */
@@ -273,7 +292,8 @@ export function readPostingExport(text: string, template: PostingTemplate): Expo
       rowNo: row.rowNo,
       ...values,
       raw: Object.fromEntries(mapped.map((field) => [field, row.get(field)])),
-      fingerprint: JSON.stringify(['posting', values.postedOn, values.checkOrTrace, values.amountCents.toString(), values.payerName, values.claimReference, values.procedureCode, values.serviceDate, values.batch]),
+      // The code cell as written (its modifiers too), so rows that differ only by modifier are never one row.
+      fingerprint: JSON.stringify(['posting', values.postedOn, values.checkOrTrace, values.amountCents.toString(), values.payerName, values.claimReference, optional(row.get('procedure_code')), values.serviceDate, values.batch]),
     });
   }
   return { kind: 'read', rows: withOccurrence(rows), problems };
@@ -303,7 +323,11 @@ function eftValues(row: Cells, template: EftTemplate): Read<Omit<EftExportRow, '
   if (amountCents === null) {
     return { problem: 'amount' };
   }
-  return { values: { depositedOn, trace, amountCents, batchReference: optional(row.get('batch_reference')) } };
+  const batchReference = optional(row.get('batch_reference'));
+  if (batchReference !== null && batchReference.length > LONGEST_BATCH) {
+    return { problem: 'batch_reference' };
+  }
+  return { values: { depositedOn, trace, amountCents, batchReference } };
 }
 
 /** Reads a bank export with the bank layout; a row with an unreadable field is left out and counted. */

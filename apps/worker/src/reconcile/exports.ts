@@ -14,8 +14,10 @@ import { type Scope, practiceLedgerSettings } from './ledger';
  * most MAX_EXPORT_BYTES), each row stored once by its fingerprint (the keyed hash of its values and its
  * occurrence in its export, so a row repeated in a later export, or the same export again, is never a
  * second row), the claim reference encrypted with the practice's key. A row with an unreadable field is
- * left out and counted; a file the template cannot read at all is unreadable. The document is then
- * loaded, and a replay reads nothing again.
+ * left out and counted; a file the template cannot read at all is unreadable, and so is one the database
+ * refuses a row of (EXPORT_ROW_REFUSED: none of its rows is kept). The document is then loaded, and a
+ * replay reads nothing again. Each waiting export is read on its own: one that fails for any other reason
+ * stays stored, is named in the outcome (failed), and never stops the others or the reconcile after them.
  */
 
 /** The largest export read (an export of a year of postings is far smaller). */
@@ -29,7 +31,7 @@ export interface ExportServices {
 export interface ExportLoad {
   readonly documentId: string;
   readonly kind: 'posting_export' | 'eft_export';
-  readonly outcome: 'loaded' | 'unreadable' | 'waiting_for_template';
+  readonly outcome: 'loaded' | 'unreadable' | 'waiting_for_template' | 'failed';
   /** Rows stored now; rows the practice already held (repeated); rows left out for an unreadable field. */
   readonly stored: number;
   readonly repeated: number;
@@ -112,8 +114,28 @@ async function setStatus(scope: Scope, documentId: string, status: 'loaded' | 'u
   await scope.client.query("UPDATE source_document SET status = $2 WHERE id = $1 AND status = 'stored'", [documentId, status]);
 }
 
+/** SQLSTATE classes of a row the database refuses: a data exception (22) or an integrity constraint (23). */
+function rowRefused(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && /^2[23]/.test(error.code);
+}
+
 /** Reads one waiting export into rows, in its own transaction; the document is loaded (or unreadable) with them. */
 async function loadExport(context: JobContext, services: ExportServices, cipher: PracticeCipher, practiceId: string, document: WaitingRow): Promise<ExportLoad> {
+  try {
+    return await readExport(context, services, cipher, practiceId, document);
+  } catch (error) {
+    if (!rowRefused(error)) {
+      throw error;
+    }
+    // A row the export's tables refuse (a value the template read but a CHECK does not hold): its rows
+    // were rolled back with the transaction; the document is unreadable, never retried.
+    await context.transaction((scope) => setStatus(scope, document.id, 'unreadable'));
+    context.logger.warn('export could not be read', { document_id: document.id, error_code: 'EXPORT_ROW_REFUSED' });
+    return { documentId: document.id, kind: document.kind, outcome: 'unreadable', stored: 0, repeated: 0, problems: 0 };
+  }
+}
+
+async function readExport(context: JobContext, services: ExportServices, cipher: PracticeCipher, practiceId: string, document: WaitingRow): Promise<ExportLoad> {
   const template = document.kind === 'posting_export' ? (await context.transaction((scope) => practiceLedgerSettings(scope, practiceId))).postingTemplate : null;
   if (document.kind === 'posting_export' && template === null) {
     context.logger.warn('posting export waits for the practice’s posting template', { document_id: document.id, error_code: 'POSTING_TEMPLATE_NOT_MAPPED' });
@@ -134,12 +156,21 @@ async function loadExport(context: JobContext, services: ExportServices, cipher:
   });
 }
 
-/** Reads every waiting export of the practice (or the one named) into rows. */
+/**
+ * Reads every waiting export of the practice (or the one named) into rows, each on its own: an export
+ * that fails to load stays stored for the next reconcile and is reported as failed (the reconcile job
+ * fails its attempt after the rest of its work, so the third failure raises the operator's alert).
+ */
 export async function loadExports(context: JobContext, services: ExportServices, cipher: PracticeCipher, practiceId: string, documentId?: string): Promise<ExportLoad[]> {
   const waiting = await context.transaction((scope) => waitingExports(scope, practiceId, documentId));
   const loads: ExportLoad[] = [];
   for (const document of waiting) {
-    loads.push(await loadExport(context, services, cipher, practiceId, document));
+    try {
+      loads.push(await loadExport(context, services, cipher, practiceId, document));
+    } catch {
+      context.logger.warn('export could not be loaded; it stays stored for the next reconcile', { document_id: document.id, error_code: 'EXPORT_LOAD_FAILED' });
+      loads.push({ documentId: document.id, kind: document.kind, outcome: 'failed', stored: 0, repeated: 0, problems: 0 });
+    }
   }
   return loads;
 }
