@@ -122,7 +122,10 @@ the ledger truly under Vitest 5 is not checked here. The time log the ROI statem
 milestone of the plan: it stays an open decision, and pursuit hours stay zero, stated on the statement. The e2e worker
 runs the monitoring chain's planning step for the recovery journey's practice too, so J10's remittances reach the ledger
 through the chain's own monitor, price, triage and reconcile in the browser journey (the spec starts the monitor job a
-parse queued without its batch wait), not only in `chain.db.test.ts`.
+parse queued without its batch wait), not only in `chain.db.test.ts`. The queue's regulations column first joined
+each practice's versions to every practice's packets in its all-practices scope; measured at 600 synthetic practices it
+took 405 seconds, and the generated route tests timed out on it. `20261028090000_specialist_queue_by_practice.sql`
+counts it from the practice's own packets and their current versions instead (about a second, the same counts).
 
 ## Revisit when
 
