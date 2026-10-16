@@ -154,6 +154,28 @@ the v1 reports (ADR 0040); the summary's PDF export comes with the other v1 repo
 step with no duplicate effect (JOB-01), three failures with the alert and the dashboard's run-failed record (JOB-02),
 and the digest's counts and totals with no PHI column read (JOB-03).
 
+Packets, submissions and payer responses (ADR 0041): `packages/packets` assembles a packet version from a case and
+its approved records (the practice and payer, the signed-off contract version's verified rate record with its document,
+page, quoted clause and page hash, or the Medicare Advantage regulation; the rule releases; the pattern statement's
+facts; the line schedule with each line's trace reference; prompt-pay interest from the state record as its own line;
+the evidence list with its gaps; the requested action), drafts the pattern statement by code, and holds the verifier:
+every figure of a narrative must be among the version's inputs and every sentence must cite one of its numbered sources
+(`verifyNarrative`, no options). Identifiers are placeholders in every version (`{{claim_control_number:3}}`) and are
+inserted from the claim and patient records only by the `packet_export` job, which prints the PDF with Chromium, writes
+the CSV schedule, stores both sealed and records their SHA-256 on the version. The database holds the rest
+(`20261023090000_packets_submissions_and_responses.sql`): a version never changes (an edit is a new version, which
+clears the approval); approval needs a passing verifier (a CHECK), the version's hash and `packet.approve`, and refuses
+the packet's drafter and the version's writer unless no one else may approve the practice's packets, then only 24 hours
+after writing, flagged `approved_alone`; a Medicare Advantage non-contracted packet waits for a contract specialist's
+confirmation; only the job exports, once; a submission carries the export's hashes and follows up in 45 days; a
+response answers the latest submission, and a denial with a category may reopen the case for the next dispute level
+within its window. A case's state (submitted, awaiting response, partially resolved, resolved) now derives from its
+lines and submissions. Recording a response writes no ledger entry and no stage. The workflow is `@tp/worker/packets`
+(`writePacketVersion`, `approvePacketVersion`, `confirmRegulation`, `requestPacketExport`, `logSubmission`,
+`recordPayerResponse`, `submissionLog`, `followUpsDue`, `acceptedPayerResponses` for the ledger); its screens are
+milestone 8's second part. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
+fixtures.
+
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its
 context's `transaction`), PHI reads go through `readWithAudit`, every stored object is sealed with its practice's data

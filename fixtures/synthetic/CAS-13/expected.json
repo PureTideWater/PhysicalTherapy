@@ -5,7 +5,7 @@
   "assertion": "New version; approval cleared",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "Edits any approved packet: an action, no file.",
   "files": [],

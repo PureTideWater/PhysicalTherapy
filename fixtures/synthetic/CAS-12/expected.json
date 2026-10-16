@@ -5,7 +5,7 @@
   "assertion": "PDF and CSV hashes stored; shown in submission log",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "Exports any approved packet; the PDF and CSV are outputs, not fixtures.",
   "files": [],

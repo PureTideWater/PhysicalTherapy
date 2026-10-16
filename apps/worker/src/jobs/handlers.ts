@@ -44,4 +44,5 @@ export const placeholderHandlers: JobHandlers = {
   reconcile: placeholder,
   digest: placeholder,
   export: placeholder,
+  packet_export: placeholder,
 };

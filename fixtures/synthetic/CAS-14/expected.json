@@ -5,7 +5,7 @@
   "assertion": "Follow-up surfaces",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "A submission logged 45 days before the test date with no response: dates, no file.",
   "files": [],

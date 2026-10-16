@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Packet assembly, the verifier, and PDF and CSV export (milestone 8).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/test-support.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -84,10 +84,13 @@ describe('the catalog test', () => {
       { table_name: 'line_note', policy_name: 'line_note_tenant' },
       { table_name: 'line_status', policy_name: 'line_status_tenant' },
       { table_name: 'notification', policy_name: 'notification_tenant' },
+      { table_name: 'packet', policy_name: 'packet_tenant' },
+      { table_name: 'packet_version', policy_name: 'packet_version_tenant' },
       { table_name: 'parse_report', policy_name: 'parse_report_tenant' },
       { table_name: 'patient_ref', policy_name: 'patient_ref_tenant' },
       { table_name: 'payer', policy_name: 'payer_tenant' },
       { table_name: 'payer_plan_mapping', policy_name: 'payer_plan_mapping_tenant' },
+      { table_name: 'payer_response', policy_name: 'payer_response_tenant' },
       { table_name: 'plan', policy_name: 'plan_tenant' },
       { table_name: 'practice', policy_name: 'practice_tenant' },
       { table_name: 'priced_line', policy_name: 'priced_line_tenant' },
@@ -97,6 +100,7 @@ describe('the catalog test', () => {
       { table_name: 'remittance', policy_name: 'remittance_tenant' },
       { table_name: 'service_line', policy_name: 'service_line_tenant' },
       { table_name: 'source_document', policy_name: 'source_document_tenant' },
+      { table_name: 'submission', policy_name: 'submission_tenant' },
       { table_name: 'support_grant', policy_name: 'support_grant_tenant' },
     ]);
     expect(Object.keys(NULLABLE_PRACTICE_ID_TABLES).sort()).toEqual(['agreement', 'audit_event']);
@@ -120,10 +124,13 @@ describe('the catalog test', () => {
       { table: 'line_note', tenantColumn: 'practice_id' },
       { table: 'line_status', tenantColumn: 'practice_id' },
       { table: 'notification', tenantColumn: 'practice_id' },
+      { table: 'packet', tenantColumn: 'practice_id' },
+      { table: 'packet_version', tenantColumn: 'practice_id' },
       { table: 'parse_report', tenantColumn: 'practice_id' },
       { table: 'patient_ref', tenantColumn: 'practice_id' },
       { table: 'payer', tenantColumn: 'practice_id' },
       { table: 'payer_plan_mapping', tenantColumn: 'practice_id' },
+      { table: 'payer_response', tenantColumn: 'practice_id' },
       { table: 'plan', tenantColumn: 'practice_id' },
       { table: 'practice', tenantColumn: 'id' },
       { table: 'priced_line', tenantColumn: 'practice_id' },
@@ -133,6 +140,7 @@ describe('the catalog test', () => {
       { table: 'remittance', tenantColumn: 'practice_id' },
       { table: 'service_line', tenantColumn: 'practice_id' },
       { table: 'source_document', tenantColumn: 'practice_id' },
+      { table: 'submission', tenantColumn: 'practice_id' },
       { table: 'support_grant', tenantColumn: 'practice_id' },
     ]);
   });

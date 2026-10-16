@@ -52,6 +52,11 @@ function planned(result: PlanResult): LoadPlan {
 const fixture = (relative: string) => readFileSync(path.join(FIXTURES, relative), 'latin1');
 
 describe('the load plan', () => {
+  it('keeps when the payer received the claim (DTM 050), which prompt-pay interest counts from (CAS-15)', () => {
+    expect(planned(loadPlan(only(fixture('CAS-15/remit.835')))).claims[0]?.receivedOn).toBe('2026-03-02');
+    expect(planned(loadPlan(only(syntheticInterchange()))).claims[0]?.receivedOn).toBeNull();
+  });
+
   it('maps a transaction set to its remittance, payer, claim, line and adjustments', () => {
     const plan = planned(loadPlan(only(syntheticInterchange())));
     expect(plan.remittance).toEqual({

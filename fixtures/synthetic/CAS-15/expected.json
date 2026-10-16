@@ -5,7 +5,7 @@
   "assertion": "Separate line; not in expected",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts","packages/packets/src/interest.test.ts"],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

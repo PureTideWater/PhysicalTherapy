@@ -21,6 +21,7 @@ import { databaseJobRuns } from './jobs/runs';
 import { intakeHandler } from './intake/intake';
 import { intakeServices } from './intake/wiring';
 import { monitorHandler } from './monitor/job';
+import { packetExportHandler } from './packets/export';
 import { parseHandler } from './parse/job';
 import { mailSender, platformRuntime } from './platform/wiring';
 import { priceHandler } from './price/job';
@@ -68,7 +69,8 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
     // Intake takes uploads in and queues parse_835 per clean 835, which parses and loads it and queues
     // the monitoring chain: monitor plans the months to price, price executes a pricing run, triage
     // screens a complete run and groups its lines into cases, reconcile is the ledger's step; digest
-    // sends a practice's monthly digest; audit_report triages a run and prints its report; export
+    // sends a practice's monthly digest; audit_report triages a run and prints its report;
+    // packet_export prints an approved packet's PDF and CSV with its identifiers inserted; export
     // arrives with its milestone. Every practice job's attempts are recorded in job_run.
     const services = intakeServices(intake);
     const handlers: JobHandlers = {
@@ -81,6 +83,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       reconcile: reconcileHandler(),
       digest: digestHandler({ mail: mailSender(notifications), appOrigin: notifications.appOrigin }),
       audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
+      packet_export: packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     };
     const worker = await startWorker({
       boss,

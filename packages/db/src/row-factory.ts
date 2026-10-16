@@ -17,8 +17,9 @@ import { type OwnerClient, type TenantWorld, addMembership, asOwner, createOrgan
  * written as, so a cross-tenant probe differs from an accepted row in its practice only. A user column
  * whose user must hold a role (ROLE_BOUND_USERS) gets a user who holds it, and a column whose value the
  * row's other constraints decide (FIXED_VALUES) gets that value, and one that must match a column of a
- * row another column references (SAME_AS) is read from that row; a row a column references that must
- * have taken a further step first (PREPARED_REFERENCES) takes it once created. It first fills only NOT
+ * row another column references (SAME_AS) is read from that row, or from rows further along or made for
+ * it (DERIVED_VALUES); a row a column references that must have taken a further step first
+ * (PREPARED_REFERENCES) takes it once created. It first fills only NOT
  * NULL columns without defaults, and if a constraint refuses that row, fills every column it can. Rows
  * are written as the owner role inside the world's practice scope.
  *
@@ -98,7 +99,7 @@ const ACTOR_COLUMN = /^(actor_id|[a-z_]+_by|[a-z_]+_by_user_id)$/;
  * by a person (created_by) or by the monitoring job (created_by_job_id), exactly one; the factory's run
  * is a person's, so its creator is filled in the first, minimal row too.
  */
-const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by', 'line_status.set_by']);
+const REQUIRED_ACTORS: ReadonlySet<string> = new Set(['pricing_run.created_by', 'line_status.set_by', 'payer_response.recorded_by']);
 
 /** User columns whose user must hold a role, which the database checks (support grants go to support engineers). */
 const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.user_id': 'support' };
@@ -109,7 +110,16 @@ const ROLE_BOUND_USERS: Readonly<Record<string, 'support'>> = { 'support_grant.u
  * worker's. Their actor columns name, and the row is written by, a user of the world's organization
  * who holds the role, so the probe differs from an accepted row in its practice only.
  */
-const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = { line_status: 'billing_manager', pricing_run: 'billing_manager', audit_report: 'billing_manager' };
+const ROLE_BOUND_ACTORS: Readonly<Record<string, 'billing_manager'>> = {
+  line_status: 'billing_manager',
+  pricing_run: 'billing_manager',
+  audit_report: 'billing_manager',
+  // Packets are drafted, submissions logged and responses recorded by people with those roles (migration 20261023090000).
+  packet: 'billing_manager',
+  packet_version: 'billing_manager',
+  submission: 'billing_manager',
+  payer_response: 'billing_manager',
+};
 
 /**
  * Columns whose value the row's other constraints decide, so no generic value fits: a priced line is
@@ -123,6 +133,15 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'rule_release.published_at': () => new Date().toISOString(),
   // One open case per pattern: each factory case is its own pattern.
   'case.pattern_key': () => JSON.stringify({ synthetic: randomUUID() }),
+  // A packet's first version, asking for the factory case's lines (it has none), passing the verifier.
+  'packet_version.version_no': () => 1,
+  'packet_version.content': () => JSON.stringify(SYNTHETIC_PACKET_CONTENT),
+  'packet_version.verifier_passed': () => true,
+  'packet_version.verifier_report': () => JSON.stringify({ format: 'tp-packet-verifier/1', passed: true, narrative_sha256: '0'.repeat(64), sentences: 0, checked: 0, mismatches: [] }),
+  // A denial that does not reopen the case: no amount, no next window.
+  'payer_response.kind': () => 'denied',
+  'payer_response.amount_cents': () => null,
+  'payer_response.next_window_ends_on': () => null,
 };
 
 /**
@@ -140,6 +159,21 @@ const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: 
  * one completes, as the price job completes a run that priced no lines (its coverage counts none).
  */
 const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: TenantWorld, referenced: Row) => Promise<void>>> = {
+  // A submission sends an exported version: a second billing manager approves the factory's version
+  // (its drafter cannot) and the export job records its files.
+  'submission.packet_version_id': async (client, world, version) => {
+    const approver = await createUser(client);
+    await addMembership(client, world.organizationId, approver, 'billing_manager');
+    await asOwner(client, [world.practiceId], () => client.query('UPDATE packet_version SET approved_by = $2, approved_sha256 = content_sha256 WHERE id = $1', [version.id, approver]), approver);
+    const key = (file: string) => `practices/${world.practiceId}/packets/${String(version.packet_id)}/${randomUUID()}.${file}`;
+    await asOwner(
+      client,
+      [world.practiceId],
+      () =>
+        client.query('UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4 WHERE id = $1', [version.id, key('pdf'), key('csv'), 'e'.repeat(64)]),
+      randomUUID(),
+    );
+  },
   'audit_report.pricing_run_id': async (client, world, run) => {
     await asOwner(
       client,
@@ -148,6 +182,52 @@ const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: 
       world.adminUserId,
     );
   },
+};
+
+/** The content of the factory's packet versions: tp-packet/1 with no lines (its case has none). */
+const SYNTHETIC_PACKET_CONTENT = {
+  format: 'tp-packet/1',
+  as_of: '2026-01-01',
+  dispute_level: 1,
+  practice: {},
+  payer: {},
+  citation: { kind: 'contract' },
+  rule_releases: [],
+  pattern: {},
+  lines: [],
+  interest: null,
+  evidence: [],
+  evidence_gaps: [],
+  requested_action: 'SYNTHETIC',
+  sources: [],
+};
+
+/** What a derived column reads from or makes with. */
+interface DeriveContext {
+  readonly client: OwnerClient;
+  readonly world: TenantWorld;
+  readonly row: Row;
+  /** Makes a row of a table for the world, as a foreign key would. */
+  readonly create: (table: string) => Promise<Row>;
+}
+
+async function exportedVersion(context: DeriveContext): Promise<Row> {
+  const found = await asOwner(context.client, [context.world.practiceId], () =>
+    context.client.query('SELECT p.case_id, v.export_sha256, v.export_csv_sha256 FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1', [context.row.packet_version_id]),
+  );
+  return (found.rows[0] ?? {}) as Row;
+}
+
+/**
+ * Columns whose value is read from, or made for, the rows the row's other columns reference, once they
+ * exist: a submission's case and export hashes are its packet version's; a payer response's document
+ * is one the factory makes. Filled after the references, in every attempt.
+ */
+const DERIVED_VALUES: Readonly<Record<string, (context: DeriveContext) => Promise<unknown>>> = {
+  'submission.case_id': async (context) => (await exportedVersion(context)).case_id,
+  'submission.export_sha256': async (context) => (await exportedVersion(context)).export_sha256,
+  'submission.export_csv_sha256': async (context) => (await exportedVersion(context)).export_csv_sha256,
+  'payer_response.document_id': async (context) => (await context.create('source_document')).id,
 };
 
 const IN_LIST = /^CHECK \(\(\(?"?(\w+)"?\)? = ANY \(\(?ARRAY\[(.*)\]\)?(?:::\w+\[\])?\)\)\)$/;
@@ -330,7 +410,7 @@ export class RowFactory {
         row.practice_id = world.practiceId;
         continue;
       }
-      if (SAME_AS[`${table}.${column.name}`] !== undefined) {
+      if (SAME_AS[`${table}.${column.name}`] !== undefined || DERIVED_VALUES[`${table}.${column.name}`] !== undefined) {
         continue;
       }
       const fixed = FIXED_VALUES[`${table}.${column.name}`];
@@ -380,6 +460,12 @@ export class RowFactory {
         client.query(`SELECT ${quote(same.column)} AS value FROM ${quote(foreignKey.refTable)} WHERE ${quote(foreignKey.refColumn)} = $1`, [row[same.via]]),
       );
       row[column.name] = (found.rows[0] as { value?: unknown } | undefined)?.value;
+    }
+    for (const column of info.columns) {
+      const derive = DERIVED_VALUES[`${table}.${column.name}`];
+      if (derive !== undefined) {
+        row[column.name] = await derive({ client, world, row, create: (referenced) => this.create(client, referenced, world, depth + 1) });
+      }
     }
     return row;
   }

@@ -20,11 +20,12 @@ const examples: { readonly [T in JobType]: JobPayload<T> } = {
   reconcile: { practice_id: PRACTICE, pricing_run_id: SUBJECT },
   digest: { practice_id: PRACTICE, period: '2026-10' },
   export: { practice_id: PRACTICE, export_job_id: SUBJECT },
+  packet_export: { practice_id: PRACTICE, packet_version_id: SUBJECT },
 };
 
 describe('job registry', () => {
   it('registers the six job types of PRD section 15, intake, which queues parse_835, the monitoring chain’s planning step and the audit report', () => {
-    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export']);
+    expect(JOB_TYPES).toEqual(['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export']);
     expect(Object.keys(JOB_PAYLOADS).sort()).toEqual([...JOB_TYPES].sort());
   });
 
@@ -73,6 +74,7 @@ describe('singletonKey', () => {
     ['reconcile', `reconcile:${PRACTICE}:${SUBJECT}`],
     ['digest', `digest:${PRACTICE}:2026-10`],
     ['export', `export:${PRACTICE}:${SUBJECT}`],
+    ['packet_export', `packet_export:${PRACTICE}:${SUBJECT}`],
   ] as const)('keys %s jobs by type, practice and subject', (type, key) => {
     expect(singletonKey(type, examples[type])).toBe(key);
   });

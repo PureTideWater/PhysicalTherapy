@@ -89,4 +89,22 @@ describe('case states (PRD 8)', () => {
     expect(deriveCaseState([{ writtenOff: false }, { writtenOff: true }])).toBe('open');
     expect(deriveCaseState([{ writtenOff: true }, { writtenOff: true }])).toBe('closed_written_off');
   });
+
+  it('follows the latest submission and its latest response (docs/adr/0041)', () => {
+    const lines = [{ writtenOff: false, stage: 'actionable' as const }, { writtenOff: true }];
+    expect(deriveCaseState(lines, { response: null, reopened: false })).toBe('submitted');
+    expect(deriveCaseState(lines, { response: 'info_requested', reopened: false })).toBe('awaiting_response');
+    expect(deriveCaseState(lines, { response: 'denied', reopened: true })).toBe('awaiting_response');
+    expect(deriveCaseState(lines, { response: 'denied', reopened: false })).toBe('resolved');
+    expect(deriveCaseState(lines, { response: 'partial', reopened: false })).toBe('partially_resolved');
+    expect(deriveCaseState(lines, { response: 'accepted', reopened: false })).toBe('resolved');
+    expect(deriveCaseState(lines, { response: 'reprocessed_no_change', reopened: false })).toBe('resolved');
+    expect(deriveCaseState([{ writtenOff: true }], { response: null, reopened: false })).toBe('closed_written_off');
+  });
+
+  it('is resolved once every line not written off is payer approved or recovered, partially while some are', () => {
+    expect(deriveCaseState([{ writtenOff: false, stage: 'payer_approved' }, { writtenOff: false, stage: 'recovered' }, { writtenOff: true }])).toBe('resolved');
+    expect(deriveCaseState([{ writtenOff: false, stage: 'payer_approved' }, { writtenOff: false, stage: 'actionable' }], { response: null, reopened: false })).toBe('partially_resolved');
+    expect(deriveCaseState([{ writtenOff: false, stage: null }, { writtenOff: false }])).toBe('open');
+  });
 });

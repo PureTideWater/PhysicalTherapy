@@ -42,7 +42,11 @@ export { type CandidateLine, type CasePlan, type GroupingSettings, type HeldPatt
 export { DEFAULT_TRIAGE_SETTINGS, type PursuitSettings, type TriageSettings, TriageSettingsError, triageSettings } from './settings';
 export {
   CASE_STATES,
+  type CaseDispute,
   type CaseState,
+  type CaseStateLine,
+  DISPUTE_RESPONSES,
+  type DisputeResponse,
   LEDGER_STAGES,
   LINE_STAGES,
   type LineStage,

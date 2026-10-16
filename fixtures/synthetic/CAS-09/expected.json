@@ -5,7 +5,7 @@
   "assertion": "Refused",
   "synthetic": true,
   "completesIn": 8,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "The drafter of any packet attempts its approval: an action, no file.",
   "files": [],

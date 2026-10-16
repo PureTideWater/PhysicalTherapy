@@ -213,16 +213,18 @@ class Loader {
       service_from: claim.serviceFrom,
       service_to: claim.serviceTo,
       allowed_cents: text(claim.allowedCents),
+      received_on: claim.receivedOn,
     }));
     const { rows: inserted } = await this.query<{ id: string; claim_no: number }>(
       `INSERT INTO claim (practice_id, remittance_id, claim_no, patient_control_number, payer_claim_control_number, payer_claim_control_number_hash, claim_status_code,
-         charge_cents, paid_cents, patient_resp_cents, filing_indicator, facility_type, frequency_code, patient_ref_id, insured_ref_id, service_from, service_to, allowed_cents)
+         charge_cents, paid_cents, patient_resp_cents, filing_indicator, facility_type, frequency_code, patient_ref_id, insured_ref_id, service_from, service_to, allowed_cents,
+         received_on)
        SELECT $1, $2, c.claim_no, c.patient_control_number, c.payer_claim_control_number, c.payer_claim_control_number_hash, c.claim_status_code, c.charge_cents,
               c.paid_cents, c.patient_resp_cents, c.filing_indicator, c.facility_type, c.frequency_code, c.patient_ref_id, c.insured_ref_id, c.service_from, c.service_to,
-              c.allowed_cents
+              c.allowed_cents, c.received_on
          FROM jsonb_to_recordset($3::jsonb) AS c (claim_no integer, patient_control_number text, payer_claim_control_number text, payer_claim_control_number_hash text,
               claim_status_code text, charge_cents bigint, paid_cents bigint, patient_resp_cents bigint, filing_indicator text, facility_type text, frequency_code text,
-              patient_ref_id uuid, insured_ref_id uuid, service_from date, service_to date, allowed_cents bigint)
+              patient_ref_id uuid, insured_ref_id uuid, service_from date, service_to date, allowed_cents bigint, received_on date)
        RETURNING id, claim_no`,
       [this.context.practiceId, remittanceId, JSON.stringify(rows)],
     );

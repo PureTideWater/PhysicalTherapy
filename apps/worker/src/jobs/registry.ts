@@ -11,9 +11,11 @@ import { z } from 'zod';
  * done, which creates a pricing run under the release in force for each service month whose lines no
  * run covers yet (or, on the daily schedule, for the day) and queues `price` for it; a price job that
  * completes a run the chain created queues `triage`, and triage queues `reconcile` (the recovery
- * ledger's step, milestone 9). `digest` sends a practice's monthly digest.
+ * ledger's step, milestone 9). `digest` sends a practice's monthly digest. `packet_export` prints an
+ * approved packet version's PDF and CSV schedule, its identifiers inserted from the canonical records
+ * (docs/adr/0041).
  */
-export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export'] as const;
+export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
@@ -37,6 +39,8 @@ export const JOB_PAYLOADS = {
   reconcile: z.strictObject({ practice_id: id, pricing_run_id: id }),
   digest: z.strictObject({ practice_id: id, period: month }),
   export: z.strictObject({ practice_id: id, export_job_id: id }),
+  /** An approved packet version to print and store (the person who asked is in the audit log). */
+  packet_export: z.strictObject({ practice_id: id, packet_version_id: id }),
 } satisfies Record<JobType, z.ZodType<{ practice_id: string }>>;
 
 export type JobPayload<T extends JobType> = z.infer<(typeof JOB_PAYLOADS)[T]>;
@@ -52,6 +56,7 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   reconcile: (payload) => payload.pricing_run_id,
   digest: (payload) => payload.period,
   export: (payload) => payload.export_job_id,
+  packet_export: (payload) => payload.packet_version_id,
 };
 
 /** The job's idempotency subject inside its practice (job_run.idempotency_key). */
