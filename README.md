@@ -252,7 +252,12 @@ demand. Each figure is recomputed on its page from the entries it links. The wor
 PDF through the audit report's Chromium pipeline and records its key and SHA-256 once; the CSV (`roiStatementCsv`)
 lists each figure's entries. `apps/worker/src/reconcile/chain.db.test.ts` runs every LED case through the worker loop
 and intake on SYNTHETIC files, and `apps/web/e2e/reconciliation.spec.ts` is J10 in the browser: payer approved, posted,
-deposited, a recoupment, the ROI statement and a reversal.
+deposited, a recoupment, the ROI statement and a reversal. That is milestone 9's done check: the flagged-as-recovered
+shortcut fails, a recoupment reduces recovered by its amount, and the ROI statement recomputes from its entries. With
+milestones 8 and 9 built, `packages/synth` traces every case through milestone 9 to its tests
+(`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement, until billing and the
+time log (milestone 11). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
+(milestone 11).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its

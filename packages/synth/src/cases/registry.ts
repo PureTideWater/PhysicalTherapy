@@ -42,11 +42,12 @@ export const BUILT_THROUGH_MILESTONE = 5;
 
 /**
  * The milestones whose code is in the repository though their done check still waits on people
- * (milestones 6 and 7: the three hand-run audits and the specialist's review of the golden lines; see
- * the README). Their cases are traced to their tests all the same: the fixtures test fails while a
+ * (milestones 6 and 7: the three hand-run audits and the specialist's review of the golden lines;
+ * milestones 8 and 9 on top of them: packets, the workbench, the recovery ledger and reconciliation;
+ * see the README). Their cases are traced to their tests all the same: the fixtures test fails while a
  * case completing in one of them names none.
  */
-export const CODE_BUILT_THROUGH_MILESTONE = 7;
+export const CODE_BUILT_THROUGH_MILESTONE = 9;
 
 /** Every test-matrix case, by ID. */
 const ENTRIES: Readonly<Record<string, Entry>> = {
