@@ -99,7 +99,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       const propose = specialist.getByRole('region', { name: 'Propose the terms' });
       await propose.getByRole('button', { name: 'Propose the terms' }).click();
       await expect(specialist.locator('[data-model-notice="proposed"]')).toBeVisible();
-      const proposal = specialist.getByRole('region', { name: 'Model proposal' });
+      const proposal = specialist.getByRole('region', { name: 'Model proposal', exact: true });
       await expect(proposal).toHaveAttribute('data-decision', 'awaiting');
       await expect(proposal.locator('[data-candidate="0"]')).toHaveAttribute('data-verified', 'yes');
       await expect(proposal.locator('[data-check="passed"]')).toHaveCount(3);
@@ -111,7 +111,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       await expectAccessible(specialist, 'Rate record review with a model proposal');
       await verifyAndApprove(specialist);
       await expect(specialist.locator('[data-page-text] mark')).toHaveText(Q97110);
-      await expect(specialist.getByRole('region', { name: 'Model proposal' })).toHaveAttribute('data-decision', 'accepted');
+      await expect(specialist.getByRole('region', { name: 'Model proposal', exact: true })).toHaveAttribute('data-decision', 'accepted');
     });
 
     await test.step('the model drafts the packet’s narrative; the verifier passes it; its drafter cannot approve it and a second person does (MOD-03, CAS-09)', async () => {

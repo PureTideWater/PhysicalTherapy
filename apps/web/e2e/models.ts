@@ -10,7 +10,7 @@ import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
 
 import { evidenceFor } from '../src/lib/contracts/evidence';
-import { storeContractDocument } from '../src/lib/routes/test-support/contract-world';
+import { CONTRACT_PAGES, storeContractDocument } from '../src/lib/routes/test-support/contract-world';
 import { E2E_DOCUMENTS_DIR, E2E_MODEL_OUTPUTS_DIR, e2eDatabaseUrl } from './env';
 import { withDatabase } from './helpers';
 import { userId } from './journeys';
@@ -56,16 +56,17 @@ export interface DraftContract {
 
 /**
  * A new SYNTHETIC contract with the practice's first payer (contract-world's invented agreement, its
- * page text stored as intake stores it), and its first version as a draft naming the document, made by
- * the billing manager.
+ * page text stored as intake stores it, a closing line naming the contract so each document's bytes
+ * are its own), and its first version as a draft naming the document, made by the billing manager.
  */
 export async function draftContract(practiceId: string, managerKey: string, title: string): Promise<DraftContract> {
+  const pages = CONTRACT_PAGES.map((page, index) => (index === CONTRACT_PAGES.length - 1 ? [...page, title] : page));
   const manager = await userId(managerKey);
   const specialist = await userId('models-specialist');
   return withPool(async (pool) => {
     const cipher = await withPracticeScope(pool, { actorId: manager, practiceIds: [practiceId] }, (scope) => loadPracticeCipher(scope, keys, practiceId));
     const payerId = await withDatabase(async (client) => (await client.query<{ id: string }>('SELECT id FROM payer WHERE practice_id = $1 ORDER BY created_at LIMIT 1', [practiceId])).rows[0]?.id ?? '');
-    const documentId = await withDatabase((client) => storeContractDocument({ owner: client, app: pool, documents, cipher, practiceId, payerId, customerId: manager, specialistId: specialist }));
+    const documentId = await withDatabase((client) => storeContractDocument({ owner: client, app: pool, documents, cipher, practiceId, payerId, customerId: manager, specialistId: specialist }, pages));
     const versionId = await withPracticeScope(pool, { actorId: manager, practiceIds: [practiceId] }, async (scope) => {
       const context = { scope, requestId: `e2e-${randomUUID()}` };
       const contract = await createContract(context, { practiceId, payerId, title });
