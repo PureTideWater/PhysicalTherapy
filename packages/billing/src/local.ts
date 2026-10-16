@@ -256,6 +256,11 @@ function stringify(value: unknown): string {
   return JSON.stringify(value, (_key, item: unknown) => (typeof item === 'bigint' ? (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(item.toString()) : item));
 }
 
+/** Why an attempt that was not settled at once failed (a card's decline), or null (paid, or an ACH debit under way). */
+function declineOf(invoice: SimInvoice): string | null {
+  return invoice.status === 'paid' || invoice.pending !== null ? null : invoice.lastFailureCode;
+}
+
 export class LocalBillingProvider implements BillingProvider {
   readonly kind = 'local' as const;
   readonly publishableKey = null;
@@ -652,8 +657,13 @@ export class LocalBillingProvider implements BillingProvider {
     });
   }
 
+  /**
+   * Pays an open invoice now, as Stripe's invoices.pay does: a card is charged at once and a decline is
+   * refused with its code (the failure and its event recorded all the same, and the same refusal replayed
+   * for the same idempotency key); an ACH debit starts and settles later.
+   */
   async payInvoice(input: { readonly invoiceRef: string; readonly idempotencyKey: string }): Promise<void> {
-    await this.once(input.idempotencyKey, (state) => {
+    const declined = await this.once(input.idempotencyKey, (state) => {
       const invoice = state.invoices[input.invoiceRef];
       if (invoice === undefined) {
         throw new BillingProviderError('resource_missing', 'no such invoice in the billing simulator');
@@ -662,8 +672,11 @@ export class LocalBillingProvider implements BillingProvider {
         throw new BillingProviderError('invoice_not_open', 'only an open invoice is paid');
       }
       this.attempt(state, invoice);
-      return null;
+      return declineOf(invoice);
     });
+    if (declined !== null) {
+      throw new BillingProviderError(declined, 'the payment failed');
+    }
   }
 
   invoicePayment(invoiceRef: string): Promise<InvoicePaymentDetails> {

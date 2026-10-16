@@ -107,6 +107,12 @@ describe('LocalBillingProvider (the Stripe test-mode simulator)', () => {
     expect(events.at(-1)).toMatchObject({ kind: 'subscription', subscription: { status: 'unpaid' } });
     const open = events.find((event) => event.kind === 'invoice');
     const invoiceRef = open?.kind === 'invoice' ? open.invoice.invoiceRef : '';
+    // Paid on demand with the declined card still on file: refused with its code, as Stripe's invoices.pay
+    // is, the failure recorded all the same, and the same refusal for the same key.
+    const failures = events.filter((event) => event.type === 'invoice.payment_failed').length;
+    await expect(billing.payInvoice({ invoiceRef, idempotencyKey: 'pay:declined' })).rejects.toMatchObject({ code: 'card_declined' });
+    await expect(billing.payInvoice({ invoiceRef, idempotencyKey: 'pay:declined' })).rejects.toMatchObject({ code: 'card_declined' });
+    expect(events.filter((event) => event.type === 'invoice.payment_failed')).toHaveLength(failures + 1);
     const intent = await billing.createSetupIntent({ customerRef: customer, idempotencyKey: 'setup:2' });
     await billing.confirmSetupIntent({ setupIntentRef: intent.setupIntentRef, details: GOOD_CARD, idempotencyKey: 'confirm:2' });
     await billing.payInvoice({ invoiceRef, idempotencyKey: 'pay:1' });
