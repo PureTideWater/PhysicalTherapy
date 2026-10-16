@@ -67,12 +67,22 @@ const summaryRow = z.strictObject({
   written_off: figure,
 });
 
+/**
+ * A packet version approved by its own writer in a single-user practice, after the 24-hour delay (PRD 12,
+ * Approval: "a 24-hour delay and an audit flag instead, and the gap is shown in the report"; CAS-10):
+ * opaque IDs, the day it was approved and how long after it was written.
+ */
+const approvedAlone = z.strictObject({ packet_version_id: z.uuid(), case_id: z.uuid(), approved_on: day, hours_waited: count });
+export type ApprovedAloneRow = z.infer<typeof approvedAlone>;
+
 export const monthlySummarySchema = z.strictObject({
   format: z.literal(MONTHLY_SUMMARY_FORMAT),
   generated_on: day,
   month,
   total: summaryRow,
   by_payer: z.array(summaryRow),
+  /** Every packet of the practice approved alone, as of the day generated (absent in a summary generated before it was recorded). */
+  approved_alone: z.array(approvedAlone).optional(),
 });
 export type MonthlySummaryContent = z.infer<typeof monthlySummarySchema>;
 export type MonthlySummaryRow = z.infer<typeof summaryRow>;
@@ -163,9 +173,10 @@ export function coverageReportCsv(content: CoverageReportContent): string {
 /**
  * A month's summary as CSV: one row per payer (and "all payers") and stage, counts and totals only,
  * never a stage added to another. A stage without dollars of its own here (flagged, payer approved,
- * recovered, the unstaged lines) leaves variance blank.
+ * recovered, the unstaged lines) leaves variance blank. Last, the count of the practice's packets
+ * approved alone (the single-user audit flag), where the summary recorded them.
  */
-export function monthlySummaryCsv(content: Pick<MonthlySummaryContent, 'month' | 'total' | 'by_payer'>): string {
+export function monthlySummaryCsv(content: Pick<MonthlySummaryContent, 'month' | 'total' | 'by_payer' | 'approved_alone'>): string {
   const rows: CsvCell[][] = [];
   const write = (payer: string, row: MonthlySummaryRow) => {
     for (const bucket of SUMMARY_BUCKET_CODES) {
@@ -177,6 +188,10 @@ export function monthlySummaryCsv(content: Pick<MonthlySummaryContent, 'month' |
   write('all payers', content.total);
   for (const payer of content.by_payer) {
     write(payer.payer_name ?? payer.payer_id ?? 'unknown payer', payer);
+  }
+  // The single-user approval gap, counted (the document's page and PDF list each one).
+  if (content.approved_alone !== undefined) {
+    rows.push([text(content.month), text('all payers'), text('packets_approved_alone'), number(content.approved_alone.length), dollars(null), dollars(null)]);
   }
   return csvDocument(MONTHLY_CSV_COLUMNS, rows);
 }
@@ -319,8 +334,21 @@ export function monthlySummaryHtml(content: MonthlySummaryContent, pins: Documen
     [{ value: 'Payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => ({ value: SUMMARY_BUCKET_LABELS[bucket] }))],
     content.by_payer.map((row) => [{ value: row.payer_name ?? 'Unnamed payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => summaryCell(row, bucket))]),
     `No line has a service date in ${content.month}.`,
-  )}`,
+  )}${content.approved_alone === undefined ? '' : approvedAloneHtml(content.approved_alone)}`,
   );
+}
+
+/** The single-user approval gap (CAS-10): every packet its own writer approved, with no one else to approve it. */
+function approvedAloneHtml(rows: readonly ApprovedAloneRow[]): string {
+  return `
+  <h2>Packets approved alone</h2>
+  <p>With no second person to approve its packets, the practice's writer of a version approved it alone, at least 24 hours after writing it; each carries the audit flag.</p>
+  ${table(
+    'Packets approved by their own writer',
+    [{ value: 'Packet version' }, { value: 'Case' }, { value: 'Approved on' }, { value: 'Hours after it was written', amount: true }],
+    rows.map((row) => [{ value: row.packet_version_id }, { value: row.case_id }, { value: row.approved_on }, { value: String(row.hours_waited), amount: true }]),
+    'No packet of the practice was approved by its own writer.',
+  )}`;
 }
 
 /** The document's HTML, from its stored figures. */

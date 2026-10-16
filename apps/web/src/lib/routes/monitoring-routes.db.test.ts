@@ -240,6 +240,8 @@ describe('the monthly variance summary (J12)', () => {
     expect(summary.total.writtenOff).toEqual({ lines: 0, billedCents: '0', varianceCents: '0' });
     expect(summary.byPayer).toHaveLength(1);
     expect(summary.byPayer[0]).toMatchObject({ payerName: 'SYNTHETIC PAYER Q', figures: { actionable: { lines: 16, varianceCents: '55200' }, validated: { lines: 1, varianceCents: '300' } } });
+    // The single-user approval gap (CAS-10): none here, a practice with two who approve packets.
+    expect(summary.approvedAlone).toEqual([]);
 
     const empty = ok(await call(monthlySummaryPage, viewer, { ...P(), month: '2025-01' })).summary;
     expect(empty.byPayer).toEqual([]);
@@ -258,6 +260,7 @@ describe('the monthly variance summary (J12)', () => {
     expect(lines[0]).toBe('month,payer,stage,lines,billed,variance');
     expect(lines).toContain(`2026-03,all payers,actionable,16,${String(billed / 100n)}.${String(billed % 100n).padStart(2, '0')},552.00`);
     expect(lines).toContain('2026-03,all payers,flagged,0,0.00,');
+    expect(lines).toContain('2026-03,all payers,packets_approved_alone,0,,');
     expect(lines.filter((line) => line.includes('SYNTHETIC PAYER Q'))).toHaveLength(10);
     expect(download.body).not.toMatch(/SYNPCN|SYNCCN|SYNTHLAST|SYNTHFIRST/);
   });

@@ -14,7 +14,13 @@ export default {
   mutate: [
     'packages/pricing/src/**/*.ts',
     'packages/ledger/src/**/*.ts',
+    // The packet verifier: its check, and the reading of a narrative it rests on (what the text shows,
+    // the figures it holds, the inputs they are checked against, the placeholders).
     'packages/packets/src/verifier/**/*.ts',
+    'packages/packets/src/readable.ts',
+    'packages/packets/src/scan.ts',
+    'packages/packets/src/facts.ts',
+    'packages/packets/src/placeholders.ts',
     '!**/*.test.ts',
   ],
   coverageAnalysis: 'perTest',

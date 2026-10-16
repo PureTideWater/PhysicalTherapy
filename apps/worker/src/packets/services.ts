@@ -161,6 +161,8 @@ export interface PacketVersionDetail {
   readonly draftedByEmail: string | null;
   readonly createdAt: Date;
   readonly regulationConfirmedBy: string | null;
+  readonly regulationConfirmedByEmail: string | null;
+  readonly regulationConfirmedAt: Date | null;
   readonly approvedBy: string | null;
   readonly approvedByEmail: string | null;
   readonly approvedAt: Date | null;
@@ -188,6 +190,7 @@ interface VersionRow {
   readonly drafted_by: string;
   readonly created_at: Date;
   readonly regulation_confirmed_by: string | null;
+  readonly regulation_confirmed_at: Date | null;
   readonly approved_by: string | null;
   readonly approved_at: Date | null;
   readonly approved_alone: boolean;
@@ -198,11 +201,12 @@ interface VersionRow {
   readonly exported_at: Date | null;
   readonly drafted_by_email: string | null;
   readonly approved_by_email: string | null;
+  readonly regulation_confirmed_by_email: string | null;
 }
 
 export const VERSION_COLUMNS = `v.id, v.practice_id, v.packet_id, p.case_id, v.version_no, (p.current_version_id = v.id) AS current, v.content, v.narrative, v.content_sha256,
-  v.verifier_passed, v.verifier_report, v.drafted_by, v.created_at, v.regulation_confirmed_by, v.approved_by, v.approved_at, v.approved_alone, v.export_sha256,
-  v.export_csv_sha256, v.export_pdf_key, v.export_csv_key, v.exported_at, people.drafted_by_email, people.approved_by_email`;
+  v.verifier_passed, v.verifier_report, v.drafted_by, v.created_at, v.regulation_confirmed_by, v.regulation_confirmed_at, v.approved_by, v.approved_at, v.approved_alone, v.export_sha256,
+  v.export_csv_sha256, v.export_pdf_key, v.export_csv_key, v.exported_at, people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email`;
 
 /** A version as stored, its narrative decrypted (a read of the packet, audited), or undefined. */
 export async function packetVersionOf(
@@ -242,6 +246,8 @@ export async function packetVersionOf(
     draftedByEmail: row.drafted_by_email,
     createdAt: row.created_at,
     regulationConfirmedBy: row.regulation_confirmed_by,
+    regulationConfirmedByEmail: row.regulation_confirmed_by_email,
+    regulationConfirmedAt: row.regulation_confirmed_at,
     approvedBy: row.approved_by,
     approvedByEmail: row.approved_by_email,
     approvedAt: row.approved_at,

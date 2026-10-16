@@ -162,7 +162,8 @@ remittance. `ledger.db.test.ts` runs the LED cases with milestone 8's packets su
 remittances (the export dated back with triggers off so the SYNTHETIC remittances of the past answer it). A wrong match is corrected by reversing it, which leaves both entries in the ledger. The practice's own
 practice-management templates are mapped once at onboarding with `setLedgerSettings`. Exports wait, stored, until
 then. The screens (Unmatched items, the ledger on a case, the ROI statement) come in milestone 9's second part, through
-`@tp/worker/ledger`. Fees and pursuit hours come with billing and the time log (milestone 11), behind the two seams.
+`@tp/worker/ledger`. Fees come with billing (milestone 11) and pursuit hours with a time log, which no milestone of the plan schedules
+(an open decision; ADR 0047), behind the two seams.
 The audit report's payer approved and recovered stay zero: a report is attested at triage, before any pursuit.
 
 ## Revisit when

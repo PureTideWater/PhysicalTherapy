@@ -11,6 +11,7 @@ import { type ApprovalFacts, type ApprovalViewer, SINGLE_USER_DELAY_MS, approval
 const WRITTEN = '2026-10-16T08:00:00.000Z';
 const facts: ApprovalFacts = {
   verifierPassed: true,
+  verifierCurrent: true,
   current: true,
   matchesCase: true,
   regulationCitation: false,
@@ -37,6 +38,7 @@ describe('approvalState', () => {
 
   it('blocks approval while the verifier fails, the version is not current, the case changed, or the regulation is unconfirmed (CAS-08)', () => {
     expect(approvalState({ ...facts, verifierPassed: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier' });
+    expect(approvalState({ ...facts, verifierCurrent: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'verifier_outdated' });
     expect(approvalState({ ...facts, current: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'not_current' });
     expect(approvalState({ ...facts, matchesCase: false }, second, at(0))).toEqual({ status: 'blocked', reason: 'case_changed' });
     expect(approvalState({ ...facts, regulationCitation: true }, second, at(0))).toEqual({ status: 'blocked', reason: 'regulation' });

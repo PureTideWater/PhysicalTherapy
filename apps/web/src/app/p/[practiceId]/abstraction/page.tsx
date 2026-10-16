@@ -44,9 +44,15 @@ export default async function AbstractionPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="abstraction">
       <div className="flex flex-col gap-1">
-        <p className="text-sm">
+        <p className="flex flex-wrap gap-3 text-sm">
           <Link className="underline" href="/console/specialist-queue">
             Specialist queue
+          </Link>
+          <Link className="underline" href={`/p/${practiceId}/abstraction/regulations`}>
+            Regulations to confirm
+          </Link>
+          <Link className="underline" href={`/p/${practiceId}/abstraction/ledger`}>
+            Ledger corrections
           </Link>
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">Contract abstraction</h1>

@@ -13,6 +13,7 @@ describe('the monthly variance summary as CSV', () => {
       month: '2026-03',
       total: { payerId: null, payerName: null, figures: figures({ actionable: { lines: 16, billedCents: '240000', varianceCents: '55200' }, validated: { lines: 1, billedCents: '7500', varianceCents: '-5' } }), writtenOff: zero(true) },
       byPayer: [{ payerId: '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01', payerName: 'SYNTHETIC PAYER, "Q"', figures: figures(), writtenOff: { lines: 2, billedCents: '15000', varianceCents: '7' } }],
+      approvedAlone: [],
     };
     const lines = monthlySummaryCsv(summary).split('\r\n');
     expect(lines[0]).toBe('month,payer,stage,lines,billed,variance');
@@ -20,8 +21,9 @@ describe('the monthly variance summary as CSV', () => {
     expect(lines).toContain('2026-03,all payers,validated,1,75.00,-0.05');
     expect(lines).toContain('2026-03,all payers,flagged,0,0.00,');
     expect(lines).toContain('2026-03,"SYNTHETIC PAYER, ""Q""",actionable_written_off,2,150.00,0.07');
-    // Ten rows for each of the two groupings, the header and the final line break.
-    expect(lines).toHaveLength(1 + 2 * (SUMMARY_BUCKETS.length + 1) + 1);
+    // Ten rows for each of the two groupings, the count of packets approved alone, the header and the final line break.
+    expect(lines).toContain('2026-03,all payers,packets_approved_alone,0,,');
+    expect(lines).toHaveLength(1 + 2 * (SUMMARY_BUCKETS.length + 1) + 1 + 1);
     expect(lines.at(-1)).toBe('');
     const unnamed = monthlySummaryCsv({ ...summary, byPayer: [{ ...summary.byPayer[0], payerName: null } as MonthlySummary['byPayer'][number]] });
     expect(unnamed).toContain('2026-03,7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01,flagged,0,0.00,');
@@ -32,6 +34,7 @@ describe('the monthly variance summary as CSV', () => {
       month: '2026-03',
       total: { payerId: null, payerName: null, figures: figures({ overpaid: { lines: 1, billedCents: '7500', varianceCents: null } }), writtenOff: zero(true) },
       byPayer: [{ payerId: '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01', payerName: '=HYPERLINK("http://attacker.example/","Open")', figures: figures({ validated: { lines: 1, billedCents: '7500', varianceCents: '-120' } }), writtenOff: zero(true) }],
+      approvedAlone: [],
     };
     const csv = monthlySummaryCsv(summary);
     expect(csv).toContain(`2026-03,"'=HYPERLINK(""http://attacker.example/"",""Open"")",validated,1,75.00,-1.20`);

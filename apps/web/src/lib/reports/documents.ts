@@ -84,7 +84,14 @@ function rowOf(row: SummaryRow): MonthlySummaryRow {
 
 /** A month's summary as a document stores it (and as its CSV reads it). */
 export function monthlyContent(summary: MonthlySummary, today: string): MonthlySummaryContent {
-  return { format: MONTHLY_SUMMARY_FORMAT, generated_on: today, month: summary.month, total: rowOf(summary.total), by_payer: summary.byPayer.map(rowOf) };
+  return {
+    format: MONTHLY_SUMMARY_FORMAT,
+    generated_on: today,
+    month: summary.month,
+    total: rowOf(summary.total),
+    by_payer: summary.byPayer.map(rowOf),
+    approved_alone: summary.approvedAlone.map((item) => ({ packet_version_id: item.versionId, case_id: item.caseId, approved_on: item.approvedOn, hours_waited: item.hoursWaited })),
+  };
 }
 
 export type GenerateRequest = { readonly kind: 'coverage' } | { readonly kind: 'monthly_summary'; readonly month: string };

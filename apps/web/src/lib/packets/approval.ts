@@ -13,6 +13,8 @@ export const SINGLE_USER_DELAY_MS = 24 * 60 * 60 * 1000;
 
 export interface ApprovalFacts {
   readonly verifierPassed: boolean;
+  /** Whether the current verifier wrote the version's report (an earlier one's pass is not approved; docs/adr/0047). */
+  readonly verifierCurrent: boolean;
   /** Whether it is the packet's current version (an edit since makes a new one, which clears approval). */
   readonly current: boolean;
   /** Whether it still asks for exactly the case's lines not written off, at their priced amounts. */
@@ -40,7 +42,7 @@ export interface ApprovalViewer {
 
 export type ApprovalState =
   | { readonly status: 'approved'; readonly by: string | null; readonly at: string; readonly alone: boolean }
-  | { readonly status: 'blocked'; readonly reason: 'verifier' | 'not_current' | 'case_changed' | 'regulation' }
+  | { readonly status: 'blocked'; readonly reason: 'verifier' | 'verifier_outdated' | 'not_current' | 'case_changed' | 'regulation' }
   /** The viewer does not approve packets: a billing manager or firm principal does. */
   | { readonly status: 'not_approver' }
   /** The viewer drafted or last edited the packet, and someone else may approve it: the database refuses them. */
@@ -56,6 +58,9 @@ export function approvalState(facts: ApprovalFacts, viewer: ApprovalViewer, now:
   }
   if (!facts.verifierPassed) {
     return { status: 'blocked', reason: 'verifier' };
+  }
+  if (!facts.verifierCurrent) {
+    return { status: 'blocked', reason: 'verifier_outdated' };
   }
   if (!facts.current) {
     return { status: 'blocked', reason: 'not_current' };
@@ -84,9 +89,11 @@ export function approvalState(facts: ApprovalFacts, viewer: ApprovalViewer, now:
 /** Why approval is blocked, in words, with the next step. */
 export const BLOCKED_TEXT: Readonly<Record<Extract<ApprovalState, { status: 'blocked' }>['reason'], string>> = {
   verifier: 'Approval is blocked: the verifier failed this version (its mismatches are listed above). Correct the narrative and save a new version; only a version that passes can be approved.',
+  verifier_outdated: 'An earlier verifier checked this version. Save it again as a new version so the current verifier checks it; only a version the current verifier passed can be approved.',
   not_current: 'A later version of this packet was written since; only the current version can be approved.',
   case_changed: 'The case’s lines changed since this version was written (a line was written off or reopened); write a new version first.',
-  regulation: 'A contract specialist confirms the Medicare Advantage regulation applies to this case before its packet can be approved.',
+  regulation:
+    'A contract specialist confirms the Medicare Advantage regulation applies to this case before its packet can be approved: they do it on their Regulations to confirm page, under the practice’s support grant (the platform administrator opens one from a ticket).',
 };
 
 /** A wait as hours and minutes, rounded up to the minute ("23 h 59 min"). */

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
-import { type PacketContent, type VerifierReport, draftNarrative } from '@tp/packets';
+import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
 import { type PacketVersionDetail, approvePacketVersion, packetOfCase, packetVersionOf, writePacketVersion } from '@tp/worker/packets';
 
 import type { Services } from '../server/services';
@@ -53,6 +53,8 @@ export interface VersionView {
   readonly writtenAt: string;
   readonly writtenBy: string | null;
   readonly regulationConfirmed: boolean;
+  /** Who confirmed the regulation applies (a contract specialist) and when; null until then, and for a contract citation. */
+  readonly regulationConfirmation: { readonly by: string | null; readonly at: string } | null;
   readonly exportedAt: string | null;
   readonly exportSha256: string | null;
   readonly exportCsvSha256: string | null;
@@ -145,6 +147,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null): Ver
     writtenAt: detail.createdAt.toISOString(),
     writtenBy,
     regulationConfirmed: detail.regulationConfirmedBy !== null,
+    regulationConfirmation: detail.regulationConfirmedAt === null ? null : { by: detail.regulationConfirmedByEmail, at: detail.regulationConfirmedAt.toISOString() },
     exportedAt: detail.exportedAt?.toISOString() ?? null,
     exportSha256: detail.exportSha256,
     exportCsvSha256: detail.exportCsvSha256,
@@ -192,6 +195,7 @@ export async function builderView(
   const approval = approvalState(
     {
       verifierPassed: shown.verifier_passed,
+      verifierCurrent: detail.verifier.format === VERIFIER_FORMAT,
       current: shown.current,
       matchesCase: facts[0]?.matches ?? false,
       regulationCitation: detail.content.citation.kind === 'regulation',

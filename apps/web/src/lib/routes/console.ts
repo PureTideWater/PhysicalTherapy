@@ -605,6 +605,8 @@ export interface QueuePractice {
   readonly proposalsAwaiting: number;
   readonly awaitingSignOff: number;
   readonly openQuestions: number;
+  /** Packets citing the Medicare Advantage regulation that wait for a specialist's confirmation. */
+  readonly regulationsAwaiting: number;
   /** When the caller's own open support grant on the practice ends; null without one. */
   readonly grantEndsAt: Date | null;
 }
@@ -614,7 +616,8 @@ export const QUEUE_PRACTICES_PER_PAGE = 25;
 /**
  * The internal console's specialist queue (PRD 7, Internal console: "documents awaiting abstraction,
  * proposals awaiting verification, questions to customers ... abstract, verify, approve, ask"): per
- * practice, counts only (console_contract_queue(): no document, contract or question is read here),
+ * practice, counts only (console_contract_queue(): no document, contract, question or packet is read
+ * here), the regulations waiting for a specialist's confirmation among them (docs/adr/0047),
  * and whether the specialist's own support grant to the practice is open, which is the only way into
  * its records (docs/adr/0028). Proposals stay empty until the model gateway proposes abstractions
  * (milestone 10). Practices with nothing waiting are left out unless asked for.
@@ -635,6 +638,7 @@ export const specialistQueuePage = platformRoute({
       proposals_awaiting: string;
       awaiting_sign_off: string;
       open_questions: string;
+      regulations_awaiting: string;
       support_grant_ends_at: Date | null;
     }>('SELECT * FROM console_contract_queue()');
     const all = rows.map(
@@ -646,11 +650,12 @@ export const specialistQueuePage = platformRoute({
         proposalsAwaiting: Number.parseInt(row.proposals_awaiting, 10),
         awaitingSignOff: Number.parseInt(row.awaiting_sign_off, 10),
         openQuestions: Number.parseInt(row.open_questions, 10),
+        regulationsAwaiting: Number.parseInt(row.regulations_awaiting, 10),
         grantEndsAt: row.support_grant_ends_at,
       }),
     );
     const working = (practice: QueuePractice) =>
-      practice.documentsAwaiting + practice.drafts + practice.proposalsAwaiting + practice.awaitingSignOff + practice.openQuestions > 0 || practice.grantEndsAt !== null;
+      practice.documentsAwaiting + practice.drafts + practice.proposalsAwaiting + practice.awaitingSignOff + practice.openQuestions + practice.regulationsAwaiting > 0 || practice.grantEndsAt !== null;
     const shown = params.all === '1' ? all : all.filter(working);
     const pages = Math.max(1, Math.ceil(shown.length / QUEUE_PRACTICES_PER_PAGE));
     const current = Math.min(params.page, pages);
@@ -661,6 +666,7 @@ export const specialistQueuePage = platformRoute({
         documentsAwaiting: all.reduce((sum, practice) => sum + practice.documentsAwaiting, 0),
         proposalsAwaiting: all.reduce((sum, practice) => sum + practice.proposalsAwaiting, 0),
         openQuestions: all.reduce((sum, practice) => sum + practice.openQuestions, 0),
+        regulationsAwaiting: all.reduce((sum, practice) => sum + practice.regulationsAwaiting, 0),
       },
       page: current,
       pages,

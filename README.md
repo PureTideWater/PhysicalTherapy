@@ -148,8 +148,9 @@ nothing but integers and integer cents keyed by a closed list of figure codes, n
 read their own notifications at `/p/<practice>/notifications` and set their preferences at `/account/notifications` (in
 their own `user.settings`). The monthly variance summary (`/p/<practice>/reports/monthly?month=<YYYY-MM>`, with its CSV)
 counts each line of a month once, from its pricing in effect, at the furthest stage it has reached, by payer and in all,
-never adding stages together. The notifications, preferences and the summary were pulled forward from milestone 11 and
-the v1 reports (ADR 0040); the summary's PDF export comes with the other v1 reports.
+never adding stages together, and lists every packet of the practice approved alone by its writer in a single-user
+practice (the audit flag's gap, CAS-10; its CSV counts them). The notifications, preferences and the summary were
+pulled forward from milestone 11 and the v1 reports (ADR 0040); the summary's PDF export comes with the other v1 reports.
 `apps/worker/src/monitor/monitor.db.test.ts` runs the chain on SYNTHETIC files through the worker loop: replays of every
 step with no duplicate effect (JOB-01), three failures with the alert and the dashboard's run-failed record (JOB-02),
 and the digest's counts and totals with no PHI column read (JOB-03).
@@ -160,14 +161,23 @@ page, quoted clause and page hash, or the Medicare Advantage regulation; the rul
 facts; the line schedule with each line's trace reference; prompt-pay interest from the state record as its own line;
 the evidence list with its gaps; the requested action), drafts the pattern statement by code, and holds the verifier:
 every figure of a narrative must be among the version's inputs and every sentence must cite one of its numbered sources
-(`verifyNarrative`, no options). Identifiers are placeholders in every version (`{{claim_control_number:3}}`) and are
+(`verifyNarrative`, no options). It reads a narrative as it shows (ADR 0047): each character in its NFKC form, so
+fullwidth, superscript and mathematical digits are the digits they show; a hidden character (a zero-width space, a soft
+hyphen, a direction control) and a figure in another script's digits fail it where they stand; counts, ordinals and
+multiples in words (a dozen, the fifth, twice, half, a level IV appeal, March fifth) and fractions are figures; and the
+case's own identifiers (the schedule rows' patient and insured names, member IDs and claim numbers, read from the
+canonical records when the version is written) fail it wherever they appear, without regard to case, the report giving
+positions only. A version stores its narrative in NFKC. Identifiers are placeholders in every version (`{{claim_control_number:3}}`) and are
 inserted from the claim and patient records only by the `packet_export` job, which prints the PDF with Chromium, writes
 the CSV schedule, stores both sealed and records their SHA-256 on the version. The database holds the rest
 (`20261023090000_packets_submissions_and_responses.sql`): a version never changes (an edit is a new version, which
 clears the approval); approval needs a passing verifier (a CHECK), the version's hash and `packet.approve`, and refuses
 the packet's drafter and the version's writer unless no one else may approve the practice's packets, then only 24 hours
-after writing, flagged `approved_alone`; a Medicare Advantage non-contracted packet waits for a contract specialist's
-confirmation; only the job exports, once; a submission carries the export's hashes and follows up in 45 days; a
+after writing, flagged `approved_alone`, and only with the current verifier's report (`tp-packet-verifier/2`); a
+Medicare Advantage non-contracted packet waits for a contract specialist's confirmation, which they give on their
+Regulations to confirm page (`/p/<practice>/abstraction/regulations`, under a support grant, counted on the console's
+specialist queue); only the job exports, once, under the version's own practice and packet; a submission sends the
+current version (or one an edit replaced, sent before the edit), carries the export's hashes and follows up in 45 days; a
 response answers the latest submission, and a denial with a category may reopen the case for the next dispute level
 within its window. A case's state (submitted, awaiting response, partially resolved, resolved) now derives from its
 lines and submissions. Recording a response writes no ledger entry and no stage. The workflow is `@tp/worker/packets`
@@ -199,7 +209,8 @@ filter and page in the URL with opaque IDs only:
   runs in the worker, and its history lists each version's SHA-256.
 - **Submissions and responses** (`/p/<practice>/cases/<case>/submissions`) logs the submission (date, channel,
   reference, the export's hash attached) and the payer's response with its document (accepted, partial, denied, more
-  information requested). Follow-ups default to 45 days and surface overdue on the dashboard. A denial with a reason
+  information requested). Follow-ups default to 45 days and surface overdue on the dashboard; the daily monitor tells
+  the case's owner in the app once when a follow-up has come with no response (`follow_up` notifications). A denial with a reason
   can reopen the case for a second-level dispute within its window.
 
 Every mutation is a route in the registry with a Zod schema, a role check in the handler and in Postgres, an audit
@@ -229,8 +240,12 @@ check (LED-04, allocated pro rata when the check posted in part, LED-09; a row w
 no row proves more than its amount, which Postgres holds too) and deposits by TRN02 and amount (LED-05), takes back PLB WO and reversals at once, reopening the line
 and its case and telling the owner (LED-06), records interest beside principal, and writes the quarter before's ROI
 statement once, which the database checks against the entries it links (LED-11). A person with `posting.reconcile`
-matches by hand, reverses a match with an exactly offsetting entry for each of its entries and their adjustments
-(LED-07) and adjusts an entry with a reason through `@tp/worker/ledger` and the Reconciliation screen below; only
+matches by hand and reverses a match with an exactly offsetting entry for each of its entries and their adjustments,
+the latest first (LED-07). An entry's amount is corrected by a specialist (PRD 13; ADR 0047): `ledger.adjust`, which
+only the contract specialist holds, under a support grant, on their Ledger corrections page
+(`/p/<practice>/abstraction/ledger`), with a reason. Postgres keeps every row's entries between zero and its amount, a
+line's posted and deposited at or below its approved, and every correction between zero and what its entry's evidence
+shows, for every role; only
 the reconcile job writes posting and EFT rows, from a stored clean export of their kind, and an export the database
 refuses a row of is unreadable without stopping the rest (ADR 0046); the dashboard's recovered this quarter and the digest's recoveries now read the
 ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
@@ -248,8 +263,8 @@ an adjusted remittance or a PLB take-back reaches the ledger after its parse. Th
 - each case line's linkage from its remittance (ERA) to its posting and deposit, with recoupments, interest and entries;
 - the ledger's entries.
 
-A billing manager or firm principal (`posting.reconcile`) matches by hand, reverses a match, and adjusts an entry
-(an approval a remittance paid in part, shown as its line's shortfall), each with a reason and a confirmation; a
+A billing manager or firm principal (`posting.reconcile`) matches by hand and reverses a match, each with a reason and
+a confirmation; a line's shortfall (an approval a remittance paid in part) is the contract specialist's to correct; a
 corrected posting export's take-back row is listed beside the match it offsets. The posting template is mapped once at `/p/<practice>/reconciliation/template`, by the same people, through
 `set_practice_posting_template` (migration `20261024120000_reconciliation_and_roi_documents.sql`; the proof level stays
 the administrator's). It is a built-in template or the practice's own column mapping, previewed on a sample read in the
@@ -261,8 +276,9 @@ and intake on SYNTHETIC files, and `apps/web/e2e/reconciliation.spec.ts` is J10 
 deposited, a recoupment, the ROI statement and a reversal. That is milestone 9's done check: the flagged-as-recovered
 shortcut fails, a recoupment reduces recovered by its amount, and the ROI statement recomputes from its entries. With
 milestones 8 and 9 built, `packages/synth` traces every case through milestone 9 to its tests
-(`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement, until billing and the
-time log (milestone 11). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
+(`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement: fees until billing
+(milestone 11); pursuit hours until a time log, which PRD 12 and 13 rely on ("replaced by actual logged time",
+"pursuit hours logged") but no milestone of the plan schedules, so it is an open decision (ADR 0047). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
 (milestone 11): see the milestone 9 note below.
 
 The practice dashboard and the Reports screen (ADR 0045; migration
@@ -288,7 +304,10 @@ The practice dashboard and the Reports screen (ADR 0045; migration
 
 The Playwright journeys run on a fresh e2e database in practices of their own: J8 (`triage.spec.ts`), J11
 (`monitoring.spec.ts`, the digest landing in the local outbox) and J12 (`reports.spec.ts`). J10's payer response is a
-step in `packets.spec.ts`. Each journey runs axe-core's WCAG 2.1 AA rules on the screens it touches and moves through
+step in `packets.spec.ts`. The e2e worker runs the monitoring chain's planning step for J11's practice only; in J10
+(`reconciliation.spec.ts`) and `packets.spec.ts` the spec queues the reconcile the chain would queue after each 835, so
+the chain's own step from a document to the reconcile is covered by `apps/worker/src/reconcile/chain.db.test.ts`, not
+the browser journey. Each journey runs axe-core's WCAG 2.1 AA rules on the screens it touches and moves through
 one control by keyboard (`e2e/a11y.ts`).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,

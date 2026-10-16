@@ -34,7 +34,7 @@ export default async function SpecialistQueuePage(props: Props) {
           Counts only: a practice’s documents and contracts open only under its support grant, which a platform administrator opens from a ticket for four hours.
         </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <Card>
           <CardHeader>
             <CardDescription>Documents awaiting abstraction</CardDescription>
@@ -53,6 +53,13 @@ export default async function SpecialistQueuePage(props: Props) {
             <CardDescription>Questions to customers</CardDescription>
             <CardTitle className="text-3xl tabular-nums">{totals.openQuestions}</CardTitle>
           </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardDescription>Regulations to confirm</CardDescription>
+            <CardTitle className="text-3xl tabular-nums">{totals.regulationsAwaiting}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground">Medicare Advantage packets wait for your confirmation before anyone can approve them.</CardContent>
         </Card>
       </div>
       <p className="text-sm">
@@ -78,6 +85,7 @@ export default async function SpecialistQueuePage(props: Props) {
               <th className="py-1 text-right font-medium">Proposals</th>
               <th className="py-1 text-right font-medium">Awaiting sign-off</th>
               <th className="py-1 text-right font-medium">Open questions</th>
+              <th className="py-1 text-right font-medium">Regulations to confirm</th>
               <th className="py-1 font-medium">Access</th>
             </tr>
           </thead>
@@ -90,6 +98,7 @@ export default async function SpecialistQueuePage(props: Props) {
                 <td className="py-1 pr-3 text-right tabular-nums">{practice.proposalsAwaiting}</td>
                 <td className="py-1 pr-3 text-right tabular-nums">{practice.awaitingSignOff}</td>
                 <td className="py-1 pr-3 text-right tabular-nums">{practice.openQuestions}</td>
+                <td className="py-1 pr-3 text-right tabular-nums">{practice.regulationsAwaiting}</td>
                 <td className="py-1">
                   {practice.grantEndsAt === null ? (
                     <span className="text-muted-foreground">No support grant: ask a platform administrator for one from the ticket</span>
@@ -97,6 +106,12 @@ export default async function SpecialistQueuePage(props: Props) {
                     <span className="flex flex-wrap items-center gap-2">
                       <Link className="underline" href={`/p/${practice.practiceId}/abstraction`}>
                         Open the practice’s abstraction
+                      </Link>
+                      <Link className="underline" href={`/p/${practice.practiceId}/abstraction/regulations`}>
+                        Regulations
+                      </Link>
+                      <Link className="underline" href={`/p/${practice.practiceId}/abstraction/ledger`}>
+                        Ledger corrections
                       </Link>
                       <Badge variant="secondary">Grant ends {utc(practice.grantEndsAt)}</Badge>
                     </span>

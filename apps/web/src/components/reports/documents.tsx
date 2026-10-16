@@ -151,7 +151,7 @@ function StageDollars({ practiceId, stage, cents }: { readonly practiceId: strin
   );
 }
 
-export function MonthlyFigures({ practiceId, content }: { readonly practiceId: string; readonly content: Pick<MonthlySummaryContent, 'month' | 'total' | 'by_payer'> }) {
+export function MonthlyFigures({ practiceId, content }: { readonly practiceId: string; readonly content: Pick<MonthlySummaryContent, 'month' | 'total' | 'by_payer' | 'approved_alone'> }) {
   return (
     <>
       <Card role="region" aria-label="By stage">
@@ -255,6 +255,46 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
           )}
         </CardContent>
       </Card>
+      {content.approved_alone === undefined ? null : (
+        <Card role="region" aria-label="Packets approved alone">
+          <CardHeader>
+            <CardTitle>Packets approved alone</CardTitle>
+            <CardDescription>
+              With no second person to approve its packets, the writer of a version approved it alone at least 24 hours after writing it. Each carries the audit flag (the single-user gap).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {content.approved_alone.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No packet of the practice was approved by its own writer.</p>
+            ) : (
+              <table className="w-full text-left text-sm" aria-label="Packets approved by their own writer">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 font-medium">Case</th>
+                    <th className="py-1 font-medium">Packet version</th>
+                    <th className="py-1 font-medium">Approved on</th>
+                    <th className="py-1 font-medium">Hours after it was written</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {content.approved_alone.map((row) => (
+                    <tr key={row.packet_version_id} className="border-t" data-approved-alone={row.packet_version_id}>
+                      <td className="py-1">
+                        <Link className="underline" href={`/p/${practiceId}/cases/${row.case_id}/packet`}>
+                          Case packet
+                        </Link>
+                      </td>
+                      <td className="py-1 font-mono text-xs">{row.packet_version_id}</td>
+                      <td className="py-1">{row.approved_on}</td>
+                      <td className="py-1 tabular-nums">{row.hours_waited}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 }

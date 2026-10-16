@@ -8,6 +8,7 @@
 export { type AuditReportContent, type EvidenceGap, REPORT_FORMAT, type ReportAnomaly, type ReportCase, type ReportLine, type ReportPattern } from './content';
 export { CSV_COLUMNS, type CsvCell, csvDocument, csvText } from './csv';
 export {
+  type ApprovedAloneRow,
   COVERAGE_CSV_COLUMNS,
   COVERAGE_REPORT_FORMAT,
   type CoverageReportContent,

@@ -1,6 +1,7 @@
 import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import { centsToString, parseCents, sumCents } from '@tp/money';
 import { type DigestFigures, parseDigestFigures } from '@tp/worker/digests';
+import { singleUserApprovals } from '@tp/worker/packets';
 import { PRICED_IN_EFFECT } from '@tp/worker/pricing';
 
 /**
@@ -14,7 +15,7 @@ import { PRICED_IN_EFFECT } from '@tp/worker/pricing';
 
 type Scope = PracticeScope<ScopeClient>;
 
-export type NotificationKind = 'monitoring_run' | 'digest' | 'recoupment';
+export type NotificationKind = 'monitoring_run' | 'digest' | 'recoupment' | 'follow_up';
 
 export interface NotificationView {
   readonly id: string;
@@ -52,11 +53,12 @@ interface NotificationRow {
 export async function listNotifications(scope: Scope, practiceId: string, limit = NOTIFICATIONS_PER_PAGE, offset = 0): Promise<NotificationView[]> {
   const { rows } = await scope.client.query<NotificationRow>(
     `SELECT n.id, n.kind, n.subject_id, n.counts, n.totals_cents, n.created_at, n.read_at,
-            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period, e.case_id
+            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period, coalesce(e.case_id, s.case_id) AS case_id
        FROM notification n
        LEFT JOIN pricing_run r ON n.kind = 'monitoring_run' AND r.id = n.subject_id
        LEFT JOIN digest d ON n.kind = 'digest' AND d.id = n.subject_id
        LEFT JOIN ledger_entry e ON n.kind = 'recoupment' AND e.id = n.subject_id
+       LEFT JOIN submission s ON n.kind = 'follow_up' AND s.id = n.subject_id
       WHERE n.practice_id = $1 AND n.user_id = app_actor_id()
       ORDER BY n.created_at DESC, n.id DESC
       LIMIT $2 OFFSET $3`,
@@ -171,6 +173,11 @@ export interface MonthlySummary {
   readonly month: string;
   readonly total: SummaryRow;
   readonly byPayer: readonly SummaryRow[];
+  /**
+   * Every packet of the practice approved by its own writer in a single-user practice, as of now (PRD 12,
+   * Approval: "the gap is shown in the report"; CAS-10): opaque IDs, the day and the hours waited.
+   */
+  readonly approvedAlone: readonly { readonly versionId: string; readonly caseId: string; readonly approvedOn: string; readonly hoursWaited: number }[];
 }
 
 /**
@@ -256,7 +263,13 @@ function emptyRow(payerId: string | null, payerName: string | null): { payerId: 
  * recovery ledger's.
  */
 export async function monthlySummary(scope: Scope, practiceId: string, month: string): Promise<MonthlySummary> {
-  return { month, ...(await summaryOf(scope, practiceId, month)) };
+  const approvedAlone = (await singleUserApprovals(scope, { practiceId })).map((item) => ({
+    versionId: item.versionId,
+    caseId: item.caseId,
+    approvedOn: item.approvedAt.toISOString().slice(0, 10),
+    hoursWaited: item.hoursWaited,
+  }));
+  return { month, ...(await summaryOf(scope, practiceId, month)), approvedAlone };
 }
 
 /**
@@ -267,7 +280,7 @@ export async function practiceStageSummary(scope: Scope, practiceId: string): Pr
   return (await summaryOf(scope, practiceId, null)).total;
 }
 
-async function summaryOf(scope: Scope, practiceId: string, month: string | null): Promise<Omit<MonthlySummary, 'month'>> {
+async function summaryOf(scope: Scope, practiceId: string, month: string | null): Promise<Omit<MonthlySummary, 'month' | 'approvedAlone'>> {
   const { rows } = await scope.client.query<BucketRow>(SUMMARY, [practiceId, month === null ? null : `${month}-01`]);
   const names = await payerNames(scope, practiceId, [...new Set(rows.map((row) => row.payer_id))]);
   const total = emptyRow(null, null);

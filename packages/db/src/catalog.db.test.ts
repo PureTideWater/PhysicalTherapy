@@ -318,6 +318,20 @@ describe('the catalog test', () => {
     ]);
   });
 
+  it('fails when a column the application encrypts has no CHECK admitting enc:v1 ciphertext alone (docs/adr/0047)', async () => {
+    for (const [table, constraint, column] of [
+      ['ledger_entry', 'ledger_entry_reason_encrypted', 'ledger_entry.reason'],
+      ['ledger_match', 'ledger_match_reversal_reason_encrypted', 'ledger_match.reversal_reason'],
+      ['line_status', 'line_status_reason_encrypted', 'line_status.reason'],
+      ['case_line', 'case_line_written_off_text_encrypted', 'case_line.written_off_text'],
+      ['case_line', 'case_line_reopen_reason_encrypted', 'case_line.reopen_reason'],
+      ['packet_version', 'packet_version_narrative_check', 'packet_version.narrative'],
+    ] as const) {
+      expect(await problemsAfter(`ALTER TABLE ${table} DROP CONSTRAINT ${constraint};`)).toEqual([`column ${column} is encrypted with the practice's key but no CHECK admits enc:v1 ciphertext alone`]);
+    }
+    expect(await problemsAfter('ALTER TABLE submission DROP COLUMN reference;')).toEqual(['encrypted column submission.reference does not exist']);
+  });
+
   it('fails when a global table is writable by the application role', async () => {
     expect(await problemsAfter(`GRANT INSERT ON phi_table_registry TO ${APP_ROLE};`)).toEqual([
       'table phi_table_registry has no row-level security, so it is global, but the application role can write it',

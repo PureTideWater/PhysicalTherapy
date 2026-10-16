@@ -147,8 +147,15 @@ export default async function PacketPage(props: Props) {
               <CardTitle>Contract citation</CardTitle>
               <CardDescription>Rule release {version.content.rule_releases.map((release) => release.release_no).join(', ') || '—'}.</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col gap-2">
               <Citation content={version.content} />
+              {version.content.citation.kind === 'regulation' ? (
+                <p className="text-sm" data-regulation={version.regulationConfirmation === null ? 'waiting' : 'confirmed'}>
+                  {version.regulationConfirmation === null
+                    ? 'Waiting for a contract specialist to confirm the regulation applies to this case; approval is blocked until then.'
+                    : `A contract specialist (${version.regulationConfirmation.by ?? 'a former specialist'}) confirmed the regulation applies to this case on ${utc(version.regulationConfirmation.at)}.`}
+                </p>
+              ) : null}
             </CardContent>
           </Card>
           <Card role="region" aria-label="Line table">

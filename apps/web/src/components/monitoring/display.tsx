@@ -6,7 +6,8 @@ import type { NotificationView } from '../../lib/monitoring/queries';
 
 /**
  * How a notification reads (counts and totals only; docs/adr/0039): a run the monitoring chain priced
- * and triaged links to its run, a month's digest to its page, a recoupment to its case and its ledger. Stage labels as
+ * and triaged links to its run, a month's digest to its page, a recoupment to its case and its ledger, a follow-up that has
+ * come to its case's submissions. Stage labels as
  * everywhere: validated is contract-supported, flagged is investigatory and never a dollar figure.
  */
 
@@ -30,6 +31,16 @@ export function NotificationText({ practiceId, notification }: { readonly practi
         </Link>{' '}
         priced and triaged by monitoring: {count(counts, 'priced_lines')} of {count(counts, 'lines')} lines priced; validated {usd(totals, 'validated_variance')} on {count(counts, 'validated_lines')} lines; {count(counts, 'cases')} cases;{' '}
         {count(counts, 'flagged_lines')} lines flagged (investigatory).
+      </span>
+    );
+  }
+  if (notification.kind === 'follow_up') {
+    return (
+      <span>
+        <Link className="font-medium underline" href={`/p/${practiceId}/cases/${notification.caseId ?? ''}/submissions`}>
+          A follow-up is due
+        </Link>
+        : the payer has not answered a submission of this case in {count(counts, 'days_waiting')} days. Follow up through the payer&apos;s channel and record what it says.
       </span>
     );
   }

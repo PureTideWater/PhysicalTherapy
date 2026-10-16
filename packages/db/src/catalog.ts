@@ -1,3 +1,4 @@
+import { ENCRYPTED_COLUMNS } from './crypto/cipher';
 import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 
 /**
@@ -25,6 +26,9 @@ import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
  *   call it) is one of REVIEWED_SCOPE_FUNCTIONS, each with its reason.
  * - The application and operator roles own nothing; no column is real, double precision, float or
  *   money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
+ * - Every column the application encrypts with the practice's key (ENCRYPTED_COLUMNS) exists and has a
+ *   CHECK that admits enc:v1 ciphertext alone, so a code path that skipped the cipher stores nothing in
+ *   clear (docs/adr/0047).
  *
  * The two lists below are not exemptions from the PHI-table rules (.claude/rules/privacy-and-tenant.md:
  * "The catalog test lists exceptions; there are none"): no PHI table is exempt from practice_id NOT
@@ -240,6 +244,18 @@ const COLUMNS = `
    WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm') AND a.attnum > 0 AND NOT a.attisdropped
    ORDER BY 1, 2`;
 
+/** Each encrypted column, and whether a CHECK of its table holds it to enc:v1 ciphertext, as PostgreSQL prints the CHECK. */
+const ENCRYPTED = `
+  SELECT c.relname AS table_name, a.attname AS column_name,
+         EXISTS (SELECT 1 FROM pg_constraint con WHERE con.conrelid = c.oid AND con.contype = 'c' AND a.attnum = ANY (con.conkey)
+                    AND strpos(pg_get_constraintdef(con.oid), '(' || quote_ident(a.attname) || ' ~ ''^enc:v1:[A-Za-z0-9_-]+$''::text)') > 0) AS sealed
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped
+     AND (c.relname || '.' || a.attname) = ANY ($1::text[])
+   ORDER BY 1, 2`;
+
 const OWNED_BY_APP = `
   SELECT kind || ' ' || name AS object FROM (
     SELECT 'relation' AS kind, relname::text AS name FROM pg_class WHERE relowner = $1::regrole
@@ -408,6 +424,18 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     }
     if ((column.column_name === 'rate' || column.column_name.endsWith('_rate')) && column.base_type !== 'numeric(14,6)') {
       problems.push(`${where} is ${column.type}; rate columns are numeric(14,6)`);
+    }
+  }
+
+  const encrypted = new Map(
+    (await rows<{ table_name: string; column_name: string; sealed: boolean }>(client, ENCRYPTED, [[...ENCRYPTED_COLUMNS]])).map((row) => [`${row.table_name}.${row.column_name}`, row.sealed]),
+  );
+  for (const column of ENCRYPTED_COLUMNS) {
+    const sealed = encrypted.get(column);
+    if (sealed === undefined) {
+      problems.push(`encrypted column ${column} does not exist`);
+    } else if (!sealed) {
+      problems.push(`column ${column} is encrypted with the practice's key but no CHECK admits enc:v1 ciphertext alone`);
     }
   }
 

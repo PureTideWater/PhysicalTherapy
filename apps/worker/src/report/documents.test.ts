@@ -137,6 +137,23 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(coverageReportHtml(coverage({ run: null, pricing_runs: 2 }), PINS)).toContain('No pricing run had completed');
   });
 
+  it('shows the single-user approval gap: each packet approved alone in the PDF, their count in the CSV (CAS-10)', () => {
+    const alone = {
+      ...monthly(),
+      approved_alone: [{ packet_version_id: '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a02', case_id: '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a03', approved_on: '2026-04-02', hours_waited: 25 }],
+    };
+    expect(parseReportDocument('monthly_summary', alone)).toEqual(alone);
+    const html = monthlySummaryHtml(alone, PINS);
+    expect(html).toContain('Packets approved alone');
+    expect(html).toContain('7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a02');
+    expect(html).toContain('<td class="amount">25</td>');
+    expect(reportDocumentCsv(alone).split('\r\n')).toContain('2026-03,all payers,packets_approved_alone,1,,');
+    expect(monthlySummaryHtml({ ...alone, approved_alone: [] }, PINS)).toContain('No packet of the practice was approved by its own writer.');
+    // A summary stored before the gap was recorded shows neither.
+    expect(monthlySummaryHtml(monthly(), PINS)).not.toContain('Packets approved alone');
+    expect(reportDocumentCsv(monthly())).not.toContain('packets_approved_alone');
+  });
+
   it('prints the monthly summary with every stage on its own, recovered a count whose dollars are the ledger’s, and escapes names', () => {
     const html = monthlySummaryHtml(monthly(), PINS);
     expect(html).toContain('Monthly variance summary, 2026-03');
