@@ -33,6 +33,8 @@ export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-documents`);
 export const E2E_MODEL_OUTPUTS_DIR = path.join(tmpdir(), `${DIRECTORY}-model-outputs`);
 /** Where the in-test worker's digests are emailed (the local mail sender's outbox: one JSON file per message). */
 export const E2E_MAIL_OUTBOX_DIR = path.join(tmpdir(), `${DIRECTORY}-mail`);
+/** The local billing simulator's state for this run (BILLING_LOCAL_DIR): its customers, invoices and events (docs/adr/0050). */
+export const E2E_BILLING_DIR = path.join(tmpdir(), `${DIRECTORY}-billing`);
 
 /** The superuser (or CREATEDB and owner-capable) login the run prepares its database with. */
 export function e2eAdminUrl(): string {
