@@ -41,6 +41,9 @@ const JOB_NAMES: Readonly<Record<string, string>> = {
   reconcile: 'Reconciliation',
   digest: 'Monthly digest',
   export: 'Export',
+  packet_export: 'Packet export',
+  roi_statement: 'ROI statement',
+  report_document: 'Report printing',
 };
 
 /** Where to go next after a job failed three times: the screen that shows what it was doing, or the operator's replay. */
@@ -79,6 +82,8 @@ function failedNextStep(practiceId: string, jobType: string) {
         </>
       );
     case 'audit_report':
+    case 'roi_statement':
+    case 'report_document':
       return (
         <>
           Request the report again from the{' '}
