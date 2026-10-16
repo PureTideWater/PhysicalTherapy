@@ -19,7 +19,7 @@ import type { EnvironmentName, EnvironmentSettings, ServiceSettings, TaskSize } 
 import { HEARTBEAT_INTERVAL_SECONDS } from '../heartbeat';
 import { type ConnectionUrl, DATABASE_SETTINGS, RDS_CA_BUNDLE_PATH, launchScript, secretVariables } from '../launch';
 import { logGroupName } from '../log-groups';
-import { QUEUE_ROLE } from './database';
+import { DATABASE_NAME, QUEUE_ROLE } from './database';
 import type { Database } from './database';
 import { WEB_PORT } from './edge';
 import type { Identity } from './identity';
@@ -146,7 +146,7 @@ export class Compute extends Construct {
       NODE_EXTRA_CA_CERTS: RDS_CA_BUNDLE_PATH,
       [DATABASE_SETTINGS.host]: database.instance.dbInstanceEndpointAddress,
       [DATABASE_SETTINGS.port]: database.instance.dbInstanceEndpointPort,
-      [DATABASE_SETTINGS.name]: 'tp',
+      [DATABASE_SETTINGS.name]: DATABASE_NAME,
     };
     const keyArn = props.key.keyArn;
 
