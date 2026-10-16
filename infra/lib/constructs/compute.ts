@@ -113,6 +113,8 @@ interface ContainerSpec {
 export class Compute extends Construct {
   readonly cluster: ecs.Cluster;
   readonly cookieSecret: secretsmanager.Secret;
+  /** Stripe's keys for the web app (docs/adr/0050), which an operator sets: a JSON object of secretKey, webhookSecret and publishableKey. */
+  readonly stripeSecret: secretsmanager.Secret;
   readonly web: ecs.FargateService;
   readonly worker: ecs.FargateService;
   readonly platform: ecs.FargateService;
@@ -135,6 +137,19 @@ export class Compute extends Construct {
       description: `Therapy platform ${environmentName}: the web app's sign-in cookie sealing key`,
       encryptionKey: props.key,
       generateSecretString: { passwordLength: 43, excludePunctuation: true, includeSpace: false },
+    });
+
+    // Stripe's live keys (docs/adr/0050; docs/runbooks/billing.md): created with placeholders, which the web
+    // app refuses at start, until an operator writes the account's keys. Only the web app reads them.
+    this.stripeSecret = new secretsmanager.Secret(this, 'StripeSecret', {
+      description: `Therapy platform ${environmentName}: Stripe's secret key, webhook signing secret and publishable key`,
+      encryptionKey: props.key,
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({ webhookSecret: 'unset', publishableKey: 'unset' }),
+        generateStringKey: 'secretKey',
+        excludePunctuation: true,
+        includeSpace: false,
+      },
     });
 
     const webImage = ecs.ContainerImage.fromEcrRepository(props.repositories.web, parameters.imageTag);
@@ -171,8 +186,16 @@ export class Compute extends Construct {
         KMS_KEY_ID: keyArn,
         DOCUMENTS_BUCKET: props.documents.bucketName,
         DOCUMENTS_KMS_KEY_ID: keyArn,
+        BILLING_PROVIDER: 'stripe',
+        // Live Stripe in the production environment only; dev and staging bill in Stripe's test mode.
+        BILLING_STRIPE_MODE: environmentName === 'production' ? 'live' : 'test',
       },
-      secrets: { AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret) },
+      secrets: {
+        AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
+        STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(this.stripeSecret, 'secretKey'),
+        STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(this.stripeSecret, 'webhookSecret'),
+        STRIPE_PUBLISHABLE_KEY: ecs.Secret.fromSecretsManager(this.stripeSecret, 'publishableKey'),
+      },
       port: WEB_PORT,
     });
 

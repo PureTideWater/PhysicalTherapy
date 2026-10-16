@@ -35,10 +35,10 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
   });
 
   it('keeps the owner, application, operator and queue logins in four secrets under the environment key', () => {
-    // Every secret but the web app's cookie-sealing key (compute.test.ts) is a database login.
-    const cookie = logicalIdOf(stack, stack.compute.cookieSecret);
+    // Every secret but the web app's cookie-sealing key and Stripe's keys (compute.test.ts) is a database login.
+    const web = [logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)];
     const secrets = resourcesOf(template, 'AWS::SecretsManager::Secret')
-      .filter(([id]) => id !== cookie)
+      .filter(([id]) => !web.includes(id))
       .map(([, secret]) => propertiesOf(secret));
     expect(secrets).toHaveLength(4);
     const templates = secrets.map((secret) => {

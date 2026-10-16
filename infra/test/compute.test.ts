@@ -182,6 +182,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       ...urlSecrets('DATABASE_URL', secret.app),
       ...urlSecrets('QUEUE_DATABASE_URL', secret.queue),
       AUTH_COOKIE_SECRET: ref(logicalIdOf(stack, stack.compute.cookieSecret)),
+      STRIPE_SECRET_KEY: field(logicalIdOf(stack, stack.compute.stripeSecret), 'secretKey'),
+      STRIPE_WEBHOOK_SECRET: field(logicalIdOf(stack, stack.compute.stripeSecret), 'webhookSecret'),
+      STRIPE_PUBLISHABLE_KEY: field(logicalIdOf(stack, stack.compute.stripeSecret), 'publishableKey'),
     });
     expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.app), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
     expect(secretsOf(definitions.platform)).toEqual({ ...urlSecrets('OPERATOR_DATABASE_URL', secret.operator), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
@@ -196,7 +199,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
 
   it('lets each task\'s execution role read only the secrets its container names, and decrypt them only through Secrets Manager', () => {
     const expected: Record<TaskName, string[]> = {
-      web: [secret.app, secret.queue, logicalIdOf(stack, stack.compute.cookieSecret)],
+      web: [secret.app, secret.queue, logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)],
       worker: [secret.app, secret.queue],
       platform: [secret.operator, secret.queue],
       migration: [secret.owner, secret.app, secret.operator, secret.queue],
@@ -278,6 +281,8 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(plain).toMatchObject({
       TP_AUTH_PROVIDER: 'cognito',
       TP_KEY_PROVIDER: 'kms',
+      BILLING_PROVIDER: 'stripe',
+      BILLING_STRIPE_MODE: environment === 'production' ? 'live' : 'test',
       COGNITO_USER_POOL_ID: ref(logicalIdOf(stack, stack.identity.userPool)),
       COGNITO_CLIENT_ID: ref(logicalIdOf(stack, stack.identity.webClient)),
       DOCUMENTS_BUCKET: ref(logicalIdOf(stack, stack.storage.documents)),
@@ -326,6 +331,17 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       GenerateSecretString: { PasswordLength: 43, ExcludePunctuation: true, IncludeSpace: false },
     });
     expect(Buffer.from('A'.repeat(43), 'base64')).toHaveLength(32);
+  });
+
+  it('keeps Stripe\'s keys in Secrets Manager under the environment key, as placeholders the web app refuses until an operator sets them', () => {
+    const stripe = resourceById(template, 'AWS::SecretsManager::Secret', logicalIdOf(stack, stack.compute.stripeSecret));
+    expect(propertiesOf(stripe)).toMatchObject({
+      KmsKeyId: getAtt(logicalIdOf(stack, stack.key.key), 'Arn'),
+      GenerateSecretString: { SecretStringTemplate: JSON.stringify({ webhookSecret: 'unset', publishableKey: 'unset' }), GenerateStringKey: 'secretKey' },
+    });
+    // Only the web app names it.
+    expect(secretsOf(definitions.worker)).not.toHaveProperty('STRIPE_SECRET_KEY');
+    expect(secretsOf(definitions.platform)).not.toHaveProperty('STRIPE_SECRET_KEY');
   });
 
   describe('the migration task runs before the new image receives traffic', () => {
@@ -418,8 +434,8 @@ describe('the compute contract with the applications', () => {
     ...Object.keys(secretsOf(definition)).filter((name) => !/_URL_(USERNAME|PASSWORD)$/.test(name) && !/^TP_[A-Z]+_LOGIN_(USERNAME|PASSWORD)$/.test(name)),
   ];
 
-  it('sets only settings the web app reads (apps/web/src/lib/server/config.ts)', () => {
-    const config = source('apps/web/src/lib/server/config.ts');
+  it('sets only settings the web app reads (apps/web/src/lib/server/config.ts, and billing\'s in apps/web/src/lib/billing/config.ts)', () => {
+    const config = source('apps/web/src/lib/server/config.ts') + source('apps/web/src/lib/billing/config.ts');
     for (const name of [...configured(definitionOf('tp-staging-web')), 'DATABASE_URL', 'QUEUE_DATABASE_URL']) {
       expect(config, name).toContain(`${name}:`);
     }
