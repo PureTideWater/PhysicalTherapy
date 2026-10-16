@@ -119,7 +119,10 @@ word outside a date; the person rephrases. The 221 surviving mutants are mostly 
 (quantifiers and lookarounds no narrative of the tests tells apart) and fact sources that repeat another source's value
 (a pattern's first service date is a line's). Whether `stryker.config.mjs`'s vitest runner scores the pricing engine and
 the ledger truly under Vitest 5 is not checked here. The time log the ROI statement's pursuit hours need is scheduled by no
-milestone of the plan: it stays an open decision, and pursuit hours stay zero, stated on the statement.
+milestone of the plan: it stays an open decision, and pursuit hours stay zero, stated on the statement. The e2e worker
+runs the monitoring chain's planning step for the recovery journey's practice too, so J10's remittances reach the ledger
+through the chain's own monitor, price, triage and reconcile in the browser journey (the spec starts the monitor job a
+parse queued without its batch wait), not only in `chain.db.test.ts`.
 
 ## Revisit when
 

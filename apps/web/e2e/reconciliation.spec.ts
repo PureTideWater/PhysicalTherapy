@@ -5,7 +5,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { signInWithTotp } from './helpers';
-import { ledgerPractice, newestDocument, openLedgerCase, queue } from './ledger';
+import { chainFrom, chainPricedMonths, ledgerPractice, newestDocument, openLedgerCase } from './ledger';
 import { startLocalWorker } from './worker';
 
 /**
@@ -18,9 +18,12 @@ import { startLocalWorker } from './worker';
  * reduces recovered by its amount; an ROI statement generated on demand recomputes from its entries, its
  * PDF printed by the worker and its CSV listing them; a posting match reversed with its reason nets the
  * posted figure to zero and changes nothing recovered (the practice proves by deposit). A viewer reads
- * the ledger without the controls or the PHI columns. The monitoring chain's planning step stays a
- * placeholder in the e2e worker (e2e/worker.ts), so after each 835 the spec queues the reconcile the
- * chain queues for a document. Synthetic data only.
+ * the ledger without the controls or the PHI columns. Every 835 reaches the ledger through the
+ * monitoring chain, as in production: the e2e worker runs its monitor step for this practice
+ * (e2e/worker.ts), which plans the month, price and triage follow, and triage queues the reconcile (the
+ * original payment, whose plan waits on its mapping, is reconciled after its parse with nothing
+ * priced). The spec only starts the monitor job the parse queued without its batch wait
+ * (e2e/journeys.ts, chainFrom). Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -40,6 +43,11 @@ async function upload835(page: Page, practiceId: string, file: string): Promise<
   await page.goto(`/p/${practiceId}/uploads`);
   await page.getByLabel('Choose files to upload').setInputFiles([{ name: file, mimeType: 'application/octet-stream', buffer: fixture(file) }]);
   await expect(page.getByRole('region', { name: 'This batch' }).getByRole('listitem').filter({ hasText: file })).toContainText('Loaded 1 remittance', { timeout: 90_000 });
+}
+
+/** The 835 just uploaded, through the monitoring chain to the ledger. */
+async function throughTheChain(practiceId: string): Promise<void> {
+  await chainFrom(practiceId, await newestDocument(practiceId, 'x12_835'));
 }
 
 /** An export uploaded through the Reconciliation screen's own uploader, once intake has taken it in. */
@@ -66,6 +74,9 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
   await test.step('the original payment loads, and the worker opens its case', async () => {
     await withWorker(async () => {
       await upload835(page, practiceId, 'original.835');
+      // The chain prices nothing yet (the plan waits on its mapping) and reconciles the document.
+      await throughTheChain(practiceId);
+      expect(await chainPricedMonths(practiceId)).toEqual([]);
       await openLedgerCase(practiceId);
     });
     const response = await page.goto(`/p/${practiceId}/reconciliation`);
@@ -95,10 +106,12 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await expect(page.getByRole('region', { name: 'Current template' })).toContainText('SYNTHETIC PM SYSTEM');
   });
 
-  await test.step('an adjusted remittance creates a payer-approved amount', async () => {
+  await test.step('an adjusted remittance creates a payer-approved amount, through the monitoring chain', async () => {
     await withWorker(async () => {
       await upload835(page, practiceId, 'adjusted.835');
-      await queue('reconcile', { practice_id: practiceId, document_id: await newestDocument(practiceId, 'x12_835') });
+      // The chain prices March again with the reprocessed claim, triages it and reconciles the run.
+      await throughTheChain(practiceId);
+      expect(await chainPricedMonths(practiceId)).toEqual(['2026-03-01']);
       await expectFigure(page, practiceId, 'approved', '$30.00');
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$0.00');
@@ -133,7 +146,9 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
   await test.step('a PLB recoupment reduces recovered by exactly its amount and reopens the line', async () => {
     await withWorker(async () => {
       await upload835(page, practiceId, 'recoupment.835');
-      await queue('reconcile', { practice_id: practiceId, document_id: await newestDocument(practiceId, 'x12_835') });
+      // The recoupment's own claim is in July: the chain prices and triages July, and the reconcile after it takes the money back.
+      await throughTheChain(practiceId);
+      expect(await chainPricedMonths(practiceId)).toEqual(['2026-03-01', '2026-07-01']);
       await expectFigure(page, practiceId, 'recovered', '$12.00');
     });
     await expect(page.locator('[data-figure="recouped"]')).toContainText('-$18.00');

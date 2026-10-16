@@ -306,10 +306,12 @@ The practice dashboard and the Reports screen (ADR 0045; migration
 
 The Playwright journeys run on a fresh e2e database in practices of their own: J8 (`triage.spec.ts`), J11
 (`monitoring.spec.ts`, the digest landing in the local outbox) and J12 (`reports.spec.ts`). J10's payer response is a
-step in `packets.spec.ts`. The e2e worker runs the monitoring chain's planning step for J11's practice only; in J10
-(`reconciliation.spec.ts`) and `packets.spec.ts` the spec queues the reconcile the chain would queue after each 835, so
-the chain's own step from a document to the reconcile is covered by `apps/worker/src/reconcile/chain.db.test.ts`, not
-the browser journey. Each journey runs axe-core's WCAG 2.1 AA rules on the screens it touches and moves through
+step in `packets.spec.ts`. The e2e worker runs the monitoring chain's planning step for J11's and J10's practices
+(`e2e/worker.ts`), so in J10 (`reconciliation.spec.ts`) every 835 reaches the ledger through the chain's own monitor,
+price, triage and reconcile; the spec only starts the monitor job a parse queued without its two-minute batch wait
+(`chainFrom` in `e2e/journeys.ts`). What the e2e does not wait for is the daily schedule: J11 queues the day's monitor
+and `packets.spec.ts` the day's reconcile, each as `queueMonitoringSchedule` queues it. Each journey runs axe-core's
+WCAG 2.1 AA rules on the screens it touches and moves through
 one control by keyboard (`e2e/a11y.ts`).
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,

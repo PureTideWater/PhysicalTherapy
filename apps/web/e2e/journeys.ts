@@ -5,7 +5,7 @@ import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, openPool, provisionPracticeKey, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
-import { type JobPayload, type JobType, enqueue } from '@tp/worker/jobs';
+import { type JobPayload, type JobType, enqueue, singletonKey } from '@tp/worker/jobs';
 import { createPricingRun } from '@tp/worker/pricing';
 import { PgBoss } from 'pg-boss';
 
@@ -84,6 +84,56 @@ export async function until(check: () => Promise<boolean>, what: string, timeout
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
   throw new Error(`timed out waiting for ${what}`);
+}
+
+/** The chain's steps after a parse: a job of these of the practice still queued or running means the chain has not run out. */
+const CHAIN_STEPS = ['monitor', 'price', 'triage', 'reconcile'];
+
+/**
+ * The monitoring chain from a parsed 835 (PRD 5, J11; docs/adr/0039 and 0043), for a practice whose
+ * monitor step the e2e worker runs (e2e/worker.ts, CHAINED_PRACTICES). The parse queued the monitor job
+ * keyed by the document to start after MONITOR_DELAY_SECONDS, the wait for the rest of an upload batch,
+ * which the e2e does not sit out: the job is started now (test setup only, as the monitoring journey
+ * dates its events back; its key and payload stay the parse's). The worker then runs the chain's own
+ * steps: monitor plans the month, price and triage follow, and the reconcile after them (or after the
+ * document, when nothing was priced). Returns once the chain has run out: the monitor job done and no
+ * step of the practice left in the queue.
+ */
+export async function chainFrom(practiceId: string, documentId: string): Promise<void> {
+  const key = singletonKey('monitor', { practice_id: practiceId, document_id: documentId });
+  await until(
+    () =>
+      withDatabase(async (client) => {
+        const queued = await client.query("SELECT 1 FROM pgboss.job WHERE name = 'monitor' AND singleton_key = $1", [key]);
+        if ((queued.rowCount ?? 0) === 0) {
+          return false;
+        }
+        await client.query("UPDATE pgboss.job SET start_after = now() WHERE name = 'monitor' AND singleton_key = $1 AND state = 'created'", [key]);
+        return true;
+      }),
+    'the parse to queue the monitoring step',
+  );
+  await until(
+    () =>
+      withDatabase(async (client) => {
+        const { rows } = await client.query<{ done: boolean; waiting: boolean }>(
+          `SELECT EXISTS (SELECT 1 FROM pgboss.job WHERE name = 'monitor' AND singleton_key = $1 AND state = 'completed') AS done,
+                  EXISTS (SELECT 1 FROM pgboss.job WHERE name = ANY($2::text[]) AND data ->> 'practice_id' = $3 AND state IN ('created', 'retry', 'active')) AS waiting`,
+          [key, CHAIN_STEPS, practiceId],
+        );
+        return rows[0]?.done === true && !rows[0].waiting;
+      }),
+    'the monitoring chain',
+  );
+}
+
+/** The months the monitoring chain priced for the practice (its runs, created in no person's name), in order. */
+export async function chainPricedMonths(practiceId: string): Promise<string[]> {
+  return withDatabase(async (client) =>
+    (await client.query<{ period_from: string }>('SELECT period_from::text FROM pricing_run WHERE practice_id = $1 AND created_by_job_id IS NOT NULL ORDER BY period_from', [practiceId])).rows.map(
+      (row) => row.period_from,
+    ),
+  );
 }
 
 /** The practice's newest document of a kind (the one the browser just uploaded). */

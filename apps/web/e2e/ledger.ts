@@ -1,7 +1,7 @@
 import { withDatabase } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, until } from './journeys';
 
-export { newestDocument, queue } from './journeys';
+export { chainFrom, chainPricedMonths, newestDocument } from './journeys';
 
 /**
  * The recovery journey's setup on the e2e database (synthetic data only): a practice of its own in the
