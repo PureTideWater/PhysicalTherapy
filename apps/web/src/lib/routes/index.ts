@@ -12,9 +12,11 @@ import { MONITORING_ROUTES } from './monitoring';
 import { PACKET_ROUTES } from './packets';
 import { PRACTICE_ROUTES } from './practice';
 import { PRICING_ROUTES } from './pricing';
+import { RECONCILIATION_ROUTES } from './reconciliation';
 import { RELEASE_ROUTES } from './releases';
 import { REMITTANCE_ROUTES } from './remittances';
 import { REPORT_ROUTES } from './reports';
+import { ROI_ROUTES } from './roi';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { SUBMISSION_ROUTES } from './submissions';
@@ -56,6 +58,8 @@ export const ROUTES: readonly Route[] = [
   ...PACKET_ROUTES,
   ...SUBMISSION_ROUTES,
   ...REPORT_ROUTES,
+  ...RECONCILIATION_ROUTES,
+  ...ROI_ROUTES,
   ...MONITORING_ROUTES,
   ...RELEASE_ROUTES,
   ...CONTRACT_ROUTES,

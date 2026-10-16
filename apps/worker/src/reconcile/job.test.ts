@@ -4,12 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JobContext } from '../jobs/handlers';
 import { reconcileHandler } from './job';
 import { type ReconcileServices, reconcilePractice } from './pass';
+import { queueUnprinted } from './print';
 import { generateRoiStatement } from './statements';
 import type * as Pass from './pass';
+import type * as Print from './print';
 import type * as Statements from './statements';
 
 vi.mock('./pass', async (original) => ({ ...(await original<typeof Pass>()), reconcilePractice: vi.fn() }));
 vi.mock('./statements', async (original) => ({ ...(await original<typeof Statements>()), generateRoiStatement: vi.fn() }));
+vi.mock('./print', async (original) => ({ ...(await original<typeof Print>()), queueUnprinted: vi.fn() }));
 
 const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const RUN = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
@@ -34,6 +37,7 @@ describe('the reconcile job', () => {
   beforeEach(() => {
     vi.mocked(reconcilePractice).mockReset().mockResolvedValue({} as never);
     vi.mocked(generateRoiStatement).mockReset();
+    vi.mocked(queueUnprinted).mockReset().mockResolvedValue(0);
   });
 
   it.each([
@@ -56,16 +60,20 @@ describe('the reconcile job', () => {
     expect(reconcilePractice).toHaveBeenLastCalledWith(exported.job, services, PRACTICE, { documentId: DOCUMENT });
     expect(exported.lines).toEqual([expect.objectContaining({ msg: 'reconcile complete', document_id: DOCUMENT })]);
     expect(generateRoiStatement).not.toHaveBeenCalled();
+    expect(queueUnprinted).not.toHaveBeenCalled();
   });
 
-  it('writes the quarterly ROI statement of the quarter before the day, and says so only when it is new', async () => {
-    vi.mocked(generateRoiStatement).mockResolvedValueOnce({ id: 'statement' } as never).mockResolvedValueOnce(null);
+  it('writes the quarterly ROI statement of the quarter before the day, says so only when it is new, and queues the prints not done', async () => {
+    vi.mocked(generateRoiStatement).mockResolvedValueOnce({ statementId: DOCUMENT } as never).mockResolvedValueOnce(null);
     const first = context();
     await reconcileHandler(services)({ practice_id: PRACTICE, day: '2026-07-01' }, first.job);
     expect(generateRoiStatement).toHaveBeenLastCalledWith(expect.anything(), { practiceId: PRACTICE, periodFrom: '2026-04-01', periodTo: '2026-06-30', requestId: JOB }, expect.anything());
     expect(first.lines.map((line) => line.msg)).toEqual(['quarterly ROI statement generated', 'reconcile complete']);
+    expect(first.lines[0]).toMatchObject({ roi_statement_id: DOCUMENT });
+    expect(queueUnprinted).toHaveBeenLastCalledWith(first.job, PRACTICE);
     const again = context();
     await reconcileHandler(services)({ practice_id: PRACTICE, day: '2026-07-02' }, again.job);
     expect(again.lines.map((line) => line.msg)).toEqual(['reconcile complete']);
+    expect(queueUnprinted).toHaveBeenCalledTimes(2);
   });
 });

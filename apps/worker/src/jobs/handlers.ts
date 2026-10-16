@@ -45,4 +45,5 @@ export const placeholderHandlers: JobHandlers = {
   digest: placeholder,
   export: placeholder,
   packet_export: placeholder,
+  roi_statement: placeholder,
 };

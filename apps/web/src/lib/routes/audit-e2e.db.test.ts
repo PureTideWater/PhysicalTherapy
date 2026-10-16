@@ -13,7 +13,7 @@ import { formatCents, parseCents } from '@tp/money';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type AuditReportContent, CSV_COLUMNS } from '@tp/worker/reports';
-import { ChromiumPdfRenderer, type JobContext, auditReportHandler, intakeHandler, intakeServices, monitorHandler, parseHandler, priceHandler, triageHandler } from '@tp/worker/runtime';
+import { ChromiumPdfRenderer, type JobContext, auditReportHandler, intakeHandler, intakeServices, monitorHandler, parseHandler, priceHandler, reconcileHandler, triageHandler } from '@tp/worker/runtime';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
@@ -216,7 +216,8 @@ function jobContext(lastAttempt = false): JobContext {
 
 /**
  * Runs the queued jobs as the worker would, in order: intake, parse_835, the monitoring chain's planning
- * step the parse queues (the plans are not mapped yet when the file loads, so it prices nothing: MAP-01),
+ * step the parse queues (the plans are not mapped yet when the file loads, so it prices nothing: MAP-01)
+ * and the reconcile it queues for the document (docs/adr/0043; the ledger has nothing to do here),
  * price, triage, audit_report.
  */
 async function runQueue(): Promise<string[]> {
@@ -245,6 +246,8 @@ async function runQueue(): Promise<string[]> {
         await priceHandler()(job.payload as { practice_id: string; pricing_run_id: string }, jobContext());
       } else if (job.type === 'triage') {
         await triageHandler()(job.payload as { practice_id: string; pricing_run_id: string }, jobContext());
+      } else if (job.type === 'reconcile') {
+        await reconcileHandler({ documents, keys })(job.payload as { practice_id: string; document_id: string }, jobContext());
       } else if (job.type === 'audit_report') {
         await auditReportHandler({ documents, keys, pdf: printer })(job.payload as { practice_id: string; audit_report_id: string }, jobContext());
       } else {
@@ -277,7 +280,7 @@ async function send(file: string): Promise<void> {
     ),
   );
   ok(await call(completeUpload, manager, P(), { documentId: document.documentId }));
-  expect(await runQueue()).toEqual(['intake', 'parse_835', 'monitor']);
+  expect(await runQueue()).toEqual(['intake', 'parse_835', 'monitor', 'reconcile']);
 }
 
 function as<T>(actorId: string, run: (context: WorkflowContext) => Promise<T>): Promise<T> {

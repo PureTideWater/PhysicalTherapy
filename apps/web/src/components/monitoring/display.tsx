@@ -6,7 +6,7 @@ import type { NotificationView } from '../../lib/monitoring/queries';
 
 /**
  * How a notification reads (counts and totals only; docs/adr/0039): a run the monitoring chain priced
- * and triaged links to its run, a month's digest to its page, a recoupment to its case. Stage labels as
+ * and triaged links to its run, a month's digest to its page, a recoupment to its case and its ledger. Stage labels as
  * everywhere: validated is contract-supported, flagged is investigatory and never a dollar figure.
  */
 
@@ -39,7 +39,10 @@ export function NotificationText({ practiceId, notification }: { readonly practi
         <Link className="font-medium underline" href={`/p/${practiceId}/cases/${notification.caseId ?? ''}`}>
           A payer took back {usd(totals, 'recouped')}
         </Link>{' '}
-        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered is reduced by that amount.
+        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered is reduced by that amount.{' '}
+        <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${notification.caseId ?? ''}`}>
+          The case’s ledger
+        </Link>
       </span>
     );
   }

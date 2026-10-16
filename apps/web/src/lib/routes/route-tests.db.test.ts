@@ -40,6 +40,7 @@ import { scratchContentRoot } from './test-support/content-root';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 import { seedTriage, seedTriageLine } from './test-support/triage-world';
 import { seedMonitoring } from './test-support/monitoring-world';
+import { seedLedger } from './test-support/ledger-world';
 import { seedPacketLine, seedPackets } from './test-support/packet-world';
 
 /**
@@ -361,6 +362,20 @@ async function buildWorld(name: string): Promise<World> {
     uploaderId: tenant.adminUserId,
   });
   const monitoring = await seedMonitoring({ owner, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, pricingRunId, payerId: loaded.payerId });
+  const ledger = await seedLedger({
+    owner,
+    app,
+    keys,
+    documents,
+    practiceId: tenant.practiceId,
+    cipher: key.cipher,
+    uploaderId: tenant.adminUserId,
+    managerId: manager,
+    payerId: loaded.payerId,
+    planId: loaded.planId,
+    remittanceId: loaded.remittanceId,
+    caseServiceLineId: triageLineId,
+  });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -383,6 +398,7 @@ async function buildWorld(name: string): Promise<World> {
     rerunId,
     ...triage,
     ...monitoring,
+    ...ledger,
     ...packets,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };

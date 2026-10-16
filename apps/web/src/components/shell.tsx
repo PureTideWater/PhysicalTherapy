@@ -76,6 +76,7 @@ export type ShellSection =
   | 'pricing_runs'
   | 'anomalies'
   | 'cases'
+  | 'reconciliation'
   | 'reports'
   | 'notifications'
   | 'contracts'
@@ -141,6 +142,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             </RailLink>
             <RailLink href={`/p/${shell.currentPracticeId}/cases`} active={section === 'cases'}>
               Cases
+            </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/reconciliation`} active={section === 'reconciliation'}>
+              Reconciliation
             </RailLink>
             <RailLink href={`/p/${shell.currentPracticeId}/reports`} active={section === 'reports'}>
               Reports

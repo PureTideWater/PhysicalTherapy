@@ -110,6 +110,22 @@ export function readDate(text: string, format: DateFormat): string | null {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso ? iso : null;
 }
 
+/**
+ * The column headers of an export's first row, trimmed and without blanks: what the template mapping
+ * screen offers for each field (PRD 20, mapped once at onboarding). Null when the text is not a CSV or
+ * has no header.
+ */
+export function exportColumns(text: string): string[] | null {
+  let table: string[][];
+  try {
+    table = parseCsv(text);
+  } catch {
+    return null;
+  }
+  const header = table[0];
+  return header === undefined ? null : header.map((name) => name.trim()).filter((name) => name !== '');
+}
+
 /** A field a row could not be read in: the row is left out and counted, its value never kept. */
 export interface RowProblem {
   readonly rowNo: number;

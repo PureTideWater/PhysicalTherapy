@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { EFT_FIELDS, POSTING_FIELDS, REQUIRED_EFT_FIELDS, REQUIRED_POSTING_FIELDS, SYNTHETIC_BANK_EXPORT_V1, SYNTHETIC_PM_EXPORT_V1, type PostingTemplate, readDate, readEftExport, readPostingExport, templateProblems } from './templates';
+import { EFT_FIELDS, POSTING_FIELDS, REQUIRED_EFT_FIELDS, REQUIRED_POSTING_FIELDS, SYNTHETIC_BANK_EXPORT_V1, SYNTHETIC_PM_EXPORT_V1, type PostingTemplate, exportColumns, readDate, readEftExport, readPostingExport, templateProblems } from './templates';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 const fixture = (name: string) => readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -104,6 +104,19 @@ describe('reading an export row by row', () => {
       rows: [{ postedOn: '2026-06-11', checkOrTrace: '880060040002', amountCents: 3000n, payerName: null, batch: null, raw: { posted_on: '2026-06-11', check_or_trace: '880060040002', amount: '30.00' } }],
     });
     expect(readPostingExport('amt,check,posted\n30.00\n', template)).toMatchObject({ kind: 'read', problems: [{ rowNo: 1, field: 'posted_on' }] });
+  });
+});
+
+describe('an export’s columns, for the template mapping screen (PRD 20)', () => {
+  it('gives the header row’s columns, trimmed and without blanks', () => {
+    expect(exportColumns(fixture('LED-04/posting-export.csv'))).toEqual(['Post Date', 'Check/EFT #', 'Payer', 'Claim Ref', 'CPT', 'DOS', 'Paid Amount', 'Batch']);
+    expect(exportColumns(' Date , Amount ,,"Trace, Number"\r\n2026-06-09,30.00,,T1\r\n')).toEqual(['Date', 'Amount', 'Trace, Number']);
+  });
+
+  it('gives nothing for a file that is not CSV or has no header', () => {
+    expect(exportColumns('"never closed')).toBeNull();
+    expect(exportColumns('')).toBeNull();
+    expect(exportColumns('\n\n')).toBeNull();
   });
 });
 

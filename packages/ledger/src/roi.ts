@@ -71,8 +71,12 @@ export function ratioText(recovered: Cents, fees: Cents): string | null {
   return formatCents(cents(negative ? -hundredths : hundredths));
 }
 
-/** What is approved and not yet proved, per line (or per case for a case's own approval), at or above zero. */
-function approvedUnproved(entries: readonly LedgerEntry[], proofLevel: ProofLevel, ledger: ReadonlyMap<string, LedgerEntry>): { readonly cents: Cents; readonly links: string[] } {
+/**
+ * What is approved and not yet proved, per line (or per case for a case's own approval), at or above
+ * zero, and the entries of the lines (or cases) still open: the statement's "approved but not yet
+ * posted", and its recomputation from the entries it links.
+ */
+export function approvedUnproved(entries: readonly LedgerEntry[], proofLevel: ProofLevel, ledger: ReadonlyMap<string, LedgerEntry>): { readonly cents: Cents; readonly links: string[] } {
   const groups = new Map<string, { approved: bigint; proved: bigint; ids: string[] }>();
   for (const entry of entries) {
     const stage = countedStage(entry, ledger);

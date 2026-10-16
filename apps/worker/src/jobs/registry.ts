@@ -14,9 +14,10 @@ import { z } from 'zod';
  * ledger's step, docs/adr/0042), which intake also queues for a stored posting or EFT export and the
  * daily schedule for the day. `digest` sends a practice's monthly digest. `packet_export` prints an
  * approved packet version's PDF and CSV schedule, its identifiers inserted from the canonical records
- * (docs/adr/0041).
+ * (docs/adr/0041). `roi_statement` prints an ROI statement's PDF (docs/adr/0043): on demand, once a
+ * person generates one, and after the daily reconcile writes the quarter before's.
  */
-export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export'] as const;
+export const JOB_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export', 'roi_statement'] as const;
 export type JobType = (typeof JOB_TYPES)[number];
 
 const id = z.uuid();
@@ -46,6 +47,8 @@ export const JOB_PAYLOADS = {
   export: z.strictObject({ practice_id: id, export_job_id: id }),
   /** An approved packet version to print and store (the person who asked is in the audit log). */
   packet_export: z.strictObject({ practice_id: id, packet_version_id: id }),
+  /** A generated ROI statement to print and store (the statement records who generated it). */
+  roi_statement: z.strictObject({ practice_id: id, roi_statement_id: id }),
 } satisfies Record<JobType, z.ZodType<{ practice_id: string }>>;
 
 export type JobPayload<T extends JobType> = z.infer<(typeof JOB_PAYLOADS)[T]>;
@@ -62,6 +65,7 @@ const SUBJECTS: { readonly [T in JobType]: (payload: JobPayload<T>) => string } 
   digest: (payload) => payload.period,
   export: (payload) => payload.export_job_id,
   packet_export: (payload) => payload.packet_version_id,
+  roi_statement: (payload) => payload.roi_statement_id,
 };
 
 /** The job's idempotency subject inside its practice (job_run.idempotency_key). */

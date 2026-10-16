@@ -2,6 +2,7 @@ import { previousQuarter, quarterPeriod } from '@tp/ledger';
 
 import type { JobHandler } from '../jobs/handlers';
 import { type ReconcileServices, reconcilePractice } from './pass';
+import { queueUnprinted } from './print';
 import { DEFAULT_STATEMENT_SOURCES, type StatementSources, generateRoiStatement } from './statements';
 
 /**
@@ -15,7 +16,8 @@ import { DEFAULT_STATEMENT_SOURCES, type StatementSources, generateRoiStatement 
  *   read into rows first;
  * - by the operator's daily schedule (reconcile:<practice>:<day>): the practice's whole ledger brought
  *   up to date (a remittance no run followed, a person's manual recoupment to tell its owner), and the
- *   quarterly ROI statement of the quarter before the day, once.
+ *   quarterly ROI statement of the quarter before the day, once, with its print (the roi_statement
+ *   job) queued, and the print of any statement of the practice not printed yet queued again.
  *
  * Whichever set it off, it runs the whole reconcile of the practice (pass.ts), which is idempotent: a
  * replay, or two reconciles one after the other, add nothing twice (JOB-01).
@@ -38,8 +40,10 @@ export function reconcileHandler(services: ReconcileServices, sources: Statement
         generateRoiStatement(scope, { practiceId: payload.practice_id, periodFrom: period.from, periodTo: period.to, requestId: context.jobId }, sources),
       );
       if (generated !== null) {
-        context.logger.info('quarterly ROI statement generated');
+        context.logger.info('quarterly ROI statement generated', { roi_statement_id: generated.statementId });
       }
+      // The new quarter's statement, and any whose print never ran (a queue that refused it, three failed attempts).
+      await queueUnprinted(context, payload.practice_id);
     }
     if ('pricing_run_id' in payload) {
       context.logger.info('reconcile complete', { pricing_run_id: payload.pricing_run_id });

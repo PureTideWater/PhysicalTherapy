@@ -186,9 +186,19 @@ export const roiStatement = pgTable(
     documentKey: text('document_key'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** The SHA-256 of the printed PDF, recorded with its key by the statement job (20261024100000, added last). */
+    pdfSha256: text('pdf_sha256'),
   },
   (table) => [index('roi_statement_by_period').on(table.practiceId, table.periodFrom.desc(), table.generatedAt.desc())],
 );
+
+/**
+ * A statement's printed PDF: an opaque key under the practice and the statement, never a name, a claim
+ * number or a date (the database checks the prefix). Each print attempt writes a new object.
+ */
+export function roiStatementKey(practiceId: string, roiStatementId: string, objectId: string): string {
+  return `practices/${practiceId}/reports/${roiStatementId}/${objectId}.pdf`;
+}
 
 export type PostingRowRow = typeof postingRow.$inferSelect;
 export type EftRowRow = typeof eftRow.$inferSelect;
