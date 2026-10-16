@@ -46,3 +46,9 @@ export function e2eDatabaseUrl(adminUrl: string = e2eAdminUrl()): string {
   url.pathname = `/${E2E_DATABASE}`;
   return url.toString();
 }
+/** The local e-signature stand-in's signed documents and its webhook secret for this run (docs/adr/0053; synthetic only). */
+export const E2E_ESIGN_DIR = path.join(tmpdir(), `${DIRECTORY}-esign`);
+export const E2E_ESIGN_SECRET = 'synthetic-e2e-esign-webhook-secret';
+/** Where uploaded agreements are kept, and where the evidence export is sent. */
+export const E2E_AGREEMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-agreements`);
+export const E2E_COMPLIANCE_DIR = path.join(tmpdir(), `${DIRECTORY}-compliance`);

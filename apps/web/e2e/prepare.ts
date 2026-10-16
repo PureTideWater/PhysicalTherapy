@@ -8,7 +8,19 @@ import { PgBoss } from 'pg-boss';
 
 import { developmentMasterKey } from '../src/lib/server/config';
 import { seed } from '../scripts/seed';
-import { E2E_BILLING_DIR, E2E_DATABASE, E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_MAIL_OUTBOX_DIR, E2E_MODEL_OUTPUTS_DIR, e2eAdminUrl, e2eDatabaseUrl } from './env';
+import {
+  E2E_AGREEMENTS_DIR,
+  E2E_BILLING_DIR,
+  E2E_COMPLIANCE_DIR,
+  E2E_DATABASE,
+  E2E_DEV_AUTH_DIR,
+  E2E_DOCUMENTS_DIR,
+  E2E_ESIGN_DIR,
+  E2E_MAIL_OUTBOX_DIR,
+  E2E_MODEL_OUTPUTS_DIR,
+  e2eAdminUrl,
+  e2eDatabaseUrl,
+} from './env';
 
 /**
  * Before the e2e server starts: a fresh database (migrated, with the application role's dev login,
@@ -36,6 +48,9 @@ rmSync(E2E_DEV_AUTH_DIR, { recursive: true, force: true });
 rmSync(E2E_DOCUMENTS_DIR, { recursive: true, force: true });
 rmSync(E2E_MAIL_OUTBOX_DIR, { recursive: true, force: true });
 rmSync(E2E_BILLING_DIR, { recursive: true, force: true });
+for (const directory of [E2E_ESIGN_DIR, E2E_AGREEMENTS_DIR, E2E_COMPLIANCE_DIR]) {
+  rmSync(directory, { recursive: true, force: true });
+}
 // The local model provider's outputs: none until a journey writes one (every other call proposes nothing).
 rmSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true, force: true });
 mkdirSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true });

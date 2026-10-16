@@ -1,9 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { LocalKeyProvider, SeedError, type SeedPerson, type SeedResult, databaseClient, readDatabaseUrl, seedSyntheticTenancy } from '@tp/db';
+import { LocalKeyProvider, OWNER_ROLE, SeedError, type SeedPerson, type SeedResult, databaseClient, readDatabaseUrl, seedSyntheticTenancy } from '@tp/db';
 
 import { FileDevStore } from '../src/lib/auth/dev-store';
 import { hashPassword } from '../src/lib/auth/password';
@@ -41,6 +41,7 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
   let result: SeedResult;
   try {
     result = await seedSyntheticTenancy(client, people, new LocalKeyProvider(options.masterKey));
+    await acceptSyntheticTerms(client, result);
   } finally {
     await client.end();
   }
@@ -60,6 +61,34 @@ export async function seed(options: SeedOptions): Promise<SeedResult> {
     });
   }
   return result;
+}
+
+/** The synthetic terms of use in force (docs/adr/0053). */
+export const SYNTHETIC_TERMS_VERSION = 'synthetic-2026-10';
+
+/**
+ * Publishes a synthetic version of the terms of use and records that every seeded person accepted it, so the
+ * personas work as they did before the terms gate; a person invited later accepts it at first sign-in.
+ */
+async function acceptSyntheticTerms(client: ReturnType<typeof databaseClient>, result: SeedResult): Promise<void> {
+  const publisher = result.users['platform-admin'];
+  if (publisher === undefined) {
+    throw new SeedError('the synthetic terms need a platform administrator to publish them');
+  }
+  await client.query('BEGIN');
+  try {
+    await client.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+    const { rows } = await client.query<{ id: string }>("INSERT INTO terms_version (version, document_ref, sha256, published_by) VALUES ($1, 'terms/synthetic-2026-10', $2, $3) RETURNING id", [
+      SYNTHETIC_TERMS_VERSION,
+      createHash('sha256').update('synthetic terms of use').digest('hex'),
+      publisher,
+    ]);
+    await client.query("INSERT INTO terms_acceptance (user_id, terms_version_id, request_id) SELECT unnest($1::uuid[]), $2, 'seed'", [Object.values(result.users), rows[0]?.id]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
 }
 
 async function main(): Promise<void> {

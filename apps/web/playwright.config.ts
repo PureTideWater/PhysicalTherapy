@@ -3,7 +3,20 @@ import { existsSync } from 'node:fs';
 
 import { chromium, defineConfig, devices } from '@playwright/test';
 
-import { E2E_BILLING_DIR, E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_MODEL_OUTPUTS_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
+import {
+  E2E_AGREEMENTS_DIR,
+  E2E_BILLING_DIR,
+  E2E_COMPLIANCE_DIR,
+  E2E_DEV_AUTH_DIR,
+  E2E_DOCUMENTS_DIR,
+  E2E_ESIGN_DIR,
+  E2E_ESIGN_SECRET,
+  E2E_MODEL_OUTPUTS_DIR,
+  E2E_ORIGIN,
+  E2E_PORT,
+  e2eAdminUrl,
+  e2eDatabaseUrl,
+} from './e2e/env';
 import { developmentMasterKey } from './src/lib/server/config';
 
 /**
@@ -67,6 +80,14 @@ export default defineConfig({
       // wrote for its exact requests (e2e/models.ts) and proposes nothing otherwise (docs/adr/0052).
       MODEL_PROVIDER: 'local',
       MODEL_LOCAL_FIXTURES_DIR: E2E_MODEL_OUTPUTS_DIR,
+      // No proxy is trusted here (Next names the socket's own address when no proxy does, which every test shares):
+      // the sign-in limits hold per account; the per-address limits are rate-limit.db.test.ts's (docs/adr/0053).
+      // Agreements: the local e-signature stand-in's webhook, and uploads kept in this run's directory.
+      ESIGN_PROVIDER: 'local',
+      ESIGN_LOCAL_SECRET: E2E_ESIGN_SECRET,
+      ESIGN_LOCAL_DIR: E2E_ESIGN_DIR,
+      AGREEMENTS_DIR: E2E_AGREEMENTS_DIR,
+      COMPLIANCE_EXPORT_DIR: E2E_COMPLIANCE_DIR,
     },
   },
 });

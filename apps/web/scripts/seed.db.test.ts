@@ -12,7 +12,7 @@ import { FileDevStore } from '../src/lib/auth/dev-store';
 import { Sealer } from '../src/lib/auth/seal';
 import { SignInFlow } from '../src/lib/auth/sign-in';
 import { developmentMasterKey } from '../src/lib/server/config';
-import { seed } from './seed';
+import { SYNTHETIC_TERMS_VERSION, seed } from './seed';
 import { SYNTHETIC_PERSONAS, personaEmail, personaPassword, personaTotpCode } from './synthetic-personas';
 
 /** `pnpm db:seed`: every synthetic persona can sign in with its derived credentials. */
@@ -59,6 +59,13 @@ describe('pnpm db:seed', () => {
       }
       const admin = result.users['practice-admin'] ?? '';
       expect((await withActor(pool, admin, (scope) => scope.allowedPracticeIds())).sort()).toEqual([result.practices.north, result.practices.south].sort());
+      // Every persona accepted the synthetic terms of use in force, so none is stopped at them (docs/adr/0053).
+      const required = await Promise.all(
+        Object.values(result.users).map((userId) => withActor(pool, userId, async (scope) => (await scope.client.query<{ required: boolean }>('SELECT app_actor_terms_required() AS required')).rows[0]?.required)),
+      );
+      expect(new Set(required)).toEqual(new Set([false]));
+      const terms = await withActor(pool, admin, async (scope) => (await scope.client.query<{ version: string }>('SELECT version FROM terms_version WHERE id = current_terms_version()')).rows);
+      expect(terms).toEqual([{ version: SYNTHETIC_TERMS_VERSION }]);
     } finally {
       await pool.end();
     }
