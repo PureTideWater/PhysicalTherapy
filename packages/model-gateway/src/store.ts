@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { LoggedCitation, ModelCallOutcome } from '@tp/db';
+import type { LoggedCitation, ModelCallOutcome } from '@tp/db/runtime';
 
 import { type FlagRow, type GatewayFeatures, resolveFeatures } from './flags';
 import type { ProviderKind } from './provider';

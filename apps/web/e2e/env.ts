@@ -26,6 +26,11 @@ const DIRECTORY = E2E_DATABASE === 'tp_e2e' ? 'tp-e2e' : `tp-e2e-${E2E_DATABASE}
 export const E2E_DEV_AUTH_DIR = path.join(tmpdir(), `${DIRECTORY}-dev-auth`);
 /** Where the e2e server's local upload receiver and the in-test worker keep sealed documents. */
 export const E2E_DOCUMENTS_DIR = path.join(tmpdir(), `${DIRECTORY}-documents`);
+/**
+ * Where the e2e server's local model provider reads its fixed outputs (MODEL_LOCAL_FIXTURES_DIR, one
+ * <key>.json per request, read on each call): the model features' journey writes the outputs it expects.
+ */
+export const E2E_MODEL_OUTPUTS_DIR = path.join(tmpdir(), `${DIRECTORY}-model-outputs`);
 /** Where the in-test worker's digests are emailed (the local mail sender's outbox: one JSON file per message). */
 export const E2E_MAIL_OUTBOX_DIR = path.join(tmpdir(), `${DIRECTORY}-mail`);
 

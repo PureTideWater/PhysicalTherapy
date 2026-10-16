@@ -1,5 +1,5 @@
 import { type Citation, RATE_METHODS, ROUNDING_RULES, TIMED_UNITS_RULES, addDays, pageTextHash, quoteOnPage, rateTermsInputSchema, rateTermsToJson, windowsOverlap } from '@tp/contracts';
-import type { LoggedCitation } from '@tp/db';
+import type { LoggedCitation } from '@tp/db/runtime';
 import { centsToString } from '@tp/money';
 import { z } from 'zod';
 

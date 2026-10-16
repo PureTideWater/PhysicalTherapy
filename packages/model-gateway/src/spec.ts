@@ -1,4 +1,4 @@
-import type { LoggedCitation } from '@tp/db';
+import type { LoggedCitation } from '@tp/db/runtime';
 import type { z } from 'zod';
 
 import type { PromptVersion } from './prompts';

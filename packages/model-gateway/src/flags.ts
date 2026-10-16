@@ -1,4 +1,4 @@
-import type { FeatureFlagKey, FeatureFlagScope } from '@tp/db';
+import type { FeatureFlagKey, FeatureFlagScope } from '@tp/db/runtime';
 
 /**
  * The flags the gateway obeys (PRD 14, Operational limits; Data dictionary, feature_flag), resolved for

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 
 import { chromium, defineConfig, devices } from '@playwright/test';
 
-import { E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
+import { E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_MODEL_OUTPUTS_DIR, E2E_ORIGIN, E2E_PORT, e2eAdminUrl, e2eDatabaseUrl } from './e2e/env';
 import { developmentMasterKey } from './src/lib/server/config';
 
 /**
@@ -60,6 +60,10 @@ export default defineConfig({
       // Uploads land in a local directory (the e2e suite's worker reads it) and queue on pg-boss's login.
       DOCUMENTS_DIR: E2E_DOCUMENTS_DIR,
       QUEUE_DATABASE_URL: e2eDatabaseUrl(),
+      // The model gateway on the local deterministic provider: it answers only the outputs a journey
+      // wrote for its exact requests (e2e/models.ts) and proposes nothing otherwise (docs/adr/0052).
+      MODEL_PROVIDER: 'local',
+      MODEL_LOCAL_FIXTURES_DIR: E2E_MODEL_OUTPUTS_DIR,
     },
   },
 });

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import pricesFile from '../config/models.json';
+import pricesFile from '../config/models.json' with { type: 'json' };
 import { GatewayConfigError } from './errors';
 import { PROVIDER_KINDS, type ProviderKind } from './provider';
 

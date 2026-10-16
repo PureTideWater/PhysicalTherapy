@@ -124,7 +124,7 @@ export default async function PacketPage(props: Props) {
               <input type="hidden" name="useDraft" value="on" />
             </ActionForm>
             {canDraftWithModel ? (
-              <ActionForm action={draftNarrativeFormAction} submit="Write the first version with the model's narrative" variant="outline" className="mt-4 flex max-w-xl flex-col gap-3">
+              <ActionForm action={draftNarrativeFormAction} submit="Draft the first version with the model" variant="outline" className="mt-4 flex max-w-xl flex-col gap-3">
                 <VersionFields practiceId={practiceId} caseId={item.id} builder={builder} version={null} />
               </ActionForm>
             ) : null}

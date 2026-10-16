@@ -1,13 +1,13 @@
 import { z } from 'zod';
 
-import contractTermsPrompt from '../prompts/propose-contract-terms/v1/prompt.json';
-import contractTermsSchema from '../prompts/propose-contract-terms/v1/schema.json';
-import denialLetterPrompt from '../prompts/read-denial-letter/v1/prompt.json';
-import denialLetterSchema from '../prompts/read-denial-letter/v1/schema.json';
-import narrativePrompt from '../prompts/draft-packet-narrative/v1/prompt.json';
-import narrativeSchema from '../prompts/draft-packet-narrative/v1/schema.json';
-import evidencePrompt from '../prompts/suggest-evidence-requests/v1/prompt.json';
-import evidenceSchema from '../prompts/suggest-evidence-requests/v1/schema.json';
+import contractTermsPrompt from '../prompts/propose-contract-terms/v1/prompt.json' with { type: 'json' };
+import contractTermsSchema from '../prompts/propose-contract-terms/v1/schema.json' with { type: 'json' };
+import denialLetterPrompt from '../prompts/read-denial-letter/v1/prompt.json' with { type: 'json' };
+import denialLetterSchema from '../prompts/read-denial-letter/v1/schema.json' with { type: 'json' };
+import narrativePrompt from '../prompts/draft-packet-narrative/v1/prompt.json' with { type: 'json' };
+import narrativeSchema from '../prompts/draft-packet-narrative/v1/schema.json' with { type: 'json' };
+import evidencePrompt from '../prompts/suggest-evidence-requests/v1/prompt.json' with { type: 'json' };
+import evidenceSchema from '../prompts/suggest-evidence-requests/v1/schema.json' with { type: 'json' };
 import { jsonSha256 } from './hash';
 import { EFFORTS, type Effort, PROVIDER_KINDS, type ProviderKind } from './provider';
 import { MODEL_PURPOSES, type ModelPurpose } from './purposes';

@@ -1,4 +1,4 @@
-import { type FeatureFlagKey, type FeatureFlagScope, OPERATOR_ROLE, type PracticeScope, REVIEWER_DECISIONS, type ReviewerDecision, type ScopeClient, type ScopePool, recordAuditEvent, withActor, withJobScope, withPracticeScope } from '@tp/db';
+import { type FeatureFlagKey, type FeatureFlagScope, OPERATOR_ROLE, type PracticeScope, REVIEWER_DECISIONS, type ReviewerDecision, type ScopeClient, type ScopePool, recordAuditEvent, withActor, withJobScope, withPracticeScope } from '@tp/db/runtime';
 
 import { GatewayError } from './errors';
 import { type FlagRow, type GatewayFeatures, resolveFeatures } from './flags';

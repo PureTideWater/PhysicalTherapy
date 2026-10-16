@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 import { databaseClient, migrate } from '@tp/db';
@@ -8,7 +8,7 @@ import { PgBoss } from 'pg-boss';
 
 import { developmentMasterKey } from '../src/lib/server/config';
 import { seed } from '../scripts/seed';
-import { E2E_DATABASE, E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_MAIL_OUTBOX_DIR, e2eAdminUrl, e2eDatabaseUrl } from './env';
+import { E2E_DATABASE, E2E_DEV_AUTH_DIR, E2E_DOCUMENTS_DIR, E2E_MAIL_OUTBOX_DIR, E2E_MODEL_OUTPUTS_DIR, e2eAdminUrl, e2eDatabaseUrl } from './env';
 
 /**
  * Before the e2e server starts: a fresh database (migrated, with the application role's dev login,
@@ -35,6 +35,9 @@ try {
 rmSync(E2E_DEV_AUTH_DIR, { recursive: true, force: true });
 rmSync(E2E_DOCUMENTS_DIR, { recursive: true, force: true });
 rmSync(E2E_MAIL_OUTBOX_DIR, { recursive: true, force: true });
+// The local model provider's outputs: none until a journey writes one (every other call proposes nothing).
+rmSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true, force: true });
+mkdirSync(E2E_MODEL_OUTPUTS_DIR, { recursive: true });
 await seed({ databaseUrl: e2eDatabaseUrl(), devAuthDirectory: E2E_DEV_AUTH_DIR, masterKey: developmentMasterKey() });
 // pg-boss's schema and the worker's queues, as the worker creates them on start: the server queues
 // intake jobs on them, and the upload tests run the worker beside it.

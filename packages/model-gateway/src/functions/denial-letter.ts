@@ -1,4 +1,4 @@
-import type { LoggedCitation } from '@tp/db';
+import type { LoggedCitation } from '@tp/db/runtime';
 import { DENIAL_CATEGORIES } from '@tp/rules';
 import { z } from 'zod';
 

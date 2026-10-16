@@ -1,4 +1,4 @@
-import { QUESTION_TOPICS } from '@tp/db';
+import { QUESTION_TOPICS } from '@tp/db/runtime';
 import { EVIDENCE_GAP_CODES } from '@tp/packets';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import { z } from 'zod';
