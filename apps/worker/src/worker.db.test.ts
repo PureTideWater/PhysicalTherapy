@@ -49,7 +49,11 @@ describe('worker against PostgreSQL', () => {
   });
 
   it('runs a queued job through its handler and shuts down gracefully', async () => {
-    await withScratchDatabase(readDatabaseUrl(), async (url) => {
+    // A migrated database: before a job that starts new work (a digest), the worker asks the database
+    // whether the practice's organization may start it (practice_run_refusal, docs/adr/0050).
+    const database = await createMigratedDatabase(readDatabaseUrl());
+    try {
+      const url = database.url;
       const boss = new PgBoss(url);
       boss.on('error', () => undefined);
       let resolveSeen: (jobId: string) => void = () => undefined;
@@ -82,8 +86,10 @@ describe('worker against PostgreSQL', () => {
         await worker.stop();
         await pool.end();
       }
-    });
-  }, 30_000);
+    } finally {
+      await database.drop();
+    }
+  }, 60_000);
 });
 
 type WorkHandler = (jobs: { id: string; data: unknown; retryCount?: number }[]) => Promise<unknown>;
