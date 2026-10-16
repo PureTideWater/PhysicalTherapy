@@ -24,7 +24,7 @@ describe('CDK app', () => {
     }
   });
 
-  it.each(ENVIRONMENTS)('%s synthesizes without errors or warnings', (environment) => {
+  it.each(ENVIRONMENTS)('%s synthesizes without errors or warnings', { timeout: SYNTH_TIMEOUT_MS }, (environment) => {
     const { stack } = synthesized(environment);
     expect(Annotations.fromStack(stack).findError('*', Match.anyValue())).toEqual([]);
     expect(Annotations.fromStack(stack).findWarning('*', Match.anyValue())).toEqual([]);
