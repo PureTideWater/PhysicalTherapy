@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { signOut } from '../app/account/actions';
 import type { Shell } from '../lib/http/route';
 import { roleNames } from './format';
+import { HELP } from './help';
 import { FormKeys } from './form-keys';
 
 /**
@@ -88,6 +89,13 @@ export type ShellSection =
   | 'rule_releases'
   | 'billing'
   | 'console_billing'
+  | 'settings'
+  | 'users'
+  | 'prospects'
+  | 'terms_versions'
+  | 'tickets'
+  | 'status_admin'
+  | 'compliance'
   | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
@@ -96,6 +104,7 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
   }
   const platformAdmin = shell.platformRoles.includes('platform_admin');
   const specialist = shell.platformRoles.includes('contract_specialist');
+  const supportDesk = shell.platformRoles.includes('support');
   return (
     <div className="flex min-h-screen">
       <aside className="flex w-64 shrink-0 flex-col gap-4 border-r bg-sidebar p-4 text-sidebar-foreground" aria-label="Navigation">
@@ -153,9 +162,12 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
             <RailLink href={`/p/${shell.currentPracticeId}/notifications`} active={section === 'notifications'}>
               Notifications
             </RailLink>
+            <RailLink href={`/p/${shell.currentPracticeId}/settings`} active={section === 'settings'}>
+              Settings
+            </RailLink>
           </nav>
         )}
-        {platformAdmin || specialist ? (
+        {platformAdmin || specialist || supportDesk ? (
           <nav aria-label="Internal console" className="flex flex-col gap-1">
             <p className="px-3 text-xs font-semibold uppercase text-muted-foreground">Internal console</p>
             {platformAdmin ? (
@@ -172,7 +184,24 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
                 <RailLink href="/console/billing" active={section === 'console_billing'}>
                   Billing status
                 </RailLink>
+                <RailLink href="/console/prospects" active={section === 'prospects'}>
+                  Audit requests
+                </RailLink>
+                <RailLink href="/console/terms" active={section === 'terms_versions'}>
+                  Terms of use
+                </RailLink>
+                <RailLink href="/console/status" active={section === 'status_admin'}>
+                  Status and maintenance
+                </RailLink>
+                <RailLink href="/console/compliance" active={section === 'compliance'}>
+                  SOC 2 evidence
+                </RailLink>
               </>
+            ) : null}
+            {platformAdmin || supportDesk ? (
+              <RailLink href="/console/tickets" active={section === 'tickets'}>
+                Support tickets
+              </RailLink>
             ) : null}
             {specialist ? (
               <RailLink href="/console/specialist-queue" active={section === 'specialist_queue'}>
@@ -191,6 +220,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           <RailLink href="/settings/billing" active={section === 'billing'}>
             Billing
           </RailLink>
+          <RailLink href={`/support?from=${section}`} active={false}>
+            Help and support
+          </RailLink>
         </nav>
         <div className="mt-auto flex flex-col gap-2">
           <Separator />
@@ -206,7 +238,24 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           </form>
         </div>
       </aside>
-      <main className="flex min-w-0 flex-1 flex-col gap-6 p-8">{children}</main>
+      <main className="flex min-w-0 flex-1 flex-col gap-6 p-8">
+        <details className="self-end text-sm" data-help={section}>
+          <summary className="cursor-pointer text-muted-foreground underline">Help with this screen</summary>
+          <div className="mt-2 flex max-w-md flex-col gap-2 rounded-md border bg-background p-3">
+            <p>{HELP[section]}</p>
+            <p>
+              <Link className="underline" href={`/support?from=${section}`}>
+                Ask support about this screen
+              </Link>{' '}
+              ·{' '}
+              <Link className="underline" href="/status">
+                Service status
+              </Link>
+            </p>
+          </div>
+        </details>
+        {children}
+      </main>
     </div>
   );
 }

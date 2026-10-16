@@ -46,3 +46,33 @@ export function SelectField({
     </div>
   );
 }
+
+/** A labelled multi-line text field. */
+export function TextAreaField({
+  label,
+  name,
+  hint,
+  id: given,
+  rows = 4,
+  ...props
+}: { readonly label: string; readonly name: string; readonly hint?: string; readonly rows?: number } & ComponentProps<'textarea'>) {
+  const id = given ?? `field-${name}`;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor={id}>{label}</Label>
+      <textarea
+        id={id}
+        name={name}
+        rows={rows}
+        aria-describedby={hint === undefined ? undefined : `${id}-hint`}
+        className="rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {...props}
+      />
+      {hint === undefined ? null : (
+        <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}

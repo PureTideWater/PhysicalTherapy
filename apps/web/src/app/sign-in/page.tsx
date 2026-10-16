@@ -35,6 +35,17 @@ export default async function SignInPage(props: { readonly searchParams: Promise
           Sign in with a hardware key
         </Link>
       </p>
+      <p className="text-sm text-muted-foreground">
+        New here?{' '}
+        <Link className="underline" href="/request-audit">
+          Request an audit
+        </Link>
+        . Trouble signing in? Check the{' '}
+        <Link className="underline" href="/status">
+          service status
+        </Link>
+        .
+      </p>
     </main>
   );
 }

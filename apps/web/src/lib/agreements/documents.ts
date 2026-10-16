@@ -75,7 +75,7 @@ export class S3AgreementDocuments implements AgreementDocuments {
 }
 
 /** The most an uploaded agreement may be. */
-export const MAX_AGREEMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_AGREEMENT_BYTES = 10 * 1024 * 1024;
 
 /** Reads an upload whole (an agreement is small) and its SHA-256, refusing more than the limit. */
 export async function readAgreementUpload(body: AsyncIterable<Uint8Array>): Promise<{ readonly bytes: Uint8Array; readonly sha256: string }> {
@@ -85,7 +85,7 @@ export async function readAgreementUpload(body: AsyncIterable<Uint8Array>): Prom
   for await (const part of body) {
     size += part.length;
     if (size > MAX_AGREEMENT_BYTES) {
-      throw new AgreementDocumentError('an agreement document is at most 20 MB');
+      throw new AgreementDocumentError('an agreement document is at most 10 MB');
     }
     hash.update(part);
     parts.push(part);

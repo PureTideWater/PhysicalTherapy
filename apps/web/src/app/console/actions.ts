@@ -2,6 +2,7 @@
 
 import { type ActionState, runAction } from '../../lib/http/next';
 import { createOrganization, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, recordAgreement, setPracticeSettings, unlockUser } from '../../lib/routes/console';
+import { resendInvitationFromConsole, uploadAgreement } from '../../lib/routes/console-onboarding';
 
 /** Server actions for the internal console; each runs its registered route (src/lib/routes/console.ts). */
 
@@ -39,4 +40,13 @@ export async function createSupportGrantAction(_state: ActionState, form: FormDa
 
 export async function endSupportGrantAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(endSupportGrant, form);
+}
+
+export async function resendInvitationAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(resendInvitationFromConsole, form);
+}
+
+/** Records a signed agreement uploaded as a PDF, hashed on the server (docs/adr/0053). */
+export async function uploadAgreementAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(uploadAgreement, form, {}, { fileField: 'document' });
 }

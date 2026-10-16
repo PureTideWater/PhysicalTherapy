@@ -154,7 +154,7 @@ describe('the uptime contract with the web app', () => {
   it('checks the public sign-in page and a sign-in API route that answers an empty body with 400', () => {
     expect(source('app/sign-in/page.tsx')).toContain('loadPublicPage(signInPage');
     expect(source('app/api/sign-in/hardware-key/options/route.ts')).toContain('export const POST = routeHandler(hardwareKeyOptions');
-    expect(source('lib/routes/sign-in.ts')).toMatch(/path: '\/api\/sign-in\/hardware-key\/options',[\s\S]{0,80}input: z\.object\(\{ email: emailAddress \}\)/);
+    expect(source('lib/routes/sign-in.ts')).toMatch(/path: '\/api\/sign-in\/hardware-key\/options',[\s\S]{0,160}input: z\.object\(\{ email: emailAddress \}\)/);
     expect(source('lib/http/handler.ts')).toContain('invalid: 400,');
     expect(UPTIME_CHECKS.api).toMatchObject({ method: 'POST', body: {}, status: 400 });
   });

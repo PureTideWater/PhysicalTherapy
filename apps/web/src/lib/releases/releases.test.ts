@@ -65,6 +65,9 @@ describe('the content checkout of the Rule releases screen', () => {
       AUTH_COOKIE_SECRET: Buffer.alloc(32, 1).toString('base64'),
       DOCUMENTS_BUCKET: 'tp-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'support@synthetic.test',
+      TP_ENVIRONMENT: 'staging',
     };
     expect(readWebConfig(production).contentRoot).toBeNull();
     const scratch = mkdtempSync(path.join(tmpdir(), 'tp-content-root-test-'));

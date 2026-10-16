@@ -318,6 +318,8 @@ describe('the web configuration', () => {
       KMS_KEY_ID: 'alias/tp-production',
       AUTH_COOKIE_SECRET: key,
       TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      TP_ENVIRONMENT: 'production',
       APP_ORIGIN: 'https://app.synthetic.test/ignored',
       DOCUMENTS_BUCKET: 'tp-production-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp-production',
@@ -331,6 +333,10 @@ describe('the web configuration', () => {
       documents: { kind: 's3', bucket: 'tp-production-documents', kmsKeyId: 'alias/tp-production' },
       queueDatabaseUrl: 'postgres://tp_queue:x@db.internal:5432/tp',
       trustedProxyHops: 1,
+      supportEmail: 'help@synthetic.test',
+      environment: 'production',
+      esign: { kind: 'none' },
+      complianceExportDir: null,
     });
     expect(() => readWebConfig({ ...base, TP_AUTH_PROVIDER: 'cognito' })).toThrow('COGNITO_USER_POOL_ID is required for Cognito');
     expect(() => readWebConfig({ ...base, TP_KEY_PROVIDER: 'kms' })).toThrow('KMS_KEY_ID is required for KMS');
@@ -372,8 +378,39 @@ describe('the web configuration', () => {
       AUTH_COOKIE_SECRET: key,
       DOCUMENTS_BUCKET: 'tp-documents',
       DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      TP_ENVIRONMENT: 'staging',
     };
     expect(() => readWebConfig(production)).toThrow(new ConfigError('TRUSTED_PROXY_HOPS is required in production'));
+  });
+
+  it('requires the support address and the environment in production, and refuses the local e-signature stand-in there (docs/adr/0053)', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+      DOCUMENTS_BUCKET: 'tp-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      TP_ENVIRONMENT: 'staging',
+    };
+    expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
+    expect(() => readWebConfig({ ...production, SUPPORT_EMAIL: undefined })).toThrow(new ConfigError('SUPPORT_EMAIL is required in production'));
+    expect(() => readWebConfig({ ...production, TP_ENVIRONMENT: undefined })).toThrow(new ConfigError('TP_ENVIRONMENT is required in production'));
+    expect(() => readWebConfig({ ...production, ESIGN_PROVIDER: 'local' })).toThrow(ConfigError);
+    expect(readWebConfig({ ...production, COMPLIANCE_EXPORT_DIR: '/srv/evidence' }).complianceExportDir).toBe('/srv/evidence');
+    // In development: a synthetic support address, the local stand-in and a local evidence directory.
+    const development = readWebConfig(base);
+    expect(development).toMatchObject({ supportEmail: 'support@synthetic.test', environment: 'dev', esign: { kind: 'local' } });
+    expect(development.complianceExportDir).not.toBeNull();
+    expect(readWebConfig({ ...base, ESIGN_PROVIDER: 'none' }).esign).toEqual({ kind: 'none' });
+    expect(readWebConfig({ ...base, ESIGN_LOCAL_SECRET: 'synthetic-esign-secret-0001', ESIGN_LOCAL_DIR: '/tmp/esign' }).esign).toEqual({ kind: 'local', secret: 'synthetic-esign-secret-0001', directory: '/tmp/esign' });
   });
 
   it('names the settings it refuses, never their values', () => {

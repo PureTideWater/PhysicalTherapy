@@ -182,7 +182,7 @@ export interface TicketView {
   readonly createdAt: Date;
 }
 
-export const supportPage = selfRoute({
+export const supportRequestPage = selfRoute({
   id: 'support.page',
   kind: 'page',
   path: '/support',
@@ -434,4 +434,4 @@ export const setMaintenance = platformRoute({
   sample: { params: () => ({}), input: () => ({ on: 'false' }) },
 });
 
-export const SUPPORT_ROUTES = [statusPage, maintenancePage, supportPage, createTicket, ticketsPage, setTicketStatus, consoleStatusPage, setComponentStatus, openIncident, updateIncident, setMaintenance] as const;
+export const SUPPORT_ROUTES = [statusPage, maintenancePage, supportRequestPage, createTicket, ticketsPage, setTicketStatus, consoleStatusPage, setComponentStatus, openIncident, updateIncident, setMaintenance] as const;

@@ -9,6 +9,9 @@ const monorepoRoot = path.resolve(import.meta.dirname, '../..');
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // A server action's body may carry a signed agreement's PDF (at most 10 MB, MAX_AGREEMENT_BYTES; docs/adr/0053);
+  // every other upload goes straight to storage through a pre-signed URL.
+  experimental: { serverActions: { bodySizeLimit: '11mb' } },
   // The fixed security headers on every response, static assets included; the per-request CSP with its nonce
   // comes from src/proxy.ts (docs/adr/0053).
   headers: () => Promise.resolve([{ source: '/:path*', headers: [...STATIC_SECURITY_HEADERS] }]),

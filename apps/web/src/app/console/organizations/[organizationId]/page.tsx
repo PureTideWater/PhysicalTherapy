@@ -8,7 +8,7 @@ import { roleName, roleNames, utcDate } from '../../../../components/format';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationPage } from '../../../../lib/routes/console';
-import { createPracticeAction, endMembershipAction, inviteMemberAction, recordAgreementAction, unlockUserAction } from '../../actions';
+import { createPracticeAction, endMembershipAction, inviteMemberAction, recordAgreementAction, resendInvitationAction, unlockUserAction, uploadAgreementAction } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Organization' };
@@ -31,7 +31,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="organizations" roles={page.roles} message={page.message} nextStep="The internal console is for platform administrators." />;
   }
-  const { organization, roles, practices, members, agreements, grants } = page.data;
+  const { organization, roles, practices, members, agreements, grants, invitations } = page.data;
   const practiceName = new Map(practices.map((practice) => [practice.id, practice.name]));
   return (
     <AppShell shell={page.shell} section="organizations">
@@ -135,6 +135,51 @@ export default async function OrganizationPage(props: { readonly params: Promise
 
       <Card>
         <CardHeader>
+          <CardTitle>Invitations</CardTitle>
+          <CardDescription>Each lasts seven days, like the temporary password it sends. An expired one is sent again from here, never by the person invited.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {invitations.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No invitations sent from the application yet.</p>
+          ) : (
+            <table className="w-full text-left text-sm" aria-label="Invitations">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="py-1 font-medium">Email</th>
+                  <th className="py-1 font-medium">Role</th>
+                  <th className="py-1 font-medium">Sent</th>
+                  <th className="py-1 font-medium">State</th>
+                  <th className="py-1 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {invitations.map((invitation) => (
+                  <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
+                    <td className="py-1">{invitation.email}</td>
+                    <td className="py-1">{roleName(invitation.role)}</td>
+                    <td className="py-1">
+                      {utcDate(invitation.sentAt)} ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
+                    </td>
+                    <td className="py-1">{invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}</td>
+                    <td className="py-1">
+                      {invitation.acceptedAt === null ? (
+                        <ActionForm action={resendInvitationAction} submit="Send again" variant="outline" className="flex flex-col gap-1">
+                          <FormKeys />
+                          <input type="hidden" name="organizationId" value={organization.id} />
+                          <input type="hidden" name="invitationId" value={invitation.id} />
+                        </ActionForm>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Agreements</CardTitle>
           <CardDescription>Signed documents, stored by reference and SHA-256 with version, signer and date. A grant cannot exist without one.</CardDescription>
         </CardHeader>
@@ -181,6 +226,23 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <Field label="Signed on" name="signedOn" type="date" required />
             <Field label="Document reference" name="documentRef" required hint="The e-signature vendor's envelope or document reference." />
             <Field label="SHA-256" name="sha256" required pattern="[0-9a-fA-F]{64}" hint="The signed document's SHA-256, 64 hexadecimal characters." />
+          </ActionForm>
+          <h3 className="text-sm font-semibold">Or upload the signed PDF</h3>
+          <p className="text-xs text-muted-foreground">The server hashes it and keeps it under an opaque key; an agreement signed through the e-signature vendor arrives by its webhook instead.</p>
+          <ActionForm action={uploadAgreementAction} submit="Upload agreement" className="grid max-w-xl gap-3">
+            <FormKeys />
+            <input type="hidden" name="organizationId" value={organization.id} />
+            <SelectField label="Kind" id="upload-kind" name="kind" options={AGREEMENT_KINDS} />
+            <SelectField
+              label="Practice"
+              id="upload-practice"
+              name="practiceId"
+              options={[{ value: '', label: 'Whole organization' }, ...practices.map((practice) => ({ value: practice.id, label: practice.name }))]}
+            />
+            <Field label="Version" id="upload-version" name="version" required maxLength={40} />
+            <Field label="Signer" id="upload-signer" name="signer" required maxLength={200} />
+            <Field label="Signed on" id="upload-signed-on" name="signedOn" type="date" required />
+            <Field label="Signed PDF" id="upload-document" name="document" type="file" accept="application/pdf" required hint="At most 10 MB." />
           </ActionForm>
         </CardContent>
       </Card>

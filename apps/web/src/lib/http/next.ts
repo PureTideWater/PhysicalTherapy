@@ -124,10 +124,17 @@ export interface ActionState {
   readonly locked?: boolean;
 }
 
-function formInput(form: FormData): Record<string, string> {
+/** A form's fields; a field named with [] (a group of checkboxes) is its checked values, comma-joined, under its name. */
+export function formInput(form: FormData): Record<string, string> {
   const input: Record<string, string> = {};
   for (const [name, value] of form.entries()) {
-    if (typeof value === 'string' && !name.startsWith('$ACTION')) {
+    if (typeof value !== 'string' || name.startsWith('$ACTION')) {
+      continue;
+    }
+    if (name.endsWith('[]')) {
+      const key = name.slice(0, -2);
+      input[key] = input[key] === undefined ? value : `${input[key]},${value}`;
+    } else {
       input[name] = value;
     }
   }
