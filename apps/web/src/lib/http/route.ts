@@ -193,6 +193,8 @@ export interface SampleRefs {
   readonly exportedVersionId: string;
   readonly submissionId: string;
   readonly responseDocumentId: string;
+  /** A third case, a Medicare Advantage non-contracted pattern, whose current version cites the regulation and waits for a specialist's confirmation (docs/adr/0047). */
+  readonly regulationVersionId: string;
   /** A printed coverage report of the practice (docs/adr/0045). */
   readonly reportDocumentId: string;
 }

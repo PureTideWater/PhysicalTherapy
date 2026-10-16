@@ -1,4 +1,13 @@
-import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
+import {
+  type KeyProvider,
+  PermissionDeniedError,
+  type PracticeScope,
+  type ScopeClient,
+  loadPracticeCipher,
+  readWithAudit,
+  recordAuditEvent,
+  requirePlatformPermission,
+} from '@tp/db/runtime';
 import { type Cents, centsToString, parseCents } from '@tp/money';
 import {
   FOLLOW_UP_DAYS,
@@ -253,13 +262,66 @@ export interface VersionAction {
 
 /**
  * A contract specialist (under a support grant) confirms the regulation applies to a Medicare Advantage
- * non-contracted case before its packet is approved (PRD 2, step 5; Rules reference).
+ * non-contracted case before its packet is approved (PRD 2, step 5; Rules reference), in their own name:
+ * a practice the specialist reaches and the platform permission pricing.answer (as rate_record.approve is
+ * checked for the specialist's approvals), checked here and by the database, which records who and when.
  */
 export async function confirmRegulation(scope: PracticeScope<ScopeClient>, input: VersionAction): Promise<void> {
+  if (scope.access(input.practiceId) === undefined) {
+    throw new PermissionDeniedError('pricing.answer', 'no_access', []);
+  }
+  await requirePlatformPermission(scope, 'pricing.answer');
   const { rowCount } = await underRules(() => scope.client.query('UPDATE packet_version SET regulation_confirmed_by = app_actor_id() WHERE id = $1 AND practice_id = $2', [input.versionId, input.practiceId]));
   if (rowCount !== 1) {
     throw new PacketRefusedError('version_not_found', 'no such packet version in this practice');
   }
+}
+
+export interface RegulationAwaiting {
+  readonly versionId: string;
+  readonly caseId: string;
+  readonly versionNo: number;
+  readonly writtenAt: Date;
+  /** The regulation the version cites, and what it says (the rule release's words). */
+  readonly reference: string;
+  readonly statement: string;
+  readonly payerName: string;
+  readonly planKey: string;
+  readonly lines: number;
+  readonly claims: number;
+  readonly varianceCents: Cents;
+}
+
+/**
+ * The packet versions waiting for a contract specialist to confirm the regulation applies (PRD 2, step 5;
+ * Rules reference, Medicare Advantage non-contracting): each packet's current version, not approved,
+ * citing the regulation, not yet confirmed, oldest first. The version's own content only, which holds no
+ * identifier (they are placeholders).
+ */
+export async function regulationsAwaiting(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string }): Promise<RegulationAwaiting[]> {
+  const { rows } = await scope.client.query<{ id: string; case_id: string; version_no: number; created_at: Date; content: PacketContent }>(
+    `SELECT v.id, p.case_id, v.version_no, v.created_at, v.content
+       FROM packet_version v JOIN packet p ON p.current_version_id = v.id
+      WHERE v.practice_id = $1 AND v.content -> 'citation' ->> 'kind' = 'regulation' AND v.regulation_confirmed_by IS NULL AND v.approved_by IS NULL
+      ORDER BY v.created_at, v.id`,
+    [input.practiceId],
+  );
+  return rows.map((row) => {
+    const citation = row.content.citation;
+    return {
+      versionId: row.id,
+      caseId: row.case_id,
+      versionNo: row.version_no,
+      writtenAt: row.created_at,
+      reference: citation.kind === 'regulation' ? citation.reference : '',
+      statement: citation.kind === 'regulation' ? citation.statement : '',
+      payerName: row.content.payer.name,
+      planKey: row.content.payer.plan_key,
+      lines: row.content.pattern.lines,
+      claims: row.content.pattern.claims,
+      varianceCents: parseCents(row.content.pattern.variance_cents),
+    };
+  });
 }
 
 export interface ApprovedVersion {
@@ -344,8 +406,9 @@ export interface LoggedSubmission {
 /**
  * Logs a submission the customer made through the payer's own channel (the product never submits),
  * carrying the export's SHA-256 into the log (CAS-12). The database refuses a version not exported, a
- * date before the export or after today, a dispute the payer has answered (unless a denial reopened it,
- * then within the next level's window), and anyone who does not log submissions.
+ * version an edit replaced (unless it was sent before the edit; CAS-13), a date before the export or
+ * after today, a dispute the payer has answered (unless a denial reopened it, then within the next
+ * level's window), and anyone who does not log submissions.
  */
 export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: LogSubmissionInput): Promise<LoggedSubmission> {
   if (!isIsoDate(input.submittedOn) || (input.followUpOn !== undefined && input.followUpOn !== null && !isIsoDate(input.followUpOn))) {
@@ -354,8 +417,10 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   if (!(SUBMISSION_CHANNELS as readonly string[]).includes(input.channel)) {
     throw new PacketRuleError('23514', 'a submission goes through the payer portal, fax, mail or provider-relations email');
   }
-  const { rows: versions } = await scope.client.query<{ case_id: string; export_sha256: string | null; export_csv_sha256: string | null }>(
-    'SELECT p.case_id, v.export_sha256, v.export_csv_sha256 FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2',
+  const { rows: versions } = await scope.client.query<{ case_id: string; export_sha256: string | null; export_csv_sha256: string | null; current: boolean; replaced_on: string | null }>(
+    `SELECT p.case_id, v.export_sha256, v.export_csv_sha256, p.current_version_id = v.id AS current,
+            (SELECT (n.created_at AT TIME ZONE 'UTC')::date::text FROM packet_version n WHERE n.packet_id = v.packet_id AND n.version_no = v.version_no + 1) AS replaced_on
+       FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
     [input.versionId, input.practiceId],
   );
   const version = versions[0];
@@ -364,6 +429,10 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   }
   if (version.export_sha256 === null || version.export_csv_sha256 === null) {
     throw new PacketRuleError('23514', 'a packet is submitted once it is exported');
+  }
+  // An edit clears the approval (CAS-13): a version an edit replaced was sent only if it went before the edit.
+  if (!version.current && (version.replaced_on === null || input.submittedOn >= version.replaced_on)) {
+    throw new PacketRuleError('23514', "a submission sends the packet's current version; one an edit replaced is logged only when it was sent before the edit");
   }
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
   const reference = input.reference === null || input.reference.trim() === '' ? null : cipher.encrypt('submission.reference', input.reference.trim());
@@ -556,6 +625,38 @@ export async function followUpsDue(scope: PracticeScope<ScopeClient>, input: { r
     [input.practiceId, asOf],
   );
   return rows.map((row) => ({ caseId: row.case_id, submissionId: row.submission_id, submittedOn: row.submitted_on, followUpOn: row.follow_up_on, daysWaiting: row.days_waiting }));
+}
+
+/**
+ * The follow-up reminder (PRD 6, Submissions and payer responses: "follow-up dates; reminders"; CAS-14):
+ * once for each submission whose follow-up date has come by `asOf` with no response from the payer, the
+ * case's owner is told in the app, or the practice's people when the case has no owner who reaches the
+ * practice and keeps in-app notices on. Counts only (the days since it was submitted), the submission's
+ * opaque ID as its subject, so a replay tells no one twice. A practice job's (the daily monitor), since
+ * only a job reads the recipients. Returns how many were told.
+ */
+export async function remindFollowUps(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string; readonly asOf?: string }): Promise<number> {
+  const due = await followUpsDue(scope, input);
+  if (due.length === 0) {
+    return 0;
+  }
+  const people = (await scope.client.query<{ user_id: string; in_app: boolean }>('SELECT user_id, in_app FROM practice_notification_recipients()')).rows.filter((person) => person.in_app);
+  let told = 0;
+  for (const followUp of due) {
+    const owner = (await scope.client.query<{ owner_user_id: string | null }>('SELECT owner_user_id FROM "case" WHERE id = $1', [followUp.caseId])).rows[0]?.owner_user_id ?? null;
+    const recipients = owner !== null && people.some((person) => person.user_id === owner) ? [owner] : people.map((person) => person.user_id);
+    if (recipients.length === 0) {
+      continue;
+    }
+    const { rowCount } = await scope.client.query(
+      `INSERT INTO notification (practice_id, user_id, kind, subject_id, counts, totals_cents)
+       SELECT $1, u.id, 'follow_up', $2, $3, '{}' FROM unnest($4::uuid[]) AS u (id) ORDER BY u.id
+       ON CONFLICT (user_id, kind, subject_id) DO NOTHING`,
+      [input.practiceId, followUp.submissionId, JSON.stringify({ days_waiting: followUp.daysWaiting }), recipients],
+    );
+    told += rowCount ?? 0;
+  }
+  return told;
 }
 
 /** The follow-up date a submission gets unless the person names one. */

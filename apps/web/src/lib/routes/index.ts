@@ -20,6 +20,7 @@ import { REPORT_ROUTES } from './reports';
 import { ROI_ROUTES } from './roi';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
 import { SIGN_IN_ROUTES } from './sign-in';
+import { SPECIALIST_ROUTES } from './specialist';
 import { SUBMISSION_ROUTES } from './submissions';
 import { TRIAGE_ROUTES } from './triage';
 import { UPLOAD_ROUTES } from './uploads';
@@ -66,6 +67,7 @@ export const ROUTES: readonly Route[] = [
   ...RELEASE_ROUTES,
   ...CONTRACT_ROUTES,
   ...ABSTRACTION_ROUTES,
+  ...SPECIALIST_ROUTES,
   ...CONSOLE_ROUTES,
   ...RULE_RELEASE_ROUTES,
 ];

@@ -1,7 +1,7 @@
 'use server';
 
 import { type ActionState, runAction } from '../../../../lib/http/next';
-import { adjustEntryAction, matchClaimAction, matchDepositAction, matchPostingAction, reverseMatchAction } from '../../../../lib/routes/reconciliation';
+import { matchClaimAction, matchDepositAction, matchPostingAction, reverseMatchAction } from '../../../../lib/routes/reconciliation';
 
 /** Matches an unmatched posting row to a remittance by hand (PRD 13, Matching step 4: "a manual match records the user"). */
 export async function matchPostingFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
@@ -21,9 +21,4 @@ export async function matchClaimFormAction(_state: ActionState, form: FormData):
 /** Reverses a match with a reason, once the person confirms what it does (PRD 7: "reverse a match"). */
 export async function reverseMatchFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(reverseMatchAction, form, { practiceId: form.get('practiceId') });
-}
-
-/** Corrects an entry's amount with a reason, once the person confirms what it does (PRD 13, Entries: adjusted). */
-export async function adjustEntryFormAction(_state: ActionState, form: FormData): Promise<ActionState> {
-  return runAction(adjustEntryAction, form, { practiceId: form.get('practiceId') });
 }

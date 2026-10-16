@@ -19,8 +19,9 @@ import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
-import { adjustEntryAction, matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
+import { matchDepositAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
+import { adjustEntryAction, ledgerReviewPage } from './specialist';
 
 /**
  * The Reconciliation screen, the posting-template mapping and the ROI statements through their routes
@@ -63,7 +64,9 @@ const tokens = new Map<string, string>();
 async function sessionOf(userId: string): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
-    token = (await openSession(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    // An internal role signs in with a hardware key (the contract specialist, under the practice's support grant).
+    const method = userId === w.pricing.specialist ? 'webauthn' : 'totp';
+    token = (await openSession(w.app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;
@@ -304,23 +307,36 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect(home.recoveredQuarter.cents).toBe('0');
   });
 
-  it('adjusts an entry with the person’s reason and confirmation, as its own signed entry, and never one that was reversed (PRD 13, Entries: adjusted)', async () => {
+  it('lets the contract specialist alone adjust an entry, with a reason and confirmation, within what its evidence shows, and never one that was reversed (PRD 13, Entries: adjusted)', async () => {
     const page = ok(await call(reconciliationPage, practice.manager, P()));
     expect(page.linkage.items[0]?.shortfallCents).toBeNull();
     const approval = page.entries.items.find((entry) => entry.stage === 'approved');
+    const recoupment = page.entries.items.find((entry) => entry.stage === 'recouped');
     const undone = page.entries.items.find((entry) => entry.stage === 'deposited' && !entry.adjustable);
     expect(approval?.adjustable).toBe(true);
     expect(undone).toBeDefined();
     expect(page.entries.items.filter((entry) => entry.stage === 'reversed').every((entry) => !entry.adjustable)).toBe(true);
-    const input = { entryId: approval?.id, amount: '-5.00', reason: 'SYNTHETIC specialist review of the approval' };
+    const specialist = w.pricing.specialist;
+    const input = { entryId: recoupment?.id, amount: '5.00', reason: 'SYNTHETIC specialist review of the take-back' };
+    // The viewer and the billing manager reconcile, read or post; neither corrects an amount.
     expect((await call(adjustEntryAction, viewer, P(), { ...input, confirm: 'on' })).status).toBe('forbidden');
-    expect(await call(adjustEntryAction, practice.manager, P(), input)).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
-    expect(await call(adjustEntryAction, practice.manager, P(), { ...input, amount: '0.00', confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'amount' }] });
-    expect(await call(adjustEntryAction, practice.manager, P(), { ...input, amount: '5', confirm: 'on', entryId: undone?.id })).toMatchObject({ status: 'invalid', issues: [{ field: 'entryId' }] });
-    const adjusted = ok(await call(adjustEntryAction, practice.manager, P(), { ...input, confirm: 'on' }));
-    expect(adjusted.redirect).toBe(`/p/${practice.practiceId}/reconciliation?notice=adjusted`);
+    expect((await call(adjustEntryAction, practice.manager, P(), { ...input, confirm: 'on' })).status).toBe('forbidden');
+    expect(await call(adjustEntryAction, specialist, P(), input)).toMatchObject({ status: 'invalid', issues: [{ field: 'confirm' }] });
+    expect(await call(adjustEntryAction, specialist, P(), { ...input, amount: '0.00', confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'amount' }] });
+    expect(await call(adjustEntryAction, specialist, P(), { ...input, confirm: 'on', entryId: undone?.id })).toMatchObject({ status: 'invalid', issues: [{ field: 'entryId' }] });
+    // The approval of 30.00 was deposited in full: lowering it would leave more deposited than approved.
+    expect(await call(adjustEntryAction, specialist, P(), { ...input, entryId: approval?.id, amount: '-5.00', confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'amount' }] });
+    // The 18.00 take-back may be corrected toward nothing, never past it.
+    expect(await call(adjustEntryAction, specialist, P(), { ...input, amount: '18.01', confirm: 'on' })).toMatchObject({ status: 'invalid', issues: [{ field: 'amount' }] });
+    const review = ok(await call(ledgerReviewPage, specialist, P()));
+    expect(review).toMatchObject({ canAdjust: true, totals: { recoupedCents: '-1800' } });
+    expect(review.entries.items.find((entry) => entry.id === recoupment?.id)?.reason ?? null).toBeNull();
+    const adjusted = ok(await call(adjustEntryAction, specialist, P(), { ...input, confirm: 'on' }));
+    expect(adjusted.redirect).toBe(`/p/${practice.practiceId}/abstraction/ledger?notice=adjusted`);
     const after = ok(await call(reconciliationPage, practice.manager, P()));
-    expect(after.totals).toMatchObject({ approvedCents: '2500' });
-    expect(after.entries.items[0]).toMatchObject({ id: adjusted.objectId, stage: 'adjusted', amountCents: '-500', reason: 'SYNTHETIC specialist review of the approval', byJob: false, adjustable: false });
+    expect(after.totals).toMatchObject({ approvedCents: '3000', recoupedCents: '-1300', recoveredCents: '1700' });
+    expect(after.entries.items[0]).toMatchObject({ id: adjusted.objectId, stage: 'adjusted', amountCents: '500', reason: 'SYNTHETIC specialist review of the take-back', byJob: false, adjustable: false });
+    // The billing manager cannot open the specialist's page.
+    expect((await call(ledgerReviewPage, practice.manager, P())).status).toBe('forbidden');
   });
 });

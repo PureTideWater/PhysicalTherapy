@@ -330,6 +330,7 @@ async function buildWorld(name: string): Promise<World> {
   const manager = actors.find((actor) => actor.persona.kind === 'group' && actor.persona.role === 'billing_manager')?.userId ?? '';
   const triageLineId = await seedTriageLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
   const packetLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId });
+  const regulationLineId = await seedPacketLine({ owner, practiceId: tenant.practiceId, claimId: loaded.claimId, planId: loaded.planId, lineNo: 4, serviceDate: '2026-03-18' });
   const { pricingRunId, rerunId } = await seedPricingRun({ owner, app, practiceId: tenant.practiceId, planId: loaded.planId, signedOffVersionId: contracts.signedOffVersionId, managerId: manager });
   const triage = await seedTriage({
     owner,
@@ -355,6 +356,7 @@ async function buildWorld(name: string): Promise<World> {
     pricingRunId,
     caseId: triage.caseId,
     packetLineServiceLineId: packetLineId,
+    regulationLineServiceLineId: regulationLineId,
     payerId: loaded.payerId,
     planId: loaded.planId,
     signedOffVersionId: contracts.signedOffVersionId,

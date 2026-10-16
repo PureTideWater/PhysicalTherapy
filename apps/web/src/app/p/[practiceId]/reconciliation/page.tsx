@@ -14,8 +14,8 @@ import { stageLabel } from '../../../../components/triage/display';
 import { Uploader } from '../../../../components/uploads/uploader';
 import { loadPage } from '../../../../lib/http/next';
 import type { EntryView, LinkageLine, MatchView, RemittanceChoice } from '../../../../lib/reconciliation/queries';
-import { ADJUSTMENT_CONSEQUENCE, REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
-import { adjustEntryFormAction, matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
+import { REVERSAL_CONSEQUENCE, type ReconciliationNotice, reconciliationPage } from '../../../../lib/routes/reconciliation';
+import { matchClaimFormAction, matchDepositFormAction, matchPostingFormAction, reverseMatchFormAction } from './actions';
 
 export const metadata: Metadata = { title: 'Reconciliation' };
 
@@ -24,7 +24,6 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 const NOTICES: Readonly<Record<ReconciliationNotice, { readonly title: string; readonly text: string }>> = {
   matched: { title: 'Matched', text: 'The match is recorded in your name with its evidence; the ledger entries it owes follow from it.' },
   reversed: { title: 'Reversed', text: 'Each entry of the match, and each adjustment of one, is offset exactly by a reversed entry in your name; its evidence is unmatched again.' },
-  adjusted: { title: 'Adjusted', text: 'The correction is an entry of its own in your name, with your reason; the entry it corrects is unchanged.' },
   already_matched: { title: 'Already matched', text: 'That match already stands; nothing was recorded twice.' },
   already_reversed: { title: 'Already reversed', text: 'That match was already reversed; nothing changed.' },
 };
@@ -103,34 +102,7 @@ function Matches({ title, matches, empty, ...rest }: { readonly title: string; r
   );
 }
 
-/** Corrects an entry's amount, up or down, with a reason and the person's confirmation of what it does. */
-function AdjustForm({ practiceId, entry, idPrefix }: { readonly practiceId: string; readonly entry: EntryView; readonly idPrefix: string }) {
-  const id = `${idPrefix}-${entry.id}`;
-  return (
-    <details>
-      <summary className="cursor-pointer text-xs underline">Adjust</summary>
-      <ActionForm action={adjustEntryFormAction} submit="Adjust the amount" variant="destructive" className="flex max-w-md flex-col gap-2 pt-2">
-        <input type="hidden" name="requestKey" value={randomUUID()} />
-        <input type="hidden" name="practiceId" value={practiceId} />
-        <input type="hidden" name="entryId" value={entry.id} />
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`amount-${id}`}>Change in dollars (a minus sign lowers it)</Label>
-          <input id={`amount-${id}`} name="amount" required inputMode="decimal" pattern="-?[0-9]{1,9}([.][0-9]{1,2})?" className="rounded-md border bg-background p-2 text-sm" />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`adjust-reason-${id}`}>Why the amount is corrected</Label>
-          <textarea id={`adjust-reason-${id}`} name="reason" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" />
-        </div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="confirm" required className="mt-1" />
-          <span>{ADJUSTMENT_CONSEQUENCE} Adjust it.</span>
-        </label>
-      </ActionForm>
-    </details>
-  );
-}
-
-function EntryRows({ entries, practiceId, phi, canReconcile, idPrefix }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly canReconcile: boolean; readonly idPrefix: string }) {
+function EntryRows({ entries, practiceId, phi }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean }) {
   return (
     <>
       {entries.map((entry) => (
@@ -151,15 +123,14 @@ function EntryRows({ entries, practiceId, phi, canReconcile, idPrefix }: { reado
           </td>
           <td className="py-1 pr-3">{EVIDENCE_WORDS[entry.evidenceKind] ?? entry.evidenceKind}</td>
           <td className="py-1 pr-3">{entry.byJob ? 'the reconcile job' : (entry.createdBy ?? '—')}</td>
-          <td className="py-1 pr-3">{phi ? (entry.reason ?? '') : ''}</td>
-          <td className="py-1">{canReconcile && entry.adjustable ? <AdjustForm practiceId={practiceId} entry={entry} idPrefix={idPrefix} /> : null}</td>
+          <td className="py-1">{phi ? (entry.reason ?? '') : ''}</td>
         </tr>
       ))}
     </>
   );
 }
 
-function EntryTable({ entries, practiceId, phi, label, canReconcile }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string; readonly canReconcile: boolean }) {
+function EntryTable({ entries, practiceId, phi, label }: { readonly entries: readonly EntryView[]; readonly practiceId: string; readonly phi: boolean; readonly label: string }) {
   return (
     <div className="overflow-x-auto">
       <table aria-label={label} className="w-full text-sm">
@@ -172,12 +143,11 @@ function EntryTable({ entries, practiceId, phi, label, canReconcile }: { readonl
             <th className="py-1 pr-3">Case</th>
             <th className="py-1 pr-3">Evidence</th>
             <th className="py-1 pr-3">Written by</th>
-            <th className="py-1 pr-3">{phi ? 'Reason' : ''}</th>
-            <th className="py-1">{canReconcile ? 'Correct' : ''}</th>
+            <th className="py-1">{phi ? 'Reason' : ''}</th>
           </tr>
         </thead>
         <tbody>
-          <EntryRows entries={entries} practiceId={practiceId} phi={phi} canReconcile={canReconcile} idPrefix={label === 'Ledger entries' ? 'ledger' : 'line'} />
+          <EntryRows entries={entries} practiceId={practiceId} phi={phi} />
         </tbody>
       </table>
     </div>
@@ -211,11 +181,11 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
       )}
       {line.shortfallCents === null ? null : (
         <p className="rounded-md border border-dashed p-2 text-sm" data-shortfall={line.shortfallCents}>
-          Shortfall: the payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this line. It stays approved and is never taken back as a recoupment; adjust the approval
-          below with your reason, or dispute it with a further submission.
+          Shortfall: the payer accepted <Money value={line.shortfallCents} /> more than its remittance paid on this line. It stays approved and is never taken back as a recoupment. A contract
+          specialist corrects the approval after review (under a support grant, with a reason), or the practice disputes it with a further submission.
         </p>
       )}
-      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" canReconcile={canReconcile} />
+      <EntryTable entries={line.entries} practiceId={practiceId} phi={phi} label="Entries of the line" />
     </li>
   );
 }
@@ -464,7 +434,7 @@ export default async function ReconciliationPage(props: Props) {
         {data.entries.total === 0 ? (
           <EmptyState title="No entry yet" nextStep="Entries appear when a remittance, a posting or a deposit is matched to a case line." />
         ) : (
-          <EntryTable entries={data.entries.items} practiceId={practiceId} phi={phi} label="Ledger entries" canReconcile={canReconcile} />
+          <EntryTable entries={data.entries.items} practiceId={practiceId} phi={phi} label="Ledger entries" />
         )}
         <Pager path={path} query={query} page={data.entries.page} pages={data.entries.pages} total={data.entries.total} noun="Entries" param="entries" />
       </section>

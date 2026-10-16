@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { readDatabaseUrl } from '@tp/db';
+import { readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
 import { addDays, nextDisputeWindow } from '@tp/packets';
@@ -21,6 +21,8 @@ import {
   packetOfCase,
   packetVersionOf,
   recordPayerResponse,
+  regulationsAwaiting,
+  remindFollowUps,
   requestPacketExport,
   singleUserApprovals,
   submissionLog,
@@ -311,6 +313,110 @@ describe('CAS-12: the export', () => {
   });
 });
 
+describe('the verifier against what a narrative shows and the case’s own records (CAS-08, CAS-11; docs/adr/0047)', () => {
+  const cp = (...points: number[]) => String.fromCodePoint(...points);
+  const codesOf = (version: { verifier: { mismatches: readonly { code: string }[] } }) => version.verifier.mismatches.map((item) => item.code);
+
+  it('fails a narrative naming the case’s patient or member, or hiding a figure, and keeps it from approval', async () => {
+    const setup = await cas08('verifier-review');
+    // A patient's name (CAS-08's first claim, SYNTHETIC) in any case, and a member ID without its placeholder.
+    const named = await write(setup, setup.practice.manager, { narrative: 'Synthlastsbgcde Synthfirstgqv, a member of the plan, was underpaid [3].' });
+    expect(named.verifier.passed).toBe(false);
+    expect(codesOf(named)).toEqual(['identifier_in_narrative', 'identifier_in_narrative']);
+    expect(JSON.stringify(named.verifier).toLowerCase()).not.toContain('synthlast');
+    expect((await refusal(approve(setup, setup.second, named.versionId, named.contentSha256))).message).toBe('a packet version the verifier failed cannot be approved');
+    const member = await write(setup, setup.practice.manager, { narrative: 'Member SYNMBR80014496 was underpaid [3].', basedOn: named.versionId });
+    expect(codesOf(member)).toContain('identifier_in_narrative');
+    // A fullwidth amount is read as the amount it shows, and stored as it reads (NFKC).
+    const fullwidth = `The payer withheld $${[...'1,234.56'].map((char) => (/\d/.test(char) ? cp(0xff10 + Number.parseInt(char, 10)) : char === ',' ? cp(0xff0c) : char === '.' ? cp(0xff0e) : char)).join('')} [3].`;
+    const read = await write(setup, setup.practice.manager, { narrative: fullwidth, basedOn: member.versionId });
+    expect(codesOf(read)).toEqual(['figure_not_in_input']);
+    const stored = await w.as(setup.practice, setup.practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: setup.practice.practiceId, versionId: read.versionId, requestId: 'r' }));
+    expect(stored?.narrative).toBe('The payer withheld $1,234.56 [3].');
+    // A zero-width space splitting a figure is a hidden character.
+    const split = await write(setup, setup.practice.manager, { narrative: `The payer paid 1${cp(0x200b)}11 claims short [3].`, basedOn: read.versionId });
+    expect(codesOf(split)).toContain('hidden_character');
+    expect(split.verifier.passed).toBe(false);
+  });
+
+  it('approves only a version the current verifier passed', async () => {
+    const setup = await cas08('verifier-format');
+    const version = await write(setup, setup.practice.manager);
+    await w.superuser(`UPDATE packet_version SET verifier_report = jsonb_set(verifier_report, '{format}', '"tp-packet-verifier/1"') WHERE id = $1`, [version.versionId]);
+    expect((await refusal(approve(setup, setup.second, version.versionId, version.contentSha256))).message).toBe(
+      'a packet version is approved only once the current verifier has passed it; write the version again',
+    );
+    const again = await write(setup, setup.practice.manager, { basedOn: version.versionId });
+    await expect(approve(setup, setup.second, again.versionId, again.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
+  });
+
+  it('records an export’s keys only under the version’s own practice and packet', async () => {
+    const setup = await cas08('export-keys');
+    const other = await cas08('export-keys-other');
+    const version = await write(setup, setup.practice.manager);
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    const job = (keyOf: (packetId: string) => string) =>
+      withJobScope(w.app, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, async (scope) => {
+        const { rows } = await scope.client.query<{ packet_id: string }>('SELECT packet_id FROM packet_version WHERE id = $1', [version.versionId]);
+        const key = keyOf(rows[0]?.packet_id ?? '');
+        return scope.client.query('UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4 WHERE id = $1', [
+          version.versionId,
+          `${key}.pdf`,
+          `${key}.csv`,
+          'a'.repeat(64),
+        ]);
+      });
+    // Another tenant's key space, and another packet's of the same practice: refused.
+    await expect(job((packetId) => `practices/${other.practice.practiceId}/packets/${packetId}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514' });
+    await expect(job(() => `practices/${setup.practice.practiceId}/packets/${randomUUID()}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514' });
+    expect(await w.export(setup.practice, version.versionId)).toMatchObject({ outcome: 'exported' });
+  });
+
+  it('logs a submission of the current version only, or of one sent before an edit replaced it (CAS-13)', async () => {
+    const setup = await cas08('submission-current');
+    const first = await exported(setup);
+    const second = await write(setup, setup.second, { basedOn: first.versionId, narrative: 'The payer paid these lines short of the contract [3].' });
+    // Sent today, after the edit: the approval it carried was cleared, so it is refused, by the service and by Postgres.
+    expect((await refusal(submit(setup, first.versionId))).message).toBe("a submission sends the packet's current version; one an edit replaced is logged only when it was sent before the edit");
+    const direct = await refusal(
+      w.as(setup.practice, setup.practice.manager, (scope) =>
+        scope.client.query(
+          `INSERT INTO submission (practice_id, case_id, packet_version_id, submitted_on, channel, submitted_by, follow_up_on, export_sha256, export_csv_sha256)
+           VALUES ($1, $2, $3, $4, 'fax', app_actor_id(), $4, $5, $6)`,
+          [setup.practice.practiceId, setup.caseId, first.versionId, w.today(), first.pdfSha256, first.csvSha256],
+        ),
+      ),
+    );
+    expect(direct.message).toBe("a submission sends the packet's current version; one an edit replaced is logged only when it was sent before the edit");
+    // Sent the day before the edit (the export dated earlier, as a migration would): logged.
+    await w.superuser("UPDATE packet_version SET exported_at = now() - interval '3 days' WHERE id = $1", [first.versionId]);
+    await expect(submit(setup, first.versionId, addDays(w.today(), -1))).resolves.toMatchObject({ caseId: setup.caseId });
+    expect(second.versionNo).toBe(2);
+  });
+
+  it('reminds the case’s people once when a follow-up has come with no response (CAS-14)', async () => {
+    const setup = await cas08('follow-up-reminder');
+    const version = await exported(setup);
+    const logged = await submit(setup, version.versionId, w.today(), w.today());
+    const remind = () => withJobScope(w.app, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, (scope) => remindFollowUps(scope, { practiceId: setup.practice.practiceId, asOf: w.today() }));
+    const told = await remind();
+    expect(told).toBeGreaterThanOrEqual(2);
+    expect(await remind()).toBe(0);
+    const { rows } = await asOwner(w.owner, [setup.practice.practiceId], () =>
+      w.owner.query<{ user_id: string; counts: unknown; totals_cents: unknown }>("SELECT user_id, counts, totals_cents FROM notification WHERE practice_id = $1 AND kind = 'follow_up' AND subject_id = $2 ORDER BY user_id", [
+        setup.practice.practiceId,
+        logged.submissionId,
+      ]),
+    );
+    // The case has no owner, so the practice's people are told: counts only.
+    expect(rows).toHaveLength(told);
+    expect(rows.map((row) => row.user_id)).toEqual(expect.arrayContaining([setup.practice.manager, setup.second]));
+    expect(new Set(rows.map((row) => JSON.stringify([row.counts, row.totals_cents])))).toEqual(new Set([JSON.stringify([{ days_waiting: 0 }, {}])]));
+    // A person never reads the recipients.
+    await expect(w.as(setup.practice, setup.practice.manager, (scope) => remindFollowUps(scope, { practiceId: setup.practice.practiceId, asOf: w.today() }))).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
 describe('CAS-13: an edit after approval', () => {
   it('is a new version that clears the approval; the old one never changes and is no longer exported', async () => {
     const setup = await cas08('CAS-13');
@@ -508,10 +614,17 @@ describe('a Medicare Advantage non-contracted case', () => {
     expect(version.content.requested_action).toContain('Original Medicare');
     expect(version.verifier.passed).toBe(true);
     expect((await refusal(approve(setup, setup.second, version.versionId, version.contentSha256))).message).toBe('a contract specialist confirms the regulation applies to the case before its packet is approved');
-    expect((await refusal(w.as(practice, setup.second, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' })))).message).toBe(
-      "a regulation's application to a case is confirmed by a contract specialist, in their own name",
+    // A billing manager is refused by the service, and by the database in SQL.
+    expect((await refusal(w.as(practice, setup.second, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' })))).message).toMatch(
+      /cannot answer pricing questions/,
     );
+    expect(
+      (await refusal(w.as(practice, setup.second, (scope) => scope.client.query('UPDATE packet_version SET regulation_confirmed_by = app_actor_id() WHERE id = $1', [version.versionId])))).message,
+    ).toBe("a regulation's application to a case is confirmed by a contract specialist, in their own name");
+    const waiting = await w.as(practice, w.specialist, (scope) => regulationsAwaiting(scope, { practiceId: practice.practiceId }));
+    expect(waiting).toMatchObject([{ versionId: version.versionId, caseId: setup.caseId, reference: '42 CFR 422.214', lines: 3, claims: 3 }]);
     await w.as(practice, w.specialist, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(await w.as(practice, w.specialist, (scope) => regulationsAwaiting(scope, { practiceId: practice.practiceId }))).toEqual([]);
     await expect(approve(setup, setup.second, version.versionId, version.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
     // A contract citation takes no confirmation.
     const contract = await cas08('MA-contract');

@@ -1,4 +1,5 @@
 import type { JobHandler } from '../jobs/handlers';
+import { remindFollowUps } from '../packets/services';
 import { closePassedWindows, todayUtc } from '../triage/execute';
 import { type MonitorPlan, planMonitoring } from './plan';
 
@@ -12,7 +13,8 @@ import { type MonitorPlan, planMonitoring } from './plan';
  * First, in its own transaction, it writes off every open case's line whose dispute window closed
  * before today (window passed; PRD 12, Deadlines), so a case's actionable total and deadline follow the
  * calendar on the daily schedule even when no new file arrives. Again the same day, it writes off
- * nothing more.
+ * nothing more. Then it reminds the case's owner of every submission whose follow-up date has come with
+ * no response (in the app, once per submission; PRD 6, "follow-up dates; reminders").
  *
  * After a document, when the plan prices nothing (no month to price, a month waiting on a mapping, no
  * rule release in force), it queues the recovery ledger's reconcile keyed by the document
@@ -25,6 +27,11 @@ export function monitorHandler(): JobHandler<'monitor'> {
     const closed = await context.transaction((scope) => closePassedWindows(scope, payload.practice_id, todayUtc()));
     if (closed > 0) {
       context.logger.info('monitoring wrote off case lines whose windows closed');
+    }
+    // The follow-up reminders whose day has come (once per submission), in their own transaction too.
+    const reminded = await context.transaction((scope) => remindFollowUps(scope, { practiceId: payload.practice_id, asOf: todayUtc() }));
+    if (reminded > 0) {
+      context.logger.info('monitoring reminded the case owners of follow-ups that have come');
     }
     const plan: MonitorPlan = await context.transaction((scope) => planMonitoring(scope, payload.practice_id, context.jobId));
     if (plan.outcome === 'batch_loading') {
