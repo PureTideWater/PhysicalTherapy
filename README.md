@@ -278,8 +278,8 @@ and intake on SYNTHETIC files, and `apps/web/e2e/reconciliation.spec.ts` is J10 
 deposited, a recoupment, the ROI statement and a reversal. That is milestone 9's done check: the flagged-as-recovered
 shortcut fails, a recoupment reduces recovered by its amount, and the ROI statement recomputes from its entries. With
 milestones 8 and 9 built, `packages/synth` traces every case through milestone 9 to its tests
-(`CODE_BUILT_THROUGH_MILESTONE`). Fees and pursuit hours stay at zero, stated on the statement: fees until billing
-(milestone 11); pursuit hours until a time log, which PRD 12 and 13 rely on ("replaced by actual logged time",
+(`CODE_BUILT_THROUGH_MILESTONE`). Fees are the group's paid invoices, shared among its practices (milestone 11, ADR
+0050). Pursuit hours stay at zero, stated on the statement, until a time log, which PRD 12 and 13 rely on ("replaced by actual logged time",
 "pursuit hours logged") but no milestone of the plan schedules, so it is an open decision (ADR 0047). The proof level is set only through `setLedgerSettings` until the practice's Settings screen
 (milestone 11): see the milestone 9 note below.
 
@@ -377,6 +377,25 @@ application, operator and queue logins from their secrets) runs before any servi
 connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
 certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
 image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
+
+Billing (ADR 0050; `packages/billing`, `apps/worker/src/billing`; migration `20261029150000_billing.sql`): an
+organization's administrator (a group's practice administrator, a firm's principal) manages its plan (monthly or
+annual), its payment method (ACH or card, through Stripe Elements) and its invoices at `/settings/billing`; platform
+administrators see every organization's standing and issue audit invoices at `/console/billing`. Stripe's events arrive
+at `POST /api/billing/webhook`, verified by signature and recorded once by event ID. Billing's transactions run as the
+role `tp_billing`, which has no privilege on any table that can hold PHI. An invoice unpaid 30 days after its payment
+failed suspends the organization: new runs are refused with the reason (routes, jobs and the database), every screen
+stays readable, and runs start again the moment it is paid. The nightly `usage_snapshot` job counts each organization's
+practices for milestone 12. Development and the e2e suite run a local simulator of Stripe's test mode (its test bank
+accounts and cards are on the billing page; `BILLING_LOCAL_DIR` holds its state). `docs/runbooks/billing.md` lists what an
+operator sets before launch.
+
+**Milestone 11's billing is not verified against Stripe.** Its done check is "a test ACH payment completes; a suspended
+organization can read but not run". Both hold against the local test-mode simulator (`apps/worker/src/billing/billing.db.test.ts`,
+`apps/web/src/lib/routes/billing-routes.db.test.ts`, `apps/web/e2e/billing.spec.ts`), and the Stripe provider is tested
+against the SDK with a mocked client; no call has reached Stripe (no keys, and api.stripe.com is refused from the build
+environment). A person with Stripe test keys finishes it in staging as the runbook's step 4 says. The plan and audit
+prices in `packages/billing/config/plans.json` are placeholders (`confirmed: false`), which production refuses to bill at.
 
 **Milestone 10 is not complete.** Its done check is "every quote verifies, the narrative gate passes with zero
 failures, and the lint fails a test file that imports the provider directly". The lint check is met
