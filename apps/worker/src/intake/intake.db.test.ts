@@ -240,11 +240,13 @@ describe('intake of a single file', () => {
       [pdf('contract'), 'contract', 'stored'],
       [Buffer.from('check,amount\nSYN-1,1.00\n'), 'contract', 'wrong_type'],
       [Buffer.from('check,amount\nSYN-2,1.00\n'), 'posting_export', 'stored'],
+      [Buffer.from('trace,amount\nSYN-3,1.00\n'), 'eft_export', 'stored'],
       [Buffer.from(`ISA*00*${' '.repeat(120)}`), 'x12_835', 'unreadable'],
     ];
     for (const [bytes, kind, status] of cases) {
       const id = await upload(h, bytes, { kind });
-      expect((await intake(h, id)).queued).toEqual([]);
+      // A stored posting or EFT export queues the recovery ledger's reconcile, which reads it (docs/adr/0042).
+      expect((await intake(h, id)).queued).toEqual(kind === 'posting_export' || kind === 'eft_export' ? [{ type: 'reconcile', payload: { practice_id: world.practiceId, document_id: id } }] : []);
       expect((await one(id)).status, `${kind} ${status}`).toBe(status);
     }
   });

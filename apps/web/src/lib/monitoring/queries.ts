@@ -14,7 +14,7 @@ import { PRICED_IN_EFFECT } from '@tp/worker/pricing';
 
 type Scope = PracticeScope<ScopeClient>;
 
-export type NotificationKind = 'monitoring_run' | 'digest';
+export type NotificationKind = 'monitoring_run' | 'digest' | 'recoupment';
 
 export interface NotificationView {
   readonly id: string;
@@ -28,6 +28,8 @@ export interface NotificationView {
   readonly periodFrom: string | null;
   readonly periodTo: string | null;
   readonly period: string | null;
+  /** For a recoupment: the case it took money back from (its subject is the first recouped entry). */
+  readonly caseId: string | null;
 }
 
 export const NOTIFICATIONS_PER_PAGE = 50;
@@ -43,16 +45,18 @@ interface NotificationRow {
   readonly period_from: string | null;
   readonly period_to: string | null;
   readonly period: string | null;
+  readonly case_id: string | null;
 }
 
 /** The person's notifications in the practice, newest first, `limit` from `offset` (the policy admits their own only). */
 export async function listNotifications(scope: Scope, practiceId: string, limit = NOTIFICATIONS_PER_PAGE, offset = 0): Promise<NotificationView[]> {
   const { rows } = await scope.client.query<NotificationRow>(
     `SELECT n.id, n.kind, n.subject_id, n.counts, n.totals_cents, n.created_at, n.read_at,
-            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period
+            r.period_from::text AS period_from, r.period_to::text AS period_to, d.period, e.case_id
        FROM notification n
        LEFT JOIN pricing_run r ON n.kind = 'monitoring_run' AND r.id = n.subject_id
        LEFT JOIN digest d ON n.kind = 'digest' AND d.id = n.subject_id
+       LEFT JOIN ledger_entry e ON n.kind = 'recoupment' AND e.id = n.subject_id
       WHERE n.practice_id = $1 AND n.user_id = app_actor_id()
       ORDER BY n.created_at DESC, n.id DESC
       LIMIT $2 OFFSET $3`,
@@ -69,6 +73,7 @@ export async function listNotifications(scope: Scope, practiceId: string, limit 
     periodFrom: row.period_from,
     periodTo: row.period_to,
     period: row.period,
+    caseId: row.case_id,
   }));
 }
 

@@ -1,23 +1,52 @@
+import { previousQuarter, quarterPeriod } from '@tp/ledger';
+
 import type { JobHandler } from '../jobs/handlers';
+import { type ReconcileServices, reconcilePractice } from './pass';
+import { DEFAULT_STATEMENT_SOURCES, type StatementSources, generateRoiStatement } from './statements';
 
 /**
- * The monitoring chain's last step, the ledger's reconcile (PRD 5, J11: "updates the ledger"; J10; PRD
- * 13; docs/adr/0039): one practice per job, keyed by the run (reconcile:<practice>:<run>), three
- * attempts with the operator's alert on the third. The recovery ledger arrives with milestone 9, which
- * fills this step in: the run's new remittances matched to case lines, adjusted payments to entries at
- * payer approved, posting and EFT exports to posted and deposited. Until then the step checks the run
- * is complete and records that it ran: the worker records every attempt in job_run (its subject, the
- * run, as the idempotency key), and the step adds no ledger entry, so a replay has nothing to repeat.
+ * The reconcile job, the recovery ledger's step (PRD 5, J10 and J11: "updates the ledger"; PRD 13;
+ * docs/adr/0039 and 0042): one practice per job, three attempts with the operator's alert on the third
+ * (the worker's, ADR 0019). It is queued three ways, each keyed by its subject:
+ *
+ * - by triage, after a run the monitoring chain priced (reconcile:<practice>:<run>): the new
+ *   remittances' claims against the case lines, recoupments and interest;
+ * - by intake, once a posting or EFT export is stored (reconcile:<practice>:<document>): the export
+ *   read into rows first;
+ * - by the operator's daily schedule (reconcile:<practice>:<day>): the practice's whole ledger brought
+ *   up to date (a remittance no run followed, a person's manual recoupment to tell its owner), and the
+ *   quarterly ROI statement of the quarter before the day, once.
+ *
+ * Whichever set it off, it runs the whole reconcile of the practice (pass.ts), which is idempotent: a
+ * replay, or two reconciles one after the other, add nothing twice (JOB-01).
  */
-export function reconcileHandler(): JobHandler<'reconcile'> {
+export function reconcileHandler(services: ReconcileServices, sources: StatementSources = DEFAULT_STATEMENT_SOURCES): JobHandler<'reconcile'> {
   return async (payload, context) => {
-    const status = await context.transaction(
-      async (scope) => (await scope.client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1 AND practice_id = $2', [payload.pricing_run_id, payload.practice_id])).rows[0]?.status,
-    );
-    if (status !== 'complete') {
-      context.logger.warn('reconcile found no complete pricing run', { pricing_run_id: payload.pricing_run_id, error_code: status === undefined ? 'RECONCILE_RUN_NOT_FOUND' : 'RECONCILE_RUN_NOT_COMPLETE' });
-      return;
+    if ('pricing_run_id' in payload) {
+      const status = await context.transaction(
+        async (scope) => (await scope.client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1 AND practice_id = $2', [payload.pricing_run_id, payload.practice_id])).rows[0]?.status,
+      );
+      if (status !== 'complete') {
+        context.logger.warn('reconcile found no complete pricing run', { pricing_run_id: payload.pricing_run_id, error_code: status === undefined ? 'RECONCILE_RUN_NOT_FOUND' : 'RECONCILE_RUN_NOT_COMPLETE' });
+        return;
+      }
     }
-    context.logger.info('reconcile ran; the recovery ledger has no entries to post yet', { pricing_run_id: payload.pricing_run_id });
+    await reconcilePractice(context, services, payload.practice_id, 'document_id' in payload ? { documentId: payload.document_id } : {});
+    if ('day' in payload) {
+      const period = quarterPeriod(previousQuarter(payload.day));
+      const generated = await context.transaction((scope) =>
+        generateRoiStatement(scope, { practiceId: payload.practice_id, periodFrom: period.from, periodTo: period.to, requestId: context.jobId }, sources),
+      );
+      if (generated !== null) {
+        context.logger.info('quarterly ROI statement generated');
+      }
+    }
+    if ('pricing_run_id' in payload) {
+      context.logger.info('reconcile complete', { pricing_run_id: payload.pricing_run_id });
+    } else if ('document_id' in payload) {
+      context.logger.info('reconcile complete', { document_id: payload.document_id });
+    } else {
+      context.logger.info('reconcile complete');
+    }
   };
 }

@@ -11,6 +11,7 @@
     "./reports": "./src/report/public.ts",
     "./digests": "./src/digest/public.ts",
     "./packets": "./src/packets/public.ts",
+    "./ledger": "./src/reconcile/public.ts",
     "./runtime": "./src/runtime.ts",
     "./testing": "./src/price/test-support/pricing-world.ts",
     "./testing/triage": "./src/triage/test-support/triage-world.ts"

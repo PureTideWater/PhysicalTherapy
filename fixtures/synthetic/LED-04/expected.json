@@ -5,7 +5,11 @@
   "assertion": "`posted` entry",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": [],
+  "assertedBy": [
+    "apps/worker/src/reconcile/ledger.db.test.ts",
+    "packages/ledger/src/matching.test.ts",
+    "packages/ledger/src/templates.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

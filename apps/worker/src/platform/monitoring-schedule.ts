@@ -8,8 +8,9 @@ import { previousMonth } from '../digest/view';
  * "schedules"; docs/adr/0039): a platform job, daily, as the operator role (tp_operator, which owns
  * nothing and reads no table): it learns the active practices' IDs from operator_active_practice_ids()
  * and queues, for each, that practice's own jobs: the day's monitor job (which prices any month a batch
- * left unplanned) and the digest of the month before (sent once; the days after it are replays with no
- * effect). It reads no practice's data and spans no practice's transaction: each job it queues is one
+ * left unplanned), the digest of the month before (sent once; the days after it are replays with no
+ * effect) and the day's reconcile (the recovery ledger brought up to date, and the quarter before's ROI
+ * statement, generated once). It reads no practice's data and spans no practice's transaction: each job it queues is one
  * practice's (SEC-06).
  */
 
@@ -38,7 +39,7 @@ async function activePractices(client: ScheduleClient): Promise<string[]> {
   }
 }
 
-/** Queues the day's monitor job and the previous month's digest for every active practice. */
+/** Queues the day's monitor job, the previous month's digest and the day's reconcile for every active practice. */
 export async function queueMonitoringSchedule(options: { readonly client: ScheduleClient; readonly queue: JobSender; readonly day: string }): Promise<MonitoringScheduleResult> {
   const practices = await activePractices(options.client);
   const period = previousMonth(options.day);
@@ -47,6 +48,7 @@ export async function queueMonitoringSchedule(options: { readonly client: Schedu
     for (const sent of [
       await enqueue(options.queue, 'monitor', { practice_id: practiceId, day: options.day }),
       await enqueue(options.queue, 'digest', { practice_id: practiceId, period }),
+      await enqueue(options.queue, 'reconcile', { practice_id: practiceId, day: options.day }),
     ]) {
       queued += sent === null ? 0 : 1;
     }

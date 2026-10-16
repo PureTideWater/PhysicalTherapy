@@ -9,7 +9,7 @@ import { queueMonitoringSchedule } from './monitoring-schedule';
 /**
  * The monitoring schedule against PostgreSQL (PRD 5, J11: "or on a schedule"; docs/adr/0039): as the
  * operator role, which reads no table, the schedule learns the active practices' IDs and queues each
- * practice's own monitor and digest jobs; nobody else may list the practices.
+ * practice's own monitor, digest and reconcile jobs; nobody else may list the practices.
  */
 
 let database: MigratedDatabase;
@@ -34,14 +34,14 @@ afterAll(async () => {
 });
 
 describe('the monitoring schedule', () => {
-  it('queues each active practice’s monitor job for the day and its digest for the month before, from IDs alone', async () => {
+  it('queues each active practice’s monitor job and reconcile for the day and its digest for the month before, from IDs alone', async () => {
     const one = await createTenantWorld(owner, 'schedule one');
     const two = await createTenantWorld(owner, 'schedule two');
     const queue = new MemoryQueue();
     const client = await operator.connect();
     try {
       const result = await queueMonitoringSchedule({ client, queue: queue.client, day: '2026-11-01' });
-      expect(result).toEqual({ practices: 2, queued: 4 });
+      expect(result).toEqual({ practices: 2, queued: 6 });
       // The same morning again: every key is still queued, so the queue takes nothing more.
       expect(await queueMonitoringSchedule({ client, queue: queue.client, day: '2026-11-01' })).toEqual({ practices: 2, queued: 0 });
     } finally {
@@ -53,6 +53,7 @@ describe('the monitoring schedule', () => {
         [one.practiceId, two.practiceId].flatMap((practice) => [
           ['digest', { practice_id: practice, period: '2026-10' }] as const,
           ['monitor', { practice_id: practice, day: '2026-11-01' }] as const,
+          ['reconcile', { practice_id: practice, day: '2026-11-01' }] as const,
         ]),
       ),
     );

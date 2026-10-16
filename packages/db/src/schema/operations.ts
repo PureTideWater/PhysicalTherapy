@@ -60,7 +60,7 @@ export const restoreDrill = pgTable('restore_drill', {
 export type FigureCounts = Readonly<Record<string, number | Readonly<Record<string, number>>>>;
 export type FigureTotals = Readonly<Record<string, string | Readonly<Record<string, string>>>>;
 
-export const NOTIFICATION_KINDS = ['monitoring_run', 'digest'] as const;
+export const NOTIFICATION_KINDS = ['monitoring_run', 'digest', 'recoupment'] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 /** In-app notifications: one per person, kind and subject (the pricing run or the digest it is about). */

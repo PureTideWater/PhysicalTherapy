@@ -294,8 +294,9 @@ describe('the stage rules in SQL (PRD 8: monotonic forward, reopen explicit)', (
       );
     await expect(insert('flagged', null, null)).rejects.toThrow(/move forward only/);
     await expect(insert('validated', null, null)).rejects.toThrow(/move forward only/);
-    await expect(insert('payer_approved', null, null)).rejects.toThrow(/recovery ledger/);
-    await expect(insert('recovered', null, null)).rejects.toThrow(/recovery ledger/);
+    // Payer approved and recovered come from the recovery ledger's entries only (docs/adr/0042).
+    await expect(insert('payer_approved', null, null)).rejects.toThrow(/the ledger holds no entries that put the line at payer_approved/);
+    await expect(insert('recovered', null, null)).rejects.toThrow(/the ledger holds no entries that put the line at recovered/);
     // In another's name, or in no one's (as triage, a job, sets it): refused for a person by the policy.
     await expect(insert('actionable', null, null, randomUUID())).rejects.toThrow(/row-level security/);
     const other = await createUser(w.owner);

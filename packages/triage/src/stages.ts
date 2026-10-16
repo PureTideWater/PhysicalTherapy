@@ -98,6 +98,12 @@ export interface CaseStateLine {
   readonly writtenOff: boolean;
   /** The line's current stage; payer approved and recovered resolve it (the ledger sets them). */
   readonly stage?: LineStage | null;
+  /**
+   * The line was moved back from payer approved or recovered to an earlier stage: by the recovery ledger
+   * when the payer took the money back (a recoupment, PRD 13: "reopens the case"), or by a person's
+   * explicit reopen (docs/adr/0042).
+   */
+  readonly reopenedFromApproval?: boolean;
 }
 
 /**
@@ -107,6 +113,9 @@ export interface CaseStateLine {
  * - closed_written_off: every line is written off (the only state a person sets, by writing lines off);
  * - resolved: every line not written off is payer approved or recovered;
  * - partially_resolved: some of them are;
+ * - awaiting_response: a line was moved back from payer approved or recovered (the recovery ledger's
+ *   recoupment, or a person's reopen), whatever the payer answered before: the case is reopened and
+ *   waits on the payer again;
  * - open: no submission has been logged;
  * - submitted: the latest submission has no response yet;
  * - awaiting_response: the payer asked for more information, or denied the dispute and the case was
@@ -128,6 +137,9 @@ export function deriveCaseState(lines: readonly CaseStateLine[], dispute: CaseDi
   }
   if (resolved > 0) {
     return 'partially_resolved';
+  }
+  if (open.some((line) => line.reopenedFromApproval === true)) {
+    return 'awaiting_response';
   }
   if (dispute === null) {
     return 'open';

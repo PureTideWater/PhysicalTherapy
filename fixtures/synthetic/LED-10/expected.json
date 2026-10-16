@@ -5,7 +5,7 @@
   "assertion": "Fails",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/reconcile/ledger.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.",
   "files": [],

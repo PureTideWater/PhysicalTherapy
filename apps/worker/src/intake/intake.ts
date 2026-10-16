@@ -36,7 +36,8 @@ import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLi
  *    and the zip is expanded.
  * 7. A clean contract, exhibit or payer letter (a top-level upload or a zip entry) has its page text
  *    read in a bounded thread and sealed beside it before it is stored (pages.ts; docs/adr/0033), so
- *    the web app cites pages from that text and never parses an uploaded document itself.
+ *    the web app cites pages from that text and never parses an uploaded document itself. A clean
+ *    posting or EFT export, once stored, queues the reconcile step, which reads it (docs/adr/0042).
  *
  * Every step is idempotent, so a retried attempt resumes: an entry's document ID is derived from the
  * zip's ID and the entry's position, entries already decided are skipped, a sealed object already
@@ -192,6 +193,10 @@ class Intake {
       }
       await setStatus(scope, document.id, 'stored');
     });
+    if (document.kind === 'posting_export' || document.kind === 'eft_export') {
+      // The recovery ledger reads a stored export into rows and matches them (docs/adr/0042).
+      await this.context.enqueue('reconcile', { practice_id: this.practiceId, document_id: document.id });
+    }
   }
 
   async takeIn(row: DocumentRow): Promise<void> {

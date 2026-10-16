@@ -5,7 +5,7 @@
   "assertion": "No entry",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/packets/packets.db.test.ts","apps/worker/src/reconcile/ledger.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "A packet marked submitted: an action that must create no entry; no file.",
   "files": [],

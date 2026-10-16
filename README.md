@@ -137,9 +137,9 @@ a job of one practice keyed by type, practice and subject, three attempts and th
 of service dates whose newest line no run covers, under the release in force and in the job's own name
 (`pricing_run.created_by_job_id`; a month with an unmapped plan waits); `price` prices it and, for a run the chain created,
 queues `triage`, which tells the practice's people in the app and queues `reconcile`, the recovery ledger's step
-(milestone 9 fills it in; until then it records that it ran). The operator's daily `monitoring_schedule` (05:10 UTC, where
+(ADR 0042, below). The operator's daily `monitoring_schedule` (05:10 UTC, where
 `OPERATOR_DATABASE_URL` is set) queues each active practice's `monitor` for the day (which first writes off, window
-passed, every open case's line whose window has closed) and `digest` for the month before:
+passed, every open case's line whose window has closed), `reconcile` for the day and `digest` for the month before:
 one digest per practice and month, its figures fixed when recorded (new validated variance by payer, cases nearing
 deadline, recoveries posted, coverage against the previous digest, contracts expiring), emailed once to each person who
 keeps it on (`MAIL_FROM` for SES, otherwise `MAIL_OUTBOX_DIR`; fixed sentences, counts, dollar totals and one link) and
@@ -175,6 +175,30 @@ lines and submissions. Recording a response writes no ledger entry and no stage.
 `recordPayerResponse`, `submissionLog`, `followUpsDue`, `acceptedPayerResponses` for the ledger); its screens are
 milestone 8's second part. `apps/worker/src/packets/packets.db.test.ts` runs CAS-08 to CAS-15 and LED-01 on SYNTHETIC
 fixtures.
+
+The recovery ledger (ADR 0042): `ledger_entry` (`20261023120000_recovery_ledger.sql`) holds signed integer cents by
+stage (approved, posted, deposited, recouped, reversed, adjusted, interest), each with its evidence, and no role can
+update, delete or truncate one (LED-10); a correction is a new entry. Every entry but a payer response's approval comes
+from a standing `ledger_match` of its evidence, so nothing is posted or deposited without a matched export row, and a
+line reaches payer approved or recovered only where its entries put it (the database refuses any other event: the
+flagged-as-recovered shortcut fails). `packages/ledger` holds the pure rules at 100% branch coverage with fast-check
+properties: `ledgerTotals` (recovered is the practice's proof level, posted by default or deposited, plus recoupments,
+net of reversals; approved and interest are their own figures; a forward balance counts nothing), the matching
+decisions with a tolerance of zero, pro-rata allocation, the posting and EFT templates and the ROI statement. The
+`reconcile` job (after triage, after intake stores a posting or EFT export, and daily) reads waiting exports into rows
+once per fingerprint (LED-08), approves what accepted payer responses accept (`acceptedPayerResponses`), matches new
+claims to open case lines by payer claim control number, then patient control number, service date and code
+(approved for a higher allowed, LED-02; a recoupment for a lower one; a payment of what a response accepted confirms
+it; otherwise a payer response "reprocessed, no change" through `recordPayerResponse`), lists what matches nothing for
+a person (LED-03), posts each case line's share of a matched check (LED-04, allocated pro rata when the check posted
+in part, LED-09) and deposits by TRN02 and amount (LED-05), takes back PLB WO and reversals at once, reopening the line
+and its case and telling the owner (LED-06), records interest beside principal, and writes the quarter before's ROI
+statement once, which the database checks against the entries it links (LED-11). A person with `posting.reconcile`
+matches by hand and reverses a match with an exactly offsetting entry (LED-07) through `@tp/worker/ledger`, whose
+screens are milestone 9's second part; the dashboard's recovered this quarter and the digest's recoveries now read the
+ledger. `apps/worker/src/reconcile/ledger.db.test.ts` runs LED-01 to LED-11 and
+`apps/worker/src/reconcile/ledger-oracle.db.test.ts` is the ledger oracle (PRD 18): five synthetic export scenarios
+whose known outcomes are compared with plain SQL sums.
 
 Tenancy and audit (ADRs 0013 to 0015, 0018 and 0019): every query runs in a scope from `@tp/db` (`withActor`,
 `withPracticeScope`, `withJobScope`, one practice per job; a practice job reaches the database only through its

@@ -489,11 +489,8 @@ describe('submissions, payer responses and the case states they derive (PRD 8; P
       scope.client.query<{ stage: string }>('SELECT DISTINCT ON (service_line_id) stage FROM line_status ORDER BY service_line_id, seq DESC'),
     );
     expect(new Set(stages.map((row) => row.stage))).toEqual(new Set(['actionable']));
-    const { rows: ledger } = await asOwner(w.owner, [setup.practice.practiceId], () => w.owner.query<{ exists: boolean }>("SELECT to_regclass('public.ledger_entry') IS NOT NULL AS exists"));
-    if (ledger[0]?.exists === true) {
-      const { rows: entries } = await asOwner(w.owner, [setup.practice.practiceId], () => w.owner.query<{ entries: string }>('SELECT count(*)::text AS entries FROM ledger_entry'));
-      expect(entries).toEqual([{ entries: '0' }]);
-    }
+    const { rows: entries } = await asOwner(w.owner, [setup.practice.practiceId], () => w.owner.query<{ entries: string }>('SELECT count(*)::text AS entries FROM ledger_entry'));
+    expect(entries).toEqual([{ entries: '0' }]);
     expect((await caseState(setup)).state).toBe('resolved');
   });
 });

@@ -107,4 +107,14 @@ describe('case states (PRD 8)', () => {
     expect(deriveCaseState([{ writtenOff: false, stage: 'payer_approved' }, { writtenOff: false, stage: 'actionable' }], { response: null, reopened: false })).toBe('partially_resolved');
     expect(deriveCaseState([{ writtenOff: false, stage: null }, { writtenOff: false }])).toBe('open');
   });
+
+  it('waits on the payer again once a line is moved back from payer approved or recovered, whatever the payer answered (docs/adr/0042)', () => {
+    const reopened = [{ writtenOff: false, stage: 'actionable' as const, reopenedFromApproval: true }, { writtenOff: false, stage: 'actionable' as const }];
+    expect(deriveCaseState(reopened)).toBe('awaiting_response');
+    expect(deriveCaseState(reopened, { response: 'accepted', reopened: false })).toBe('awaiting_response');
+    expect(deriveCaseState(reopened, { response: 'reprocessed_no_change', reopened: false })).toBe('awaiting_response');
+    // Lines still approved or recovered beside it: partly resolved; a written-off reopened line counts nothing.
+    expect(deriveCaseState([...reopened, { writtenOff: false, stage: 'recovered' }], { response: 'accepted', reopened: false })).toBe('partially_resolved');
+    expect(deriveCaseState([{ writtenOff: true, reopenedFromApproval: true }, { writtenOff: false }], { response: 'accepted', reopened: false })).toBe('resolved');
+  });
 });

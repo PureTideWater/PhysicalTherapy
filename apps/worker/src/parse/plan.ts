@@ -89,6 +89,8 @@ export interface PlannedClaim {
   readonly allowedCents: Cents | null;
   /** DTM 050: when the payer received the claim (prompt-pay interest counts from it). */
   readonly receivedOn: string | null;
+  /** AMT I: the interest the payer paid on the claim (the recovery ledger records it beside principal). */
+  readonly interestCents: Cents | null;
   readonly adjustments: readonly PlannedAdjustment[];
   readonly lines: readonly PlannedLine[];
   /** A reversal (CLP02 22): the claim it reverses when that one is earlier in the same transaction set. */
@@ -316,6 +318,7 @@ function plannedClaim(remittance: LoadableRemittance, claim: Claim): PlannedClai
     serviceTo: claim.serviceTo,
     allowedCents: claim.allowedCents,
     receivedOn: claim.dates.find((date) => date.qualifier === '050')?.from ?? null,
+    interestCents: claim.amounts.find((amount) => amount.qualifier === 'I')?.cents ?? null,
     adjustments: adjustments(claim.adjustments, unknown),
     lines: claim.lines.map((line) => plannedLine(claim, line, unknown)),
     reversal: claim.reversal === null ? null : { reversedClaimNo: claimNoIn(remittance, claim.reversal.reversed) },

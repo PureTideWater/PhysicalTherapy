@@ -5,7 +5,7 @@
   "assertion": "Equals sum of entries",
   "synthetic": true,
   "completesIn": 9,
-  "assertedBy": [],
+  "assertedBy": ["apps/worker/src/reconcile/ledger.db.test.ts","packages/ledger/src/roi.test.ts"],
   "codeListRelease": null,
   "noFileReason": "Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.",
   "files": [],

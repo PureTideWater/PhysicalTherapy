@@ -1,4 +1,7 @@
 import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { quarterOf, quarterPeriod } from '@tp/ledger';
+import { centsToString } from '@tp/money';
+import { practiceLedgerTotals } from '@tp/worker/ledger';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -123,7 +126,10 @@ export interface Dashboard {
   readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
   /** Open cases whose deadline falls today or within DEADLINE_WINDOW_DAYS, with their actionable total. */
   readonly deadlines: { readonly cases: number; readonly actionableCents: string; readonly earliest: string | null };
-  /** Recovered this quarter: zero until the recovery ledger posts (milestone 9); never an estimate. */
+  /**
+   * Recovered this quarter: from the recovery ledger's entries dated in the quarter (the practice's proof
+   * level, net of recoupments and reversals; docs/adr/0042), never an estimate and never approved.
+   */
   readonly recoveredCents: string;
 }
 
@@ -147,7 +153,7 @@ export async function dashboard(scope: PracticeScope<ScopeClient>, practiceId: s
         : { runId: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, lines: coverage.lines, pricedLines: coverage.priced.lines, chargeCents: coverage.charge_cents, pricedChargeCents: coverage.priced.charge_cents },
     casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
     deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },
-    recoveredCents: '0',
+    recoveredCents: centsToString((await practiceLedgerTotals(scope, practiceId, quarterPeriod(quarterOf(today)))).recoveredCents),
   };
 }
 

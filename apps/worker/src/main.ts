@@ -80,7 +80,7 @@ if (config !== undefined && intake !== undefined && notifications !== undefined)
       monitor: monitorHandler(),
       price: priceHandler(),
       triage: triageHandler(),
-      reconcile: reconcileHandler(),
+      reconcile: reconcileHandler({ documents: services.documents, keys: services.keys }),
       digest: digestHandler({ mail: mailSender(notifications), appOrigin: notifications.appOrigin }),
       audit_report: auditReportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
       packet_export: packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),

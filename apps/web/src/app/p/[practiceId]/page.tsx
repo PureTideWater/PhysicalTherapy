@@ -235,7 +235,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               </dd>
               <dt className="text-muted-foreground">Recovered this quarter</dt>
               <dd data-figure="recovered">
-                <Money value={dashboard.recoveredCents} /> (stage five: cash posted, net of recoupments; the recovery ledger arrives later, so nothing has posted).
+                <Money value={dashboard.recoveredCents} /> (stage five: cash posted or deposited, as the practice proves recovery, net of recoupments and reversals, from the recovery ledger).
               </dd>
             </dl>
           </CardContent>

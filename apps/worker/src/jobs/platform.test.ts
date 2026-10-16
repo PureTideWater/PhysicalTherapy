@@ -133,7 +133,7 @@ describe('platform handlers', () => {
     expect(lines.at(-1)?.msg).toBe('restore drill failed');
   });
 
-  it('queues each active practice’s own monitor job for the day and digest for the month before, as the operator', async () => {
+  it('queues each active practice’s own monitor job for the day, digest for the month before and reconcile for the day, as the operator', async () => {
     const practices = ['1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02', '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01'];
     const statements: string[] = [];
     const { pool, released } = operator((text) => {
@@ -145,7 +145,7 @@ describe('platform handlers', () => {
       send: (name: string, data: object | null, options: unknown) => {
         sent.push({ name, data, options });
         // The second practice's digest is already queued: the queue refuses its key.
-        return Promise.resolve(sent.length === 4 ? null : `job-${String(sent.length)}`);
+        return Promise.resolve(sent.length === 5 ? null : `job-${String(sent.length)}`);
       },
     } as unknown as NonNullable<Parameters<typeof createPlatformHandlers>[0]['queue']>;
     const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now: () => new Date('2026-11-01T05:10:00Z'), queue, ...notices });
@@ -157,12 +157,15 @@ describe('platform handlers', () => {
       practices.flatMap((practice) => [
         { name: 'monitor', data: { practice_id: practice, day: '2026-11-01' }, options: { singletonKey: `monitor:${practice}:2026-11-01` } },
         { name: 'digest', data: { practice_id: practice, period: '2026-10' }, options: { singletonKey: `digest:${practice}:2026-10` } },
+        { name: 'reconcile', data: { practice_id: practice, day: '2026-11-01' }, options: { singletonKey: `reconcile:${practice}:2026-11-01` } },
       ]),
     );
     expect(lines.at(-1)).toMatchObject({ msg: 'monitoring schedule queued the practices’ jobs', job_id: JOB });
     expect(released).toEqual([false]);
     await handlers.monitoring_schedule({ day: '2027-01-15' }, { jobId: JOB, logger });
-    expect(sent.slice(4).map((item) => item.data)).toEqual(practices.flatMap((practice) => [{ practice_id: practice, day: '2027-01-15' }, { practice_id: practice, period: '2026-12' }]));
+    expect(sent.slice(6).map((item) => item.data)).toEqual(
+      practices.flatMap((practice) => [{ practice_id: practice, day: '2027-01-15' }, { practice_id: practice, period: '2026-12' }, { practice_id: practice, day: '2027-01-15' }]),
+    );
   });
 
   it('says so when there is no active practice, and refuses to run without a queue', async () => {

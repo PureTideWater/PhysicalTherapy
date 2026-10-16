@@ -57,6 +57,10 @@ describe('the load plan', () => {
     expect(planned(loadPlan(only(syntheticInterchange()))).claims[0]?.receivedOn).toBeNull();
   });
 
+  it('keeps the interest a payer paid on a claim (AMT I), which the recovery ledger records beside principal', () => {
+    expect(planned(loadPlan(only(fixture('variants/V07-plb-l6-interest/remit.835')))).claims.map((claim) => claim.interestCents)).toEqual([411n, null]);
+  });
+
   it('maps a transaction set to its remittance, payer, claim, line and adjustments', () => {
     const plan = planned(loadPlan(only(syntheticInterchange())));
     expect(plan.remittance).toEqual({

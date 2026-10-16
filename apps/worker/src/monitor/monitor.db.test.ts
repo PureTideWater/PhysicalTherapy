@@ -70,7 +70,7 @@ async function chain(replace: Partial<JobHandlers> = {}, now?: () => Date): Prom
       monitor: monitorHandler(),
       price: priceHandler(),
       triage: triageHandler(),
-      reconcile: reconcileHandler(),
+      reconcile: reconcileHandler(w.pricing.parseServices),
       digest: digestHandler({ mail, appOrigin: ORIGIN, ...(now === undefined ? {} : { now }) }),
       ...replace,
     },
@@ -98,7 +98,9 @@ async function effects(practiceId: string): Promise<Record<string, number>> {
             (SELECT count(*)::int FROM case_line WHERE practice_id = $1) AS case_lines,
             (SELECT count(*)::int FROM notification WHERE practice_id = $1) AS notifications,
             (SELECT count(*)::int FROM digest WHERE practice_id = $1) AS digests,
-            (SELECT count(*)::int FROM digest WHERE practice_id = $1 AND sent_at IS NOT NULL) AS digests_sent`,
+            (SELECT count(*)::int FROM digest WHERE practice_id = $1 AND sent_at IS NOT NULL) AS digests_sent,
+            (SELECT count(*)::int FROM ledger_match WHERE practice_id = $1) AS ledger_matches,
+            (SELECT count(*)::int FROM ledger_entry WHERE practice_id = $1) AS ledger_entries`,
     [practiceId],
   );
   return row ?? {};
@@ -218,7 +220,7 @@ describe('the monitoring chain on an upload batch (J11)', () => {
         key('triage', runId),
         key('reconcile', runId),
       ]);
-      expect(c.logs.find((line) => line.msg === 'reconcile ran; the recovery ledger has no entries to post yet')).toMatchObject({ job_type: 'reconcile', pricing_run_id: runId });
+      expect(c.logs.find((line) => line.msg === 'reconcile complete')).toMatchObject({ job_type: 'reconcile', pricing_run_id: runId });
       expect(c.logs.filter((line) => line.msg === JOB_FAILED_MESSAGE)).toEqual([]);
     } finally {
       await c.worker.stop();

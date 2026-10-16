@@ -55,6 +55,26 @@ export {
 } from './documents';
 export { JOB_RUN_OUTCOMES, JOB_RUN_TYPES, type JobRunOutcome, type JobRunRow, jobRun } from './jobs';
 export {
+  type EftRowRow,
+  LEDGER_ENTRY_STAGES,
+  LEDGER_EVIDENCE_KINDS,
+  LEDGER_MATCH_KINDS,
+  LEDGER_MATCH_LEVELS,
+  LEDGER_MATCH_OUTCOMES,
+  type LedgerEntryRow,
+  type LedgerMatchKind,
+  type LedgerMatchRow,
+  type PostingRowRow,
+  ROI_PROOF_LEVELS,
+  type RoiLinks,
+  type RoiStatementRow,
+  eftRow,
+  ledgerEntry,
+  ledgerMatch,
+  postingRow,
+  roiStatement,
+} from './ledger';
+export {
   type AdjustmentRow,
   type ClaimRow,
   type LineNoteRow,

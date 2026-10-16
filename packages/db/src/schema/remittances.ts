@@ -143,6 +143,8 @@ export const claim = pgTable(
     updatedAt: updatedAt(),
     /** DTM 050: when the payer received the claim, which prompt-pay interest counts from (migration 20261023090000). */
     receivedOn: date('received_on'),
+    /** AMT I: the interest the payer paid on the claim (migration 20261023120000). */
+    interestCents: bigint('interest_cents', { mode: 'bigint' }),
   },
   (table) => [
     unique('claim_once').on(table.remittanceId, table.claimNo),

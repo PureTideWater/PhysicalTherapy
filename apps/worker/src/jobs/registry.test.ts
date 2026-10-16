@@ -79,6 +79,12 @@ describe('singletonKey', () => {
     expect(singletonKey(type, examples[type])).toBe(key);
   });
 
+  it('keys a reconcile by its export or its day too, and refuses a payload of two subjects', () => {
+    expect(singletonKey('reconcile', parsePayload('reconcile', { practice_id: PRACTICE, document_id: SUBJECT }))).toBe(`reconcile:${PRACTICE}:${SUBJECT}`);
+    expect(singletonKey('reconcile', parsePayload('reconcile', { practice_id: PRACTICE, day: '2026-07-01' }))).toBe(`reconcile:${PRACTICE}:2026-07-01`);
+    expect(() => parsePayload('reconcile', { practice_id: PRACTICE, pricing_run_id: SUBJECT, document_id: SUBJECT })).toThrow(ZodError);
+  });
+
   it('differs across practices for the same subject', () => {
     const other = singletonKey('parse_835', { practice_id: OTHER_PRACTICE, document_id: SUBJECT });
     expect(other).not.toBe(singletonKey('parse_835', examples.parse_835));
