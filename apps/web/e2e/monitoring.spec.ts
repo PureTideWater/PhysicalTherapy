@@ -82,15 +82,22 @@ test('the chain plans, prices, triages and tells the practice; the monthly diges
 
     await test.step('the daily schedule’s monitor plans the month in the job’s name; the chain prices, triages and tells the practice', async () => {
       await queue('monitor', { practice_id: practiceId, day: today() });
+      // The chain has run out: triage opened the case and told the manager, the reconcile triage queued
+      // after the chain's run has succeeded, and no job of the practice is still running (the
+      // dashboard's last run is the newest job's).
       await until(
         () =>
           withDatabase(async (client) => {
-            const { rows } = await client.query<{ cases: number; notified: number }>(
+            const { rows } = await client.query<{ cases: number; notified: number; reconciled: number; running: number }>(
               `SELECT (SELECT count(*)::int FROM "case" WHERE practice_id = $1) AS cases,
-                      (SELECT count(*)::int FROM notification n JOIN "user" u ON u.id = n.user_id WHERE n.practice_id = $1 AND n.kind = 'monitoring_run' AND u.email = $2) AS notified`,
+                      (SELECT count(*)::int FROM notification n JOIN "user" u ON u.id = n.user_id WHERE n.practice_id = $1 AND n.kind = 'monitoring_run' AND u.email = $2) AS notified,
+                      (SELECT count(*)::int FROM job_run j JOIN pricing_run r ON r.id::text = j.idempotency_key
+                        WHERE j.practice_id = $1 AND j.job_type = 'reconcile' AND j.outcome = 'succeeded' AND r.practice_id = $1 AND r.created_by_job_id IS NOT NULL) AS reconciled,
+                      (SELECT count(*)::int FROM job_run WHERE practice_id = $1 AND outcome IN ('running', 'retrying')) AS running`,
               [practiceId, manager],
             );
-            return (rows[0]?.cases ?? 0) > 0 && (rows[0]?.notified ?? 0) > 0;
+            const row = rows[0];
+            return row !== undefined && row.cases > 0 && row.notified > 0 && row.reconciled > 0 && row.running === 0;
           }),
         'the monitoring chain',
         120_000,
