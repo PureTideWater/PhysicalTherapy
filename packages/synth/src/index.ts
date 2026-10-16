@@ -48,6 +48,12 @@ export { type Exhibit, type ExhibitPage, EXHIBIT_BANNER, exhibitPageLines, exhib
 export { readZip, writeZip, type ZipEntry } from './formats/zip';
 export { writePdf } from './formats/pdf';
 
+// The model gateway's synthetic evaluation sets (test matrix MOD-01 and MOD-03).
+export * from './eval/formats';
+export { CONTRACT_SET_DIR, CONTRACT_SET_SIZE, contractSetFiles, contractSetSpecs, normalizeText, writtenDate } from './eval/contract-set';
+export { NARRATIVE_SET_DIR, NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetFiles } from './eval/narrative-set';
+export { SCAN_HEIGHT, SCAN_WIDTH, TEXTRACT_RECORDING_FORMAT, type RecordedBlock, type TextractRecording, scannedPdf, textractRecording } from './formats/scan';
+
 // Writing fixtures.
 export { SyntheticSenderError, assertSyntheticX12, driftFrom, writeCases } from './write';
 

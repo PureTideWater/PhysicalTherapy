@@ -1,0 +1,109 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C10",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Exhibit A: 97112",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97112"],"written":["97112"],"page":3,"quote":"97112 - - $87.48 per unit"},
+        "amount": {"value":"8748","written":"$87.48","page":3,"quote":"97112 - - $87.48 per unit"},
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1/1/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97750",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97750"],"written":["97750"],"page":3,"quote":"97750 - - $40.98 per unit"},
+        "amount": {"value":"4098","written":"$40.98","page":3,"quote":"97750 - - $40.98 per unit"},
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1/1/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97163 59 POS 12",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97163"],"written":["97163"],"page":3,"quote":"97163 59 12 $44.01 per unit"},
+        "modifiers": {"value":["59"],"written":["59"],"page":3,"quote":"97163 59 12 $44.01 per unit"},
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97163 59 12 $44.01 per unit"},
+        "amount": {"value":"4401","written":"$44.01","page":3,"quote":"97163 59 12 $44.01 per unit"},
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1/1/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1/1/2026 and remains in effect through 12/31/2026."
+        }
+      }
+    }
+  ]
+}

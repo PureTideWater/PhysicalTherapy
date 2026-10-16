@@ -1,0 +1,102 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C18",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97165",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97165"],
+          "written": ["97165"],
+          "page": 3,
+          "quote": "For CPT 97165, Payer shall pay $159.68 per unit."
+        },
+        "amount": {
+          "value": "15968",
+          "written": "$159.68",
+          "page": 3,
+          "quote": "For CPT 97165, Payer shall pay $159.68 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "1 April 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 April 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97162 GP",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97162"],
+          "written": ["97162"],
+          "page": 3,
+          "quote": "For CPT 97162 billed with modifier GP, Payer shall pay $97.84 per unit."
+        },
+        "modifiers": {
+          "value": ["GP"],
+          "written": ["GP"],
+          "page": 3,
+          "quote": "For CPT 97162 billed with modifier GP, Payer shall pay $97.84 per unit."
+        },
+        "amount": {
+          "value": "9784",
+          "written": "$97.84",
+          "page": 3,
+          "quote": "For CPT 97162 billed with modifier GP, Payer shall pay $97.84 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "1 April 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 April 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

@@ -97,7 +97,8 @@ function reviews(result: { readonly proposal: ContractTermsProposal | null }) {
 
 describe('MOD-01: a contract proposal whose quotes all verify', () => {
   it('verifies every quote of the case’s proposal as a substring of its page, and proposes its rates as written', async () => {
-    expect(expectation('MOD-01')).toEqual({ verifier: 'every quote is a substring of its page' });
+    // The case also carries the 40-document evaluation set, which eval/gate.golden.test.ts runs.
+    expect(expectation('MOD-01')).toMatchObject({ verifier: 'every quote is a substring of its page', contractSet: expect.stringContaining('field by field') });
     const input = agreement('MOD-01');
     const fields = proposal('MOD-01');
     const from = fields.find((field) => field.field === 'effective_from');

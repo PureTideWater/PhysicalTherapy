@@ -1,0 +1,160 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C03",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "exhibit",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 1,
+  "records": [
+    {
+      "label": "Exhibit: 97150",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97150"],
+          "written": ["97150"],
+          "page": 1,
+          "quote": "97150 - - 105% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 1,
+          "quote": "97150 - - 105% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "1/15/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1/15/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97110 59 GP",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97110"],
+          "written": ["97110"],
+          "page": 1,
+          "quote": "97110 59 GP - 115% of the 2025 Medicare fee schedule"
+        },
+        "modifiers": {
+          "value": ["59","GP"],
+          "written": ["59","GP"],
+          "page": 1,
+          "quote": "97110 59 GP - 115% of the 2025 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "115",
+          "written": "115%",
+          "page": 1,
+          "quote": "97110 59 GP - 115% of the 2025 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 1,
+          "quote": "97110 59 GP - 115% of the 2025 Medicare fee schedule"
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "1/15/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1/15/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: G0283 GO POS 12",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["G0283"],
+          "written": ["G0283"],
+          "page": 1,
+          "quote": "G0283 GO 12 87.5% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["GO"],
+          "written": ["GO"],
+          "page": 1,
+          "quote": "G0283 GO 12 87.5% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 1,
+          "quote": "G0283 GO 12 87.5% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "87.5",
+          "written": "87.5%",
+          "page": 1,
+          "quote": "G0283 GO 12 87.5% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "1/15/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1/15/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97166 POS 11",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97166"],
+          "written": ["97166"],
+          "page": 1,
+          "quote": "97166 - 11 95% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 1,
+          "quote": "97166 - 11 95% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95%",
+          "page": 1,
+          "quote": "97166 - 11 95% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-01-15",
+          "written": "1/15/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 1/15/2026."
+        }
+      }
+    }
+  ]
+}

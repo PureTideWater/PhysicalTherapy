@@ -1,0 +1,125 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C15",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97165 CO",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97165"],
+          "written": ["97165"],
+          "page": 3,
+          "quote": "For CPT 97165 billed with modifier CO, Payer shall pay $38.38 per unit."
+        },
+        "modifiers": {
+          "value": ["CO"],
+          "written": ["CO"],
+          "page": 3,
+          "quote": "For CPT 97165 billed with modifier CO, Payer shall pay $38.38 per unit."
+        },
+        "amount": {
+          "value": "3838",
+          "written": "$38.38",
+          "page": 3,
+          "quote": "For CPT 97165 billed with modifier CO, Payer shall pay $38.38 per unit."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "March 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "June 30, 2027",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97161",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97161"],
+          "written": ["97161"],
+          "page": 3,
+          "quote": "For CPT 97161, Payer shall pay $105.35 per unit."
+        },
+        "amount": {
+          "value": "10535",
+          "written": "$105.35",
+          "page": 3,
+          "quote": "For CPT 97161, Payer shall pay $105.35 per unit."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "March 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "June 30, 2027",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97167",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97167"],
+          "written": ["97167"],
+          "page": 3,
+          "quote": "For CPT 97167, Payer shall pay $40.55 per unit."
+        },
+        "amount": {
+          "value": "4055",
+          "written": "$40.55",
+          "page": 3,
+          "quote": "For CPT 97167, Payer shall pay $40.55 per unit."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "March 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        },
+        "effective_to": {
+          "value": "2027-06-30",
+          "written": "June 30, 2027",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and remains in effect through June 30, 2027."
+        }
+      }
+    }
+  ]
+}

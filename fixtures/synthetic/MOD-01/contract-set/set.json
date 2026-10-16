@@ -1,0 +1,327 @@
+{
+  "format": "tp-eval-contract-set/1",
+  "synthetic": true,
+  "note": "SYNTHETIC: 40 invented contracts and exhibits for the model gateway evaluation (PRD 14). No real payer, provider or rate.",
+  "cases": [
+    {
+      "id": "C01",
+      "dir": "contract-set/C01-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 2,
+      "fields": 11
+    },
+    {
+      "id": "C02",
+      "dir": "contract-set/C02-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 3,
+      "fields": 24
+    },
+    {
+      "id": "C03",
+      "dir": "contract-set/C03-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 4,
+      "fields": 21
+    },
+    {
+      "id": "C04",
+      "dir": "contract-set/C04-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 2,
+      "fields": 12
+    },
+    {
+      "id": "C05",
+      "dir": "contract-set/C05-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 4,
+      "fields": 28
+    },
+    {
+      "id": "C06",
+      "dir": "contract-set/C06-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 2,
+      "fields": 9
+    },
+    {
+      "id": "C07",
+      "dir": "contract-set/C07-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 6,
+      "fields": 46
+    },
+    {
+      "id": "C08",
+      "dir": "contract-set/C08-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 4,
+      "fields": 25
+    },
+    {
+      "id": "C09",
+      "dir": "contract-set/C09-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 5,
+      "fields": 22
+    },
+    {
+      "id": "C10",
+      "dir": "contract-set/C10-table",
+      "layout": "table",
+      "kind": "contract",
+      "records": 3,
+      "fields": 20
+    },
+    {
+      "id": "C11",
+      "dir": "contract-set/C11-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 2,
+      "fields": 9
+    },
+    {
+      "id": "C12",
+      "dir": "contract-set/C12-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 3,
+      "fields": 14
+    },
+    {
+      "id": "C13",
+      "dir": "contract-set/C13-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 4,
+      "fields": 19
+    },
+    {
+      "id": "C14",
+      "dir": "contract-set/C14-table",
+      "layout": "table",
+      "kind": "exhibit",
+      "records": 3,
+      "fields": 14
+    },
+    {
+      "id": "C15",
+      "dir": "contract-set/C15-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 16
+    },
+    {
+      "id": "C16",
+      "dir": "contract-set/C16-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 20
+    },
+    {
+      "id": "C17",
+      "dir": "contract-set/C17-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 22
+    },
+    {
+      "id": "C18",
+      "dir": "contract-set/C18-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 2,
+      "fields": 11
+    },
+    {
+      "id": "C19",
+      "dir": "contract-set/C19-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 1,
+      "fields": 6
+    },
+    {
+      "id": "C20",
+      "dir": "contract-set/C20-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 16
+    },
+    {
+      "id": "C21",
+      "dir": "contract-set/C21-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 16
+    },
+    {
+      "id": "C22",
+      "dir": "contract-set/C22-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 20
+    },
+    {
+      "id": "C23",
+      "dir": "contract-set/C23-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 2,
+      "fields": 13
+    },
+    {
+      "id": "C24",
+      "dir": "contract-set/C24-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 1,
+      "fields": 8
+    },
+    {
+      "id": "C25",
+      "dir": "contract-set/C25-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 6,
+      "fields": 40
+    },
+    {
+      "id": "C26",
+      "dir": "contract-set/C26-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 2,
+      "fields": 15
+    },
+    {
+      "id": "C27",
+      "dir": "contract-set/C27-prose",
+      "layout": "prose",
+      "kind": "contract",
+      "records": 3,
+      "fields": 18
+    },
+    {
+      "id": "C28",
+      "dir": "contract-set/C28-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 3,
+      "fields": 18
+    },
+    {
+      "id": "C29",
+      "dir": "contract-set/C29-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 1,
+      "fields": 6
+    },
+    {
+      "id": "C30",
+      "dir": "contract-set/C30-scanned",
+      "layout": "scanned",
+      "kind": "exhibit",
+      "records": 4,
+      "fields": 19
+    },
+    {
+      "id": "C31",
+      "dir": "contract-set/C31-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 2,
+      "fields": 11
+    },
+    {
+      "id": "C32",
+      "dir": "contract-set/C32-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 4,
+      "fields": 25
+    },
+    {
+      "id": "C33",
+      "dir": "contract-set/C33-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 5,
+      "fields": 38
+    },
+    {
+      "id": "C34",
+      "dir": "contract-set/C34-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 1,
+      "fields": 7
+    },
+    {
+      "id": "C35",
+      "dir": "contract-set/C35-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 4,
+      "fields": 27
+    },
+    {
+      "id": "C36",
+      "dir": "contract-set/C36-scanned",
+      "layout": "scanned",
+      "kind": "exhibit",
+      "records": 5,
+      "fields": 23
+    },
+    {
+      "id": "C37",
+      "dir": "contract-set/C37-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 2,
+      "fields": 14
+    },
+    {
+      "id": "C38",
+      "dir": "contract-set/C38-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 4,
+      "fields": 25
+    },
+    {
+      "id": "C39",
+      "dir": "contract-set/C39-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 2,
+      "fields": 10
+    },
+    {
+      "id": "C40",
+      "dir": "contract-set/C40-scanned",
+      "layout": "scanned",
+      "kind": "contract",
+      "records": 4,
+      "fields": 24
+    }
+  ]
+}

@@ -12,6 +12,7 @@ import * as par from './par';
 import * as pricing from './pricing';
 import { VARIANTS } from './variants';
 import * as workflow from './workflow';
+import { addContractSet, addNarrativeSet } from '../eval/cases';
 
 type Build = (b: CaseBuilder) => void;
 
@@ -204,9 +205,15 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   'JOB-03': none(7, 'A digest is built from counts and totals in the database; no file.', ['apps/worker/src/monitor/monitor.db.test.ts', 'apps/worker/src/digest/view.test.ts', 'apps/web/e2e/monitoring.spec.ts']),
   'JOB-04': none(1, 'Heartbeats are a contract between the worker and its alarm.', ['apps/worker/src/heartbeat.test.ts', 'infra/test/monitoring.test.ts']),
-  'MOD-01': { completesIn: 10, build: workflow.mod01 },
+  'MOD-01': {
+    completesIn: 10,
+    build: (b) => {
+      workflow.mod01(b);
+      addContractSet(b);
+    },
+  },
   'MOD-02': { completesIn: 10, build: workflow.mod02 },
-  'MOD-03': none(10, 'The 300-case narrative evaluation set is generated in milestone 10 from the packet facts milestone 8 defines; nothing can be generated before that format exists.'),
+  'MOD-03': { completesIn: 10, build: addNarrativeSet },
   'MOD-04': { completesIn: 10, build: workflow.mod04 },
   'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.'),
   'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.'),

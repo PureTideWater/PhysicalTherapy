@@ -1,0 +1,125 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C20",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97542 POS 11",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97542"],
+          "written": ["97542"],
+          "page": 3,
+          "quote": "For CPT 97542 in place of service 11, Payer shall pay $146.20 per unit."
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 3,
+          "quote": "For CPT 97542 in place of service 11, Payer shall pay $146.20 per unit."
+        },
+        "amount": {
+          "value": "14620",
+          "written": "$146.20",
+          "page": 3,
+          "quote": "For CPT 97542 in place of service 11, Payer shall pay $146.20 per unit."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "April 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective April 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97166",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97166"],
+          "written": ["97166"],
+          "page": 3,
+          "quote": "For CPT 97166, Payer shall pay $31.18 per unit."
+        },
+        "amount": {
+          "value": "3118",
+          "written": "$31.18",
+          "page": 3,
+          "quote": "For CPT 97166, Payer shall pay $31.18 per unit."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "April 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective April 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97116",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Article 3."
+        },
+        "codes": {
+          "value": ["97116"],
+          "written": ["97116"],
+          "page": 3,
+          "quote": "For CPT 97116, Payer shall pay $19.89 per unit."
+        },
+        "amount": {
+          "value": "1989",
+          "written": "$19.89",
+          "page": 3,
+          "quote": "For CPT 97116, Payer shall pay $19.89 per unit."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "April 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective April 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

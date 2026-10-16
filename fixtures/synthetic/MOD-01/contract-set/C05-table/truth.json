@@ -1,0 +1,142 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C05",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 4,
+  "records": [
+    {
+      "label": "Exhibit A: 97760 KX GP",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97760"],"written":["97760"],"page":3,"quote":"97760 KX GP - 21.64 per unit"},
+        "modifiers": {"value":["KX","GP"],"written":["KX","GP"],"page":3,"quote":"97760 KX GP - 21.64 per unit"},
+        "amount": {"value":"2164","written":"21.64","page":3,"quote":"97760 KX GP - 21.64 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97032 GO 59",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97032"],"written":["97032"],"page":3,"quote":"97032 GO 59 - 125.43 per unit"},
+        "modifiers": {"value":["GO","59"],"written":["GO","59"],"page":3,"quote":"97032 GO 59 - 125.43 per unit"},
+        "amount": {"value":"12543","written":"125.43","page":3,"quote":"97032 GO 59 - 125.43 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Amendment 1: 97760 KX GP",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97760"],"written":["97760"],"page":4,"quote":"97760 KX GP - 30.45 per unit"},
+        "modifiers": {"value":["KX","GP"],"written":["KX","GP"],"page":4,"quote":"97760 KX GP - 30.45 per unit"},
+        "amount": {"value":"3045","written":"30.45","page":4,"quote":"97760 KX GP - 30.45 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-05-31",
+          "written": "31 May 2026",
+          "page": 4,
+          "quote": "Effective 31 May 2026, the rates below replace the rates stated earlier for the same codes."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    },
+    {
+      "label": "Amendment 1: 97032 GO 59",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97032"],"written":["97032"],"page":4,"quote":"97032 GO 59 - 131.57 per unit"},
+        "modifiers": {"value":["GO","59"],"written":["GO","59"],"page":4,"quote":"97032 GO 59 - 131.57 per unit"},
+        "amount": {"value":"13157","written":"131.57","page":4,"quote":"97032 GO 59 - 131.57 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-05-31",
+          "written": "31 May 2026",
+          "page": 4,
+          "quote": "Effective 31 May 2026, the rates below replace the rates stated earlier for the same codes."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "31 December 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and remains in effect through 31 December 2026."
+        }
+      }
+    }
+  ]
+}

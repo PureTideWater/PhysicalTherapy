@@ -1,0 +1,108 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C37",
+  "layout": "scanned",
+  "drawnAs": "prose",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97163",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97163, Payer pays the lesser of the billed charge or 110% of the 2025 Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97163"],
+          "written": ["97163"],
+          "page": 3,
+          "quote": "For CPT 97163, Payer pays the lesser of the billed charge or 110% of the 2025 Medicare Physician Fee Schedule."
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110%",
+          "page": 3,
+          "quote": "For CPT 97163, Payer pays the lesser of the billed charge or 110% of the 2025 Medicare Physician Fee Schedule."
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 3,
+          "quote": "For CPT 97163, Payer pays the lesser of the billed charge or 110% of the 2025 Medicare Physician Fee Schedule."
+        },
+        "lesser_of_schedule": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97163, Payer pays the lesser of the billed charge or 110% of the 2025 Medicare Physician Fee Schedule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97542",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97542, Payer pays the lesser of the billed charge or 87.5% of the 2024 Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97542"],
+          "written": ["97542"],
+          "page": 3,
+          "quote": "For CPT 97542, Payer pays the lesser of the billed charge or 87.5% of the 2024 Medicare Physician Fee Schedule."
+        },
+        "percentage": {
+          "value": "87.5",
+          "written": "87.5%",
+          "page": 3,
+          "quote": "For CPT 97542, Payer pays the lesser of the billed charge or 87.5% of the 2024 Medicare Physician Fee Schedule."
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 3,
+          "quote": "For CPT 97542, Payer pays the lesser of the billed charge or 87.5% of the 2024 Medicare Physician Fee Schedule."
+        },
+        "lesser_of_schedule": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97542, Payer pays the lesser of the billed charge or 87.5% of the 2024 Medicare Physician Fee Schedule."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "Jul. 1st, 2025",
+          "page": 1,
+          "quote": "This Agreement is effective Jul. 1st, 2025 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}
