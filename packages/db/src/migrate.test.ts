@@ -8,6 +8,7 @@ import { MIGRATIONS_DIR, MigrationError, historyProblems, readMigrations } from 
 import {
   APP_DEV_LOGIN,
   APP_ROLE,
+  BILLING_ROLE,
   OPERATOR_ROLE,
   OWNER_ROLE,
   type RoleAttributes,
@@ -84,8 +85,8 @@ describe('roles', () => {
   const owner = WANTED_ROLES[OWNER_ROLE] as RoleAttributes;
 
   it('creates the dev login only when asked', () => {
-    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE]);
-    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, APP_DEV_LOGIN]);
+    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE]);
+    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, APP_DEV_LOGIN]);
     expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(APP_DEV_LOGIN);
     expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN}`);
     expect(() => createRoleStatement('someone_else')).toThrow(RoleBootstrapError);
@@ -94,11 +95,15 @@ describe('roles', () => {
   it('revokes temporary tables from PUBLIC and lets the operator role connect', () => {
     const statements = grantStatements({ devLogin: false }).join('\n');
     expect(statements).toContain("REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC");
-    expect(statements).toContain(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}`);
+    expect(statements).toContain(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}`);
+    // The application and operator roles switch to billing's role without inheriting it (docs/adr/0050).
+    for (const member of [APP_ROLE, OPERATOR_ROLE]) {
+      expect(statements).toContain(`GRANT ${BILLING_ROLE} TO ${member} WITH INHERIT FALSE, SET TRUE;`);
+    }
   });
 
-  it('never gives the application, operator or owner role superuser, bypass or login', () => {
-    for (const role of [APP_ROLE, OPERATOR_ROLE, OWNER_ROLE]) {
+  it('never gives the application, operator, billing or owner role superuser, bypass or login', () => {
+    for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, OWNER_ROLE]) {
       expect(createRoleStatement(role)).toContain(`CREATE ROLE ${role} NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`);
       expect(WANTED_ROLES[role]).toEqual({ rolcanlogin: false, rolinherit: true, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
     }

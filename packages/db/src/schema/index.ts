@@ -2,6 +2,32 @@
  * The Drizzle schema, one file per area, alongside the hand-written SQL in packages/db/migrations.
  */
 export {
+  BILLING_EVENT_OUTCOMES,
+  BILLING_STANDINGS,
+  type BillingEventOutcome,
+  type BillingEventRow,
+  type BillingStanding,
+  DUNNING_STAGES,
+  type DunningStage,
+  INVOICE_KINDS,
+  INVOICE_STATUSES,
+  type InvoiceKind,
+  type InvoiceRow,
+  type InvoiceStatus,
+  PAYMENT_METHOD_KINDS,
+  PLAN_INTERVALS,
+  type PaymentMethodKind,
+  type PlanInterval,
+  SUBSCRIPTION_STATUSES,
+  type SubscriptionRow,
+  type SubscriptionStatus,
+  type UsageSnapshotRow,
+  billingEvent,
+  invoice,
+  subscription,
+  usageSnapshot,
+} from './billing';
+export {
   CALENDAR_EVENT_KINDS,
   CONTRACT_STATUSES,
   type CalendarEventKind,

@@ -9,7 +9,8 @@ import { practice } from './tenancy';
  * (test matrix JOB-02). Codes and opaque IDs only.
  */
 
-export const JOB_RUN_OUTCOMES = ['running', 'retrying', 'succeeded', 'failed'] as const;
+/** refused: a run job of an organization that may not start new work (docs/adr/0050), neither retried nor alerted. */
+export const JOB_RUN_OUTCOMES = ['running', 'retrying', 'succeeded', 'failed', 'refused'] as const;
 export type JobRunOutcome = (typeof JOB_RUN_OUTCOMES)[number];
 
 export const JOB_RUN_TYPES = ['intake', 'parse_835', 'monitor', 'price', 'triage', 'audit_report', 'reconcile', 'digest', 'export', 'packet_export', 'roi_statement', 'report_document'] as const;

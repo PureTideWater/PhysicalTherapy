@@ -22,6 +22,10 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  * - The practice administrator and the billing manager sign off contract versions (PRD 5, J5:
  *   contract.sign_off), and so does the firm principal, who does everything a billing manager does.
  *   A contract specialist reaches a practice only under a support grant (docs/adr/0028).
+ * - The organization owner of J18 (PRD 5) is its administrator: the practice administrator of a group and
+ *   the firm principal of a firm ("is billed", PRD 3) choose its plan and payment method and read its
+ *   invoices (organization.billing); platform administrators manage billing for every organization
+ *   (billing.manage; docs/adr/0050).
  * - A permission is granted when one of the actor's roles allows it and none denies it (a "must not"
  *   wins). Some "must not" rules are not a single permission; they are kept by the structure of
  *   access (STRUCTURAL_RULES) and each has its own test.
@@ -63,6 +67,7 @@ export const PERMISSIONS = {
   'contract.sign_off': { scope: 'practice', writes: true, description: 'sign off a contract version' },
   'firm_user.manage': { scope: 'organization', writes: true, description: 'manage firm users' },
   'portfolio.read': { scope: 'organization', writes: false, description: 'see the firm portfolio' },
+  'organization.billing': { scope: 'organization', writes: true, description: 'choose the organization’s plan and payment method and read its invoices' },
   'contract.review': { scope: 'platform', writes: false, description: 'review model-proposed contract abstractions' },
   'rate_record.approve': { scope: 'platform', writes: true, description: 'approve rate records for publication' },
   'rate_record.edit_published': { scope: 'platform', writes: true, description: 'edit a published rate version' },
@@ -147,7 +152,18 @@ export const WRITE_PERMISSIONS: readonly Permission[] = PERMISSION_NAMES.filter(
 export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
   practice_admin: {
     persona: 'Practice administrator',
-    does: [...VIEWER_READS, 'agreement.sign', 'user.invite', 'grant.approve', 'grant.revoke', 'export.request', 'deletion.request', 'access_log.read', 'contract.sign_off'],
+    does: [
+      ...VIEWER_READS,
+      'agreement.sign',
+      'user.invite',
+      'grant.approve',
+      'grant.revoke',
+      'export.request',
+      'deletion.request',
+      'access_log.read',
+      'contract.sign_off',
+      'organization.billing',
+    ],
     mustNot: [{ rule: 'Edit rate records (that is the specialist’s job)', denies: ['rate_record.edit'] }],
   },
   billing_manager: { persona: 'Billing manager', does: BILLING_MANAGER_DOES, mustNot: [NO_OWN_APPROVAL] },
@@ -160,7 +176,7 @@ export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
   },
   firm_principal: {
     persona: 'Firm principal',
-    does: [...BILLING_MANAGER_DOES, 'firm_user.manage', 'portfolio.read', 'user.invite'],
+    does: [...BILLING_MANAGER_DOES, 'firm_user.manage', 'portfolio.read', 'user.invite', 'organization.billing'],
     mustNot: [NO_OWN_APPROVAL, { rule: 'Act in a practice whose grant has expired', denies: [], structural: 'grant_in_force' }],
   },
   contract_specialist: {

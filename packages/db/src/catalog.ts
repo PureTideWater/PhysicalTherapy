@@ -1,5 +1,5 @@
 import { ENCRYPTED_COLUMNS } from './crypto/cipher';
-import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 
 /**
  * The catalog test (PRD 8 Invariants; PRD 16 Tenant isolation; test matrix SEC-01), as a function so
@@ -24,7 +24,7 @@ import { APP_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
  * - Every SECURITY DEFINER function sets its search_path with pg_temp last, and one that sets
  *   app.practice_ids (it runs as the owner, so a scope it widens reads across practices for whoever may
  *   call it) is one of REVIEWED_SCOPE_FUNCTIONS, each with its reason.
- * - The application and operator roles own nothing; no column is real, double precision, float or
+ * - The application, operator and billing roles own nothing; no column is real, double precision, float or
  *   money; money columns (_cents) are bigint; rate columns (rate, *_rate) are numeric(14,6).
  * - Every column the application encrypts with the practice's key (ENCRYPTED_COLUMNS) exists and has a
  *   CHECK that admits enc:v1 ciphertext alone, so a code path that skipped the cipher stores nothing in
@@ -293,6 +293,7 @@ export interface CatalogOptions {
   readonly appRole?: string;
   readonly ownerRole?: string;
   readonly operatorRole?: string;
+  readonly billingRole?: string;
 }
 
 /** Every way the database breaks the invariants above, as sentences naming tables and columns only. */
@@ -300,6 +301,7 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
   const appRole = options.appRole ?? APP_ROLE;
   const ownerRole = options.ownerRole ?? OWNER_ROLE;
   const operatorRole = options.operatorRole ?? OPERATOR_ROLE;
+  const billingRole = options.billingRole ?? BILLING_ROLE;
   const problems: string[] = [];
   const tables = await rows<TableRow>(client, TABLES, [appRole]);
   const byName = new Map(tables.map((table) => [table.name, table]));
@@ -444,6 +446,7 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
   for (const [label, role] of [
     ['application', appRole],
     ['operator', operatorRole],
+    ['billing', billingRole],
   ] as const) {
     const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [role]);
     if (roleExists[0]?.exists === true) {

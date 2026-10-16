@@ -10,6 +10,7 @@ export { MIGRATIONS_DIR, type MigrateOptions, type MigrateResult, type Migration
 export {
   APP_DEV_LOGIN,
   APP_ROLE,
+  BILLING_ROLE,
   OPERATOR_ROLE,
   OWNER_ROLE,
   type RoleAttributes,
