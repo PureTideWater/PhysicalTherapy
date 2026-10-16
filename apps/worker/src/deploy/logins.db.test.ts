@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { databaseClient, readDatabaseUrl } from '@tp/db';
 import { createMigratedDatabase, withScratchDatabase } from '@tp/db/testing';
+import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 
 import { type DeployLogins, LOGIN_VARIABLES, LoginProvisionError, QUEUE_ROLE, QUEUE_SCHEMA, provisionLogins, readDeployLogins } from './logins';
@@ -92,6 +93,21 @@ describe('provisionLogins (the migration task, docs/adr/0049)', () => {
       });
       await asSuperuser(loginUrl(database.url, logins.app.username, logins.app.password), async (client) => {
         expect((await client.query("SELECT pg_has_role(current_user, 'tp_app', 'USAGE') AS app, pg_has_role(current_user, 'tp_queue', 'USAGE') AS queue")).rows).toEqual([{ app: true, queue: false }]);
+      });
+
+      // pg-boss installs its schema and queues work on the queue login alone, everything owned by the role.
+      const boss = new PgBoss(loginUrl(database.url, logins.queue.username, logins.queue.password, QUEUE_ROLE));
+      boss.on('error', () => undefined);
+      await boss.start();
+      await boss.createQueue('deploy_probe', { policy: 'exclusive', retryLimit: 2 });
+      expect(await boss.send('deploy_probe', { probe: true }, { singletonKey: 'deploy_probe:1' })).not.toBeNull();
+      await boss.stop({ graceful: false });
+      await asSuperuser(database.url, async (client) => {
+        const owners = await client.query(
+          "SELECT DISTINCT pg_get_userbyid(c.relowner)::text AS owner FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = $1",
+          [QUEUE_SCHEMA],
+        );
+        expect(owners.rows).toEqual([{ owner: QUEUE_ROLE }]);
       });
 
       // Again, with new passwords in the secrets: nothing is created and no password changes (rotation owns them).
