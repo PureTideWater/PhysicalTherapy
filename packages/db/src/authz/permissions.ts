@@ -22,6 +22,11 @@ import { type MembershipRole, MEMBERSHIP_ROLES } from '../schema/tenancy';
  * - The practice administrator and the billing manager sign off contract versions (PRD 5, J5:
  *   contract.sign_off), and so does the firm principal, who does everything a billing manager does.
  *   A contract specialist reaches a practice only under a support grant (docs/adr/0028).
+ * - The proof level (posted or deposited) decides what "recovered" counts, so it stays the practice
+ *   administrator's (proof_level.set; docs/adr/0043 and 0053), never a firm's under a grant. The status page
+ *   and the SOC 2 evidence checklist are the platform administrators' (status.manage, compliance.manage), and
+ *   the support desk (platform administrators and support engineers) works tickets (support_ticket.work):
+ *   the operations PRD 19 names, which the persona table leaves unassigned.
  * - The organization owner of J18 (PRD 5) is its administrator: the practice administrator of a group and
  *   the firm principal of a firm ("is billed", PRD 3) choose its plan and payment method and read its
  *   invoices (organization.billing); platform administrators manage billing for every organization
@@ -68,6 +73,7 @@ export const PERMISSIONS = {
   'firm_user.manage': { scope: 'organization', writes: true, description: 'manage firm users' },
   'portfolio.read': { scope: 'organization', writes: false, description: 'see the firm portfolio' },
   'organization.billing': { scope: 'organization', writes: true, description: 'choose the organization’s plan and payment method and read its invoices' },
+  'proof_level.set': { scope: 'practice', writes: true, description: 'set the practice’s proof level for recovered (posted or deposited)' },
   'contract.review': { scope: 'platform', writes: false, description: 'review model-proposed contract abstractions' },
   'rate_record.approve': { scope: 'platform', writes: true, description: 'approve rate records for publication' },
   'rate_record.edit_published': { scope: 'platform', writes: true, description: 'edit a published rate version' },
@@ -79,6 +85,9 @@ export const PERMISSIONS = {
   'rule_release.manage': { scope: 'platform', writes: true, description: 'prepare, check and publish rule releases' },
   'feature_flag.manage': { scope: 'platform', writes: true, description: 'manage feature flags' },
   'billing.manage': { scope: 'platform', writes: true, description: 'manage billing' },
+  'status.manage': { scope: 'platform', writes: true, description: 'set the public status page’s components and incidents' },
+  'compliance.manage': { scope: 'platform', writes: true, description: 'keep the SOC 2 evidence checklist and send it to the compliance platform' },
+  'support_ticket.work': { scope: 'platform', writes: true, description: 'work support tickets' },
 } as const satisfies Readonly<Record<string, PermissionInfo>>;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -163,6 +172,7 @@ export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
       'access_log.read',
       'contract.sign_off',
       'organization.billing',
+      'proof_level.set',
     ],
     mustNot: [{ rule: 'Edit rate records (that is the specialist’s job)', denies: ['rate_record.edit'] }],
   },
@@ -192,12 +202,22 @@ export const PERSONAS: Readonly<Record<MembershipRole, Persona>> = {
   },
   platform_admin: {
     persona: 'Platform administrator',
-    does: ['organization.manage', 'agreement.record', 'support_grant.create', 'rule_release.manage', 'feature_flag.manage', 'billing.manage'],
+    does: [
+      'organization.manage',
+      'agreement.record',
+      'support_grant.create',
+      'rule_release.manage',
+      'feature_flag.manage',
+      'billing.manage',
+      'status.manage',
+      'compliance.manage',
+      'support_ticket.work',
+    ],
     mustNot: [{ rule: 'Read PHI without a support grant', denies: ['phi.read', 'phi.export'], structural: 'support_grant_required' }],
   },
   support: {
     persona: 'Support engineer',
-    does: [...VIEWER_READS, 'phi.read'],
+    does: [...VIEWER_READS, 'phi.read', 'support_ticket.work'],
     mustNot: [{ rule: 'Retain access after the ticket closes', denies: [], structural: 'support_grant_expiry' }],
   },
 };

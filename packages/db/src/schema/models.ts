@@ -18,8 +18,11 @@ import { agreement, practice, user } from './tenancy';
  * - eval_example: synthetic or permitted evaluation data.
  */
 
-/** The flags the gateway reads, a closed list the database checks (PRD 14, Operational limits). */
-export const FEATURE_FLAG_KEYS = ['model.kill_switch', 'model.read_denial_letter', 'model.daily_budget_cents'] as const;
+/**
+ * The flags, a closed list the database checks: the gateway's (PRD 14, Operational limits) and the platform's
+ * maintenance flag, global only (milestone 11; docs/adr/0053).
+ */
+export const FEATURE_FLAG_KEYS = ['model.kill_switch', 'model.read_denial_letter', 'model.daily_budget_cents', 'platform.maintenance'] as const;
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
 export const FEATURE_FLAG_SCOPES = ['global', 'organization', 'practice'] as const;
 export type FeatureFlagScope = (typeof FEATURE_FLAG_SCOPES)[number];
