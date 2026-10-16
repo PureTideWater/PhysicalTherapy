@@ -175,6 +175,8 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'model_call.attempts': () => 1,
   // A practice's example is a permitted one, under the data-rights agreement the factory signs for it.
   'eval_example.source': () => 'permitted',
+  // A proposal of contract terms (its call's purpose) holds an object (migration 20261029190000).
+  'model_proposal.proposal': () => JSON.stringify({}),
 };
 
 /**
@@ -262,6 +264,9 @@ const DERIVED_VALUES: Readonly<Record<string, (context: DeriveContext) => Promis
   'submission.export_csv_sha256': async (context) => (await exportedVersion(context)).export_csv_sha256,
   'payer_response.document_id': async (context) => (await context.create('source_document')).id,
   'eval_example.permission_ref': (context) => dataRightsAgreement(context.client, context.world),
+  // A proposal of contract terms names the version it was made for and the document it read.
+  'model_proposal.contract_version_id': async (context) => (await context.create('contract_version')).id,
+  'model_proposal.source_document_id': async (context) => (await context.create('source_document')).id,
 };
 
 /** A signed data-rights agreement of the world's practice: what a permitted evaluation example rests on (migration 20261029090000). */

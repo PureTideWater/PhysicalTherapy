@@ -1,6 +1,9 @@
 import { bigint, boolean, index, integer, jsonb, numeric, pgTable, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
+import { contractVersion } from './contracts';
+import { sourceDocument } from './documents';
+import { packetVersion } from './packets';
 import { agreement, practice, user } from './tenancy';
 
 /**
@@ -115,6 +118,43 @@ export const evalExample = pgTable(
   (table) => [index('eval_example_by_practice').on(table.practiceId, table.createdAt)],
 );
 
+/** The purposes a person's call on a screen proposes for (the denial-letter reader, v1.5, has no screen yet). */
+export const MODEL_PROPOSAL_PURPOSES = ['proposeContractTerms', 'draftPacketNarrative', 'suggestEvidenceRequests'] as const;
+export type ModelProposalPurpose = (typeof MODEL_PROPOSAL_PURPOSES)[number];
+
+/**
+ * What a person's model call on a screen proposed, and for what (migrations/20261029190000_model_proposals.sql;
+ * docs/adr/0052): the contract version and document a proposal of terms read, the packet version a narrative
+ * draft became, or a coverage checklist. Written once by the person who made the call; afterwards only when the
+ * reviewer's decision was recorded on the call, and the evaluation example a correction became.
+ */
+export const modelProposal = pgTable(
+  'model_proposal',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    practiceId: uuid('practice_id')
+      .notNull()
+      .references(() => practice.id),
+    modelCallId: uuid('model_call_id')
+      .notNull()
+      .references(() => modelCall.id),
+    purpose: text('purpose', { enum: MODEL_PROPOSAL_PURPOSES }).notNull(),
+    contractVersionId: uuid('contract_version_id').references(() => contractVersion.id),
+    sourceDocumentId: uuid('source_document_id').references(() => sourceDocument.id),
+    packetVersionId: uuid('packet_version_id').references(() => packetVersion.id),
+    proposal: jsonb('proposal').$type<Readonly<Record<string, unknown>>>().notNull(),
+    verifierPassed: boolean('verifier_passed').notNull(),
+    proposedBy: uuid('proposed_by')
+      .notNull()
+      .references(() => user.id),
+    reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+    evalExampleId: uuid('eval_example_id').references(() => evalExample.id),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [unique('model_proposal_once').on(table.modelCallId), index('model_proposal_by_practice').on(table.practiceId, table.createdAt)],
+);
+
 export type FeatureFlagRow = typeof featureFlag.$inferSelect;
+export type ModelProposalRow = typeof modelProposal.$inferSelect;
 export type ModelCallRow = typeof modelCall.$inferSelect;
 export type EvalExampleRow = typeof evalExample.$inferSelect;

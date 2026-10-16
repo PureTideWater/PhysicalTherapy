@@ -126,6 +126,7 @@ describe('migrate', () => {
           'line_status',
           'membership',
           'model_call',
+          'model_proposal',
           'mutation_request',
           'notification',
           'organization',
