@@ -5,7 +5,12 @@
   "assertion": "Zero critical errors",
   "synthetic": true,
   "completesIn": 10,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/model-gateway/eval/gate.golden.test.ts",
+    "packages/model-gateway/src/functions/narrative.test.ts",
+    "apps/web/src/lib/routes/models-routes.db.test.ts",
+    "apps/web/e2e/models.spec.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

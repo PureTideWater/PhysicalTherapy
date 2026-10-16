@@ -45,10 +45,11 @@ export const BUILT_THROUGH_MILESTONE = 5;
  * The milestones whose code is in the repository though their done check still waits on people
  * (milestones 6 and 7: the three hand-run audits and the specialist's review of the golden lines;
  * milestones 8 and 9 on top of them: packets, the workbench, the recovery ledger and reconciliation;
- * see the README). Their cases are traced to their tests all the same: the fixtures test fails while a
- * case completing in one of them names none.
+ * milestone 10: the model gateway and its evaluation, whose real gate needs a model run inside the PHI
+ * boundary or with credentials; see the README). Their cases are traced to their tests all the same:
+ * the fixtures test fails while a case completing in one of them names none.
  */
-export const CODE_BUILT_THROUGH_MILESTONE = 9;
+export const CODE_BUILT_THROUGH_MILESTONE = 10;
 
 /** Every test-matrix case, by ID. */
 const ENTRIES: Readonly<Record<string, Entry>> = {
@@ -211,12 +212,29 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
       workflow.mod01(b);
       addContractSet(b);
     },
+    assertedBy: [
+      'packages/model-gateway/src/fixtures.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'packages/model-gateway/eval/score.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/web/e2e/models.spec.ts',
+    ],
   },
-  'MOD-02': { completesIn: 10, build: workflow.mod02 },
-  'MOD-03': { completesIn: 10, build: addNarrativeSet },
-  'MOD-04': { completesIn: 10, build: workflow.mod04 },
-  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.'),
-  'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.'),
+  'MOD-02': { completesIn: 10, build: workflow.mod02, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts'] },
+  'MOD-03': {
+    completesIn: 10,
+    build: addNarrativeSet,
+    assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/narrative.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts', 'apps/web/e2e/models.spec.ts'],
+  },
+  'MOD-04': { completesIn: 10, build: workflow.mod04, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/untrusted.test.ts', 'packages/model-gateway/src/gateway.db.test.ts'] },
+  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.', ['packages/model-gateway/src/gateway.test.ts', 'packages/model-gateway/src/gateway.db.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts']),
+  'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/e2e/models.spec.ts',
+  ]),
 };
 
 export interface CaseDefinition {

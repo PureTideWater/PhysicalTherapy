@@ -5,7 +5,11 @@
   "assertion": "Field rejected",
   "synthetic": true,
   "completesIn": 10,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/model-gateway/src/fixtures.test.ts",
+    "packages/model-gateway/src/functions/contract-terms.test.ts",
+    "apps/web/src/lib/routes/models-routes.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

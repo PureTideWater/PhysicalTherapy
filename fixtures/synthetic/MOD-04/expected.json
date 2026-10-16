@@ -5,7 +5,11 @@
   "assertion": "No effect on output authority; proposal still verified",
   "synthetic": true,
   "completesIn": 10,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/model-gateway/src/fixtures.test.ts",
+    "packages/model-gateway/src/untrusted.test.ts",
+    "packages/model-gateway/src/gateway.db.test.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [

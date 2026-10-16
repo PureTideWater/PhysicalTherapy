@@ -5,7 +5,12 @@
   "assertion": "Product works on hand-entered records",
   "synthetic": true,
   "completesIn": 10,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/model-gateway/src/gateway.test.ts",
+    "packages/model-gateway/src/gateway.db.test.ts",
+    "apps/web/src/lib/routes/models-routes.db.test.ts",
+    "apps/web/e2e/models.spec.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "The kill switch is a feature flag; the product runs on hand-entered records; no file.",
   "files": [],

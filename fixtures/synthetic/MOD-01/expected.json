@@ -5,7 +5,14 @@
   "assertion": "All quotes are substrings of the page",
   "synthetic": true,
   "completesIn": 10,
-  "assertedBy": [],
+  "assertedBy": [
+    "packages/model-gateway/src/fixtures.test.ts",
+    "packages/model-gateway/src/functions/contract-terms.test.ts",
+    "packages/model-gateway/eval/gate.golden.test.ts",
+    "packages/model-gateway/eval/score.test.ts",
+    "apps/web/src/lib/routes/models-routes.db.test.ts",
+    "apps/web/e2e/models.spec.ts"
+  ],
   "codeListRelease": 900001,
   "noFileReason": null,
   "files": [
