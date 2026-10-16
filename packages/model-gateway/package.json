@@ -5,17 +5,29 @@
   "type": "module",
   "description": "The only code that calls a model: purpose-typed calls, prompts, verifiers (milestone 10).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1152.0",
+    "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
-    "@tp/observability": "workspace:*"
+    "@tp/money": "workspace:*",
+    "@tp/observability": "workspace:*",
+    "@tp/packets": "workspace:*",
+    "@tp/pricing": "workspace:*",
+    "@tp/rules": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "catalog:",
+    "fast-check": "catalog:",
+    "pg": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
