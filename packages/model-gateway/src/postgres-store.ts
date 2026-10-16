@@ -119,7 +119,11 @@ export class OperatorEvaluationStore implements ModelCallStore {
   /** `pool` connects as a login that can SET ROLE tp_operator (OPERATOR_DATABASE_URL). */
   constructor(private readonly pool: ScopePool<ScopeClient>) {}
 
-  private async operator<T>(run: (client: ScopeClient) => Promise<T>): Promise<T> {
+  /** Runs `run` as tp_operator with no practice in scope; refused for a call that names a practice. */
+  private async operator<T>(practiceId: string | null, run: (client: ScopeClient) => Promise<T>): Promise<T> {
+    if (practiceId !== null) {
+      throw new GatewayError('context_invalid', 'an evaluation run reads synthetic material and names no practice');
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -136,15 +140,8 @@ export class OperatorEvaluationStore implements ModelCallStore {
     }
   }
 
-  private static evaluationOnly(practiceId: string | null): void {
-    if (practiceId !== null) {
-      throw new GatewayError('context_invalid', 'an evaluation run reads synthetic material and names no practice');
-    }
-  }
-
   features(practiceId: string | null): Promise<GatewayFeatures> {
-    OperatorEvaluationStore.evaluationOnly(practiceId);
-    return this.operator(async (client) => resolveFeatures(await flagRows(client, null, null), null, null));
+    return this.operator(practiceId, async (client) => resolveFeatures(await flagRows(client, null, null), null, null));
   }
 
   spentSince(): Promise<bigint> {
@@ -152,16 +149,14 @@ export class OperatorEvaluationStore implements ModelCallStore {
   }
 
   completedCall(practiceId: string | null, idempotencyKey: string): Promise<string | null> {
-    OperatorEvaluationStore.evaluationOnly(practiceId);
-    return this.operator(async (client) => {
+    return this.operator(practiceId, async (client) => {
       const { rows } = await client.query<{ id: string }>("SELECT id FROM model_call WHERE practice_id IS NULL AND idempotency_key = $1 AND outcome = 'completed'", [idempotencyKey]);
       return rows[0]?.id ?? null;
     });
   }
 
   record(record: ModelCallRecord): Promise<string> {
-    OperatorEvaluationStore.evaluationOnly(record.practiceId);
-    return this.operator(async (client) => {
+    return this.operator(record.practiceId, async (client) => {
       const { rows } = await client.query<{ id: string }>(INSERT, insertValues({ ...record, ...actorColumns(this.actor) }));
       return (rows[0] as { id: string }).id;
     });
