@@ -33,7 +33,7 @@ export const PARAMETER_NAMES = {
  *   certificate, which CloudFront requires in us-east-1.
  * - MailFromAddress: the address Cognito and the worker send from; its domain is a verified SES
  *   identity in the stack's region before the deploy.
- * - SupportEmail: the support address every screen's help, the error pages and the status page name
+ * - SupportEmail: the support address the support, status and maintenance pages name
  *   (PRD 19, Support; docs/adr/0053); what arrives there the desk records as a ticket.
  * - ImageTag: the release tag of the web and worker images in this environment's repositories.
  *   `none` (the default) is the first deploy, before any image exists: the services run no task.
@@ -93,7 +93,7 @@ export class DeployParameters extends Construct {
     this.mailFromDomain = Token.asString(Fn.select(1, Fn.split('@', this.mailFromAddress)));
     this.supportEmail = parameter(PARAMETER_NAMES.supportEmail, {
       type: 'String',
-      description: 'The support address the help on every screen, the error pages and the status page name',
+      description: 'The support address the support, status and maintenance pages name',
       allowedPattern: '^[A-Za-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
       constraintDescription: 'an email address on a lowercase domain',
     });

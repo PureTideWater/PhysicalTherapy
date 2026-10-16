@@ -59,7 +59,7 @@ export interface Services {
    * know the client's address; 0 trusts none (docs/adr/0053).
    */
   readonly trustedProxyHops: number;
-  /** The support address every screen's help names (PRD 19, Support). */
+  /** The support address (PRD 19, Support): shown on the support, status and maintenance pages. */
   readonly supportEmail: string;
   /** The e-signature vendor's webhook verifier and document source, or null when none is configured (docs/adr/0053). */
   readonly esign: ESignatureProvider | null;

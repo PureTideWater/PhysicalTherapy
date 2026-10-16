@@ -79,7 +79,9 @@ console stays open. The public `/status` page shows components and incidents sta
 that name nobody. The error pages show Next's opaque reference only and link to support and status.
 
 **Support.** Every screen's help (`components/help.ts`) links to `/support`, which opens a ticket naming the screen;
-the support address beside it opens one too (the desk records what arrives by email). Ticket text is screened for
+the support address is shown beside it and on the status and maintenance pages. Mail to the address does not open a
+ticket in the application yet: that needs inbound mail (SES receiving, or the help desk vendor still to be chosen), and
+until then the desk answers it from the mailbox. Ticket text is screened for
 identifiers like the public form: a ticket is not a place for PHI, and when the answer needs a practice's records the
 desk opens a support grant (ADR 0019), which tells the practice administrator. The desk's queue reads requesters
 through a definer function, since a support engineer reads no user row.
@@ -106,7 +108,7 @@ file. The six policies in `docs/policies/` are drafts written from the plan for 
   deletion test and the monthly report of reads by role are milestone 12's. Fifteen of the seventeen controls become ready
   once their records exist; encryption and the audit log stay partial until milestone 12.
 - The criteria mapping is a proposal; the security official and the auditor confirm it before the examination.
-- The stack gains a CloudFormation parameter, `SupportEmail` (the address every screen's help names), so ADR 0049's
+- The stack gains a CloudFormation parameter, `SupportEmail` (the address the support, status and maintenance pages name), so ADR 0049's
   deploy commands also pass `SupportEmail=…`; the web task sets `TRUSTED_PROXY_HOPS=1`, `ESIGN_PROVIDER=none` and
   `TP_ENVIRONMENT`, all of which the web app requires in production.
 - Each new migration is forward-only: `20261030090000` (the tables and functions), `20261030100000` (the desk's queue and

@@ -40,7 +40,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
         <CardHeader>
           <CardTitle>Open a ticket</CardTitle>
           <CardDescription>
-            We answer within {responseTarget}. Or write to <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a>; that opens a ticket too. Never send a patient&apos;s
+            We answer within {responseTarget}. Or write to <a className="underline" href={`mailto:${supportEmail}`}>{supportEmail}</a>; the desk answers from there. Never send a patient&apos;s
             name, date of birth, member ID or claim number: name the screen and the record&apos;s ID from its address instead.
           </CardDescription>
         </CardHeader>

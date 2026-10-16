@@ -98,7 +98,7 @@ export interface WebConfig {
    * the load balancer, 1, in staging and production, where it is required; 0 elsewhere, trusting none).
    */
   readonly trustedProxyHops: number;
-  /** The support address (PRD 19, Support): shown in every screen's help and on the error and status pages. */
+  /** The support address (PRD 19, Support): shown on the support, status and maintenance pages. */
   readonly supportEmail: string;
   /**
    * The e-signature vendor (docs/adr/0053): the local stand-in, or none (the webhook then refuses every event and
