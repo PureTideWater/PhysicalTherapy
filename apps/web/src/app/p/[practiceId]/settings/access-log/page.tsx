@@ -21,9 +21,9 @@ export default async function AccessLogPage(props: { readonly params: Promise<{ 
     return <Forbidden shell={page.shell} section="settings" roles={page.roles} message={page.message} nextStep="The access log is for the practice administrator." />;
   }
   const { practiceId, filter, entries, next } = page.data;
-  const filtered = filter.objectId !== null;
+  const filtered = filter.active;
   const base = `/p/${practiceId}/settings/access-log`;
-  const query = filtered ? `object_type=${filter.objectType ?? ''}&object_id=${filter.objectId ?? ''}&` : '';
+  const query = filter.objectId === null ? '' : `object_type=${filter.objectType ?? ''}&object_id=${filter.objectId}&`;
   return (
     <AppShell shell={page.shell} section="settings">
       <h1 className="text-2xl font-semibold tracking-tight">Access log</h1>

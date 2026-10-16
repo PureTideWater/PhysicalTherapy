@@ -161,7 +161,7 @@ export const CONTROLS: readonly Control[] = [
       { kind: 'database_test', file: 'packages/db/src/audit.db.test.ts', test: 'refuses UPDATE, DELETE and TRUNCATE by the application role' },
       { kind: 'database_test', file: 'packages/db/src/audit.db.test.ts', test: 'answers "which users read this object" in one query' },
       { kind: 'database_test', file: 'apps/worker/src/platform/audit-copy.db.test.ts', test: 'copies exactly the day’s events, in time order, as JSON lines with seven years of retention' },
-      { kind: 'database_test', file: 'apps/web/src/lib/routes/settings.db.test.ts', test: 'answers who read an object, newest first, for the practice’s administrators only' },
+      { kind: 'database_test', file: 'apps/web/src/lib/routes/onboarding-routes.db.test.ts', test: 'answers who read an object, newest first, for the practice’s administrators only' },
       { kind: 'not_built', milestone: 12, what: 'the monthly report that counts reads by role' },
     ],
   },

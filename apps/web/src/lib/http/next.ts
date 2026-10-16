@@ -5,6 +5,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
+import { formInput } from './form';
 import { clientAddress, retryMinutes } from './rate-limit';
 import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
 
@@ -122,23 +123,6 @@ export interface ActionState {
   readonly issues?: readonly Issue[];
   readonly problems?: readonly string[];
   readonly locked?: boolean;
-}
-
-/** A form's fields; a field named with [] (a group of checkboxes) is its checked values, comma-joined, under its name. */
-export function formInput(form: FormData): Record<string, string> {
-  const input: Record<string, string> = {};
-  for (const [name, value] of form.entries()) {
-    if (typeof value !== 'string' || name.startsWith('$ACTION')) {
-      continue;
-    }
-    if (name.endsWith('[]')) {
-      const key = name.slice(0, -2);
-      input[key] = input[key] === undefined ? value : `${input[key]},${value}`;
-    } else {
-      input[name] = value;
-    }
-  }
-  return input;
 }
 
 /** A form's file field as the route's streamed upload (an agreement's signed copy), or none. */

@@ -244,6 +244,9 @@ async function seedRemittance(practiceId: string, cipher: PracticeCipher, upload
  * run of the remittance's lines under the signed-off version (docs/adr/0035); and its triage: an
  * anomaly, a case and audit reports (docs/adr/0038).
  */
+/** Sample records that belong to no practice: anyone may see them. */
+const GLOBAL_REFS: ReadonlySet<string> = new Set(['termsVersionId', 'incidentId']);
+
 async function buildWorld(name: string): Promise<World> {
   const tenant = await createTenantWorld(owner, name);
   const actors: Actor[] = [];
@@ -433,7 +436,9 @@ async function buildWorld(name: string): Promise<World> {
     ...onboarding,
     termsVersionId,
   };
-  return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
+  // The terms of use in force and the status page's incident are everyone's, not the practice's.
+  const tenantRefs = Object.entries(refs).flatMap(([key, value]) => (GLOBAL_REFS.has(key) ? [] : [value]));
+  return { tenant, refs, actors, ids: [...new Set([...tenantRefs, agreementId, ...actors.map((actor) => actor.userId)])] };
 }
 
 interface SignedIn {

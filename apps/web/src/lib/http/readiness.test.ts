@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { Sealer } from '../auth/seal';
 import { newToken } from '../auth/tokens';
 import { csrfTokenFor, csrfTokenMatches, sameOrigin } from './csrf';
+import { formInput } from './form';
 import { type Limit, RATE_BUCKETS, RATE_LIMITS, clientAddress, rateSubjectHash, retryMinutes } from './rate-limit';
 import { STATIC_SECURITY_HEADERS, contentSecurityPolicy, newNonce, uploadOrigins } from './security-headers';
+import { overallStatus } from '../routes/support';
 
 /** The pure parts of production readiness (docs/adr/0053): CSRF tokens and origins, rate-limit subjects, and the security headers. */
 
@@ -156,5 +158,25 @@ describe('the security headers', () => {
     const nonces = new Set(Array.from({ length: 50 }, () => newNonce()));
     expect(nonces.size).toBe(50);
     expect([...nonces][0]).toMatch(/^[A-Za-z0-9+/]{22}==$/);
+  });
+});
+
+describe('form fields', () => {
+  it('send a group of checkboxes as their checked values, comma-joined, and drop the framework’s own fields', () => {
+    const form = new FormData();
+    form.append('title', 'Slow uploads');
+    form.append('components[]', 'uploads');
+    form.append('components[]', 'jobs');
+    form.append('$ACTION_ID_abc', 'x');
+    form.append('document', new Blob(['%PDF-']), 'signed.pdf');
+    expect(formInput(form)).toEqual({ title: 'Slow uploads', components: 'uploads,jobs' });
+  });
+});
+
+describe('the status page', () => {
+  it('heads with the worst status any component has', () => {
+    expect(overallStatus([])).toBe('operational');
+    expect(overallStatus([{ status: 'operational' }, { status: 'degraded' }, { status: 'maintenance' }])).toBe('degraded');
+    expect(overallStatus([{ status: 'partial_outage' }, { status: 'major_outage' }, { status: 'degraded' }])).toBe('major_outage');
   });
 });

@@ -362,6 +362,9 @@ export function publicRoute<P, I, R>(spec: PublicSpec<P, I, R>): Route<R> {
     ...shape,
     mutation: false,
     invoke: async (request, services) => {
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const parsed = parse(spec, request, false);
       if (isOutcome(parsed)) {
         return parsed;
@@ -387,12 +390,13 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
   return {
     ...shape,
     invoke: async (request, services) => {
+      // A POST from another site is refused before anything in it is read.
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const parsed = parse(spec, request, shape.mutation);
       if (isOutcome(parsed)) {
         return parsed;
-      }
-      if (shape.originChecked && !sameOrigin(request, services.origin)) {
-        return { status: 'csrf_refused' };
       }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {
@@ -436,12 +440,13 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
   return {
     ...shape,
     invoke: async (request, services) => {
+      // A POST from another site is refused before anything in it is read.
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const parsed = parse(spec, request, shape.mutation);
       if (isOutcome(parsed)) {
         return parsed;
-      }
-      if (shape.originChecked && !sameOrigin(request, services.origin)) {
-        return { status: 'csrf_refused' };
       }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {
@@ -489,12 +494,13 @@ export function organizationRoute<P extends { readonly organizationId: string },
   return {
     ...shape,
     invoke: async (request, services) => {
+      // A POST from another site is refused before anything in it is read.
+      if (shape.originChecked && !sameOrigin(request, services.origin)) {
+        return { status: 'csrf_refused' };
+      }
       const parsed = parse(spec, request, shape.mutation);
       if (isOutcome(parsed)) {
         return parsed;
-      }
-      if (shape.originChecked && !sameOrigin(request, services.origin)) {
-        return { status: 'csrf_refused' };
       }
       const session = await signedIn(request, services);
       if (isOutcome(session)) {

@@ -435,7 +435,8 @@ export const accessLogPage = practiceRoute({
     );
     return {
       practiceId,
-      filter: { objectType: params.object_type ?? null, objectId: params.object_id ?? null },
+      // The record filtered on is named back only when this practice's log holds it (an ID from elsewhere is not echoed).
+      filter: { active: params.object_id !== undefined, objectType: params.object_type ?? null, objectId: entries.length > 0 ? (params.object_id ?? null) : null },
       entries,
       next: rows.length > ACCESS_LOG_PAGE_SIZE ? (entries.at(-1)?.at.toISOString() ?? null) : null,
     };

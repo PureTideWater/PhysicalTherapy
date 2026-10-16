@@ -40,7 +40,9 @@ export class LocalAgreementDocuments implements AgreementDocuments {
       throw new AgreementDocumentError('not an agreement document key');
     }
     const file = path.join(this.directory, key);
-    await mkdir(path.dirname(file), { recursive: true });
+    await mkdir(path.dirname(file), { recursive: true }).catch(() => {
+      throw new AgreementDocumentError('the agreement document could not be stored');
+    });
     const handle = await open(file, 'wx', 0o600).catch((error: unknown) => {
       throw new AgreementDocumentError((error as NodeJS.ErrnoException).code === 'EEXIST' ? 'an agreement document is written once' : 'the agreement document could not be stored');
     });
