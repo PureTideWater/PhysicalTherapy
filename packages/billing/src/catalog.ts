@@ -1,7 +1,7 @@
 import { type Cents, parseCents } from '@tp/money';
 import { z } from 'zod';
 
-import catalogFile from '../config/plans.json';
+import catalogFile from '../config/plans.json' with { type: 'json' };
 import type { PlanInterval } from './types';
 
 /**
