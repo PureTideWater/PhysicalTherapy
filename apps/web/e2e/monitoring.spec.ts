@@ -14,8 +14,9 @@ import { MONITORED_PRACTICE, startLocalWorker } from './worker';
 
 /**
  * Monthly monitoring in the browser (PRD 5, J11; PRD 6, Monitoring jobs and notifications; PRD 7,
- * Practice dashboard; test matrix JOB-01, JOB-02, JOB-03): in a practice of its own (the one the e2e
- * worker's monitoring steps act for, e2e/worker.ts), a billing manager uploads a SYNTHETIC remittance
+ * Practice dashboard; test matrix JOB-01, JOB-02, JOB-03): in a practice of its own (one the e2e
+ * worker's monitoring steps act for, and the one whose digest it sends, e2e/worker.ts), a billing
+ * manager uploads a SYNTHETIC remittance
  * (CAS-08) whose payer schedule is signed off beside the browser, with a dispute window that closes a week
  * from today. The daily schedule's monitor job then plans the month in the job's own name, and the chain
  * prices it, triages it into a case, tells the practice's people in the app and reconciles. The monthly
