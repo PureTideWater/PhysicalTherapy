@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 
 import { aws_cloudfront as cloudfront } from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';
@@ -209,7 +210,7 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
       const [functionId, edgeFunction] = onlyResource(template, 'AWS::CloudFront::Function');
       expect(fallback.FunctionAssociations).toEqual([{ EventType: 'viewer-request', FunctionARN: getAtt(functionId, 'FunctionARN') }]);
       const code = propertiesOf(edgeFunction).FunctionCode as string;
-      const handler = new Function(`${code}; return handler;`)() as (event: unknown) => unknown;
+      const handler = vm.runInNewContext(`${code}\nhandler`) as (event: unknown) => unknown;
       for (const uri of ['/', '/p/7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01/claims', '/api/sign-in/hardware-key/options', '/sign-in']) {
         expect(handler({ request: { uri, method: 'GET', headers: {} } }), uri).toEqual({ statusCode: 404, statusDescription: 'Not Found' });
       }

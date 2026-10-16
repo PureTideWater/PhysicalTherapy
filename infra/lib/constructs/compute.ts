@@ -2,7 +2,7 @@ import {
   Duration,
   Size,
   Stack,
-  aws_ecr as ecr,
+  type aws_ecr as ecr,
   aws_ecs as ecs,
   type aws_elasticloadbalancingv2 as elbv2,
   type aws_ec2 as ec2,

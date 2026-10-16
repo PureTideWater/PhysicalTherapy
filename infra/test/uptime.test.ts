@@ -229,7 +229,7 @@ describe.each(ENVIRONMENTS)('%s: uptime and certificate checks', (environment) =
     expect(JSON.stringify(kms[0]?.Condition)).toContain(logicalIdOf(stack, stack.uptime.artifacts));
     const writes = statements.find((statement) => statement.Sid === 'WriteArtifacts') as CfnStatement;
     expect(JSON.stringify(writes.Resource)).toContain(logicalIdOf(stack, stack.uptime.artifacts));
-    expect((propertiesOf(resourceById(template, 'AWS::IAM::Role', roleId)).Policies as unknown) ?? []).toEqual([]);
+    expect(propertiesOf(resourceById(template, 'AWS::IAM::Role', roleId)).Policies ?? []).toEqual([]);
   });
 
   it('alarms after two failed runs in a row, missing runs counting as failed, and tells the operator on recovery too', () => {

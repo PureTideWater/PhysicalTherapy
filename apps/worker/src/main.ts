@@ -11,7 +11,6 @@ import {
   type PlatformWorkerConfig,
   type WorkerConfig,
   WorkerConfigError,
-  type WorkerJobs,
   readIntakeConfig,
   readNotificationConfig,
   readPlatformConfig,
@@ -40,14 +39,13 @@ import { startWorker } from './worker';
 
 const logger = createLogger({ base: { worker_id: randomUUID() } });
 
-let jobs: WorkerJobs = 'all';
 let config: WorkerConfig | undefined;
 let platformWorker: PlatformWorkerConfig | undefined;
 let platform: PlatformConfig | null = null;
 let intake: IntakeConfig | undefined;
 let notifications: NotificationConfig | undefined;
 try {
-  jobs = readWorkerJobs();
+  const jobs = readWorkerJobs();
   if (jobs === 'platform') {
     // The platform jobs alone (docs/adr/0049): the operator and queue logins, no application login.
     platformWorker = readPlatformWorkerConfig();
