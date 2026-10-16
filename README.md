@@ -411,6 +411,29 @@ practices for milestone 12. Development and the e2e suite run a local simulator 
 accounts and cards are on the billing page; `BILLING_LOCAL_DIR` holds its state). `docs/runbooks/billing.md` lists what an
 operator sets before launch.
 
+Customer sign-in and production readiness (ADR 0053; routes in `apps/web/src/lib/routes/onboarding.ts`,
+`console-onboarding.ts`, `settings.ts`, `support.ts`, `compliance.ts`; migrations `20261030090000` to `20261030110000`):
+the public audit request at `/request-audit`; the console's audit requests, invitations (seven days, sent again by an
+administrator), agreements by upload or by the e-signature vendor's signed webhook (`/api/agreements/webhook`), and terms
+of use by version, which every customer accepts at `/terms` before anything else; the practice's Settings sections
+(`/p/<practice>/settings`) and the organization's users and roles; CSRF tokens and origin checks on every mutation,
+rate limits in Postgres, a nonce-based Content-Security-Policy and the fixed security headers; the maintenance switch,
+the public `/status` page, error pages, help on every screen and support tickets at `/support`; and the SOC 2 Type I
+evidence checklist at `/console/compliance` (`packages/compliance`), whose export the compliance platform ingests. The
+policies are drafts in `docs/policies/` for the security official; the incident runbook is
+`docs/runbooks/incident-response.md`. Production needs `SUPPORT_EMAIL` (the stack's `SupportEmail` parameter),
+`TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets.
+
+**Milestone 11 is not complete.** Its done check is "a new customer signs up, enrolls MFA, pays by test ACH and reaches
+the dashboard; Type I readiness checklist green". The first half holds on the local providers
+(`apps/web/e2e/onboarding.spec.ts`): Cognito's invitation email through SES, a real e-signature vendor and Stripe are
+not reached from the build environment. The checklist is not green, and the repository cannot make it so: every
+repository source of evidence is in place and checked on each build (`packages/compliance/src/controls.test.ts`), but
+the six policies await the security official's approval, none of the people's records (access and vendor reviews, the
+tabletop, the risk analysis, the attestations, the security official) exists, no restore drill has run in an
+environment, and the deletion test and the monthly report of reads by role are milestone 12's. The criteria mapping is
+a proposal for the security official and the auditor.
+
 **Milestone 11's billing is not verified against Stripe.** Its done check is "a test ACH payment completes; a suspended
 organization can read but not run". Both hold against the local test-mode simulator (`apps/worker/src/billing/billing.db.test.ts`,
 `apps/web/src/lib/routes/billing-routes.db.test.ts`, `apps/web/e2e/billing.spec.ts`), and the Stripe provider is tested
@@ -430,12 +453,9 @@ before the milestone closes. The Bedrock and Anthropic providers are tested agai
 their pinned prices are unconfirmed (ADR 0048). PRD 20's choice of model path waits on counsel's read of both
 agreements; Bedrock is the default until then.
 
-**Milestone 9: the proof level cannot yet be set in the product.** PRD 13 has practices set their proof level
-(posted or deposited) and PRD 20 revisits it at milestone 9. The ledger, the totals, the ROI statement and the
-database all read `proof_level` from `practice.settings` (posted by default), but no route sets it: only
-`setLedgerSettings` (`@tp/worker/ledger`, the practice administrator), which the tests call. A change of proof level
-after entries exist needs a rule for the lines already at recovered, and the practice's Settings screen (milestone 11)
-brings both (ADRs 0043 and 0046). Until then a practice that uploads EFT exports still proves recovery by posting.
+**Milestone 9's proof level is set in Settings.** The practice administrator sets posted or deposited at
+`/p/<practice>/settings/proof-level` (milestone 11, ADR 0053), which states and counts what the change does to lines
+already recovered before it is saved, and queues the reconcile that applies it.
 
 **Milestone 1 is not complete.** Its done check includes "the restore job runs on staging", and nothing can be deployed
 from the environment the repository was built in (no AWS credentials, no Docker to build the images). Everything the drill
@@ -466,8 +486,8 @@ Triage and the report judge every line from its pricing in effect (ADR 0040): a 
 specialist answers QUESTIONS Q44 and Q41; each case in a report shows this run's share beside the whole case, so the
 headline, the cases and the line CSV reconcile. A platform administrator sets a practice's billing ZIP and its pricing
 and triage settings (place-of-service split, rounding, materiality, anomaly and pursuit-cost settings) in the internal
-console at `/console/practices/<practice>` until the practice's own Settings screen exists (milestone 11); pursuit cost
-is "not estimated" until the staff rate and minutes are set.
+console at `/console/practices/<practice>`; the practice's own Settings screen (milestone 11) sets materiality and the
+pursuit cost, which is "not estimated" until the staff rate and minutes are set.
 
 **Milestone 7 is not complete.** Its engine part, its pricing runs and the re-run diffs under a new release are built
 (ADRs 0034, 0035 and 0037): a re-run under SYNTHETIC release 900004, a "release 2" that changes one relative value,
