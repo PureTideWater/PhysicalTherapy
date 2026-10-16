@@ -189,6 +189,13 @@ export class Compute extends Construct {
         BILLING_PROVIDER: 'stripe',
         // Live Stripe in the production environment only; dev and staging bill in Stripe's test mode.
         BILLING_STRIPE_MODE: environmentName === 'production' ? 'live' : 'test',
+        // The load balancer is the one proxy in front of the tasks: the client's address is the last
+        // X-Forwarded-For entry it appends (rate limits; docs/adr/0053).
+        TRUSTED_PROXY_HOPS: '1',
+        SUPPORT_EMAIL: parameters.supportEmail,
+        // No e-signature vendor is chosen yet: agreements are recorded in the console (docs/adr/0053).
+        ESIGN_PROVIDER: 'none',
+        TP_ENVIRONMENT: environmentName,
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),

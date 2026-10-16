@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PhiLeakError, assertNoPhi, jobPayloadPhiFindings, s3KeyPhiFindings, urlPhiFindings } from './phi-guard';
+import { PhiLeakError, assertNoPhi, jobPayloadPhiFindings, s3KeyPhiFindings, textPhiFindings, urlPhiFindings } from './phi-guard';
 
 const PRACTICE = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
 const CLAIM = '9c8b7a65-4321-4fed-8cba-123456789012';
@@ -114,5 +114,21 @@ describe('assertNoPhi', () => {
     expect(() => {
       assertNoPhi('s3_key', 'uploads/SMITH.835');
     }).toThrow(PhiLeakError);
+  });
+});
+
+describe('textPhiFindings (docs/adr/0053)', () => {
+  it('passes plain words and opaque IDs', () => {
+    expect(textPhiFindings('The upload screen says the file is held; what should we do next?')).toEqual([]);
+    expect(textPhiFindings('Ticket about run 3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60 and 12 lines')).toEqual([]);
+  });
+
+  it('finds identifier shapes', () => {
+    expect(textPhiFindings('claim 123456789 was underpaid')).toHaveLength(1);
+    expect(textPhiFindings('born 1980-04-12')).toHaveLength(1);
+    expect(textPhiFindings('ssn 123-45-6789')).not.toEqual([]);
+    expect(textPhiFindings('call 919-555-0100')).toHaveLength(1);
+    expect(textPhiFindings('write to someone@synthetic.test')).toHaveLength(1);
+    expect(textPhiFindings('patient SYNTHLAST', { known: ['SYNTHLAST'] })).toHaveLength(1);
   });
 });

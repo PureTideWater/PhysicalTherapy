@@ -88,6 +88,17 @@ export interface MemberSummary {
   readonly current: boolean;
 }
 
+export interface InvitationSummary {
+  readonly id: string;
+  readonly email: string;
+  readonly role: MembershipRole;
+  readonly sentAt: Date;
+  readonly expiresAt: Date;
+  readonly sends: number;
+  readonly acceptedAt: Date | null;
+  readonly expired: boolean;
+}
+
 export interface ConsoleGrant {
   readonly id: string;
   readonly granteeId: string;
@@ -148,8 +159,27 @@ export const organizationPage = platformRoute({
       [grants.rows.map((row) => row.organization_id), grants.rows.map((row) => row.practice_id)],
     );
     const nameOf = new Map(names.rows.map((row) => [row.id, row.name]));
+    // Invitations (PRD 5, J2), with whether each has lapsed: an expired one is sent again from here.
+    const invitations = await scope.client.query<{ id: string; email: string; role: MembershipRole; sent_at: Date; expires_at: Date; sends: number; accepted_at: Date | null; expired: boolean }>(
+      `SELECT i.id, u.email, m.role, i.sent_at, i.expires_at, i.sends, i.accepted_at, (i.accepted_at IS NULL AND i.expires_at <= now()) AS expired
+         FROM invitation i JOIN "user" u ON u.id = i.user_id JOIN membership m ON m.id = i.membership_id
+        WHERE i.organization_id = $1 ORDER BY i.accepted_at IS NOT NULL, i.sent_at DESC, i.id LIMIT 100`,
+      [id],
+    );
     return {
       organization: organizationOf(organization),
+      invitations: invitations.rows.map(
+        (row): InvitationSummary => ({
+          id: row.id,
+          email: row.email,
+          role: row.role,
+          sentAt: row.sent_at,
+          expiresAt: row.expires_at,
+          sends: row.sends,
+          acceptedAt: row.accepted_at,
+          expired: row.expired,
+        }),
+      ),
       roles: ROLES_BY_KIND[organization.kind],
       practices: practices.rows.map((row) => ({ id: row.practice_id, name: row.name, status: row.status, createdAt: row.created_at })),
       members: members.rows.map(

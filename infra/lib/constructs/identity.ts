@@ -16,6 +16,12 @@ export const TOKEN_LIFETIMES = {
 
 export const PASSWORD_MIN_LENGTH = 12;
 
+/**
+ * An invitation's temporary password lasts as long as the invitation does (INVITATION_DAYS in packages/db, the
+ * invitation table's expiry; docs/adr/0053): an administrator re-sends it after that.
+ */
+export const INVITATION_DAYS = 7;
+
 export interface IdentityProps {
   readonly deletionProtection: boolean;
   /** The passkey relying-party ID: the application's host name. */
@@ -73,7 +79,7 @@ export class Identity extends Construct {
         requireUppercase: true,
         requireDigits: true,
         requireSymbols: true,
-        tempPasswordValidity: Duration.days(3),
+        tempPasswordValidity: Duration.days(INVITATION_DAYS),
       },
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,

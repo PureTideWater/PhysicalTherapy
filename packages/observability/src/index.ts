@@ -22,5 +22,6 @@ export {
   assertNoPhi,
   jobPayloadPhiFindings,
   s3KeyPhiFindings,
+  textPhiFindings,
   urlPhiFindings,
 } from './phi-guard';

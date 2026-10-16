@@ -47,6 +47,8 @@ import { seedPacketLine, seedPackets } from './test-support/packet-world';
 import { seedReportDocument } from './test-support/report-world';
 import { seedBilling } from './test-support/billing-world';
 import { csrfTokenFor } from '../http/csrf';
+import { forgetMaintenanceFlag } from '../http/invoke';
+import { acceptCurrentTerms, publishSyntheticTerms, seedOnboarding } from './test-support/onboarding-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -64,7 +66,12 @@ import { csrfTokenFor } from '../http/csrf';
  * - every persona of another practice, aimed at this practice's records or mixing them into its own
  *   request: never answered with any of this practice's records, and nothing of this practice changes;
  * - for practice routes, every internal role: never made a member of the practice's group (not through
- *   the console, not by the owner), so the route stays not found without a support grant (PRD 3).
+ *   the console, not by the owner), so the route stays not found without a support grant (PRD 3);
+ * - every mutation: refused without the session's CSRF token, with another session's, or from another origin;
+ *   every public POST but a signed webhook: refused from another origin (docs/adr/0053);
+ * - every customer route but the terms themselves: a customer who has not accepted the terms of use in force is
+ *   sent to them first; every route but the console's and the terms': refused while the platform is in
+ *   maintenance. Neither changes anything.
  */
 
 const adminUrl = readDatabaseUrl();
@@ -104,6 +111,9 @@ beforeAll(async () => {
     contentRoot: content.root,
   });
   tables = await tenantTables(owner);
+  // The terms of use are in force from the start, so every generated test runs behind the terms gate; each
+  // world's people accept them (docs/adr/0053).
+  await publishSyntheticTerms(owner, await createUser(owner));
 }, 60_000);
 
 afterAll(async () => {
@@ -387,6 +397,13 @@ async function buildWorld(name: string): Promise<World> {
   const models = await seedModelProposals({ app, keys, documents, practiceId: tenant.practiceId, specialistId, managerId: manager, draftVersionId: contracts.draftVersionId, contractDocumentId: contracts.contractDocumentId });
   const billing = await seedBilling({ owner, pool: app, provider: services.billing, organizationId: tenant.organizationId });
   const locked = await lockedUser(tenant.organizationId);
+  const platformAdminId = actors.find((actor) => actor.persona.kind === 'internal' && actor.persona.role === 'platform_admin')?.userId ?? '';
+  const onboarding = await seedOnboarding({ owner, organizationId: tenant.organizationId, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, platformAdminId });
+  await acceptCurrentTerms(
+    owner,
+    actors.map((actor) => actor.userId),
+  );
+  const termsVersionId = ((await owner.query<{ id: string | null }>('SELECT current_terms_version() AS id')).rows[0]?.id ?? '');
   const refs = {
     practiceId: tenant.practiceId,
     organizationId: tenant.organizationId,
@@ -413,6 +430,8 @@ async function buildWorld(name: string): Promise<World> {
     ...reportDocument,
     ...models,
     ...billing,
+    ...onboarding,
+    termsVersionId,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }
@@ -446,9 +465,17 @@ async function rawSession(userId: string, method: 'totp' | 'webauthn'): Promise<
   return { token, deviceId, sessionId: session.rows[0]?.id ?? '' };
 }
 
-function call<R>(route: Route<R>, session: SignedIn | undefined, refs: SampleRefs, requestKey: string = randomUUID()): Promise<Outcome<R>> {
+interface CallOptions {
+  /** The CSRF token sent, instead of the session's own (null: none). */
+  readonly csrfToken?: string | null;
+  /** The browser's Origin header. */
+  readonly origin?: string;
+}
+
+function call<R>(route: Route<R>, session: SignedIn | undefined, refs: SampleRefs, requestKey: string = randomUUID(), options: CallOptions = {}): Promise<Outcome<R>> {
   const params = route.sample?.params(refs) ?? {};
-  const input = route.mutation ? { ...(route.sample?.input?.(refs) ?? {}), requestKey, csrfToken: csrfTokenFor(services.sealer, session?.token) } : route.sample?.input?.(refs);
+  const csrfToken = options.csrfToken === undefined ? csrfTokenFor(services.sealer, session?.token) : options.csrfToken;
+  const input = route.mutation ? { ...(route.sample?.input?.(refs) ?? {}), requestKey, csrfToken } : route.sample?.input?.(refs);
   const upload = route.sample?.upload?.(refs);
   const request: RouteRequest = {
     cookies: new MemoryJar(session === undefined ? {} : { [SESSION_COOKIE]: session.token }),
@@ -465,8 +492,23 @@ function call<R>(route: Route<R>, session: SignedIn | undefined, refs: SampleRef
         }),
     requestId: `test-${randomUUID()}`,
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0',
+    ...(options.origin === undefined ? {} : { origin: options.origin, fetchSite: 'cross-site' }),
   };
   return route.invoke(request, services);
+}
+
+/** The first persona of the practice's group the persona matrix lets use the route, if any (a customer). */
+function customerPersona(route: Route): Persona | undefined {
+  return PERSONA_LIST.find((persona) => persona.kind === 'group' && expected(route, { persona, userId: '', practiceRoles: [persona.role], platformRoles: [] }) === 'ok');
+}
+
+async function setMaintenance(on: boolean): Promise<void> {
+  await owner.query(
+    `INSERT INTO feature_flag (key, scope, scope_id, value) VALUES ('platform.maintenance', 'global', NULL, $1::jsonb)
+     ON CONFLICT ON CONSTRAINT feature_flag_once DO UPDATE SET value = EXCLUDED.value`,
+    [JSON.stringify(on)],
+  );
+  forgetMaintenanceFlag();
 }
 
 /** A digest of every row of the practice's: tenant tables, its group's members and their devices and sessions. */
@@ -649,6 +691,49 @@ describe.each(authenticated.map((route) => [route.id, route] as const))('%s', (_
       }
     });
   }
+
+  if (route.mutation) {
+    it('refuses a missing or wrong CSRF token, and a request from another origin, and changes nothing (docs/adr/0053)', async () => {
+      const allowed = worldA.actors.find((actor) => expected(route, actor) === 'ok') as Actor;
+      const session = await signIn(allowed);
+      const another = await signIn(allowed);
+      const refs = refsFor(worldA, session);
+      const before = tenantRows(await snapshot(worldA));
+      expect(await call(route, session, refs, randomUUID(), { csrfToken: null })).toEqual({ status: 'csrf_refused' });
+      expect(await call(route, session, refs, randomUUID(), { csrfToken: csrfTokenFor(services.sealer, another.token) })).toEqual({ status: 'csrf_refused' });
+      expect(await call(route, session, refs, randomUUID(), { csrfToken: 'not-a-token' })).toEqual({ status: 'csrf_refused' });
+      expect(await call(route, session, refs, randomUUID(), { origin: 'https://elsewhere.example' })).toEqual({ status: 'csrf_refused' });
+      expect(tenantRows(await snapshot(worldA))).toBe(before);
+    });
+  }
+
+  const customer = route.access.kind === 'platform' || route.termsExempt ? undefined : customerPersona(route);
+  if (customer !== undefined) {
+    it('sends a customer who has not accepted the terms of use in force to them first, and changes nothing (docs/adr/0053)', async () => {
+      // A new member of the group in the role the matrix allows, who has not accepted the terms in force.
+      const person = await createUser(owner);
+      await addMembership(owner, worldA.refs.organizationId, person, customer.role);
+      const session = await signIn({ persona: customer, userId: person, practiceRoles: [customer.role], platformRoles: [] });
+      const before = tenantRows(await snapshot(worldA));
+      expect(await call(route, session, refsFor(worldA, session))).toEqual({ status: 'terms_required' });
+      expect(tenantRows(await snapshot(worldA))).toBe(before);
+    });
+  }
+
+  if (route.access.kind !== 'platform' && !route.termsExempt) {
+    it('answers with the maintenance page while the platform is in maintenance, and changes nothing (docs/adr/0053)', async () => {
+      const allowed = worldA.actors.find((actor) => expected(route, actor) === 'ok') as Actor;
+      const session = await signIn(allowed);
+      const before = tenantRows(await snapshot(worldA));
+      await setMaintenance(true);
+      try {
+        expect(await call(route, session, refsFor(worldA, session))).toEqual({ status: 'maintenance' });
+      } finally {
+        await setMaintenance(false);
+      }
+      expect(tenantRows(await snapshot(worldA))).toBe(before);
+    });
+  }
 });
 
 const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'support'] as const;
@@ -697,4 +782,12 @@ describe.each(publicRoutes.map((route) => [route.id, route] as const))('%s (publ
     expect(world.ids.filter((id) => text.includes(id))).toEqual([]);
     expect(await snapshot(world)).toBe(before);
   });
+
+  if (route.originChecked) {
+    it('refuses a POST from another origin before reading it (login CSRF; docs/adr/0053)', async () => {
+      const world = await buildWorld(`public origin ${route.id}`);
+      const outcome = await call(route, undefined, { ...world.refs, actorDeviceId: randomUUID() }, randomUUID(), { origin: 'https://elsewhere.example' });
+      expect(outcome).toEqual({ status: 'csrf_refused' });
+    });
+  }
 });

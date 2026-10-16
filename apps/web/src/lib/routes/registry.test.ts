@@ -8,13 +8,16 @@ import type { Route } from '../http/route';
 import * as abstraction from './abstraction';
 import * as account from './account';
 import * as billing from './billing';
+import * as compliance from './compliance';
 import * as consoleRoutes from './console';
+import * as consoleOnboarding from './console-onboarding';
 import * as contracts from './contracts';
 import * as coverage from './coverage';
 import * as registry from './index';
 import * as mapping from './mapping';
 import * as models from './models';
 import * as monitoring from './monitoring';
+import * as onboarding from './onboarding';
 import * as packets from './packets';
 import * as practice from './practice';
 import * as pricing from './pricing';
@@ -25,9 +28,11 @@ import * as reportDocuments from './report-documents';
 import * as reports from './reports';
 import * as roi from './roi';
 import * as ruleReleases from './rule-releases';
+import * as settings from './settings';
 import * as signIn from './sign-in';
 import * as specialist from './specialist';
 import * as submissions from './submissions';
+import * as support from './support';
 import * as triage from './triage';
 import * as uploads from './uploads';
 import * as workbench from './workbench';
@@ -48,7 +53,39 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [abstraction, account, billing, consoleRoutes, contracts, coverage, mapping, models, monitoring, packets, practice, pricing, reconciliation, releases, remittances, reportDocuments, reports, roi, ruleReleases, signIn, specialist, submissions, triage, uploads, workbench, registry].flatMap((module) =>
+  [
+    abstraction,
+    account,
+    billing,
+    compliance,
+    consoleRoutes,
+    consoleOnboarding,
+    contracts,
+    coverage,
+    mapping,
+    models,
+    monitoring,
+    onboarding,
+    packets,
+    practice,
+    pricing,
+    reconciliation,
+    releases,
+    remittances,
+    reportDocuments,
+    reports,
+    roi,
+    ruleReleases,
+    settings,
+    signIn,
+    specialist,
+    submissions,
+    support,
+    triage,
+    uploads,
+    workbench,
+    registry,
+  ].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );
@@ -158,13 +195,24 @@ describe('every registered route', () => {
       expect(route.phi, `${route.id}: no console screen shows PHI`).toBe(false);
     }
     if (route.access.kind === 'organization') {
-      expect(route.path, `${route.id} is an organization route outside its billing settings`).toMatch(/^\/(settings|api)\/billing\/\[organizationId\]/);
+      expect(route.path, `${route.id} is an organization route outside its settings`).toMatch(/^\/(settings|api)\/billing\/\[organizationId\]|^\/settings\/organizations\/\[organizationId\]\//);
       expect(route.phi, `${route.id}: an organization's own records hold no PHI`).toBe(false);
     }
     if (route.access.kind === 'public') {
       expect(route.phi).toBe(false);
-      // Sign-in, and Stripe's webhook, which its signature authenticates (docs/adr/0050).
-      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/billing\/webhook$/);
+      // Sign-in, Stripe's and the e-signature vendor's webhooks, which their signatures authenticate (docs/adr/0050,
+      // 0053), the audit request, the status page and the maintenance page.
+      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance)$/);
+    }
+    if (route.method !== 'GET' || route.kind === 'action') {
+      // Every POST and PUT is checked for the application's origin, but a webhook its sender signs (docs/adr/0053).
+      expect(route.originChecked, `${route.id}: a POST without the origin check`).toBe(!route.path.endsWith('/webhook'));
+      if (route.access.kind === 'public') {
+        expect(route.rateLimit, `${route.id}: a public POST without its rate limit`).not.toBeNull();
+      } else {
+        expect(route.csrfToken, `${route.id}: a mutation without the session's CSRF token`).toBe(true);
+        expect(route.rateLimit, `${route.id}: a mutation without a rate limit`).not.toBeNull();
+      }
     }
   });
 });

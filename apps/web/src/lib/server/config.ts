@@ -40,6 +40,13 @@ const schema = z.object({
   DOCUMENTS_DIR: z.string().min(1).optional(),
   CONTENT_ROOT: z.string().min(1).optional(),
   TRUSTED_PROXY_HOPS: z.enum(['0', '1', '2', '3']).optional(),
+  SUPPORT_EMAIL: z.email().optional(),
+  ESIGN_PROVIDER: z.enum(['local', 'none']).optional(),
+  ESIGN_LOCAL_SECRET: z.string().min(16).optional(),
+  ESIGN_LOCAL_DIR: z.string().min(1).optional(),
+  AGREEMENTS_DIR: z.string().min(1).optional(),
+  COMPLIANCE_EXPORT_DIR: z.string().min(1).optional(),
+  TP_ENVIRONMENT: z.enum(['dev', 'staging', 'production']).optional(),
 });
 
 export type AuthProviderSettings =
@@ -91,6 +98,22 @@ export interface WebConfig {
    * the load balancer, 1, in staging and production, where it is required; 0 elsewhere, trusting none).
    */
   readonly trustedProxyHops: number;
+  /** The support address (PRD 19, Support): shown in every screen's help and on the error and status pages. */
+  readonly supportEmail: string;
+  /**
+   * The e-signature vendor (docs/adr/0053): the local stand-in, or none (the webhook then refuses every event and
+   * agreements are recorded in the console by upload or by reference). The plan names no vendor.
+   */
+  readonly esign: { readonly kind: 'local'; readonly secret: string; readonly directory: string } | { readonly kind: 'none' };
+  /** Where uploaded agreements are kept locally (the documents bucket in staging and production). */
+  readonly agreementsDir: string;
+  /**
+   * Where the evidence export is written for the compliance platform to collect (docs/adr/0053); null in staging
+   * and production until the vendor is chosen (the console's download is then the export).
+   */
+  readonly complianceExportDir: string | null;
+  /** The deployment this server runs in (the evidence export names it); dev outside staging and production. */
+  readonly environment: 'dev' | 'staging' | 'production';
 }
 
 export class ConfigError extends Error {
@@ -108,6 +131,20 @@ export { developmentMasterKey };
 /** Development only: a cookie key for one server process. */
 function developmentCookieSecret(): Buffer {
   return createHash('sha256').update(`therapy-platform development cookie key ${String(process.pid)} ${String(Date.now())}`).digest();
+}
+
+/** Development only: the local e-signature stand-in's shared secret (synthetic events only). */
+const DEVELOPMENT_ESIGN_SECRET = 'therapy-platform development e-signature secret';
+
+function esignSettings(settings: z.output<typeof schema>, production: boolean): WebConfig['esign'] {
+  const kind = settings.ESIGN_PROVIDER ?? (production ? 'none' : 'local');
+  if (kind === 'none') {
+    return { kind: 'none' };
+  }
+  if (production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e') {
+    throw new ConfigError('ESIGN_PROVIDER=local is refused in production (no vendor is chosen yet; record agreements in the console)');
+  }
+  return { kind: 'local', secret: settings.ESIGN_LOCAL_SECRET ?? DEVELOPMENT_ESIGN_SECRET, directory: settings.ESIGN_LOCAL_DIR ?? path.join(tmpdir(), 'tp-esign') };
 }
 
 export function readWebConfig(env: Readonly<Record<string, string | undefined>> = process.env): WebConfig {
@@ -178,6 +215,11 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     queueDatabaseUrl: settings.QUEUE_DATABASE_URL ?? settings.DATABASE_URL,
     documents,
     contentRoot: settings.CONTENT_ROOT ?? (production ? null : defaultContentRoot()),
+    supportEmail: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.SUPPORT_EMAIL, 'SUPPORT_EMAIL') : (settings.SUPPORT_EMAIL ?? 'support@synthetic.test'),
+    esign: esignSettings(settings, production),
+    agreementsDir: settings.AGREEMENTS_DIR ?? path.join(tmpdir(), 'tp-agreements'),
+    complianceExportDir: settings.COMPLIANCE_EXPORT_DIR ?? (production ? null : path.join(tmpdir(), 'tp-compliance-export')),
+    environment: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TP_ENVIRONMENT, 'TP_ENVIRONMENT') : (settings.TP_ENVIRONMENT ?? 'dev'),
     trustedProxyHops: Number.parseInt(production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TRUSTED_PROXY_HOPS, 'TRUSTED_PROXY_HOPS') : (settings.TRUSTED_PROXY_HOPS ?? '0'), 10),
   };
 }

@@ -80,7 +80,7 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
         RequireUppercase: true,
         RequireNumbers: true,
         RequireSymbols: true,
-        TemporaryPasswordValidityDays: 3,
+        TemporaryPasswordValidityDays: 7,
       },
     });
     expect(PASSWORD_MIN_LENGTH).toBeGreaterThanOrEqual(12);

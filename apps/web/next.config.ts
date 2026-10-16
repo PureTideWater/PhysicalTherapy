@@ -20,6 +20,7 @@ const config: NextConfig = {
   turbopack: { root: monorepoRoot },
   // Workspace packages export TypeScript source; Next compiles them with the app.
   transpilePackages: [
+    '@tp/compliance',
     '@tp/contracts',
     '@tp/db',
     '@tp/ledger',

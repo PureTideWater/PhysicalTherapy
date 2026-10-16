@@ -160,6 +160,15 @@ export function jobPayloadPhiFindings(payload: unknown, options: PhiGuardOptions
   return [...new Set(findings)];
 }
 
+/**
+ * Findings for free text a person writes where no PHI belongs (a support ticket, a status update, an audit
+ * request; docs/adr/0053): the identifier shapes alone (nine or more digits, an SSN, a date, an email address, a
+ * phone number), so the text is refused before it is stored. Opaque IDs are not findings.
+ */
+export function textPhiFindings(text: string, options: PhiGuardOptions = {}): string[] {
+  return contentFindings('the text', text, options);
+}
+
 const CHECKS: Readonly<Record<PhiCarrier, (value: never, options: PhiGuardOptions) => string[]>> = {
   url: urlPhiFindings,
   s3_key: s3KeyPhiFindings,

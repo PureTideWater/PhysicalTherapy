@@ -234,6 +234,18 @@ export interface SampleRefs {
    * account on file, and an open audit invoice whose ACH debit is pending.
    */
   readonly billingInvoiceId: string;
+  /**
+   * Onboarding, settings and support (docs/adr/0053): the terms of use in force; an invitation the practice
+   * administrator sent; a spare member of the group (an analyst no persona plays) whose role may change or whose
+   * membership may end; an audit request from the public form; a ticket the administrator opened; an open
+   * status-page incident.
+   */
+  readonly termsVersionId: string;
+  readonly invitationId: string;
+  readonly spareMembershipId: string;
+  readonly prospectId: string;
+  readonly ticketId: string;
+  readonly incidentId: string;
 }
 
 export interface RouteSample {

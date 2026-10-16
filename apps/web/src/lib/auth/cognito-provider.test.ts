@@ -253,6 +253,17 @@ describe('CognitoAuthProvider: administration', () => {
     await expect(provider.ensureUser('y@synthetic.test')).rejects.toThrow('without a subject');
   });
 
+  it('sends an invitation again, and leaves a user who has signed in as they are (J2)', async () => {
+    const { provider, sent } = make({ AdminCreateUserCommand: [{}, named('UnsupportedUserStateException'), named('InternalErrorException')] });
+    await provider.resendInvitation('invited@synthetic.test');
+    expect(sent[0]).toEqual({
+      command: 'AdminCreateUserCommand',
+      input: { UserPoolId: 'us-east-1_Synthetic', Username: 'invited@synthetic.test', MessageAction: 'RESEND', DesiredDeliveryMediums: ['EMAIL'] },
+    });
+    await expect(provider.resendInvitation('active@synthetic.test')).resolves.toBeUndefined();
+    await expect(provider.resendInvitation('x@synthetic.test')).rejects.toThrow('InternalErrorException');
+  });
+
   it('signs a user out everywhere by subject', async () => {
     const { provider, sent } = make({ AdminUserGlobalSignOutCommand: {} });
     await provider.globalSignOut('sub-1');

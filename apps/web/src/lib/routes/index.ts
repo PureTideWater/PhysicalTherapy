@@ -5,12 +5,15 @@ import type { Route } from '../http/route';
 import { ABSTRACTION_ROUTES } from './abstraction';
 import { ACCOUNT_ROUTES } from './account';
 import { BILLING_ROUTES } from './billing';
+import { COMPLIANCE_ROUTES } from './compliance';
 import { CONSOLE_ROUTES } from './console';
+import { CONSOLE_ONBOARDING_ROUTES } from './console-onboarding';
 import { CONTRACT_ROUTES } from './contracts';
 import { COVERAGE_ROUTES } from './coverage';
 import { MAPPING_ROUTES } from './mapping';
 import { MODEL_ROUTES } from './models';
 import { MONITORING_ROUTES } from './monitoring';
+import { ONBOARDING_ROUTES } from './onboarding';
 import { PACKET_ROUTES } from './packets';
 import { PRACTICE_ROUTES } from './practice';
 import { PRICING_ROUTES } from './pricing';
@@ -21,9 +24,11 @@ import { REPORT_DOCUMENT_ROUTES } from './report-documents';
 import { REPORT_ROUTES } from './reports';
 import { ROI_ROUTES } from './roi';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
+import { SETTINGS_ROUTES } from './settings';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { SPECIALIST_ROUTES } from './specialist';
 import { SUBMISSION_ROUTES } from './submissions';
+import { SUPPORT_ROUTES } from './support';
 import { TRIAGE_ROUTES } from './triage';
 import { UPLOAD_ROUTES } from './uploads';
 import { WORKBENCH_ROUTES } from './workbench';
@@ -74,6 +79,11 @@ export const ROUTES: readonly Route[] = [
   ...CONSOLE_ROUTES,
   ...RULE_RELEASE_ROUTES,
   ...BILLING_ROUTES,
+  ...ONBOARDING_ROUTES,
+  ...CONSOLE_ONBOARDING_ROUTES,
+  ...SETTINGS_ROUTES,
+  ...SUPPORT_ROUTES,
+  ...COMPLIANCE_ROUTES,
 ];
 
 export function routeById(id: string): Route | undefined {

@@ -49,7 +49,7 @@ export type Pending =
   /** An internal user proved password and TOTP but has no hardware key yet: they may register one. */
   | { readonly step: 'register_key'; readonly email: string; readonly userId: string; readonly grant: string; readonly challenge?: string };
 
-export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered';
+export type RefusalReason = 'credentials' | 'locked' | 'expired' | 'hardware_key_required' | 'no_account' | 'key_not_registered' | 'invitation_expired';
 
 export type FlowResult =
   | { readonly kind: 'pending'; readonly pending: Pending }
@@ -166,6 +166,14 @@ export class SignInFlow {
     }
     if (account?.status === 'disabled') {
       return refused('credentials');
+    }
+    // An invitation lasts seven days (PRD 5, J2: "an expired invitation is re-sent by the administrator"), as
+    // Cognito's temporary password does; the database says when every invitation of the user has lapsed.
+    if (account?.status === 'invited') {
+      const [state] = await this.query<{ expired: boolean }>('SELECT invitation_expired($1) AS expired', [account.user_id]);
+      if (state?.expired === true) {
+        return refused('invitation_expired');
+      }
     }
     return this.after(await this.deps.provider.signIn(email, password), email, context);
   }

@@ -20,6 +20,7 @@
     "@stripe/react-stripe-js": "^7.0.0",
     "@stripe/stripe-js": "^10.0.0",
     "@tp/billing": "workspace:*",
+    "@tp/compliance": "workspace:*",
     "@tp/contracts": "workspace:*",
     "@tp/db": "workspace:*",
     "@tp/ledger": "workspace:*",

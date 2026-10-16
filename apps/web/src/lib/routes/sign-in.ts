@@ -45,6 +45,7 @@ const MESSAGES = {
   locked: 'This account is locked after ten failed attempts. A platform administrator can unlock it.',
   no_account: 'That did not match. Check the email, the password or the code, and try again.',
   key_not_registered: 'The hardware key was not registered. Try again with the key connected.',
+  invitation_expired: 'This invitation has expired. Ask your organization’s administrator to send it again.',
 } as const;
 
 const STEP_PAGES: Readonly<Record<Pending['step'], string>> = {
@@ -100,6 +101,7 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
         case 'credentials':
         case 'no_account':
         case 'key_not_registered':
+        case 'invitation_expired':
           return { error: MESSAGES[result.reason] };
       }
   }

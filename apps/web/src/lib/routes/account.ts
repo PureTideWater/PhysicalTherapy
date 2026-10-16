@@ -48,6 +48,8 @@ export const signOutAction = selfRoute({
   kind: 'action',
   path: '/account/devices',
   phi: false,
+  // Anyone may sign out: before the terms are accepted, and while the platform is in maintenance.
+  termsExempt: true,
   params: z.object({}),
   input: z.object({}),
   audit: { action: 'sign_out', objectType: 'user_session' },

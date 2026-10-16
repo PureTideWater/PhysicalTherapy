@@ -14,6 +14,7 @@ export const PARAMETER_NAMES = {
   staticDomainName: 'StaticDomainName',
   staticCertificateArn: 'StaticCertificateArn',
   mailFromAddress: 'MailFromAddress',
+  supportEmail: 'SupportEmail',
   imageTag: 'ImageTag',
 } as const;
 
@@ -32,6 +33,8 @@ export const PARAMETER_NAMES = {
  *   certificate, which CloudFront requires in us-east-1.
  * - MailFromAddress: the address Cognito and the worker send from; its domain is a verified SES
  *   identity in the stack's region before the deploy.
+ * - SupportEmail: the support address every screen's help, the error pages and the status page name
+ *   (PRD 19, Support; docs/adr/0053); what arrives there the desk records as a ticket.
  * - ImageTag: the release tag of the web and worker images in this environment's repositories.
  *   `none` (the default) is the first deploy, before any image exists: the services run no task.
  */
@@ -43,6 +46,7 @@ export class DeployParameters extends Construct {
   readonly mailFromAddress: string;
   /** The domain part of MailFromAddress: the SES identity Cognito sends through. */
   readonly mailFromDomain: string;
+  readonly supportEmail: string;
   readonly imageTag: string;
   /** True once ImageTag names a release. */
   readonly released: CfnCondition;
@@ -87,6 +91,12 @@ export class DeployParameters extends Construct {
       constraintDescription: 'an email address on a lowercase domain',
     });
     this.mailFromDomain = Token.asString(Fn.select(1, Fn.split('@', this.mailFromAddress)));
+    this.supportEmail = parameter(PARAMETER_NAMES.supportEmail, {
+      type: 'String',
+      description: 'The support address the help on every screen, the error pages and the status page name',
+      allowedPattern: '^[A-Za-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+      constraintDescription: 'an email address on a lowercase domain',
+    });
     this.imageTag = parameter(PARAMETER_NAMES.imageTag, {
       type: 'String',
       description: `The release tag of the web and worker images; ${NO_IMAGE} before the first release (no task runs)`,

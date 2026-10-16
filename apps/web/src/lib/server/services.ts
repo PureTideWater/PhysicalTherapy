@@ -8,9 +8,12 @@ import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
+import { type CompliancePlatform, FileCompliancePlatform } from '@tp/compliance';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
+import { type AgreementDocuments, LocalAgreementDocuments, S3AgreementDocuments } from '../agreements/documents';
+import { type ESignatureProvider, LocalESignature } from '../agreements/esign';
 import { CognitoAuthProvider } from '../auth/cognito-provider';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { FileDevStore } from '../auth/dev-store';
@@ -56,6 +59,16 @@ export interface Services {
    * know the client's address; 0 trusts none (docs/adr/0053).
    */
   readonly trustedProxyHops: number;
+  /** The support address every screen's help names (PRD 19, Support). */
+  readonly supportEmail: string;
+  /** The e-signature vendor's webhook verifier and document source, or null when none is configured (docs/adr/0053). */
+  readonly esign: ESignatureProvider | null;
+  /** Where uploaded agreements are kept (docs/adr/0053). */
+  readonly agreementDocuments: AgreementDocuments;
+  /** The compliance platform the evidence export is sent to, or null when none is connected (docs/adr/0053). */
+  readonly compliancePlatform: CompliancePlatform | null;
+  /** The deployment this server runs in: dev, staging or production. */
+  readonly environment: 'dev' | 'staging' | 'production';
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -103,6 +116,12 @@ export interface ServiceParts {
   /** Tests that bill give their own; otherwise an in-memory simulator delivering its events to the pool. */
   readonly billing?: BillingProvider;
   readonly trustedProxyHops?: number;
+  readonly supportEmail?: string;
+  /** Tests give the local e-signature stand-in; otherwise none. */
+  readonly esign?: ESignatureProvider | null;
+  readonly agreementDocuments?: AgreementDocuments;
+  readonly compliancePlatform?: CompliancePlatform | null;
+  readonly environment?: 'dev' | 'staging' | 'production';
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -128,6 +147,11 @@ export function createServices(parts: ServiceParts): Services {
     contentRoot: parts.contentRoot ?? null,
     billing: parts.billing ?? memoryBillingProvider(parts.pool),
     trustedProxyHops: parts.trustedProxyHops ?? 0,
+    supportEmail: parts.supportEmail ?? 'support@synthetic.test',
+    esign: parts.esign ?? null,
+    agreementDocuments: parts.agreementDocuments ?? new LocalAgreementDocuments(path.join(tmpdir(), `tp-agreements-${randomUUID()}`)),
+    compliancePlatform: parts.compliancePlatform === undefined ? new FileCompliancePlatform(path.join(tmpdir(), `tp-compliance-export-${randomUUID()}`)) : parts.compliancePlatform,
+    environment: parts.environment ?? 'dev',
   };
 }
 
@@ -150,6 +174,12 @@ export function servicesFromConfig(config: WebConfig): Services {
     contentRoot: config.contentRoot,
     billing: billingProvider(readBillingConfig(), pool),
     trustedProxyHops: config.trustedProxyHops,
+    supportEmail: config.supportEmail,
+    esign: config.esign.kind === 'local' ? new LocalESignature({ secret: config.esign.secret, directory: config.esign.directory }) : null,
+    agreementDocuments:
+      documents.kind === 's3' ? new S3AgreementDocuments({ client: new S3Client({}), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : new LocalAgreementDocuments(config.agreementsDir),
+    compliancePlatform: config.complianceExportDir === null ? null : new FileCompliancePlatform(config.complianceExportDir),
+    environment: config.environment,
   });
 }
 

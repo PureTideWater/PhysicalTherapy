@@ -23,7 +23,26 @@ type Stage = keyof typeof RANK;
 export const REOPEN_NOTES = {
   recoupment: 'Reopened by the recovery ledger: the payer took money back (a recoupment) after this line was approved or recovered.',
   reversal: 'Moved back by the recovery ledger: a match that proved this line was reversed.',
+  // docs/adr/0053: the practice now proves recovery by deposit, and this line's deposit has not matched yet.
+  proofLevel: 'Moved back by the recovery ledger: the practice now counts recovered at deposit, and this line’s deposit has not matched yet; it returns to recovered when it does.',
 } as const;
+
+/**
+ * Why a recovered line's entries now leave it payer approved: a reversal written since it reached recovered, or
+ * else the practice's proof level, raised from posted to deposited (docs/adr/0053: the rule for lines already
+ * recovered when the level changes).
+ */
+async function moveBackNote(scope: Scope, serviceLineId: string): Promise<string> {
+  const { rows } = await scope.client.query<{ reversed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM ledger_entry e
+        WHERE e.service_line_id = $1 AND e.stage = 'reversed'
+          AND e.created_at >= (SELECT max(s.set_at) FROM line_status s WHERE s.service_line_id = $1 AND s.stage = 'recovered')
+     ) AS reversed`,
+    [serviceLineId],
+  );
+  return rows[0]?.reversed === true ? REOPEN_NOTES.reversal : REOPEN_NOTES.proofLevel;
+}
 
 export interface StageSync {
   /** Events that moved a line forward (to payer approved or recovered). */
@@ -74,7 +93,7 @@ export async function syncLineStages(scope: Scope, cipher: PracticeCipher, pract
       continue;
     }
     if ((current === 'payer_approved' || current === 'recovered') && (target === null || RANK[target] < RANK[current])) {
-      const note = target === null ? REOPEN_NOTES.recoupment : REOPEN_NOTES.reversal;
+      const note = target === null ? REOPEN_NOTES.recoupment : current === 'recovered' ? await moveBackNote(scope, row.service_line_id) : REOPEN_NOTES.reversal;
       await insertStage(scope, practiceId, row.service_line_id, target ?? 'actionable', setBy, { from: current, reason: cipher.encrypt('line_status.reason', note) });
       back += 1;
     }

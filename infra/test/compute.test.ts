@@ -288,6 +288,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       DOCUMENTS_BUCKET: ref(logicalIdOf(stack, stack.storage.documents)),
       APP_ORIGIN: appOrigin,
       WEBAUTHN_RP_ID: ref(PARAMETER_NAMES.appDomainName),
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: ref(PARAMETER_NAMES.supportEmail),
+      ESIGN_PROVIDER: 'none',
+      TP_ENVIRONMENT: environment,
     });
     expect(plain.KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
     expect(plain.DOCUMENTS_KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));

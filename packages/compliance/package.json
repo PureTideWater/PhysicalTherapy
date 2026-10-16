@@ -1,0 +1,21 @@
+{
+  "name": "@tp/compliance",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The SOC 2 Type I evidence checklist (PRD 16): every control of the section 16 table mapped to its criteria and its evidence sources, the checklist's evaluation, the export the compliance platform ingests, and the CompliancePlatform interface with its file implementation. No PHI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

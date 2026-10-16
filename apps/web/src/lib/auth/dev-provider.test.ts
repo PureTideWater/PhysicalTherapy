@@ -149,6 +149,23 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     await expect(dev.release()).resolves.toBeUndefined();
     expect(passwordProblems(temporaryPassword())).toEqual([]);
   });
+
+  it('sends an invitation again with a new temporary password, and nothing for an account that chose its own (J2)', async () => {
+    const { dev, invitations } = await provider();
+    await dev.ensureUser('again@synthetic.test');
+    const first = invitations[0]?.password ?? '';
+    await dev.resendInvitation('again@synthetic.test');
+    expect(invitations).toHaveLength(2);
+    const second = invitations[1]?.password ?? '';
+    expect(second).not.toBe(first);
+    expect((await dev.signIn('again@synthetic.test', first)).kind).toBe('rejected');
+    const step = await dev.signIn('again@synthetic.test', second);
+    expect(step.kind).toBe('new_password_required');
+    await dev.setNewPassword(challengeOf(step), 'Chosen-Synthetic-Pass-2026!');
+    await dev.resendInvitation('again@synthetic.test');
+    await dev.resendInvitation('nobody@synthetic.test');
+    expect(invitations).toHaveLength(2);
+  });
 });
 
 describe('DevAuthProvider: hardware keys (real WebAuthn verification)', () => {

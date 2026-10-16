@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { INVITATION_DAYS } from '@tp/db/runtime';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -67,6 +68,12 @@ describe('passwords', () => {
     for (const rule of ['requireLowercase: true', 'requireUppercase: true', 'requireDigits: true', 'requireSymbols: true']) {
       expect(identity).toContain(rule);
     }
+  });
+
+  it('lets a temporary password last exactly as long as the invitation it came with', () => {
+    const identity = readFileSync(path.resolve(import.meta.dirname, '../../../../../infra/lib/constructs/identity.ts'), 'utf8');
+    expect(identity).toContain(`export const INVITATION_DAYS = ${String(INVITATION_DAYS)};`);
+    expect(identity).toContain('tempPasswordValidity: Duration.days(INVITATION_DAYS)');
   });
 
   it('hashes with scrypt and verifies only the same password', async () => {

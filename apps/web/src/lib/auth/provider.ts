@@ -82,6 +82,12 @@ export interface AuthProvider {
    * provider delivers itself (Cognito's invitation email; the local outbox in development).
    */
   ensureUser(email: string): Promise<{ readonly sub: string; readonly created: boolean }>;
+  /**
+   * Sends an invited user's invitation again with a new temporary password (J2: "an expired invitation is
+   * re-sent by the administrator"): Cognito's resend; the local outbox in development. A user who has chosen
+   * a password already is not invited and is left as they are.
+   */
+  resendInvitation(email: string): Promise<void>;
   /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
   globalSignOut(sub: string): Promise<void>;
 }
