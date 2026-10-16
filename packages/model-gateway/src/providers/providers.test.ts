@@ -157,6 +157,8 @@ describe('AnthropicProvider (mocked SDK client)', () => {
     ['a rate limit', Anthropic.APIError.generate(429, {}, 'x', new Headers()), 'throttled'],
     ['an overload', Anthropic.APIError.generate(529, {}, 'x', new Headers()), 'unavailable'],
     ['a server error', Anthropic.APIError.generate(500, {}, 'x', new Headers()), 'unavailable'],
+    ['a server status on an error the SDK did not classify', new Anthropic.APIError(502, {}, 'x', new Headers()), 'unavailable'],
+    ['an error with no status that is not a connection error', new Anthropic.APIError(undefined, {}, 'x', new Headers()), 'rejected'],
     ['a connection error', new Anthropic.APIConnectionError({ message: 'x' }), 'unavailable'],
     ['a connection timeout', new Anthropic.APIConnectionTimeoutError(), 'timeout'],
     ['a bad request', Anthropic.APIError.generate(400, {}, 'x', new Headers()), 'rejected'],
