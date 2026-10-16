@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
+import { UPLOAD_CORS_MAX_AGE_SECONDS, UPLOAD_HEADERS } from '../lib/constructs/storage';
+import { PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { ENVIRONMENTS, environmentSettings } from '../lib/environments';
 import { type CfnStatement, getAtt, logicalIdOf, propertiesOf, ref, resourcesOf, synthesized } from './synth';
 
@@ -8,6 +13,16 @@ import { type CfnStatement, getAtt, logicalIdOf, propertiesOf, ref, resourcesOf,
  * never public and refuse plain HTTP; Object Lock with seven years' retention on packets and audit
  * copies. Evidence: these CDK assertions.
  */
+describe('the upload CORS contract with the web app', () => {
+  it('admits exactly the headers the presigned PUT signs, less Content-Length, which the browser sets', () => {
+    const targets = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/uploads/targets.ts'), 'utf8');
+    const signed = /const SIGNED_HEADERS = new Set\(\[([^\]]*)\]\)/.exec(targets)?.[1];
+    expect(signed).toBeDefined();
+    const names = [...(signed ?? '').matchAll(/'([a-z-]+)'/g)].map((match) => match[1]);
+    expect(names.filter((name) => name !== 'content-length').sort()).toEqual([...UPLOAD_HEADERS].sort());
+  });
+});
+
 describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
   const { stack, template } = synthesized(environment);
   const buckets = resourcesOf(template, 'AWS::S3::Bucket');
@@ -15,10 +30,43 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
   const idOf = (bucket: Parameters<typeof logicalIdOf>[1]) => logicalIdOf(stack, bucket);
   const writeOnce = [idOf(stack.storage.packets), idOf(stack.storage.auditCopies)];
 
-  it('has the documents, packets, audit-copy and trail buckets and no other', () => {
+  it('has the documents, packets, audit-copy, trail and canary-artifact buckets and no other', () => {
     expect(buckets.map(([id]) => id).sort()).toEqual(
-      [idOf(stack.storage.documents), ...writeOnce, idOf(stack.accountSecurity.trailBucket)].sort(),
+      [idOf(stack.storage.documents), ...writeOnce, idOf(stack.accountSecurity.trailBucket), idOf(stack.uptime.artifacts)].sort(),
     );
+  });
+
+  it('admits presigned upload PUTs to the documents bucket from the application origin alone, with the headers the PUT signs', () => {
+    const [, documents] = buckets.find(([id]) => id === idOf(stack.storage.documents)) ?? ['', { Type: '' }];
+    expect(propertiesOf(documents).CorsConfiguration).toEqual({
+      CorsRules: [
+        {
+          Id: 'presigned-uploads-from-the-application',
+          AllowedOrigins: [{ 'Fn::Join': ['', ['https://', { Ref: PARAMETER_NAMES.appDomainName }]] }],
+          AllowedMethods: ['PUT'],
+          AllowedHeaders: [...UPLOAD_HEADERS],
+          MaxAge: UPLOAD_CORS_MAX_AGE_SECONDS,
+        },
+      ],
+    });
+    for (const [id, bucket] of buckets.filter(([candidate]) => candidate !== idOf(stack.storage.documents))) {
+      expect(propertiesOf(bucket).CorsConfiguration, id).toBeUndefined();
+    }
+  });
+
+  it('expires canary artifacts after 35 days', () => {
+    const [, artifacts] = buckets.find(([id]) => id === idOf(stack.uptime.artifacts)) ?? ['', { Type: '' }];
+    expect(propertiesOf(artifacts).LifecycleConfiguration).toEqual({
+      Rules: [
+        {
+          Id: 'canary-artifacts-expire',
+          Status: 'Enabled',
+          ExpirationInDays: 35,
+          NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+          AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
+        },
+      ],
+    });
   });
 
   const blocks = ['BlockPublicAcls', 'BlockPublicPolicy', 'IgnorePublicAcls', 'RestrictPublicBuckets'];
@@ -95,7 +143,7 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
     }
   });
 
-  it('does not lock the documents or trail buckets', () => {
+  it('does not lock the documents, trail or canary-artifact buckets', () => {
     for (const [id, bucket] of buckets.filter(([candidate]) => !writeOnce.includes(candidate))) {
       expect(propertiesOf(bucket).ObjectLockEnabled, id).toBeUndefined();
       expect(propertiesOf(bucket).ObjectLockConfiguration, id).toBeUndefined();

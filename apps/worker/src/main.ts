@@ -8,12 +8,16 @@ import {
   type IntakeConfig,
   type NotificationConfig,
   type PlatformConfig,
+  type PlatformWorkerConfig,
   type WorkerConfig,
   WorkerConfigError,
+  type WorkerJobs,
   readIntakeConfig,
   readNotificationConfig,
   readPlatformConfig,
+  readPlatformWorkerConfig,
   readWorkerConfig,
+  readWorkerJobs,
 } from './config';
 import { digestHandler } from './digest/job';
 import { type JobHandlers, placeholderHandlers } from './jobs/handlers';
@@ -36,16 +40,25 @@ import { startWorker } from './worker';
 
 const logger = createLogger({ base: { worker_id: randomUUID() } });
 
+let jobs: WorkerJobs = 'all';
 let config: WorkerConfig | undefined;
+let platformWorker: PlatformWorkerConfig | undefined;
 let platform: PlatformConfig | null = null;
 let intake: IntakeConfig | undefined;
 let notifications: NotificationConfig | undefined;
 try {
-  const worker = readWorkerConfig();
-  platform = readPlatformConfig();
-  intake = readIntakeConfig();
-  notifications = readNotificationConfig();
-  config = worker;
+  jobs = readWorkerJobs();
+  if (jobs === 'platform') {
+    // The platform jobs alone (docs/adr/0049): the operator and queue logins, no application login.
+    platformWorker = readPlatformWorkerConfig();
+    platform = readPlatformConfig();
+  } else {
+    const worker = readWorkerConfig();
+    platform = jobs === 'practice' ? null : readPlatformConfig();
+    intake = readIntakeConfig();
+    notifications = readNotificationConfig();
+    config = worker;
+  }
 } catch (error) {
   if (!(error instanceof WorkerConfigError)) {
     throw error;
@@ -53,6 +66,21 @@ try {
   // Configuration messages are written by this codebase and name the variable, never its value.
   process.stderr.write(`worker: ${error.message}\n`);
   process.exitCode = 2;
+}
+
+if (platformWorker !== undefined && platform !== null) {
+  try {
+    const boss = new PgBoss(platformWorker.queueDatabaseUrl);
+    boss.on('error', () => {
+      logger.error('queue error', { error_code: 'QUEUE_ERROR' });
+    });
+    const runtime = platformRuntime(platform, boss);
+    const worker = await startWorker({ boss, logger, heartbeatMs: platformWorker.heartbeatMs, platform: runtime.handlers });
+    installShutdownHandlers(worker, logger);
+  } catch {
+    logger.error('worker failed to start', { error_code: 'WORKER_START_FAILED' });
+    process.exitCode = 1;
+  }
 }
 
 if (config !== undefined && intake !== undefined && notifications !== undefined) {

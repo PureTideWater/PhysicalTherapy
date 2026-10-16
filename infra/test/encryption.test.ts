@@ -21,6 +21,7 @@ const KEY_PROPERTY: Record<string, (properties: Record<string, unknown>) => unkn
   'AWS::SNS::Topic': (p) => p.KmsMasterKeyId,
   'AWS::Logs::LogGroup': (p) => p.KmsKeyId,
   'AWS::CloudTrail::Trail': (p) => p.KMSKeyId,
+  'AWS::ECR::Repository': (p) => (p.EncryptionConfiguration as { EncryptionType: string; KmsKey: unknown }).KmsKey,
 };
 
 /** Cognito encrypts user pools at rest with keys it manages; there is no customer key to choose. */
@@ -68,14 +69,22 @@ describe.each(ENVIRONMENTS)('%s: encryption at rest', (environment) => {
         checked += 1;
       }
     }
-    // Four buckets, one database, three secrets (owner, application, operator), one topic, one log group, one trail.
-    expect(checked).toBe(11);
+    // Five buckets (documents, packets, audit copies, trail, canary artifacts), one database, five secrets
+    // (owner, application, operator and queue logins, the cookie-sealing key), one topic, five log groups
+    // (web, worker, platform, migration, migration runner), one trail, two image repositories.
+    expect(checked).toBe(20);
   });
 
   it('has no data store outside that list', () => {
     const types = new Set(allResources(template).map(([, resource]) => resource.Type));
     expect([...types].filter((type) => DATA_STORE.test(type) && !(type in KEY_PROPERTY) && !SERVICE_ENCRYPTED.has(type))).toEqual([]);
     expect(types.has('AWS::Cognito::UserPool')).toBe(true);
+  });
+
+  it('encrypts the image repositories with KMS', () => {
+    for (const [id, repository] of resourcesOf(template, 'AWS::ECR::Repository')) {
+      expect(propertiesOf(repository).EncryptionConfiguration, id).toEqual({ EncryptionType: 'KMS', KmsKey: environmentKey });
+    }
   });
 
   it('turns on storage encryption on the database and S3 bucket keys on every bucket', () => {

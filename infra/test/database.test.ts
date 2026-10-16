@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN, restoreDrillInstanceId } from '../lib/constructs/database';
+import { APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN, QUEUE_LOGIN, restoreDrillInstanceId } from '../lib/constructs/database';
 import { ENVIRONMENTS } from '../lib/environments';
 import { PASSWORD_EXCLUDED_CHARACTERS } from '../lib/retention';
 import { getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourcesOf, synthesized, transformsOf } from './synth';
@@ -34,9 +34,13 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
     expect(properties.DBParameterGroupName).toEqual(ref(id));
   });
 
-  it('keeps the owner, application and operator logins in three secrets under the environment key', () => {
-    const secrets = resourcesOf(template, 'AWS::SecretsManager::Secret').map(([, secret]) => propertiesOf(secret));
-    expect(secrets).toHaveLength(3);
+  it('keeps the owner, application, operator and queue logins in four secrets under the environment key', () => {
+    // Every secret but the web app's cookie-sealing key (compute.test.ts) is a database login.
+    const cookie = logicalIdOf(stack, stack.compute.cookieSecret);
+    const secrets = resourcesOf(template, 'AWS::SecretsManager::Secret')
+      .filter(([id]) => id !== cookie)
+      .map(([, secret]) => propertiesOf(secret));
+    expect(secrets).toHaveLength(4);
     const templates = secrets.map((secret) => {
       const generate = secret.GenerateSecretString as { SecretStringTemplate: unknown; GenerateStringKey: string; ExcludeCharacters: string };
       expect(generate.GenerateStringKey).toBe('password');
@@ -45,12 +49,13 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
       return JSON.stringify(generate.SecretStringTemplate);
     });
     const usernames = templates.map((text) => /\\"username\\":\\"([a-z_]+)\\"/.exec(text)?.[1]).sort();
-    expect(usernames).toEqual([APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN].sort());
+    expect(usernames).toEqual([APP_LOGIN, OPERATOR_LOGIN, OWNER_LOGIN, QUEUE_LOGIN].sort());
     expect(properties.MasterUsername).toBe(OWNER_LOGIN);
-    // The application and operator logins' secrets name the owner secret, which their alternating-users rotation logs in with.
+    // The application, operator and queue logins' secrets name the owner secret, which their alternating-users rotation logs in with.
     const owner = logicalIdOf(stack, stack.database.ownerSecret);
-    expect(templates.find((text) => text.includes(APP_LOGIN))).toContain(`"masterarn\\":\\"",{"Ref":"${owner}"}`);
-    expect(templates.find((text) => text.includes(OPERATOR_LOGIN))).toContain(`"masterarn\\":\\"",{"Ref":"${owner}"}`);
+    for (const login of [APP_LOGIN, OPERATOR_LOGIN, QUEUE_LOGIN]) {
+      expect(templates.find((text) => text.includes(login))).toContain(`"masterarn\\":\\"",{"Ref":"${owner}"}`);
+    }
   });
 
   it('names one scratch instance for the restore drill, per environment', () => {
@@ -58,12 +63,13 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
     expect(restoreDrillInstanceId(environment)).toBe(`tp-${environment}-restore-drill`);
   });
 
-  it('rotates the owner login by itself and the application and operator logins with alternating users, every 30 days', () => {
+  it('rotates the owner login by itself and the application, operator and queue logins with alternating users, every 30 days', () => {
     const schedules = resourcesOf(template, 'AWS::SecretsManager::RotationSchedule').map(([, schedule]) => propertiesOf(schedule));
-    expect(schedules).toHaveLength(3);
+    expect(schedules).toHaveLength(4);
     const owner = logicalIdOf(stack, stack.database.ownerSecret);
     const app = logicalIdOf(stack, stack.database.appSecret);
     const operator = logicalIdOf(stack, stack.database.operatorSecret);
+    const queue = logicalIdOf(stack, stack.database.queueSecret);
     const bySecret = (id: string) => schedules.find((schedule) => JSON.stringify(schedule.SecretId) === JSON.stringify(ref(id)));
     const rotationGroup = { 'Fn::GetAtt': [expect.stringMatching(/^DatabaseRotationSecurityGroup/), 'GroupId'] };
 
@@ -76,7 +82,7 @@ describe.each(ENVIRONMENTS)('%s: database', (environment) => {
       },
     });
     expect(bySecret(owner)?.RotateImmediatelyOnUpdate).toBeUndefined();
-    for (const login of [app, operator]) {
+    for (const login of [app, operator, queue]) {
       expect(bySecret(login)).toMatchObject({
         RotationRules: { ScheduleExpression: 'rate(30 days)' },
         RotateImmediatelyOnUpdate: false,

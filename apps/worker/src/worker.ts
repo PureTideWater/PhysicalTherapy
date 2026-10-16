@@ -14,9 +14,14 @@ export type QueueClient = Pick<PgBoss, 'start' | 'stop' | 'createQueue' | 'work'
 export interface WorkerOptions {
   readonly boss: QueueClient;
   readonly logger: Logger;
-  readonly handlers: JobHandlers;
+  /**
+   * The practice jobs' handlers, with `pool`. Both are absent on a platform-only worker
+   * (WORKER_JOBS=platform), which creates the practice queues, so the monitoring schedule can queue
+   * into them, and works none of them.
+   */
+  readonly handlers?: JobHandlers;
   /** The application login's pool: practice jobs reach the database only through withJobScope on it. */
-  readonly pool: ScopePool<ScopeClient>;
+  readonly pool?: ScopePool<ScopeClient>;
   /** The platform jobs (audit copy, restore drill), where this worker holds an operator connection. */
   readonly platform?: PlatformHandlers;
   /** Where each practice job's attempts are recorded for the practice's dashboard (job_run, JOB-02). */
@@ -75,8 +80,29 @@ async function recordEnd(runs: JobRunRecorder | undefined, logger: Logger, end: 
   }
 }
 
-async function runJob<T extends JobType>(type: T, job: QueuedJob, options: WorkerOptions): Promise<void> {
-  const { handlers, logger, pool, boss, runs } = options;
+interface PracticeJobs {
+  readonly handlers: JobHandlers;
+  readonly pool: ScopePool<ScopeClient>;
+}
+
+/** The practice jobs this worker works, or undefined on a platform-only worker. */
+function practiceJobs(options: WorkerOptions): PracticeJobs | undefined {
+  const { handlers, pool } = options;
+  if (handlers === undefined && pool === undefined) {
+    if (options.platform === undefined) {
+      throw new Error('a worker works the practice jobs, the platform jobs or both');
+    }
+    return undefined;
+  }
+  if (handlers === undefined || pool === undefined) {
+    throw new Error('the practice jobs need both their handlers and the application login pool');
+  }
+  return { handlers, pool };
+}
+
+async function runJob<T extends JobType>(type: T, job: QueuedJob, options: WorkerOptions, practice: PracticeJobs): Promise<void> {
+  const { logger, boss, runs } = options;
+  const { handlers, pool } = practice;
   let payload;
   try {
     payload = parsePayload(type, job.data);
@@ -125,20 +151,24 @@ async function runPlatformJob<T extends PlatformJobType>(type: T, job: QueuedJob
 /**
  * Starts pg-boss, creates every queue, subscribes a handler to each and starts the heartbeat. With
  * platform handlers it also creates, schedules and works the platform queues (UTC schedules, one job
- * of each queued or active at a time).
+ * of each queued or active at a time). Without practice handlers (a platform-only worker) it creates
+ * the practice queues and works none of them.
  */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const { boss, logger } = options;
+  const practice = practiceJobs(options);
   await boss.start();
   for (const type of JOB_TYPES) {
     await boss.createQueue(type, queueOptions(type));
   }
-  for (const type of JOB_TYPES) {
-    await boss.work(type, workOptions(type), async (jobs) => {
-      for (const job of jobs) {
-        await attempt(type, job, logger, () => runJob(type, job, options));
-      }
-    });
+  if (practice !== undefined) {
+    for (const type of JOB_TYPES) {
+      await boss.work(type, workOptions(type), async (jobs) => {
+        for (const job of jobs) {
+          await attempt(type, job, logger, () => runJob(type, job, options, practice));
+        }
+      });
+    }
   }
   const { platform } = options;
   if (platform !== undefined) {

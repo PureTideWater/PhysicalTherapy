@@ -19,6 +19,12 @@ RUN npm install --no-save --omit=dev playwright-core@1.56.1 \
  && npx playwright-core install --with-deps chromium-headless-shell \
  && npm cache clean --force
 COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
+# The one-off migration task runs dist/migrate.js from this image before a release receives traffic;
+# it applies the migrations from ../migrations (docs/adr/0049).
+COPY --from=build --chown=node:node /repo/packages/db/migrations ./migrations
+# Amazon RDS's certificate bundle: every database connection verifies the server (sslmode=verify-full)
+# and the task definitions point Node at this file (NODE_EXTRA_CA_CERTS; infra/lib/launch.ts).
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 USER node
 # ECS sends SIGTERM before stopping a task; the worker drains active jobs and exits.
 STOPSIGNAL SIGTERM

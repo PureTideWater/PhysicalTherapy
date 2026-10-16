@@ -49,20 +49,65 @@ function isProduction(env: Env): boolean {
   return value(env, 'NODE_ENV') === 'production';
 }
 
-/** Reads the worker's settings from the environment. */
-export function readWorkerConfig(env: Env = process.env): WorkerConfig {
+function heartbeatMs(env: Env): number {
   const raw = env.WORKER_HEARTBEAT_SECONDS ?? '';
   if (raw !== '' && !/^[1-9]\d{0,5}$/.test(raw)) {
     throw new WorkerConfigError('WORKER_HEARTBEAT_SECONDS must be a whole number of seconds from 1 to 999999');
   }
-  const seconds = raw === '' ? DEFAULT_HEARTBEAT_SECONDS : Number.parseInt(raw, 10);
+  return (raw === '' ? DEFAULT_HEARTBEAT_SECONDS : Number.parseInt(raw, 10)) * 1000;
+}
+
+/** Reads the worker's settings from the environment. */
+export function readWorkerConfig(env: Env = process.env): WorkerConfig {
+  const beat = heartbeatMs(env);
   let databaseUrl: string;
   try {
     databaseUrl = readDatabaseUrl(env);
   } catch (error) {
     throw new WorkerConfigError((error as Error).message);
   }
-  return { production: isProduction(env), databaseUrl, queueDatabaseUrl: value(env, 'QUEUE_DATABASE_URL') ?? databaseUrl, heartbeatMs: seconds * 1000 };
+  return { production: isProduction(env), databaseUrl, queueDatabaseUrl: value(env, 'QUEUE_DATABASE_URL') ?? databaseUrl, heartbeatMs: beat };
+}
+
+/**
+ * Which jobs this worker works (WORKER_JOBS; docs/adr/0049). Deployed, the practice jobs and the
+ * platform jobs run in separate services under separate task roles: `practice` works the practice
+ * queues only and refuses the operator login; `platform` works the platform queues only, with the
+ * operator login and pg-boss's own login and never the application login. Unset (development and
+ * the tests), one worker works both, the platform jobs where OPERATOR_DATABASE_URL is set.
+ */
+export type WorkerJobs = 'all' | 'practice' | 'platform';
+
+export function readWorkerJobs(env: Env = process.env): WorkerJobs {
+  const jobs = value(env, 'WORKER_JOBS');
+  if (jobs === undefined) {
+    return 'all';
+  }
+  if (jobs === 'practice') {
+    refused(env, 'OPERATOR_DATABASE_URL', 'when WORKER_JOBS is practice (the platform jobs hold the operator login)');
+    return jobs;
+  }
+  if (jobs === 'platform') {
+    required(env, 'OPERATOR_DATABASE_URL', 'when WORKER_JOBS is platform');
+    refused(env, 'DATABASE_URL', 'when WORKER_JOBS is platform (the practice jobs hold the application login)');
+    return jobs;
+  }
+  throw new WorkerConfigError('WORKER_JOBS is practice or platform');
+}
+
+/** A platform-only worker's own settings: pg-boss's login (QUEUE_DATABASE_URL, required) and the heartbeat. */
+export interface PlatformWorkerConfig {
+  readonly production: boolean;
+  readonly queueDatabaseUrl: string;
+  readonly heartbeatMs: number;
+}
+
+export function readPlatformWorkerConfig(env: Env = process.env): PlatformWorkerConfig {
+  return {
+    production: isProduction(env),
+    queueDatabaseUrl: required(env, 'QUEUE_DATABASE_URL', 'when WORKER_JOBS is platform'),
+    heartbeatMs: heartbeatMs(env),
+  };
 }
 
 export type AuditStoreConfig =

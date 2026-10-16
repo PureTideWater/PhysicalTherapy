@@ -330,4 +330,33 @@ describe('startWorker', () => {
     expect(lines.find((line) => line.job_id === 'job-10')).toMatchObject({ error_code: 'JOB_PAYLOAD_INVALID', job_type: 'restore_drill' });
     await worker.stop();
   });
+
+  it('works the platform queues alone without practice handlers, creating the practice queues it queues into (WORKER_JOBS=platform)', async () => {
+    const { boss, calls, client } = fakeBoss();
+    const platform: PlatformHandlers = {
+      audit_copy: () => Promise.resolve(),
+      restore_drill: () => Promise.resolve(),
+      support_grant_notices: () => Promise.resolve(),
+      monitoring_schedule: () => Promise.resolve(),
+    };
+    const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
+    for (const type of JOB_TYPES) {
+      expect(boss.createQueue).toHaveBeenCalledWith(type, queueOptions(type));
+      expect(calls).not.toContain(`work:${type}`);
+    }
+    for (const type of PLATFORM_JOB_TYPES) {
+      expect(calls).toContain(`work:${type}`);
+    }
+    await worker.stop();
+  });
+
+  it('refuses to start with neither kind of job, or with practice handlers but no pool', async () => {
+    const { boss, client } = fakeBoss();
+    await expect(startWorker({ boss: client, logger: capture().logger, heartbeatMs: 60_000 })).rejects.toThrow(/practice jobs, the platform jobs or both/);
+    await expect(startWorker({ boss: client, logger: capture().logger, handlers: placeholderHandlers, heartbeatMs: 60_000 })).rejects.toThrow(
+      /both their handlers and the application login pool/,
+    );
+    await expect(startWorker({ boss: client, logger: capture().logger, pool, heartbeatMs: 60_000 })).rejects.toThrow(/both their handlers and the application login pool/);
+    expect(boss.start).not.toHaveBeenCalled();
+  });
 });

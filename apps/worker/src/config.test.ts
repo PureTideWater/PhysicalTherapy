@@ -4,7 +4,16 @@ import path from 'node:path';
 import { developmentMasterKey } from '@tp/db';
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_HEARTBEAT_SECONDS, WorkerConfigError, readIntakeConfig, readNotificationConfig, readPlatformConfig, readWorkerConfig } from './config';
+import {
+  DEFAULT_HEARTBEAT_SECONDS,
+  WorkerConfigError,
+  readIntakeConfig,
+  readNotificationConfig,
+  readPlatformConfig,
+  readPlatformWorkerConfig,
+  readWorkerConfig,
+  readWorkerJobs,
+} from './config';
 
 const DATABASE_URL = 'postgres://u:p@localhost:5432/d';
 
@@ -32,6 +41,44 @@ describe('readWorkerConfig', () => {
   it('requires DATABASE_URL', () => {
     expect(() => readWorkerConfig({})).toThrow(WorkerConfigError);
     expect(() => readWorkerConfig({})).toThrow(/DATABASE_URL is not set/);
+  });
+});
+
+describe('readWorkerJobs (docs/adr/0049)', () => {
+  const OPERATOR = 'postgres://operator@localhost:5432/d';
+
+  it('works every job when unset, as in development and the tests', () => {
+    expect(readWorkerJobs({})).toBe('all');
+    expect(readWorkerJobs({ WORKER_JOBS: '', DATABASE_URL, OPERATOR_DATABASE_URL: OPERATOR })).toBe('all');
+  });
+
+  it('runs the practice jobs without the operator login', () => {
+    expect(readWorkerJobs({ WORKER_JOBS: 'practice', DATABASE_URL })).toBe('practice');
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'practice', DATABASE_URL, OPERATOR_DATABASE_URL: OPERATOR })).toThrow(/OPERATOR_DATABASE_URL is refused when WORKER_JOBS is practice/);
+  });
+
+  it('runs the platform jobs with the operator login and never the application login', () => {
+    expect(readWorkerJobs({ WORKER_JOBS: 'platform', OPERATOR_DATABASE_URL: OPERATOR })).toBe('platform');
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'platform' })).toThrow(/OPERATOR_DATABASE_URL is required when WORKER_JOBS is platform/);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'platform', OPERATOR_DATABASE_URL: OPERATOR, DATABASE_URL })).toThrow(/DATABASE_URL is refused when WORKER_JOBS is platform/);
+  });
+
+  it('refuses any other value', () => {
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'both' })).toThrow(WorkerConfigError);
+    expect(() => readWorkerJobs({ WORKER_JOBS: 'both' })).toThrow(/WORKER_JOBS is practice or platform/);
+  });
+});
+
+describe('readPlatformWorkerConfig', () => {
+  it('needs pg-boss\'s own login and reads the heartbeat like any worker', () => {
+    expect(readPlatformWorkerConfig({ QUEUE_DATABASE_URL: 'postgres://q@localhost/d', NODE_ENV: 'production', WORKER_HEARTBEAT_SECONDS: '60' })).toEqual({
+      production: true,
+      queueDatabaseUrl: 'postgres://q@localhost/d',
+      heartbeatMs: 60_000,
+    });
+    expect(readPlatformWorkerConfig({ QUEUE_DATABASE_URL: 'postgres://q@localhost/d' })).toMatchObject({ production: false, heartbeatMs: DEFAULT_HEARTBEAT_SECONDS * 1000 });
+    expect(() => readPlatformWorkerConfig({})).toThrow(/QUEUE_DATABASE_URL is required when WORKER_JOBS is platform/);
+    expect(() => readPlatformWorkerConfig({ QUEUE_DATABASE_URL: 'postgres://q@localhost/d', WORKER_HEARTBEAT_SECONDS: '0' })).toThrow(WorkerConfigError);
   });
 });
 

@@ -5,7 +5,8 @@ import { type CfnResource, getAtt, logicalIdOf, onlyResource, propertiesOf, ref,
 
 /**
  * PRD 16, network: "Private subnets for database and worker; VPC endpoints for S3, KMS, Bedrock ...;
- * no public database endpoint". Evidence: these CDK assertions.
+ * WAF with managed rules and rate limits; no public database endpoint". Evidence: these CDK
+ * assertions (the web ACL's are in edge.test.ts).
  */
 
 function subnetGroup(subnet: CfnResource): string | undefined {
@@ -40,16 +41,38 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     expect(subnets).toHaveLength(6);
   });
 
-  it('gives the app and data subnets no route out of the VPC and no public addresses', () => {
+  it('gives the data subnets no route out of the VPC, and no private subnet a public address', () => {
     const routes = resourcesOf(template, 'AWS::EC2::Route').map(([, route]) => JSON.stringify(propertiesOf(route).RouteTableId));
-    for (const id of privateSubnets) {
+    for (const id of idsIn('data')) {
       const table = routeTableOf(id);
       expect(table, id).toBeDefined();
       expect(routes).not.toContain(JSON.stringify(table));
+    }
+    for (const id of privateSubnets) {
       expect(propertiesOf(resourceById(template, 'AWS::EC2::Subnet', id)).MapPublicIpOnLaunch, id).toBe(false);
     }
-    expect(resourcesOf(template, 'AWS::EC2::NatGateway')).toEqual([]);
-    expect(resourcesOf(template, 'AWS::EC2::EIP')).toEqual([]);
+  });
+
+  it('routes the app subnets out only through NAT gateways in the edge subnets, one per zone in production (docs/adr/0049)', () => {
+    const expected = environmentSettings(environment).compute.natGateways;
+    expect(expected).toBe(environment === 'production' ? 2 : 1);
+    const nats = resourcesOf(template, 'AWS::EC2::NatGateway');
+    expect(nats).toHaveLength(expected);
+    expect(resourcesOf(template, 'AWS::EC2::EIP')).toHaveLength(expected);
+    const edgeRefs = idsIn('edge').map((id) => JSON.stringify(ref(id)));
+    for (const [id, nat] of nats) {
+      expect(edgeRefs, id).toContain(JSON.stringify(propertiesOf(nat).SubnetId));
+    }
+    const natRefs = nats.map(([id]) => JSON.stringify(ref(id)));
+    const routes = resourcesOf(template, 'AWS::EC2::Route').map(([, route]) => propertiesOf(route));
+    for (const id of idsIn('app')) {
+      const table = JSON.stringify(routeTableOf(id));
+      const own = routes.filter((route) => JSON.stringify(route.RouteTableId) === table);
+      expect(own, id).toHaveLength(1);
+      expect(own[0]?.DestinationCidrBlock, id).toBe('0.0.0.0/0');
+      expect(natRefs, id).toContain(JSON.stringify(own[0]?.NatGatewayId));
+      expect(own[0]?.GatewayId, id).toBeUndefined();
+    }
   });
 
   it('keeps the edge subnets ready for the load balancer without assigning public addresses', () => {
@@ -96,10 +119,10 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     const ingress = resourcesOf(template, 'AWS::EC2::SecurityGroupIngress')
       .map(([, rule]) => propertiesOf(rule))
       .filter((rule) => JSON.stringify(rule.GroupId) === JSON.stringify(databaseGroup));
-    const clients = [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup].map((group) =>
-      getAtt(logicalIdOf(stack, group), 'GroupId'),
+    const clients = [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup, stack.network.migrationSecurityGroup].map(
+      (group) => getAtt(logicalIdOf(stack, group), 'GroupId'),
     );
-    expect(ingress).toHaveLength(4);
+    expect(ingress).toHaveLength(5);
     for (const rule of ingress) {
       expect(rule).toMatchObject({ IpProtocol: 'tcp', FromPort: 5432, ToPort: 5432 });
       expect(rule.SourceSecurityGroupId).toBeDefined();
@@ -110,19 +133,21 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     expect(propertiesOf(group).SecurityGroupIngress).toBeUndefined();
   });
 
-  it('lets no security group accept traffic from the internet', () => {
-    const inline = resourcesOf(template, 'AWS::EC2::SecurityGroup').flatMap(
-      ([, group]) => (propertiesOf(group).SecurityGroupIngress ?? []) as Record<string, unknown>[],
+  it('lets only the load balancer accept traffic from the internet, and only HTTPS', () => {
+    const balancer = logicalIdOf(stack, stack.edge.loadBalancerSecurityGroup);
+    const inline = resourcesOf(template, 'AWS::EC2::SecurityGroup').flatMap(([id, group]) =>
+      ((propertiesOf(group).SecurityGroupIngress ?? []) as Record<string, unknown>[]).map((rule) => ({ id, rule })),
     );
-    const separate = resourcesOf(template, 'AWS::EC2::SecurityGroupIngress').map(([, rule]) => propertiesOf(rule));
-    for (const rule of [...inline, ...separate]) {
-      expect(rule.CidrIp).not.toBe('0.0.0.0/0');
-      expect(rule.CidrIpv6).toBeUndefined();
-    }
+    const separate = resourcesOf(template, 'AWS::EC2::SecurityGroupIngress').map(([, rule]) => ({
+      id: (propertiesOf(rule).GroupId as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0],
+      rule: propertiesOf(rule),
+    }));
+    const open = [...inline, ...separate].filter(({ rule }) => rule.CidrIp === '0.0.0.0/0' || rule.CidrIpv6 !== undefined);
+    expect(open).toEqual([{ id: balancer, rule: expect.objectContaining({ CidrIp: '0.0.0.0/0', IpProtocol: 'tcp', FromPort: 443, ToPort: 443 }) }]);
   });
 
-  it('limits the web, worker and operator groups to HTTPS and PostgreSQL egress', () => {
-    for (const group of [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup]) {
+  it('limits the web, worker, operator and migration groups to HTTPS and PostgreSQL egress', () => {
+    for (const group of [stack.network.webSecurityGroup, stack.network.workerSecurityGroup, stack.network.operatorSecurityGroup, stack.network.migrationSecurityGroup]) {
       const id = logicalIdOf(stack, group);
       const resource = resourceById(template, 'AWS::EC2::SecurityGroup', id);
       expect(propertiesOf(resource).SecurityGroupEgress).toEqual([

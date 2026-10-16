@@ -18,6 +18,9 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
+# Amazon RDS's certificate bundle: every database connection verifies the server (sslmode=verify-full)
+# and the task definition points Node at this file (NODE_EXTRA_CA_CERTS; infra/lib/launch.ts).
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 USER node
 EXPOSE 3000
 CMD ["node", "apps/web/server.js"]
