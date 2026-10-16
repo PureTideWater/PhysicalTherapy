@@ -127,6 +127,9 @@ export async function runAction(route: Route<MutationResult>, form: FormData, pa
   if (outcome.status === 'not_found') {
     return { error: 'That record is no longer there. Reload the page.' };
   }
+  if (outcome.status === 'suspended') {
+    return { error: `Not started: ${outcome.reason}.` };
+  }
   return { error: 'This form was already submitted. Reload the page to see the result.' };
 }
 

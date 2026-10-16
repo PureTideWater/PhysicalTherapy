@@ -69,6 +69,8 @@ function declaredType(file: File, allowed: readonly string[]): string {
 interface Refusal {
   readonly status?: string;
   readonly issues?: readonly { readonly field: string; readonly message: string }[];
+  /** A suspended organization's reason (docs/adr/0050). */
+  readonly reason?: string;
 }
 
 async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -80,7 +82,7 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
   });
   const answer = (await response.json()) as T & Refusal;
   if (!response.ok) {
-    const issue = answer.issues?.[0]?.message;
+    const issue = answer.issues?.[0]?.message ?? (answer.status === 'suspended' && answer.reason !== undefined ? `Not started: ${answer.reason}.` : undefined);
     throw new Error(issue ?? (response.status === 403 ? 'Your role cannot upload files here.' : 'The server refused the request. Reload the page and try again.'));
   }
   return answer;

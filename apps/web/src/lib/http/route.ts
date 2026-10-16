@@ -21,6 +21,11 @@ export type Access =
   | { readonly kind: 'self' }
   /** A permission on the practice named by params.practiceId, inside that practice's scope. */
   | { readonly kind: 'practice'; readonly permission: Permission }
+  /**
+   * A permission of the actor's role in the organization named by params.organizationId (its billing,
+   * docs/adr/0050); the transaction has no practice in scope, so no PHI row is visible.
+   */
+  | { readonly kind: 'organization'; readonly permission: Permission }
   /** A permission of the actor's internal roles; the transaction has no practice in scope. */
   | { readonly kind: 'platform'; readonly permission: Permission };
 
@@ -79,7 +84,12 @@ export type Outcome<R> =
   | { readonly status: 'forbidden'; readonly permission: Permission; readonly message: string; readonly roles: readonly MembershipRole[]; readonly shell?: Shell }
   | { readonly status: 'not_found' }
   /** A mutation whose request key was already used: it did nothing this time. */
-  | { readonly status: 'duplicate' };
+  | { readonly status: 'duplicate' }
+  /**
+   * A run the practice's organization may not start now (suspended for nonpayment, or by a platform
+   * administrator), with the database's reason; data stays readable (PRD 5, J18; docs/adr/0050).
+   */
+  | { readonly status: 'suspended'; readonly reason: string };
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {
@@ -203,6 +213,11 @@ export interface SampleRefs {
    */
   readonly contractProposalId: string;
   readonly checklistProposalId: string;
+  /**
+   * Billing (docs/adr/0050): the group's Stripe customer in the local simulator, its settling test bank
+   * account on file, and an open audit invoice whose ACH debit is pending.
+   */
+  readonly billingInvoiceId: string;
 }
 
 export interface RouteSample {
@@ -259,6 +274,17 @@ export interface PublicSpec<P, I, R> extends CommonSpec<P, I> {
 
 export interface ActorSpec<P, I, R> extends CommonSpec<P, I> {
   readonly handle: (context: ActorContext<P, I>) => Promise<R>;
+}
+
+export interface OrganizationContext<P, I> extends ActorContext<P, I> {
+  readonly organizationId: string;
+  /** The actor's roles in the organization. */
+  readonly organizationRoles: readonly MembershipRole[];
+}
+
+export interface OrganizationSpec<P extends { readonly organizationId: string }, I, R> extends CommonSpec<P, I> {
+  readonly permission: Permission;
+  readonly handle: (context: OrganizationContext<P, I>) => Promise<R>;
 }
 
 export interface PracticeSpec<P extends { readonly practiceId: string }, I, R> extends CommonSpec<P, I> {

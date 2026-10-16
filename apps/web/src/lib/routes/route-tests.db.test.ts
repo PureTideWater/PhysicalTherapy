@@ -25,6 +25,7 @@ import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../auth/dev-provider';
+import { RUN_STARTING_ROUTES } from '../billing/runs';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
@@ -44,6 +45,7 @@ import { seedLedger } from './test-support/ledger-world';
 import { seedModelProposals } from './test-support/model-world';
 import { seedPacketLine, seedPackets } from './test-support/packet-world';
 import { seedReportDocument } from './test-support/report-world';
+import { seedBilling } from './test-support/billing-world';
 
 /**
  * Tests generated from the route registry, for every registered route (test matrix SEC-02 "every
@@ -382,6 +384,7 @@ async function buildWorld(name: string): Promise<World> {
   });
   const reportDocument = await seedReportDocument({ app, keys, documents, practiceId: tenant.practiceId, managerId: manager });
   const models = await seedModelProposals({ app, keys, documents, practiceId: tenant.practiceId, specialistId, managerId: manager, draftVersionId: contracts.draftVersionId, contractDocumentId: contracts.contractDocumentId });
+  const billing = await seedBilling({ owner, pool: app, provider: services.billing, organizationId: tenant.organizationId });
   const locked = await lockedUser(tenant.organizationId);
   const refs = {
     practiceId: tenant.practiceId,
@@ -408,6 +411,7 @@ async function buildWorld(name: string): Promise<World> {
     ...packets,
     ...reportDocument,
     ...models,
+    ...billing,
   };
   return { tenant, refs, actors, ids: [...new Set([...Object.values(refs), agreementId, ...actors.map((actor) => actor.userId)])] };
 }
@@ -487,6 +491,26 @@ async function snapshot(world: World): Promise<string> {
   return parts.join('\n');
 }
 
+/** The snapshot without the people's sessions and devices, which a request touches (its last-seen time). */
+function tenantRows(digest: string): string {
+  return digest
+    .split('\n')
+    .filter((line) => !line.startsWith('user_session:') && !line.startsWith('user_device:'))
+    .join('\n');
+}
+
+/** An open invoice of the world's group whose payment failed 31 days ago (as Stripe's events leave one): the group is suspended. */
+async function suspendForNonpayment(world: World): Promise<string> {
+  const { rows } = await owner.query<{ id: string }>(
+    `INSERT INTO invoice (organization_id, stripe_invoice_id, stripe_customer_id, kind, status, currency, amount_due_cents, amount_paid_cents, amount_remaining_cents,
+       attempt_count, first_failed_at, last_failure_code, stripe_event_at)
+     SELECT o.id, $2, o.billing_customer_ref, 'audit', 'open', 'usd', 250000, 0, 250000, 1, now() - interval '31 days', 'insufficient_funds', now() - interval '31 days'
+       FROM organization o WHERE o.id = $1 RETURNING id`,
+    [world.refs.organizationId, `in_route${randomBytes(6).toString('hex')}`],
+  );
+  return rows[0]?.id ?? '';
+}
+
 /** What the persona matrix and the routes to the practice say the actor gets. */
 function expected(route: Route, actor: Actor): Outcome<unknown>['status'] {
   switch (route.access.kind) {
@@ -500,6 +524,12 @@ function expected(route: Route, actor: Actor): Outcome<unknown>['status'] {
         return 'not_found';
       }
       return rolesPermit(actor.practiceRoles, route.access.permission) ? 'ok' : 'forbidden';
+    case 'organization':
+      // The route names the practice's group: its members hold their role there; nobody else is a member.
+      if (actor.persona.kind !== 'group') {
+        return 'not_found';
+      }
+      return rolesPermit([actor.persona.role], route.access.permission) ? 'ok' : 'forbidden';
   }
 }
 
@@ -596,12 +626,28 @@ describe.each(authenticated.map((route) => [route.id, route] as const))('%s', (_
           `${label(persona)} saw practice A's records through ${route.id}`,
         ).toEqual([]);
       }
-      if (route.access.kind === 'practice') {
+      if (route.access.kind === 'practice' || route.access.kind === 'organization') {
         expect(atA.status).toBe('not_found');
       }
       expect(after).toBe(before);
     },
   );
+
+  if (RUN_STARTING_ROUTES.has(route.id)) {
+    it('refuses new work with the reason while the practice’s organization is suspended for nonpayment, and changes nothing (docs/adr/0050)', async () => {
+      // On the other world, after every test above has used it; paid again afterwards.
+      const allowed = worldB.actors.find((actor) => expected(route, actor) === 'ok') as Actor;
+      const session = await signIn(allowed);
+      const invoiceId = await suspendForNonpayment(worldB);
+      try {
+        const before = tenantRows(await snapshot(worldB));
+        expect(await call(route, session, refsFor(worldB, session))).toEqual({ status: 'suspended', reason: expect.stringMatching(/^the organization is suspended for nonpayment/) as string });
+        expect(tenantRows(await snapshot(worldB))).toBe(before);
+      } finally {
+        await owner.query("UPDATE invoice SET status = 'paid', paid_at = now(), amount_paid_cents = amount_due_cents, amount_remaining_cents = 0 WHERE id = $1", [invoiceId]);
+      }
+    });
+  }
 });
 
 const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'support'] as const;

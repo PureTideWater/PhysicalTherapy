@@ -21,6 +21,7 @@ const STATUS: Readonly<Record<Outcome<unknown>['status'], number>> = {
   forbidden: 403,
   not_found: 404,
   duplicate: 409,
+  suspended: 402,
 };
 
 function readCookies(header: string | null): Map<string, string> {
@@ -95,13 +96,28 @@ function lengthOf(header: string | null): number | null {
   return header !== null && /^\d{1,15}$/.test(header) ? Number.parseInt(header, 10) : null;
 }
 
-/** The route request for a Web Request: GET reads the URL; POST also a JSON body; PUT streams its body. */
-async function routeRequest(request: Request, cookies: ResponseCookies, context: { readonly params?: Params } | undefined): Promise<RouteRequest | Response> {
+/**
+ * A handler whose body is read as sent, not as JSON: a signed webhook (docs/adr/0050), whose signature
+ * covers the exact bytes. The route's input is { payload, signature } from the body and the header.
+ */
+export interface RawBodyOptions {
+  readonly rawBody: { readonly signatureHeader: string; readonly maxBytes: number };
+}
+
+/** The route request for a Web Request: GET reads the URL; POST also a JSON body (or its raw text); PUT streams its body. */
+async function routeRequest(request: Request, cookies: ResponseCookies, context: { readonly params?: Params } | undefined, options?: RawBodyOptions): Promise<RouteRequest | Response> {
   const query = Object.fromEntries(new URL(request.url).searchParams);
   const params = { ...query, ...((await context?.params) ?? {}) };
   let input: unknown;
   let upload: UploadBody | undefined;
-  if (request.method === 'POST') {
+  if (request.method === 'POST' && options !== undefined) {
+    const declared = lengthOf(request.headers.get('content-length'));
+    const payload = declared !== null && declared > options.rawBody.maxBytes ? null : await request.text();
+    if (payload === null || payload.length > options.rawBody.maxBytes) {
+      return outcomeResponse({ status: 'invalid', issues: [{ field: 'payload', message: 'the body is too large' }] }, cookies);
+    }
+    input = { payload, signature: request.headers.get(options.rawBody.signatureHeader) };
+  } else if (request.method === 'POST') {
     try {
       input = await request.json();
     } catch {
@@ -119,11 +135,14 @@ async function routeRequest(request: Request, cookies: ResponseCookies, context:
   return { cookies, params, input, ...(upload === undefined ? {} : { upload }), requestId: randomUUID(), userAgent: request.headers.get('user-agent') };
 }
 
-/** A Next route handler for a registered route. GET reads the URL's parameters; POST also reads a JSON body; PUT streams its body. */
-export function routeHandler(route: Route, servicesOf: () => Services) {
+/**
+ * A Next route handler for a registered route. GET reads the URL's parameters; POST also reads a JSON body
+ * (or, with RawBodyOptions, the body as sent and a signature header); PUT streams its body.
+ */
+export function routeHandler(route: Route, servicesOf: () => Services, options?: RawBodyOptions) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
-    const built = await routeRequest(request, cookies, context);
+    const built = await routeRequest(request, cookies, context, options);
     if (built instanceof Response) {
       return built;
     }

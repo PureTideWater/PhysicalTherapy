@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import type { BillingProvider } from '@tp/billing';
 import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
@@ -16,6 +17,8 @@ import { FileDevStore } from '../auth/dev-store';
 import type { AuthProvider } from '../auth/provider';
 import { Sealer } from '../auth/seal';
 import { SignInFlow } from '../auth/sign-in';
+import { readBillingConfig } from '../billing/config';
+import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type WebConfig, readWebConfig } from './config';
@@ -46,6 +49,8 @@ export interface Services {
   readonly documents: DocumentStore;
   /** The checkout the console's Rule releases screen works in; null when the server has none (WebConfig.contentRoot). */
   readonly contentRoot: string | null;
+  /** Stripe, or the local test-mode simulator (docs/adr/0050). */
+  readonly billing: BillingProvider;
 }
 
 /** The local outbox where the development provider "sends" an invitation's temporary password. */
@@ -90,6 +95,8 @@ export interface ServiceParts {
   readonly documents?: DocumentStore;
   /** Tests of the Rule releases screen give a scratch checkout; otherwise none. */
   readonly contentRoot?: string | null;
+  /** Tests that bill give their own; otherwise an in-memory simulator delivering its events to the pool. */
+  readonly billing?: BillingProvider;
 }
 
 /** No queue configured: refuses rather than dropping the job. */
@@ -113,6 +120,7 @@ export function createServices(parts: ServiceParts): Services {
     queue: parts.queue ?? NO_QUEUE,
     documents,
     contentRoot: parts.contentRoot ?? null,
+    billing: parts.billing ?? memoryBillingProvider(parts.pool),
   };
 }
 
@@ -120,10 +128,11 @@ export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
+  const pool = openPool(config.databaseUrl, 10);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
-    pool: openPool(config.databaseUrl, 10),
+    pool,
     provider: provider(config, sealer),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
@@ -132,6 +141,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     queue: new PgBossQueue(config.queueDatabaseUrl, logger),
     documents: store,
     contentRoot: config.contentRoot,
+    billing: billingProvider(readBillingConfig(), pool),
   });
 }
 

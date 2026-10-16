@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import type { Route } from '../http/route';
 import * as abstraction from './abstraction';
 import * as account from './account';
+import * as billing from './billing';
 import * as consoleRoutes from './console';
 import * as contracts from './contracts';
 import * as coverage from './coverage';
@@ -47,7 +48,7 @@ function files(dir: string): string[] {
 
 /** Every exported route, by its export name. */
 const EXPORTED = new Map<string, Route>(
-  [abstraction, account, consoleRoutes, contracts, coverage, mapping, models, monitoring, packets, practice, pricing, reconciliation, releases, remittances, reportDocuments, reports, roi, ruleReleases, signIn, specialist, submissions, triage, uploads, workbench, registry].flatMap((module) =>
+  [abstraction, account, billing, consoleRoutes, contracts, coverage, mapping, models, monitoring, packets, practice, pricing, reconciliation, releases, remittances, reportDocuments, reports, roi, ruleReleases, signIn, specialist, submissions, triage, uploads, workbench, registry].flatMap((module) =>
     Object.entries(module).filter((entry): entry is [string, Route] => typeof entry[1] === 'object' && entry[1] !== null && 'invoke' in entry[1] && 'id' in entry[1]),
   ),
 );
@@ -156,9 +157,14 @@ describe('every registered route', () => {
       expect(route.path.startsWith('/console/'), `${route.id} is a platform route outside the console`).toBe(true);
       expect(route.phi, `${route.id}: no console screen shows PHI`).toBe(false);
     }
+    if (route.access.kind === 'organization') {
+      expect(route.path, `${route.id} is an organization route outside its billing settings`).toMatch(/^\/(settings|api)\/billing\/\[organizationId\]/);
+      expect(route.phi, `${route.id}: an organization's own records hold no PHI`).toBe(false);
+    }
     if (route.access.kind === 'public') {
       expect(route.phi).toBe(false);
-      expect(route.path).toMatch(/^\/(api\/)?sign-in/);
+      // Sign-in, and Stripe's webhook, which its signature authenticates (docs/adr/0050).
+      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/billing\/webhook$/);
     }
   });
 });

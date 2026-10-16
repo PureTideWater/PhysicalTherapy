@@ -1,4 +1,5 @@
 import { type PracticeScope, type ScopeClient, readWithAudit, rolesPermit } from '@tp/db/runtime';
+import { practiceRunRefusal } from '@tp/worker/billing';
 import { z } from 'zod';
 
 import { dashboard } from '../dashboard/queries';
@@ -66,7 +67,7 @@ interface SupportGrantRow {
 export interface JobRunSummary {
   readonly jobId: string;
   readonly jobType: string;
-  readonly outcome: 'running' | 'retrying' | 'succeeded' | 'failed';
+  readonly outcome: 'running' | 'retrying' | 'succeeded' | 'failed' | 'refused';
   readonly attempts: number;
   readonly startedAt: Date;
   readonly finishedAt: Date | null;
@@ -156,6 +157,8 @@ export const practiceHome = practiceRoute({
       access: { via: access.via, roles: access.roles },
       supportGrants,
       freshness: await freshness(scope, practiceId),
+      /** Why new runs are refused now (the organization is suspended), or null (docs/adr/0050). */
+      suspension: await practiceRunRefusal(scope.client, practiceId),
       dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10), request.requestId),
       notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };

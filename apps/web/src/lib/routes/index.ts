@@ -4,6 +4,7 @@ import { selfRoute } from '../http/invoke';
 import type { Route } from '../http/route';
 import { ABSTRACTION_ROUTES } from './abstraction';
 import { ACCOUNT_ROUTES } from './account';
+import { BILLING_ROUTES } from './billing';
 import { CONSOLE_ROUTES } from './console';
 import { CONTRACT_ROUTES } from './contracts';
 import { COVERAGE_ROUTES } from './coverage';
@@ -72,6 +73,7 @@ export const ROUTES: readonly Route[] = [
   ...SPECIALIST_ROUTES,
   ...CONSOLE_ROUTES,
   ...RULE_RELEASE_ROUTES,
+  ...BILLING_ROUTES,
 ];
 
 export function routeById(id: string): Route | undefined {

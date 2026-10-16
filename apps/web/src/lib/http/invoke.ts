@@ -5,17 +5,21 @@ import {
   type MembershipRole,
   PermissionDeniedError,
   type ScopeClient,
+  organizationRoles,
   platformRoles,
   practiceDirectory,
   recordAuditEvent,
+  requireOrganizationPermission,
   requirePlatformPermission,
   requirePracticePermission,
   withActor,
   withPracticeScope,
 } from '@tp/db/runtime';
+import { practiceRunRefusal } from '@tp/worker/billing';
 import { z } from 'zod';
 
 import { type ActiveSession, SESSION_COOKIE, resolveSession } from '../auth/sessions';
+import { RUN_STARTING_ROUTES, SuspendedError } from '../billing/runs';
 import { cookieToken } from '../auth/tokens';
 import type { Services } from '../server/services';
 import {
@@ -26,6 +30,7 @@ import {
   type Issue,
   type MutationResult,
   NotFoundError,
+  type OrganizationSpec,
   type Outcome,
   type PlatformSpec,
   type PracticeSpec,
@@ -51,7 +56,10 @@ import {
  *    effective-permission function (withPracticeScope) for practice routes, or empty (withActor) for
  *    platform and self routes. Memberships and grants are re-resolved here, every request.
  * 5. The role check runs in the handler's process: the route's permission against the actor's roles
- *    on the practice (or their internal roles). A practice the actor cannot reach is "not found".
+ *    on the practice (or their internal roles, or their role in the organization the route names). A
+ *    practice the actor cannot reach, or an organization they are no member of, is "not found". A route
+ *    that starts new work is refused, with the database's reason, while the practice's organization is
+ *    suspended (docs/adr/0050).
  * 6. A mutation records its request key in the same transaction (a replay does nothing), runs, and
  *    records its audit event; pages get the application shell.
  *
@@ -179,6 +187,13 @@ async function run<R>(running: Running, handle: () => Promise<R>): Promise<Outco
 async function refusal(error: unknown, kind: Route['kind'], services: Services, actor: Actor, practiceId: string | null): Promise<Outcome<never>> {
   if (error instanceof NotFoundError) {
     return { status: 'not_found' };
+  }
+  if (error instanceof SuspendedError) {
+    return { status: 'suspended', reason: error.message };
+  }
+  if (isPgError(error, '55000')) {
+    // The database refused new work for a suspended organization's practice (migration 20261029150000).
+    return { status: 'suspended', reason: (error as Error).message };
   }
   if (error instanceof InputError) {
     return { status: 'invalid', issues: error.issues };
@@ -311,6 +326,12 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
             throw new NotFoundError();
           }
           const access = requirePracticePermission(scope, practiceId, spec.permission);
+          if (RUN_STARTING_ROUTES.has(spec.id)) {
+            const reason = await practiceRunRefusal(scope.client, practiceId);
+            if (reason !== null) {
+              throw new SuspendedError(reason);
+            }
+          }
           const roles = await platformRoles(scope);
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId, roles }, () =>
             spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, practiceId, access, platformRoles: roles }),
@@ -318,6 +339,45 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
         });
       } catch (error) {
         return refusal(error, spec.kind, services, actor, practiceId);
+      }
+    },
+  };
+}
+
+/**
+ * An organization's own records (its billing, docs/adr/0050): the organization named by
+ * params.organizationId, under the route's organization permission, with no practice in scope. An
+ * organization the actor is no member of is "not found"; the database checks the permission again
+ * where it matters.
+ */
+export function organizationRoute<P extends { readonly organizationId: string }, I, R>(spec: OrganizationSpec<P, I, R>): Route<R> {
+  const shape = common(spec, { kind: 'organization', permission: spec.permission });
+  return {
+    ...shape,
+    invoke: async (request, services) => {
+      const parsed = parse(spec, request, shape.mutation);
+      if (isOutcome(parsed)) {
+        return parsed;
+      }
+      const session = await signedIn(request, services);
+      if (isOutcome(session)) {
+        return session;
+      }
+      const actor = actorOf(session);
+      const organizationId = parsed.params.organizationId;
+      try {
+        return await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+          if ((await organizationRoles(scope, organizationId)).length === 0) {
+            throw new NotFoundError();
+          }
+          const held = await requireOrganizationPermission(scope, organizationId, spec.permission);
+          const roles = await platformRoles(scope);
+          return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
+            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held }),
+          );
+        });
+      } catch (error) {
+        return refusal(error, spec.kind, services, actor, null);
       }
     },
   };

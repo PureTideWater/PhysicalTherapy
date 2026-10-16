@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { DOCUMENT_KINDS, type DocumentKind, type DocumentStatus, type PracticeScope, type ScopeClient, loadPracticeCipher, recordAuditEvent, rolesPermit } from '@tp/db/runtime';
+import { practiceRunRefusal } from '@tp/worker/billing';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -81,11 +82,13 @@ export const uploadsPage = practiceRoute({
   params: z.object({ practiceId: opaqueId }),
   handle: async ({ scope, practiceId, access }): Promise<UploadsPageData> => {
     const open = await baaOnFile(scope, practiceId);
+    // A suspended organization's uploads pause with the reason (docs/adr/0050); what is on file stays readable.
+    const suspension = await practiceRunRefusal(scope.client, practiceId);
     return {
       practiceId,
       canUpload: rolesPermit(access.roles, 'file.upload'),
       roles: access.roles,
-      gate: { open, reason: open ? null : NO_BAA },
+      gate: { open: open && suspension === null, reason: !open ? NO_BAA : suspension === null ? null : `Uploads are paused: ${suspension}.` },
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
     };
   },

@@ -87,6 +87,8 @@ export type ShellSection =
   | 'support'
   | 'specialist_queue'
   | 'rule_releases'
+  | 'billing'
+  | 'console_billing'
   | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
@@ -168,6 +170,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
                 <RailLink href="/console/rule-releases" active={section === 'rule_releases'}>
                   Rule releases
                 </RailLink>
+                <RailLink href="/console/billing" active={section === 'console_billing'}>
+                  Billing status
+                </RailLink>
               </>
             ) : null}
             {specialist ? (
@@ -183,6 +188,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           </RailLink>
           <RailLink href="/account/notifications" active={section === 'notification_preferences'}>
             Notification preferences
+          </RailLink>
+          <RailLink href="/settings/billing" active={section === 'billing'}>
+            Billing
           </RailLink>
         </nav>
         <div className="mt-auto flex flex-col gap-2">

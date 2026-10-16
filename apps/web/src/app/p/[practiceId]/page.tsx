@@ -125,6 +125,7 @@ const OUTCOME_NAMES: Readonly<Record<string, string>> = {
   retrying: 'Failed; retrying',
   succeeded: 'Succeeded',
   failed: 'Failed three times',
+  refused: 'Refused: the organization is suspended',
 };
 
 /**
@@ -142,7 +143,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="practice" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications } = page.data;
+  const { practice, agreements, access, supportGrants, freshness, dashboard, notifications, suspension } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
@@ -151,6 +152,15 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
+      {suspension === null ? null : (
+        <Alert variant="destructive" data-notice="suspended" role="alert">
+          <AlertTitle>New runs have stopped</AlertTitle>
+          <AlertDescription>
+            {suspension[0]?.toUpperCase()}
+            {suspension.slice(1)}. Everything here stays readable; uploads, pricing runs, monitoring, packet exports and reports start again once it is resolved. The organization&apos;s administrator sees why in Settings, Billing.
+          </AlertDescription>
+        </Alert>
+      )}
       {freshness.failedRun === null ? null : (
         <Alert variant="destructive" data-job={freshness.failedRun.jobId}>
           <AlertTitle>Last run failed</AlertTitle>
