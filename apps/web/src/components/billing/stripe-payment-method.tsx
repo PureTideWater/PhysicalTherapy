@@ -1,7 +1,9 @@
 'use client';
 
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
-import { type Stripe, loadStripe } from '@stripe/stripe-js';
+import type { Stripe } from '@stripe/stripe-js';
+// The pure entry point: Stripe.js loads from Stripe only once an administrator starts adding a method, not on import.
+import { loadStripe } from '@stripe/stripe-js/pure';
 import { Alert, AlertDescription, Button } from '@tp/ui';
 import { type FormEvent, useMemo, useState } from 'react';
 

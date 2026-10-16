@@ -25,8 +25,16 @@ async function seededGroup(): Promise<{ readonly id: string; readonly name: stri
   });
 }
 
-test('an organization administrator pays by test ACH: the bank account, the monthly plan, the settled debit and the paid invoice (J18)', async ({ page }) => {
+test('an organization administrator pays by test ACH: the bank account, the monthly plan, the settled debit and the paid invoice (J18)', async ({ page, baseURL }) => {
   const group = await seededGroup();
+  // In test mode nothing loads from Stripe (Stripe.js loads only when Stripe's own form starts).
+  const foreign: string[] = [];
+  page.on('request', (request) => {
+    const url = request.url();
+    if (!url.startsWith(baseURL ?? '') && !url.startsWith('data:')) {
+      foreign.push(url);
+    }
+  });
   await signInWithTotp(page, 'practice-admin');
   await page.getByRole('navigation', { name: 'Account' }).getByRole('link', { name: 'Billing' }).click();
   await expect(page).toHaveURL(/\/settings\/billing$/);
@@ -64,6 +72,7 @@ test('an organization administrator pays by test ACH: the bank account, the mont
     subscription: (await client.query<{ plan: string; status: string }>('SELECT plan, status FROM subscription WHERE organization_id = $1', [group.id])).rows,
   }));
   expect(recorded).toEqual({ invoices: [{ status: 'paid', paid: true, method: 'us_bank_account', remaining: '0' }], subscription: [{ plan: 'monthly', status: 'active' }] });
+  expect(foreign).toEqual([]);
 });
 
 test('the webhook route refuses a body without Stripe’s signature, and records nothing', async ({ request }) => {
