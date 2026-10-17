@@ -10,7 +10,7 @@ import {
   removeRateRecord,
 } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { CONTRACT_KINDS, type CandidateReview, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
+import { CONTRACT_KINDS, CORRECTION_FORMAT, type CandidateReview, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
 import type { DocumentStore } from '@tp/worker/documents';
 
 import { evidenceFor } from '../contracts/evidence';
@@ -40,7 +40,8 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  */
 
 export const CONTRACT_PROPOSAL_FORMAT = 'tp-contract-proposal/1';
-export const CORRECTION_FORMAT = 'tp-eval-correction/1';
+/** The permitted example's expectation, as the evaluation inside the PHI boundary reads it (the gateway's permitted.ts). */
+export { CORRECTION_FORMAT };
 
 /** A candidate as the proposal stores it: the verifier's review, and the rate record it was proposed as. */
 export interface StoredCandidate extends Omit<CandidateReview, 'rateRecord'> {

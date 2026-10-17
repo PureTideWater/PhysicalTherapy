@@ -22,6 +22,24 @@ export {
 export { CALL_TIMEOUT_MS, type GatewayConfig, assertPricesConfirmed, createProvider, pinnedModels, readGatewayConfig } from './config';
 export { EVALUATED_PURPOSES, type MissingEvaluation, RECORDED_EVALUATIONS, type RecordedEvaluation, assertEvaluated, unevaluatedModels } from './evaluated';
 export {
+  CORRECTION_FORMAT,
+  type Correction,
+  type FieldCounts as PermittedFieldCounts,
+  PERMITTED_FIELDS,
+  PERMITTED_REPORT_FORMAT,
+  type PermittedField,
+  type PermittedReport,
+  type PermittedResult,
+  addCounts,
+  correctionSchema,
+  finalKeys,
+  permittedRegressions,
+  permittedReport,
+  permittedReportSchema,
+  scorePermitted,
+  statedKeys,
+} from './permitted';
+export {
   type CompleteOptions,
   EFFORTS,
   type Effort,

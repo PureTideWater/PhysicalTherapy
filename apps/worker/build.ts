@@ -7,8 +7,10 @@ import { build } from 'esbuild';
  * migrator (`pnpm db:migrate`'s CLI), which the one-off migration task runs from the same image as
  * dist/migrate.js before a release receives traffic; it reads the migrations from ../migrations,
  * where the image puts them, and then dist/logins.js, which creates the logins from their secrets
- * (src/deploy/logins.ts; docs/adr/0049). pg's optional native binding is left out; the pure
- * JavaScript client is used.
+ * (src/deploy/logins.ts; docs/adr/0049), and dist/evaluate-permitted.js, the evaluation on a
+ * practice's permitted examples inside the PHI boundary, run as a one-off task of the worker's own task
+ * definition (src/models/permitted-cli.ts; docs/adr/0054). pg's optional native binding is left out; the
+ * pure JavaScript client is used.
  */
 await build({
   entryPoints: {
@@ -16,6 +18,7 @@ await build({
     'page-thread': '../../packages/contracts/src/evidence/page-thread.ts',
     migrate: '../../packages/db/src/cli/migrate.ts',
     logins: 'src/deploy/logins-cli.ts',
+    'evaluate-permitted': 'src/models/permitted-cli.ts',
   },
   outdir: 'dist',
   bundle: true,

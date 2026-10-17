@@ -22,7 +22,8 @@
     "dev": "tsx watch src/main.ts",
     "build": "tsx build.ts",
     "start": "node dist/main.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "eval:permitted": "tsx src/models/permitted-cli.ts"
   },
   "dependencies": {
     "@aws-sdk/client-rds": "^3.1152.0",
