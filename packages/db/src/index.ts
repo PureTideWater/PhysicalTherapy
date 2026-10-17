@@ -10,7 +10,9 @@ export { MIGRATIONS_DIR, type MigrateOptions, type MigrateResult, type Migration
 export {
   APP_DEV_LOGIN,
   APP_ROLE,
+  BILLING_DEV_LOGIN,
   BILLING_ROLE,
+  ESIGN_DEV_LOGIN,
   OPERATOR_ROLE,
   OWNER_ROLE,
   type RoleAttributes,
@@ -22,4 +24,5 @@ export {
   grantStatements,
   managedRoles,
   roleAlteration,
+  switchesTo,
 } from './roles';

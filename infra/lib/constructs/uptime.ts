@@ -12,7 +12,6 @@ import { Construct } from 'constructs';
 
 import type { EnvironmentName } from '../environments';
 import { UPTIME_SCRIPT } from '../uptime-script';
-import { WEB_HEALTH_CHECK } from './edge';
 import { privateBucket } from './storage';
 
 /**
@@ -22,7 +21,7 @@ import { privateBucket } from './storage';
  * no sign-in). Neither is signed in or touches a practice.
  */
 export const UPTIME_CHECKS = {
-  web: { method: 'GET', path: WEB_HEALTH_CHECK.path, status: 200 },
+  web: { method: 'GET', path: '/sign-in', status: 200 },
   api: { method: 'POST', path: '/api/sign-in/hardware-key/options', body: {}, status: 400 },
 } as const;
 

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 
 import { migrate } from './migrate';
-import { appDevLoginUrl } from './roles';
+import { appDevLoginUrl, billingDevLoginUrl, esignDevLoginUrl } from './roles';
 
 export { type BuiltRow, RowFactory, RowFactoryError, type Row } from './row-factory';
 export {
@@ -67,6 +67,10 @@ export async function withScratchDatabase<T>(adminUrl: string, run: (url: string
 export interface MigratedDatabase extends ScratchDatabase {
   /** The application role's dev login on the same database (tp_app_dev). */
   readonly appUrl: string;
+  /** Billing's dev login, which may SET ROLE tp_billing (tp_billing_dev). */
+  readonly billingUrl: string;
+  /** The e-signature webhook's dev login, which may SET ROLE tp_esign (tp_esign_dev). */
+  readonly esignUrl: string;
 }
 
 /** A scratch database with every migration applied and the dev login for the application role. */
@@ -78,5 +82,5 @@ export async function createMigratedDatabase(adminUrl: string): Promise<Migrated
     await database.drop();
     throw error;
   }
-  return { ...database, appUrl: appDevLoginUrl(database.url) };
+  return { ...database, appUrl: appDevLoginUrl(database.url), billingUrl: billingDevLoginUrl(database.url), esignUrl: esignDevLoginUrl(database.url) };
 }

@@ -192,7 +192,7 @@ export async function applyBillingEvent(client: BillingClient, event: BillingEve
 }
 
 export interface ReceiveDependencies {
-  /** The application login's pool (the webhook route) or any login that may SET ROLE tp_billing. */
+  /** Billing's own login (the webhook route) or the operator's: a login that may SET ROLE tp_billing (docs/adr/0055). */
   readonly pool: BillingPool;
   readonly provider: BillingProvider;
 }

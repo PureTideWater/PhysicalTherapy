@@ -2,8 +2,9 @@ import { BILLING_ROLE } from '@tp/db/runtime';
 
 /**
  * Billing's transactions (PRD 8: "Billing never reads PHI tables"; docs/adr/0050). Every billing
- * transaction runs as tp_billing (SET LOCAL ROLE): the application login (the webhook route) and the
- * operator login (the nightly jobs) may switch to it but do not inherit it, and it holds privileges on the
+ * transaction runs as tp_billing (SET LOCAL ROLE): billing's own login (the webhook route and the
+ * organization's billing screens) and the operator login (the nightly jobs) may switch to it but do not
+ * inherit it; the application's login may not switch to it at all (docs/adr/0055). It holds privileges on the
  * billing tables, the organization's name, kind, status and customer reference, and four functions
  * (counts, owners' addresses, audit events), and on no PHI table. The scope is empty, so even a policy
  * that read app.practice_ids would admit nothing.

@@ -1,5 +1,5 @@
 import { ENCRYPTED_COLUMNS } from './crypto/cipher';
-import { APP_ROLE, BILLING_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
+import { APP_ROLE, BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, OWNER_ROLE } from './roles';
 
 /**
  * The catalog test (PRD 8 Invariants; PRD 16 Tenant isolation; test matrix SEC-01), as a function so
@@ -289,6 +289,18 @@ function policyKeepsTenant(policy: PolicyRow, expected: string): boolean {
 
 const FLOAT_TYPES = /^(real|double precision|float\d*|money)(\[\])*$/;
 
+/**
+ * Definer functions only a role other than the application's may call (docs/adr/0055): the application role,
+ * which every request's login holds, must hold no EXECUTE on them.
+ */
+export const NOT_FOR_THE_APPLICATION: readonly { readonly function: string; readonly role: string; readonly reason: string }[] = [
+  {
+    function: 'record_esigned_agreement(text,text,uuid,uuid,text,text,timestamp with time zone,text,text,text)',
+    role: ESIGN_ROLE,
+    reason: 'it records a BAA or a data-rights agreement for any customer from a webhook whose signature only the e-signature webhook route checks',
+  },
+];
+
 export interface CatalogOptions {
   readonly appRole?: string;
   readonly ownerRole?: string;
@@ -443,10 +455,35 @@ export async function catalogProblems(client: Queryable, options: CatalogOptions
     }
   }
 
+  // The application role switches to no other role: not billing's (an invoice rewritten from any request), not the
+  // e-signature webhook's, not the operator's or the owner's (docs/adr/0050, 0055).
+  for (const role of [billingRole, ESIGN_ROLE, operatorRole, ownerRole]) {
+    const switches = await rows<{ switches: boolean }>(client, "SELECT to_regrole($2) IS NOT NULL AND pg_has_role($1, $2, 'SET') AS switches", [appRole, role]);
+    if (switches[0]?.switches === true) {
+      problems.push(`the application role ${appRole} may SET ROLE ${role}`);
+    }
+  }
+  for (const item of NOT_FOR_THE_APPLICATION) {
+    const found = await rows<{ app: boolean; role: boolean }>(
+      client,
+      "SELECT has_function_privilege($1, p.oid, 'EXECUTE') AS app, has_function_privilege($2, p.oid, 'EXECUTE') AS role FROM pg_proc p WHERE p.oid = to_regprocedure($3)",
+      [appRole, item.role, item.function],
+    );
+    const privileges = found[0];
+    if (privileges === undefined) {
+      problems.push(`function ${item.function} does not exist; update NOT_FOR_THE_APPLICATION`);
+    } else if (privileges.app) {
+      problems.push(`the application role ${appRole} may call ${item.function}, which only ${item.role} may: ${item.reason}`);
+    } else if (!privileges.role) {
+      problems.push(`${item.role} may not call ${item.function}`);
+    }
+  }
+
   for (const [label, role] of [
     ['application', appRole],
     ['operator', operatorRole],
     ['billing', billingRole],
+    ['e-signature', ESIGN_ROLE],
   ] as const) {
     const roleExists = await rows<{ exists: boolean }>(client, 'SELECT to_regrole($1) IS NOT NULL AS exists', [role]);
     if (roleExists[0]?.exists === true) {

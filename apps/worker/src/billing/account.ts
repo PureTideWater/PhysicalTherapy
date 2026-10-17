@@ -169,7 +169,7 @@ export async function assertManagesBilling(client: ReadClient, organizationId: s
 }
 
 export interface BillingServices {
-  /** A pool whose login may SET ROLE tp_billing (the application's or the operator's). */
+  /** A pool whose login may SET ROLE tp_billing (billing's own, or the operator's; never the application's, docs/adr/0055). */
   readonly pool: BillingPool;
   readonly provider: BillingProvider;
 }

@@ -9,12 +9,14 @@
 
 export { MODEL_PURPOSES, FLAGGED_PURPOSES, type ModelPurpose } from './purposes';
 export { type CallContext, type GatewayOptions, type GatewayResult, ModelGateway } from './gateway';
+export { CallLimiter, type CallLimits, DEFAULT_CALL_LIMITS } from './limiter';
 export {
   DuplicateModelCallError,
   GatewayConfigError,
   GatewayError,
   InputRefusedError,
   ModelBudgetExceededError,
+  ModelBusyError,
   ModelCallFailedError,
   ModelFeatureOffError,
   PhiBoundaryError,

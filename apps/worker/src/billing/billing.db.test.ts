@@ -19,7 +19,7 @@ import { recordUsageSnapshots } from './usage';
  * Billing against a real database and the local Stripe test-mode simulator (PRD 6, Billing acceptance: "A
  * test ACH payment completes; a suspended organization can read but not run"; PRD 8: "Billing never reads
  * PHI tables"; docs/adr/0050). Webhooks go through the same verification and processing the webhook route
- * uses, on the application's own login switching to tp_billing.
+ * uses, on billing's own login switching to tp_billing (the application's login may not; docs/adr/0055).
  */
 
 const SECRET = 'whsec_synthetic_billing_db_test';
@@ -29,6 +29,7 @@ const FAILING_ACH = { kind: 'us_bank_account' as const, routingNumber: SIMULATOR
 let database: MigratedDatabase;
 let owner: DatabaseClient;
 let app: DatabasePool;
+let billingPool: DatabasePool;
 let operator: DatabasePool;
 let billing: LocalBillingProvider;
 const outcomes: string[] = [];
@@ -41,6 +42,7 @@ beforeAll(async () => {
   owner = databaseClient(database.url);
   await owner.connect();
   app = openPool(database.appUrl, 4);
+  billingPool = openPool(database.billingUrl, 4);
   operator = openPool(database.url, 2);
   billing = new LocalBillingProvider({
     webhookSecret: SECRET,
@@ -50,19 +52,20 @@ beforeAll(async () => {
         waiting.push({ payload, signature });
         return;
       }
-      outcomes.push((await receiveWebhook({ pool: app, provider: billing }, { payload, signature, requestId: `test-${randomUUID()}` })).outcome);
+      outcomes.push((await receiveWebhook({ pool: billingPool, provider: billing }, { payload, signature, requestId: `test-${randomUUID()}` })).outcome);
     },
   });
 });
 
 afterAll(async () => {
   await app.end();
+  await billingPool.end();
   await operator.end();
   await owner.end();
   await database.drop();
 });
 
-const services = () => ({ pool: app, provider: billing });
+const services = () => ({ pool: billingPool, provider: billing });
 
 async function one<T>(text: string, values: unknown[] = []): Promise<T> {
   return (await owner.query(text, values)).rows[0] as T;
@@ -79,7 +82,7 @@ async function customerWithMethod(label: string, details = GOOD_ACH): Promise<Te
 /** Delivers the webhooks held back, in the order they were sent. */
 async function deliverHeld(): Promise<void> {
   for (const event of waiting.splice(0)) {
-    outcomes.push((await receiveWebhook({ pool: app, provider: billing }, { ...event, requestId: `test-${randomUUID()}` })).outcome);
+    outcomes.push((await receiveWebhook({ pool: billingPool, provider: billing }, { ...event, requestId: `test-${randomUUID()}` })).outcome);
   }
 }
 
@@ -121,7 +124,7 @@ function invoiceObject(id: string, customer: string, status: string, due: number
   };
 }
 
-const receive = (event: { payload: string; signature: string }) => receiveWebhook({ pool: app, provider: billing }, { ...event, requestId: `test-${randomUUID()}` });
+const receive = (event: { payload: string; signature: string }) => receiveWebhook({ pool: billingPool, provider: billing }, { ...event, requestId: `test-${randomUUID()}` });
 
 describe('billing with the local Stripe test-mode simulator', () => {
   it('completes a test ACH payment: the method on file, the plan, the debit settled and the invoice paid', async () => {
@@ -538,14 +541,14 @@ describe('billing reads no PHI table (PRD 8)', () => {
   it('refuses tp_billing a PHI read even inside a practice’s scope', async () => {
     const world = await createTenantWorld(owner, 'no phi for billing');
     await expect(
-      withBilling(app, async (client) => {
+      withBilling(billingPool, async (client) => {
         await client.query("SELECT set_config('app.practice_ids', $1, true)", [`{${world.practiceId}}`]);
         return client.query('SELECT count(*) FROM claim');
       }),
     ).rejects.toMatchObject({ code: '42501' });
-    await expect(withBilling(app, (client) => client.query('SELECT name FROM practice LIMIT 1'))).rejects.toMatchObject({ code: '42501' });
-    await expect(withBilling(app, (client) => client.query('SELECT email FROM "user" LIMIT 1'))).rejects.toMatchObject({ code: '42501' });
-    expect(await withBilling(app, async (client) => (await client.query('SELECT current_user AS role')).rows[0])).toEqual({ role: 'tp_billing' });
+    await expect(withBilling(billingPool, (client) => client.query('SELECT name FROM practice LIMIT 1'))).rejects.toMatchObject({ code: '42501' });
+    await expect(withBilling(billingPool, (client) => client.query('SELECT email FROM "user" LIMIT 1'))).rejects.toMatchObject({ code: '42501' });
+    expect(await withBilling(billingPool, async (client) => (await client.query('SELECT current_user AS role')).rows[0])).toEqual({ role: 'tp_billing' });
   });
 
   it('lets tp_billing call only billing’s own definer functions, and lets neither login inherit its privileges', async () => {
@@ -558,10 +561,13 @@ describe('billing reads no PHI table (PRD 8)', () => {
       `SELECT pg_get_userbyid(m.member) AS member, m.inherit_option AS inherits, m.set_option AS switches FROM pg_auth_members m WHERE m.roleid = 'tp_billing'::regrole ORDER BY 1`,
     );
     expect(members.rows).toEqual([
-      { member: 'tp_app', inherits: false, switches: true },
+      { member: 'tp_billing_dev', inherits: false, switches: true },
       { member: 'tp_operator', inherits: false, switches: true },
     ]);
     expect((await owner.query<{ usage: boolean }>("SELECT pg_has_role('tp_app_dev', 'tp_billing', 'USAGE') AS usage")).rows[0]).toEqual({ usage: false });
+    // The application's login may not switch to billing at all (docs/adr/0055): no request can rewrite an invoice.
+    expect((await owner.query<{ switches: boolean }>("SELECT pg_has_role('tp_app_dev', 'tp_billing', 'SET') AS switches")).rows[0]).toEqual({ switches: false });
+    await expect(withBilling(app, (client) => client.query("UPDATE invoice SET status = 'paid' WHERE false"))).rejects.toMatchObject({ code: '42501' });
     // The application role itself writes no billing record.
     await expect(withActor(app, randomUUID(), (scope) => scope.client.query("UPDATE invoice SET status = 'paid'"))).rejects.toMatchObject({ code: '42501' });
     expect(outcomes.length).toBeGreaterThan(0);

@@ -8,7 +8,10 @@ import { MIGRATIONS_DIR, MigrationError, historyProblems, readMigrations } from 
 import {
   APP_DEV_LOGIN,
   APP_ROLE,
+  BILLING_DEV_LOGIN,
   BILLING_ROLE,
+  ESIGN_DEV_LOGIN,
+  ESIGN_ROLE,
   OPERATOR_ROLE,
   OWNER_ROLE,
   type RoleAttributes,
@@ -84,26 +87,31 @@ describe('historyProblems', () => {
 describe('roles', () => {
   const owner = WANTED_ROLES[OWNER_ROLE] as RoleAttributes;
 
-  it('creates the dev login only when asked', () => {
-    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE]);
-    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, APP_DEV_LOGIN]);
-    expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(APP_DEV_LOGIN);
+  it('creates the dev logins only when asked', () => {
+    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE]);
+    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]);
+    for (const login of [APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]) {
+      expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(login);
+    }
     expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN}`);
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${BILLING_ROLE} TO ${BILLING_DEV_LOGIN} WITH INHERIT FALSE, SET TRUE;`);
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${ESIGN_ROLE} TO ${ESIGN_DEV_LOGIN} WITH INHERIT FALSE, SET TRUE;`);
     expect(() => createRoleStatement('someone_else')).toThrow(RoleBootstrapError);
   });
 
   it('revokes temporary tables from PUBLIC and lets the operator role connect', () => {
     const statements = grantStatements({ devLogin: false }).join('\n');
     expect(statements).toContain("REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC");
-    expect(statements).toContain(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}`);
-    // The application and operator roles switch to billing's role without inheriting it (docs/adr/0050).
-    for (const member of [APP_ROLE, OPERATOR_ROLE]) {
-      expect(statements).toContain(`GRANT ${BILLING_ROLE} TO ${member} WITH INHERIT FALSE, SET TRUE;`);
-    }
+    expect(statements).toContain(`GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}`);
+    // The operator role switches to billing's role without inheriting it (docs/adr/0050); the application role
+    // never may, and a membership an earlier bootstrap granted it is revoked (docs/adr/0055).
+    expect(statements).toContain(`GRANT ${BILLING_ROLE} TO ${OPERATOR_ROLE} WITH INHERIT FALSE, SET TRUE;`);
+    expect(statements).not.toContain(`GRANT ${BILLING_ROLE} TO ${APP_ROLE}`);
+    expect(statements).toContain(`REVOKE ${BILLING_ROLE} FROM ${APP_ROLE};`);
   });
 
-  it('never gives the application, operator, billing or owner role superuser, bypass or login', () => {
-    for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, OWNER_ROLE]) {
+  it('never gives the application, operator, billing, e-signature or owner role superuser, bypass or login', () => {
+    for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, OWNER_ROLE]) {
       expect(createRoleStatement(role)).toContain(`CREATE ROLE ${role} NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`);
       expect(WANTED_ROLES[role]).toEqual({ rolcanlogin: false, rolinherit: true, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
     }

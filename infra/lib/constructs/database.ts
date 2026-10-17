@@ -38,6 +38,13 @@ export const OPERATOR_LOGIN = 'tp_operator_login';
 export const QUEUE_LOGIN = 'tp_queue_login';
 export const QUEUE_ROLE = 'tp_queue';
 
+/**
+ * Billing's own login (docs/adr/0055): it may SET ROLE tp_billing without inheriting it, and holds nothing
+ * else. Only the web app's billing paths (Stripe's webhook, the organization's billing screens) connect with
+ * it; the application login may not switch to tp_billing at all, so no other route can write an invoice.
+ */
+export const BILLING_LOGIN = 'tp_billing_login';
+
 /** The restore drill's scratch instance in an environment: one at a time, deleted after each drill. */
 export function restoreDrillInstanceId(environment: string): string {
   return `tp-${environment}-restore-drill`;
@@ -63,12 +70,12 @@ export interface DatabaseProps {
  * daily snapshot, both kept 35 days, and survive the instance's deletion. Multi-AZ and deletion
  * protection follow the environment's settings (production has both).
  *
- * Four logins, four secrets, all encrypted under the environment key: the owner (master) login,
+ * Five logins, five secrets, all encrypted under the environment key: the owner (master) login,
  * which only the migration task uses; the application login; the operator login of the platform
- * jobs; and pg-boss's queue login (QUEUE_LOGIN).
+ * jobs; pg-boss's queue login (QUEUE_LOGIN); and billing's own login (BILLING_LOGIN).
  * They rotate every 30 days through Secrets Manager's hosted PostgreSQL rotation functions, which run
  * in the app subnets and reach Secrets Manager through its endpoint. The owner rotates itself (single
- * user). The application, operator and queue logins use the alternating-users scheme, so a running task's
+ * user). The application, operator, queue and billing logins use the alternating-users scheme, so a running task's
  * password stays valid through a rotation; their first rotation waits for the schedule because each
  * login exists only after the deploy job has created it.
  *
@@ -82,6 +89,7 @@ export class Database extends Construct {
   readonly appSecret: secretsmanager.ISecret;
   readonly operatorSecret: secretsmanager.ISecret;
   readonly queueSecret: secretsmanager.ISecret;
+  readonly billingSecret: secretsmanager.ISecret;
   /** The subnet group the instance (and the drill's scratch instance) lives in. */
   readonly subnetGroup: rds.ISubnetGroup;
   readonly restoreDrillInstanceId: string;
@@ -161,6 +169,12 @@ export class Database extends Construct {
       excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
       masterSecret: this.ownerSecret,
     }).attach(this.instance);
+    this.billingSecret = new rds.DatabaseSecret(this, 'BillingLoginSecret', {
+      username: BILLING_LOGIN,
+      encryptionKey: key,
+      excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
+      masterSecret: this.ownerSecret,
+    }).attach(this.instance);
 
     const rotationSecurityGroup = appTierSecurityGroup(this, 'RotationSecurityGroup', vpc, 'Secrets Manager rotation functions');
     const rotation = {
@@ -173,7 +187,7 @@ export class Database extends Construct {
       hostedRotation: secretsmanager.HostedRotation.postgreSqlSingleUser(rotation),
       automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),
     });
-    for (const secret of [this.appSecret, this.operatorSecret, this.queueSecret]) {
+    for (const secret of [this.appSecret, this.operatorSecret, this.queueSecret, this.billingSecret]) {
       secret.addRotationSchedule('Rotation', {
         hostedRotation: secretsmanager.HostedRotation.postgreSqlMultiUser({ ...rotation, masterSecret: this.ownerSecret }),
         automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),

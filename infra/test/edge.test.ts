@@ -11,7 +11,9 @@ import {
   MANAGED_RULE_GROUPS,
   RATE_LIMITS,
   STATIC_PATH_PATTERN,
+  LOAD_BALANCER_IDLE_TIMEOUT_SECONDS,
   WEB_HEALTH_CHECK,
+  WEB_KEEP_ALIVE_MS,
   WEB_PORT,
 } from '../lib/constructs/edge';
 import { PARAMETER_NAMES } from '../lib/deploy-parameters';
@@ -236,10 +238,23 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
 });
 
 describe('the edge contract with the web app', () => {
-  it('health-checks a page the web app serves to anyone', () => {
-    const page = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/app/sign-in/page.tsx'), 'utf8');
-    expect(page).toContain('loadPublicPage(signInPage');
-    expect(WEB_HEALTH_CHECK.path).toBe('/sign-in');
+  it('health-checks the route that asks the database, which the web app serves to anyone', () => {
+    const route = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/app/api/health/route.ts'), 'utf8');
+    expect(route).toContain('routeHandler(healthCheck');
+    const support = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/routes/support.ts'), 'utf8');
+    expect(support).toMatch(/id: 'public\.health',\s+kind: 'handler',\s+path: '\/api\/health'/);
+    expect(support).toContain("await client.query('SELECT 1')");
+    expect(WEB_HEALTH_CHECK.path).toBe('/api/health');
+  });
+
+  it('keeps a silent connection open longer than a model call can take, and the web server longer still', () => {
+    const config = readFileSync(path.resolve(import.meta.dirname, '../../packages/model-gateway/src/config.ts'), 'utf8');
+    const timeout = /export const CALL_TIMEOUT_MS = ([\d_]+);/.exec(config)?.[1];
+    expect(timeout).toBeDefined();
+    const callSeconds = Number((timeout ?? '0').replaceAll('_', '')) / 1000;
+    // Two attempts at the call timeout, and a minute for the database work around them.
+    expect(LOAD_BALANCER_IDLE_TIMEOUT_SECONDS).toBeGreaterThanOrEqual(2 * callSeconds + 60);
+    expect(WEB_KEEP_ALIVE_MS).toBeGreaterThan(LOAD_BALANCER_IDLE_TIMEOUT_SECONDS * 1000);
   });
 
   it('rate-limits the paths the sign-in routes are registered under', () => {

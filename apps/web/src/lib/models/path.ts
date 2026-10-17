@@ -1,4 +1,5 @@
 import {
+  CallLimiter,
   DuplicateModelCallError,
   FLAGGED_PURPOSES,
   GatewayConfigError,
@@ -6,6 +7,7 @@ import {
   LocalDeterministicProvider,
   MODEL_PURPOSES,
   ModelBudgetExceededError,
+  ModelBusyError,
   ModelCallFailedError,
   ModelFeatureOffError,
   ModelGateway,
@@ -34,6 +36,13 @@ export { MODEL_PROBLEMS, MODEL_PROBLEM_TEXT, type ModelProblem } from './notices
  * A gateway is built per request for the person acting: its calls are logged in model_call in that
  * person's name, in the practice's scope (PostgresModelCallStore), and its flags and budget are read the
  * same way. Screens ask modelFeatures() what to offer, in the request's own transaction.
+ *
+ * The gateway's own reads and writes (the flags, the budget's hold, the model_call row) go through the
+ * services' model pool, never the request's (docs/adr/0055): the request's transaction holds a connection of
+ * its pool while the model answers, and a second connection from the same pool for the gateway would let
+ * enough calls at once take every connection and wait forever for one more. The process also caps the calls
+ * in flight (CallLimiter: four at once, two per practice), so model calls hold at most four of the request
+ * pool's connections and the model pool always has one for each.
  */
 
 export type ModelPath =
@@ -67,9 +76,22 @@ export function modelPathFromEnv(env: Readonly<Record<string, string | undefined
 
 /** What a gateway needs of the request's services. */
 export interface ModelServices {
-  readonly pool: ConstructorParameters<typeof PostgresModelCallStore>[0];
+  /** The gateway's own pool (the application's login), apart from the one the request's transaction holds. */
+  readonly modelPool: ConstructorParameters<typeof PostgresModelCallStore>[0];
   readonly logger: Logger;
   readonly now: () => Date;
+}
+
+const limiters = new WeakMap<object, CallLimiter>();
+
+/** The process's cap on model calls in flight, one per set of services (a server builds one). */
+export function modelLimiterOf(services: ModelServices): CallLimiter {
+  let limiter = limiters.get(services);
+  if (limiter === undefined) {
+    limiter = new CallLimiter();
+    limiters.set(services, limiter);
+  }
+  return limiter;
 }
 
 const injected = new WeakMap<object, ModelPath>();
@@ -94,7 +116,14 @@ export function gatewayFor(services: ModelServices, userId: string): ModelGatewa
   if (models.kind === 'unavailable') {
     return null;
   }
-  return new ModelGateway({ provider: models.provider(), store: new PostgresModelCallStore(services.pool, { kind: 'user', userId }), logger: services.logger, production: models.production, now: services.now });
+  return new ModelGateway({
+    provider: models.provider(),
+    store: new PostgresModelCallStore(services.modelPool, { kind: 'user', userId }),
+    logger: services.logger,
+    production: models.production,
+    now: services.now,
+    limiter: modelLimiterOf(services),
+  });
 }
 
 export type ModelFeatures = Readonly<Record<ModelPurpose, boolean>>;
@@ -121,6 +150,9 @@ export function modelProblem(error: unknown): ModelProblem | null {
   }
   if (error instanceof ModelBudgetExceededError) {
     return 'budget';
+  }
+  if (error instanceof ModelBusyError) {
+    return 'busy';
   }
   if (error instanceof ModelCallFailedError || error instanceof DuplicateModelCallError) {
     return 'failed';

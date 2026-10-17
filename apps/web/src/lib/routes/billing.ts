@@ -43,8 +43,9 @@ import { opaqueId } from './schemas';
 
 const organizationParams = z.object({ organizationId: opaqueId });
 
+/** Billing's own login (docs/adr/0055): the application's may not switch to tp_billing. */
 function billingServices(services: Services): BillingServices {
-  return { pool: services.pool, provider: services.billing };
+  return { pool: services.billingPool, provider: services.billing };
 }
 
 /** A refusal of the billing workflow or the provider, as the form shows it (a code, never a value). */
@@ -311,7 +312,7 @@ export const billingWebhook = publicRoute({
   input: z.object({ payload: z.string().min(1).max(WEBHOOK_MAX_BYTES), signature: z.string().max(2048).nullable() }),
   handle: async ({ input, services, request }) => {
     try {
-      const applied = await receiveWebhook({ pool: services.pool, provider: services.billing }, { payload: input.payload, signature: input.signature, requestId: request.requestId });
+      const applied = await receiveWebhook(billingServices(services), { payload: input.payload, signature: input.signature, requestId: request.requestId });
       return { received: true, outcome: applied.outcome };
     } catch (error) {
       if (error instanceof WebhookSignatureError || error instanceof BillingEventError) {

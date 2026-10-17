@@ -32,6 +32,15 @@ export class ModelBudgetExceededError extends GatewayError {
   }
 }
 
+/** The process, or the practice, already has as many calls in flight as it may (limiter.ts); nothing was sent. */
+export class ModelBusyError extends GatewayError {
+  override readonly name = 'ModelBusyError';
+
+  constructor() {
+    super('busy', 'other model calls are in flight on this server; nothing was sent, so try again in a minute or enter the record by hand');
+  }
+}
+
 /** A practice's material would leave for a model from somewhere other than production (PRD 14, PHI minimization). */
 export class PhiBoundaryError extends GatewayError {
   override readonly name = 'PhiBoundaryError';

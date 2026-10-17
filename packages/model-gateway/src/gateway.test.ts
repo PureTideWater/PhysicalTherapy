@@ -4,7 +4,8 @@ import { price } from '@tp/pricing';
 import { contractAgreement, lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
-import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
+import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
+import { CallLimiter } from './limiter';
 import type { FlagRow } from './flags';
 import { type GatewayResult, ModelGateway, mostCost } from './gateway';
 import { canonicalJson, sha256Hex } from './hash';
@@ -341,6 +342,36 @@ describe('MOD-05: the daily budget', () => {
     expect((await harness.store.hold(SYNTHETIC_IDS.practice, { since: new Date('2026-10-16T00:00:00Z'), amountMicro: 1n, budgetMicro: 500n * 1_000_000n, holdMs: 1_000 })).holdId).toBeNull();
     now = new Date('2026-10-16T12:00:02Z');
     expect((await harness.store.hold(SYNTHETIC_IDS.practice, { since: new Date('2026-10-16T00:00:00Z'), amountMicro: 1n, budgetMicro: 500n * 1_000_000n, holdMs: 1_000 })).spent).toBe(20n * 1_000_000n);
+  });
+});
+
+describe('the cap on calls in flight (docs/adr/0055)', () => {
+  it('refuses a call over the cap at once, before anything is read or held, and frees the place when a call ends', async () => {
+    let finish: (response: ModelResponse) => void = () => undefined;
+    const provider = new ScriptedProvider('local', [
+      () =>
+        new Promise<ModelResponse>((resolve) => {
+          finish = resolve;
+        }),
+      answer(syntheticEvidenceOutput()),
+    ]);
+    const limiter = new CallLimiter({ perProcess: 1, perPractice: 1 });
+    const harness = localGateway({ provider, limiter });
+    const first = harness.gateway.suggestEvidenceRequests(CONTEXT, syntheticEvidenceInput());
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(limiter.current(SYNTHETIC_IDS.practice)).toEqual({ total: 1, practice: 1 });
+    const holds = harness.store.holds.size;
+    await expect(harness.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: 'request-2' }, syntheticEvidenceInput())).rejects.toBeInstanceOf(ModelBusyError);
+    expect(harness.store.holds.size).toBe(holds);
+    expect(harness.logger.lines.some((line) => line.fields.error_code === 'MODEL_CALLS_BUSY')).toBe(true);
+    finish({ text: JSON.stringify(syntheticEvidenceOutput()), tokensIn: 0, tokensOut: 0, stopReason: 'end' });
+    await expect(first).resolves.toMatchObject({ passed: true });
+    expect(limiter.current(SYNTHETIC_IDS.practice)).toEqual({ total: 0, practice: 0 });
+    await expect(harness.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: 'request-3' }, syntheticEvidenceInput())).resolves.toMatchObject({ passed: true });
+    // A refused call (the kill switch) frees its place too.
+    const off = localGateway({ limiter, flags: [{ key: 'model.kill_switch', scope: 'global', scopeId: null, value: true }] });
+    await expect(off.gateway.suggestEvidenceRequests(CONTEXT, syntheticEvidenceInput())).rejects.toBeInstanceOf(ModelFeatureOffError);
+    expect(limiter.current(SYNTHETIC_IDS.practice)).toEqual({ total: 0, practice: 0 });
   });
 });
 

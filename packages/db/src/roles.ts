@@ -11,11 +11,16 @@
  *   audit log and calls the operator functions; the owner stays with migrations (docs/adr/0014).
  * - `tp_billing` is billing's role (Stripe's webhooks, dunning, the nightly usage snapshot; docs/adr/0050):
  *   NOSUPERUSER, NOBYPASSRLS, owns nothing, cannot log in. It holds the billing tables and nothing on
- *   any PHI table. The application and operator roles may SET ROLE to it but do not inherit it, so
- *   billing code runs with its privileges alone and the application never holds them.
- * - `tp_app_dev` is a login for the application role in dev and test only, with a fixed local
- *   password. It is created only when asked (`pnpm db:migrate --dev-login`); production logins come
- *   from Secrets Manager.
+ *   any PHI table. The operator role and billing's own login may SET ROLE to it but do not inherit it,
+ *   so billing code runs with its privileges alone. The application role may not (docs/adr/0055): a
+ *   request on the application's login can never switch to billing and rewrite an invoice.
+ * - `tp_esign` holds only EXECUTE on record_esigned_agreement() (docs/adr/0053 and 0055): NOLOGIN, owns
+ *   nothing. Only the e-signature webhook's own login may SET ROLE to it, so no other route can record
+ *   an agreement by that path.
+ * - `tp_app_dev`, `tp_billing_dev` and `tp_esign_dev` are the dev and test logins for the application
+ *   role, billing's login and the e-signature webhook's login, with fixed local passwords. They are
+ *   created only when asked (`pnpm db:migrate --dev-login`); production logins come from Secrets
+ *   Manager (apps/worker/src/deploy/logins.ts).
  *
  * Roles belong to the whole PostgreSQL cluster, so the bootstrap is idempotent and tolerates another
  * database's migration creating the same role at the same moment. It works from a superuser (dev and
@@ -27,9 +32,16 @@ export const OWNER_ROLE = 'tp_owner';
 export const APP_ROLE = 'tp_app';
 export const OPERATOR_ROLE = 'tp_operator';
 export const BILLING_ROLE = 'tp_billing';
+export const ESIGN_ROLE = 'tp_esign';
 export const APP_DEV_LOGIN = 'tp_app_dev';
 /** Local only: the dev and test login's password. Never used outside a developer machine or CI. */
 export const APP_DEV_PASSWORD = 'tp_app_dev';
+/** Local only: billing's dev and test login (its password is its name, as the application's). */
+export const BILLING_DEV_LOGIN = 'tp_billing_dev';
+/** Local only: the e-signature webhook's dev and test login. */
+export const ESIGN_DEV_LOGIN = 'tp_esign_dev';
+/** The dev logins, each with the role it may switch to (the application's inherits its role). */
+const DEV_LOGINS = [APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN] as const;
 
 /** The pg_roles columns the bootstrap manages, and the keyword that sets each. */
 const ATTRIBUTES = {
@@ -55,7 +67,10 @@ export const WANTED_ROLES: Readonly<Record<string, RoleAttributes>> = {
   [APP_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [OPERATOR_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [BILLING_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
+  [ESIGN_ROLE]: { rolcanlogin: false, rolinherit: true, ...NOTHING },
   [APP_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
+  [BILLING_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
+  [ESIGN_DEV_LOGIN]: { rolcanlogin: true, rolinherit: true, ...NOTHING },
 };
 
 function attributeWords(attributes: RoleAttributes): string {
@@ -93,9 +108,9 @@ EXCEPTION WHEN duplicate_object OR unique_violation THEN NULL;
 END $$`;
 }
 
-/** The roles the bootstrap creates, in order: the owner, the application, operator and billing roles and, when asked, the dev login. */
+/** The roles the bootstrap creates, in order: the owner, the application, operator, billing and e-signature roles and, when asked, the dev logins. */
 export function managedRoles(options: { readonly devLogin: boolean }): string[] {
-  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ...(options.devLogin ? [APP_DEV_LOGIN] : [])];
+  return [OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, ...(options.devLogin ? DEV_LOGINS : [])];
 }
 
 /** CREATE ROLE for one managed role; a role that already exists is left for roleAlteration. */
@@ -104,7 +119,7 @@ export function createRoleStatement(name: string): string {
   if (wanted === undefined) {
     throw new RoleBootstrapError(`${name} is not a role the bootstrap manages`);
   }
-  const password = name === APP_DEV_LOGIN ? ` PASSWORD '${APP_DEV_PASSWORD}'` : '';
+  const password = (DEV_LOGINS as readonly string[]).includes(name) ? ` PASSWORD '${name}'` : '';
   return createRole(name, `${attributeWords(wanted)}${password}`);
 }
 
@@ -117,23 +132,22 @@ export function grantStatements(options: { readonly devLogin: boolean }): string
     EXECUTE format('GRANT ${OWNER_ROLE} TO %I', current_user);
   END IF;
 END $$`,
-    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}', current_database()); END $$`,
+    `DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}', current_database()); END $$`,
     // No temporary tables for anyone but the database's owner and superusers: a temporary table could
     // otherwise stand in for a real one in a function that does not search pg_temp last.
     `DO $$ BEGIN EXECUTE format('REVOKE TEMPORARY ON DATABASE %I FROM PUBLIC', current_database()); END $$`,
     'REVOKE CREATE ON SCHEMA public FROM PUBLIC',
     `GRANT USAGE, CREATE ON SCHEMA public TO ${OWNER_ROLE}`,
-    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}`,
-    // Billing code runs as tp_billing: the application and operator logins switch to it with SET ROLE,
-    // and neither inherits its privileges (docs/adr/0050).
-    ...[APP_ROLE, OPERATOR_ROLE].map(
-      (member) => `DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = '${BILLING_ROLE}'::regrole AND m.member = '${member}'::regrole) THEN
-    GRANT ${BILLING_ROLE} TO ${member} WITH INHERIT FALSE, SET TRUE;
+    `GRANT USAGE ON SCHEMA public TO ${APP_ROLE}, ${OPERATOR_ROLE}, ${BILLING_ROLE}, ${ESIGN_ROLE}`,
+    // Billing code runs as tp_billing: the operator role switches to it with SET ROLE without inheriting
+    // its privileges (docs/adr/0050); so does billing's own login (logins.ts). The application role never
+    // may (docs/adr/0055): a membership an earlier bootstrap granted it is revoked.
+    switchesTo(OPERATOR_ROLE, BILLING_ROLE),
+    `DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = '${BILLING_ROLE}'::regrole AND m.member = '${APP_ROLE}'::regrole) THEN
+    REVOKE ${BILLING_ROLE} FROM ${APP_ROLE};
   END IF;
-EXCEPTION WHEN unique_violation THEN NULL;
 END $$`,
-    ),
   ];
   if (options.devLogin) {
     statements.push(`DO $$ BEGIN
@@ -142,8 +156,19 @@ END $$`,
   END IF;
 EXCEPTION WHEN unique_violation THEN NULL;
 END $$`);
+    statements.push(switchesTo(BILLING_DEV_LOGIN, BILLING_ROLE), switchesTo(ESIGN_DEV_LOGIN, ESIGN_ROLE));
   }
   return statements;
+}
+
+/** Lets `member` SET ROLE to `role` without inheriting its privileges (idempotent). */
+export function switchesTo(member: string, role: string): string {
+  return `DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.roleid = '${role}'::regrole AND m.member = '${member}'::regrole) THEN
+    GRANT ${role} TO ${member} WITH INHERIT FALSE, SET TRUE;
+  END IF;
+EXCEPTION WHEN unique_violation THEN NULL;
+END $$`;
 }
 
 /** SQLSTATEs a concurrent bootstrap in another database can raise on the shared role catalog. */
@@ -205,10 +230,24 @@ export async function bootstrapRoles(client: Queryable, options: { readonly devL
   }
 }
 
+function devLoginUrl(databaseUrl: string, login: string): string {
+  const url = new URL(databaseUrl);
+  url.username = login;
+  url.password = login;
+  return url.toString();
+}
+
 /** The URL of the dev and test login for the application role, on the same server and database. */
 export function appDevLoginUrl(databaseUrl: string): string {
-  const url = new URL(databaseUrl);
-  url.username = APP_DEV_LOGIN;
-  url.password = APP_DEV_PASSWORD;
-  return url.toString();
+  return devLoginUrl(databaseUrl, APP_DEV_LOGIN);
+}
+
+/** The URL of billing's dev and test login (it may SET ROLE tp_billing), on the same server and database. */
+export function billingDevLoginUrl(databaseUrl: string): string {
+  return devLoginUrl(databaseUrl, BILLING_DEV_LOGIN);
+}
+
+/** The URL of the e-signature webhook's dev and test login (it may SET ROLE tp_esign), on the same server and database. */
+export function esignDevLoginUrl(databaseUrl: string): string {
+  return devLoginUrl(databaseUrl, ESIGN_DEV_LOGIN);
 }

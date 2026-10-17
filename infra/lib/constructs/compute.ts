@@ -21,7 +21,7 @@ import { type ConnectionUrl, DATABASE_SETTINGS, RDS_CA_BUNDLE_PATH, launchScript
 import { logGroupName } from '../log-groups';
 import { DATABASE_NAME, QUEUE_ROLE } from './database';
 import type { Database } from './database';
-import { WEB_PORT } from './edge';
+import { WEB_KEEP_ALIVE_MS, WEB_PORT } from './edge';
 import type { Identity } from './identity';
 import { MigrationRun } from './migration-run';
 import type { Network } from './network';
@@ -42,6 +42,7 @@ export const LOGIN_SECRET_VARIABLES = {
   app: { username: 'TP_APP_LOGIN_USERNAME', password: 'TP_APP_LOGIN_PASSWORD' },
   operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
   queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
+  billing: { username: 'TP_BILLING_LOGIN_USERNAME', password: 'TP_BILLING_LOGIN_PASSWORD' },
 } as const;
 
 /** The worker's job split (apps/worker/src/config.ts readWorkerJobs): practice jobs, or platform jobs. */
@@ -92,8 +93,8 @@ interface ContainerSpec {
  * public address, each under its own security group, its own log group (kept a year, under the
  * environment key) and the existing task roles:
  *
- * - web: the Next.js server behind the load balancer, as ApplicationRole, with the application and
- *   queue logins and the cookie-sealing secret.
+ * - web: the Next.js server behind the load balancer, as ApplicationRole, with the application, queue
+ *   and billing logins and the cookie-sealing secret.
  * - worker: the practice jobs (WORKER_JOBS=practice), as ApplicationRole, with the application and
  *   queue logins.
  * - platform: the platform jobs (WORKER_JOBS=platform: the audit copy, the restore drill, the support
@@ -174,6 +175,8 @@ export class Compute extends Construct {
       urls: [
         { url: { variable: 'DATABASE_URL' }, secret: database.appSecret },
         { url: QUEUE, secret: database.queueSecret },
+        // Billing's own login, for the webhook and the billing screens alone (docs/adr/0055).
+        { url: { variable: 'BILLING_DATABASE_URL' }, secret: database.billingSecret },
       ],
       environment: {
         ...common,
@@ -196,6 +199,8 @@ export class Compute extends Construct {
         // No e-signature vendor is chosen yet: agreements are recorded in the console (docs/adr/0053).
         ESIGN_PROVIDER: 'none',
         TP_ENVIRONMENT: environmentName,
+        // Longer than the load balancer's idle timeout, so it never reuses a connection the server closed.
+        KEEP_ALIVE_TIMEOUT: String(WEB_KEEP_ALIVE_MS),
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
@@ -275,6 +280,7 @@ export class Compute extends Construct {
         ...loginField(database.appSecret, LOGIN_SECRET_VARIABLES.app),
         ...loginField(database.operatorSecret, LOGIN_SECRET_VARIABLES.operator),
         ...loginField(database.queueSecret, LOGIN_SECRET_VARIABLES.queue),
+        ...loginField(database.billingSecret, LOGIN_SECRET_VARIABLES.billing),
       },
     });
     const appSubnets = network.vpc.selectSubnets(network.appSubnets).subnets;

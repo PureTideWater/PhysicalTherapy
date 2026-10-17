@@ -52,7 +52,7 @@ describe('the cause of a changed line, in words', () => {
 
 describe('the content checkout of the Rule releases screen', () => {
   it('is CONTENT_ROOT, else in development the repository the server runs from, and none in production', () => {
-    const base = { DATABASE_URL: 'postgres://tp_app_dev:x@localhost:5432/tp' };
+    const base = { DATABASE_URL: 'postgres://tp_app_dev:x@localhost:5432/tp', BILLING_DATABASE_URL: 'postgres://tp_billing_dev:x@localhost:5432/tp' };
     expect(readWebConfig({ ...base, CONTENT_ROOT: '/srv/content' }).contentRoot).toBe('/srv/content');
     const production = {
       ...base,

@@ -273,7 +273,7 @@ describe('handler errors', () => {
 });
 
 describe('the web configuration', () => {
-  const base = { DATABASE_URL: 'postgres://tp_app_dev:x@localhost:5432/tp' };
+  const base = { DATABASE_URL: 'postgres://tp_app_dev:x@localhost:5432/tp', BILLING_DATABASE_URL: 'postgres://tp_billing_dev:x@localhost:5432/tp' };
   const key = Buffer.alloc(32, 1).toString('base64');
 
   it('defaults to the local providers in development', () => {
@@ -281,6 +281,20 @@ describe('the web configuration', () => {
     expect(config).toMatchObject({ production: false, origin: 'http://localhost:3000', rpId: 'localhost', auth: { kind: 'dev', directory: defaultDevAuthDirectory() }, keys: { kind: 'local' } });
     expect(config.keys.kind === 'local' && config.keys.masterKey.equals(developmentMasterKey())).toBe(true);
     expect(config.cookieSecret).toHaveLength(32);
+  });
+
+  it('connects billing and the e-signature webhook on their own logins: the dev logins in development, explicit ones in production (docs/adr/0055)', () => {
+    const dev = readWebConfig({ DATABASE_URL: 'postgres://tp_app_dev:tp_app_dev@localhost:5432/tp' });
+    expect(dev.billingDatabaseUrl).toBe('postgres://tp_billing_dev:tp_billing_dev@localhost:5432/tp');
+    expect(dev.esignDatabaseUrl).toBe('postgres://tp_esign_dev:tp_esign_dev@localhost:5432/tp');
+    expect(readWebConfig({ ...base, ESIGN_PROVIDER: 'none' }).esignDatabaseUrl).toBeNull();
+    expect(readWebConfig({ ...base, ESIGN_DATABASE_URL: 'postgres://e:x@localhost:5432/tp' }).esignDatabaseUrl).toBe('postgres://e:x@localhost:5432/tp');
+    const e2e = { DATABASE_URL: base.DATABASE_URL, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TP_AUTH_PROVIDER: 'dev', TP_KEY_PROVIDER: 'local', AUTH_COOKIE_SECRET: key, TP_LOCAL_MASTER_KEY: key };
+    expect(() => readWebConfig(e2e)).toThrow(new ConfigError('BILLING_DATABASE_URL is required in production'));
+    expect(() => readWebConfig({ ...e2e, BILLING_DATABASE_URL: base.BILLING_DATABASE_URL, ESIGN_PROVIDER: 'local' })).toThrow(
+      new ConfigError('ESIGN_DATABASE_URL is required for an e-signature vendor in production'),
+    );
+    expect(readWebConfig({ ...e2e, BILLING_DATABASE_URL: base.BILLING_DATABASE_URL }).esignDatabaseUrl).toBeNull();
   });
 
   it('requires every implementation choice explicitly in production', () => {

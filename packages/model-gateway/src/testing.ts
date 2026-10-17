@@ -8,6 +8,7 @@ import type { DenialLetterInput, DenialLetterOutput, OtherPatientCheck } from '.
 import type { EvidenceRequestsInput, EvidenceRequestsOutput } from './functions/evidence-requests';
 import type { NarrativeInput, NarrativeOutput } from './functions/narrative';
 import { ModelGateway } from './gateway';
+import type { CallLimiter } from './limiter';
 import { sha256Hex } from './hash';
 import type { ModelProvider } from './provider';
 import { LocalDeterministicProvider } from './providers/local';
@@ -201,6 +202,7 @@ export interface LocalGatewayOptions {
   readonly provider?: ModelProvider;
   readonly timeoutMs?: number;
   readonly now?: () => Date;
+  readonly limiter?: CallLimiter;
 }
 
 export function localGateway(options: LocalGatewayOptions = {}) {
@@ -220,6 +222,7 @@ export function localGateway(options: LocalGatewayOptions = {}) {
     production: options.production ?? false,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.limiter === undefined ? {} : { limiter: options.limiter }),
   });
   return { gateway, provider, local, store, logger };
 }

@@ -25,11 +25,11 @@ import { developmentMasterKey } from './src/lib/server/config';
  */
 const bundledChromium = existsSync(chromium.executablePath());
 
-/** The application role's dev login on the e2e database (packages/db/src/roles.ts, tp_app_dev). */
-function appLoginUrl(): string {
+/** A dev login on the e2e database (packages/db/src/roles.ts: tp_app_dev, tp_billing_dev, tp_esign_dev; each password is its name). */
+function devLoginUrl(login: 'tp_app_dev' | 'tp_billing_dev' | 'tp_esign_dev'): string {
   const url = new URL(e2eDatabaseUrl());
-  url.username = 'tp_app_dev';
-  url.password = 'tp_app_dev';
+  url.username = login;
+  url.password = login;
   return url.toString();
 }
 
@@ -60,7 +60,10 @@ export default defineConfig({
     stderr: 'pipe',
     env: {
       E2E_ADMIN_URL: e2eAdminUrl(),
-      DATABASE_URL: appLoginUrl(),
+      DATABASE_URL: devLoginUrl('tp_app_dev'),
+      // Billing's and the e-signature webhook's own logins: the application's may not switch to their roles (docs/adr/0055).
+      BILLING_DATABASE_URL: devLoginUrl('tp_billing_dev'),
+      ESIGN_DATABASE_URL: devLoginUrl('tp_esign_dev'),
       APP_ORIGIN: E2E_ORIGIN,
       // The production build with the local providers, which only the e2e suite may ask for.
       TP_ALLOW_LOCAL_PROVIDERS: 'e2e',

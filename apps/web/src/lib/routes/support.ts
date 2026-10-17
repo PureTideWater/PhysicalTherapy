@@ -169,6 +169,29 @@ export const maintenancePage = publicRoute({
   sample: { params: () => ({}) },
 });
 
+/**
+ * The load balancer's health check (docs/adr/0049 and 0055): one round trip to the database on the pool every
+ * request uses. A task whose pool is starved, or that cannot reach the database, fails it within the pool's
+ * connection timeout and is replaced; /sign-in, the check before, touched no database and stayed healthy.
+ */
+export const healthCheck = publicRoute({
+  id: 'public.health',
+  kind: 'handler',
+  path: '/api/health',
+  phi: false,
+  params: z.object({}),
+  handle: async ({ services }) => {
+    const client = await services.pool.connect();
+    try {
+      await client.query('SELECT 1');
+    } finally {
+      client.release();
+    }
+    return { status: 'ok' as const };
+  },
+  sample: { params: () => ({}) },
+});
+
 /** A screen's key, as the help link names it (a ShellSection, or another screen's own key). */
 const screenKey = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/, 'a screen');
 
@@ -434,4 +457,4 @@ export const setMaintenance = platformRoute({
   sample: { params: () => ({}), input: () => ({ on: 'false' }) },
 });
 
-export const SUPPORT_ROUTES = [statusPage, maintenancePage, supportRequestPage, createTicket, ticketsPage, setTicketStatus, consoleStatusPage, setComponentStatus, openIncident, updateIncident, setMaintenance] as const;
+export const SUPPORT_ROUTES = [statusPage, maintenancePage, healthCheck, supportRequestPage, createTicket, ticketsPage, setTicketStatus, consoleStatusPage, setComponentStatus, openIncident, updateIncident, setMaintenance] as const;

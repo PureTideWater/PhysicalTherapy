@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { openPool } from '@tp/db';
+import { CONNECTION_TIMEOUT_MS, openPool } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import { PgBoss } from 'pg-boss';
 
@@ -68,7 +68,7 @@ try {
 
 if (platformWorker !== undefined && platform !== null) {
   try {
-    const boss = new PgBoss(platformWorker.queueDatabaseUrl);
+    const boss = new PgBoss({ connectionString: platformWorker.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
     boss.on('error', () => {
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });
     });
@@ -83,7 +83,7 @@ if (platformWorker !== undefined && platform !== null) {
 
 if (config !== undefined && intake !== undefined && notifications !== undefined) {
   try {
-    const boss = new PgBoss(config.queueDatabaseUrl);
+    const boss = new PgBoss({ connectionString: config.queueDatabaseUrl, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
     boss.on('error', () => {
       // pg-boss errors are logged by code only; their text can carry SQL and connection details.
       logger.error('queue error', { error_code: 'QUEUE_ERROR' });

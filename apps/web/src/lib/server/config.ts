@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { developmentMasterKey } from '@tp/db/runtime';
+import { billingDevLoginUrl, developmentMasterKey, esignDevLoginUrl } from '@tp/db/runtime';
 import { z } from 'zod';
 
 /**
@@ -35,6 +35,8 @@ const schema = z.object({
   TP_LOCAL_MASTER_KEY: base64Key.optional(),
   KMS_KEY_ID: z.string().min(1).optional(),
   QUEUE_DATABASE_URL: z.url().optional(),
+  BILLING_DATABASE_URL: z.url().optional(),
+  ESIGN_DATABASE_URL: z.url().optional(),
   DOCUMENTS_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/).optional(),
   DOCUMENTS_KMS_KEY_ID: z.string().min(1).optional(),
   DOCUMENTS_DIR: z.string().min(1).optional(),
@@ -85,6 +87,17 @@ export interface WebConfig {
   readonly keys: KeyProviderSettings;
   /** pg-boss's login, which the web app queues jobs with; DATABASE_URL unless QUEUE_DATABASE_URL is set. */
   readonly queueDatabaseUrl: string;
+  /**
+   * Billing's own login (BILLING_DATABASE_URL; docs/adr/0055), which alone may SET ROLE tp_billing: the Stripe
+   * webhook and the organization's billing screens use it, and no other route. Required in production; in
+   * development, the dev login tp_billing_dev on DATABASE_URL's server and database.
+   */
+  readonly billingDatabaseUrl: string;
+  /**
+   * The e-signature webhook's own login (ESIGN_DATABASE_URL), which alone may SET ROLE tp_esign and record a signed
+   * agreement; null when no vendor is configured (the webhook then refuses every event).
+   */
+  readonly esignDatabaseUrl: string | null;
   readonly documents: DocumentSettings;
   /**
    * The checkout whose content/ the internal console's Rule releases screen reads, checks and prepares
@@ -204,6 +217,7 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     documents = { kind: 'local', dir: settings.DOCUMENTS_DIR ?? defaultDocumentsDirectory() };
   }
 
+  const esign = esignSettings(settings, production);
   return {
     production,
     databaseUrl: settings.DATABASE_URL,
@@ -213,10 +227,12 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     auth,
     keys,
     queueDatabaseUrl: settings.QUEUE_DATABASE_URL ?? settings.DATABASE_URL,
+    billingDatabaseUrl: production ? needed(settings.BILLING_DATABASE_URL, 'BILLING_DATABASE_URL') : (settings.BILLING_DATABASE_URL ?? billingDevLoginUrl(settings.DATABASE_URL)),
+    esignDatabaseUrl: esign.kind === 'none' ? null : production ? needed(settings.ESIGN_DATABASE_URL, 'ESIGN_DATABASE_URL', 'for an e-signature vendor in production') : (settings.ESIGN_DATABASE_URL ?? esignDevLoginUrl(settings.DATABASE_URL)),
     documents,
     contentRoot: settings.CONTENT_ROOT ?? (production ? null : defaultContentRoot()),
     supportEmail: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.SUPPORT_EMAIL, 'SUPPORT_EMAIL') : (settings.SUPPORT_EMAIL ?? 'support@synthetic.test'),
-    esign: esignSettings(settings, production),
+    esign,
     agreementsDir: settings.AGREEMENTS_DIR ?? path.join(tmpdir(), 'tp-agreements'),
     complianceExportDir: settings.COMPLIANCE_EXPORT_DIR ?? (production ? null : path.join(tmpdir(), 'tp-compliance-export')),
     environment: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TP_ENVIRONMENT, 'TP_ENVIRONMENT') : (settings.TP_ENVIRONMENT ?? 'dev'),

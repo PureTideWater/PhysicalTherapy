@@ -21,8 +21,8 @@ export {
   tenantTables,
 } from './catalog';
 export { readDatabaseUrl } from './config';
-export { BILLING_ROLE, OPERATOR_ROLE } from './roles';
+export { BILLING_ROLE, ESIGN_ROLE, OPERATOR_ROLE, billingDevLoginUrl, esignDevLoginUrl } from './roles';
 export * from './crypto';
 export * from './schema';
 export { RETENTION_CLASSES, type RetentionClass, RetentionError, type RetentionStart, retainUntil } from './retention';
-export { type DatabaseClient, type DatabasePool, type DatabasePoolClient, databaseClient, openPool } from './connect';
+export { CONNECTION_TIMEOUT_MS, type DatabaseClient, type DatabasePool, type DatabasePoolClient, IDLE_TIMEOUT_MS, databaseClient, openPool } from './connect';

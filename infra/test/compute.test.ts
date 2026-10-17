@@ -68,13 +68,14 @@ function field(secretLogicalId: string, name: string): unknown {
   return { 'Fn::Join': ['', [ref(secretLogicalId), `:${name}::`]] };
 }
 
-/** The four logins' secrets (the attachments their tasks reference). */
+/** The five logins' secrets (the attachments their tasks reference). */
 function logins(stack: PlatformStack) {
   return {
     owner: logicalIdOf(stack, stack.database.ownerSecret),
     app: logicalIdOf(stack, stack.database.appSecret),
     operator: logicalIdOf(stack, stack.database.operatorSecret),
     queue: logicalIdOf(stack, stack.database.queueSecret),
+    billing: logicalIdOf(stack, stack.database.billingSecret),
   };
 }
 
@@ -181,6 +182,8 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(secretsOf(definitions.web)).toEqual({
       ...urlSecrets('DATABASE_URL', secret.app),
       ...urlSecrets('QUEUE_DATABASE_URL', secret.queue),
+      // Billing's own login reaches the web app alone, for its billing paths (docs/adr/0055).
+      ...urlSecrets('BILLING_DATABASE_URL', secret.billing),
       AUTH_COOKIE_SECRET: ref(logicalIdOf(stack, stack.compute.cookieSecret)),
       STRIPE_SECRET_KEY: field(logicalIdOf(stack, stack.compute.stripeSecret), 'secretKey'),
       STRIPE_WEBHOOK_SECRET: field(logicalIdOf(stack, stack.compute.stripeSecret), 'webhookSecret'),
@@ -188,21 +191,22 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     });
     expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.app), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
     expect(secretsOf(definitions.platform)).toEqual({ ...urlSecrets('OPERATOR_DATABASE_URL', secret.operator), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
-    // The migration also reads the three service logins, which it creates when they are missing.
+    // The migration also reads the four service logins, which it creates when they are missing.
     expect(secretsOf(definitions.migration)).toEqual({
       ...urlSecrets('DATABASE_URL', secret.owner),
       ...loginFields(LOGIN_SECRET_VARIABLES.app, secret.app),
       ...loginFields(LOGIN_SECRET_VARIABLES.operator, secret.operator),
       ...loginFields(LOGIN_SECRET_VARIABLES.queue, secret.queue),
+      ...loginFields(LOGIN_SECRET_VARIABLES.billing, secret.billing),
     });
   });
 
   it('lets each task\'s execution role read only the secrets its container names, and decrypt them only through Secrets Manager', () => {
     const expected: Record<TaskName, string[]> = {
-      web: [secret.app, secret.queue, logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)],
+      web: [secret.app, secret.queue, secret.billing, logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)],
       worker: [secret.app, secret.queue],
       platform: [secret.operator, secret.queue],
-      migration: [secret.owner, secret.app, secret.operator, secret.queue],
+      migration: [secret.owner, secret.app, secret.operator, secret.queue, secret.billing],
     };
     for (const name of TASKS) {
       const roleId = (propertiesOf(tasks[name][1]).ExecutionRoleArn as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0];
@@ -234,7 +238,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     }
     expect(definitions.web.Command).toEqual([
       launchScript(
-        [{ variable: 'DATABASE_URL' }, { variable: 'QUEUE_DATABASE_URL', role: 'tp_queue' }],
+        [{ variable: 'DATABASE_URL' }, { variable: 'QUEUE_DATABASE_URL', role: 'tp_queue' }, { variable: 'BILLING_DATABASE_URL' }],
         COMMANDS.web,
       ),
     ]);
@@ -440,8 +444,14 @@ describe('the compute contract with the applications', () => {
 
   it('sets only settings the web app reads (apps/web/src/lib/server/config.ts, and billing\'s in apps/web/src/lib/billing/config.ts)', () => {
     const config = source('apps/web/src/lib/server/config.ts') + source('apps/web/src/lib/billing/config.ts');
-    for (const name of [...configured(definitionOf('tp-staging-web')), 'DATABASE_URL', 'QUEUE_DATABASE_URL']) {
+    // The keep-alive is the Next.js standalone server's own setting (its generated server.js reads it).
+    const nextServer = ['KEEP_ALIVE_TIMEOUT'];
+    for (const name of [...configured(definitionOf('tp-staging-web')).filter((name) => !nextServer.includes(name)), 'DATABASE_URL', 'QUEUE_DATABASE_URL', 'BILLING_DATABASE_URL']) {
       expect(config, name).toContain(`${name}:`);
+    }
+    for (const name of nextServer) {
+      expect(configured(definitionOf('tp-staging-web'))).toContain(name);
+      expect(source('apps/web/node_modules/next/dist/build/utils.js'), name).toContain(`process.env.${name}`);
     }
   });
 

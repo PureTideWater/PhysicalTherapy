@@ -47,6 +47,8 @@ const SECRET = 'whsec_synthetic_billing_routes_test';
 let database: MigratedDatabase;
 let owner: DatabaseClient;
 let app: DatabasePool;
+let billingPool: DatabasePool;
+let esignPool: DatabasePool;
 let services: Services;
 let simulator: LocalBillingProvider;
 const deliveries: { status: number; body: unknown }[] = [];
@@ -68,6 +70,8 @@ beforeAll(async () => {
   owner = databaseClient(database.url);
   await owner.connect();
   app = openPool(database.appUrl, 4);
+  billingPool = openPool(database.billingUrl, 4);
+  esignPool = openPool(database.esignUrl, 2);
   const sealer = new Sealer(randomBytes(32));
   simulator = new LocalBillingProvider({
     webhookSecret: SECRET,
@@ -83,6 +87,8 @@ beforeAll(async () => {
   services = createServices({
     origin: 'http://localhost:3100',
     pool: app,
+    billingPool,
+    esignPool,
     provider: new DevAuthProvider({
       store: new MemoryDevStore(),
       sealer: sealer.derive('dev-provider'),
@@ -99,6 +105,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.end();
+  await billingPool.end();
+  await esignPool.end();
   await owner.end();
   await database.drop();
 });

@@ -9,6 +9,7 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { DocumentStore, LocalSealedBytes, S3SealedBytes } from '@tp/worker/documents';
 import { type KeyProvider, LocalKeyProvider, type ScopeClient, type ScopePool, createKmsKeyProvider, openPool } from '@tp/db/runtime';
 import { type CompliancePlatform, FileCompliancePlatform } from '@tp/compliance';
+import { DEFAULT_CALL_LIMITS } from '@tp/model-gateway';
 import { type Logger, createLogger } from '@tp/observability';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
@@ -22,6 +23,7 @@ import { Sealer } from '../auth/seal';
 import { SignInFlow } from '../auth/sign-in';
 import { readBillingConfig } from '../billing/config';
 import { billingProvider, memoryBillingProvider } from '../billing/provider';
+import type { BillingPool } from '@tp/worker/billing';
 import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type WebConfig, readWebConfig } from './config';
@@ -33,7 +35,20 @@ import { type WebConfig, readWebConfig } from './config';
  */
 export interface Services {
   readonly origin: string;
+  /** The application role's login: every route's own transaction. It may not switch to billing's or the e-signature role. */
   readonly pool: ScopePool<ScopeClient>;
+  /**
+   * Billing's own login (docs/adr/0055), which alone may SET ROLE tp_billing: the Stripe webhook and the organization's
+   * billing screens, after the person's permission is checked in their own transaction, and nothing else.
+   */
+  readonly billingPool: BillingPool;
+  /** The e-signature webhook's own login, which alone may SET ROLE tp_esign; null when no vendor is configured. */
+  readonly esignPool: ScopePool<ScopeClient> | null;
+  /**
+   * The model gateway's own pool (the application's login; docs/adr/0055): its flag reads, budget holds and
+   * model_call rows never wait on the pool whose connection the request's transaction holds.
+   */
+  readonly modelPool: ScopePool<ScopeClient>;
   readonly provider: AuthProvider;
   readonly keys: KeyProvider;
   readonly sealer: Sealer;
@@ -100,6 +115,12 @@ function provider(config: WebConfig, sealer: Sealer): AuthProvider {
 export interface ServiceParts {
   readonly origin: string;
   readonly pool: ScopePool<ScopeClient>;
+  /** Tests that bill give billing's login (MigratedDatabase.billingUrl); otherwise billing refuses. */
+  readonly billingPool?: BillingPool;
+  /** Tests of the e-signature webhook give its login (MigratedDatabase.esignUrl); otherwise none. */
+  readonly esignPool?: ScopePool<ScopeClient> | null;
+  /** The gateway's own pool; tests that make no calls at once may leave it to the request pool. */
+  readonly modelPool?: ScopePool<ScopeClient>;
   readonly provider: AuthProvider;
   readonly keys: KeyProvider;
   readonly sealer: Sealer;
@@ -129,12 +150,21 @@ const NO_QUEUE: JobQueue = {
   enqueue: () => Promise.reject(new Error('no job queue is configured for these services')),
 };
 
+/** No billing login configured: refuses rather than falling back to the application's login. */
+const NO_BILLING_LOGIN: BillingPool = {
+  connect: () => Promise.reject(new Error('no billing login is configured for these services')),
+};
+
 export function createServices(parts: ServiceParts): Services {
   const logger = parts.logger ?? createLogger();
   const documents = parts.documents ?? new DocumentStore(new LocalSealedBytes(path.join(tmpdir(), `tp-documents-${randomUUID()}`)));
+  const billingPool = parts.billingPool ?? NO_BILLING_LOGIN;
   return {
     origin: parts.origin,
     pool: parts.pool,
+    billingPool,
+    esignPool: parts.esignPool ?? null,
+    modelPool: parts.modelPool ?? parts.pool,
     provider: parts.provider,
     keys: parts.keys,
     sealer: parts.sealer,
@@ -145,7 +175,7 @@ export function createServices(parts: ServiceParts): Services {
     queue: parts.queue ?? NO_QUEUE,
     documents,
     contentRoot: parts.contentRoot ?? null,
-    billing: parts.billing ?? memoryBillingProvider(parts.pool),
+    billing: parts.billing ?? memoryBillingProvider(billingPool),
     trustedProxyHops: parts.trustedProxyHops ?? 0,
     supportEmail: parts.supportEmail ?? 'support@synthetic.test',
     esign: parts.esign ?? null,
@@ -160,10 +190,15 @@ export function servicesFromConfig(config: WebConfig): Services {
   const logger = createLogger();
   const documents = config.documents;
   const pool = openPool(config.databaseUrl, 10);
+  const billingPool = openPool(config.billingDatabaseUrl, 4);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool,
+    billingPool,
+    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, 2),
+    // One connection for each call the process lets be in flight at once, and one to spare.
+    modelPool: openPool(config.databaseUrl, DEFAULT_CALL_LIMITS.perProcess + 1),
     provider: provider(config, sealer),
     keys: config.keys.kind === 'kms' ? createKmsKeyProvider(config.keys.keyId) : new LocalKeyProvider(config.keys.masterKey),
     sealer,
@@ -172,7 +207,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     queue: new PgBossQueue(config.queueDatabaseUrl, logger),
     documents: store,
     contentRoot: config.contentRoot,
-    billing: billingProvider(readBillingConfig(), pool),
+    billing: billingProvider(readBillingConfig(), billingPool),
     trustedProxyHops: config.trustedProxyHops,
     supportEmail: config.supportEmail,
     esign: config.esign.kind === 'local' ? new LocalESignature({ secret: config.esign.secret, directory: config.esign.directory }) : null,

@@ -1,3 +1,4 @@
+import { CONNECTION_TIMEOUT_MS } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 import { type JobPayload, type JobType, enqueue, parsePayload } from '@tp/worker/jobs';
 import { PgBoss } from 'pg-boss';
@@ -27,7 +28,7 @@ export class PgBossQueue implements JobQueue {
 
   private boss(): Promise<PgBoss> {
     this.started ??= (async () => {
-      const boss = new PgBoss({ connectionString: this.connectionString, supervise: false, schedule: false, migrate: false, max: 2 });
+      const boss = new PgBoss({ connectionString: this.connectionString, supervise: false, schedule: false, migrate: false, max: 2, connectionTimeoutMillis: CONNECTION_TIMEOUT_MS });
       boss.on('error', () => {
         // pg-boss errors are logged by code only; their text can carry SQL and connection details.
         this.logger.error('queue error', { error_code: 'QUEUE_ERROR' });

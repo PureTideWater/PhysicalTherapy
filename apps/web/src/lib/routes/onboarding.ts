@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { PROSPECT_BILLING_ARRANGEMENTS, type ProspectBillingArrangement } from '@tp/db/runtime';
+import { ESIGN_ROLE, PROSPECT_BILLING_ARRANGEMENTS, type ProspectBillingArrangement } from '@tp/db/runtime';
 import { textPhiFindings } from '@tp/observability';
 import { z } from 'zod';
 
@@ -118,8 +118,17 @@ export const agreementWebhook = publicRoute({
       throw error;
     }
     const sha256 = createHash('sha256').update(document).digest('hex');
-    const client = await services.pool.connect();
+    // The webhook's own login, as tp_esign, the one role that may record an e-signed agreement (docs/adr/0055).
+    const pool = services.esignPool;
+    if (pool === null) {
+      throw new InputError([{ field: 'payload', message: 'no e-signature login is configured; agreements are recorded in the console' }]);
+    }
+    const client = await pool.connect();
+    let open = false;
     try {
+      await client.query('BEGIN');
+      open = true;
+      await client.query(`SET LOCAL ROLE ${ESIGN_ROLE}`);
       const { rows } = await client.query<{ agreement_id: string; duplicate: boolean }>('SELECT agreement_id, duplicate FROM record_esigned_agreement($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [
         envelope.eventId,
         envelope.envelopeRef,
@@ -132,8 +141,13 @@ export const agreementWebhook = publicRoute({
         sha256,
         request.requestId,
       ]);
+      await client.query('COMMIT');
+      open = false;
       return { received: true, outcome: rows[0]?.duplicate === true ? 'duplicate' : 'recorded' };
     } catch (error) {
+      if (open) {
+        await client.query('ROLLBACK');
+      }
       if (typeof error === 'object' && error !== null && 'code' in error && (error.code === '23514' || error.code === '23503')) {
         throw new InputError([{ field: 'payload', message: (error as unknown as Error).message }]);
       }

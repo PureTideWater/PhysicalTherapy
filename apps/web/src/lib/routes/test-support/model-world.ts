@@ -65,7 +65,7 @@ const CHECKLIST_ITEM = { reason: 'NO_RATE_FOR_CODE', document: 'SYNTHETIC: the f
 export async function seedModelProposals(options: ModelWorldOptions): Promise<ModelWorldRefs> {
   const logger = createLogger({ sink: () => undefined });
   const services = (output: unknown): ModelServices & { readonly keys: KeyProvider; readonly documents: DocumentStore } => {
-    const own = { pool: options.app, logger, now: () => new Date(), keys: options.keys, documents: options.documents };
+    const own = { modelPool: options.app, logger, now: () => new Date(), keys: options.keys, documents: options.documents };
     assignModelPath(own, { kind: 'available', production: false, provider: () => answering(output) });
     return own;
   };

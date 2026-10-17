@@ -347,6 +347,26 @@ describe('the catalog test', () => {
     ]);
   });
 
+  it('fails when the application role may switch to billing’s or the e-signature webhook’s role, or call the e-signature definer (docs/adr/0055)', async () => {
+    expect(await catalogProblems(client)).toEqual([]);
+    expect(await problemsAfter(`RESET ROLE; GRANT tp_billing TO ${APP_ROLE} WITH INHERIT FALSE, SET TRUE;`)).toEqual([`the application role ${APP_ROLE} may SET ROLE tp_billing`]);
+    expect(await problemsAfter(`RESET ROLE; GRANT tp_esign TO ${APP_ROLE} WITH INHERIT FALSE, SET TRUE;`)).toEqual([`the application role ${APP_ROLE} may SET ROLE tp_esign`]);
+    const recorder = 'record_esigned_agreement(text,text,uuid,uuid,text,text,timestamp with time zone,text,text,text)';
+    expect(await problemsAfter(`GRANT EXECUTE ON FUNCTION ${recorder} TO ${APP_ROLE};`)).toEqual([expect.stringMatching(new RegExp(`^the application role ${APP_ROLE} may call record_esigned_agreement`))]);
+    expect(await problemsAfter(`REVOKE EXECUTE ON FUNCTION ${recorder} FROM tp_esign;`)).toEqual([`tp_esign may not call ${recorder}`]);
+    // As the dev login every request uses: no switch to billing, and no call to the recorder.
+    const app = new pg.Client({ connectionString: database.appUrl });
+    await app.connect();
+    try {
+      await expect(app.query('SET ROLE tp_billing')).rejects.toMatchObject({ code: '42501' });
+      await expect(
+        app.query("SELECT record_esigned_agreement('evt_x', 'env_x', gen_random_uuid(), NULL, 'baa', '1', now(), 'SYNTHETIC SIGNER', repeat('0', 64), 'request')"),
+      ).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      await app.end();
+    }
+  });
+
   it('fails when the application role owns anything', async () => {
     const problems = await problemsAfter(`CREATE TABLE throwaway_owned (id uuid PRIMARY KEY); RESET ROLE; ALTER TABLE throwaway_owned OWNER TO ${APP_ROLE};`);
     expect(problems).toEqual(

@@ -1,12 +1,13 @@
 import type { Logger } from '@tp/observability';
 
 import { CALL_TIMEOUT_MS } from './config';
-import { DuplicateModelCallError, GatewayError, ModelBudgetExceededError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
+import { DuplicateModelCallError, GatewayError, ModelBudgetExceededError, ModelBusyError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import type { ContractPagesInput, ContractTermsProposal } from './functions/contract-terms';
 import type { DenialLetterInput, DenialLetterProposal } from './functions/denial-letter';
 import type { EvidenceRequestsInput, EvidenceRequestsProposal } from './functions/evidence-requests';
 import type { NarrativeInput, NarrativeProposal } from './functions/narrative';
 import { jsonSha256, sha256Hex } from './hash';
+import type { CallLimiter } from './limiter';
 import { type ModelPrice, PRICES, callCost, priceOf } from './prices';
 import { modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
@@ -19,6 +20,8 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  * The gateway: the only code that calls a model (PRD 14; CLAUDE.md, Never: "Call a model outside
  * packages/model-gateway"). Each of the four purpose-typed functions goes through one path, in order:
  *
+ * 0. The process's cap on calls in flight, when it has one (limiter.ts): a call over it is refused at once,
+ *    before anything else is read, so calls waiting on a model never hold all of a task's connections.
  * 1. The kill switch, and a v1.5 purpose's own flag (test matrix MOD-06): with either off, nothing is
  *    sent and the caller falls back to hand entry.
  * 2. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
@@ -49,6 +52,8 @@ export interface GatewayOptions {
   readonly timeoutMs?: number;
   readonly prices?: readonly ModelPrice[];
   readonly now?: () => Date;
+  /** The process's cap on calls in flight, shared by every gateway the process builds (the web app's: one per server). */
+  readonly limiter?: CallLimiter;
 }
 
 export interface CallContext {
@@ -132,8 +137,21 @@ export class ModelGateway {
   }
 
   private async run<I, O, P, C>(spec: PurposeSpec<I, O, P, C>, context: CallContext, input: I): Promise<GatewayResult<P>> {
-    const { provider, store, logger } = this.options;
     this.checkContext(context);
+    const release = this.options.limiter?.tryAcquire(context.practiceId);
+    if (release === null) {
+      this.options.logger.warn('a model call was refused: the server has as many calls in flight as it may', { error_code: 'MODEL_CALLS_BUSY' });
+      throw new ModelBusyError();
+    }
+    try {
+      return await this.limited(spec, context, input);
+    } finally {
+      release?.();
+    }
+  }
+
+  private async limited<I, O, P, C>(spec: PurposeSpec<I, O, P, C>, context: CallContext, input: I): Promise<GatewayResult<P>> {
+    const { provider, store, logger } = this.options;
     const { practiceId } = context;
 
     const features = await store.features(practiceId);

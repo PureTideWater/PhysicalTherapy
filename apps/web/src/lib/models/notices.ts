@@ -5,12 +5,13 @@
  */
 
 /** Why a model call proposed nothing. */
-export const MODEL_PROBLEMS = ['off', 'budget', 'failed', 'refused', 'invalid_output', 'misstated', 'unavailable'] as const;
+export const MODEL_PROBLEMS = ['off', 'budget', 'busy', 'failed', 'refused', 'invalid_output', 'misstated', 'unavailable'] as const;
 export type ModelProblem = (typeof MODEL_PROBLEMS)[number];
 
 export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
   off: 'Model features are switched off for this practice; enter it by hand.',
   budget: 'The practice has spent its model budget for today; enter it by hand, or try again tomorrow.',
+  busy: 'Other model requests are being answered right now, so nothing was sent; try again in a minute, or enter it by hand.',
   failed: 'The model did not answer (it timed out, was busy or refused); nothing was proposed. Enter it by hand, or try again.',
   refused: 'The input cannot be sent to a model as it is; enter it by hand.',
   invalid_output: 'The model’s answer did not follow its schema; nothing was proposed. Enter it by hand.',

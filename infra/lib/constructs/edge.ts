@@ -23,7 +23,17 @@ export const WEB_PORT = 3000;
  * What the load balancer asks of each web task (a public page that renders on the server, so a task
  * that cannot serve pages leaves the target group). The uptime checks call the same page from outside.
  */
-export const WEB_HEALTH_CHECK = { path: '/sign-in', healthyHttpCodes: '200' } as const;
+export const WEB_HEALTH_CHECK = { path: '/api/health', healthyHttpCodes: '200' } as const;
+
+/**
+ * How long the load balancer keeps a silent connection (docs/adr/0055). A model call runs inside the request
+ * that asks for it (docs/adr/0052): two attempts of up to 60 seconds each (PRD 14), with the database work
+ * around them. The idle timeout stands well above that, so a slow answer reaches the screen as the notice and
+ * hand entry, not as the load balancer's 504. The web server keeps its connections open longer still
+ * (WEB_KEEP_ALIVE_MS), so the load balancer never reuses one the server has just closed.
+ */
+export const LOAD_BALANCER_IDLE_TIMEOUT_SECONDS = 180;
+export const WEB_KEEP_ALIVE_MS = (LOAD_BALANCER_IDLE_TIMEOUT_SECONDS + 5) * 1000;
 
 /** TLS 1.2 and 1.3 only, with forward-secret AEAD ciphers (ELBSecurityPolicy-TLS13-1-2-Res-2021-06). */
 export const LOAD_BALANCER_TLS_POLICY = elbv2.SslPolicy.TLS13_RES;
@@ -69,7 +79,8 @@ export interface EdgeProps {
  * - An internet-facing application load balancer in the edge subnets, HTTPS only: one listener on
  *   443 with the AppDomainName certificate and TLS 1.2 or later, no listener on 80, a security group
  *   that admits 443 alone and reaches only the web tasks on their port. Invalid header fields are
- *   dropped; production is deletion-protected. Its target group checks WEB_HEALTH_CHECK.
+ *   dropped; production is deletion-protected. Its target group checks WEB_HEALTH_CHECK, which touches the
+ *   database, so a task whose pool is starved is replaced.
  * - A regional web ACL on it: two rate-based rules (all requests, and sign-in) first, then the AWS
  *   managed IP reputation, common and known-bad-input rule groups. Metrics go to CloudWatch; sampled
  *   requests are off, because a sampled request keeps its headers, session cookies among them. A
@@ -106,7 +117,7 @@ export class Edge extends Construct {
       dropInvalidHeaderFields: true,
       deletionProtection: props.deletionProtection,
       http2Enabled: true,
-      idleTimeout: Duration.seconds(60),
+      idleTimeout: Duration.seconds(LOAD_BALANCER_IDLE_TIMEOUT_SECONDS),
     });
     this.targetGroup = new elbv2.ApplicationTargetGroup(this, 'Web', {
       vpc,
