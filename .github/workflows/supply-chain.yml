@@ -7,6 +7,11 @@ name: supply-chain
 # docs/adr/0010-supply-chain-gates-beside-ci.md records why these live here.
 on: [pull_request]
 
+# A newer push to the same pull request cancels the older run, so superseded runs spend no minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
