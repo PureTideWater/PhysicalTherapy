@@ -110,6 +110,18 @@ describe('workflows', () => {
     expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
   });
 
+  it('print a failed run’s screenshot diffs and actuals into the job log, each under 300 KB as its path and its base64 on one line', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const print = stepIndex(steps, (step) => step.run?.includes('base64 -w 0') === true);
+    // After the e2e step and the artifact upload, which stays right after it.
+    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
+    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4'));
+    const step = steps[print] as Step & { if?: string };
+    expect(step.if).toBe('failure()');
+    expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
+    expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
+  });
+
   it('install Playwright’s own Chromium, with its system libraries, before the unit tests, so the worker’s print checks run and the brand baselines compare under the build that made them', () => {
     const steps = workflow('ci.yml').jobs.check?.steps ?? [];
     const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');

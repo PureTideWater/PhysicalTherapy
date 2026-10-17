@@ -52,6 +52,14 @@ jobs:
             brand-screenshots/
           if-no-files-found: ignore
           retention-days: 14
+      # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
+      # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
+      - if: failure()
+        run: |
+          [ -d apps/web/test-results ] || exit 0
+          find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
+            echo "$file $(base64 -w 0 "$file")"
+          done
       - run: pnpm build
       - run: pnpm cdk:diff
   mutation:

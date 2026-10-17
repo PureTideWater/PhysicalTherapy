@@ -178,7 +178,9 @@ text the baselines hold is drawn in the brand's web faces (Chromium's record of 
 host preferring Inter for sans-serif or not, and a glyph check of the faces for each character shown, the truncation's
 ellipsis included), so the host's installed fonts do not enter them either. The screenshots for people stay in
 `brand-screenshots/`, and CI uploads them with the Playwright report and test results (the diffs of a failed
-comparison included) after the e2e step, failed runs included.
+comparison included) after the e2e step, failed runs included. A failed run also prints each diff and actual picture
+under `apps/web/test-results` smaller than 300 KB into the job's log, as its path and its base64 on one line, so a
+comparison can be read where the artifact cannot be fetched.
 
 **Printed documents print at full size.** Chromium shrinks a whole PDF to fit when anything is wider than the inside
 pages' content box (8.5 in less the stylesheet's 0.75 in margins: 672 CSS px), the full-bleed Paper cover and the 16 px
@@ -218,7 +220,8 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   refuses Google's font loader; `pnpm test:e2e` runs the font-host journey, the copy journey (`e2e/copy.spec.ts`, the D11
   placements and the undecorated sign-in) and the brand journey with its baselines. `tools/test/workflows.test.ts` pins
   the Chromium install step right before the unit tests (and so before the e2e step), the artifact upload right after
-  the e2e step, the seven baselines, and the e2e browser's text rendering switches and `e2e/fonts.conf`.
+  the e2e step, the print of a failed run's pictures after it, the seven baselines, and the e2e browser's text
+  rendering switches and `e2e/fonts.conf`.
 - A deliberate change to the header or the cover, or an upgrade of `@playwright/test` (which moves Chromium; Dependabot
   proposes one weekly), may need new baselines: on Linux with Playwright's Chromium, run
   `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the seven images (the
