@@ -681,7 +681,15 @@ export async function statementOf(scope: Scope, practiceId: string, statementId:
   const statement = storedStatement(row);
   const ledger = await ledgerById(scope, practiceId);
   const check = recomputeStatement(statement, ledger);
-  const verified = reportReconciliation({ report: { kind: 'roi_statement', id: row.id }, proofLevel: statement.proofLevel, statedRecoveredCents: statement.recoveredCents, recoveredEntryIds: statement.links.recovered, ledger });
+  // The Verified gate (docs/adr/0055), as the print job runs it: a statement whose figures no longer match their entries never carries the seal.
+  const verified = reportReconciliation({
+    report: { kind: 'roi_statement', id: row.id },
+    proofLevel: statement.proofLevel,
+    statedRecoveredCents: statement.recoveredCents,
+    recoveredEntryIds: statement.links.recovered,
+    ledger,
+    figuresMatch: check.matches,
+  });
   return {
     ...summaryOf(row),
     feesCents: row.fees_cents,

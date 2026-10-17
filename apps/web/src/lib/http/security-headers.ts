@@ -69,6 +69,15 @@ export const STATIC_SECURITY_HEADERS: readonly { readonly key: string; readonly 
   { key: 'Origin-Agent-Cluster', value: '?1' },
 ];
 
+/**
+ * The public brand art under /brand (apps/web/public/brand) may be embedded from another origin: the email's
+ * header lockup is loaded by mail clients, some of them web pages on their own origin, which a same-origin
+ * resource policy would refuse. Only these files, which are the brand's published art and carry no data,
+ * take it; every other response keeps same-origin.
+ */
+export const PUBLIC_BRAND_ASSET_SOURCE = '/brand/:path*';
+export const PUBLIC_BRAND_ASSET_HEADERS: readonly { readonly key: string; readonly value: string }[] = [{ key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' }];
+
 /** The documents bucket's origins a presigned upload is sent to, from the server's settings (none locally). */
 export function uploadOrigins(env: Readonly<Record<string, string | undefined>>): string[] {
   const bucket = env.DOCUMENTS_BUCKET;

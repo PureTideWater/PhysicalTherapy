@@ -2,7 +2,7 @@ import { type FigureCheck, type LedgerEntry, type ReportReconciliation, type Sta
 import { type Cents, formatUsd } from '@tp/money';
 
 import { brandedDocument, figureColumns } from '../report/brand';
-import { escapeHtml } from '../report/escape';
+import { escapeHtml, escapeWithFigures } from '../report/escape';
 
 /**
  * The ROI statement as one self-contained HTML document, which the statement job prints to PDF with
@@ -30,11 +30,10 @@ export interface StatementDocument {
   readonly reconciliation: ReportReconciliation;
 }
 
-// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
+// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables, colors and figure-amount).
 const STYLE = `
   h2 { border-bottom: 1px solid var(--pw-line); padding-bottom: 3pt; }
   .pins { color: var(--pw-slate); font-size: 9pt; }
-  .figure-amount { font-family: var(--pw-font-mono); font-weight: 500; font-variant-numeric: tabular-nums; }
   table { margin: 4pt 0 8pt; font-size: 8.5pt; }
   .empty { color: var(--pw-slate); font-style: italic; }
   footer { margin-top: 18pt; font-size: 8pt; color: var(--pw-slate); border-top: 1px solid var(--pw-line); padding-top: 4pt; }
@@ -74,7 +73,7 @@ function entryTable(caption: string, entries: readonly LedgerEntry[], empty: str
 
 function figure(title: string, note: string, check: FigureCheck, empty: string): string {
   return `<h2>${escapeHtml(title)}: <span class="figure-amount">${escapeHtml(usd(check.storedCents))}</span></h2>
-  <p>${escapeHtml(note)} ${escapeHtml(check.matches ? `Its ${String(check.entries.length)} linked entries give ${usd(check.recomputedCents)}.` : `Its linked entries give ${usd(check.recomputedCents)}, not the figure stored.`)}</p>
+  <p>${escapeHtml(note)} ${escapeWithFigures(check.matches ? `Its ${String(check.entries.length)} linked entries give ${usd(check.recomputedCents)}.` : `Its linked entries give ${usd(check.recomputedCents)}, not the figure stored.`)}</p>
   ${entryTable(`Entries of ${title.toLowerCase()}`, check.entries, empty)}`;
 }
 

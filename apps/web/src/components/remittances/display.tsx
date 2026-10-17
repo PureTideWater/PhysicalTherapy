@@ -1,4 +1,5 @@
 import { cents, formatUsd } from '@tp/money';
+import { STAGE_LABELS } from '@tp/triage';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
@@ -30,14 +31,8 @@ export function claimStatusName(code: string): string {
   return CLAIM_STATUS_NAMES[code] ?? `Status ${code}`;
 }
 
-const STATUS_LABELS: Readonly<Record<LineStatus, string>> = {
-  flagged: 'Flagged (investigatory)',
-  validated: 'Validated',
-  actionable: 'Actionable',
-  payer_approved: 'Payer approved',
-  recovered: 'Recovered',
-  unpriced: 'Unpriced',
-};
+/** The five stages' labels (recovered names the cash that proves it, never "Recovered" alone), and unpriced. */
+const STATUS_LABELS: Readonly<Record<LineStatus, string>> = { ...STAGE_LABELS, unpriced: 'Unpriced' };
 
 /**
  * Each status's tint (docs/adr/0054): recovered is whole (cash at the proof level); validated and actionable

@@ -138,8 +138,80 @@ describe('reportReconciliation: the Verified gate (docs/adr/0055)', () => {
     expect(reportReconciliation(input([reversal, posted], cents(400n), { ledger: [earlier, reversal, posted] }))).toMatchObject({ reconciledToCash: false, reason: 'line_not_proved' });
   });
 
+  it('refuses a total that links an entry twice', () => {
+    const posted = make('posted', 10000n);
+    const doubled: ReportReconciliationInput = { ...input([posted], cents(20000n)), recoveredEntryIds: [posted.id, posted.id] };
+    expect(reportReconciliation(doubled)).toMatchObject({ reconciledToCash: false, reason: 'duplicate_entry', recoveredCents: 0n, lines: 0 });
+    // Linked once, the same entry gives what it holds.
+    expect(reportReconciliation(input([posted], cents(10000n)))).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });
+  });
+
+  it('refuses a total whose linked posting the ledger has since reversed (a wrong match undone, LED-07)', () => {
+    const posted = make('posted', 10000n, { line: 'line-1' });
+    const other = make('posted', 500n, { line: 'line-2' });
+    const later = reverse(posted);
+    // The statement linked the posting before the reversal existed; the reversal takes the posting's date, so it is in the period.
+    const result = reportReconciliation(input([posted, other], cents(10500n), { ledger: [posted, other, later] }));
+    expect(result).toEqual({ reconciledToCash: false, source: reconciliationSource(REPORT), reason: 'entry_corrected_since', proofLevel: 'posted', recoveredCents: 10500n, lines: 2 });
+    // Linked with its reversal (the statement made after it), the line nets to zero and the rest is proved.
+    expect(reportReconciliation(input([posted, later, other], cents(500n)))).toMatchObject({ reconciledToCash: true, reason: 'reconciled', lines: 1 });
+  });
+
+  it('refuses a total whose linked posting the ledger has since adjusted, or whose linked adjustment it has since reversed', () => {
+    const posted = make('posted', 4000n);
+    const lower = adjust(posted, -1500n);
+    expect(reportReconciliation(input([posted], cents(4000n), { ledger: [posted, lower] }))).toMatchObject({ reconciledToCash: false, reason: 'entry_corrected_since' });
+    expect(reportReconciliation(input([posted, lower], cents(2500n)))).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });
+    // The adjustment linked, its reversal made later: the cash is back to 4000, not the 2500 the links give.
+    const undone = reverse(lower);
+    expect(reportReconciliation(input([posted, lower], cents(2500n), { ledger: [posted, lower, undone] }))).toMatchObject({ reconciledToCash: false, reason: 'entry_corrected_since' });
+    // A later recoupment's reversal counts the same way.
+    const recouped = make('recouped', 300n);
+    expect(reportReconciliation(input([posted, recouped], cents(3700n), { ledger: [posted, recouped, reverse(recouped)] }))).toMatchObject({ reconciledToCash: false, reason: 'entry_corrected_since' });
+    // A correction of an entry the report does not link (another period's posting) is no reason to refuse.
+    const elsewhere = make('posted', 900n, { line: 'line-9' });
+    expect(reportReconciliation(input([posted], cents(4000n), { ledger: [posted, elsewhere, reverse(elsewhere)] }))).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });
+  });
+
+  it('refuses a report whose other figures no longer recompute from their entries', () => {
+    const posted = make('posted', 3000n);
+    expect(reportReconciliation({ ...input([posted], cents(3000n)), figuresMatch: false })).toMatchObject({ reconciledToCash: false, reason: 'figures_differ', recoveredCents: 3000n, lines: 1 });
+    expect(reportReconciliation({ ...input([posted], cents(3000n)), figuresMatch: true })).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });
+  });
+
   it('lists every reason it can give', () => {
-    expect(RECONCILIATION_REASONS).toEqual(['reconciled', 'no_recovered_total', 'entry_not_in_ledger', 'entry_not_cash', 'total_differs', 'line_not_proved']);
+    expect(RECONCILIATION_REASONS).toEqual([
+      'reconciled',
+      'no_recovered_total',
+      'entry_not_in_ledger',
+      'duplicate_entry',
+      'entry_not_cash',
+      'entry_corrected_since',
+      'total_differs',
+      'line_not_proved',
+      'figures_differ',
+    ]);
+  });
+
+  it('is refused exactly when a linked entry was corrected after the report was made (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ posted: fc.bigInt({ min: 1n, max: 500_000n }), later: fc.constantFrom('none', 'reversed', 'adjusted') }), { minLength: 1, maxLength: 8 }),
+        fc.bigInt({ min: -400_000n, max: 400_000n }).filter((amount) => amount !== 0n),
+        (lines, adjustment) => {
+          const postings = lines.map((line, index) => make('posted', line.posted, { line: `line-${String(index)}` }));
+          const corrections = lines.flatMap((line, index) => {
+            const posting = postings[index] as LedgerEntry;
+            return line.later === 'reversed' ? [reverse(posting)] : line.later === 'adjusted' ? [adjust(posting, adjustment)] : [];
+          });
+          const total = lines.reduce((sum, line) => sum + line.posted, 0n);
+          const result = reportReconciliation(input(postings, cents(total), { ledger: [...postings, ...corrections] }));
+          const corrected = lines.some((line) => line.later !== 'none');
+          expect(result.reconciledToCash).toBe(!corrected);
+          expect(result.reason).toBe(corrected ? 'entry_corrected_since' : 'reconciled');
+        },
+      ),
+    );
   });
 
   it('is earned exactly when the stated total is positive and is what its proved lines give (property)', () => {

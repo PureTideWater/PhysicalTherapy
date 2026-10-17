@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { statementHtml } from '../reconcile/statement-html';
 import { brandedDocument, inlineSvg, reportStyles, verifiedBadge, verifiedSeal } from './brand';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
+import { amountsNotInMono } from './test-support/figures';
 
 /**
  * The PaidWhole report frame (docs/brand/BRAND.md, section 7; docs/adr/0055): the brand's styles and fonts
@@ -104,8 +105,31 @@ describe('a statement’s cover', () => {
   });
 });
 
+describe('the inside pages’ running header', () => {
+  it('is the 16 px mark alone beside the document’s title, hidden from readers, never a lockup built from the mark and the name', () => {
+    const html = statement(1200n);
+    const header = /<div class="page-header">.*?<\/div>/.exec(html)?.[0] ?? '';
+    expect(header).toMatch(/^<div class="page-header"><span class="brand"><svg viewBox="0 0 240 240" width="16.00" height="16" aria-hidden="true" focusable="false">/);
+    expect(header).toContain('<span class="title">ROI statement</span>');
+    expect(header).not.toContain('PaidWhole');
+    expect(header).toContain('<span class="practice">SYNTHETIC PRACTICE</span>');
+  });
+});
+
 describe('a billing firm’s white label (the slot milestone 12 fills)', () => {
   const frame = { title: 'Audit report', kicker: 'Contract-payment audit', heading: 'Audit report', practiceName: 'SYNTHETIC PRACTICE', meta: [], reference: 'Report report-1', whiteLabel: { firmName: 'SYNTHETIC BILLING FIRM' } };
+
+  it('names the firm, not PaidWhole, in the document’s title (the PDF’s Title) and the running header; PaidWhole is only inside the earned badge', () => {
+    for (const reconciliation of [gate(1200n), gate(1300n)]) {
+      const html = brandedDocument({ ...frame, reconciliation }, '', '<p>Body</p>');
+      expect(html).toContain('<title>Audit report | SYNTHETIC BILLING FIRM</title>');
+      expect(html).toContain('<span class="title">SYNTHETIC BILLING FIRM · Audit report</span>');
+      // Every PaidWhole the document carries is the badge's label, and the badge is there only when earned.
+      const outsideBadge = html.replace(/<span class="badge" data-verified="badge"[^>]*>.*?<\/span>/s, '');
+      expect(outsideBadge).not.toMatch(/PaidWhole/i);
+      expect(html.includes('PaidWhole')).toBe(reconciliation.reconciledToCash !== false);
+    }
+  });
 
   it('leads with the firm, shows no PaidWhole lockup or seal, and puts the badge in the footer only when earned', () => {
     const earned = brandedDocument({ ...frame, reconciliation: gate(1200n) }, '', '<p>Body</p>');
@@ -117,6 +141,13 @@ describe('a billing firm’s white label (the slot milestone 12 fills)', () => {
     expect(refused).toContain('<div class="running-footer"><span class="firm">SYNTHETIC BILLING FIRM</span></div>');
     expect(refused).not.toContain('data-verified');
   });
+});
+
+describe('dollar figures in a printed statement', () => {
+  it.skipIf(!chromiumInstalled())('are every one in IBM Plex Mono, in headings and running text as in tables (skipped where Playwright’s Chromium is not installed)', async () => {
+    expect(await amountsNotInMono(statement(1200n))).toEqual([]);
+    expect(statement(1200n)).toContain('Its 2 linked entries give <span class="figure-amount">$12.00</span>.');
+  }, 60_000);
 });
 
 describe('printing a cover with Chromium', () => {

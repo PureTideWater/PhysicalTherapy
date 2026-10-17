@@ -35,8 +35,9 @@ export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
   });
 }
 
-export function mailSender(config: Pick<NotificationConfig, 'mail'>): MailSender {
-  return config.mail.kind === 'ses' ? sesMailSender(config.mail.from) : new LocalMailSender(config.mail.dir);
+/** Email as configured; its HTML's header image is served by the application it links to (APP_ORIGIN). */
+export function mailSender(config: Pick<NotificationConfig, 'mail' | 'appOrigin'>): MailSender {
+  return config.mail.kind === 'ses' ? sesMailSender(config.mail.from, config.appOrigin) : new LocalMailSender(config.mail.dir, config.appOrigin);
 }
 
 /** The platform handlers and the operator pool they use (closed by the caller on shutdown); the queue takes the monitoring schedule's jobs. */

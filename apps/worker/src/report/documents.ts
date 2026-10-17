@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 import { brandedDocument, figureColumns } from './brand';
 import { type CsvCell, csvDocument } from './csv';
-import { escapeHtml } from './escape';
+import { escapeHtml, escapeWithFigures } from './escape';
 import { UNPRICED_REMEDIES } from './remedies';
 
 /**
@@ -288,8 +288,8 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     'Coverage report',
     content.generated_on,
     pins,
-    `<p>${escapeHtml(run)} The practice holds ${escapeHtml(plural(content.lines.lines, 'line'))} in ${escapeHtml(plural(content.lines.claims, 'claim'))}, ${escapeHtml(usd(content.lines.charge_cents))} billed.</p>
-  <h2>Priced: ${escapeHtml(`${String(content.priced.lines)} of ${String(content.of.lines)} lines (${shareText(content.priced.lines, content.of.lines)}); ${usd(content.priced.charge_cents)} of ${usd(content.of.charge_cents)} billed (${shareText(content.priced.charge_cents, content.of.charge_cents)})`)}</h2>
+    `<p>${escapeHtml(run)} The practice holds ${escapeHtml(plural(content.lines.lines, 'line'))} in ${escapeHtml(plural(content.lines.claims, 'claim'))}, ${escapeWithFigures(usd(content.lines.charge_cents))} billed.</p>
+  <h2>Priced: ${escapeWithFigures(`${String(content.priced.lines)} of ${String(content.of.lines)} lines (${shareText(content.priced.lines, content.of.lines)}); ${usd(content.priced.charge_cents)} of ${usd(content.of.charge_cents)} billed (${shareText(content.priced.charge_cents, content.of.charge_cents)})`)}</h2>
   <p>${escapeHtml(readiness)}</p>
   <h2>Unpriced reasons</h2>
   ${table(
@@ -299,8 +299,8 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     'No reason applies.',
     [1],
   )}
-  <h2>Dollars waiting on mappings: ${escapeHtml(usd(content.waiting.charge_cents))} billed</h2>
-  <p>${escapeHtml(`${plural(content.waiting.lines, 'line')} in ${plural(content.waiting.claims, 'claim')} had no mapping on their service date, ${usd(content.waiting.paid_cents)} paid.`)}</p>
+  <h2>Dollars waiting on mappings: ${escapeWithFigures(usd(content.waiting.charge_cents))} billed</h2>
+  <p>${escapeWithFigures(`${plural(content.waiting.lines, 'line')} in ${plural(content.waiting.claims, 'claim')} had no mapping on their service date, ${usd(content.waiting.paid_cents)} paid.`)}</p>
   ${table(
     'Plans waiting on mapping',
     [{ value: 'Payer' }, { value: 'Plan' }, { value: 'Lines', amount: true }, { value: 'Claims', amount: true }, { value: 'Billed', amount: true }, { value: 'Paid', amount: true }],
@@ -318,9 +318,10 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
   );
 }
 
+/** A payer's count (and, for a stage with dollars, its variance) at one stage: a figure cell, in the mono face. */
 function summaryCell(row: MonthlySummaryRow, bucket: SummaryBucketCode): Cell {
   const entry = row.figures[bucket];
-  return { value: SUMMARY_DOLLAR_BUCKETS.has(bucket) && entry.variance_cents !== null ? `${plural(entry.lines, 'line')}, ${usd(entry.variance_cents)}` : plural(entry.lines, 'line') };
+  return { value: SUMMARY_DOLLAR_BUCKETS.has(bucket) && entry.variance_cents !== null ? `${plural(entry.lines, 'line')}, ${usd(entry.variance_cents)}` : plural(entry.lines, 'line'), amount: true };
 }
 
 /** A month's variance summary as one self-contained HTML document: the month's lines, each counted once at the furthest stage it reached. */
@@ -352,7 +353,7 @@ export function monthlySummaryHtml(content: MonthlySummaryContent, pins: Documen
   <h2>By payer</h2>
   ${table(
     'Stages by payer',
-    [{ value: 'Payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => ({ value: SUMMARY_BUCKET_LABELS[bucket] }))],
+    [{ value: 'Payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => ({ value: SUMMARY_BUCKET_LABELS[bucket], amount: true }))],
     content.by_payer.map((row) => [{ value: row.payer_name ?? 'Unnamed payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => summaryCell(row, bucket))]),
     `No line has a service date in ${content.month}.`,
   )}${content.approved_alone === undefined ? '' : approvedAloneHtml(content.approved_alone)}`,

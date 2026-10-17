@@ -1,4 +1,5 @@
 import type { DocumentStatus } from '@tp/db/runtime';
+import { recoveredLabel as ledgerRecoveredLabel } from '@tp/ledger';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import { Money } from '../remittances/display';
@@ -35,15 +36,16 @@ export const EVIDENCE_WORDS: Readonly<Record<string, string>> = {
   ledger_entry: 'the entry it corrects',
 };
 
-/** The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says "posted"). */
 /**
  * The label of a recovered dollar figure: "Recovered" never stands without posted or deposited
- * (docs/brand/BRAND.md, section 7), so it names the proof level the cash is proved by.
+ * (docs/brand/BRAND.md, section 7), so it names the proof level the cash is proved by (@tp/ledger's, which
+ * the PDFs use too).
  */
 export function recoveredLabel(level: string): string {
-  return `Recovered (${level === 'deposited' ? 'deposited' : 'posted'})`;
+  return ledgerRecoveredLabel(level === 'deposited' ? 'deposited' : 'posted');
 }
 
+/** The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says "posted"). */
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
   return level === 'deposited' ? 'proved by deposit (the bank export)' : 'proved by posting (no deposit data is supplied)';
 }

@@ -1,10 +1,10 @@
-import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
+import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, recoveredLabel, reportReconciliation } from '@tp/ledger';
 import { formatUsd, parseCents } from '@tp/money';
 import { WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 
 import { type FigureColumns, brandedDocument, figureColumns } from './brand';
 import type { AuditReportContent } from './content';
-import { escapeHtml } from './escape';
+import { escapeHtml, escapeWithFigures } from './escape';
 
 /**
  * The audit report as one self-contained HTML document, which the worker prints to PDF with Chromium
@@ -87,19 +87,22 @@ export function auditReconciliation(content: AuditReportContent, proofLevel: Pro
 export function auditHtml(content: AuditReportContent, reconciliation: ReportReconciliation = auditReconciliation(content)): string {
   const { headline, run } = content;
   const labels = headline.labels;
+  // Recovered names the practice's proof level, the one the gate judged it under: never "Recovered" alone.
+  const level = reconciliation.proofLevel;
+  const recovered = recoveredLabel(level);
   const figures = [
     { label: labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases, inside their dispute windows and above materiality` },
     { label: labels.payer_approved, amount: headline.payer_approved_cents, note: 'accepted by the payer; no payer response is recorded yet' },
-    { label: labels.recovered, amount: headline.recovered_cents, note: 'posted, net of recoupments and reversals; nothing has posted yet' },
+    { label: recovered, amount: headline.recovered_cents, note: `${level}, net of recoupments and reversals; nothing has ${level === 'deposited' ? 'been deposited' : 'posted'} yet` },
   ];
   const sections: string[] = [];
   sections.push(`<section aria-label="Headline"><div class="headline">${figures
-    .map((figure) => `<div class="figure"><div class="label">${escapeHtml(figure.label)}</div><div class="amount">${escapeHtml(usd(figure.amount))}</div><div class="note">${escapeHtml(figure.note)}</div></div>`)
-    .join('')}</div><div class="below"><div><strong>${escapeHtml(labels.flagged)}:</strong> ${escapeHtml(count(headline.flagged_lines, 'line'))} short of their cohort's mode, a range of ${escapeHtml(usd(headline.flagged_range_low_cents))} to ${escapeHtml(usd(headline.flagged_range_high_cents))}; investigatory, never a claim and in no total.</div><div><strong>${escapeHtml(labels.validated)}:</strong> ${escapeHtml(usd(headline.validated_cents))} across ${escapeHtml(count(headline.validated_lines, 'line'))} priced under signed-off terms with a trace and paid below them; the actionable amount is the part of it in cases.</div></div></section>`);
+    .map((figure) => `<div class="figure"><div class="label">${escapeWithFigures(figure.label)}</div><div class="amount">${escapeHtml(usd(figure.amount))}</div><div class="note">${escapeWithFigures(figure.note)}</div></div>`)
+    .join('')}</div><div class="below"><div><strong>${escapeWithFigures(labels.flagged)}:</strong> ${escapeWithFigures(count(headline.flagged_lines, 'line'))} short of their cohort's mode, a range of ${escapeWithFigures(usd(headline.flagged_range_low_cents))} to ${escapeWithFigures(usd(headline.flagged_range_high_cents))}; investigatory, never a claim and in no total.</div><div><strong>${escapeWithFigures(labels.validated)}:</strong> ${escapeWithFigures(usd(headline.validated_cents))} across ${escapeWithFigures(count(headline.validated_lines, 'line'))} priced under signed-off terms with a trace and paid below them; the actionable amount is the part of it in cases.</div></div></section>`);
 
   const coverageRows = content.coverage.reasons.map((entry) => [entry.reason, String(entry.lines), usd(entry.charge_cents), entry.remedy]);
   sections.push(
-    `<section aria-label="Coverage"><h2>Coverage</h2><p>${escapeHtml(`${String(content.coverage.priced_lines)} of ${count(content.coverage.lines, 'line')} priced, ${usd(content.coverage.priced_charge_cents)} of ${usd(content.coverage.charge_cents)} billed.`)}</p>${table('Lines left unpriced, by reason', ['Reason', 'Lines', 'Billed', 'Remedy'], coverageRows, 'Every line priced.', { code: [1], amount: [2, 3] })}</section>`,
+    `<section aria-label="Coverage"><h2>Coverage</h2><p>${escapeWithFigures(`${String(content.coverage.priced_lines)} of ${count(content.coverage.lines, 'line')} priced, ${usd(content.coverage.priced_charge_cents)} of ${usd(content.coverage.charge_cents)} billed.`)}</p>${table('Lines left unpriced, by reason', ['Reason', 'Lines', 'Billed', 'Remedy'], coverageRows, 'Every line priced.', { code: [1], amount: [2, 3] })}</section>`,
   );
 
   const anomalyRows = content.anomalies.map((item) => [
@@ -116,13 +119,13 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     item.reviewed ? 'yes' : 'no',
   ]);
   sections.push(
-    `<section aria-label="Anomalies"><h2>Anomalies <span class="label-investigatory">(investigatory)</span></h2><p>Lines that cannot be priced yet, compared with their cohort: the same payer and plan, code and modifiers, place of service and quarter, at least ${escapeHtml(String(content.settings.anomaly_minimum_cohort))} lines. A line short of the modal allowed amount by more than ${escapeHtml(usd(content.settings.anomaly_threshold_cents))} is counted. The mode is not a contract rate: validate a cohort by obtaining its agreement, mapping its plan and pricing it.</p>${table('Cohorts', ['Label', 'Payer', 'Plan', 'Code', 'Place', 'Quarter', 'Lines', 'Modal allowed per unit', 'Short of the mode', 'Range', 'Reviewed'], anomalyRows, 'No cohort reaches the minimum size with a line short of its mode.', { code: [4, 5], date: [6], amount: [7, 8, 9, 10] })}</section>`,
+    `<section aria-label="Anomalies"><h2>Anomalies <span class="label-investigatory">(investigatory)</span></h2><p>Lines that cannot be priced yet, compared with their cohort: the same payer and plan, code and modifiers, place of service and quarter, at least ${escapeWithFigures(String(content.settings.anomaly_minimum_cohort))} lines. A line short of the modal allowed amount by more than ${escapeWithFigures(usd(content.settings.anomaly_threshold_cents))} is counted. The mode is not a contract rate: validate a cohort by obtaining its agreement, mapping its plan and pricing it.</p>${table('Cohorts', ['Label', 'Payer', 'Plan', 'Code', 'Place', 'Quarter', 'Lines', 'Modal allowed per unit', 'Short of the mode', 'Range', 'Reviewed'], anomalyRows, 'No cohort reaches the minimum size with a line short of its mode.', { code: [4, 5], date: [6], amount: [7, 8, 9, 10] })}</section>`,
   );
 
   const patternRows = content.validated.patterns.map((item) => [item.payer, item.plan, item.mapping_kind === 'ma_noncontracted' ? 'Medicare Advantage non-contracted' : 'Contract', item.behavior_text, String(item.lines), usd(item.variance_cents)]);
   const notActionableRows = content.validated.not_actionable.map((item) => [reasonText(item.reason), String(item.lines), usd(item.variance_cents)]);
   sections.push(
-    `<section aria-label="Validated discrepancies"><h2>${escapeHtml(labels.validated)} discrepancies</h2><p>${escapeHtml(`${count(content.validated.lines, 'line')} priced under signed-off terms and paid below them, ${usd(content.validated.variance_cents)} in all (expected allowed less observed allowed).`)}</p>${table('By payer pattern', ['Payer', 'Plan', 'Agreement', 'Adjustment behavior', 'Lines', 'Variance'], patternRows, 'No line was paid below its terms.', { amount: [5, 6] })}${table('Validated, not actionable', ['Why', 'Lines', 'Variance'], notActionableRows, 'Every validated line is actionable.', { amount: [2, 3] })}<p>${escapeHtml(`Overpayments: ${count(content.overpaid.lines, 'line')}, ${usd(content.overpaid.variance_cents)}; recorded and shown, never pursued.`)}</p></section>`,
+    `<section aria-label="Validated discrepancies"><h2>${escapeWithFigures(labels.validated)} discrepancies</h2><p>${escapeWithFigures(`${count(content.validated.lines, 'line')} priced under signed-off terms and paid below them, ${usd(content.validated.variance_cents)} in all (expected allowed less observed allowed).`)}</p>${table('By payer pattern', ['Payer', 'Plan', 'Agreement', 'Adjustment behavior', 'Lines', 'Variance'], patternRows, 'No line was paid below its terms.', { amount: [5, 6] })}${table('Validated, not actionable', ['Why', 'Lines', 'Variance'], notActionableRows, 'Every validated line is actionable.', { amount: [2, 3] })}<p>${escapeWithFigures(`Overpayments: ${count(content.overpaid.lines, 'line')}, ${usd(content.overpaid.variance_cents)}; recorded and shown, never pursued.`)}</p></section>`,
   );
 
   const caseRows = content.cases.map((item) => [
@@ -138,7 +141,7 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     usd(item.net_expected_cents),
   ]);
   sections.push(
-    `<section aria-label="Actionable cases"><h2>${escapeHtml(labels.actionable)}: cases by payer pattern</h2><p>${escapeHtml(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them. A pattern accumulates across runs, so a case may hold lines other runs priced: this report counts the lines this run priced, and the whole case is shown beside them.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'State', 'Lines counted (this run)', `${labels.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.', { date: [7], amount: [5, 6, 8, 9, 10] })}<p>${escapeHtml(content.pursuit.estimated ? `Pursuit cost of the open cases: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
+    `<section aria-label="Actionable cases"><h2>${escapeWithFigures(labels.actionable)}: cases by payer pattern</h2><p>${escapeWithFigures(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them. A pattern accumulates across runs, so a case may hold lines other runs priced: this report counts the lines this run priced, and the whole case is shown beside them.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'State', 'Lines counted (this run)', `${labels.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.', { date: [7], amount: [5, 6, 8, 9, 10] })}<p>${escapeWithFigures(content.pursuit.estimated ? `Pursuit cost of the open cases: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
   );
 
   const gapRows = content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind.replaceAll('_', ' '), gap.lines === 0 ? '' : String(gap.lines), gap.charge_cents === null ? '' : usd(gap.charge_cents), gap.detail, gap.remedy]);
@@ -157,6 +160,6 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
       reconciliation,
     },
     STYLE,
-    `<header><p class="pins">${escapeHtml(pins)}</p></header>${sections.join('')}<footer>Every figure carries its stage. ${escapeHtml(labels.recovered)} counts only cash posted, net of recoupments and reversals. This report is released only after a reimbursement reviewer signs an attestation naming this file's SHA-256. Report ${escapeHtml(content.report_id)}.</footer>`,
+    `<header><p class="pins">${escapeWithFigures(pins)}</p></header>${sections.join('')}<footer>Every figure carries its stage. ${escapeWithFigures(recovered)} counts only cash ${escapeWithFigures(level)}, net of recoupments and reversals. This report is released only after a reimbursement reviewer signs an attestation naming this file's SHA-256. Report ${escapeWithFigures(content.report_id)}.</footer>`,
   );
 }

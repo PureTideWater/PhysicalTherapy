@@ -21,7 +21,9 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 /**
  * The Claims and lines screen (PRD 7): a server-side paginated, filterable table of every service
  * line, with patient reference, claim control numbers, service date, code and modifiers, units,
- * charge, paid, patient share, observed allowed, expected allowed and the status chips, both from the
+ * charge, then expected allowed, observed allowed and the short (variance) between them in the brand's
+ * order (expected, paid, short; docs/brand/BRAND.md, section 7), then paid and patient share, the
+ * remittance's split of what it allowed, and the status chips, the expected and short from the
  * latest complete pricing run that priced the line (unpriced with its reason, validated when the line is
  * short of its expected amount, priced without a shortfall, or not priced yet). The net view shows each adjudicated claim once, so a reversal followed by a correction
  * shows the corrected claim alone (PRD 6); the full view shows every claim as sent. PHI columns show
@@ -127,21 +129,29 @@ export default async function ClaimsPage(props: Props) {
         />
       ) : (
         <Card>
-          <CardContent className="overflow-x-auto">
+          {/* relative: the scroller contains the visually hidden header text, which would otherwise widen the page at phone width. */}
+          <CardContent className="relative overflow-x-auto">
             <table className="w-full text-left text-sm" aria-label="Claims and lines">
               <thead className="text-muted-foreground">
-                <tr>
-                  {canReadPhi ? <th className="py-1 font-medium">Patient reference</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Service date</th> : null}
-                  <th className="py-1 font-medium">Code and modifiers</th>
-                  <th className="py-1 text-right font-medium">Units</th>
-                  <th className="py-1 text-right font-medium">Charge</th>
-                  <th className="py-1 text-right font-medium">Paid</th>
-                  <th className="py-1 text-right font-medium">Patient share</th>
-                  <th className="py-1 text-right font-medium">Observed allowed</th>
-                  <th className="py-1 text-right font-medium">Expected allowed</th>
-                  <th className="py-1 font-medium">Status</th>
+                <tr className="align-bottom">
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Patient reference</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Claim control numbers</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium whitespace-nowrap">Service date</th> : null}
+                  <th className="py-1 pr-3 font-medium">Code and modifiers</th>
+                  <th className="py-1 pr-3 text-right font-medium">Units</th>
+                  <th className="py-1 pr-3 text-right font-medium">Charge</th>
+                  <th className="py-1 pr-3 text-right font-medium" data-figure="expected">
+                    Expected allowed
+                  </th>
+                  <th className="py-1 pr-3 text-right font-medium" data-figure="paid">
+                    Observed allowed
+                  </th>
+                  <th className="py-1 pr-3 text-right font-medium" data-figure="short">
+                    Short (variance)
+                  </th>
+                  <th className="py-1 pr-3 text-right font-medium">Paid</th>
+                  <th className="py-1 pr-3 text-right font-medium">Patient share</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
                   <th className="py-1 font-medium">
                     <span className="sr-only">Open</span>
                   </th>
@@ -186,17 +196,20 @@ export default async function ClaimsPage(props: Props) {
                       <Money value={row.chargeCents} />
                     </td>
                     <td className="py-2 pr-3 text-right">
-                      <Money value={row.paidCents} />
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={row.patientShareCents} />
+                      <Money value={row.expectedAllowedCents} />
                     </td>
                     <td className="py-2 pr-3 text-right" title={basisName(row.observedAllowedBasis, row.observedAllowedAllocated)}>
                       <Money value={row.observedAllowedCents} />
                       {row.observedAllowedAllocated ? <div className="text-xs text-muted-foreground">allocated</div> : null}
                     </td>
+                    <td className="py-2 pr-3 text-right" data-variance={row.pricing?.varianceCents ?? ''}>
+                      <Money value={row.pricing?.varianceCents ?? null} />
+                    </td>
                     <td className="py-2 pr-3 text-right">
-                      <Money value={row.expectedAllowedCents} />
+                      <Money value={row.paidCents} />
+                    </td>
+                    <td className="py-2 pr-3 text-right">
+                      <Money value={row.patientShareCents} />
                     </td>
                     <td className="py-2 pr-3">
                       <LineStatusChip status={row.status} priced={row.pricing !== null} shortfall={row.pricing !== null && BigInt(row.pricing.varianceCents ?? '0') > 0n} />

@@ -108,6 +108,7 @@ export async function printRoiStatement(context: JobContext, services: Statement
       statedRecoveredCents: statement.recoveredCents,
       recoveredEntryIds: statement.links.recovered,
       ledger,
+      figuresMatch: check.matches,
     });
     const html = statementHtml({
       statementId: row.id,

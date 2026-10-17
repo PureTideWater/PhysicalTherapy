@@ -7,7 +7,7 @@ import { newToken } from '../auth/tokens';
 import { csrfTokenFor, csrfTokenMatches, sameOrigin } from './csrf';
 import { formInput } from './form';
 import { type Limit, RATE_BUCKETS, RATE_LIMITS, clientAddress, rateSubjectHash, retryMinutes } from './rate-limit';
-import { STATIC_SECURITY_HEADERS, contentSecurityPolicy, newNonce, uploadOrigins } from './security-headers';
+import { PUBLIC_BRAND_ASSET_HEADERS, PUBLIC_BRAND_ASSET_SOURCE, STATIC_SECURITY_HEADERS, contentSecurityPolicy, newNonce, uploadOrigins } from './security-headers';
 import { overallStatus } from '../routes/support';
 
 /** The pure parts of production readiness (docs/adr/0053): CSRF tokens and origins, rate-limit subjects, and the security headers. */
@@ -152,6 +152,12 @@ describe('the security headers', () => {
       'Origin-Agent-Cluster',
     ]);
     expect(STATIC_SECURITY_HEADERS.find((header) => header.key === 'Strict-Transport-Security')?.value).toMatch(/max-age=\d{8}/);
+  });
+
+  it('let only the public brand art be embedded from another origin (the email header lockup)', () => {
+    expect(STATIC_SECURITY_HEADERS.find((header) => header.key === 'Cross-Origin-Resource-Policy')?.value).toBe('same-origin');
+    expect(PUBLIC_BRAND_ASSET_SOURCE).toBe('/brand/:path*');
+    expect(PUBLIC_BRAND_ASSET_HEADERS).toEqual([{ key: 'Cross-Origin-Resource-Policy', value: 'cross-origin' }]);
   });
 
   it('draw a fresh nonce each time', () => {

@@ -10,8 +10,11 @@ import { escapeHtml } from './escape';
  * report stylesheet inlined with the bundled fonts as data URLs, so Chromium fetches nothing; a Paper cover
  * with the outlined lockup top left and, only when the ledger says the report's recovered total reconciles to
  * cash, the seal bottom right with its definition line; white inside pages with the 16 px mark in a running
- * header. A billing firm's white label (milestone 12 builds the flow; this is its slot) leads with the
- * firm's name: PaidWhole then appears only as the Verified badge in the footer, and only when earned.
+ * header beside the document's title (the mark alone: below 120 px no lockup is built from it and live text).
+ * A white label leads with another name: a billing firm's (milestone 12 builds the flow; this is its slot), or
+ * the practice's own for its correspondence to a payer (a dispute packet, docs/adr/0054). PaidWhole then
+ * appears nowhere but as the Verified badge in the footer, and only when earned: not on the cover, not in the
+ * running header, not in the document's title (which Chromium copies into the PDF's Title).
  *
  * The seal and the badge render only through verifiedSeal and verifiedBadge, which take the ledger's
  * answer (reportReconciliation in @tp/ledger, docs/adr/0055): its `reconciledToCash` is `false` or a `true`
@@ -35,7 +38,10 @@ export interface ReportFrame {
   readonly reference: string;
   /** The Verified gate's answer for this document, from the ledger. */
   readonly reconciliation: Pick<ReportReconciliation, 'reconciledToCash' | 'source'>;
-  /** A billing firm's white label: its name leads the cover and the running header. */
+  /**
+   * A white label: a billing firm's, or the practice's own for a document it sends as its own (a dispute
+   * packet). Its name leads the cover, the running header and the title; PaidWhole is only the earned badge.
+   */
   readonly whiteLabel?: { readonly firmName: string } | null;
 }
 
@@ -104,14 +110,21 @@ function cover(frame: ReportFrame): string {
   // A white label shows PaidWhole only as the footer's badge: no seal on its cover.
   const seal = frame.whiteLabel ? '' : verifiedSeal(frame.reconciliation);
   const meta = frame.meta.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
-  return `<section class="cover" aria-label="Cover"><div class="cover-top">${lead}</div><div class="cover-main"><p class="kicker">${escapeHtml(frame.kicker)}</p><h1>${escapeHtml(frame.heading)}</h1>${frame.subheading === undefined ? '' : `<p class="subheading">${escapeHtml(frame.subheading)}</p>`}<p class="practice">${escapeHtml(frame.practiceName)}</p><div class="meta">${meta}</div></div><div class="cover-foot">${seal}</div></section>`;
+  // The practice's own document already leads with its name: it is not repeated under the headline.
+  const practice = frame.whiteLabel?.firmName === frame.practiceName ? '' : `<p class="practice">${escapeHtml(frame.practiceName)}</p>`;
+  return `<section class="cover" aria-label="Cover"><div class="cover-top">${lead}</div><div class="cover-main"><p class="kicker">${escapeHtml(frame.kicker)}</p><h1>${escapeHtml(frame.heading)}</h1>${frame.subheading === undefined ? '' : `<p class="subheading">${escapeHtml(frame.subheading)}</p>`}${practice}<div class="meta">${meta}</div></div><div class="cover-foot">${seal}</div></section>`;
 }
 
 function runningHeader(frame: ReportFrame): string {
-  // The 16 px mark beside the name it stands for: decorative.
-  const mark = frame.whiteLabel ? '' : inlineSvg(markSvg({ size: 16 }), 16, null);
-  const name = frame.whiteLabel ? escapeHtml(frame.whiteLabel.firmName) : brandName;
-  return `<div class="page-header"><span class="brand">${mark}<span class="title">${name} · ${escapeHtml(frame.title)}</span></span><span class="practice">${escapeHtml(frame.practiceName)}</span></div>`;
+  // The 16 px mark alone beside the document's title, decorative (the cover carries the lockup and the name);
+  // a white label leads with its own name instead.
+  const lead = frame.whiteLabel ? `<span class="title">${escapeHtml(frame.whiteLabel.firmName)} · ${escapeHtml(frame.title)}</span>` : `${inlineSvg(markSvg({ size: 16 }), 16, null)}<span class="title">${escapeHtml(frame.title)}</span>`;
+  return `<div class="page-header"><span class="brand">${lead}</span><span class="practice">${escapeHtml(frame.practiceName)}</span></div>`;
+}
+
+/** The document's title, which Chromium copies into the PDF's Title: the white label's name, else PaidWhole's. */
+export function documentTitle(frame: Pick<ReportFrame, 'title' | 'whiteLabel'>): string {
+  return `${frame.title} | ${frame.whiteLabel ? frame.whiteLabel.firmName : brandName}`;
 }
 
 function runningFooter(frame: ReportFrame): string {
@@ -126,7 +139,7 @@ function runningFooter(frame: ReportFrame): string {
  */
 export function brandedDocument(frame: ReportFrame, templateStyles: string, body: string): string {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(frame.title)} | ${brandName}</title><style>${reportStyles()}
+<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(documentTitle(frame))}</title><style>${reportStyles()}
 ${templateStyles}</style></head>
 <body>
 ${cover(frame)}

@@ -3,6 +3,9 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
+import { chromiumInstalled } from './pdf';
+import { amountsNotInMono } from './test-support/figures';
+
 import {
   COVERAGE_CSV_COLUMNS,
   COVERAGE_REPORT_FORMAT,
@@ -124,9 +127,10 @@ describe('the report documents (docs/adr/0045)', () => {
   it('prints the coverage report as self-contained HTML with its labels, every reason and its remedy, and nothing from outside', () => {
     const html = coverageReportHtml(coverage(), PINS);
     expect(html).toContain('Coverage report, 2026-10-16');
-    expect(html).toContain('Priced: 3 of 4 lines (75.0%); $300.00 of $400.00 billed (75.0%)');
+    // Its amounts, in headings and running text too, are in the mono face.
+    expect(html).toContain('Priced: 3 of 4 lines (75.0%); <span class="figure-amount">$300.00</span> of <span class="figure-amount">$400.00</span> billed (75.0%)');
     expect(html).toContain('1 plan had no mapping at all');
-    expect(html).toContain('Dollars waiting on mappings: $100.00 billed');
+    expect(html).toContain('Dollars waiting on mappings: <span class="figure-amount">$100.00</span> billed');
     for (const reason of UNPRICED_REASONS) {
       expect(html).toContain(`<td>${reason}</td>`);
     }
@@ -154,12 +158,22 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(reportDocumentCsv(monthly())).not.toContain('packets_approved_alone');
   });
 
+  it.skipIf(!chromiumInstalled())('sets every dollar figure of both documents in IBM Plex Mono, headings and running text included (skipped without Chromium)', async () => {
+    expect(await amountsNotInMono(coverageReportHtml(coverage(), PINS))).toEqual([]);
+    expect(await amountsNotInMono(monthlySummaryHtml(monthly(), PINS))).toEqual([]);
+  }, 60_000);
+
   it('prints the monthly summary with every stage on its own, recovered a count whose dollars are the ledger’s, and escapes names', () => {
     const html = monthlySummaryHtml(monthly(), PINS);
     expect(html).toContain('Monthly variance summary, 2026-03');
     expect(html).toContain('a count, never a dollar claim');
-    expect(html).toContain('3 lines, $90.00');
-    expect(html).toContain('<td>1 line</td>');
+    // A payer's stage cells are figures, in the mono face: the count, and for a stage with dollars its variance.
+    expect(html).toContain('<td class="amount">3 lines, $90.00</td>');
+    expect(html).toContain('<td class="amount">1 line</td>');
+    // Recovered is a count here, and its label names the cash that proves it.
+    expect(html).toContain('<td>Recovered (posted or deposited)</td>');
+    expect(html).toContain('<th scope="col" class="amount">Recovered (posted or deposited)</th>');
+    expect(html).not.toMatch(/>Recovered</);
     expect(html).toContain('their dollars are the recovery ledger’s');
     expect(html).toContain('Written off from a case (not in the actionable total)');
     expect(reportDocumentHtml({ ...monthly(), by_payer: [] }, PINS)).toContain('No line has a service date in 2026-03.');

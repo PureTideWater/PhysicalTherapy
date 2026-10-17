@@ -3,7 +3,7 @@ import { formatUsd, parseCents } from '@tp/money';
 import { EVIDENCE_GAP_CODES, type EvidenceGapCode, type ExportedPacket } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
-import { escapeHtml } from '../report/escape';
+import { escapeHtml, escapeWithFigures } from '../report/escape';
 
 /**
  * A packet as one self-contained HTML document, which the worker prints to PDF with Chromium (PRD 15,
@@ -13,8 +13,11 @@ import { escapeHtml } from '../report/escape';
  * reference, interest as its own line (never inside expected), the evidence list with its gaps, the
  * requested action, and the approval record (who, when, the version's hash, and the audit flag of a
  * single-user approval). It is the export, so it carries the identifiers inserted at export: it is
- * stored sealed with the practice's key. Nothing loads from outside the document. It is set in the
- * PaidWhole report frame (report/brand.ts); a packet states no recovered total, so it never earns the seal.
+ * stored sealed with the practice's key. Nothing loads from outside the document. It is set in the report
+ * frame's type and tokens (report/brand.ts) as the practice's own correspondence: the practice submits it to
+ * its payer through its own channel, so the practice's name leads the cover and the running header (the
+ * frame's white-label slot) and PaidWhole's lockup and name are not on it (docs/adr/0054). A packet states
+ * no recovered total, so it never earns the seal or the badge.
  */
 
 export interface ApprovalRecord {
@@ -134,7 +137,7 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
             ]),
             { code: [1], date: [2, 3, 4], amount: [5, 6, 7] },
           ),
-          `<p><strong>Interest ${interest.computed ? '' : 'that can be computed '}in all: ${interest.total_cents === null ? 'cannot be computed' : usd(interest.total_cents)}</strong></p>`,
+          `<p><strong>Interest ${interest.computed ? '' : 'that can be computed '}in all: ${interest.total_cents === null ? 'cannot be computed' : escapeWithFigures(usd(interest.total_cents))}</strong></p>`,
         ].join('');
   const evidence = content.evidence.map((item, index) => {
     const marker = content.sources.find((source) => source.kind === 'evidence' && source.evidence_index === index)?.marker;
@@ -152,7 +155,7 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
   const paragraphs = narrative
     .split(/\n\s*\n/)
     .filter((paragraph) => paragraph.trim() !== '')
-    .map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
+    .map((paragraph) => `<p>${escapeWithFigures(paragraph.trim())}</p>`)
     .join('');
   return brandedDocument(
     {
@@ -163,6 +166,8 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
       meta: [`To ${payer.name} (${payer.payer_id_raw}), plan ${payer.plan_name ?? payer.plan_key}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`],
       reference: `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`,
       reconciliation,
+      // The practice's own letter to its payer: its name leads, not the vendor's.
+      whiteLabel: { firmName: practice.name },
     },
     STYLE,
     `<h1>Request to reprocess underpaid claims</h1>
@@ -179,7 +184,7 @@ ${interestSection}
 <ul>${evidence.join('')}</ul>
 ${gaps.length === 0 ? '' : `<p><strong>Evidence gaps</strong></p><ul>${gaps.join('')}</ul>`}
 <h2>Requested action</h2>
-<p>${escapeHtml(content.requested_action)}</p>
+<p>${escapeWithFigures(content.requested_action)}</p>
 <h2>Approval record</h2>
 ${approvalRecord}
 <footer>Every amount in this packet was computed by code from the practice's remittances and the cited contract terms; interest is stated apart from the variance.</footer>`,

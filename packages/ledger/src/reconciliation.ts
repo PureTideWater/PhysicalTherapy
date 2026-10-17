@@ -1,6 +1,6 @@
 import { type Cents, ZERO_CENTS } from '@tp/money';
 
-import { type LedgerEntry, type ProofLevel, countedStage } from './stages';
+import { type LedgerEntry, type ProofLevel, countedStage, isCorrecting } from './stages';
 import { ledgerTotals } from './totals';
 
 /**
@@ -10,8 +10,12 @@ import { ledgerTotals } from './totals';
  *
  * - the report must state a recovered total above zero (a report with none, or with nothing recovered,
  *   does not earn the mark: flagged, validated, actionable and payer approved amounts never do);
- * - every entry the total links must be in the practice's ledger and count toward the proof level's stage
- *   (posted or deposited, the practice's setting the report was made under) or a recoupment of it;
+ * - every entry the total links must be in the practice's ledger, linked once, and count toward the proof
+ *   level's stage (posted or deposited, the practice's setting the report was made under) or a recoupment of it;
+ * - no linked entry may have been corrected since the report was made: a reversal or adjustment in the
+ *   ledger whose target is a linked entry must be linked too (a correction takes the effective date of the
+ *   entry it corrects, so one made at the time is in the report's period and in its links; one that is not
+ *   linked was made later, and the cash the links give is no longer what the ledger holds for that line);
  * - those entries, net of their reversals and adjustments, must sum to exactly the total the report states;
  * - every line in the total (by service line, or by case for an entry of the case as a whole) must have a
  *   posted or deposited amount standing, net of its recoupments and reversals: a line whose entries net to
@@ -29,7 +33,17 @@ declare const ledgerFact: unique symbol;
  */
 export type ReconciledToCash = true & { readonly [ledgerFact]: 'ledger' };
 
-export const RECONCILIATION_REASONS = ['reconciled', 'no_recovered_total', 'entry_not_in_ledger', 'entry_not_cash', 'total_differs', 'line_not_proved'] as const;
+export const RECONCILIATION_REASONS = [
+  'reconciled',
+  'no_recovered_total',
+  'entry_not_in_ledger',
+  'duplicate_entry',
+  'entry_not_cash',
+  'entry_corrected_since',
+  'total_differs',
+  'line_not_proved',
+  'figures_differ',
+] as const;
 export type ReconciliationReason = (typeof RECONCILIATION_REASONS)[number];
 
 export interface ReportReconciliation {
@@ -55,6 +69,12 @@ export interface ReportReconciliationInput {
   readonly recoveredEntryIds: readonly string[];
   /** The practice's ledger by ID, the targets of corrections included. */
   readonly ledger: ReadonlyMap<string, LedgerEntry>;
+  /**
+   * Whether the report's other entry-backed figures still recompute from their entries (an ROI statement's
+   * interest and approved-but-not-posted, recomputeStatement's `matches`). A report whose figures do not
+   * match its entries is not printed and never carries the mark. Defaults to true for a report with none.
+   */
+  readonly figuresMatch?: boolean;
 }
 
 /** The source a reconciliation names for a report. */
@@ -82,6 +102,11 @@ export function reportReconciliation(input: ReportReconciliationInput): ReportRe
     }
     entries.push(entry);
   }
+  // An entry linked twice would be counted twice.
+  const linked = new Set(input.recoveredEntryIds);
+  if (linked.size !== input.recoveredEntryIds.length) {
+    return refused('duplicate_entry');
+  }
   // Each entry's stage as the totals count it: a reversal or adjustment counts toward the entry it corrects.
   const stages = entries.map((entry) => countedStage(entry, ledger));
   if (stages.some((stage) => stage !== proofLevel && stage !== 'recouped')) {
@@ -106,11 +131,22 @@ export function reportReconciliation(input: ReportReconciliationInput): ReportRe
   if (stated === null || stated <= ZERO_CENTS) {
     return refused('no_recovered_total', recovered, inTotal.length);
   }
+  // A reversal or adjustment of a linked entry that the report does not link: the ledger changed after the
+  // report was made (a reversal of an adjustment names the adjustment, which is then itself such a correction
+  // or linked, so the entry a correction names directly is the one to look at).
+  for (const entry of ledger.values()) {
+    if (isCorrecting(entry.stage) && linked.has(entry.evidenceId) && !linked.has(entry.id)) {
+      return refused('entry_corrected_since', recovered, inTotal.length);
+    }
+  }
   if (recovered !== stated) {
     return refused('total_differs', recovered, inTotal.length);
   }
   if (inTotal.some((group) => group.proved <= 0n || group.proved + group.recouped < 0n)) {
     return refused('line_not_proved', recovered, inTotal.length);
+  }
+  if (input.figuresMatch === false) {
+    return refused('figures_differ', recovered, inTotal.length);
   }
   return { reconciledToCash: true as ReconciledToCash, source, reason: 'reconciled', proofLevel, recoveredCents: recovered, lines: inTotal.length };
 }

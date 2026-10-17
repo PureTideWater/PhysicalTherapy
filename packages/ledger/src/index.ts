@@ -59,6 +59,7 @@ export {
   isCorrecting,
   isLedgerStage,
   isProofLevel,
+  recoveredLabel,
 } from './stages';
 export {
   BUILT_IN_POSTING_TEMPLATES,
