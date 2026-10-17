@@ -19,7 +19,7 @@ import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Outcome, Route, UploadBody } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
-import type { Receipt } from '../uploads/receipt-labels';
+import { type Receipt, receiptState } from '../uploads/receipt-labels';
 import { LocalUploadTargets } from '../uploads/targets';
 import { practiceHome } from './practice';
 import { addLineNote, claimsPage, findClaim, linePage, remittancePage, remittancesPage } from './remittances';
@@ -281,6 +281,19 @@ async function upload(practice: Practice, bytes: Buffer, contentType = 'applicat
   }
   const token = new URL(document.upload.url).searchParams.get('token') ?? '';
   ok(await call(uploadContent, practice.manager, { ...params, documentId: document.documentId }, { token }, { contentType, contentLength: bytes.length, body: Readable.from([bytes]) }));
+  ok(await call(completeUpload, practice.manager, params, { documentId: document.documentId }));
+  return document.documentId;
+}
+
+/** An ERA export's upload, as the Uploads screen sends it: the system's format chosen, declared as CSV. */
+async function uploadExport(practice: Practice, bytes: Buffer, formatId: string): Promise<string> {
+  const params = { practiceId: practice.world.practiceId };
+  const [document] = ok(await call(requestUploads, practice.manager, params, { files: [{ kind: 'era_export', formatId, contentType: 'text/csv', sizeBytes: bytes.length }] })).documents;
+  if (document === undefined) {
+    throw new Error('no upload URL');
+  }
+  const token = new URL(document.upload.url).searchParams.get('token') ?? '';
+  ok(await call(uploadContent, practice.manager, { ...params, documentId: document.documentId }, { token }, { contentType: 'text/csv', contentLength: bytes.length, body: Readable.from([bytes]) }));
   ok(await call(completeUpload, practice.manager, params, { documentId: document.documentId }));
   return document.documentId;
 }
@@ -861,4 +874,89 @@ describe('the dashboard', () => {
     expect(ok(await call(practiceHome, practice.viewer, { practiceId: practice.world.practiceId })).freshness).toMatchObject({ lastRun: { jobId: retried, outcome: 'succeeded' }, failedRun: null });
     queue.jobs.splice(0);
   });
+});
+
+describe('ERA exports on the screens (CO-03; docs/adr/0060)', () => {
+  const exportOf = (format: string) => readFileSync(path.join(FIXTURES, 'emr', format, 'era-export.csv'));
+  const shortOf = (id: string) => id.slice(0, 8);
+
+  it('names the format on the receipt, and shows an export’s remittance without an X12 envelope, its lines as any 835’s', async () => {
+    const practice = await practiceFor('era-screens');
+    const params = { practiceId: practice.world.practiceId };
+    const id = await uploadExport(practice, exportOf('webpt_billing_era_v0'), 'webpt_billing_era_v0');
+    await runQueue();
+    const shown = await receipt(practice, id);
+    expect(shown).toMatchObject({ kind: 'era_export', status: 'loaded', format: { id: 'webpt_billing_era_v0', name: 'WebPT Billing ERA export', unconfirmed: true }, parse: { source: 'era_export' } });
+    expect(receiptState(shown).detail).toMatch(/^Loaded 7 remittances, \d+ claims and 17 lines; 1 reversal linked to its original where loaded\.$/);
+    const list = ok(await call(remittancesPage, practice.manager, params)).list.remittances;
+    expect(list).toHaveLength(7);
+    expect(list.every((item) => item.provenance === 'era_export' && item.sourceDocumentId === id)).toBe(true);
+    const detail = ok(await call(remittancePage, practice.manager, { ...params, remittanceId: list[0]?.id })).detail.remittance;
+    expect(detail).toMatchObject({ provenance: 'era_export', receiverId: null, isa13: null, st02: null, format: { name: 'WebPT Billing ERA export', unconfirmed: true } });
+    const lines = ok(await call(claimsPage, practice.manager, { ...params, view: 'all' })).list;
+    expect(lines.total).toBe(17);
+    expect(lines.rows.every((row) => row.observedAllowedBasis === 'paid_plus_pr' && !row.observedAllowedAllocated)).toBe(true);
+  }, 60_000);
+
+  it('holds an 835 of a payment first loaded from an export for review, and says why on its receipt (D13)', async () => {
+    const practice = await practiceFor('era-review');
+    const era = await uploadExport(practice, exportOf('raintree_era_v0'), 'raintree_era_v0');
+    await runQueue();
+    const x12 = await upload(practice, readFileSync(path.join(FIXTURES, 'PAR-01/remit.835')));
+    await runQueue();
+    const shown = await receipt(practice, x12);
+    expect(shown.status).toBe('held');
+    expect(shown.parse?.transactionOutcomes).toEqual([expect.objectContaining({ outcome: 'held_for_review', linkedDocumentId: era, linkedProvenance: 'era_export', reviewReason: 'payment_loaded_from_export' })]);
+    expect(receiptState(shown)).toMatchObject({ held: true, detail: expect.stringContaining(`Held for review: a payment in it was already loaded from ERA export file ${shortOf(era)}.`) });
+    expect((await owner.query('SELECT 1 FROM remittance WHERE source_document_id = $1', [x12])).rows).toHaveLength(0);
+  }, 60_000);
+
+  it('names the 835 an export’s payment repeats, and loads the others (D13)', async () => {
+    const practice = await practiceFor('era-duplicate');
+    const x12 = await upload(practice, readFileSync(path.join(FIXTURES, 'PAR-01/remit.835')));
+    await runQueue();
+    const era = await uploadExport(practice, exportOf('spry_era_v0'), 'spry_era_v0');
+    await runQueue();
+    const shown = await receipt(practice, era);
+    expect(shown.status).toBe('loaded');
+    expect(receiptState(shown).detail).toContain(`1 payment already loaded from 835 file ${shortOf(x12)}, so nothing of it loads again`);
+    // The same payments in another system's export: every one already loaded, from the 835 or the SPRY export, so
+    // nothing loads and the receipt names both.
+    const again = await uploadExport(practice, exportOf('webpt_billing_era_v0'), 'webpt_billing_era_v0');
+    await runQueue();
+    const repeated = await receipt(practice, again);
+    expect(repeated.status).toBe('duplicate');
+    expect(receiptState(repeated).detail).toBe(
+      `Already loaded: all 7 of its payments were loaded before from 835 file ${shortOf(x12)} and ERA export file ${shortOf(era)}, so nothing loads from it. Each payment is linked to the remittance it repeats; the receipt lists them.`,
+    );
+    // The same bytes again are a duplicate of the file itself.
+    const bytes = await uploadExport(practice, exportOf('spry_era_v0'), 'spry_era_v0');
+    await runQueue();
+    expect(receiptState(await receipt(practice, bytes)).detail).toBe(`Duplicate of file ${shortOf(era)} (received ${new Date().toISOString().slice(0, 10)}); nothing loads from it.`);
+  }, 60_000);
+
+  it('holds the payment of a row that lacks a line’s units, by its column and row and never its values, and loads the rest', async () => {
+    const practice = await practiceFor('era-held');
+    // The Raintree export with the first data row's Quantity cell blank (in memory only; the fixture is unchanged).
+    const lines = exportOf('raintree_era_v0').toString('utf8').split('\n');
+    const header = (lines[0] ?? '').split(',');
+    const at = header.indexOf('Quantity');
+    expect(at).toBeGreaterThan(-1);
+    const first = (lines[1] ?? '').split(',');
+    first[at] = '';
+    lines[1] = first.join(',');
+    const id = await uploadExport(practice, Buffer.from(lines.join('\n'), 'utf8'), 'raintree_era_v0');
+    await runQueue();
+    const shown = await receipt(practice, id);
+    expect(shown).toMatchObject({ status: 'held', parse: { source: 'era_export', outcome: 'partially_held', held: 1 } });
+    expect(shown.parse?.errors).toEqual([{ code: 'EXPORT_HELD', reason: 'export_value_missing', column: 'Quantity', row: 1, payment: 1 }]);
+    const detail = receiptState(shown).detail;
+    expect(detail).toBe(
+      'Partly held: 6 of 7 payments loaded or already loaded, 1 held. Row 1 below the header, payment 1: “Quantity” is blank. Correct the payment in the system the export came from and export it again, or upload the payer’s 835 for that payment instead. The error report lists every row and column.',
+    );
+    expect(detail).not.toMatch(/SYNPCN|SYNCCN|SYNEFT|9900639797/);
+    const report = ok(await call(uploadReport, practice.manager, { practiceId: practice.world.practiceId, documentId: id })).download.body;
+    expect(report).toContain(',EXPORT_HELD,export_value_missing,');
+    expect(report).not.toMatch(/SYNPCN|SYNCCN|SYNEFT|SYNTHETIC PAYER/);
+  }, 60_000);
 });
