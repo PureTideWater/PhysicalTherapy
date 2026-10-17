@@ -3,9 +3,10 @@ import { checkFixtures } from './check';
 
 /**
  * `pnpm check:fixtures`: the repository's fixture check (CO-03, docs/adr/0059). Every CSV, TSV, spreadsheet,
- * X12 interchange, zip and OLE2 file git would commit goes through the writer's guard; each refusal is
- * printed with the file and the rule, and any refusal fails the run. `pnpm test` runs the same check
- * (check.test.ts).
+ * X12 interchange, zip, gzip and OLE2 file git would commit, and every text file under fixtures/ and
+ * packages/synth/, goes through the writer's guard; each refusal is printed with the file and the rule, and
+ * any refusal fails the run. `pnpm test` runs the same check (check.test.ts); CI runs it before
+ * `pnpm synth --all`.
  */
 const { checked, problems } = checkFixtures(repositoryRoot);
 
