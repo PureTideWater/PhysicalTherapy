@@ -1,5 +1,8 @@
-/* PaidWhole design tokens. The only file in the repository that may contain brand hex values.
-   Import once in apps/web/app/layout.tsx and in the report renderer's base stylesheet. */
+/* PaidWhole design tokens: the brand's colors as CSS custom properties, the one place components read them.
+   Brand hex values stand in four exact files only (reconciliation-001, D9 item 4; tools/brand-colors ALLOWED):
+   this file, packages/brand/src/tokens.ts (its typed mirror), packages/brand/src/mark.ts (the mark's
+   fallbacks) and apps/worker/src/mail/template.ts (email, where CSS variables do not work).
+   Import once in apps/web/src/app/globals.css and in the report renderer's base stylesheet. */
 
 :root {
   /* Brand palette */

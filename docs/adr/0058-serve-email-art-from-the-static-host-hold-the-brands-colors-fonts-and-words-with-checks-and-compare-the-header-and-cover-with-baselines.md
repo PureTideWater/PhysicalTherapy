@@ -212,9 +212,15 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   `Cross-Origin-Resource-Policy: cross-origin`. CloudFront caches `/brand/*` under the build output's policy; Next serves
   public files with `max-age=0`, so CloudFront keeps them for its one-second minimum, and a changed lockup shows almost
   at once although the names are not content-hashed.
-- `.claude/rules/brand.md` still says `tokens.css` is the only file with brand hex apart from the email template; this
-  ADR is the record until the rule's owner aligns it. BRAND.md section 1 lists only the tagline; adding the descriptor
-  and the independence claim there is the brand owner's call.
+- The hex rule is D9 item 4, which the owner approved: hex in `packages/brand/src/tokens.css`, `tokens.ts` and `mark.ts`
+  and `apps/worker/src/mail/template.ts`, each by its exact path. `tokens.css`'s header and `packages/brand/README.md`
+  say so. `.claude/rules/brand.md`, which applies from this pull request on (CO-01), still says `tokens.css` is the only
+  file with brand hex apart from the email template. It is Claude Code's own instruction file, which a session changes
+  only on a person's word, so its sentence waits for the owner; the wording proposed is "No hex values in components:
+  brand hex stands only in packages/brand/src/tokens.css, tokens.ts and mark.ts, and in the email template
+  (apps/worker/src/mail/template.ts), which takes its hex from tokens.ts; tools/brand-colors holds the list." Until then
+  this ADR and `tools/brand-colors` (`ALLOWED`) are the record. BRAND.md section 1 lists only the tagline; adding the
+  descriptor and the independence claim there is the brand owner's call.
 - The response headers, the schema, the engine, the ledger's semantics, the content pipeline and the catalog are
   unchanged; `packages/ledger` gains only the branch's pure `reportReconciliation()` and `recoveredLabel()`.
 
