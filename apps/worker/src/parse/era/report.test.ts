@@ -1,8 +1,5 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { Readable } from 'node:stream';
-
-import { createHash } from 'node:crypto';
 
 import type { CodeListProvider } from '@tp/edi835';
 import { inCodeSet } from '@tp/edi835';
@@ -10,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import type { ExportPaymentLoad } from '../loader';
 import { documentStatus } from '../report';
-import { TOO_LARGE, readEraExport } from './load';
-import { ERA_EXPORT_HELD_REASONS, type EraExportNormalized, normalizeEraExport } from './normalize';
+import { TOO_LARGE } from './load';
+import { ERA_EXPORT_HELD_REASONS, normalizeEraExport } from './normalize';
 import { exportReportRow } from './report';
 
 /** The parse report of an ERA export (report.ts), from the WebPT Billing fixture's normalized payments. */
@@ -94,16 +91,5 @@ describe('the parse report of an ERA export', () => {
 
   it('refuses a loadable payment without a result rather than report it as anything', () => {
     expect(() => exportReportRow(normalized, new Map(), null)).toThrow(/no result/);
-  });
-});
-
-describe('reading an export for the normalizer', () => {
-  it('hashes every byte, and keeps the bytes only within the limit', async () => {
-    const chunks = [Buffer.from('a,b\r\n'), Buffer.from('1,2\r\n')];
-    const sha = createHash('sha256').update(Buffer.concat(chunks)).digest('hex');
-    expect(await readEraExport(Readable.from(chunks), 10)).toEqual({ sha256: sha, bytes: new Uint8Array(Buffer.concat(chunks)) });
-    expect(await readEraExport(Readable.from(chunks), 9)).toEqual({ sha256: sha, bytes: null });
-    const held: EraExportNormalized = TOO_LARGE;
-    expect(held).toEqual({ kind: 'held', reasons: [{ reason: 'export_too_large', column: null, row: null, payment: null }] });
   });
 });

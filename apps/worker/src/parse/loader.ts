@@ -128,6 +128,14 @@ function traceReview(rows: readonly KnownRow[], remittance: PlannedRemittance): 
 
 const text = (value: Cents | null): string | null => (value === null ? null : value.toString());
 
+/**
+ * The per-practice, per-trace lock every load takes before it reads the remittances of its trace, held to the end
+ * of the document's transaction: an 835's and an export's alike, so the duplicate rules see each other's rows.
+ */
+export async function lockTrace(client: ScopeClient, practiceId: string, trn02: string): Promise<void> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':remittance:' || $2, 0))", [practiceId, trn02]);
+}
+
 class Loader {
   private readonly client: ScopeClient;
 
@@ -146,7 +154,7 @@ class Loader {
   async known(): Promise<KnownRow[]> {
     const { practiceId } = this.context;
     const { trn02 } = this.plan.remittance;
-    await this.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':remittance:' || $2, 0))", [practiceId, trn02]);
+    await lockTrace(this.client, practiceId, trn02);
     return (await this.query<KnownRow & Record<string, unknown>>(KNOWN, [practiceId, trn02])).rows;
   }
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { PracticeCipher, PracticeScope, ScopeClient } from '@tp/db/runtime';
 
-import { type ExportPaymentLoad, loadExportPayment } from '../loader';
+import { type ExportPaymentLoad, loadExportPayment, lockTrace } from '../loader';
 import { ERA_EXPORT_MAX_BYTES, type EraExportNormalized } from './normalize';
 
 /**
@@ -45,16 +45,22 @@ export interface ExportLoadContext {
   readonly documentId: string;
 }
 
-/** Loads each loadable payment, in file order, inside the caller's transaction; what each became, by its position. */
+/**
+ * Loads each loadable payment, in file order, inside the caller's transaction; what each became, by its position.
+ * The traces' locks are taken first, in sorted order, so two exports sharing traces never wait on each other in a
+ * cycle; each payment's load then takes its own lock again, which its transaction already holds.
+ */
 export async function loadEraExport(context: ExportLoadContext, normalized: EraExportNormalized): Promise<Map<number, ExportPaymentLoad>> {
   const results = new Map<number, ExportPaymentLoad>();
   if (normalized.kind === 'held') {
     return results;
   }
-  for (const payment of normalized.payments) {
-    if (payment.kind === 'loadable') {
-      results.set(payment.position, await loadExportPayment(context, payment.plan));
-    }
+  const loadable = normalized.payments.filter((payment) => payment.kind === 'loadable');
+  for (const trace of [...new Set(loadable.map((payment) => payment.plan.remittance.trn02))].sort()) {
+    await lockTrace(context.scope.client, context.practiceId, trace);
+  }
+  for (const payment of loadable) {
+    results.set(payment.position, await loadExportPayment(context, payment.plan));
   }
   return results;
 }
