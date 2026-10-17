@@ -30,14 +30,15 @@
   "sources": [
     {"case":"LED-04","file":"posting-export.csv","rows":1},
     {"case":"LED-08","file":"posting-export-again.csv","rows":2},
-    {"case":"LED-09","file":"lines-posting-export.csv","rows":1}
+    {"case":"LED-09","file":"lines-posting-export.csv","rows":1},
+    {"case":"LED-06","file":"recoupment-posting-export.csv","rows":1}
   ],
   "files": [
     {
       "path": "posting-export.csv",
-      "sha256": "fc6e48fd02e0672362f5f99bee0691b0298cee4abbbf5e8ab4cd3d3efa56de3e",
-      "bytes": 456,
-      "rows": 4
+      "sha256": "5d11ec8d3d4e2b4e6c20389134edb103e775970daf68e44669e192e3e294cf52",
+      "bytes": 550,
+      "rows": 5
     }
   ],
   "rows": [
@@ -80,6 +81,16 @@
       "procedureCode": "97110",
       "serviceDate": "2026-03-09",
       "batch": "SYNBATCH-0902"
+    },
+    {
+      "postedOn": "2026-08-05",
+      "checkOrTrace": "SYNEFTLED06003",
+      "amountCents": "-1800",
+      "payerName": "SYNTHETIC PAYER L",
+      "claimReference": "SYNPCNLED06001",
+      "procedureCode": null,
+      "serviceDate": null,
+      "batch": "SYNBATCH-0602"
     }
   ]
 }

@@ -46,7 +46,7 @@ export interface EmrManifest {
   readonly columns: readonly FormatColumn<string>[];
   /** The source case files, and how many of the export's rows each gives. */
   readonly sources: readonly { readonly case: string; readonly file: string; readonly rows: number }[];
-  /** An ERA export's payments, each with what its rows total (paid) beside the 835's claims paid and BPR02. */
+  /** An ERA export's payments, each with what its rows total (paid) beside the 835's claims paid and signed payment (BPR02, negated for a debit). */
   readonly checks?: readonly EraCheck[];
   readonly files: readonly { readonly path: string; readonly sha256: string; readonly bytes: number; readonly rows: number }[];
   readonly rows: readonly CanonicalPostingRow[] | readonly CanonicalEraRow[];

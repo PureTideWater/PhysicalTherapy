@@ -97,6 +97,9 @@ describe('the vendor format registry', () => {
     const era = ERA_FORMATS[0] as (typeof ERA_FORMATS)[number];
     expect(formatProblems({ ...era, status: 'FORMAT_CONFIRMED', confirmation: { receivedOn: '17 Oct', reference: ' ' }, note: 'confirmed' })).toEqual(['a confirmation has the date it was received and the description’s reference']);
     expect(formatProblems({ ...era, note: 'placeholder' })).toEqual(['an unconfirmed format says so in its note']);
+    // An ERA export names its payee and its payer: the remittance needs both, and D12's export duplicate key the payee.
+    const anonymous = { ...era, columns: era.columns.filter((column) => column.field !== 'payee_id' && column.field !== 'payer_name') };
+    expect(formatProblems(anonymous)).toEqual(['the payer_name column is missing', 'the payee_id column is missing']);
     // Confirming a format is data alone.
     expect(formatProblems({ ...era, status: 'FORMAT_CONFIRMED', confirmation: { receivedOn: '2026-11-02', reference: 'SYNTHETIC redacted format description 1' } })).toEqual([]);
   });
@@ -150,12 +153,13 @@ describe('the vendor exports', () => {
     }
   });
 
-  it('write each posting format’s rows as the source case’s synthetic export holds them (LED-04, LED-08, LED-09)', () => {
+  it('write each posting format’s rows as the source case’s synthetic export holds them (LED-04, LED-08, LED-09, LED-06’s take-back)', () => {
     const sources = postingSourceRows();
     expect(sources.map((source) => [source.source.caseId, source.source.file, source.rows.length])).toEqual([
       ['LED-04', 'posting-export.csv', 1],
       ['LED-08', 'posting-export-again.csv', 2],
       ['LED-09', 'lines-posting-export.csv', 1],
+      ['LED-06', 'recoupment-posting-export.csv', 1],
     ]);
     // The committed source files read the same.
     for (const source of POSTING_SOURCES) {
@@ -164,6 +168,8 @@ describe('the vendor exports', () => {
     }
     const rows = sources.flatMap((source) => source.rows);
     expect(rows[3]).toEqual({ postedOn: '2026-06-11', checkOrTrace: '880060090004', amountCents: '10000', payerName: 'SYNTHETIC PAYER L', claimReference: 'SYNPCNLED09003', procedureCode: '97110', serviceDate: '2026-03-09', batch: 'SYNBATCH-0902' });
+    // A take-back: LED-06's recoupment posted as a negative amount, written with a leading minus in every format.
+    expect(rows[4]).toEqual({ postedOn: '2026-08-05', checkOrTrace: 'SYNEFTLED06003', amountCents: '-1800', payerName: 'SYNTHETIC PAYER L', claimReference: 'SYNPCNLED06001', procedureCode: null, serviceDate: null, batch: 'SYNBATCH-0602' });
     for (const format of POSTING_FORMATS) {
       const set = sets.find((item) => item.id === format.id);
       expect(set?.manifest.rows, format.id).toEqual(rows);
@@ -171,6 +177,7 @@ describe('the vendor exports', () => {
         { case: 'LED-04', file: 'posting-export.csv', rows: 1 },
         { case: 'LED-08', file: 'posting-export-again.csv', rows: 2 },
         { case: 'LED-09', file: 'lines-posting-export.csv', rows: 1 },
+        { case: 'LED-06', file: 'recoupment-posting-export.csv', rows: 1 },
       ]);
       // Read back by the format's own columns: the canonical rows again.
       const [, ...cells] = readTable(text(set?.files[0]?.bytes));
@@ -190,6 +197,7 @@ describe('the vendor exports', () => {
         })),
         format.id,
       ).toEqual(rows);
+      expect(text(set?.files[0]?.bytes), format.id).toContain(',-18.00,');
     }
   });
 
@@ -217,8 +225,9 @@ describe('the ERA exports', () => {
         const mine = rows.filter((row) => row.trace === check.trace);
         expect(transaction?.plb, check.trace).toEqual([]);
         expect(sumCents(mine.map((row) => parseCents(row.paidCents))).toString(), check.trace).toBe(transaction?.balance.claimsPaidCents);
-        expect(mine.every((row) => row.paymentCents === transaction?.dedupKey.bpr02Cents), check.trace).toBe(true);
-        expect([check.paidCents, check.claimsPaidCents, check.paymentCents, check.rows]).toEqual([transaction?.balance.claimsPaidCents, transaction?.balance.claimsPaidCents, transaction?.dedupKey.bpr02Cents, mine.length]);
+        // The payment is the parser's signed payment (BPR02, negated for a debit), not BPR02 as written.
+        expect(mine.every((row) => row.paymentCents === transaction?.balance.paymentCents), check.trace).toBe(true);
+        expect([check.paidCents, check.claimsPaidCents, check.paymentCents, check.rows]).toEqual([transaction?.balance.claimsPaidCents, transaction?.balance.claimsPaidCents, transaction?.balance.paymentCents, mine.length]);
         expect(mine.length).toBe(transaction?.counts.lines);
       }
       expect(rows).toHaveLength(17);
@@ -260,6 +269,19 @@ describe('the ERA exports', () => {
     const withClaim = (changes: object) => ({ ...parse, transactions: [{ ...transaction, claims: [{ ...claim, ...changes }] }] });
     const withLine = (changes: object) => withClaim({ lines: [{ ...line, ...changes }] });
     expect(eraRowsOf(parse, 'ok').rows).toHaveLength(1);
+    // A balanced take-back (BPR03 D): BPR02 stays unsigned as written, the parser negates the payment, and the rows
+    // carry that signed payment, which their lines total; the Check Amount is negative like its lines.
+    const negate = (cents: string) => (-BigInt(cents)).toString();
+    const debitLine = { ...line, chargeCents: negate(line.chargeCents), paidCents: negate(line.paidCents), adjustments: line.adjustments.map((item) => ({ ...item, amountCents: negate(item.amountCents) })) };
+    const debitBalance = { ...transaction.balance, claimsPaidCents: negate(transaction.balance.claimsPaidCents), paymentCents: negate(transaction.balance.paymentCents) };
+    const debit = { ...parse, transactions: [{ ...transaction, balance: debitBalance, claims: [{ ...claim, chargeCents: negate(claim.chargeCents), paidCents: negate(claim.paidCents), lines: [debitLine] }] }] };
+    const taken = eraRowsOf(debit, 'debit');
+    expect(transaction.dedupKey.bpr02Cents).toBe('8800');
+    expect(taken.rows.map((row) => [row.paymentCents, row.paidCents])).toEqual([['-8800', '-8800']]);
+    expect(taken.checks).toEqual([{ trace: 'SYNEFTPAR01001', paymentCents: '-8800', claimsPaidCents: '-8800', rows: 1, paidCents: '-8800' }]);
+    const takenText = text(vendorEraExport(ERA_FORMATS[0] as (typeof ERA_FORMATS)[number], taken.rows));
+    expect(takenText).toContain(',-88.00,');
+    expect(takenText).not.toMatch(/,88\.00,/);
     expect(() => eraRowsOf({ ...parse, outcome: 'held' }, 'x')).toThrow(/only a loaded 835/);
     expect(() => eraRowsOf({ ...parse, transactions: [{ ...transaction, plb: [{} as never] }] }, 'x')).toThrow(/no PLB/);
     expect(() => eraRowsOf({ ...parse, transactions: [{ ...transaction, dedupKey: { ...transaction.dedupKey, senderId: 'OTHER' } }] }, 'x')).toThrow(/synthetic/);

@@ -19,7 +19,7 @@ import { LedgerWorld, ledSettings } from './test-support/ledger-world';
  * by a practice whose billing manager mapped the matching built-in template, loads through the
  * reconcile job into posting_row: every row of the manifest, the amount in integer cents, the template
  * named by the format's ID, the claim reference sealed. Its rows are the SYNTHETIC template's rows of
- * the source cases (LED-04, LED-08, LED-09), so the same posting brought by a vendor's export is the
+ * the source cases (LED-04, LED-08, LED-09, and LED-06's take-back, a negative amount), so the same posting brought by a vendor's export is the
  * row the practice already holds and is stored once. The practice's template reads back unconfirmed.
  * Synthetic data only.
  */
@@ -54,7 +54,7 @@ interface Manifest {
 const manifestOf = (id: string) => JSON.parse(readFileSync(path.join(FIXTURES, 'emr', id, 'manifest.json'), 'utf8')) as Manifest;
 
 /** The source cases' synthetic posting exports, which the vendor exports write again. */
-const SOURCES = ['LED-04/posting-export.csv', 'LED-08/posting-export-again.csv', 'LED-09/lines-posting-export.csv'];
+const SOURCES = ['LED-04/posting-export.csv', 'LED-08/posting-export-again.csv', 'LED-09/lines-posting-export.csv', 'LED-06/recoupment-posting-export.csv'];
 
 interface StoredRow {
   readonly row_no: number;
@@ -135,6 +135,8 @@ describe('the vendor posting exports load into posting_row through their built-i
     const rows = await stored(practice, [documentId]);
     expect(rows).toEqual(manifest.rows);
     expect(rows).toEqual(syntheticRows());
+    // The take-back is stored as a negative amount in integer cents, as the SYNTHETIC template stores it.
+    expect(rows.filter((row) => row.amountCents.startsWith('-')).map((row) => [row.checkOrTrace, row.amountCents, row.claimReference])).toEqual([['SYNEFTLED06003', '-1800', 'SYNPCNLED06001']]);
     expect(await w.rows(practice, 'SELECT DISTINCT template, count(*) OVER ()::int AS n FROM posting_row WHERE source_document_id = $1', [documentId])).toEqual([{ template: id, n: manifest.rows.length }]);
     // Only the mapped cells are kept raw, and never the claim reference.
     const [raw] = await w.rows<{ raw: Record<string, string> }>(practice, 'SELECT raw FROM posting_row WHERE source_document_id = $1 AND claim_reference IS NOT NULL', [documentId]);
@@ -155,9 +157,9 @@ describe('the vendor posting exports load into posting_row through their built-i
     for (const template of VENDOR_POSTING_TEMPLATES) {
       await as(practice, (scope) => setPostingTemplate(scope, { practiceId: practice.practiceId, template, requestId: `test-${randomUUID()}` }));
       const documentId = await w.stageExport(practice, `emr/${template.id}/posting-export.csv`, 'posting_export');
-      expect((await w.reconcile(practice, { documentId })).exports, template.id).toEqual([{ documentId, kind: 'posting_export', outcome: 'loaded', stored: 0, repeated: 4, problems: 0 }]);
+      expect((await w.reconcile(practice, { documentId })).exports, template.id).toEqual([{ documentId, kind: 'posting_export', outcome: 'loaded', stored: 0, repeated: 5, problems: 0 }]);
     }
-    expect(await w.rows(practice, 'SELECT template, count(*)::int AS n FROM posting_row GROUP BY template')).toEqual([{ template: 'synthetic_pm_export_v1', n: 4 }]);
+    expect(await w.rows(practice, 'SELECT template, count(*)::int AS n FROM posting_row GROUP BY template')).toEqual([{ template: 'synthetic_pm_export_v1', n: 5 }]);
   });
 
   it('leaves a vendor export unreadable under another vendor’s template: its columns are not there, and no row is kept', async () => {

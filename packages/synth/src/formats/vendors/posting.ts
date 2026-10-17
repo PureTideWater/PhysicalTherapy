@@ -1,7 +1,7 @@
 /**
  * The vendor posting exports (registry.ts, kind posting_export), generated from the case registry's
  * own synthetic posting exports: the LED-04 check-level row, the two rows of LED-08's later export,
- * and LED-09's row with line detail. Each source export (formats/csv.ts, the SYNTHETIC template) is
+ * LED-09's row with line detail, and LED-06's take-back (a negative amount). Each source export (formats/csv.ts, the SYNTHETIC template) is
  * read back into canonical rows, the fields the ledger stores in posting_row with the amount in integer
  * cents, and each vendor format writes the same rows in its own columns, dates and line endings, with
  * SYNTHSENDER in its payee ID column. Nothing is invented: a vendor row is a source row written again.
@@ -35,6 +35,7 @@ export const POSTING_SOURCES: readonly PostingSource[] = [
   { caseId: 'LED-04', file: 'posting-export.csv' },
   { caseId: 'LED-08', file: 'posting-export-again.csv' },
   { caseId: 'LED-09', file: 'lines-posting-export.csv' },
+  { caseId: 'LED-06', file: 'recoupment-posting-export.csv' },
 ];
 
 const US_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/;

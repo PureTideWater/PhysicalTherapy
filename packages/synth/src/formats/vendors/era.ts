@@ -3,7 +3,8 @@
  * 835s: one row per service line, with its claim's and its payment's fields repeated, as
  * practice-management systems list remittances. Every value comes from the 835's expectation in the
  * case's expected.json (the parser's reading of the file), so the rows of a payment total its claims
- * paid to the cent, and the payment is BPR02.
+ * paid to the cent, and the payment is the parser's signed payment: BPR02 as written for a credit, and
+ * BPR02 negated for a debit (BPR03 D, a take-back), so the rows of a debit total its payment too.
  *
  * The sources are loaded, balanced 835s whose adjustments are all at line level and that carry no PLB:
  * a row has no place for a claim-level adjustment or a provider-level one, so such a file is refused
@@ -29,7 +30,7 @@ export interface CanonicalEraRow {
   readonly trace: string;
   /** BPR16. */
   readonly paymentDate: string;
-  /** BPR02. */
+  /** The signed payment: BPR02, negated when BPR03 is D (a debit). */
   readonly paymentCents: string;
   /** BPR04. */
   readonly paymentMethod: string;
@@ -127,7 +128,7 @@ export function eraRowsOf(parse: ParseExpectation, label: string): { readonly ro
           payeeId: transaction.dedupKey.payeeId,
           trace: transaction.dedupKey.trn02,
           paymentDate: transaction.bpr16Date,
-          paymentCents: transaction.dedupKey.bpr02Cents,
+          paymentCents: transaction.balance.paymentCents,
           paymentMethod: transaction.bprMethod,
           patientControlNumber: claim.patientControlNumber,
           payerClaimNumber: claim.payerClaimControlNumber,
@@ -148,7 +149,7 @@ export function eraRowsOf(parse: ParseExpectation, label: string): { readonly ro
       }
     }
     const paid = centsToString(sumCents(rows.slice(before).map((row) => parseCents(row.paidCents))));
-    checks.push({ trace: transaction.dedupKey.trn02, paymentCents: transaction.dedupKey.bpr02Cents, claimsPaidCents: transaction.balance.claimsPaidCents, rows: rows.length - before, paidCents: paid });
+    checks.push({ trace: transaction.dedupKey.trn02, paymentCents: transaction.balance.paymentCents, claimsPaidCents: transaction.balance.claimsPaidCents, rows: rows.length - before, paidCents: paid });
   }
   return { rows, checks };
 }

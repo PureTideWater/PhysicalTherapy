@@ -831,6 +831,13 @@
           }
         }
       }
+    },
+    {
+      "path": "recoupment-posting-export.csv",
+      "sha256": "186d22965dc29ee7b5f25eb37d7229563aa75e2318efbf4648d661dacb4ec2da",
+      "bytes": 169,
+      "kind": "csv",
+      "description": "The posting export of the take-back: the 18.00 recouped, posted as -18.00 against the corrected claim."
     }
   ],
   "generated": [],

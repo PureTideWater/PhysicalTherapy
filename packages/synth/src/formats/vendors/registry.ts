@@ -113,10 +113,14 @@ export const FIELD_TYPES: Readonly<Record<VendorPostingField | VendorEraField, C
   adjustment_codes: 'code',
 };
 
-/** The fields every export of a kind must hold: what the ledger requires of a posting row, and what one ERA line needs. */
+/**
+ * The fields every export of a kind must hold: what the ledger requires of a posting row; and what one ERA
+ * line needs, with the payee and the payer its remittance must name (remittance.payee_npi and payer_name are
+ * NOT NULL) and the export's duplicate key needs (D12: payee, trace, amount and payment date).
+ */
 export const REQUIRED_FIELDS: Readonly<{ posting_export: readonly VendorPostingField[]; era_export: readonly VendorEraField[] }> = {
   posting_export: ['posted_on', 'check_or_trace', 'amount', 'payee_id'],
-  era_export: ['sender_id', 'trace', 'payment_date', 'payment_amount', 'patient_control_number', 'claim_status', 'service_date', 'procedure_code', 'charge', 'paid', 'patient_responsibility'],
+  era_export: ['sender_id', 'payer_name', 'payee_id', 'trace', 'payment_date', 'payment_amount', 'patient_control_number', 'claim_status', 'service_date', 'procedure_code', 'charge', 'paid', 'patient_responsibility'],
 };
 
 /** The field whose column holds SYNTHSENDER (D14): a posting export's payee ID, an ERA export's interchange sender. */

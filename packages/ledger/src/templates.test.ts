@@ -118,9 +118,9 @@ describe('the vendor posting templates read packages/synth’s placeholders of t
   });
 
   it('read the same rows, with the same fingerprints, as the SYNTHETIC template reads from the source cases', () => {
-    const sources = [readPostingExport(fixture('LED-04/posting-export.csv'), SYNTHETIC_PM_EXPORT_V1), readPostingExport(fixture('LED-08/posting-export-again.csv'), SYNTHETIC_PM_EXPORT_V1), readPostingExport(fixture('LED-09/lines-posting-export.csv'), SYNTHETIC_PM_EXPORT_V1)];
+    const sources = ['LED-04/posting-export.csv', 'LED-08/posting-export-again.csv', 'LED-09/lines-posting-export.csv', 'LED-06/recoupment-posting-export.csv'].map((source) => readPostingExport(fixture(source), SYNTHETIC_PM_EXPORT_V1));
     const synthetic = sources.flatMap((read) => (read.kind === 'read' ? read.rows : []));
-    expect(synthetic).toHaveLength(4);
+    expect(synthetic).toHaveLength(5);
     const fields = (row: (typeof synthetic)[number]) => [row.postedOn, row.checkOrTrace, row.amountCents, row.payerName, row.claimReference, row.procedureCode, row.serviceDate, row.batch];
     for (const template of VENDOR_POSTING_TEMPLATES) {
       const read = readPostingExport(fixture(`emr/${template.id}/posting-export.csv`), template);
@@ -128,6 +128,16 @@ describe('the vendor posting templates read packages/synth’s placeholders of t
       expect(rows.map(fields), template.id).toEqual(synthetic.map(fields));
       // The same posting in a vendor's export is the same posting_row: it is stored, and matched, once.
       expect(rows.map((row) => JSON.parse(row.fingerprint) as unknown), template.id).toEqual(synthetic.map((row) => JSON.parse(row.fingerprint) as unknown));
+    }
+  });
+
+  it('read the take-back (LED-06’s recoupment) as a negative amount in integer cents under every template, as the SYNTHETIC one does', () => {
+    for (const template of [SYNTHETIC_PM_EXPORT_V1, ...VENDOR_POSTING_TEMPLATES]) {
+      const read = readPostingExport(fixture(template === SYNTHETIC_PM_EXPORT_V1 ? 'LED-06/recoupment-posting-export.csv' : `emr/${template.id}/posting-export.csv`), template);
+      const rows = read.kind === 'read' ? read.rows : [];
+      expect(read.kind === 'read' && read.problems, template.id).toEqual([]);
+      const negative = rows.filter((row) => row.amountCents < 0n);
+      expect(negative.map((row) => [row.postedOn, row.checkOrTrace, row.amountCents, row.claimReference]), template.id).toEqual([['2026-08-05', 'SYNEFTLED06003', -1800n, 'SYNPCNLED06001']]);
     }
   });
 
