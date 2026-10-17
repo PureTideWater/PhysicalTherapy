@@ -5804,4 +5804,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261101120000_support_mail.sql` (39 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `ec475408c5e37f1e7342028a400df43e06b78d968c419ad5889e72ccfbea03a8`
+Approved by: Tyler Williams  Date: 2026-10-17  Document SHA-256: `ec475408c5e37f1e7342028a400df43e06b78d968c419ad5889e72ccfbea03a8`
