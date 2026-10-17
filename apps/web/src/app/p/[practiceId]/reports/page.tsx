@@ -1,3 +1,4 @@
+import { STAGE_LABELS } from '@tp/triage';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -140,26 +141,27 @@ export default async function ReportsPage(props: Props) {
                       {report.generatedAt === null ? '' : `; generated ${utc(report.generatedAt)}, windows judged on ${report.asOf ?? '—'}`}
                     </span>
                   </div>
+                  {/* Today's stage labels, not the ones a report stored when it was written: an older report stored a bare "Recovered". */}
                   {report.headline === null ? null : (
                     <p className="pt-2 text-sm" data-headline={report.id}>
                       <Link className="underline" href={`${base}#stage-actionable`}>
-                        {report.headline.labels.actionable}
+                        {STAGE_LABELS.actionable}
                       </Link>{' '}
                       <Money value={report.headline.actionable_cents} />;{' '}
                       <Link className="underline" href={`${base}#stage-payer-approved`}>
-                        {report.headline.labels.payer_approved}
+                        {STAGE_LABELS.payer_approved}
                       </Link>{' '}
                       <Money value={report.headline.payer_approved_cents} />;{' '}
                       <Link className="underline" href={`${base}#stage-recovered`}>
-                        {report.headline.labels.recovered}
+                        {STAGE_LABELS.recovered}
                       </Link>{' '}
                       <Money value={report.headline.recovered_cents} />. Below them:{' '}
                       <Link className="underline" href={`${base}#stage-flagged`}>
-                        {report.headline.labels.flagged}
+                        {STAGE_LABELS.flagged}
                       </Link>{' '}
                       {report.headline.flagged_lines} lines;{' '}
                       <Link className="underline" href={`${base}#stage-validated`}>
-                        {report.headline.labels.validated}
+                        {STAGE_LABELS.validated}
                       </Link>{' '}
                       <Money value={report.headline.validated_cents} />.
                     </p>
@@ -216,7 +218,7 @@ export default async function ReportsPage(props: Props) {
         <Card role="region" aria-label="ROI statements">
           <CardHeader>
             <CardTitle>ROI statements</CardTitle>
-            <CardDescription>Recovered cash net of recoupments against the fees paid, quarterly and on demand, every figure with the ledger entries it sums.</CardDescription>
+            <CardDescription>Recovered cash, posted or deposited and net of recoupments, against the fees paid, quarterly and on demand, every figure with the ledger entries it sums.</CardDescription>
           </CardHeader>
           <CardContent>
             <Link className="text-sm underline" href={`${path}/roi`}>

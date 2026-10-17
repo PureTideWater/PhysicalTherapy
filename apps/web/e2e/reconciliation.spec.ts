@@ -139,7 +139,8 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       await expectFigure(page, practiceId, 'deposited', '$30.00');
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
-    await expect(page.locator('[data-figure="recovered"]')).toContainText('proved by deposit');
+    await expect(page.locator('[data-figure="recovered"]')).toContainText('Recovered (deposited)');
+    await expect(page.locator('[data-figure="recovered"]')).toContainText('stage five: cash deposited, proved by the bank export');
     await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered (posted or deposited)');
   });
 
@@ -182,7 +183,9 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await expect(recovered.getByRole('table')).toContainText('Deposited');
     await expect(recovered.getByRole('table')).toContainText('-$18.00');
     await expect(page.locator('[data-proof-level="deposited"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Fees paid' }).locator('[data-ratio="none"]')).toContainText('Billing records no fees paid in the period');
+    // Recovered is labelled by the cash that proves it, everywhere on the statement (CO-11).
+    await expect(page.getByText('Recovered (deposited) is cash deposited, proved by the bank export.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Fees paid' }).locator('[data-ratio="none"]')).toHaveText('Billing records no fees paid in the period, so no ratio to the fees is given.');
     const pdf = await page.request.get(`${new URL(page.url()).pathname}/pdf`);
     expect(pdf.headers()['content-type']).toBe('application/pdf');
     expect(pdf.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);

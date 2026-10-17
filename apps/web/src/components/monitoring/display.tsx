@@ -52,7 +52,7 @@ export function NotificationText({ practiceId, notification }: { readonly practi
         <Link className="font-medium underline" href={`/p/${practiceId}/cases/${notification.caseId ?? ''}`}>
           A payer took back {usd(totals, 'recouped')}
         </Link>{' '}
-        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered is reduced by that amount.{' '}
+        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered (posted or deposited) is reduced by that amount.{' '}
         <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${notification.caseId ?? ''}`}>
           The case’s ledger
         </Link>

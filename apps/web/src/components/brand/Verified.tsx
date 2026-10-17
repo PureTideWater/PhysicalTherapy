@@ -1,4 +1,4 @@
-import { verifiedDefinition } from '@paidwhole/brand/tokens';
+import { badgeText, sealLabel, verifiedDefinition } from '@paidwhole/brand/tokens';
 import type { ReconciledToCash } from '@tp/ledger';
 
 import { PaidWholeMark } from './Mark';
@@ -54,7 +54,7 @@ export function VerifiedBadge({ reconciledToCash, source, size = 'md', reversed 
       data-source={source}
     >
       <PaidWholeMark size={BADGE[size].mark} variant={reversed ? 'reversed' : 'color'} decorative />
-      Verified by PaidWhole
+      {badgeText}
     </span>
   );
 }
@@ -71,7 +71,7 @@ type SealProps = Gate & {
 /** The seal for report covers and statements. Uses the outlined SVG so it prints identically everywhere. */
 export function VerifiedSeal({ reconciledToCash, source, size = 96, reversed = false, withDefinition = true, className }: SealProps) {
   if (!reconciledToCash) return refuse('VERIFIED_SEAL_NOT_EARNED');
-  const alt = 'Verified by PaidWhole. Reconciled to cash.';
+  const alt = sealLabel;
   return (
     <figure className={[`m-0 inline-flex flex-col items-center gap-2 ${size <= 220 ? 'max-w-[220px]' : 'max-w-none'}`, className].filter(Boolean).join(' ')} data-slot="verified-seal" data-source={source}>
       {/* Fixed-size outlined SVGs from /public; next/image would add a style attribute the CSP refuses. On a dark ground

@@ -1,6 +1,6 @@
 import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, recoveredLabel, reportReconciliation } from '@tp/ledger';
 import { formatUsd, parseCents } from '@tp/money';
-import { WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
+import { STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 
 import { type FigureColumns, brandedDocument, figureColumns } from './brand';
 import type { AuditReportContent } from './content';
@@ -86,7 +86,8 @@ export function auditReconciliation(content: AuditReportContent, proofLevel: Pro
 
 export function auditHtml(content: AuditReportContent, reconciliation: ReportReconciliation = auditReconciliation(content)): string {
   const { headline, run } = content;
-  const labels = headline.labels;
+  // Today's stage labels, not the ones the report stored when it was written.
+  const labels = STAGE_LABELS;
   // Recovered names the practice's proof level, the one the gate judged it under: never "Recovered" alone.
   const level = reconciliation.proofLevel;
   const recovered = recoveredLabel(level);
@@ -158,6 +159,7 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
       meta: [`Service dates ${run.period_from} to ${run.period_to}`, `Pricing run ${run.pricing_run_id}`, `Rule release ${String(run.release_no)}, manifest ${run.manifest_sha256.slice(0, 16)}`, `Judged on ${content.as_of}`, `Report ${content.report_id}`],
       reference: `Report ${content.report_id}`,
       reconciliation,
+      independenceClaim: true,
     },
     STYLE,
     `<header><p class="pins">${escapeWithFigures(pins)}</p></header>${sections.join('')}<footer>Every figure carries its stage. ${escapeWithFigures(recovered)} counts only cash ${escapeWithFigures(level)}, net of recoupments and reversals. This report is released only after a reimbursement reviewer signs an attestation naming this file's SHA-256. Report ${escapeWithFigures(content.report_id)}.</footer>`,

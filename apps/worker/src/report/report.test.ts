@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { independenceClaim } from '@paidwhole/brand';
 import { readDocumentPages } from '@tp/contracts/pages';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import { STAGE_LABELS } from '@tp/triage';
@@ -191,6 +192,20 @@ describe('the report HTML', () => {
   it.skipIf(!chromiumInstalled())('sets every dollar figure in IBM Plex Mono, in the headline, the boxes below it and running text as in tables (skipped without Chromium)', async () => {
     expect(await amountsNotInMono(html)).toEqual([]);
   }, 60_000);
+
+  it('prints the independence claim on its cover, in the brand’s words (CO-11, decision D11)', () => {
+    const cover = html.slice(html.indexOf('<section class="cover"'), html.indexOf('<table class="pages"'));
+    expect(cover).toContain(`<p class="claim">PaidWhole is ${independenceClaim}.</p>`);
+    expect(html.split(independenceClaim)).toHaveLength(2);
+  });
+
+  it('shows today’s stage labels, not the ones the report stored when it was written', () => {
+    // A report written before the labels named their cash stored a bare "Recovered".
+    const stored = auditHtml({ ...CONTENT, headline: { ...CONTENT.headline, labels: { ...STAGE_LABELS, recovered: 'Recovered', actionable: 'Stored actionable' } } as unknown as typeof CONTENT.headline });
+    expect(stored).toContain(`${STAGE_LABELS.actionable}</div><div class="amount">$552.00`);
+    expect(stored).not.toContain('Stored actionable');
+    expect(stored).not.toMatch(/Recovered(?! \((posted|deposited)\))/);
+  });
 
   it('keeps the word recovered beside stage five only', () => {
     const withoutHeadline = html.replace(/<div class="figure"><div class="label">Recovered \(posted\)<\/div>.*?<\/div><\/div>/, '').replace(/Recovered \(posted\) counts only cash posted/, '');

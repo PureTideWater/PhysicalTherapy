@@ -1,13 +1,13 @@
 import type { MetadataRoute } from 'next';
 
-import { BRAND_BACKGROUND_COLOR, BRAND_NAME, BRAND_TAGLINE, BRAND_THEME_COLOR } from '../lib/brand';
+import { BRAND_BACKGROUND_COLOR, BRAND_DESCRIPTOR, BRAND_NAME, BRAND_THEME_COLOR } from '../lib/brand';
 
 /** Web app manifest. app/icon.svg (favicon) and app/apple-icon.png are picked up by Next automatically. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: BRAND_NAME,
     short_name: BRAND_NAME,
-    description: BRAND_TAGLINE,
+    description: BRAND_DESCRIPTOR,
     start_url: '/',
     display: 'standalone',
     background_color: BRAND_BACKGROUND_COLOR,

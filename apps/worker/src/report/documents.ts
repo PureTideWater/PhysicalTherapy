@@ -267,7 +267,7 @@ function document(kind: ReportDocumentKind, title: string, short: string, covers
   <p>${escapeHtml(pins.practiceName)}</p>
   <p class="pins">Document ${escapeHtml(pins.documentId)}; figures fixed ${escapeHtml(pins.generatedAt)} UTC by ${escapeHtml(pins.generatedBy ?? 'a member of the practice')}. Every figure is as it stood then; a later document is generated anew.</p>
   ${body}
-  <footer>Amounts are computed in integer cents; no figure adds two stages together, and recovered is only ever the recovery ledger’s.</footer>`,
+  <footer>Amounts are computed in integer cents; no figure adds two stages together, and recovered (posted or deposited) is only ever the recovery ledger’s.</footer>`,
   );
 }
 
@@ -347,7 +347,7 @@ export function monthlySummaryHtml(content: MonthlySummaryContent, pins: Documen
     'Monthly variance summary',
     content.month,
     pins,
-    `<p>Lines with a service date in ${escapeHtml(content.month)}, each counted once at the furthest stage it has reached, as of ${escapeHtml(content.generated_on)}. Variance is expected allowed less observed allowed on the priced line the stage names. Payer approved and recovered are counts here: their dollars are the recovery ledger’s, on the practice’s Reconciliation screen and ROI statements.</p>
+    `<p>Lines with a service date in ${escapeHtml(content.month)}, each counted once at the furthest stage it has reached, as of ${escapeHtml(content.generated_on)}. Variance is expected allowed less observed allowed on the priced line the stage names. Payer approved and recovered (posted or deposited) are counts here: their dollars are the recovery ledger’s, on the practice’s Reconciliation screen and ROI statements.</p>
   <h2>By stage</h2>
   ${table('Lines by stage', [{ value: 'Stage' }, { value: 'Lines', amount: true }, { value: 'Billed', amount: true }, { value: 'Variance', amount: true }], stageRows, 'No line.')}
   <h2>By payer</h2>

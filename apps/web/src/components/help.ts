@@ -7,7 +7,7 @@ import type { ShellSection } from './shell';
  */
 export const HELP: Readonly<Record<ShellSection, string>> = {
   home: 'Your starting point: pick a practice in the switcher, or open the console if you work for PaidWhole.',
-  practice: 'The dashboard: what the latest runs found, by stage, and the queues waiting on you. Dollar figures carry their stage; only stage-five amounts are recovered.',
+  practice: 'The dashboard: what the latest runs found, by stage, and the queues waiting on you. Dollar figures carry their stage; only stage-five amounts are recovered (posted or deposited).',
   uploads: 'Upload 835 remittances, contracts, posting exports and bank exports. Each file is scanned before it is read; a held file says why.',
   remittances: 'Every remittance loaded, by payer and payment, with what was held and why.',
   claims: 'Claims and their service lines, with the expected amount where a signed-off contract prices them, and the reason where none does.',
@@ -16,7 +16,7 @@ export const HELP: Readonly<Record<ShellSection, string>> = {
   pricing_runs: 'Each run prices every line under the approved contract versions of a numbered rule release. A run never changes; a new release means a new run.',
   anomalies: 'Patterns triage found across lines. Review one to confirm it, or ask for validation.',
   cases: 'Shortfalls grouped by payer pattern. Work a case into a packet a person approves; the drafter never approves their own.',
-  reconciliation: 'Later remittances, postings and deposits matched to approved cases. A line is recovered only with a ledger entry at the practice’s proof level.',
+  reconciliation: 'Later remittances, postings and deposits matched to approved cases. A line is recovered only with a ledger entry posted or deposited at the practice’s proof level.',
   reports: 'The audit report, coverage report, monthly summary and ROI statements, with their export history.',
   notifications: 'In-app notices: digests, finished runs and cases nearing their deadline. Counts and totals only.',
   contracts: 'Your payer contracts and their versions. A rate is used only once a specialist signs it off with its page and quote.',

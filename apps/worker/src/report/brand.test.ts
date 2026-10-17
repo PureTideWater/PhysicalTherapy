@@ -1,3 +1,4 @@
+import { badgeText, independenceClaim, sealLabel } from '@paidwhole/brand';
 import { readDocumentPages } from '@tp/contracts/pages';
 import { type LedgerEntry, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
@@ -76,6 +77,33 @@ describe('the report frame', () => {
     expect(verifiedSeal(gate(1200n))).toContain(DEFINITION);
     expect(verifiedBadge(gate(1200n))).toContain('aria-label="Verified by PaidWhole"');
   });
+
+  it('names the seal and the badge in the brand’s words, from its tokens (CO-11)', () => {
+    expect(verifiedSeal(gate(1200n))).toContain(`role="img" aria-label="${sealLabel}"`);
+    expect(sealLabel).toBe('Verified by PaidWhole. Reconciled to cash.');
+    expect(verifiedBadge(gate(1200n))).toContain(`role="img" aria-label="${badgeText}"`);
+  });
+});
+
+describe('the independence claim on a cover (CO-11, decision D11)', () => {
+  const frame = { title: 'Audit report', kicker: 'Contract-payment audit', heading: 'Audit report', practiceName: 'SYNTHETIC PRACTICE', meta: ['Report report-1'], reference: 'Report report-1', reconciliation: gate(1300n) };
+  const CLAIM = '<p class="claim">PaidWhole is independent of the EMR and the payer.</p>';
+
+  it('prints the claim under the practice’s name when the document asks for it, in the tokens’ words', () => {
+    const front = cover(brandedDocument({ ...frame, independenceClaim: true }, '', '<p>Body</p>'));
+    expect(CLAIM).toContain(independenceClaim);
+    expect(front).toContain(`<p class="practice">SYNTHETIC PRACTICE</p>${CLAIM}<div class="meta">`);
+    // Once, on the cover alone.
+    expect(brandedDocument({ ...frame, independenceClaim: true }, '', '<p>Body</p>').split(independenceClaim)).toHaveLength(2);
+  });
+
+  it('prints none on a document that does not ask (the ROI statement) or under a white label', () => {
+    expect(cover(brandedDocument(frame, '', '<p>Body</p>'))).not.toContain('class="claim"');
+    expect(cover(statement(1200n))).not.toContain(independenceClaim);
+    const firm = brandedDocument({ ...frame, independenceClaim: true, whiteLabel: { firmName: 'SYNTHETIC BILLING FIRM' } }, '', '<p>Body</p>');
+    expect(firm).not.toContain(independenceClaim);
+    expect(firm).not.toMatch(/PaidWhole/);
+  });
 });
 
 describe('a statement’s cover', () => {
@@ -100,8 +128,28 @@ describe('a statement’s cover', () => {
   it('names the recovered figure with its proof level and the fees as PaidWhole’s', () => {
     const html = statement(1200n);
     expect(html).toContain('Recovered principal, net (deposited): <span class="figure-amount">$12.00</span>');
+    expect(html).toContain('Entries of recovered principal, net (deposited)');
     expect(html).toContain('Fees paid to PaidWhole:');
     expect(html).toContain('<title>ROI statement | PaidWhole</title>');
+    expect(html).toContain('<p>Billing records no fees paid in the period, so no ratio to the fees is given.</p>');
+    expect(html).toContain('Interest the payer paid in the period, shown apart from principal.');
+  });
+
+  it('says "recovered" only with posted or deposited: the ratio, the empty figure, each proof level (CO-11)', () => {
+    const paid = (proofLevel: 'posted' | 'deposited', recovered: typeof CHECK.recovered) =>
+      statementHtml({ statementId: 'statement-1', practiceName: 'SYNTHETIC PRACTICE', statement: { ...STATEMENT, proofLevel, feesCents: cents(300n) }, check: { ...CHECK, recovered }, generatedBy: null, generatedAt: '2026-10-01 09:00:00', reconciliation: gate(1300n) });
+    expect(paid('deposited', CHECK.recovered)).toContain('<p>Recovered principal, net (deposited) is 4.00 times the fees paid in the period.</p>');
+    const posted = paid('posted', NONE);
+    expect(posted).toContain('<p>Recovered principal, net (posted) is 4.00 times the fees paid in the period.</p>');
+    expect(posted).toContain('<p class="empty">No cash was recovered (posted) in the period.</p>');
+    expect(paid('deposited', NONE)).toContain('<p class="empty">No cash was recovered (deposited) in the period.</p>');
+    // Every sentence of the document that says recovered also says posted or deposited.
+    for (const html of [posted, statement(1200n)]) {
+      const sentences = html.replace(/<style>[\s\S]*?<\/style>/, '').replace(/<[^>]+>/g, '\n').split(/\n|(?<=[.!?])\s+/);
+      const unlabelled = sentences.filter((sentence) => /\brecovered\b/i.test(sentence) && !/\b(posted|deposited)\b/.test(sentence));
+      expect(unlabelled).toEqual([]);
+      expect(sentences.filter((sentence) => /\brecovered\b/i.test(sentence)).length).toBeGreaterThan(3);
+    }
   });
 });
 

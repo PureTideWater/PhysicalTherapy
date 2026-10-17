@@ -45,9 +45,12 @@ export function recoveredLabel(level: string): string {
   return ledgerRecoveredLabel(level === 'deposited' ? 'deposited' : 'posted');
 }
 
-/** The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says "posted"). */
+/**
+ * The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says
+ * "posted"): the cash it counts, deposited or posted, then what proves it. It follows "cash" or a recovered label.
+ */
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
-  return level === 'deposited' ? 'proved by deposit (the bank export)' : 'proved by posting (no deposit data is supplied)';
+  return level === 'deposited' ? 'deposited, proved by the bank export' : 'posted, proved by the posting export (no deposit data is supplied)';
 }
 
 export interface TotalsFigures {
@@ -68,7 +71,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
       key: 'approved',
       label: 'Payer approved',
       cents: totals.payerApprovedCents,
-      note: 'accepted by the payer, net of reversals and of what was taken back before it posted; not recovered until it posts',
+      note: 'accepted by the payer, net of reversals and of what was taken back before it posted; recovered only once it is posted or deposited',
     },
     { key: 'posted', label: 'Posted', cents: totals.postedCents, note: 'posting export rows matched to the remittance' },
     { key: 'deposited', label: 'Deposited', cents: totals.depositedCents, note: 'bank export rows matched to the remittance' },
@@ -97,7 +100,7 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
             <dd className="text-lg font-medium">
               <Money value={totals.recoveredCents} />
             </dd>
-            <dd className="text-xs text-muted-foreground">stage five: {proofLevelWords(totals.proofLevel)}, net of recoupments and reversals</dd>
+            <dd className="text-xs text-muted-foreground">stage five: cash {proofLevelWords(totals.proofLevel)}, net of recoupments and reversals</dd>
           </div>
         </dl>
       </CardContent>

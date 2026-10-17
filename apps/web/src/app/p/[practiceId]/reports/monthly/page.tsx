@@ -43,7 +43,7 @@ export default async function MonthlySummaryPage(props: Props) {
         </Link>
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Monthly variance summary, {monthName(month)}</h1>
         <p className="text-base text-muted-foreground">
-          Lines with a service date in the month, each counted once at the furthest stage it has reached. Every figure carries its stage; none is added to another. Payer approved and recovered are counts of lines here; their dollars are
+          Lines with a service date in the month, each counted once at the furthest stage it has reached. Every figure carries its stage; none is added to another. Payer approved and recovered (posted or deposited) are counts of lines here; their dollars are
           the recovery ledger’s, on Reconciliation.
         </p>
       </div>

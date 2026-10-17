@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { fontClassName } from '../lib/fonts';
-import { BRAND_NAME, BRAND_TAGLINE, BRAND_THEME_COLOR } from '../lib/brand';
+import { BRAND_DESCRIPTOR, BRAND_NAME, BRAND_THEME_COLOR } from '../lib/brand';
 import './globals.css';
 
 /**
@@ -21,7 +21,8 @@ export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
   title: { default: BRAND_NAME, template: `%s | ${BRAND_NAME}` },
   applicationName: BRAND_NAME,
-  description: `Contract-payment verification for outpatient therapy practices and their billing firms. ${BRAND_TAGLINE}`,
+  // The descriptor alone (decision D11): every page inherits it, and a screening page never shows the tagline.
+  description: BRAND_DESCRIPTOR,
   robots: { index: false, follow: false },
 };
 

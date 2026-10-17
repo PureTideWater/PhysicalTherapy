@@ -48,7 +48,7 @@ export default async function CasesPage(props: Props) {
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Cases</h1>
         <p className="text-base text-muted-foreground">
           {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. A case’s total is the sum of its lines not written off;
-          a line past its window is struck through and out of it. Payer approved and recovered amounts come from the recovery ledger, on each case’s page.
+          a line past its window is struck through and out of it. Payer approved and recovered (posted or deposited) amounts come from the recovery ledger, on each case’s page.
         </p>
       </div>
       {notice === 'materiality' ? (

@@ -263,7 +263,7 @@ export default async function CasePage(props: Props) {
         <CardHeader>
           <CardTitle>Timeline</CardTitle>
           <CardDescription>
-            Everything recorded on the case, oldest first (line events of the lines on this page). Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered come from the recovery ledger.
+            Everything recorded on the case, oldest first (line events of the lines on this page). Stages move forward only; a reopen is an explicit action with a reason. Payer approved and recovered (posted or deposited) come from the recovery ledger.
           </CardDescription>
         </CardHeader>
         <CardContent>

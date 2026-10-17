@@ -122,7 +122,7 @@ export default async function LedgerReviewPage(props: Props) {
           <AlertDescription>The correction is an entry of its own in your name, with your reason; the entry it corrects is unchanged.</AlertDescription>
         </Alert>
       ) : null}
-      <LedgerTotals totals={totals} title="The practice's ledger" description="Totals by stage, recovered at the practice's proof level." />
+      <LedgerTotals totals={totals} title="The practice's ledger" description="Totals by stage; recovered is the cash posted or deposited at the practice's proof level." />
       <section aria-label="Shortfalls" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Shortfalls</h2>
         {shortfalls.length === 0 ? (

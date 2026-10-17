@@ -34,6 +34,7 @@ p { margin: 4pt 0; }
 .cover h1 { font-family: var(--pw-font-display); font-weight: 700; font-size: 26pt; letter-spacing: var(--pw-tracking-display); line-height: 1.1; margin: 10pt 0; }
 .cover .subheading { font-family: var(--pw-font-display); font-weight: 500; font-size: 15pt; letter-spacing: var(--pw-tracking-display); margin: -4pt 0 12pt; }
 .cover .practice { font-family: var(--pw-font-display); font-weight: 600; font-size: 13pt; margin: 0 0 10pt; }
+.cover .claim { font-size: 10pt; color: var(--pw-slate); margin: 0 0 10pt; max-width: 5.6in; }
 .cover .meta { font-family: var(--pw-font-mono); font-size: 8pt; line-height: 1.6; color: var(--pw-slate); max-width: 5.6in; }
 .cover .meta p { margin: 0 0 3pt; }
 .cover .cover-foot { display: flex; justify-content: flex-end; align-items: flex-end; min-height: 96px; }

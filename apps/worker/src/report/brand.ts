@@ -1,4 +1,4 @@
-import { brandName, markSvg, verifiedDefinition } from '@paidwhole/brand';
+import { badgeText, brandName, independenceClaim, markSvg, sealLabel, verifiedDefinition } from '@paidwhole/brand';
 import { type ReportReconciliation } from '@tp/ledger';
 
 import { REPORT_FONT_FILES, brandFile } from './brand-files';
@@ -38,6 +38,11 @@ export interface ReportFrame {
   readonly reference: string;
   /** The Verified gate's answer for this document, from the ledger. */
   readonly reconciliation: Pick<ReportReconciliation, 'reconciledToCash' | 'source'>;
+  /**
+   * Print the independence claim on the cover, under the practice's name ("PaidWhole is independent of the EMR
+   * and the payer."): the audit report's (decision D11). A white label's cover never carries it.
+   */
+  readonly independenceClaim?: boolean;
   /**
    * A white label: a billing firm's, or the practice's own for a document it sends as its own (a dispute
    * packet). Its name leads the cover, the running header and the title; PaidWhole is only the earned badge.
@@ -94,7 +99,7 @@ export function verifiedSeal(reconciliation: ReportFrame['reconciliation']): str
   if (!reconciliation.reconciledToCash) {
     return '';
   }
-  return `<figure class="seal" data-verified="seal" data-source="${escapeHtml(reconciliation.source)}">${inlineSvg(asset('seal.svg'), 96, 'Verified by PaidWhole. Reconciled to cash.')}<figcaption class="seal-definition">${escapeHtml(verifiedDefinition)}</figcaption></figure>`;
+  return `<figure class="seal" data-verified="seal" data-source="${escapeHtml(reconciliation.source)}">${inlineSvg(asset('seal.svg'), 96, sealLabel)}<figcaption class="seal-definition">${escapeHtml(verifiedDefinition)}</figcaption></figure>`;
 }
 
 /** The Verified badge for a white-label footer, only when the ledger says the report's recovered total reconciles to cash. */
@@ -102,7 +107,7 @@ export function verifiedBadge(reconciliation: ReportFrame['reconciliation']): st
   if (!reconciliation.reconciledToCash) {
     return '';
   }
-  return `<span class="badge" data-verified="badge" data-source="${escapeHtml(reconciliation.source)}">${inlineSvg(asset('badge.svg'), 24, 'Verified by PaidWhole')}</span>`;
+  return `<span class="badge" data-verified="badge" data-source="${escapeHtml(reconciliation.source)}">${inlineSvg(asset('badge.svg'), 24, badgeText)}</span>`;
 }
 
 function cover(frame: ReportFrame): string {
@@ -112,7 +117,9 @@ function cover(frame: ReportFrame): string {
   const meta = frame.meta.map((line) => `<p>${escapeHtml(line)}</p>`).join('');
   // The practice's own document already leads with its name: it is not repeated under the headline.
   const practice = frame.whiteLabel?.firmName === frame.practiceName ? '' : `<p class="practice">${escapeHtml(frame.practiceName)}</p>`;
-  return `<section class="cover" aria-label="Cover"><div class="cover-top">${lead}</div><div class="cover-main"><p class="kicker">${escapeHtml(frame.kicker)}</p><h1>${escapeHtml(frame.heading)}</h1>${frame.subheading === undefined ? '' : `<p class="subheading">${escapeHtml(frame.subheading)}</p>`}${practice}<div class="meta">${meta}</div></div><div class="cover-foot">${seal}</div></section>`;
+  // PaidWhole's claim of independence, in the brand's words (CO-11): on PaidWhole's own cover only.
+  const claim = frame.independenceClaim === true && !frame.whiteLabel ? `<p class="claim">${escapeHtml(`${brandName} is ${independenceClaim}.`)}</p>` : '';
+  return `<section class="cover" aria-label="Cover"><div class="cover-top">${lead}</div><div class="cover-main"><p class="kicker">${escapeHtml(frame.kicker)}</p><h1>${escapeHtml(frame.heading)}</h1>${frame.subheading === undefined ? '' : `<p class="subheading">${escapeHtml(frame.subheading)}</p>`}${practice}${claim}<div class="meta">${meta}</div></div><div class="cover-foot">${seal}</div></section>`;
 }
 
 function runningHeader(frame: ReportFrame): string {

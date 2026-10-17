@@ -56,7 +56,7 @@ export default async function ProofLevelPage(props: { readonly params: Promise<{
               <input type="hidden" name="practiceId" value={practiceId} />
               <SelectField label="Proof level" name="proofLevel" options={levels.map((value) => ({ value, label: LABELS[value] ?? value }))} defaultValue={other} />
               <label className="flex items-center gap-2">
-                <input type="checkbox" name="confirm" required /> I have read what the change does to lines already recovered.
+                <input type="checkbox" name="confirm" required /> I have read what the change does to lines already recovered (posted or deposited).
               </label>
             </ActionForm>
           ) : (

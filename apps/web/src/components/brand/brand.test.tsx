@@ -1,4 +1,8 @@
-import { verifiedDefinition } from '@paidwhole/brand/tokens';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { assetPath, assets } from '@paidwhole/brand';
+import { badgeText, sealLabel, verifiedDefinition } from '@paidwhole/brand/tokens';
 import { entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -63,6 +67,22 @@ describe('VerifiedSeal and VerifiedBadge', () => {
     const badge = renderToStaticMarkup(<VerifiedBadge {...earned} size="sm" />);
     expect(badge).toContain('Verified by PaidWhole');
     expect(badge).toContain(`title="${verifiedDefinition}"`);
+  });
+
+  it('say the brand’s words from its tokens: the badge’s text, and the seal’s alternative text (CO-11)', () => {
+    const earned = reconciliation(3000n);
+    const badge = renderToStaticMarkup(<VerifiedBadge {...earned} />);
+    expect(badge).toMatch(new RegExp(`</svg>${badgeText}</span>$`));
+    const seal = renderToStaticMarkup(<VerifiedSeal {...earned} />);
+    expect(seal.match(/alt="([^"]*)"/g)).toEqual([`alt="${sealLabel}"`, `alt="${sealLabel}"`]);
+    expect(sealLabel).toBe('Verified by PaidWhole. Reconciled to cash.');
+  });
+
+  it('show the brand package’s own outlined art, byte for byte, whose glyphs the package’s test reads against the words', () => {
+    const publicBrand = path.resolve(import.meta.dirname, '../../../public/brand');
+    for (const name of [assets.seal, assets.sealReversed, assets.badge, assets.badgeReversed]) {
+      expect(readFileSync(path.join(publicBrand, name)).equals(readFileSync(assetPath(name)))).toBe(true);
+    }
   });
 
   it('follow dark mode through the tokens: the badge in the foreground color, the reversed seal on a dark ground', () => {

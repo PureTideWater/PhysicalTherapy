@@ -52,10 +52,10 @@ const count = (value: number, noun: string) => `${String(value)} ${noun}${value 
 
 /** The headline: three numbers, then flagged and validated below, each linked to its stage. */
 export function Headline({ headline, practiceId, base }: { readonly headline: AuditReportContent['headline']; readonly practiceId: string; readonly base: string }) {
+  // Today's stage labels, not the ones a report stored when it was written: "Recovered" never stands without posted or deposited.
   const figures = [
-    { label: headline.labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
-    { label: headline.labels.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
-    // Today's label, not the one a report stored when it was written: "Recovered" never stands without posted or deposited.
+    { label: STAGE_LABELS.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
+    { label: STAGE_LABELS.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
     { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted and reconciled, net of recoupments', href: `${base}#stage-recovered` },
   ];
   return (
@@ -74,7 +74,7 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
       <ul className="flex flex-col gap-1 text-sm">
         <li>
           <a className="underline" href={`${base}#stage-flagged`}>
-            {headline.labels.flagged}
+            {STAGE_LABELS.flagged}
           </a>
           : {count(headline.flagged_lines, 'line')}, <Money value={headline.flagged_range_low_cents} /> to <Money value={headline.flagged_range_high_cents} />; investigatory, never a claim and in no
           total (
@@ -85,7 +85,7 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
         </li>
         <li>
           <a className="underline" href={`${base}#stage-validated`}>
-            {headline.labels.validated}
+            {STAGE_LABELS.validated}
           </a>
           : <Money value={headline.validated_cents} /> across {count(headline.validated_lines, 'line')}; priced under signed-off terms and paid below them, before the actionable checks.
         </li>

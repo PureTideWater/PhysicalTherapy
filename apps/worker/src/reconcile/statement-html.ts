@@ -3,6 +3,7 @@ import { type Cents, formatUsd } from '@tp/money';
 
 import { brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
+import { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from '../report/recovered-words';
 
 /**
  * The ROI statement as one self-contained HTML document, which the statement job prints to PDF with
@@ -77,13 +78,10 @@ function figure(title: string, note: string, check: FigureCheck, empty: string):
   ${entryTable(`Entries of ${title.toLowerCase()}`, check.entries, empty)}`;
 }
 
-/** The words for the recovered figure: it names its proof level, so "recovered" never stands without posted or deposited. */
-function recoveredTitle(proofLevel: StoredStatement['proofLevel']): string {
-  return `Recovered principal, net (${proofLevel})`;
-}
-
 export function statementHtml(document: StatementDocument): string {
   const { statement, check } = document;
+  // The recovered figure names its proof level, so "recovered" never stands without posted or deposited.
+  const recovered = RECOVERED_PRINCIPAL_LABELS[statement.proofLevel];
   const ratio = ratioText(statement.recoveredCents, statement.feesCents);
   const cases = statement.links.actionableOpen;
   const generated = `Generated ${document.generatedAt} UTC ${document.generatedBy === null ? 'as the quarterly statement, by the reconcile job' : `on demand by ${document.generatedBy}`}`;
@@ -104,11 +102,11 @@ export function statementHtml(document: StatementDocument): string {
   <h2>Fees paid to PaidWhole: <span class="figure-amount">${escapeHtml(usd(statement.feesCents))}</span></h2>
   <p>${escapeHtml(
     ratio === null
-      ? 'Billing records no fees paid in the period, so no ratio of recovered to fees is given.'
-      : `Net recovered is ${ratio} times the fees paid in the period.`,
+      ? 'Billing records no fees paid in the period, so no ratio to the fees is given.'
+      : `${recovered} is ${ratio} times the fees paid in the period.`,
   )}</p>
-  ${figure(recoveredTitle(statement.proofLevel), 'Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it.', check.recovered, 'No cash was recovered in the period.')}
-  ${figure('Interest, net', 'Interest the payer paid in the period, shown apart from recovered principal.', check.interest, 'No interest was paid in the period.')}
+  ${figure(recovered, 'Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it.', check.recovered, NO_RECOVERED_CASH[statement.proofLevel])}
+  ${figure('Interest, net', 'Interest the payer paid in the period, shown apart from principal.', check.interest, 'No interest was paid in the period.')}
   ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered.', check.approvedUnposted, 'Nothing approved is waiting to be posted.')}
   <h2>Actionable in open cases: <span class="figure-amount">${escapeHtml(usd(statement.actionableOpenCents))}</span></h2>
   <p>${escapeHtml(cases.length === 0 ? 'No case was open when the statement was generated.' : `The actionable totals of ${String(cases.length)} open ${cases.length === 1 ? 'case' : 'cases'} when the statement was generated: ${cases.join(', ')}.`)}</p>

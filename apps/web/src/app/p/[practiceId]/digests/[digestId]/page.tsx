@@ -31,7 +31,7 @@ export default async function DigestPage(props: { readonly params: Promise<{ pra
       <Card role="region" aria-label="Digest">
         <CardHeader>
           <CardTitle>Counts and dollar totals</CardTitle>
-          <CardDescription>Validated is contract-supported; actionable is in cases, inside its window and above materiality; recovered is posted, net.</CardDescription>
+          <CardDescription>Validated is contract-supported; actionable is in cases, inside its window and above materiality; recovered is the cash posted or deposited at the proof level, net.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="flex flex-col gap-1 text-sm" aria-label="Digest figures">

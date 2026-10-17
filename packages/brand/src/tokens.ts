@@ -55,7 +55,40 @@ export const logoRules = {
   clearSpaceRatio: 0.25, // of symbol height, all sides
 } as const;
 
+/**
+ * The product's words (Change Order 001, CO-11; docs/brand/BRAND.md, sections 1 and 6). Every place that
+ * shows one reads it from here, never a copy of the literal; tools/brand-copy lints the rest of the copy.
+ */
+
+/** The tagline. It says "owed", so screening shows the lockup without it (decision D11). */
 export const tagline = "Know what you're owed. Verify what you're paid.";
 
+/** What PaidWhole is, in one line: the page metadata, the web manifest and the request-audit lede (decision D11). */
+export const descriptor = "Contract-verified payment for therapy groups";
+
+/**
+ * The independence claim, in these words and lowercase so it runs on in a sentence: the request-audit page
+ * and the audit report cover (decision D11). Never "independent verification platform".
+ */
+export const independenceClaim = "independent of the EMR and the payer";
+
+/**
+ * The seal's two lines: around the top, then around the bottom. The seal art is outlined text in exactly
+ * these words (tokens.test.ts reads its glyphs); the words name who makes the claim and what it is.
+ */
+export const sealText = ["VERIFIED BY PAIDWHOLE", "RECONCILED TO CASH"] as const;
+
+/** The badge's words, the pill "Verified by PaidWhole": the seal's first line in the wordmark's case. */
+export const badgeText = "Verified by PaidWhole";
+
+/** A line of the seal as a sentence ("RECONCILED TO CASH" reads "Reconciled to cash"). */
+function sealSentence(line: string): string {
+  return `${line.charAt(0)}${line.slice(1).toLowerCase()}`;
+}
+
+/** The seal's accessible name and alternative text: its two lines as two sentences, the name in its own case. */
+export const sealLabel = `${badgeText}. ${sealSentence(sealText[1])}.`;
+
+/** The definition line that prints with the seal on the same page, so a reader is told what "verified" means. */
 export const verifiedDefinition =
   "Verified: recovered amounts reconcile to posted or deposited remittance; expected amounts trace to signed-off contract versions.";

@@ -1,10 +1,11 @@
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from '@tp/worker/reports';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { VerifiedSeal } from '../../../../../../components/brand';
 import { utc } from '../../../../../../components/format';
-import { entryStage, proofLevelWords } from '../../../../../../components/reconciliation/display';
+import { entryStage, proofLevelWords, recoveredLabel } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
 import { ShareLink } from '../../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
@@ -18,24 +19,20 @@ type Props = { readonly params: Promise<{ practiceId: string; statementId: strin
 
 function Figure({
   id,
-  title,
-  qualifier,
+  label,
   note,
   figure,
   practiceId,
   empty,
 }: {
   readonly id: string;
-  readonly title: string;
-  /** Words shown after the title, such as the proof level a recovered figure is proved by. */
-  readonly qualifier?: string;
+  /** The figure's whole label, also the region's name: a recovered figure's names its proof level, heard as well as seen. */
+  readonly label: string;
   readonly note: string;
   readonly figure: FigureView;
   readonly practiceId: string;
   readonly empty: string;
 }) {
-  // The region's name is the figure's whole label: a recovered figure's proof level is heard, not only seen.
-  const label = qualifier === undefined ? title : `${title} ${qualifier}`;
   return (
     <Card role="region" aria-label={label} id={id}>
       <CardHeader>
@@ -115,7 +112,7 @@ export default async function RoiStatementPage(props: Props) {
           ROI statement, {detail.periodFrom} to {detail.periodTo}
         </h1>
         <p className="text-base text-muted-foreground">
-          {detail.quarterly ? 'The quarterly statement, written by the reconcile job' : `Generated on demand by ${detail.generatedBy ?? 'a member of the practice'}`}, {utc(detail.generatedAt)}. Recovered is{' '}
+          {detail.quarterly ? 'The quarterly statement, written by the reconcile job' : `Generated on demand by ${detail.generatedBy ?? 'a member of the practice'}`}, {utc(detail.generatedAt)}. {recoveredLabel(detail.proofLevel)} is cash{' '}
           <span data-proof-level={detail.proofLevel}>{proofLevelWords(detail.proofLevel)}</span>.
         </p>
       </div>
@@ -166,23 +163,22 @@ export default async function RoiStatementPage(props: Props) {
             Fees paid to PaidWhole: <Money value={detail.feesCents} />
           </CardTitle>
           <CardDescription data-ratio={detail.recoveredToFees ?? 'none'}>
-            {detail.recoveredToFees === null ? 'Billing records no fees paid in the period, so no ratio of recovered to fees is given.' : `Net recovered is ${detail.recoveredToFees} times the fees paid.`}
+            {detail.recoveredToFees === null ? 'Billing records no fees paid in the period, so no ratio to the fees is given.' : `${RECOVERED_PRINCIPAL_LABELS[detail.proofLevel]} is ${detail.recoveredToFees} times the fees paid.`}
           </CardDescription>
         </CardHeader>
       </Card>
       <Figure
         id="recovered"
-        title="Recovered principal, net"
-        qualifier={`(${detail.proofLevel})`}
+        label={RECOVERED_PRINCIPAL_LABELS[detail.proofLevel]}
         note="Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it."
         figure={detail.recovered}
         practiceId={practiceId}
-        empty="No cash was recovered in the period."
+        empty={NO_RECOVERED_CASH[detail.proofLevel]}
       />
-      <Figure id="interest" title="Interest, net" note="Interest the payer paid in the period, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
+      <Figure id="interest" label="Interest, net" note="Interest the payer paid in the period, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
       <Figure
         id="approved-unposted"
-        title="Payer approved, not yet at the proof level"
+        label="Payer approved, not yet at the proof level"
         note="Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage."
         figure={detail.approvedUnposted}
         practiceId={practiceId}
