@@ -4,7 +4,7 @@ import { Badge, Button, EmptyState, ErrorState, LoadingState } from '@tp/ui';
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 
-import { type Receipt, type ReceiptState, KIND_NAMES, formatBytes, receiptState, shortId, utcMinute } from '../../lib/uploads/receipt-labels';
+import { type Receipt, type ReceiptState, documentName, formatBytes, receiptState, shortId, utcMinute } from '../../lib/uploads/receipt-labels';
 
 /**
  * Receipts as the server keeps them (PRD 7, Uploads: "file receipts with status and reasons ... error
@@ -135,7 +135,7 @@ export function ReceiptList(props: {
       <EmptyState
         mark
         title={parentId === undefined ? 'No files uploaded yet' : 'No files in this zip'}
-        nextStep={parentId === undefined ? 'Upload your first 835 files: drop single files, a batch, or a zip of them above.' : 'The zip held no files to take in.'}
+        nextStep={parentId === undefined ? 'Upload your first 835 files or ERA exports: drop single files, a batch, or a zip of them above.' : 'The zip held no files to take in.'}
       />
     );
   }
@@ -166,7 +166,7 @@ export function ReceiptList(props: {
                     {shortId(receipt.documentId)}
                   </Link>
                 </td>
-                <td className="py-2 pr-3">{receipt.entries === null ? KIND_NAMES[receipt.kind] : `zip of ${KIND_NAMES[receipt.kind]} files`}</td>
+                <td className="py-2 pr-3">{receipt.entries === null ? documentName(receipt) : `zip of ${documentName(receipt)} files`}</td>
                 <td className="py-2 pr-3 whitespace-nowrap">{formatBytes(Number(receipt.sizeBytes))}</td>
                 <td className="py-2 pr-3">
                   <ReceiptStatus receipt={receipt} />

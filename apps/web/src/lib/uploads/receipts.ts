@@ -1,12 +1,28 @@
 import { type DocumentKind, type DocumentStatus, type PracticeScope, type ScanStatus, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 
-import { type EntryCounts, type ParseSummary, type ParsedError, type ParsedTransaction, type Receipt, errorPosition, receiptState } from './receipt-labels';
+import { eraFormatName, findEraExportFormat, isUnconfirmed } from '@tp/worker/era-formats';
+
+import {
+  type EntryCounts,
+  type ExportError,
+  type ExportPayment,
+  type ParseSummary,
+  type ParsedError,
+  type ParsedTransaction,
+  type Receipt,
+  type ReceiptFormat,
+  errorPosition,
+  exportErrorPosition,
+  receiptState,
+} from './receipt-labels';
 
 /**
  * Receipts from source_document, read under the practice's policies and through readWithAudit (every
  * returned document is an audited read), paginated server-side (PRD 6, Cross-cutting: every list
  * paginated). A zip's receipt carries its entries' counts by status (aggregates, not rows); a
  * duplicate's names the practice's first document with the same bytes (PAR-06: "duplicate of file X").
+ * The parse report is decoded by the document's kind: an 835's transaction sets and segment positions, or
+ * an ERA export's payments and holds by column and row (docs/adr/0060); an export's receipt names its format.
  */
 
 export const RECEIPTS_PER_PAGE = 25;
@@ -16,6 +32,7 @@ interface Row {
   readonly practice_id: string;
   readonly parent_document_id: string | null;
   readonly kind: DocumentKind;
+  readonly format_id: string | null;
   readonly size_bytes: string;
   readonly created_at: Date;
   readonly status: DocumentStatus;
@@ -35,11 +52,11 @@ interface Row {
   readonly parse_loaded_lines: number | null;
   readonly parse_duplicates: number | null;
   readonly parse_unknown_codes: string[] | null;
-  readonly parse_errors: ParsedError[] | null;
-  readonly parse_transaction_outcomes: ParsedTransaction[] | null;
+  readonly parse_errors: (ParsedError | ExportError)[] | null;
+  readonly parse_transaction_outcomes: (ParsedTransaction | ExportPayment)[] | null;
 }
 
-const COLUMNS = `d.id, d.practice_id, d.parent_document_id, d.kind, d.size_bytes::text AS size_bytes, d.created_at, d.status, d.scan_status, d.sha256,
+const COLUMNS = `d.id, d.practice_id, d.parent_document_id, d.kind, d.format_id, d.size_bytes::text AS size_bytes, d.created_at, d.status, d.scan_status, d.sha256,
   first.id AS duplicate_of, first.created_at AS duplicate_of_at,
   pr.outcome AS parse_outcome, pr.transactions AS parse_transactions, pr.claims AS parse_claims, pr.lines AS parse_lines, pr.reversals AS parse_reversals,
   pr.held AS parse_held, pr.plb_total_cents::text AS parse_plb_total_cents, pr.loaded_transactions AS parse_loaded_transactions,
@@ -73,7 +90,7 @@ function parseOf(row: Row): ParseSummary | null {
   if (row.parse_outcome === null) {
     return null;
   }
-  return {
+  const counts = {
     outcome: row.parse_outcome,
     transactions: row.parse_transactions ?? 0,
     claims: row.parse_claims ?? 0,
@@ -84,9 +101,22 @@ function parseOf(row: Row): ParseSummary | null {
     loaded: { transactions: row.parse_loaded_transactions ?? 0, claims: row.parse_loaded_claims ?? 0, lines: row.parse_loaded_lines ?? 0 },
     duplicates: row.parse_duplicates ?? 0,
     unknownCodes: row.parse_unknown_codes ?? [],
-    errors: row.parse_errors ?? [],
-    transactionOutcomes: row.parse_transaction_outcomes ?? [],
   };
+  // The report's shape is the document kind's: the export normalizer writes payments and holds by column and
+  // row, the 835 parser transaction sets and segment positions (apps/worker/src/parse/era/report.ts and report.ts).
+  return row.kind === 'era_export'
+    ? { ...counts, source: 'era_export', errors: (row.parse_errors ?? []) as ExportError[], transactionOutcomes: (row.parse_transaction_outcomes ?? []) as ExportPayment[] }
+    : { ...counts, source: 'x12_835', errors: (row.parse_errors ?? []) as ParsedError[], transactionOutcomes: (row.parse_transaction_outcomes ?? []) as ParsedTransaction[] };
+}
+
+/** An ERA export's format as the receipt names it, from the worker's format registry. */
+export function receiptFormat(formatId: string | null): ReceiptFormat | null {
+  if (formatId === null) {
+    return null;
+  }
+  const format = findEraExportFormat(formatId);
+  // A format the registry no longer lists (never expected: the format_id CHECK is the registry's) is named plainly and flagged.
+  return format === undefined ? { id: formatId, name: 'ERA export', unconfirmed: true } : { id: format.id, name: eraFormatName(format), unconfirmed: isUnconfirmed(format) };
 }
 
 function receipt(row: Row, counts: Map<string, EntryCounts>): Receipt {
@@ -94,6 +124,7 @@ function receipt(row: Row, counts: Map<string, EntryCounts>): Receipt {
     documentId: row.id,
     parentDocumentId: row.parent_document_id,
     kind: row.kind,
+    format: receiptFormat(row.format_id),
     sizeBytes: row.size_bytes,
     receivedAt: row.created_at.toISOString(),
     status: row.status,
@@ -207,6 +238,15 @@ const CSV_HEADER = [
   'component_position',
   'difference_cents',
   'position',
+  // An ERA export's columns (docs/adr/0060), after the 835's so a reader of the earlier columns reads them unchanged.
+  'format_id',
+  'payment',
+  'first_row',
+  'rows',
+  'column',
+  'row',
+  'linked_provenance',
+  'review_reason',
 ] as const;
 
 function csvField(value: string): string {
@@ -228,6 +268,7 @@ function reportLines(item: Receipt): string[] {
     document_id: item.documentId,
     parent_document_id: item.parentDocumentId,
     kind: item.kind,
+    format_id: item.format?.id,
     stage: state.stage,
     status: item.status,
     reason: state.detail,
@@ -249,6 +290,42 @@ function reportLines(item: Receipt): string[] {
   if (parse === null) {
     return [document];
   }
+  if (parse.source === 'era_export') {
+    const payments = parse.transactionOutcomes.map((outcome) =>
+      csvLine({
+        record: 'payment',
+        document_id: item.documentId,
+        format_id: item.format?.id,
+        payment: outcome.payment,
+        first_row: outcome.firstRow,
+        rows: outcome.rows,
+        outcome: outcome.outcome,
+        remittance_id: outcome.remittanceId,
+        linked_remittance_id: outcome.linkedRemittanceId,
+        linked_document_id: outcome.linkedDocumentId,
+        linked_provenance: outcome.linkedProvenance,
+        review_reason: outcome.reviewReason,
+        claims: outcome.claims,
+        lines: outcome.lines,
+        error_code: outcome.reasons.join(' '),
+      }),
+    );
+    // A hold names its column by the format's header and its row by number, never a cell's value.
+    const holds = parse.errors.map((error) =>
+      csvLine({
+        record: 'error',
+        document_id: item.documentId,
+        format_id: item.format?.id,
+        error_code: error.code,
+        error_reason: error.reason,
+        payment: error.payment,
+        column: error.column,
+        row: error.row,
+        position: exportErrorPosition(error),
+      }),
+    );
+    return [document, ...payments, ...holds];
+  }
   const transactions = parse.transactionOutcomes.map((outcome) =>
     csvLine({
       record: 'transaction',
@@ -258,6 +335,8 @@ function reportLines(item: Receipt): string[] {
       remittance_id: outcome.remittanceId,
       linked_remittance_id: outcome.linkedRemittanceId,
       linked_document_id: outcome.linkedDocumentId,
+      linked_provenance: outcome.linkedProvenance,
+      review_reason: outcome.reviewReason,
       claims: outcome.claims,
       lines: outcome.lines,
       error_code: outcome.reasons.join(' '),
@@ -287,8 +366,10 @@ function reportLines(item: Receipt): string[] {
  * The receipt as CSV, the parser's error report (PRD 5, J4; PRD 10, step 10): the document, and for a
  * zip one block per entry in its order in the zip (the batch receipt, PAR-27). Each document's block
  * is its line, a line per transaction set (what it loaded or why it is held, and the remittance it
- * loaded or duplicates) and a line per error with its segment index, segment ID and element position.
- * Codes, counts, opaque IDs, hashes and fixed reasons only. Undefined when no such document.
+ * loaded or duplicates) and a line per error with its segment index, segment ID and element position; an
+ * ERA export's block has a line per payment (its first row and row count, what it loaded or the remittance
+ * it repeats, and what that was loaded from) and a line per hold with its column header and row number.
+ * Codes, counts, opaque IDs, hashes, column headers and fixed reasons only. Undefined when no such document.
  */
 export async function receiptReport(scope: PracticeScope<ScopeClient>, practiceId: string, documentId: string, requestId: string): Promise<string | undefined> {
   const receipts = await audited(
