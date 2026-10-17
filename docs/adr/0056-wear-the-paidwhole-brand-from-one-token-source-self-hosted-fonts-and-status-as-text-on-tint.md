@@ -27,18 +27,14 @@ component's utilities still win) and `tailwind-theme.css`, the v4 form of the pr
 secondary, muted, accent, destructive, border, input, ring, sidebar), so every shadcn component is on brand without
 per-component colors; dark mode is the tokens' own (`[data-theme="dark"]` or `.dark`), which the shadcn variables
 follow. shadcn's `accent` stays a hover surface (the inset gray): the brand's accent is Brass, which is never a
-background. A test (`tools/brand-colors`, in `pnpm test`) fails on any hex color in source or a stylesheet outside four
-files, each by its exact path: `tokens.css`, `tokens.ts` and `mark.ts` in `packages/brand/src`, and the email template
-(reconciliation-001, D9 item 4); any other file in `packages/brand/src` is read like the rest.
+background. A test (`tools/brand-colors`, in `pnpm test`) fails on any hex color in source or a stylesheet outside
+`packages/brand/src` and the email template.
 
 **Fonts.** `next/font/local` loads the bundled woff2 files from `packages/brand/assets/fonts` (SIL Open Font License)
 under the variables tokens.css reads (`--font-display`, `--font-sans`, `--font-mono`, display swap); nothing is
 fetched from a font service at build or run time. Tailwind's font theme keys are declared `inline` so it never writes
 those variables to `:root`, where they would collide with the ones next/font sets on `<html>`. The PDF renderer embeds
-the same files as data URLs (ADR 0057 covers its gate); the worker's bundle embeds them too. ESLint refuses
-`next/font/google` (and `@next/font/google`) in every workspace, `tools/brand-fonts` (in `pnpm test`) fails on either of
-Google's font hosts anywhere in the source of apps, packages, tools and infra, and `e2e/font-hosts.spec.ts` loads the
-main public and signed-in pages and finds no request to them, no refusal of one by the CSP and no mention of them.
+the same files as data URLs (ADR 0057 covers its gate); the worker's bundle embeds them too.
 
 **Components under the CSP.** `PaidWholeMark`, `PaidWholeLockup`, `VerifiedSeal` and `VerifiedBadge` keep the drop-in's
 props and proportions but write classes and SVG attributes, never a `style` attribute, which the pages' CSP would
@@ -99,15 +95,11 @@ ledger-gated seal. A form field's outline is `--pw-input-border` (3.5:1 on White
 native selects and text areas included; the quiet rules stay `--pw-border`.
 
 **Email.** The header is the outlined horizontal lockup with its tagline, the delivered
-`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, drawn at 160 px with the alternative text "PaidWhole": every
-mail client renders an image where some strip inline SVG, and the wordmark is never typed in a fallback face. The ground
-is White (Paper is for print). The art comes from the CloudFront static host (STATIC_ASSET_ORIGIN, which the worker and
-platform tasks name as the web task does), never from the application (reconciliation-001, D7 option (b)): CloudFront
-serves `/brand/*` beside `/_next/static/*`, fetched from the application and answered under the same response headers
-policy, whose `Cross-Origin-Resource-Policy: cross-origin` lets a web mail client on its own origin embed it. The
-application's own headers stay as ADR 0053 and 0055 set them, `same-origin` on every response, `/brand` included. The
-web image carries `apps/web/public`, which Next's standalone output leaves out, so a deploy publishes the art. With no
-static host configured (a local build) a message goes without the art, never with the name typed in its place.
+`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, drawn at 160 px from the application's origin (APP_ORIGIN, which
+every message already links to) with the alternative text "PaidWhole": every mail client renders an image where some
+strip inline SVG, and the wordmark is never typed in a fallback face. The ground is White (Paper is for print). The
+public brand art under `/brand` alone answers `Cross-Origin-Resource-Policy: cross-origin`, so a web mail client on its
+own origin may embed it; every other response keeps `same-origin`.
 
 **PDFs.** A report's inside pages carry the 16 px mark alone beside the document's title in the running header (no
 lockup is built from the mark and live text below 120 px). Dollar amounts in headings and running text are wrapped in
@@ -157,8 +149,7 @@ roles and environment variables keep their names.
 - `.claude/rules/brand.md` is the drop-in's with its path scope and file paths corrected to this repository
   (`apps/worker/src/report/**`, `apps/worker/src/mail/**`, the statement and packet templates, `packages/ui/**`), so it
   loads where the hex and seal exceptions live; BRAND.md says where its paths are here.
-- The hex check allows four files by their exact paths and no directory.
-- CI uploads the Playwright report, the test results and `brand-screenshots/` after the e2e step, failed runs included.
+- The hex check allows a directory by prefix and a file only by its exact path.
 - Dark mode is wired through the tokens but nothing switches it on yet (no `data-theme` toggle).
 - The drop-in's `tailwind-preset.ts` stays in the package for a v3 consumer; this repository reads `tailwind-theme.css`.
 

@@ -10,7 +10,8 @@ Tailwind v3 preset and `apps/worker/src/reports`): the web app's code is under `
 `src/components/brand`, `src/lib/fonts.ts`), Tailwind is v4 and reads `packages/brand/src/tailwind-theme.css`,
 the PDF frame and stylesheet are `apps/worker/src/report/brand.ts` and `apps/worker/src/report/brand.css`,
 and the email template is `apps/worker/src/mail/template.ts`. The readings this file leaves open are recorded
-in docs/adr/0056.
+in docs/adr/0056, and Change Order 001's choices (where the email art is served from, and the checks that hold
+these rules) in docs/adr/0058.
 
 ## 1. The idea
 
@@ -44,15 +45,16 @@ make it flush with the ring, never move it from 12 o'clock.
 
 | Lockup | Use | File / component |
 | --- | --- | --- |
-| Horizontal | App header, sign-in, documents, decks | `<PaidWholeLockup/>`; `/brand/paidwhole-lockup-horizontal.svg` |
-| Horizontal with tagline | Marketing pages, email header | `<PaidWholeLockup tagline/>`; `/brand/paidwhole-lockup-horizontal-tagline.svg` |
-| Stacked | Square placements only (avatars with name, tiles) | `<PaidWholeLockup stacked/>`; `/brand/paidwhole-lockup-stacked.svg` |
+| Horizontal | App header, documents, decks | `<PaidWholeLockup/>`; `/brand/paidwhole-lockup-horizontal.svg` |
+| Horizontal with tagline | Marketing pages, email header (as its PNG, section 7) | `<PaidWholeLockup tagline/>`; `/brand/paidwhole-lockup-horizontal-tagline.svg`; `/brand/paidwhole-lockup-horizontal-tagline-1200w.png` |
+| Stacked | Sign-in, on Paper (section 7); square placements (avatars with name, tiles) | `<PaidWholeLockup stacked/>`; `/brand/paidwhole-lockup-stacked.svg` |
 | Symbol | Favicon, app icon, table rows, loading states, anywhere under 120 px wide | `<PaidWholeMark/>` |
 
 The wordmark is "PaidWhole" as one word in Schibsted Grotesk 700, letter-spacing -0.03em, one
 color (Ink, or White on dark). It is never split into two colors or two words, never set in another
-face, weight or tracking, never outlined. In app chrome the lockup renders live text; in print,
-email and anywhere fonts may not load, use the outlined SVG files.
+face, weight or tracking, never outlined. In app chrome the lockup renders live text; in print and
+anywhere fonts may not load, use the outlined SVG files; email uses the outlined lockup's PNG, since some
+mail clients strip SVG (section 7).
 
 ## 4. Color
 
@@ -64,7 +66,7 @@ Tokens are CSS custom properties in `packages/brand/src/tokens.css` and typed co
 | Ink `--pw-ink` | #0D1E3A | Wordmark, ring, primary text, primary buttons | 16.6:1 |
 | Brass `--pw-brass` | #C99A3B | The keystone. Also foil, seals, one accent rule or underline. Never text on white. | 2.6:1 |
 | White `--pw-white` | #FFFFFF | Product and report ground | |
-| Paper `--pw-paper` | #F6F4EE | Report covers and print only | |
+| Paper `--pw-paper` | #F6F4EE | Report covers, print, and the sign-in ground (section 7) | |
 | Slate `--pw-slate` | #526070 | Secondary text, labels | 6.4:1 |
 | Line `--pw-line` | #DAD7CF | Rules, borders, table lines | |
 
@@ -124,8 +126,12 @@ Contract-verified calculation without cash is a line status (validated), never a
   shown without "posted" or "deposited" in its label.
 - Empty states and loading: the mark alone, standard cut, never animated as a spinner (that would
   turn the keystone back into a progress ring). Use a plain progress bar for progress.
-- Email: outlined SVG lockup in the header at 160 px wide, hex colors (CSS variables do not work in
-  email), Plex Sans falls back to system sans.
+- Email: the horizontal lockup with its tagline in the header, as the outlined art's PNG
+  (`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, 1200 px wide, drawn at 160 px with the
+  alternative text "PaidWhole"; some mail clients strip SVG), on White. The image loads from the
+  CloudFront static host (`STATIC_ASSET_ORIGIN`), never from the application; with no static host
+  configured, the message goes without it, and the wordmark is never typed in its place. Hex colors
+  from `tokens.ts` (CSS variables do not work in email); Plex Sans falls back to system sans.
 - Reports (PDF): Paper cover with lockup top left and seal bottom right when earned; white inside
   pages with a 16 px mark in the running header; styles in `apps/worker/src/report/brand.css`.
 - Billing-firm white label: the firm's name and logo lead; PaidWhole appears only as the Verified
