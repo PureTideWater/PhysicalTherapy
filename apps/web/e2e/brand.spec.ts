@@ -70,13 +70,14 @@ test('no page asks a font service or another origin for anything; the brand face
   expect(requests.some((url) => url.startsWith(`${baseURL ?? ''}/_next/static/media/`) && url.endsWith('.woff2'))).toBe(true);
 });
 
-test('the email header is the outlined lockup with its tagline at 160 px on White, served from this origin to any mail client', async ({ page, baseURL }) => {
+test('the email header is the outlined lockup with its tagline at 160 px on White, and the application serves its art same-origin like every response', async ({ page, baseURL }) => {
   const origin = baseURL ?? 'http://localhost:3100';
-  // The public brand art alone may be embedded from a mail client's own origin; every other response keeps same-origin.
+  // The application's own headers stay as ADR 0053 and 0055 set them, the brand art included: a mail client is
+  // given the art by the CloudFront static host (reconciliation-001, D7), so here the email opens on this origin.
   const art = await page.request.get('/brand/paidwhole-lockup-horizontal-tagline-1200w.png');
   expect(art.status()).toBe(200);
   expect(art.headers()['content-type']).toBe('image/png');
-  expect(art.headers()['cross-origin-resource-policy']).toBe('cross-origin');
+  expect(art.headers()['cross-origin-resource-policy']).toBe('same-origin');
   expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
   const html = mailBodyHtml(
     {
@@ -88,7 +89,9 @@ test('the email header is the outlined lockup with its tagline at 160 px on Whit
     origin,
   );
   await page.setViewportSize({ width: 640, height: 520 });
-  await page.setContent(html, { waitUntil: 'load' });
+  // The message as a mail client renders it, at an address of this origin the test answers itself (no page's CSP).
+  await page.route(`${origin}/e2e-email-preview`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: html }));
+  await page.goto('/e2e-email-preview', { waitUntil: 'load' });
   const lockup = page.getByRole('img', { name: 'PaidWhole' });
   await expect(lockup).toHaveJSProperty('complete', true);
   expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
