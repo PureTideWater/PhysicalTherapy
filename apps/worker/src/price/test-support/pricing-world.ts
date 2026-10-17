@@ -7,7 +7,7 @@ import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateReco
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, withJobScope, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 
@@ -96,7 +96,7 @@ export class PricingWorld {
   }
 
   async close(): Promise<void> {
-    await this.app.end();
+    await endPool(this.app);
     await this.owner.end();
     await this.database.drop();
   }

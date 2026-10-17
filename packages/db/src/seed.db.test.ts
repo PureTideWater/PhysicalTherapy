@@ -8,7 +8,7 @@ import { readDatabaseUrl } from './config';
 import { LocalKeyProvider } from './crypto/key-provider';
 import { openPracticeCipher } from './crypto/practice-keys';
 import { type SeedPerson, SeedError, seedSyntheticTenancy } from './seed';
-import { type MigratedDatabase, createMigratedDatabase } from './testing';
+import { type MigratedDatabase, createMigratedDatabase, endPool } from './testing';
 
 /** The synthetic seed (pnpm db:seed): every persona, the practices, their agreements and the firm's grant. */
 
@@ -24,7 +24,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

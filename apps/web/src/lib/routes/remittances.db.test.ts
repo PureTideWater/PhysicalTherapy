@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
@@ -74,7 +74,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
   rmSync(documentsDir, { recursive: true, force: true });

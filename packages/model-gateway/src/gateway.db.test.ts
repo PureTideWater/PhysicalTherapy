@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import { addRateRecord, createContract, createDraftVersion } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -68,8 +68,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await superuser.end();
+  await endPool(app);
+  await endPool(superuser);
   await owner.end();
   await database.drop();
 });

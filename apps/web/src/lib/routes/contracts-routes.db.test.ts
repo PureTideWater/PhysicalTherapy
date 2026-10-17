@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 
 import { RATE_RECORD_FIELDS } from '@tp/contracts';
 import { type DatabaseClient, type DatabasePool, type DatabasePoolClient, LocalKeyProvider, type PracticeCipher, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type JobContext, intakeHandler, intakeServices, parseHandler } from '@tp/worker/runtime';
@@ -122,7 +122,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
   rmSync(documentsDir, { recursive: true, force: true });

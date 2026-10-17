@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 
 import { MemoryCompliancePlatform, complianceExportSchema } from '@tp/compliance';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -96,9 +96,9 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await app.end();
-  await billingPool.end();
-  await esignPool.end();
+  await endPool(app);
+  await endPool(billingPool);
+  await endPool(esignPool);
   await owner.end();
   await database.drop();
   rmSync(scratch, { recursive: true, force: true });

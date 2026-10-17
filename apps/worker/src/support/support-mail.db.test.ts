@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, asOwner, createMigratedDatabase, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, asOwner, createMigratedDatabase, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -64,8 +64,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
-  await app.end();
-  await operator.end();
+  await endPool(app);
+  await endPool(operator);
   await owner.end();
   await database.drop();
 });
