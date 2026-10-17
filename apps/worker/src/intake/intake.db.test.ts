@@ -87,17 +87,21 @@ function once(bytes: Buffer): AsyncIterable<Buffer> {
 }
 
 /** What the upload API and the browser leave behind: the row, and the bytes sealed under its key. */
-async function upload(h: Harness, bytes: Buffer | undefined, options: { kind?: string; size?: number; practice?: TenantWorld; uploader?: string } = {}): Promise<string> {
+async function upload(h: Harness, bytes: Buffer | undefined, options: { kind?: string; size?: number; practice?: TenantWorld; uploader?: string; formatId?: string } = {}): Promise<string> {
   const id = randomUUID();
   const practice = options.practice ?? world;
   const uploader = options.uploader ?? (practice === world ? manager : practice.adminUserId);
+  const kind = options.kind ?? 'x12_835';
+  // An ERA export names its vendor format, as the upload request requires (docs/adr/0060).
+  const formatId = options.formatId ?? (kind === 'era_export' ? 'webpt_billing_era_v0' : null);
   await withPracticeScope(app, { actorId: uploader, practiceIds: [practice.practiceId] }, (scope) =>
-    scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) VALUES ($1, $2, $3, $4, 'application/octet-stream', $5)", [
+    scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, format_id) VALUES ($1, $2, $3, $4, 'application/octet-stream', $5, $6)", [
       id,
       practice.practiceId,
-      options.kind ?? 'x12_835',
+      kind,
       options.size ?? bytes?.length ?? 0,
       uploader,
+      formatId,
     ]),
   );
   if (bytes !== undefined) {
@@ -267,6 +271,24 @@ describe('intake of a single file', () => {
     }
   });
 
+  it('scans a clean ERA export and queues parse_835 by the document; a workbook, a PDF or an 835 declared as one is not its type (docs/adr/0060)', async () => {
+    const h = harness();
+    const csv = Buffer.from(`Check/EFT Number,Payee ID\r\nSYNEFT${randomUUID().slice(0, 8)},SYNTHSENDER\r\n`);
+    const id = await upload(h, csv, { kind: 'era_export', formatId: 'prompt_era_v0' });
+    expect((await intake(h, id)).queued).toEqual([{ type: 'parse_835', payload: { practice_id: world.practiceId, document_id: id } }]);
+    expect(await one(id)).toMatchObject({ status: 'scanned', scan_status: 'clean', sha256: sha(csv) });
+    const workbook = Buffer.from(syntheticXlsx([{ name: 'ERA', rows: [['Check/EFT Number', 'Payee ID'], [`SYN-${randomUUID().slice(0, 8)}`, 'SYNTHSENDER']] }]));
+    for (const [bytes, label] of [
+      [workbook, 'xlsx'],
+      [Buffer.from(`%PDF-1.7\n%synthetic era ${randomUUID()}\n`), 'pdf'],
+      [remit(), '835'],
+    ] as const) {
+      const held = await upload(h, bytes, { kind: 'era_export' });
+      expect((await intake(h, held)).queued, label).toEqual([]);
+      expect((await one(held)).status, label).toBe('wrong_type');
+    }
+  });
+
   it('holds an upload whose bytes are not the size it declared', async () => {
     const h = harness();
     const id = await upload(h, remit(), { size: 10 });
@@ -360,6 +382,23 @@ describe('the page text of contract documents (docs/adr/0033)', () => {
 });
 
 describe('intake of a zip', () => {
+  it('gives the entries of a zip of ERA exports the zip’s kind and format, and queues each for parse (docs/adr/0060)', async () => {
+    const h = harness();
+    const entry = (n: number) => ({ name: `era-${String(n)}.csv`, data: Buffer.from(`Remit Trace Number,Remit Sender ID\nSYNEFT${randomUUID().slice(0, 8)},SYNTHSENDER\n`) });
+    const id = await upload(h, buildZip([entry(1), entry(2)]), { kind: 'era_export', formatId: 'raintree_era_v0' });
+    const run = await intake(h, id);
+    expect((await one(id)).status).toBe('expanded');
+    const { rows: entries } = await owner.query<{ id: string; kind: string; format_id: string | null; status: string }>(
+      'SELECT id, kind, format_id, status FROM source_document WHERE parent_document_id = $1 ORDER BY id',
+      [id],
+    );
+    expect(entries.map(({ kind, format_id: formatId, status }) => ({ kind, formatId, status }))).toEqual([
+      { kind: 'era_export', formatId: 'raintree_era_v0', status: 'scanned' },
+      { kind: 'era_export', formatId: 'raintree_era_v0', status: 'scanned' },
+    ]);
+    expect(new Set(run.queued.map((job) => (job.payload as { document_id: string }).document_id))).toEqual(new Set(entries.map((item) => item.id)));
+  });
+
   it('expands the 500 entries of PAR-27 into their own documents and queues each for parse, in one batch', async () => {
     const h = harness();
     const id = await upload(h, fixture('PAR-27/batch.zip'));

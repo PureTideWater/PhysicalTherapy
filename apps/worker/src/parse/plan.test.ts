@@ -64,6 +64,7 @@ describe('the load plan', () => {
   it('maps a transaction set to its remittance, payer, claim, line and adjustments', () => {
     const plan = planned(loadPlan(only(syntheticInterchange())));
     expect(plan.remittance).toEqual({
+      provenance: 'x12_835',
       senderId: 'SYNTHSENDER',
       receiverId: 'SYNTHRECEIVER',
       isa13: '000000001',

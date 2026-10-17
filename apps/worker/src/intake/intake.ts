@@ -1,7 +1,17 @@
 import { createHash } from 'node:crypto';
 
 import type { ReadPagesOptions } from '@tp/contracts/pages';
-import { type DocumentKind, type DocumentStatus, type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, documentObjectKey, loadPracticeCipher } from '@tp/db/runtime';
+import {
+  type DocumentKind,
+  type DocumentStatus,
+  type EraFormatId,
+  type KeyProvider,
+  type PracticeCipher,
+  type PracticeScope,
+  type ScopeClient,
+  documentObjectKey,
+  loadPracticeCipher,
+} from '@tp/db/runtime';
 
 import type { JobContext, JobHandler } from '../jobs/handlers';
 import type { DocumentReader, DocumentStore, WrittenDocument } from '../storage/documents';
@@ -24,9 +34,10 @@ import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLi
  *    from the bytes themselves; a size other than the one the upload declared is unreadable.
  * 4. Same bytes as an earlier document of the practice: this one is its duplicate, recorded and held,
  *    and nothing loads (PAR-06; concurrent uploads of the same bytes serialize on the hash, PAR-30).
- * 5. Content sniffing decides: a clean 835 is scanned and its parse_835 job queued (the document's ID
- *    is the job's idempotency subject); a clean document of another kind is stored; an executable or a
- *    script is quarantined (PAR-28); anything else is held with its reason.
+ * 5. Content sniffing decides: a clean 835, or a clean ERA export (CSV text; docs/adr/0060), is scanned and
+ *    its parse_835 job queued (the document's ID is the job's idempotency subject); a clean document of
+ *    another kind is stored; an executable or a script is quarantined (PAR-28); anything else is held with
+ *    its reason. A zip's entries are of its kind and carry its ERA export format.
  * 6. A zip is expanded entry by entry (zip.ts): each entry becomes its own document (parent_document_id
  *    the zip), sniffed from its first bytes before anything is written (an entry its first bytes hold,
  *    an executable or not an 835, is never copied out of the zip), then sealed under its own key,
@@ -60,6 +71,8 @@ export interface IntakeServices {
 interface DocumentRow {
   readonly id: string;
   readonly kind: DocumentKind;
+  /** An ERA export's vendor format, which its zip's entries carry (docs/adr/0060). */
+  readonly format_id: EraFormatId | null;
   readonly s3_key: string;
   readonly content_type: string;
   readonly sha256: string | null;
@@ -70,7 +83,8 @@ interface DocumentRow {
   readonly parent_document_id: string | null;
 }
 
-const SELECT_DOCUMENT = 'SELECT id, kind, s3_key, content_type, sha256, size_bytes::text AS size_bytes, uploaded_by, scan_status, status, parent_document_id FROM source_document WHERE id = $1';
+const SELECT_DOCUMENT =
+  'SELECT id, kind, format_id, s3_key, content_type, sha256, size_bytes::text AS size_bytes, uploaded_by, scan_status, status, parent_document_id FROM source_document WHERE id = $1';
 
 /** The statuses intake works on; every other one has been decided. */
 const OPEN_STATUSES: ReadonlySet<DocumentStatus> = new Set(['awaiting_upload', 'received', 'scanned', 'failed']);
@@ -297,9 +311,9 @@ class Intake {
       if (existing === undefined) {
         await this.transaction((scope) =>
           scope.client.query(
-            `INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id, status)
-             VALUES ($1, $2, $3, $4, 'application/octet-stream', $5, $6, $7)`,
-            [id, this.practiceId, zip.kind, entry.uncompressedBytes, zip.uploaded_by, zip.id, entry.hold ?? 'received'],
+            `INSERT INTO source_document (id, practice_id, kind, format_id, size_bytes, content_type, uploaded_by, parent_document_id, status)
+             VALUES ($1, $2, $3, $4, $5, 'application/octet-stream', $6, $7, $8)`,
+            [id, this.practiceId, zip.kind, zip.format_id, entry.uncompressedBytes, zip.uploaded_by, zip.id, entry.hold ?? 'received'],
           ),
         );
       }

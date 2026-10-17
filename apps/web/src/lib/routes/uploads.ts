@@ -1,7 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
-import { DOCUMENT_KINDS, type DocumentKind, type DocumentStatus, type PracticeScope, type ScopeClient, loadPracticeCipher, recordAuditEvent, rolesPermit } from '@tp/db/runtime';
+import {
+  DOCUMENT_KINDS,
+  type DocumentKind,
+  type DocumentStatus,
+  ERA_FORMAT_IDS,
+  type EraFormatId,
+  type PracticeScope,
+  type ScopeClient,
+  loadPracticeCipher,
+  recordAuditEvent,
+  rolesPermit,
+} from '@tp/db/runtime';
 import { practiceRunRefusal } from '@tp/worker/billing';
+import { ERA_EXPORT_FORMATS, isUnconfirmed } from '@tp/worker/era-formats';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
@@ -24,7 +36,8 @@ import { opaqueId } from './schemas';
  * 1. request: the agreement chain (the practice's BAA, J1) and the limits (kind and declared type,
  *    size, files per batch) are checked; one source_document per file is recorded (kind, size,
  *    declared type, uploader; an opaque key; retention class records) awaiting its bytes; each gets a
- *    URL the browser PUTs it to.
+ *    URL the browser PUTs it to. An ERA export names the system it came from (its vendor format,
+ *    docs/adr/0060), which is recorded with it and never changed; no other kind names one.
  * 2. content (local only): the bytes, sealed with the practice's data key as they arrive.
  * 3. complete: once the bytes have arrived the document is received and the intake job is queued; the
  *    worker hashes, deduplicates, scans, sniffs and expands it, and queues parse_835 per clean 835.
@@ -64,6 +77,13 @@ export interface UploadGate {
   readonly reason: string | null;
 }
 
+/** A vendor ERA export format a person may choose for an upload, and whether its layout is still a placeholder. */
+export interface EraExportChoice {
+  readonly id: EraFormatId;
+  readonly vendorName: string;
+  readonly unconfirmed: boolean;
+}
+
 export interface UploadsPageData {
   readonly practiceId: string;
   /** Whether the actor's role may upload (PRD 3). */
@@ -72,7 +92,12 @@ export interface UploadsPageData {
   /** Uploads are disabled, with the reason, until the agreement chain exists (J1). */
   readonly gate: UploadGate;
   readonly limits: { readonly maxFiles: number; readonly maxBytes: number; readonly contentTypes: readonly string[] };
+  /** An ERA export's declared types and the formats it may be (docs/adr/0060). */
+  readonly eraExport: { readonly contentTypes: readonly string[]; readonly formats: readonly EraExportChoice[] };
 }
+
+/** The ERA export formats, in the registry's order. */
+export const ERA_EXPORT_CHOICES: readonly EraExportChoice[] = ERA_EXPORT_FORMATS.map((format) => ({ id: format.id, vendorName: format.vendorName, unconfirmed: isUnconfirmed(format) }));
 
 export const uploadsPage = practiceRoute({
   id: 'practice.uploads',
@@ -91,6 +116,7 @@ export const uploadsPage = practiceRoute({
       roles: access.roles,
       gate: { open: open && suspension === null, reason: !open ? NO_BAA : suspension === null ? null : `Uploads are paused: ${suspension}.` },
       limits: { maxFiles: MAX_FILES_PER_BATCH, maxBytes: MAX_UPLOAD_BYTES, contentTypes: CONTENT_TYPES.x12_835 },
+      eraExport: { contentTypes: CONTENT_TYPES.era_export, formats: ERA_EXPORT_CHOICES },
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
@@ -153,12 +179,26 @@ const fileSchema = z.strictObject({
     .int()
     .min(1, 'an empty file')
     .max(MAX_UPLOAD_BYTES, `larger than ${String(MAX_UPLOAD_BYTES / 1024 ** 3)} GiB; split it or zip it`),
+  /** The system an ERA export came from: required for an ERA export, and for no other kind (docs/adr/0060). */
+  formatId: z.enum(ERA_FORMAT_IDS).optional(),
 });
+
+/** The request's message when an ERA export names no format, or another kind names one. */
+export function formatProblem(kind: DocumentKind, formatId: EraFormatId | undefined, position: number): string | null {
+  if (kind === 'era_export' && formatId === undefined) {
+    return `File ${String(position)} is an ERA export: choose which system's export it is.`;
+  }
+  if (kind !== 'era_export' && formatId !== undefined) {
+    return `File ${String(position)} has an export format but is not an ERA export.`;
+  }
+  return null;
+}
 
 /**
  * The batch, each file's declared type checked against its kind. A posting or EFT export the request does
  * not accept (a workbook among them, which the uploader declares generically) is named by its place in the
- * batch, with what to do: save it as CSV (docs/adr/0059).
+ * batch, with what to do: save it as CSV (docs/adr/0059). An ERA export names its format, and no other file
+ * names one, each named by its place in the batch.
  */
 const filesSchema = z
   .array(fileSchema)
@@ -168,6 +208,10 @@ const filesSchema = z
     files.forEach((file, index) => {
       if (!allowedContentType(file.kind, file.contentType)) {
         context.addIssue({ code: 'custom', message: declaredTypeProblem(file.kind, index + 1), path: [index, 'contentType'] });
+      }
+      const format = formatProblem(file.kind, file.formatId, index + 1);
+      if (format !== null) {
+        context.addIssue({ code: 'custom', message: format, path: [index, 'formatId'] });
       }
     });
   });
@@ -196,13 +240,14 @@ export const requestUploads = practiceRoute({
     const documents: RequestedUpload[] = [];
     for (const file of input.files) {
       const documentId = randomUUID();
-      await scope.client.query('INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6)', [
+      await scope.client.query('INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, format_id) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
         documentId,
         practiceId,
         file.kind,
         file.sizeBytes,
         file.contentType,
         actor.userId,
+        file.formatId ?? null,
       ]);
       await recordAuditEvent(scope, { action: 'upload_requested', objectType: 'source_document', objectId: documentId, practiceId, requestId: request.requestId });
       documents.push({ documentId, upload: await services.uploads.target({ practiceId, documentId, sizeBytes: file.sizeBytes, contentType: file.contentType }, now) });
