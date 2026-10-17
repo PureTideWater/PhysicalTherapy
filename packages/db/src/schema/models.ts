@@ -16,6 +16,7 @@ import { agreement, practice, user } from './tenancy';
  *   sets it through set_feature_flag().
  * - model_call: one row per call, never text: hashes, counts, cents, codes and references only.
  * - eval_example: synthetic or permitted evaluation data.
+ * - model_budget_hold: what calls in flight may still cost, against the practice's daily budget.
  */
 
 /**
@@ -155,6 +156,26 @@ export const modelProposal = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [unique('model_proposal_once').on(table.modelCallId), index('model_proposal_by_practice').on(table.practiceId, table.createdAt)],
+);
+
+/**
+ * What a practice's model calls in flight may still cost, held against its daily budget
+ * (migrations/20261031090000_model_budget_holds.sql; docs/adr/0054): placed before a call under the
+ * practice's advisory lock, deleted with the call's log row, expired after the longest call.
+ */
+export const modelBudgetHold = pgTable(
+  'model_budget_hold',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    practiceId: uuid('practice_id')
+      .notNull()
+      .references(() => practice.id),
+    /** In cents with six places, as model_call.cost_unrounded. */
+    heldUnrounded: numeric('held_unrounded', { precision: 18, scale: 6 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [index('model_budget_hold_by_practice').on(table.practiceId, table.expiresAt)],
 );
 
 export type FeatureFlagRow = typeof featureFlag.$inferSelect;

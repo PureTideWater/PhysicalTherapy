@@ -11,7 +11,7 @@ import { type ModelPrice, PRICES, callCost, priceOf } from './prices';
 import { modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
 import { FLAGGED_PURPOSES, MODEL_PURPOSES, type ModelPurpose } from './purposes';
-import type { PurposeSpec } from './spec';
+import type { PreparedCall, PurposeSpec } from './spec';
 import { PURPOSE_SPECS } from './specs';
 import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store';
 
@@ -28,8 +28,11 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  *    against records outside the input (a letter naming another patient of the practice).
  * 4. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
  *    and the input hashes. A completed call under the key is never made again (a replay of a job).
- * 5. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend reaches
- *    it, with an alert for the operator; crossing it raises another.
+ * 5. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend, with the
+ *    holds of the calls in flight, reaches it, with an alert for the operator; crossing it raises
+ *    another. A call that is made first holds the most it can cost (its token limit and an upper bound
+ *    of its input), under the practice's lock, until its row is written: calls made at once are held to
+ *    the budget as calls made in turn.
  * 6. The call: no tools, a pinned model and prompt version, 60 seconds per attempt, and one retry under
  *    the same idempotency key when the failure is one a retry can cure.
  * 7. The answer must follow the prompt version's schema; then the purpose's verifier checks it against
@@ -155,13 +158,6 @@ export class ModelGateway {
       throw new DuplicateModelCallError(existing);
     }
 
-    const budgetMicro = features.dailyBudgetCents * MICRO;
-    const spent = practiceId === null ? 0n : await store.spentSince(practiceId, utcDayStart(this.now()));
-    if (practiceId !== null && spent >= budgetMicro) {
-      logger.error('a model call was refused: the practice has spent its daily model budget', { practice_id: practiceId, error_code: 'MODEL_BUDGET_EXCEEDED' });
-      throw new ModelBudgetExceededError();
-    }
-
     const request: ModelRequest = {
       modelId,
       promptVersion: prompt.id,
@@ -171,6 +167,42 @@ export class ModelGateway {
       maxTokens: prompt.maxTokens,
       effort: prompt.effort,
     };
+    const budgetMicro = features.dailyBudgetCents * MICRO;
+    let spent = 0n;
+    let holdId: string | null = null;
+    if (practiceId !== null) {
+      // The call's most is held before it is made, so calls made at once cannot all pass a check of the logged spend.
+      const held = await store.hold(practiceId, { since: utcDayStart(this.now()), amountMicro: mostCost(price, request), budgetMicro, holdMs: 2 * this.timeoutMs + HOLD_MARGIN_MS });
+      if (held.holdId === null) {
+        logger.error('a model call was refused: the practice has spent its daily model budget', { practice_id: practiceId, error_code: 'MODEL_BUDGET_EXCEEDED' });
+        throw new ModelBudgetExceededError();
+      }
+      ({ spent, holdId } = held);
+    }
+    let recorded = false;
+    try {
+      return await this.callAndRecord(spec, context, input, { prepared, request, price, idempotencyKey, modelId, spent, budgetMicro, holdId }, () => {
+        recorded = true;
+      });
+    } finally {
+      if (!recorded && holdId !== null && practiceId !== null) {
+        await store.release(practiceId, holdId);
+      }
+    }
+  }
+
+  /** The call, its schema and its verifier, and its one model_call row (which releases the call's budget hold). */
+  private async callAndRecord<I, O, P, C>(
+    spec: PurposeSpec<I, O, P, C>,
+    context: CallContext,
+    input: I,
+    call: { readonly prepared: PreparedCall<C>; readonly request: ModelRequest; readonly price: ModelPrice; readonly idempotencyKey: string; readonly modelId: string; readonly spent: bigint; readonly budgetMicro: bigint; readonly holdId: string | null },
+    onRecorded: () => void,
+  ): Promise<GatewayResult<P>> {
+    const { provider, store, logger } = this.options;
+    const { practiceId } = context;
+    const { prepared, request, price, idempotencyKey, modelId, spent, budgetMicro, holdId } = call;
+    const { prompt } = spec;
     const attempted = await this.call(request);
     const base = {
       practiceId,
@@ -186,7 +218,8 @@ export class ModelGateway {
     };
     const record = async (row: Omit<ModelCallRecord, keyof typeof base | 'costCents' | 'costMicroCents' | 'tokensIn' | 'tokensOut'>, tokensIn: number, tokensOut: number) => {
       const cost = callCost(price, tokensIn, tokensOut);
-      const id = await store.record({ ...base, ...row, tokensIn, tokensOut, costCents: cost.cents, costMicroCents: cost.microCents });
+      const id = await store.record({ ...base, ...row, tokensIn, tokensOut, costCents: cost.cents, costMicroCents: cost.microCents }, holdId);
+      onRecorded();
       if (practiceId !== null && spent < budgetMicro && spent + cost.microCents >= budgetMicro) {
         logger.warn('the practice reached its daily model budget; further calls today are refused', { practice_id: practiceId, error_code: 'MODEL_BUDGET_REACHED' });
       }
@@ -250,6 +283,21 @@ export class ModelGateway {
       clearTimeout(timer);
     }
   }
+}
+
+/** How long past the longest call (two attempts at the timeout) a hold stands if its process dies. */
+const HOLD_MARGIN_MS = 60_000;
+
+/** Tokens the request's framing may add beyond its text (the roles, the schema's wrapping). */
+const FRAMING_TOKENS = 1_000;
+
+/**
+ * The most a request can cost: its token limit out, and in, no more tokens than the bytes it sends (a token is
+ * at least one byte of UTF-8) plus the framing, at the model's price, in millionths of a cent.
+ */
+export function mostCost(price: ModelPrice, request: ModelRequest): bigint {
+  const bytes = Buffer.byteLength(request.system, 'utf8') + Buffer.byteLength(request.user, 'utf8') + Buffer.byteLength(JSON.stringify(request.outputSchema), 'utf8');
+  return callCost(price, bytes + FRAMING_TOKENS, request.maxTokens).microCents;
 }
 
 function parseJson(text: string): unknown {

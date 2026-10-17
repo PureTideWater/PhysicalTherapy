@@ -4,7 +4,7 @@ import { GatewayError } from './errors';
 import { type FlagRow, type GatewayFeatures, resolveFeatures } from './flags';
 import { microCentsText, parseMicroCents } from './prices';
 import { MODEL_PURPOSES, type ModelPurpose } from './purposes';
-import { type CallActor, type ModelCallRecord, type ModelCallStore, actorColumns } from './store';
+import { type BudgetHold, type BudgetHoldRequest, type CallActor, type ModelCallRecord, type ModelCallStore, actorColumns } from './store';
 
 /**
  * The gateway's records in the product's own database (migration 20261029090000_model_gateway.sql).
@@ -97,6 +97,36 @@ export class PostgresModelCallStore implements ModelCallStore {
     });
   }
 
+  hold(practiceId: string, request: BudgetHoldRequest): Promise<BudgetHold> {
+    return this.scoped(practiceId, async (client) => {
+      // Holds and spend are read and the hold placed under the practice's lock, released at commit.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`model_budget:${practiceId}`]);
+      await client.query('DELETE FROM model_budget_hold WHERE practice_id = $1 AND expires_at <= now()', [practiceId]);
+      // One statement, so the spend and the holds come from one snapshot: a call logged meanwhile is counted once.
+      const { rows } = await client.query<{ spent: string }>(
+        `SELECT ((SELECT coalesce(sum(cost_unrounded), 0) FROM model_call WHERE practice_id = $1 AND created_at >= $2)
+               + (SELECT coalesce(sum(held_unrounded), 0) FROM model_budget_hold WHERE practice_id = $1))::numeric(18, 6)::text AS spent`,
+        [practiceId, request.since.toISOString()],
+      );
+      const spent = parseMicroCents(rows[0]?.spent ?? '0');
+      if (spent >= request.budgetMicro) {
+        return { holdId: null, spent };
+      }
+      const held = await client.query<{ id: string }>("INSERT INTO model_budget_hold (practice_id, held_unrounded, expires_at) VALUES ($1, $2, now() + $3 * interval '1 millisecond') RETURNING id", [
+        practiceId,
+        microCentsText(request.amountMicro),
+        Math.max(1, Math.ceil(request.holdMs)),
+      ]);
+      return { holdId: (held.rows[0] as { id: string }).id, spent };
+    });
+  }
+
+  release(practiceId: string, holdId: string): Promise<void> {
+    return this.scoped(practiceId, async (client) => {
+      await client.query('DELETE FROM model_budget_hold WHERE id = $1 AND practice_id = $2', [holdId, practiceId]);
+    });
+  }
+
   completedCall(practiceId: string | null, idempotencyKey: string): Promise<string | null> {
     return this.scoped(practiceId, async (client) => {
       const { rows } = await client.query<{ id: string }>("SELECT id FROM model_call WHERE practice_id = $1 AND idempotency_key = $2 AND outcome = 'completed'", [practiceId, idempotencyKey]);
@@ -104,9 +134,13 @@ export class PostgresModelCallStore implements ModelCallStore {
     });
   }
 
-  record(record: ModelCallRecord): Promise<string> {
+  /** The call's row and the release of its hold, in one transaction: a concurrent hold sees one or the other, never neither. */
+  record(record: ModelCallRecord, holdId: string | null = null): Promise<string> {
     return this.scoped(record.practiceId, async (client) => {
       const { rows } = await client.query<{ id: string }>(INSERT, insertValues({ ...record, ...actorColumns(this.actor) }));
+      if (holdId !== null) {
+        await client.query('DELETE FROM model_budget_hold WHERE id = $1 AND practice_id = $2', [holdId, record.practiceId]);
+      }
       return (rows[0] as { id: string }).id;
     });
   }
@@ -146,6 +180,15 @@ export class OperatorEvaluationStore implements ModelCallStore {
 
   spentSince(): Promise<bigint> {
     return Promise.resolve(0n);
+  }
+
+  /** A synthetic evaluation run names no practice, so it holds no practice's budget. */
+  hold(): Promise<BudgetHold> {
+    return Promise.reject(new GatewayError('context_invalid', 'an evaluation run reads synthetic material and holds no practice’s budget'));
+  }
+
+  release(): Promise<void> {
+    return Promise.resolve();
   }
 
   completedCall(practiceId: string | null, idempotencyKey: string): Promise<string | null> {

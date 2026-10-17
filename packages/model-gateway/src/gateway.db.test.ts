@@ -328,6 +328,47 @@ describe('MOD-05: the daily budget, from the calls the database holds', () => {
     expect(spent.rows).toEqual([{ cents: '4', exact: '4.000000' }]);
     await clearFlags();
   });
+
+  it('holds each call’s most under the practice’s lock, so calls made at once cannot all pass the check', async () => {
+    await clearFlags();
+    await setFeatureFlag(app, platformAdmin, { key: 'model.daily_budget_cents', scope: 'practice', scopeId: north.practiceId, value: '500' });
+    // Each answer costs 300 cents and takes a moment; the most a call can cost is more than the budget.
+    const output = JSON.stringify(syntheticEvidenceOutput());
+    let calls = 0;
+    const provider: ModelProvider = {
+      kind: 'local',
+      complete: (): Promise<ModelResponse> => {
+        calls += 1;
+        return new Promise((resolve) => setTimeout(() => resolve({ text: output, tokensIn: 300, tokensOut: 0, stopReason: 'end' }), 50));
+      },
+    };
+    const prices = [{ provider: 'local' as const, modelId: 'local-deterministic', inputCentsPerMillion: 1_000_000n, outputCentsPerMillion: 1_000_000n, confirmed: true }];
+    const before = await asOwner(owner, [north.practiceId], () => owner.query<{ n: number }>('SELECT count(*)::int AS n FROM model_call WHERE practice_id = $1', [north.practiceId]));
+    const { gateway: g, logger } = gateway({ kind: 'user', userId: north.adminUserId }, provider, prices);
+    const results = await Promise.allSettled(Array.from({ length: 6 }, () => g.suggestEvidenceRequests(context(undefined, north.practiceId), syntheticEvidenceInput())));
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    expect(calls).toBe(1);
+    expect(logger.lines.filter((line) => line.fields.error_code === 'MODEL_BUDGET_EXCEEDED')).toHaveLength(5);
+    const after = await asOwner(owner, [north.practiceId], () =>
+      owner.query<{ calls: number; holds: number }>('SELECT (SELECT count(*) FROM model_call WHERE practice_id = $1)::int AS calls, (SELECT count(*) FROM model_budget_hold WHERE practice_id = $1)::int AS holds', [
+        north.practiceId,
+      ]),
+    );
+    expect(after.rows).toEqual([{ calls: (before.rows[0]?.n ?? 0) + 1, holds: 0 }]);
+
+    // A hold whose process died expires: the next hold clears it, and the practice's spend alone counts.
+    await asOwner(owner, [north.practiceId], () =>
+      owner.query("INSERT INTO model_budget_hold (practice_id, held_unrounded, created_at, expires_at) VALUES ($1, '900000.000000', now() - interval '10 minutes', now() - interval '5 minutes')", [north.practiceId]),
+    );
+    const store = new PostgresModelCallStore(app, { kind: 'user', userId: north.adminUserId });
+    const held = await store.hold(north.practiceId, { since: new Date(Date.now() - 60_000), amountMicro: 1n, budgetMicro: 500n * 1_000_000n, holdMs: 60_000 });
+    expect(held).toEqual({ holdId: expect.any(String), spent: 300n * 1_000_000n });
+    await store.release(north.practiceId, held.holdId ?? '');
+    expect((await asOwner(owner, [north.practiceId], () => owner.query('SELECT count(*)::int AS n FROM model_budget_hold WHERE practice_id = $1', [north.practiceId]))).rows).toEqual([{ n: 0 }]);
+    // Another practice's scope sees none of its holds, and cannot place one for it.
+    await expect(new PostgresModelCallStore(app, { kind: 'user', userId: south.adminUserId }).hold(north.practiceId, { since: new Date(), amountMicro: 1n, budgetMicro: 1n, holdMs: 1 })).rejects.toBeInstanceOf(GatewayError);
+    await clearFlags();
+  });
 });
 
 describe('MOD-04: a document with embedded instructions changes no record', () => {

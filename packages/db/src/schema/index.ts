@@ -127,6 +127,7 @@ export {
   type ReviewerDecision,
   evalExample,
   featureFlag,
+  modelBudgetHold,
   modelCall,
   modelProposal,
 } from './models';

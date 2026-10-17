@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { DuplicateModelCallError, GatewayError, InputRefusedError, ModelBudgetExceededError, ModelCallFailedError, ModelFeatureOffError, PhiBoundaryError } from './errors';
 import type { FlagRow } from './flags';
-import { type GatewayResult, ModelGateway } from './gateway';
+import { type GatewayResult, ModelGateway, mostCost } from './gateway';
 import { canonicalJson, sha256Hex } from './hash';
 import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
@@ -297,6 +297,50 @@ describe('MOD-05: the daily budget', () => {
     const harness = budgeted('0', [answer(syntheticEvidenceOutput())]);
     await expect(harness.gateway.suggestEvidenceRequests(CONTEXT, syntheticEvidenceInput())).rejects.toBeInstanceOf(ModelBudgetExceededError);
     expect(harness.provider.requests).toEqual([]);
+  });
+
+  it('holds each call’s most before it is made: calls made at once are held to the budget as calls made in turn', async () => {
+    // Each answer costs 300 cents; the budget is 500. In turn: two are made, the rest refused.
+    const prices = pricedPrices(1_000_000n);
+    const most = mostCost(prices[0] as ModelPrice, requestFor('suggestEvidenceRequests', syntheticEvidenceInput()));
+    const delayed = () => () => new Promise<ModelResponse>((resolve) => setTimeout(() => resolve({ text: JSON.stringify(syntheticEvidenceOutput()), tokensIn: 300, tokensOut: 0, stopReason: 'end' }), 5));
+    const concurrent = budgeted('500', Array.from({ length: 10 }, delayed));
+    const results = await Promise.allSettled(Array.from({ length: 10 }, (_, index) => concurrent.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: `at-once-${String(index)}` }, syntheticEvidenceInput())));
+    const made = results.filter((result) => result.status === 'fulfilled').length;
+    // At once, every call but the first sees the others' holds: no more are made than in turn, and the day's spend
+    // passes the budget by at most the one call that crosses it.
+    expect(most).toBeGreaterThan(500n * 1_000_000n);
+    expect(made).toBe(1);
+    expect(results.filter((result) => result.status === 'rejected').every((result) => result.reason instanceof ModelBudgetExceededError)).toBe(true);
+    expect(concurrent.provider.requests).toHaveLength(made);
+    expect(concurrent.store.calls.reduce((sum, row) => sum + row.costCents, 0n)).toBe(300n);
+    expect(concurrent.store.holds.size).toBe(0);
+    expect(concurrent.logger.lines.filter((line) => line.fields.error_code === 'MODEL_BUDGET_EXCEEDED')).toHaveLength(9);
+
+    const inTurn = budgeted('500', Array.from({ length: 10 }, delayed));
+    let madeInTurn = 0;
+    for (let index = 0; index < 10; index += 1) {
+      madeInTurn += (await inTurn.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: `in-turn-${String(index)}` }, syntheticEvidenceInput()).then(() => 1).catch(() => 0));
+    }
+    expect(madeInTurn).toBe(2);
+    expect(made).toBeLessThanOrEqual(madeInTurn);
+  });
+
+  it('releases a call’s hold when it ends, logged or not, and lets an abandoned hold expire', async () => {
+    let now = new Date('2026-10-16T12:00:00Z');
+    const harness = budgeted('500', [failing('rejected'), answer('not json', 10, 10)], () => now);
+    await expect(harness.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: 'fails' }, syntheticEvidenceInput())).rejects.toBeInstanceOf(ModelCallFailedError);
+    await expect(harness.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: 'off-schema' }, syntheticEvidenceInput())).resolves.toMatchObject({ problems: ['invalid_output'] });
+    expect(harness.store.holds.size).toBe(0);
+    // A refusal before the call (an input the purpose refuses) never holds anything.
+    await expect(harness.gateway.suggestEvidenceRequests({ ...CONTEXT, requestKey: 'refused' }, { gaps: [] })).rejects.toBeInstanceOf(InputRefusedError);
+    expect(harness.store.holds.size).toBe(0);
+    // A hold whose process died stands until the longest call is over, then expires.
+    const held = await harness.store.hold(SYNTHETIC_IDS.practice, { since: new Date('2026-10-16T00:00:00Z'), amountMicro: 600n * 1_000_000n, budgetMicro: 500n * 1_000_000n, holdMs: 1_000 });
+    expect(held.holdId).not.toBeNull();
+    expect((await harness.store.hold(SYNTHETIC_IDS.practice, { since: new Date('2026-10-16T00:00:00Z'), amountMicro: 1n, budgetMicro: 500n * 1_000_000n, holdMs: 1_000 })).holdId).toBeNull();
+    now = new Date('2026-10-16T12:00:02Z');
+    expect((await harness.store.hold(SYNTHETIC_IDS.practice, { since: new Date('2026-10-16T00:00:00Z'), amountMicro: 1n, budgetMicro: 500n * 1_000_000n, holdMs: 1_000 })).spent).toBe(20n * 1_000_000n);
   });
 });
 

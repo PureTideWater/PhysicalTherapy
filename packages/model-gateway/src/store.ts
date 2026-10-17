@@ -40,15 +40,41 @@ export interface ModelCallRecord {
   readonly latencyMs: number;
 }
 
+/** A hold on the practice's daily budget for a call about to be made (test matrix MOD-05). */
+export interface BudgetHoldRequest {
+  /** The start of the budget's day. */
+  readonly since: Date;
+  /** The most the call can cost, in millionths of a cent. */
+  readonly amountMicro: bigint;
+  /** The practice's daily budget, in millionths of a cent. */
+  readonly budgetMicro: bigint;
+  /** How long the hold stands if the call never ends (its process died): the longest a call can take. */
+  readonly holdMs: number;
+}
+
+export interface BudgetHold {
+  /** The hold placed, or null when the budget is spent: the call is refused. */
+  readonly holdId: string | null;
+  /** The day's logged spend with every other call's hold, in millionths of a cent, as the hold saw it. */
+  readonly spent: bigint;
+}
+
 export interface ModelCallStore {
   readonly actor: CallActor;
   features(practiceId: string | null): Promise<GatewayFeatures>;
   /** What the practice has spent since `since`, in millionths of a cent. */
   spentSince(practiceId: string, since: Date): Promise<bigint>;
+  /**
+   * Under the practice's lock, reads the day's spend and the other calls' holds together and, when they have not
+   * reached the budget, holds the call's most: calls made at once are held to the budget as calls made in turn.
+   */
+  hold(practiceId: string, request: BudgetHoldRequest): Promise<BudgetHold>;
+  /** Releases a hold for a call that ended without a log row. */
+  release(practiceId: string, holdId: string): Promise<void>;
   /** The completed call logged under the idempotency key, if one is. */
   completedCall(practiceId: string | null, idempotencyKey: string): Promise<string | null>;
-  /** Writes the row; returns its ID. */
-  record(record: ModelCallRecord): Promise<string>;
+  /** Writes the row, and releases the call's hold with it; returns its ID. */
+  record(record: ModelCallRecord, holdId?: string | null): Promise<string>;
 }
 
 /** model_call's actor columns for a store's actor. */
@@ -81,6 +107,8 @@ export interface MemoryStoreOptions {
 export class MemoryModelCallStore implements ModelCallStore {
   readonly actor: CallActor;
   readonly calls: StoredCall[] = [];
+  /** The holds standing, by ID. */
+  readonly holds = new Map<string, { readonly practiceId: string; readonly amountMicro: bigint; readonly expiresAt: Date }>();
   flags: FlagRow[];
   private readonly organizations: Readonly<Record<string, string>>;
   private readonly now: () => Date;
@@ -100,13 +128,39 @@ export class MemoryModelCallStore implements ModelCallStore {
     return Promise.resolve(this.calls.filter((call) => call.practiceId === practiceId && call.createdAt >= since).reduce((sum, call) => sum + call.costMicroCents, 0n));
   }
 
+  /** One step of the event loop, as one transaction under the practice's lock is. */
+  hold(practiceId: string, request: BudgetHoldRequest): Promise<BudgetHold> {
+    const now = this.now();
+    for (const [id, held] of this.holds) {
+      if (held.expiresAt <= now) {
+        this.holds.delete(id);
+      }
+    }
+    const held = [...this.holds.values()].filter((entry) => entry.practiceId === practiceId).reduce((sum, entry) => sum + entry.amountMicro, 0n);
+    const spent = this.calls.filter((call) => call.practiceId === practiceId && call.createdAt >= request.since).reduce((sum, call) => sum + call.costMicroCents, 0n) + held;
+    if (spent >= request.budgetMicro) {
+      return Promise.resolve({ holdId: null, spent });
+    }
+    const holdId = randomUUID();
+    this.holds.set(holdId, { practiceId, amountMicro: request.amountMicro, expiresAt: new Date(now.getTime() + request.holdMs) });
+    return Promise.resolve({ holdId, spent });
+  }
+
+  release(_practiceId: string, holdId: string): Promise<void> {
+    this.holds.delete(holdId);
+    return Promise.resolve();
+  }
+
   completedCall(practiceId: string | null, idempotencyKey: string): Promise<string | null> {
     return Promise.resolve(this.calls.find((call) => call.practiceId === practiceId && call.idempotencyKey === idempotencyKey && call.outcome === 'completed')?.id ?? null);
   }
 
-  record(record: ModelCallRecord): Promise<string> {
+  record(record: ModelCallRecord, holdId: string | null = null): Promise<string> {
     const id = randomUUID();
     this.calls.push({ ...record, id, createdAt: this.now() });
+    if (holdId !== null) {
+      this.holds.delete(holdId);
+    }
     return Promise.resolve(id);
   }
 }
