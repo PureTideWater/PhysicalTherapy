@@ -63,7 +63,7 @@ document's SHA-256 on the "Approved by" line (`--require-approval`). The hash co
 provenance line, so any schema change leaves the regenerated document awaiting a new approval, and no migration merges
 without one (CLAUDE.md, Schema gate). Milestone 1 does not start until the founder approves the document; until then
 that case fails. The document records PostgreSQL's major version beside the catalog's own text, so it is checked on
-PostgreSQL 18, as CI runs; on 16 or 17 the drift case fails at the version line.
+PostgreSQL 18, as CI runs; on an older server its drift case fails (on 16, at the version line alone).
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
