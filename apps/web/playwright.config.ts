@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 import { chromium, defineConfig, devices } from '@playwright/test';
 
@@ -28,6 +29,24 @@ import { developmentMasterKey } from './src/lib/server/config';
  */
 const bundledChromium = existsSync(chromium.executablePath());
 
+/**
+ * How the e2e browser rasterizes text: fixed here, not taken from the host (docs/adr/0058). Chromium on Linux takes
+ * its text rendering from the host's fontconfig, the self-hosted brand faces included, so one build drew the baselines'
+ * text differently on a runner with fontconfig's stock hinting than on the machine that made them. These switches set
+ * the parameters instead: no hinting, and grayscale antialiasing rather than LCD text (Chromium 141 honours both). The
+ * fontconfig the browser reads is e2e/fonts.conf, which takes the host's font directories and assigns the same
+ * properties over whatever the host sets (the one the switches leave to fontconfig is whether text is antialiased).
+ */
+const textRendering = {
+  args: ['--font-render-hinting=none', '--disable-lcd-text'],
+  env: { ...definedEnvironment(), FONTCONFIG_FILE: path.join(import.meta.dirname, 'e2e/fonts.conf') },
+};
+
+/** The runner's environment, which the browser keeps beside FONTCONFIG_FILE. */
+function definedEnvironment(): Record<string, string> {
+  return Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+}
+
 /** A dev login on the e2e database (packages/db/src/roles.ts: tp_app_dev, tp_billing_dev, tp_esign_dev; each password is its name). */
 function devLoginUrl(login: 'tp_app_dev' | 'tp_billing_dev' | 'tp_esign_dev'): string {
   const url = new URL(e2eDatabaseUrl());
@@ -49,7 +68,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], ...(bundledChromium ? {} : { channel: 'chrome' }) },
+      use: { ...devices['Desktop Chrome'], ...(bundledChromium ? {} : { channel: 'chrome' }), launchOptions: textRendering },
     },
   ],
   // The production build, as the container runs it, against a database prepared and seeded for this

@@ -50,13 +50,14 @@ const BRASS_RGB: Rgb = [201, 154, 59];
 /**
  * The visual baselines (CO-01: "visual tests of the header at 1280 and 390 px and the report cover with and without
  * the seal"; docs/adr/0058), committed beside this file in brand.spec.ts-snapshots/. They are Playwright's own
- * Chromium on Linux, the build ci.yml installs before the e2e step, so CI renders with the browser that made them.
+ * Chromium on Linux, the build ci.yml installs before the e2e step, so CI renders with the browser that made them, and
+ * with the text rendering playwright.config.ts fixes for it (no hinting, grayscale antialiasing, e2e/fonts.conf), so a
+ * host's font configuration moves none of their pixels; every text they hold is in the brand's own web faces.
  * Animations are off, the caret is hidden, pixels are CSS pixels, and any <time> is masked, although neither region
  * shows the clock: the header's words are the persona's address and the journey's practice, and the cover prints the
  * statement's fixed generatedAt. A pixel counts as changed past Playwright's default color threshold (0.2), and up
- * to 1% of them may change: that absorbs antialiasing at glyph edges, the one thing a machine's font configuration
- * can move with the same browser and the same self-hosted faces, and catches a region's layout changing (the switcher,
- * the account, a line of the cover moved or gone). It cannot see a small element change inside a mostly empty
+ * to 1% of them may change: that absorbs a stray antialiased glyph edge, and catches a region's layout changing (the
+ * switcher, the account, a line of the cover moved or gone). It cannot see a small element change inside a mostly empty
  * picture: a recolored keystone or wordmark, the wordmark in another face, a lockup moved a few pixels, or the cover's
  * whole ground changed all stay under 1% of a 1280 x 56 header or an 816 x 1056 cover. Those are held by STRICT
  * comparisons of the regions that hold the brand (the header's lockup band, the cover's top band) and by computed

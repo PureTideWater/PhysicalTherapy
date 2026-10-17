@@ -132,9 +132,9 @@ regions, and three bands inside them (below), with `toHaveScreenshot` against ba
 without it (false). The data is synthetic and fixed (the journey's practice and persona, the statement's
 `generatedAt`); animations are off, the caret hidden, pixels are CSS pixels and any `<time>` is masked. A pixel counts
 as changed past Playwright's default color threshold (0.2), and at most 1% of pixels may change (`maxDiffPixelRatio:
-0.01`): enough for antialiasing at glyph edges, the one thing a machine's font configuration moves under the same browser
-and the same self-hosted faces. That catches a region's layout changing (the switcher, the account, the cover's lockup
-removed), but not a small element changing inside a mostly empty picture, as a review showed by mutation: the keystone
+0.01`): enough for a stray antialiased glyph edge under the same browser, the same self-hosted faces and the fixed text
+rendering below, which a machine's font configuration no longer moves. That catches a region's layout changing (the
+switcher, the account, the cover's lockup removed), but not a small element changing inside a mostly empty picture, as a review showed by mutation: the keystone
 or the wordmark recolored, the wordmark set in IBM Plex Sans, the lockup moved 6 px (12 px on the cover), the practice
 name in Plex Sans 400 and the cover's whole ground turned White all stayed under 1% of the 1280 x 56 header or the
 816 x 1056 cover, and the brass underline is on the rail, outside the header's picture. So the journey also compares
@@ -159,7 +159,24 @@ definition for `false` fails the comparison (2% of pixels); the seal art alone, 
 caption, passes the comparison and the DOM check and fails the foot check. The baselines are Playwright's Chromium (141.0.7390.37 for `@playwright/test` 1.56.1) on Ubuntu 24.04. CI ran Google Chrome
 where Playwright's Chromium was not installed, so `ci.yml` now runs `pnpm --filter @tp/web exec playwright install
 --with-deps chromium` right before the unit tests (so the worker's print checks below run there too, and a test fails in
-CI if Chromium is missing rather than skipping) and the config takes that build. The screenshots for people stay in
+CI if Chromium is missing rather than skipping) and the config takes that build. The same build was not enough: Chromium
+on Linux takes its text rasterization (hinting, subpixel antialiasing) from the host's fontconfig, the self-hosted faces
+included, and the machine that made the baselines rasterizes text unhinted and in grayscale, while GitHub's runner
+starts the stock Chromium under Ubuntu's stock fontconfig, which hints slightly with RGB subpixel order. The first CI run
+with the build failed the 1280 px header by 1130 pixels (2%); that build under a copy of the stock configuration, here,
+differs from the baselines by the same 1130 pixels, by 231 in the strict lockup band, and by 6336 and 5257 on the covers.
+So the e2e browser's text rendering no longer comes from the host: `playwright.config.ts` starts it with
+`--font-render-hinting=none` and `--disable-lcd-text` (Chromium 141 honours both, and with either alone the text still
+differs) and gives it its own fontconfig, `apps/web/e2e/fonts.conf`, which takes the host's font directories and then
+assigns grayscale antialiasing, no hinting and no subpixel rendering over whatever the host sets (whether text is
+antialiased at all is left to fontconfig by the switches). With both, the header and the two covers render byte for byte
+as the baselines under four host configurations (the machine's own, Ubuntu's stock, full hinting with the autohinter and
+RGB, and antialiasing off), and the seven baselines regenerated under them are byte for byte the ones committed, which
+that machine had made with the same two switches. `--disable-font-subpixel-positioning`, which Chromium 141 also
+honours, is not passed: subpixel positioning did not vary with the host, and the switch would move every glyph. Every
+text the baselines hold is drawn in the brand's web faces (Chromium's record of the fonts each text node used, with the
+host preferring Inter for sans-serif or not, and a glyph check of the faces for each character shown, the truncation's
+ellipsis included), so the host's installed fonts do not enter them either. The screenshots for people stay in
 `brand-screenshots/`, and CI uploads them with the Playwright report and test results (the diffs of a failed
 comparison included) after the e2e step, failed runs included.
 
@@ -192,7 +209,8 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
 | An exact pixel match, or a tolerance of several percent | Exact breaks on antialiasing; several percent lets a lockup or underline change pass |
 | Leave the seal's absence to the cover's comparison | The seal is about 0.5% of the cover's pixels, under any useful tolerance |
 | Keep CI on Google Chrome with baselines of its own | The runner image moves Chrome's version without a commit here; the installed Chromium moves only with `@playwright/test` in the lockfile |
-| Run the e2e step in Playwright's container image | A larger change to CI for the same browser build |
+| Run the e2e step in Playwright's container image | A larger change to CI for the same browser build, and the text would still follow that image's fontconfig |
+| Loosen `VISUAL` and `STRICT` until the runner's hinted text passes | The runner's text moved 2% of the header and 231 pixels of the lockup band, past what the mutations above are caught within |
 
 ## Consequences
 
@@ -200,7 +218,7 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   refuses Google's font loader; `pnpm test:e2e` runs the font-host journey, the copy journey (`e2e/copy.spec.ts`, the D11
   placements and the undecorated sign-in) and the brand journey with its baselines. `tools/test/workflows.test.ts` pins
   the Chromium install step right before the unit tests (and so before the e2e step), the artifact upload right after
-  the e2e step, and the seven baselines.
+  the e2e step, the seven baselines, and the e2e browser's text rendering switches and `e2e/fonts.conf`.
 - A deliberate change to the header or the cover, or an upgrade of `@playwright/test` (which moves Chromium; Dependabot
   proposes one weekly), may need new baselines: on Linux with Playwright's Chromium, run
   `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the seven images (the
