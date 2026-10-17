@@ -5,11 +5,14 @@ import { createHash } from 'node:crypto';
  * (CO-02; reconciliation-001, D1). The founder writes a name, one on the reviewed approver list
  * (APPROVERS_LIST), and a date on the line and leaves its document hash as generated, the hash of the
  * text compared with the schema. The hash covers every line but two: the approval line itself (the last
- * line of the document) and the provenance line (the commit and branch the document was generated at:
- * the first line that starts with its prefix, in the shape the generator writes), so a pull request
- * that changes no schema keeps the document valid whatever its commit, and any change to the described
- * schema changes the hash, so an approval never carries over to text it did not see. Any other line
- * that starts with either prefix is compared and hashed like every other line.
+ * line of the document) and the provenance line (the commit and branch the document was generated at).
+ * The provenance line is skipped only where the generator writes it, the document's fifth line
+ * (PROVENANCE_LINE_INDEX), and only in the shape it writes, with a commit of 7 to 40 hexadecimal digits
+ * or "unknown" and a branch that is a git ref name (provenanceProblems), so a pull request that changes
+ * no schema keeps the document valid whatever its commit, and any change to the described schema
+ * changes the hash, so an approval never carries over to text it did not see. Any other line that
+ * starts with either prefix, a provenance line moved anywhere else, and a fifth line with other text in
+ * its fields are compared and hashed like every other line.
  */
 export const APPROVAL_PREFIX = 'Approved by:';
 export const PROVENANCE_PREFIX = '- Generated at commit ';
@@ -20,6 +23,9 @@ export const EARLIEST_APPROVAL_DATE = '2026-10-16';
  * changes only with the founder's approval, in the same pull request as a document the founder signs.
  */
 export const APPROVERS_LIST = 'packages/db/domain-model/approvers.json';
+
+/** The provenance line's index: the document's fifth line, below the title and the note under it (renderDocument). */
+export const PROVENANCE_LINE_INDEX = 4;
 
 const UNCOMMITTED = ', with uncommitted changes to its inputs';
 const PROVENANCE_NOTE = '(provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)';
@@ -39,16 +45,38 @@ export function provenanceLine(provenance: Provenance): string {
   return `${PROVENANCE_PREFIX}\`${noTicks(provenance.commit) || 'unknown'}\` on branch \`${noTicks(provenance.branch) || 'unknown'}\`${provenance.uncommitted ? UNCOMMITTED : ''} ${PROVENANCE_NOTE}`;
 }
 
-const PROVENANCE_LINE = new RegExp(`^${escapeRegExp(PROVENANCE_PREFIX)}\`[^\`]*\` on branch \`[^\`]*\`(?:${escapeRegExp(UNCOMMITTED)})? ${escapeRegExp(PROVENANCE_NOTE)}$`);
+/** A commit on the provenance line: an object name of 7 to 40 lower-case hexadecimal digits, or "unknown". */
+const COMMIT = '[0-9a-f]{7,40}|unknown';
+/** A branch on the provenance line: a git ref name in letters, digits, ".", "_", "/" and "-", with no spaces ("unknown" among them). */
+const BRANCH = '[A-Za-z0-9._/-]+';
+
+const PROVENANCE_LINE = new RegExp(`^${escapeRegExp(PROVENANCE_PREFIX)}\`(?:${COMMIT})\` on branch \`${BRANCH}\`(?:${escapeRegExp(UNCOMMITTED)})? ${escapeRegExp(PROVENANCE_NOTE)}$`);
+const COMMIT_FIELD = new RegExp(`^(?:${COMMIT})$`);
+const BRANCH_FIELD = new RegExp(`^${BRANCH}$`);
 
 /**
- * The two lines the comparison and the hash skip, by index (-1 when absent): the first line that starts
- * with the provenance prefix, when it has the generated shape, and the last line that is not empty, when
- * it starts with the approval prefix.
+ * Why the generator cannot write `provenance` on a line the comparison skips: a commit that is not 7 to
+ * 40 lower-case hexadecimal digits, or a branch that is not a git ref name in letters, digits, ".", "_",
+ * "/" and "-". An empty field is written "unknown". Empty when it can.
+ */
+export function provenanceProblems(provenance: Provenance): string[] {
+  const problems: string[] = [];
+  if (provenance.commit !== '' && !COMMIT_FIELD.test(provenance.commit)) {
+    problems.push(`the commit ${JSON.stringify(provenance.commit)} is not 7 to 40 lower-case hexadecimal digits or "unknown"`);
+  }
+  if (provenance.branch !== '' && !BRANCH_FIELD.test(provenance.branch)) {
+    problems.push(`the branch ${JSON.stringify(provenance.branch)} is not a git ref name in letters, digits, ".", "_", "/" and "-"`);
+  }
+  return problems;
+}
+
+/**
+ * The two lines the comparison and the hash skip, by index (-1 when absent): the fifth line, when it is
+ * a provenance line in the generated shape, and the last line that is not empty, when it starts with the
+ * approval prefix.
  */
 function skippedLines(lines: readonly string[]): { readonly provenance: number; readonly approval: number } {
-  const first = lines.findIndex((line) => line.startsWith(PROVENANCE_PREFIX));
-  const provenance = first !== -1 && PROVENANCE_LINE.test(lines[first] ?? '') ? first : -1;
+  const provenance = PROVENANCE_LINE.test(lines[PROVENANCE_LINE_INDEX] ?? '') ? PROVENANCE_LINE_INDEX : -1;
   let last = lines.length - 1;
   while (last >= 0 && lines[last] === '') last--;
   const approval = last >= 0 && (lines[last] ?? '').startsWith(APPROVAL_PREFIX) ? last : -1;
@@ -82,20 +110,39 @@ export function approvalLineOf(text: string): string | null {
 const APPROVAL_LINE = /^Approved by: (.+?) {2}Date: (\S+) {2}Document SHA-256: `([0-9a-f]{64})`$/;
 
 /** Words that hold a name's place: a name with one of them as a word, in any case, names no one. */
-const PLACEHOLDER_WORDS = new Set(['tbd', 'name', 'founder', 'approver', 'claude']);
+const PLACEHOLDER_WORDS = new Set(['tbd', 'name', 'firstname', 'lastname', 'fullname', 'founder', 'approver', 'claude']);
+
+/** `pattern` standing alone, in any case: not inside a longer word. */
+const alone = (pattern: string): RegExp => new RegExp(`(?:^|[^\\p{L}])(?:${pattern})(?:[^\\p{L}]|$)`, 'iu');
+const N_A = alone('n\\s*/\\s*a|n[._-]a');
+const VERIFY_ONLY = alone('verify[\\s._-]*only');
+const DOTTED_TBD = alone('t[._-]?b[._-]?d');
+
+/**
+ * A word with "claude" in it, as an agent would sign (ClaudeCode, claudecode, CLAUDE_AI), but not a name
+ * that only begins with it, such as Claudette: one capital and lower-case letters, unless what follows is
+ * an agent's or a model's suffix.
+ */
+const claudeIn = (word: string): boolean => /claude/i.test(word) && (!/^\p{Lu}\p{Ll}+$/u.test(word) || /claude(?:code|ai|bot|agent|opus|sonnet|haiku)/i.test(word));
 
 function placeholderIn(name: string): string | null {
   if (/<[^>]*>/.test(name)) return 'text in angle brackets';
-  if (/(?:^|[^\p{L}])n\s*\/\s*a(?:[^\p{L}]|$)/iu.test(name)) return '"N/A"';
-  if (/(?:^|[^\p{L}])verify\s+only(?:[^\p{L}]|$)/iu.test(name)) return '"VERIFY ONLY"';
-  const word = name.split(/[^\p{L}]+/u).find((w) => PLACEHOLDER_WORDS.has(w.toLowerCase()));
-  return word === undefined ? null : `"${word}"`;
+  if (N_A.test(name)) return '"N/A"';
+  if (VERIFY_ONLY.test(name)) return '"VERIFY ONLY"';
+  const words = name.split(/[^\p{L}]+/u).filter((w) => w !== '');
+  // Words are split at a lower-case letter followed by a capital too, so "ClaudeCode" and "FirstName" are read as two.
+  const word = words.flatMap((w) => w.split(/(?<=\p{Ll})(?=\p{Lu})/u)).find((w) => PLACEHOLDER_WORDS.has(w.toLowerCase()));
+  if (word !== undefined) return `"${word}"`;
+  if (DOTTED_TBD.test(name)) return '"TBD"';
+  const agent = words.find(claudeIn);
+  return agent === undefined ? null : `"${agent}"`;
 }
 
 /**
  * Why `name` cannot be a person's name, or null: it is blank or underscores, has no letters, or holds a
- * placeholder (TBD, N/A, name, founder, approver, VERIFY ONLY or Claude, in any case, or any text in angle
- * brackets). Both the approval line and the approver list are held to it.
+ * placeholder, in any case: TBD (T.B.D., T-B-D), N/A (N.A.), name, first name, last name, full name,
+ * founder, approver, VERIFY ONLY (VERIFY-ONLY, VERIFY_ONLY), Claude (ClaudeCode, claude-code), or any
+ * text in angle brackets. Both the approval line and the approver list are held to it.
  */
 export function notAName(name: string): string | null {
   const trimmed = name.trim();

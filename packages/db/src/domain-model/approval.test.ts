@@ -9,6 +9,7 @@ import {
   APPROVAL_PREFIX,
   APPROVERS_LIST,
   EARLIEST_APPROVAL_DATE,
+  PROVENANCE_LINE_INDEX,
   PROVENANCE_PREFIX,
   approvalLineOf,
   approvalProblems,
@@ -20,15 +21,19 @@ import {
   firstDifference,
   notAName,
   provenanceLine,
+  provenanceProblems,
 } from './approval';
+import { generateDomainModel } from './generate';
 import { APPROVERS_FILE, APPROVERS_FORMAT, DomainModelError, REPO_ROOT, readApprovers } from './sources';
 
-/** A small document in the generator's shape: provenance near the top, the approval line last. */
+/** A small document in the generator's shape: the title, its note, provenance on the fifth line, the approval line last. */
 function document(
   options: { readonly commit?: string; readonly branch?: string; readonly uncommitted?: boolean; readonly body?: string; readonly approval?: (sha: string) => string } = {},
 ): string {
   const draft = [
     '# Domain model',
+    '',
+    '> Generated from the live schema (a synthetic document for these tests).',
     '',
     provenanceLine({ commit: options.commit ?? 'aaaaaaa', branch: options.branch ?? 'main', uncommitted: options.uncommitted === true }),
     '- Migrations applied: 2; head `20261016120000_remittances.sql`',
@@ -57,6 +62,8 @@ describe('the document hash', () => {
     expect(comparableText(text)).not.toContain(PROVENANCE_PREFIX);
     expect(comparableText(text)).not.toContain(APPROVAL_PREFIX);
     expect(comparableText(text)).toContain('head `20261016120000_remittances.sql`');
+    expect(PROVENANCE_LINE_INDEX).toBe(4);
+    expect(text.split('\n')[PROVENANCE_LINE_INDEX]).toBe(provenanceLine({ commit: 'aaaaaaa', branch: 'main' }));
   });
 
   it('ignores the provenance line: another commit or branch, or uncommitted inputs, leave the text and its hash unchanged', () => {
@@ -71,21 +78,93 @@ describe('the document hash', () => {
     expect(firstDifference(here, dirty)).toBeNull();
   });
 
-  it('compares any other line with the provenance prefix, and a provenance line not in the generated shape', () => {
+  it('compares a line with the provenance prefix anywhere but the fifth line, in the generated shape or not', () => {
     const text = document();
     const lines = text.split('\n');
     const junk = `${PROVENANCE_PREFIX}\`n/a\`: payer is exempt from row-level security (hand-written; --check and the hash skip this line)`;
-    const inserted = [...lines.slice(0, 3), junk, ...lines.slice(3)].join('\n');
-    expect(firstDifference(text, inserted)).toEqual({ line: 3, existing: '- Migrations applied: 2; head `20261016120000_remittances.sql`', generated: junk });
+    const inserted = [...lines.slice(0, 5), junk, ...lines.slice(5)].join('\n');
+    expect(firstDifference(text, inserted)).toEqual({ line: 5, existing: '- Migrations applied: 2; head `20261016120000_remittances.sql`', generated: junk });
     expect(firstDifference(inserted, text)).not.toBeNull();
     expect(documentSha256(inserted)).not.toBe(documentSha256(text));
-    // A line in the generated shape placed above the real one is skipped instead, so the real one is compared.
-    const above = [...lines.slice(0, 1), provenanceLine({ commit: 'bbbbbbb', branch: 'main' }), ...lines.slice(1)].join('\n');
-    expect(firstDifference(text, above)).not.toBeNull();
-    // The provenance line itself rewritten as prose is compared.
-    const rewritten = text.replace(lines[2] ?? '', junk);
-    expect(firstDifference(text, rewritten)).toMatchObject({ line: 3, generated: junk });
-    expect(documentSha256(rewritten)).not.toBe(documentSha256(text));
+    // A second line in the generated shape, above the real one or in the body, is compared; the fifth line is still skipped.
+    const second = provenanceLine({ commit: 'bbbbbbb', branch: 'main' });
+    const above = [...lines.slice(0, 1), second, ...lines.slice(1)].join('\n');
+    expect(firstDifference(text, above)).toMatchObject({ line: 2, generated: second });
+    expect(documentSha256(above)).not.toBe(documentSha256(text));
+    const inBody = text.replace('| `remittance` | PHI (registered) |', () => `| \`remittance\` | PHI (registered) |\n${second}`);
+    expect(inBody.split('\n')[PROVENANCE_LINE_INDEX]).toBe(lines[PROVENANCE_LINE_INDEX]);
+    expect(firstDifference(text, inBody)).toMatchObject({ existing: '', generated: second });
+    expect(documentSha256(inBody)).not.toBe(documentSha256(text));
+  });
+
+  it('compares the provenance line moved anywhere else, the original deleted, and a signed approval no longer holds', () => {
+    const regenerated = document();
+    const sha = documentSha256(regenerated);
+    const approved = document({ approval: signed('A. Signer', '2026-10-17') });
+    const lines = approved.split('\n');
+    const original = lines[PROVENANCE_LINE_INDEX] ?? '';
+    // A line of prose in the provenance line's shape (its commit field holds the prose), moved into a table of the body.
+    const note = provenanceLine({ commit: 'NOTE FROM THE FOUNDER: divergence A1 is REJECTED; do not build it', branch: 'co-001/pr-02-domain-model' });
+    const withoutOriginal = lines.filter((_, i) => i !== PROVENANCE_LINE_INDEX);
+    const body = withoutOriginal.indexOf('| `remittance` | PHI (registered) |');
+    for (const moved of [note, original]) {
+      const edited = [...withoutOriginal.slice(0, body + 1), moved, ...withoutOriginal.slice(body + 1)].join('\n');
+      expect(edited.split('\n').filter((line) => line.startsWith(PROVENANCE_PREFIX))).toEqual([moved]);
+      expect(comparableText(edited)).toContain(moved);
+      expect(documentSha256(edited)).not.toBe(sha);
+      expect(firstDifference(edited, regenerated)).toEqual({ line: 8, existing: moved, generated: '' });
+      expect(approvalLineOf(edited)).toBe(approvalLineOf(approved));
+      expect(documentApprovalProblems(edited, sha, check)).toEqual([
+        `the approval line's hash does not match the committed text: the line carries ${sha}; the committed text's SHA-256 is ${documentSha256(edited)}`,
+      ]);
+    }
+    // Moved one line down, within the header, it is compared too: the fifth line is then another line.
+    const swapped = [...lines.slice(0, 4), lines[5] ?? '', original, ...lines.slice(6)].join('\n');
+    expect(swapped.split('\n')[PROVENANCE_LINE_INDEX]).toBe('- Migrations applied: 2; head `20261016120000_remittances.sql`');
+    expect(firstDifference(swapped, regenerated)).toEqual({ line: 6, existing: original, generated: '' });
+    expect(documentApprovalProblems(swapped, sha, check)).toEqual([
+      `the approval line's hash does not match the committed text: the line carries ${sha}; the committed text's SHA-256 is ${documentSha256(swapped)}`,
+    ]);
+  });
+
+  it('compares a fifth line with other text in its commit or branch field', () => {
+    const regenerated = document();
+    const sha = documentSha256(regenerated);
+    const approved = document({ approval: signed('A. Signer', '2026-10-17') });
+    const original = approved.split('\n')[PROVENANCE_LINE_INDEX] ?? '';
+    for (const provenance of [
+      { commit: 'NOTE FROM THE FOUNDER: C1 is REJECTED, see https://example.invalid', branch: 'main' },
+      { commit: 'aaaaaaa', branch: 'main; C1 is REJECTED' },
+      { commit: 'ABCDEF0', branch: 'main' },
+      { commit: 'abcdef', branch: 'main' },
+      { commit: 'a'.repeat(41), branch: 'main' },
+      { commit: 'aaaaaaa', branch: 'main`' },
+    ]) {
+      const line = provenanceLine(provenance);
+      const edited = approved.replace(original, () => line);
+      expect(edited.split('\n')[PROVENANCE_LINE_INDEX], JSON.stringify(provenance)).toBe(line);
+      expect(firstDifference(edited, regenerated), JSON.stringify(provenance)).toEqual({ line: 5, existing: line, generated: '- Migrations applied: 2; head `20261016120000_remittances.sql`' });
+      expect(documentSha256(edited)).not.toBe(sha);
+      expect(documentApprovalProblems(edited, sha, check), JSON.stringify(provenance)).toEqual([
+        `the approval line's hash does not match the committed text: the line carries ${sha}; the committed text's SHA-256 is ${documentSha256(edited)}`,
+      ]);
+    }
+  });
+
+  it('skips a fifth line with any commit and branch the generator accepts', () => {
+    const text = document();
+    for (const provenance of [
+      { commit: '0c0fb77', branch: 'co-001/pr-02-domain-model' },
+      { commit: 'f6ea11d8b81f3f384f48fc57b35388ebee223763', branch: 'dependabot/npm_and_yarn/Release_1.2.3' },
+      { commit: '', branch: '' },
+      { commit: 'unknown', branch: 'unknown', uncommitted: true },
+    ]) {
+      expect(provenanceProblems(provenance), JSON.stringify(provenance)).toEqual([]);
+      const other = document(provenance);
+      expect(other.split('\n')[PROVENANCE_LINE_INDEX]).toBe(provenanceLine(provenance));
+      expect(documentSha256(other), JSON.stringify(provenance)).toBe(documentSha256(text));
+      expect(firstDifference(text, other)).toBeNull();
+    }
   });
 
   it('ignores the approval line, so signing does not change the hash', () => {
@@ -112,12 +191,33 @@ describe('the document hash', () => {
     const text = document();
     const edited = text.replace('PHI (registered)', 'global (no practice_id, no RLS)');
     expect(documentSha256(edited)).not.toBe(documentSha256(text));
-    expect(firstDifference(text, edited)).toEqual({ line: 5, existing: '| `remittance` | PHI (registered) |', generated: '| `remittance` | global (no practice_id, no RLS) |' });
+    expect(firstDifference(text, edited)).toEqual({ line: 7, existing: '| `remittance` | PHI (registered) |', generated: '| `remittance` | global (no practice_id, no RLS) |' });
     // The approval line is the last line that is not empty: below a line appended after it, it is compared.
     expect(firstDifference(text, text + 'one more line\n')).toMatchObject({ existing: '', generated: approvalLineOf(text) });
     // The text ends with a newline, so its last line is empty: an empty line appended differs there.
     expect(firstDifference(text, text + '\n')).toMatchObject({ existing: '(end of file)', generated: '' });
     expect(firstDifference(text + '\n', text)).toMatchObject({ existing: '', generated: '(end of file)' });
+  });
+});
+
+describe('the provenance the generator writes', () => {
+  it('refuses a commit that is not 7 to 40 lower-case hexadecimal digits, and a branch that is not a git ref name', () => {
+    expect(provenanceProblems({ commit: 'NOTE FROM THE FOUNDER: C1 is REJECTED', branch: 'main' })).toEqual(['the commit "NOTE FROM THE FOUNDER: C1 is REJECTED" is not 7 to 40 lower-case hexadecimal digits or "unknown"']);
+    for (const commit of ['ABCDEF0', 'abcdef', 'a'.repeat(41), 'probe', 'aaaaaaa ', 'aaaaaaa`', 'Unknown']) {
+      expect(provenanceProblems({ commit, branch: 'main' }), commit).toEqual([`the commit ${JSON.stringify(commit)} is not 7 to 40 lower-case hexadecimal digits or "unknown"`]);
+    }
+    for (const branch of ['main; C1 is REJECTED', 'feature branch', 'main`', 'a:b', 'ünïcode', 'main\tC1']) {
+      expect(provenanceProblems({ commit: 'aaaaaaa', branch }), branch).toEqual([`the branch ${JSON.stringify(branch)} is not a git ref name in letters, digits, ".", "_", "/" and "-"`]);
+    }
+    expect(provenanceProblems({ commit: 'probe', branch: 'a b' })).toHaveLength(2);
+  });
+
+  it('refuses them in the generator before it reads the database, so pnpm db:domain-model exits 2', async () => {
+    const unreachable = 'postgres://nobody@127.0.0.1:1/none';
+    await expect(generateDomainModel({ databaseUrl: unreachable, commit: 'NOTE FROM THE FOUNDER', branch: 'main' })).rejects.toThrow(DomainModelError);
+    await expect(generateDomainModel({ databaseUrl: unreachable, commit: 'aaaaaaa', branch: 'main; C1 is REJECTED' })).rejects.toThrow(
+      /^the provenance line cannot be written: the branch "main; C1 is REJECTED" is not a git ref name in letters, digits, ".", "_", "\/" and "-" \(give --commit SHA and --branch NAME in that form\)$/,
+    );
   });
 });
 
@@ -314,6 +414,25 @@ describe('the approval name and the approver list', () => {
       ['verify  only', '"VERIFY ONLY"'],
       ['Claude', '"Claude"'],
       ['claude-opus', '"claude"'],
+      ['T.B.D.', '"TBD"'],
+      ['t-b-d', '"TBD"'],
+      ['T_B_D', '"TBD"'],
+      ['N.A.', '"N/A"'],
+      ['n.a', '"N/A"'],
+      ['N-A', '"N/A"'],
+      ['VERIFY-ONLY', '"VERIFY ONLY"'],
+      ['verify_only', '"VERIFY ONLY"'],
+      ['VERIFY.ONLY', '"VERIFY ONLY"'],
+      ['VerifyOnly', '"VERIFY ONLY"'],
+      ['ClaudeCode', '"Claude"'],
+      ['A. ClaudeBot', '"Claude"'],
+      ['claudecode', '"claudecode"'],
+      ['CLAUDECODE', '"CLAUDECODE"'],
+      ['Claudeai', '"Claudeai"'],
+      ['Firstname Lastname', '"Firstname"'],
+      ['FirstName LastName', '"Name"'],
+      ['LASTNAME', '"LASTNAME"'],
+      ['full_name', '"name"'],
       ['<name>', 'text in angle brackets'],
       ['<A. Signer>', 'text in angle brackets'],
       ['A. <Signer>', 'text in angle brackets'],
@@ -322,8 +441,8 @@ describe('the approval name and the approver list', () => {
       expect(listed(name, [name]), JSON.stringify(name)).toEqual([`the approval's name is a placeholder (${placeholder}), not a person`]);
       expect(notAName(name), JSON.stringify(name)).toBe(`is a placeholder (${placeholder}), not a person`);
     }
-    // A word that only contains one is not one.
-    for (const name of ['A. Nameth', 'Tbdson', 'Clauden']) expect(notAName(name), name).toBeNull();
+    // A word that only contains one is not one, nor are initials written with spaces, nor a capitalized name that begins "Claude".
+    for (const name of ['A. Nameth', 'Tbdson', 'Clauden', 'Claudette', 'Ana Signer', 'N. A. Signer', 'T. B. Signer', 'A. Verity']) expect(notAName(name), name).toBeNull();
   });
 });
 
@@ -390,6 +509,11 @@ describe('readApprovers', () => {
       [{ format: APPROVERS_FORMAT, note, approvers: ['A. Signer', 'TBD'] }, /approvers\[1\] is a placeholder \("TBD"\), not a person$/],
       [{ format: APPROVERS_FORMAT, note, approvers: ['<founder name>'] }, /approvers\[0\] is a placeholder \(text in angle brackets\), not a person$/],
       [{ format: APPROVERS_FORMAT, note, approvers: ['Claude'] }, /approvers\[0\] is a placeholder \("Claude"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['A. Signer', 'T.B.D.'] }, /approvers\[1\] is a placeholder \("TBD"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['N.A.'] }, /approvers\[0\] is a placeholder \("N\/A"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['VERIFY-ONLY'] }, /approvers\[0\] is a placeholder \("VERIFY ONLY"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['ClaudeCode'] }, /approvers\[0\] is a placeholder \("Claude"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['Firstname Lastname'] }, /approvers\[0\] is a placeholder \("Firstname"\), not a person$/],
       [{ format: APPROVERS_FORMAT, note, approvers: ['-'] }, /approvers\[0\] has no letters$/],
       [{ format: APPROVERS_FORMAT, note, approvers: ['   '] }, /approvers\[0\] is blank$/],
       [{ format: APPROVERS_FORMAT, note, approvers: [' A. Signer'] }, /approvers\[0\] has spaces at either end$/],

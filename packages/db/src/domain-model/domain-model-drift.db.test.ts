@@ -35,7 +35,7 @@ async function migratedWithProbe(body: string): Promise<{ readonly database: Scr
   const database = await createScratchDatabase(readDatabaseUrl());
   databases.push(database);
   await migrate({ databaseUrl: database.url, migrationsDir });
-  return { database, migrationsDir, document: await generateDomainModel({ databaseUrl: database.url, migrationsDir, strict: true, commit: 'probe', branch: 'probe' }) };
+  return { database, migrationsDir, document: await generateDomainModel({ databaseUrl: database.url, migrationsDir, strict: true, commit: '0000000', branch: 'probe' }) };
 }
 
 /** A synthetic approver list, and the document signed by its one name on a valid date, as the founder would sign it. */
@@ -85,7 +85,7 @@ describe('the domain model and an edited migration', () => {
 
   it('shows a function body, a disabled trigger, a rewrite rule and a default privilege, each changed alone', async () => {
     const { after, url, migrationsDir } = both();
-    const regenerate = async (): Promise<string> => (await generateDomainModel({ databaseUrl: url, migrationsDir, commit: 'probe', branch: 'probe' })).text;
+    const regenerate = async (): Promise<string> => (await generateDomainModel({ databaseUrl: url, migrationsDir, commit: '0000000', branch: 'probe' })).text;
     const client = new pg.Client({ connectionString: url });
     await client.connect();
     try {

@@ -1,5 +1,5 @@
 import { APP_ROLE, OWNER_ROLE } from '../roles';
-import { APPROVAL_PREFIX, type Provenance, awaitingApprovalLine, documentSha256, provenanceLine } from './approval';
+import { APPROVAL_PREFIX, PROVENANCE_LINE_INDEX, type Provenance, awaitingApprovalLine, documentSha256, provenanceLine } from './approval';
 import { type Catalog } from './catalog-reads';
 import { type Dictionary, type Divergence, INFORMATIONAL, type Matches, STANDARD } from './dictionary';
 import { type MigrationText, shortName } from './migration-text';
@@ -68,6 +68,8 @@ export function renderDocument(input: RenderInput): string {
   );
   out();
   out(provenanceLine(input.provenance));
+  // The comparison and the hash skip the provenance line only at this index (approval.ts).
+  if (L.length - 1 !== PROVENANCE_LINE_INDEX) throw new Error(`the provenance line must be line ${String(PROVENANCE_LINE_INDEX + 1)} of the document`);
   out(
     `- Migrations applied: ${String(meta.migrations)}; head \`${String(meta.head)}\`${notApplied.length ? `; on disk but NOT applied: ${notApplied.map(code).join(', ')}` : ''}${appliedNotOnDisk.length ? `; applied but not on disk: ${appliedNotOnDisk.map(code).join(', ')}` : ''}`,
   );

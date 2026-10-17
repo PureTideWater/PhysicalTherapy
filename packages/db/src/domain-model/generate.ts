@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import pg from 'pg';
 
 import { OWNER_ROLE, managedRoles } from '../roles';
-import { documentSha256 } from './approval';
+import { documentSha256, provenanceProblems } from './approval';
 import { type Catalog, readCatalog } from './catalog-reads';
 import { crossCheck } from './cross-check';
 import { INFORMATIONAL, compareWithDictionary, explain, parseDictionary } from './dictionary';
@@ -27,7 +27,11 @@ export interface GenerateOptions extends Partial<DomainModelSources> {
   readonly databaseUrl: string;
   /** Refuse (DomainModelError) when a divergence lacks an explanation or an explanation is stale. */
   readonly strict?: boolean;
-  /** The provenance line; 'unknown' when absent. */
+  /**
+   * The provenance line; 'unknown' when absent. A commit is 7 to 40 lower-case hexadecimal digits and a
+   * branch a git ref name in letters, digits, ".", "_", "/" and "-" (provenanceProblems): anything else is
+   * refused, since the comparison skips the line only in that shape.
+   */
   readonly commit?: string;
   readonly branch?: string;
   /** The provenance line says the generator's inputs had uncommitted changes. */
@@ -51,6 +55,9 @@ export interface GeneratedDomainModel {
 
 export async function generateDomainModel(options: GenerateOptions): Promise<GeneratedDomainModel> {
   const sources: DomainModelSources = { ...DEFAULT_SOURCES, ...definedOnly(options) };
+  const provenance = { commit: options.commit ?? '', branch: options.branch ?? '', uncommitted: options.uncommitted === true };
+  const wrong = provenanceProblems(provenance);
+  if (wrong.length) throw new DomainModelError(`the provenance line cannot be written: ${wrong.join('; ')} (give --commit SHA and --branch NAME in that form)`);
 
   const { catalog, crossCheckReport } = await readDatabase(options.databaseUrl);
 
@@ -77,7 +84,7 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
     matches: compared.matches,
     explanations,
     crossCheck: crossCheckReport,
-    provenance: { commit: options.commit ?? '', branch: options.branch ?? '', uncommitted: options.uncommitted === true },
+    provenance,
   });
   const tables = model.tables.filter((t) => !t.isView);
   const toApprove = divergences.filter((d) => !INFORMATIONAL.has(d.kind));

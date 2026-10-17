@@ -26,8 +26,9 @@ import {
  *   --out    writes the document (FILE defaults to docs/product/domain-model.md). An existing valid
  *            approval line is kept when the regenerated text is identical; any change leaves it awaiting.
  *   --check  regenerates and compares with the document, ignoring the "Approved by:" line and the
- *            provenance line (commit and branch), so a pull request that changes no schema passes
- *            whatever its commit; exits 1 and prints the first differing line when they differ.
+ *            provenance line (commit and branch, the document's fifth line), so a pull request that
+ *            changes no schema passes whatever its commit; exits 1 and prints the first differing line
+ *            when they differ.
  *   --require-approval  with --check: also exits 1 unless the document's last line, and no other, is
  *            an approval that names a person on packages/db/domain-model/approvers.json (exactly, apart
  *            from spaces at either end; an empty list refuses every approval), gives a date (YYYY-MM-DD,
@@ -39,7 +40,10 @@ import {
  *
  * The provenance line names the commit and branch (git, unless --commit is given), and says "with
  * uncommitted changes to its inputs" when git reports changes under packages/db or to the Data
- * dictionary, so a document is only said to come from a commit that holds what generated it.
+ * dictionary, so a document is only said to come from a commit that holds what generated it. The
+ * comparison skips that line only where and as the generator writes it, so a commit (--commit or git's)
+ * that is not 7 to 40 lower-case hexadecimal digits, or a branch that is not a git ref name in letters,
+ * digits, ".", "_", "/" and "-", exits 2 before the database is read.
  */
 const USAGE =
   'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE] [--database-url URL] [--commit SHA] [--branch NAME]\n';
