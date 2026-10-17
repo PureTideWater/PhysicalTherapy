@@ -7,6 +7,7 @@ import { ENVIRONMENTS } from '../lib/environments';
 import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_MESSAGE, HEARTBEAT_METRIC, MISSED_HEARTBEATS_TO_ALARM, PLATFORM_HEARTBEAT_METRIC, workerLogGroupName } from '../lib/heartbeat';
 import { JOB_FAILED_MESSAGE, JOB_FAILED_METRIC, JOB_FAILED_PERIOD_SECONDS, PRICING_ENGINE_ERRORS_MESSAGE, PRICING_ENGINE_ERRORS_METRIC } from '../lib/jobs';
 import { LOG_GROUPS, LOG_RETENTION_DAYS, logGroupName } from '../lib/log-groups';
+import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../lib/models';
 import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../lib/security-events';
 import { type CfnStatement, getAtt, keyId, logicalIdOf, onlyResource, propertiesOf, ref, resourceById, resourcesOf, synthesized } from './synth';
 
@@ -37,6 +38,16 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
     for (const message of SIGN_IN_BURST_MESSAGES) {
       expect(web).toContain(`logger.warn('${message}'`);
     }
+  });
+});
+
+describe('the model budget alert contract with the gateway (MOD-05: calls refused; alert)', () => {
+  it('matches the error codes the gateway logs when a practice reaches and when it has spent its daily budget', () => {
+    const gateway = readFileSync(path.resolve(import.meta.dirname, '../../packages/model-gateway/src/gateway.ts'), 'utf8');
+    expect(gateway).toContain(`logger.error('a model call was refused: the practice has spent its daily model budget', { practice_id: practiceId, error_code: '${MODEL_BUDGET_ERROR_CODES[0]}' })`);
+    expect(gateway).toContain(`error_code: '${MODEL_BUDGET_ERROR_CODES[1]}'`);
+    // error_code is a field the logger keeps (packages/observability's allowlist).
+    expect(readFileSync(path.resolve(import.meta.dirname, '../../packages/observability/src/fields.ts'), 'utf8')).toContain("'error_code'");
   });
 });
 
@@ -89,15 +100,16 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   const signInAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.failedSignInBurstAlarm));
 
   it('has the worker, platform and web metric filters and the stack\'s alarms, and no other', () => {
-    // Worker: heartbeat, final job failures, pricing engine errors. Platform: heartbeat, final job
-    // failures. Web: failed sign-in bursts.
-    expect(filters).toHaveLength(6);
+    // Worker: heartbeat, final job failures, pricing engine errors, model budget events. Platform:
+    // heartbeat, final job failures. Web: failed sign-in bursts, model budget events.
+    expect(filters).toHaveLength(8);
     const alarms = [
       stack.monitoring.heartbeatAlarm,
       stack.monitoring.platformHeartbeatAlarm,
       stack.monitoring.jobFailedAlarm,
       stack.monitoring.pricingEngineErrorsAlarm,
       stack.monitoring.failedSignInBurstAlarm,
+      stack.monitoring.modelBudgetAlarm,
       stack.edge.signInRateLimitAlarm,
       stack.uptime.webAlarm,
       stack.uptime.apiAlarm,
@@ -159,6 +171,29 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       MetricName: SIGN_IN_BURST_METRIC.metricName,
       Statistic: 'Sum',
       Period: SECURITY_ALARM_PERIOD_SECONDS,
+      EvaluationPeriods: 1,
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+      Threshold: 1,
+      TreatMissingData: 'notBreaching',
+      AlarmActions: [topic],
+    });
+  });
+
+  it('counts every model budget refusal and crossing in the web app’s and the worker’s logs, and tells the operator within five minutes (MOD-05)', () => {
+    const pattern = `{ (${MODEL_BUDGET_ERROR_CODES.map((code) => `$.error_code = "${code}"`).join(') || (')}) }`;
+    for (const group of [stack.monitoring.webLogGroup, stack.monitoring.workerLogGroup]) {
+      expect(propertiesOf(filterFor(MODEL_BUDGET_METRIC.metricName, group))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, group)),
+        FilterPattern: pattern,
+        MetricTransformations: [{ MetricNamespace: MODEL_BUDGET_METRIC.namespace, MetricName: MODEL_BUDGET_METRIC.metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+    }
+    const budgetAlarm = resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.modelBudgetAlarm));
+    expect(propertiesOf(budgetAlarm)).toMatchObject({
+      Namespace: MODEL_BUDGET_METRIC.namespace,
+      MetricName: MODEL_BUDGET_METRIC.metricName,
+      Statistic: 'Sum',
+      Period: MODEL_BUDGET_PERIOD_SECONDS,
       EvaluationPeriods: 1,
       ComparisonOperator: 'GreaterThanOrEqualToThreshold',
       Threshold: 1,

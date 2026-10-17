@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { PRACTICE_CONTEXT_KEY, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { bedrockModelArns, pinnedBedrockModels } from '../lib/models';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
 
@@ -17,6 +18,36 @@ describe('the application role\'s Cognito actions match what the web app sends',
     const source = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/cognito-provider.ts'), 'utf8');
     const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
     expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
+  });
+});
+
+describe('the models the application may invoke (PRD 14, Provider and data path)', () => {
+  it('are the Bedrock models each purpose’s current prompt version pins, read from the prompts themselves', () => {
+    const dir = path.resolve(import.meta.dirname, '../../packages/model-gateway/prompts');
+    const fromPrompts = new Set<string>();
+    for (const name of ['propose-contract-terms', 'draft-packet-narrative', 'suggest-evidence-requests', 'read-denial-letter']) {
+      const prompt = JSON.parse(readFileSync(path.join(dir, name, 'v1', 'prompt.json'), 'utf8')) as { models: { bedrock: Record<string, string> } };
+      for (const id of Object.values(prompt.models.bedrock)) {
+        fromPrompts.add(id);
+      }
+    }
+    expect(pinnedBedrockModels()).toEqual([...fromPrompts].sort());
+    // The contract prompt's larger model, for contracts marked ambiguous, is among them.
+    expect(pinnedBedrockModels().length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('match the call the gateway’s Bedrock provider makes', () => {
+    const provider = readFileSync(path.resolve(import.meta.dirname, '../../packages/model-gateway/src/providers/bedrock.ts'), 'utf8');
+    const commands = [...new Set([...provider.matchAll(/new (\w+)Command\(/g)].map((match) => `bedrock:${match[1] ?? ''}`))].sort();
+    expect(commands).toEqual([...MODEL_INVOKE_ACTIONS].sort());
+  });
+
+  it('name a foundation model in the region, or an inference profile with the models it routes to', () => {
+    expect(bedrockModelArns('vendor.model-one', 'aws', 'us-east-1', '111122223333')).toEqual(['arn:aws:bedrock:us-east-1::foundation-model/vendor.model-one']);
+    expect(bedrockModelArns('us.vendor.model-one', 'aws', 'us-east-1', '111122223333')).toEqual([
+      'arn:aws:bedrock:us-east-1:111122223333:inference-profile/us.vendor.model-one',
+      'arn:aws:bedrock:*::foundation-model/vendor.model-one',
+    ]);
   });
 });
 
@@ -106,6 +137,17 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     expect(cognito).toEqual([
       { Sid: 'UserPoolAdministration', Effect: 'Allow', Action: [...USER_POOL_ADMIN_ACTIONS], Resource: getAtt(logicalIdOf(stack, stack.identity.userPool), 'Arn') },
     ]);
+  });
+
+  it('invokes the pinned models and no other, and nothing else of Bedrock', () => {
+    const bedrock = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('bedrock:')));
+    expect(bedrock.map((statement) => [statement.Sid, actionsOf(statement)])).toEqual([['PinnedModels', [...MODEL_INVOKE_ACTIONS]]]);
+    const resources = JSON.stringify(bedrock[0]?.Resource);
+    for (const modelId of pinnedBedrockModels()) {
+      expect(resources).toContain(`foundation-model/${modelId}`);
+    }
+    expect(resources).not.toContain('foundation-model/*');
+    expect(resources).toContain('AWS::Region');
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {

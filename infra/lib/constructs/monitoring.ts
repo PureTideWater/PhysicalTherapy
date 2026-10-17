@@ -23,6 +23,7 @@ import {
   workerLogGroupName,
 } from '../heartbeat';
 import { logGroupName } from '../log-groups';
+import { MODEL_BUDGET_ERROR_CODES, MODEL_BUDGET_METRIC, MODEL_BUDGET_PERIOD_SECONDS } from '../models';
 import { SECURITY_ALARM_PERIOD_SECONDS, SIGN_IN_BURST_MESSAGES, SIGN_IN_BURST_METRIC } from '../security-events';
 
 /** Where operator alerts are delivered; both optional, set at deploy time (never in the repository). */
@@ -61,8 +62,10 @@ export interface MonitoringProps {
  * The platform jobs log the same heartbeat and final-failure lines as the worker: their heartbeat is
  * its own metric and alarm, and their final failures count toward the same job-failure metric and
  * alarm. The web app's failed sign-in bursts (a second-factor burst, a lockout) are counted from
- * its log group and alarm at once. Alarm text is fixed: an alarm name, the environment and a reason,
- * never a value from a log line.
+ * its log group and alarm at once. A practice that reaches or spends its daily model budget (test
+ * matrix MOD-05: "calls refused; alert") is counted from the web app's and the worker's log groups,
+ * both of which call the model gateway, and alarms at once. Alarm text is fixed: an alarm name, the
+ * environment and a reason, never a value from a log line.
  */
 export class Monitoring extends Construct {
   readonly operatorTopic: sns.Topic;
@@ -75,6 +78,7 @@ export class Monitoring extends Construct {
   readonly jobFailedAlarm: cloudwatch.Alarm;
   readonly pricingEngineErrorsAlarm: cloudwatch.Alarm;
   readonly failedSignInBurstAlarm: cloudwatch.Alarm;
+  readonly modelBudgetAlarm: cloudwatch.Alarm;
   /** Notifies the operator topic; every alarm in the stack uses it. */
   readonly notify: cloudwatchActions.SnsAction;
 
@@ -237,5 +241,26 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.failedSignInBurstAlarm.addAlarmAction(notify);
+
+    // The model gateway runs in the web app and in the worker's practice jobs: one metric from both.
+    const budgetPattern = logs.FilterPattern.any(...MODEL_BUDGET_ERROR_CODES.map((code) => logs.FilterPattern.stringValue('$.error_code', '=', code)));
+    const budgetEvents = [this.webLogGroup, this.workerLogGroup].map((group, index) =>
+      group.addMetricFilter(index === 0 ? 'ModelBudgetEvents' : 'ModelBudgetEventsWorker', {
+        filterPattern: budgetPattern,
+        metricNamespace: MODEL_BUDGET_METRIC.namespace,
+        metricName: MODEL_BUDGET_METRIC.metricName,
+        metricValue: '1',
+        unit: cloudwatch.Unit.COUNT,
+      }),
+    );
+    this.modelBudgetAlarm = new cloudwatch.Alarm(this, 'ModelBudgetReached', {
+      alarmDescription: `A ${props.environmentName} practice reached or spent its daily model budget, and model calls are being refused.`,
+      metric: (budgetEvents[0] as logs.MetricFilter).metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(MODEL_BUDGET_PERIOD_SECONDS) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.modelBudgetAlarm.addAlarmAction(notify);
   }
 }

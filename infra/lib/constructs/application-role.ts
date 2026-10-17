@@ -1,6 +1,8 @@
 import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3, type aws_secretsmanager as secretsmanager } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
+import { bedrockModelArns, pinnedBedrockModels } from '../models';
+
 /** The only encryption-context key the application may use with the environment key directly. */
 export const PRACTICE_CONTEXT_KEY = 'practice_id';
 
@@ -10,6 +12,9 @@ export const PRACTICE_CONTEXT_KEY = 'practice_id';
  * call it makes (sign-in, MFA, passkeys, token revocation) is authorized by the user's own tokens.
  */
 export const USER_POOL_ADMIN_ACTIONS = ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut'] as const;
+
+/** The Bedrock call the model gateway makes (packages/model-gateway/src/providers/bedrock.ts: InvokeModelCommand). */
+export const MODEL_INVOKE_ACTIONS = ['bedrock:InvokeModel'] as const;
 
 export interface ApplicationRoleProps {
   readonly key: kms.IKey;
@@ -42,6 +47,10 @@ export interface ApplicationRoleProps {
  *   counts and a sign-in link, never a patient's data.
  * - The user pool (docs/adr/0049): the three administrative calls the web app makes, on this
  *   environment's pool only (USER_POOL_ADMIN_ACTIONS).
+ * - Models (PRD 14, Provider and data path; docs/adr/0048 and 0054): bedrock:InvokeModel, the one call
+ *   the gateway's Bedrock provider makes, on the models the current prompt versions pin and no other
+ *   (MODEL_INVOKE_ACTIONS, ../models.ts). The gateway still refuses Bedrock until the pinned models'
+ *   prices are confirmed and their evaluation recorded.
  */
 export class ApplicationRole extends Construct {
   readonly role: iam.Role;
@@ -52,7 +61,7 @@ export class ApplicationRole extends Construct {
     const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email',
+      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email, pinned models',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -101,6 +110,11 @@ export class ApplicationRole extends Construct {
         sid: 'UserPoolAdministration',
         actions: [...USER_POOL_ADMIN_ACTIONS],
         resources: [props.userPool.userPoolArn],
+      }),
+      new iam.PolicyStatement({
+        sid: 'PinnedModels',
+        actions: [...MODEL_INVOKE_ACTIONS],
+        resources: pinnedBedrockModels().flatMap((modelId) => bedrockModelArns(modelId, stack.partition, stack.region, stack.account)),
       }),
       new iam.PolicyStatement({
         sid: 'ApplicationLoginDecrypt',
