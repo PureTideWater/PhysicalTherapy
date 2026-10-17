@@ -47,7 +47,7 @@ describe('the monthly variance summary as CSV', () => {
   });
 
   it('labels every stage as the rest of the product does, and the lines with no stage by how their run left them', () => {
-    expect(SUMMARY_LABELS).toMatchObject({ flagged: 'Flagged (investigatory)', validated: 'Validated', actionable: 'Actionable', payer_approved: 'Payer approved', recovered: 'Recovered' });
+    expect(SUMMARY_LABELS).toMatchObject({ flagged: 'Flagged (investigatory)', validated: 'Validated', actionable: 'Actionable', payer_approved: 'Payer approved', recovered: 'Recovered (posted or deposited)' });
     expect(Object.keys(SUMMARY_LABELS).sort()).toEqual([...SUMMARY_BUCKETS].sort());
   });
 

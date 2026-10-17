@@ -110,8 +110,8 @@ export default async function LedgerReviewPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Ledger corrections</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Ledger corrections</h1>
+        <p className="text-base text-muted-foreground">
           Correct an entry&apos;s amount after review, with your reason. The entry never changes; the correction is an entry of its own, which the ledger keeps between zero and what the
           entry&apos;s evidence shows.
         </p>
@@ -124,7 +124,7 @@ export default async function LedgerReviewPage(props: Props) {
       ) : null}
       <LedgerTotals totals={totals} title="The practice's ledger" description="Totals by stage, recovered at the practice's proof level." />
       <section aria-label="Shortfalls" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Shortfalls</h2>
+        <h2 className="text-xl font-bold tracking-display">Shortfalls</h2>
         {shortfalls.length === 0 ? (
           <EmptyState title="No shortfall on this page of case lines" nextStep="A shortfall appears when a payer's remittance pays part of what its response accepted." />
         ) : (
@@ -141,7 +141,7 @@ export default async function LedgerReviewPage(props: Props) {
         )}
       </section>
       <section aria-label="Ledger entries" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Ledger entries</h2>
+        <h2 className="text-xl font-bold tracking-display">Ledger entries</h2>
         {entries.total === 0 ? (
           <EmptyState title="No entry yet" nextStep="Entries appear when a remittance, a posting or a deposit is matched to a case line." />
         ) : (

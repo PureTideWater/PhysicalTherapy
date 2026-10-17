@@ -25,8 +25,8 @@ export default async function DigestPage(props: { readonly params: Promise<{ pra
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Monitoring digest for {monthName(digest.period)}</h1>
-        <p className="text-sm text-muted-foreground">{digest.sentAt === null ? 'Not sent yet.' : `Sent ${utc(digest.sentAt)}.`} Its figures were fixed when it was recorded; the screens below show today's.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Monitoring digest for {monthName(digest.period)}</h1>
+        <p className="text-base text-muted-foreground">{digest.sentAt === null ? 'Not sent yet.' : `Sent ${utc(digest.sentAt)}.`} Its figures were fixed when it was recorded; the screens below show today's.</p>
       </div>
       <Card role="region" aria-label="Digest">
         <CardHeader>

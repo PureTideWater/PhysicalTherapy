@@ -24,8 +24,8 @@ export default async function UploadsPage(props: { readonly params: Promise<{ pr
   return (
     <AppShell shell={page.shell} section="uploads">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Uploads</h1>
-        <p className="text-sm text-muted-foreground">835 remittances: received, scanned, parsed, balanced and loaded, or held with a reason.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Uploads</h1>
+        <p className="text-base text-muted-foreground">835 remittances: received, scanned, parsed, balanced and loaded, or held with a reason.</p>
       </div>
       <Uploader csrfToken={await pageCsrfToken()} practiceId={data.practiceId} canUpload={data.canUpload} roleNames={roleNames(data.roles)} gate={data.gate} limits={data.limits} />
     </AppShell>

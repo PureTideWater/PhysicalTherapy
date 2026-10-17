@@ -17,11 +17,13 @@ export function CardHeader({ className, ...props }: ComponentProps<'div'>) {
 }
 
 export function CardTitle({ className, ...props }: ComponentProps<'h2'>) {
-  return <h2 data-slot="card-title" className={cn('font-semibold leading-none', className)} {...props} />;
+  // The brand's headline type (docs/brand/BRAND.md, section 5): 700 at -0.02em, below the page's 32 px title and a section's 20 px heading.
+  return <h2 data-slot="card-title" className={cn('text-lg font-bold leading-snug tracking-display', className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: ComponentProps<'p'>) {
-  return <p data-slot="card-description" className={cn('text-sm text-muted-foreground', className)} {...props} />;
+  // Running text at the body size, 16/24; tables and dense controls keep 14.
+  return <p data-slot="card-description" className={cn('text-base text-muted-foreground', className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }: ComponentProps<'div'>) {

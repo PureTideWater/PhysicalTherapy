@@ -171,6 +171,10 @@ describe('the security headers', () => {
     expect(STATIC_SECURITY_HEADERS.find((header) => header.key === 'Strict-Transport-Security')?.value).toMatch(/max-age=\d{8}/);
   });
 
+  it('keep a same-origin resource policy on every response the application sends, its brand art included (email art comes from the static host)', () => {
+    expect(STATIC_SECURITY_HEADERS.find((header) => header.key === 'Cross-Origin-Resource-Policy')?.value).toBe('same-origin');
+  });
+
   it('draw a fresh nonce each time', () => {
     const nonces = new Set(Array.from({ length: 50 }, () => newNonce()));
     expect(nonces.size).toBe(50);

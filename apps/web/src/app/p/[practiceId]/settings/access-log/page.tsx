@@ -26,7 +26,7 @@ export default async function AccessLogPage(props: { readonly params: Promise<{ 
   const query = filter.objectId === null ? '' : `object_type=${filter.objectType ?? ''}&object_id=${filter.objectId}&`;
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-semibold tracking-tight">Access log</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Access log</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="access_log" />
       <p className="text-sm text-muted-foreground">
         {filtered ? (
@@ -41,7 +41,7 @@ export default async function AccessLogPage(props: { readonly params: Promise<{ 
         )}
       </p>
       {entries.length === 0 ? (
-        <EmptyState title="Nothing logged" nextStep={filtered ? 'Nobody has read or changed this record.' : 'Reads and changes appear here as people work.'} />
+        <EmptyState mark title="Nothing logged" nextStep={filtered ? 'Nobody has read or changed this record.' : 'Reads and changes appear here as people work.'} />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Access log">
           <thead className="text-muted-foreground">

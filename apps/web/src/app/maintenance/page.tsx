@@ -3,6 +3,7 @@ import Link from 'next/link';
 
 import { loadPublicPage } from '../../lib/http/next';
 import { maintenancePage } from '../../lib/routes/support';
+import { PublicHeader } from '../../components/public-header';
 
 export const metadata: Metadata = { title: 'Maintenance' };
 
@@ -10,8 +11,10 @@ export const metadata: Metadata = { title: 'Maintenance' };
 export default async function MaintenancePage() {
   const { maintenance, supportEmail } = await loadPublicPage(maintenancePage, {});
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-4 p-10" data-maintenance={maintenance ? 'on' : 'off'}>
-      <h1 className="text-2xl font-semibold tracking-tight">{maintenance ? 'We are doing scheduled maintenance' : 'Maintenance is over'}</h1>
+    <>
+      <PublicHeader />
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8 md:p-10" data-maintenance={maintenance ? 'on' : 'off'}>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">{maintenance ? 'We are doing scheduled maintenance' : 'Maintenance is over'}</h1>
       <p className="text-sm">
         {maintenance
           ? 'The workspace is closed for a short while. Nothing you saved is lost, and uploads and runs already queued continue when we are back.'
@@ -33,5 +36,6 @@ export default async function MaintenancePage() {
         )}
       </p>
     </main>
+    </>
   );
 }

@@ -45,8 +45,8 @@ export default async function CasesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Cases</h1>
+        <p className="text-base text-muted-foreground">
           {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. A case’s total is the sum of its lines not written off;
           a line past its window is struck through and out of it. Payer approved and recovered amounts come from the recovery ledger, on each case’s page.
         </p>
@@ -91,7 +91,7 @@ export default async function CasesPage(props: Props) {
           <CardHeader>
             <CardTitle>Patterns waiting for a case</CardTitle>
             <CardDescription>
-              Validated lines in no case, by payer pattern, judged on today’s date. A pattern whose actionable lines reach the case materiality ({dollars(materiality.caseCents)}) can be opened now, with its owner; a smaller one keeps
+              Validated lines in no case, by payer pattern, judged on today’s date. A pattern whose actionable lines reach the case materiality (<Money value={materiality.caseCents} />) can be opened now, with its owner; a smaller one keeps
               accumulating.
             </CardDescription>
           </CardHeader>
@@ -153,7 +153,7 @@ export default async function CasesPage(props: Props) {
         <CardHeader>
           <CardTitle>Materiality</CardTitle>
           <CardDescription>
-            A validated line is actionable at or above the per-line threshold ({dollars(materiality.lineCents)}); a payer pattern becomes a case at or above the per-case threshold ({dollars(materiality.caseCents)}). The defaults are $5.00 and $250.00.
+            A validated line is actionable at or above the per-line threshold (<Money value={materiality.lineCents} />); a payer pattern becomes a case at or above the per-case threshold (<Money value={materiality.caseCents} />). The defaults are <Money value="500" /> and <Money value="25000" />.
           </CardDescription>
         </CardHeader>
         {canTriage ? (
@@ -177,7 +177,7 @@ export default async function CasesPage(props: Props) {
         ) : null}
       </Card>
       <section aria-label="Case list" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">By deadline</h2>
+        <h2 className="text-xl font-bold tracking-display">By deadline</h2>
         <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cases">
           <div className="flex flex-col gap-1">
             <Label htmlFor="cases-state">State</Label>
@@ -258,7 +258,7 @@ export default async function CasesPage(props: Props) {
                     <td className="px-2 py-1">
                       <CaseStateBadge state={item.state} />
                     </td>
-                    <td className="px-2 py-1 tabular-nums">
+                    <td className="px-2 py-1 font-mono tabular-nums">
                       {item.openLines} of {item.lines}
                     </td>
                     <td className="px-2 py-1">

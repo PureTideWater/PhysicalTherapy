@@ -20,12 +20,12 @@ export default async function DevicesPage() {
   const { devices, currentDeviceId } = page.data;
   return (
     <AppShell shell={page.shell} section="devices">
-      <h1 className="text-2xl font-semibold tracking-tight">Devices</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Devices</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
         The browsers you have signed in from. Revoke one you do not recognize: its sessions end at once and it signs in as a new device next time.
       </p>
       {devices.length === 0 ? (
-        <EmptyState title="No devices yet" nextStep="Devices appear here after you sign in from them." />
+        <EmptyState mark title="No devices yet" nextStep="Devices appear here after you sign in from them." />
       ) : (
         <ul className="flex flex-col gap-3" aria-label="Devices">
           {devices.map((device) => (

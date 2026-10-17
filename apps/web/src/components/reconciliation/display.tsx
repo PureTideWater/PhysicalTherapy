@@ -1,4 +1,5 @@
 import type { DocumentStatus } from '@tp/db/runtime';
+import { recoveredLabel as ledgerRecoveredLabel } from '@tp/ledger';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import { Money } from '../remittances/display';
@@ -34,6 +35,15 @@ export const EVIDENCE_WORDS: Readonly<Record<string, string>> = {
   provider_adjustment: 'PLB adjustment',
   ledger_entry: 'the entry it corrects',
 };
+
+/**
+ * The label of a recovered dollar figure: "Recovered" never stands without posted or deposited
+ * (docs/brand/BRAND.md, section 7), so it names the proof level the cash is proved by (@tp/ledger's, which
+ * the PDFs use too).
+ */
+export function recoveredLabel(level: string): string {
+  return ledgerRecoveredLabel(level === 'deposited' ? 'deposited' : 'posted');
+}
 
 /** The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says "posted"). */
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
@@ -75,16 +85,16 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
         <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {figures.map((figure) => (
             <div key={figure.key} className="rounded-md border p-3" data-figure={figure.key}>
-              <dt className="text-xs uppercase text-muted-foreground">{figure.label}</dt>
-              <dd className="text-lg font-semibold">
+              <dt className="text-xs font-medium text-fg-muted">{figure.label}</dt>
+              <dd className="text-lg font-medium">
                 <Money value={figure.cents} />
               </dd>
               <dd className="text-xs text-muted-foreground">{figure.note}</dd>
             </div>
           ))}
-          <div className="rounded-md border-2 border-foreground p-3" data-figure="recovered">
-            <dt className="text-xs uppercase">Recovered</dt>
-            <dd className="text-lg font-semibold">
+          <div className="rounded-md border border-border-strong p-3" data-figure="recovered">
+            <dt className="text-xs font-medium text-fg-muted">{recoveredLabel(totals.proofLevel)}</dt>
+            <dd className="text-lg font-medium">
               <Money value={totals.recoveredCents} />
             </dd>
             <dd className="text-xs text-muted-foreground">stage five: {proofLevelWords(totals.proofLevel)}, net of recoupments and reversals</dd>

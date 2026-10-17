@@ -41,8 +41,8 @@ export default async function MonthlySummaryPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
           Reports
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Monthly variance summary, {monthName(month)}</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Monthly variance summary, {monthName(month)}</h1>
+        <p className="text-base text-muted-foreground">
           Lines with a service date in the month, each counted once at the furthest stage it has reached. Every figure carries its stage; none is added to another. Payer approved and recovered are counts of lines here; their dollars are
           the recovery ledger’s, on Reconciliation.
         </p>
@@ -69,7 +69,7 @@ export default async function MonthlySummaryPage(props: Props) {
       ) : null}
       <MonthlyFigures practiceId={practiceId} content={monthlyContent(summary, '')} />
       <section aria-label="Monthly digests" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Monthly digests</h2>
+        <h2 className="text-xl font-bold tracking-display">Monthly digests</h2>
         {digests.length === 0 ? (
           <p className="text-sm text-muted-foreground">No digest yet: the first goes out on the morning after a month ends.</p>
         ) : (

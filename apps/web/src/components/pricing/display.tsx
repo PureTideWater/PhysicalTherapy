@@ -130,8 +130,8 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
                 )}
                 {pattern.rate_record_id === null ? null : <div className="font-mono text-xs text-muted-foreground">rate record {pattern.rate_record_id}</div>}
               </td>
-              <td className="py-1 pr-3 text-right tabular-nums">{pattern.lines}</td>
-              <td className="py-1 pr-3 text-right tabular-nums">{pattern.underpaid_lines}</td>
+              <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.lines}</td>
+              <td className="py-1 pr-3 text-right font-mono tabular-nums">{pattern.underpaid_lines}</td>
               <td className="py-1 pr-3 text-right">
                 <Money value={pattern.underpaid_cents} />
               </td>

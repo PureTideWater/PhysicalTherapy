@@ -41,8 +41,8 @@ export default async function PracticeSettingsPage(props: Props) {
         <Link className="text-sm underline" href={`/console/organizations/${practice.organizationId}`}>
           Organization
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">{practice.name}: pricing and triage settings</h1>
-        <p className="text-sm text-muted-foreground">Runs price with these settings and triage judges with them; a run already priced keeps the settings it recorded.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">{practice.name}: pricing and triage settings</h1>
+        <p className="text-base text-muted-foreground">Runs price with these settings and triage judges with them; a run already priced keeps the settings it recorded.</p>
       </div>
       {saved ? (
         <Alert data-notice="saved">

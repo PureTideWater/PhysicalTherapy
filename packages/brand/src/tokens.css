@@ -1,0 +1,106 @@
+/* PaidWhole design tokens. The only file in the repository that may contain brand hex values.
+   Import once in apps/web/app/layout.tsx and in the report renderer's base stylesheet. */
+
+:root {
+  /* Brand palette */
+  --pw-ink: #0D1E3A;
+  --pw-brass: #C99A3B;
+  --pw-white: #FFFFFF;
+  --pw-paper: #F6F4EE;
+  --pw-slate: #526070;
+  --pw-line: #DAD7CF;
+
+  /* Status (data only; never in or near the logo) */
+  --pw-whole: #1F7A4D;
+  --pw-short: #B5452E;
+  --pw-unpriced: #7A8594;
+  --pw-whole-bg: #EAF4EE;
+  --pw-short-bg: #F8ECE8;
+  --pw-unpriced-bg: #F0F2F5;
+
+  /* Semantic: surfaces and text */
+  --pw-bg: var(--pw-white);
+  --pw-bg-raised: #F7F8FA;
+  --pw-bg-inset: #EFF1F4;
+  --pw-fg: var(--pw-ink);
+  --pw-fg-muted: var(--pw-slate);
+  --pw-fg-inverse: var(--pw-white);
+  --pw-border: var(--pw-line);
+  --pw-border-strong: #B9BEC8;
+  /* A form field's outline: 3:1 or more on White (3.5:1), Paper (3.2:1) and the raised surface (WCAG 1.4.11) */
+  --pw-input-border: #808996;
+
+  /* Semantic: actions */
+  --pw-primary: var(--pw-ink);
+  --pw-primary-fg: var(--pw-white);
+  --pw-primary-hover: #15284A;
+  --pw-accent: var(--pw-brass);
+  --pw-link: #1F4E9A;
+  --pw-focus: #2F5DA8;
+  --pw-danger: var(--pw-short);
+  /* A failure that is not a payment status (a failed job, a refused check): named apart from Short, the
+     data color, so the two can part without touching a component. The brand defines no other red yet. */
+  --pw-danger-bg: var(--pw-short-bg);
+
+  /* The mark */
+  --pw-mark-ring: var(--pw-ink);
+  --pw-mark-keystone: var(--pw-brass);
+
+  /* Type */
+  --pw-font-display: var(--font-display, 'Schibsted Grotesk'), 'IBM Plex Sans', system-ui, sans-serif;
+  --pw-font-sans: var(--font-sans, 'IBM Plex Sans'), system-ui, sans-serif;
+  --pw-font-mono: var(--font-mono, 'IBM Plex Mono'), ui-monospace, monospace;
+  --pw-tracking-display: -0.02em;
+  --pw-tracking-wordmark: -0.03em;
+
+  /* Shape and space */
+  --pw-radius-sm: 4px;
+  --pw-radius-md: 6px;
+  --pw-radius-lg: 10px;
+  --pw-radius-pill: 999px;
+  --pw-space-1: 4px;
+  --pw-space-2: 8px;
+  --pw-space-3: 12px;
+  --pw-space-4: 16px;
+  --pw-space-6: 24px;
+  --pw-space-8: 32px;
+}
+
+/* Dark mode: Ink becomes the ground, the ring turns white, the keystone stays brass. */
+:root[data-theme="dark"],
+.dark {
+  --pw-bg: #0B1626;
+  --pw-bg-raised: #0D1E3A;
+  --pw-bg-inset: #122844;
+  --pw-fg: #F4F6FA;
+  --pw-fg-muted: #A7B1C2;
+  --pw-fg-inverse: var(--pw-ink);
+  --pw-border: #243654;
+  --pw-border-strong: #3A4F70;
+  --pw-input-border: #5A6E8E;
+
+  --pw-primary: #F4F6FA;
+  --pw-primary-fg: var(--pw-ink);
+  --pw-primary-hover: #FFFFFF;
+  --pw-link: #8FB3F0;
+  --pw-focus: #8FB3F0;
+
+  --pw-whole: #4CBF84;
+  --pw-short: #E8846B;
+  --pw-unpriced: #9AA5B5;
+  --pw-whole-bg: #12301F;
+  --pw-short-bg: #3A1C14;
+  --pw-unpriced-bg: #1A2537;
+
+  --pw-mark-ring: var(--pw-white);
+  --pw-danger-bg: var(--pw-short-bg);
+}
+
+/* Print: reports and statements */
+@media print {
+  :root {
+    --pw-bg: var(--pw-white);
+    --pw-fg: var(--pw-ink);
+    --pw-mark-ring: var(--pw-ink);
+  }
+}

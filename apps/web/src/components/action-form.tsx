@@ -18,7 +18,8 @@ export function ActionForm({
   className,
 }: {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
-  readonly submit: string;
+  /** The button's words; may hold a figure in the mono face (<Money/>). */
+  readonly submit: ReactNode;
   readonly children?: ReactNode;
   readonly variant?: 'default' | 'outline' | 'destructive';
   readonly className?: string;

@@ -1,5 +1,5 @@
 import { WRITE_OFF_REASONS } from '@tp/triage';
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -14,6 +14,9 @@ import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triag
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
+import { recoveredLabel } from '../../../../../components/reconciliation/display';
+import { STATUS_TONES } from '../../../../../components/remittances/display';
+import { StatusChip } from '../../../../../components/status';
 
 export const metadata: Metadata = { title: 'Case' };
 
@@ -44,10 +47,10 @@ export default async function CasePage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/cases`}>
           Cases
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
-        <p className="text-sm text-muted-foreground">{item.behaviorText}.</p>
+        <p className="text-base text-muted-foreground">{item.behaviorText}.</p>
       </div>
       {dispute.latestSubmission?.followUpDue === true ? (
         <Alert variant="destructive" data-follow-up="due">
@@ -62,7 +65,7 @@ export default async function CasePage(props: Props) {
       ) : null}
       <Card role="region" aria-label="Case summary">
         <CardContent className="pt-6">
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-2 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
             <Fact label={stageLabel('actionable')}>
               <span data-figure="actionable">
                 <Money value={item.actionableNowCents} />
@@ -78,7 +81,7 @@ export default async function CasePage(props: Props) {
               </span>{' '}
               (from the recovery ledger)
             </Fact>
-            <Fact label={stageLabel('recovered')}>
+            <Fact label={recoveredLabel(ledger.proofLevel)}>
               <span data-figure="recovered">
                 <Money value={ledger.recoveredCents} />
               </span>{' '}
@@ -147,7 +150,7 @@ export default async function CasePage(props: Props) {
         </CardContent>
       </Card>
       <section aria-label="Lines" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Lines ({detail.totalLines})</h2>
+        <h2 className="text-xl font-bold tracking-display">Lines ({detail.totalLines})</h2>
         <ul className="flex flex-col gap-3" aria-label="Case lines">
           {detail.lines.map((line) => (
             <li key={line.id} className="rounded-md border p-4" data-case-line={line.id} data-actionable={line.actionable ? 'yes' : 'no'}>
@@ -156,14 +159,14 @@ export default async function CasePage(props: Props) {
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${line.pricingRunId}`}>
                   Line {line.lineNo}, {line.serviceDate}
                 </Link>
-                <span>
+                <span className="font-mono tabular-nums">
                   {[line.procedureCode, ...line.modifiers].join(' ')} x {line.units}
                 </span>
                 <span>
                   Expected <Money value={line.expectedAllowedCents} />, observed <Money value={line.observedAllowedCents} />, variance <Money value={line.varianceCents} />
                 </span>
                 <span>Window ends {line.windowEndsOn ?? '—'}</span>
-                {line.stage === null ? null : <Badge variant="outline">{stageLabel(line.stage)}</Badge>}
+                {line.stage === null ? null : <StatusChip tone={STATUS_TONES[line.stage]}>{stageLabel(line.stage)}</StatusChip>}
               </div>
               {line.writtenOffReason === null ? null : (
                 <p className="pt-1 text-sm" data-reason={line.writtenOffReason}>

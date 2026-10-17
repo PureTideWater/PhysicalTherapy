@@ -91,7 +91,7 @@ export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; 
           <div className="max-h-[32rem] overflow-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap" data-page-text>
             {cited.segments.map((segment, index) =>
               segment.quoted ? (
-                <mark key={index} className="rounded bg-yellow-200 px-0.5 text-foreground">
+                <mark key={index} className="rounded-sm bg-bg-inset px-0.5 text-foreground underline decoration-fg-muted decoration-1 underline-offset-2">
                   {segment.text}
                 </mark>
               ) : (

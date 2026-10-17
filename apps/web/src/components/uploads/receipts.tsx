@@ -133,6 +133,7 @@ export function ReceiptList(props: {
   if (data.total === 0) {
     return (
       <EmptyState
+        mark
         title={parentId === undefined ? 'No files uploaded yet' : 'No files in this zip'}
         nextStep={parentId === undefined ? 'Upload your first 835 files: drop single files, a batch, or a zip of them above.' : 'The zip held no files to take in.'}
       />

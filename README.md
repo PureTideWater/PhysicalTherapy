@@ -1,4 +1,4 @@
-# Therapy contract-payment platform
+# PaidWhole
 
 A contract-payment verification platform for outpatient therapy practices and their billing firms. It ingests copies of 835 remittances and payer contracts, computes expected payment per service line under approved contract versions, groups shortfalls by payer pattern into dispute packets a person approves, and proves recovery by reconciling later remittances to payment posting and deposits.
 
@@ -560,9 +560,10 @@ lists what a person with network access does to finish it.
 | --- | --- |
 | `apps/web` | Next.js App Router: UI, route handlers, server actions |
 | `apps/worker` | pg-boss worker: intake, parse, monitor, price, triage, audit report, reconcile, digest and export jobs |
-| `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability` |
+| `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability`, `brand` (`@paidwhole/brand`: tokens, the mark, fonts and logo assets) |
 | `infra` | AWS CDK app, one stack per environment |
 | `tools` | log lint, content checker, release scripts, CI guards |
 | `content` | global rule drafts, sources and prepared releases (CI publishes `content/releases`) |
 | `fixtures` | synthetic and golden test data, never real |
 | `docs/adr` | architecture decisions |
+| `docs/brand` | the PaidWhole brand specification ([BRAND.md](docs/brand/BRAND.md)) |

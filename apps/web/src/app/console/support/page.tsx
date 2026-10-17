@@ -29,7 +29,7 @@ export default async function SupportPage() {
   const { grants, practices, engineers } = page.data;
   return (
     <AppShell shell={page.shell} section="support">
-      <h1 className="text-2xl font-semibold tracking-tight">Support</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Support</h1>
       <Card>
         <CardHeader>
           <CardTitle>New support grant from a ticket</CardTitle>
@@ -60,7 +60,7 @@ export default async function SupportPage() {
         </CardContent>
       </Card>
       {grants.length === 0 ? (
-        <EmptyState title="No support grants" nextStep="Grants appear here when created from a ticket." />
+        <EmptyState mark title="No support grants" nextStep="Grants appear here when created from a ticket." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Support grants">
           <thead className="text-muted-foreground">

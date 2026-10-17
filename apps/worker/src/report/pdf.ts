@@ -7,7 +7,9 @@ import { chromium } from 'playwright-core';
  * reports and packets, in the worker only"). The worker's image carries Chromium; development and the
  * tests use the Chromium Playwright installs (PLAYWRIGHT_BROWSERS_PATH). The page is set from the
  * report's own HTML with every network request refused, JavaScript off, so nothing outside the document
- * is fetched or run while it prints.
+ * is fetched or run while it prints: the brand's fonts and marks are inside it (report/brand.ts). The page
+ * size and margins are the document's own @page rules (a full-bleed cover, then margins for the inside
+ * pages), so none are passed here.
  */
 export interface PdfRenderer {
   render(html: string): Promise<Uint8Array>;
@@ -24,7 +26,7 @@ export class ChromiumPdfRenderer implements PdfRenderer {
       await context.route('**/*', (route) => route.abort());
       const page = await context.newPage();
       await page.setContent(html, { waitUntil: 'load' });
-      return await page.pdf({ format: 'Letter', printBackground: true, margin: { top: '0.6in', bottom: '0.6in', left: '0.6in', right: '0.6in' } });
+      return await page.pdf({ format: 'Letter', printBackground: true, preferCSSPageSize: true });
     } finally {
       await browser.close();
     }

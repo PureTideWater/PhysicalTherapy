@@ -75,8 +75,8 @@ export default async function ReportsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Reports</h1>
+        <p className="text-base text-muted-foreground">
           Every report keeps its stages apart: actionable, payer approved and recovered are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
           total links to the stage it came from.
         </p>
@@ -89,7 +89,7 @@ export default async function ReportsPage(props: Props) {
         />
       )}
       <section aria-label="Audit reports" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Audit reports</h2>
+        <h2 className="text-xl font-bold tracking-display">Audit reports</h2>
         <p className="text-sm text-muted-foreground">
           Coverage, anomalies (investigatory), validated discrepancies and actionable amounts kept apart, with the pursuit cost and the evidence gaps. A report is released only after a reimbursement reviewer signs its attestation.
         </p>
@@ -244,7 +244,7 @@ export default async function ReportsPage(props: Props) {
         </Card>
       </div>
       <section aria-label="Generated reports" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Coverage reports and monthly summaries</h2>
+        <h2 className="text-xl font-bold tracking-display">Coverage reports and monthly summaries</h2>
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (
@@ -291,7 +291,7 @@ export default async function ReportsPage(props: Props) {
         <Pager path={path} query={{ page: pageQuery.page, history: pageQuery.history }} page={documents.page} pages={documents.pages} total={documents.total} noun="Generated reports" param="documents" />
       </section>
       <section aria-label="Export history" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Export history</h2>
+        <h2 className="text-xl font-bold tracking-display">Export history</h2>
         <p className="text-sm text-muted-foreground">Every download of a report’s file and every line-level export, newest first, from the audit log.</p>
         {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No report file has been downloaded.</p>

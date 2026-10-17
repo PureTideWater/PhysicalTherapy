@@ -25,7 +25,7 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
   const { practiceId, agreements, missing, confirmation, canConfirm, grants, notice } = page.data;
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-semibold tracking-tight">Grants and agreements</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Grants and agreements</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="agreements" />
       {notice === 'confirmed' ? (
         <Alert>

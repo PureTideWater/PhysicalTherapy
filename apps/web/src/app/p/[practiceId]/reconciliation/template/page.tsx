@@ -35,8 +35,8 @@ export default async function TemplatePage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reconciliation`}>
           Reconciliation
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Posting template</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Posting template</h1>
+        <p className="text-base text-muted-foreground">
           How the practice’s payment-posting export is read: mapped once, at onboarding, for the practice-management system it comes from. Recovered is {proofLevelWords(proofLevel)}; the practice administrator sets the proof level.
         </p>
       </div>

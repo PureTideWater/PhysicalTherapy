@@ -140,7 +140,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
     await expect(page.locator('[data-figure="recovered"]')).toContainText('proved by deposit');
-    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered');
+    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered (posted or deposited)');
   });
 
   await test.step('a PLB recoupment reduces recovered by exactly its amount and reopens the line', async () => {
@@ -175,7 +175,8 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       }).toPass({ timeout: 90_000 });
     });
     await expect(page.locator('[data-state="recomputed"]')).toBeVisible();
-    const recovered = page.getByRole('region', { name: 'Recovered principal, net' });
+    // The region is named with its proof level, as the figure is labelled: never "recovered" alone.
+    const recovered = page.getByRole('region', { name: 'Recovered principal, net (deposited)', exact: true });
     await expect(recovered).toContainText('$12.00');
     await expect(recovered.locator('[data-recomputed="recovered"]')).toHaveText('Recomputed from its 2 linked entries: $12.00, the figure stored.');
     await expect(recovered.getByRole('table')).toContainText('Deposited');

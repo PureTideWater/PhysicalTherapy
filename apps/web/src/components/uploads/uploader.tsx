@@ -385,7 +385,7 @@ export function Uploader(props: UploaderProps) {
       )}
       {props.showReceipts === false ? null : (
         <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Receipts</h2>
+          <h2 className="text-xl font-bold tracking-display">Receipts</h2>
           <ReceiptList practiceId={practiceId} canUpload={canUpload} csrfToken={csrfToken} refreshKey={refreshKey} title="Receipts" />
         </div>
       )}

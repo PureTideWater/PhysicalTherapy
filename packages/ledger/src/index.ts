@@ -24,6 +24,15 @@ export {
   reprocessing,
 } from './matching';
 export { type OpenCase, type RoiInput, type RoiStatement, approvedUnproved, previousQuarter, quarterOf, quarterPeriod, ratioText, roiStatement } from './roi';
+export {
+  RECONCILIATION_REASONS,
+  type ReconciledToCash,
+  type ReconciliationReason,
+  type ReportReconciliation,
+  type ReportReconciliationInput,
+  reconciliationSource,
+  reportReconciliation,
+} from './reconciliation';
 export { type FigureCheck, ROI_CSV_COLUMNS, type StatementCheck, type StoredStatement, csvField, recomputeStatement, roiStatementCsv } from './statement';
 export { type LedgerSettings, LedgerSettingsError, POSTING_TEMPLATE_KEY, PROOF_LEVEL_KEY, ledgerSettings, postingTemplateOf, postingTemplateSetting } from './settings';
 export {
@@ -50,6 +59,7 @@ export {
   isCorrecting,
   isLedgerStage,
   isProofLevel,
+  recoveredLabel,
 } from './stages';
 export {
   BUILT_IN_POSTING_TEMPLATES,

@@ -34,8 +34,8 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
   return (
     <AppShell shell={page.shell} section="users">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Users and roles</h1>
-        <p className="text-sm text-muted-foreground">{organization.name}. Changes here are for the organization&apos;s administrator.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Users and roles</h1>
+        <p className="text-base text-muted-foreground">{organization.name}. Changes here are for the organization&apos;s administrator.</p>
       </div>
       {notice === null ? null : (
         <Alert>

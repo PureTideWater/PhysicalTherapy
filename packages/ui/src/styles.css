@@ -1,71 +1,50 @@
 /*
- * shadcn/ui theme tokens for Tailwind v4 (neutral base). Apps import this after "tailwindcss".
- * System font stacks only: nothing is fetched at build or run time.
+ * shadcn/ui theme variables for Tailwind v4, mapped to the PaidWhole tokens (@paidwhole/brand/tokens.css;
+ * docs/brand/BRAND.md). Apps import this after "tailwindcss", tokens.css and the brand's Tailwind theme, so
+ * every component here is on brand without per-component colors. Dark mode is the tokens' own
+ * ([data-theme="dark"] or .dark): the semantic tokens change, and these follow them; nothing here is
+ * inverted. Fonts are the brand's self-hosted faces (apps/web/src/lib/fonts.ts): nothing is fetched from a
+ * third party at build or run time.
  */
 @source "./";
 
-@custom-variant dark (&:is(.dark *));
-
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.48 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-accent: oklch(0.94 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --radius: var(--pw-radius-lg);
+  --background: var(--pw-bg);
+  --foreground: var(--pw-fg);
+  --card: var(--pw-bg);
+  --card-foreground: var(--pw-fg);
+  --popover: var(--pw-bg);
+  --popover-foreground: var(--pw-fg);
+  --primary: var(--pw-primary);
+  --primary-foreground: var(--pw-primary-fg);
+  --secondary: var(--pw-bg-inset);
+  --secondary-foreground: var(--pw-fg);
+  --muted: var(--pw-bg-raised);
+  --muted-foreground: var(--pw-fg-muted);
+  /* shadcn's accent is a hover surface, not the brand accent: Brass is never a background. */
+  --accent: var(--pw-bg-inset);
+  --accent-foreground: var(--pw-fg);
+  --destructive: var(--pw-danger);
+  --destructive-foreground: var(--pw-fg-inverse);
+  --border: var(--pw-border);
+  /* A field's outline at 3:1 or more on White and Paper (WCAG 1.4.11); the quiet rules stay --pw-border. */
+  --input: var(--pw-input-border);
+  --ring: var(--pw-focus);
+  --sidebar: var(--pw-bg-raised);
+  --sidebar-foreground: var(--pw-fg);
+  --sidebar-accent: var(--pw-bg-inset);
+  --sidebar-accent-foreground: var(--pw-fg);
+  --sidebar-border: var(--pw-border);
 }
 
 @theme inline {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
@@ -75,6 +54,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -87,9 +67,39 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;
+  }
+  /* Every form field is outlined so it can be found (WCAG 1.4.11), the native selects and text areas too. */
+  input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='file']),
+  select,
+  textarea {
+    @apply border-input;
+  }
+}
+
+/*
+ * A plain progress bar for loading (LoadingState): the only motion the brand allows for progress. The mark
+ * itself never moves. Under prefers-reduced-motion the bar stands still.
+ */
+@keyframes pw-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+@layer components {
+  .pw-progress-bar {
+    animation: pw-progress 1.6s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pw-progress-bar {
+      animation: none;
+    }
   }
 }

@@ -41,9 +41,9 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
             {note.changes.map((change) => (
               <tr key={change.recordType} className="border-t" data-record-type={change.recordType}>
                 <td className="py-1 pr-3 font-mono text-xs">{change.recordType}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{change.added}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{change.removed}</td>
-                <td className="py-1 text-right tabular-nums">{change.changed}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.added}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{change.removed}</td>
+                <td className="py-1 text-right font-mono tabular-nums">{change.changed}</td>
               </tr>
             ))}
           </tbody>

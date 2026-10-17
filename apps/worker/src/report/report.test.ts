@@ -8,9 +8,10 @@ import { describe, expect, it } from 'vitest';
 
 import type { AuditReportContent, ReportLine } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
-import { auditHtml, escapeHtml } from './html';
+import { auditHtml, auditReconciliation, escapeHtml } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
+import { amountsNotInMono } from './test-support/figures';
 
 /** A report's numbers as the report job stores them, written by hand (SYNTHETIC). */
 const CONTENT: AuditReportContent = {
@@ -177,15 +178,25 @@ describe('the report HTML', () => {
     const headline = html.slice(html.indexOf('aria-label="Headline"'), html.indexOf('aria-label="Coverage"'));
     expect(headline).toContain('Actionable</div><div class="amount">$552.00');
     expect(headline).toContain('Payer approved</div><div class="amount">$0.00');
-    expect(headline).toContain('Recovered</div><div class="amount">$0.00');
+    // Recovered names the proof level it was judged under, never "Recovered" alone.
+    expect(headline).toContain('Recovered (posted)</div><div class="amount">$0.00');
+    expect(headline).toContain('<div class="note">posted, net of recoupments and reversals; nothing has posted yet</div>');
+    expect(auditHtml(CONTENT, auditReconciliation(CONTENT, 'deposited'))).toContain('Recovered (deposited)</div><div class="amount">$0.00');
+    expect(headline).toContain('a range of <span class="figure-amount">$40.00</span> to <span class="figure-amount">$80.00</span>');
     expect(headline).toContain('Flagged (investigatory):</strong> 4 lines');
-    expect(headline).toContain('$40.00 to $80.00; investigatory, never a claim and in no total');
-    expect(headline).toContain('Validated:</strong> $555.00 across 17 lines');
+    expect(headline).toContain('<span class="figure-amount">$80.00</span>; investigatory, never a claim and in no total');
+    expect(headline).toContain('Validated:</strong> <span class="figure-amount">$555.00</span> across 17 lines');
   });
 
+  it.skipIf(!chromiumInstalled())('sets every dollar figure in IBM Plex Mono, in the headline, the boxes below it and running text as in tables (skipped without Chromium)', async () => {
+    expect(await amountsNotInMono(html)).toEqual([]);
+  }, 60_000);
+
   it('keeps the word recovered beside stage five only', () => {
-    const withoutHeadline = html.replace(/<div class="figure"><div class="label">Recovered<\/div>.*?<\/div><\/div>/, '').replace(/Recovered counts only cash posted/, '');
+    const withoutHeadline = html.replace(/<div class="figure"><div class="label">Recovered \(posted\)<\/div>.*?<\/div><\/div>/, '').replace(/Recovered \(posted\) counts only cash posted/, '');
     expect(withoutHeadline).not.toMatch(/recover/i);
+    // And never without the cash that proves it.
+    expect(html).not.toMatch(/Recovered(?! \((posted|deposited)\))/);
   });
 
   it('labels every anomaly investigatory and puts it in no total', () => {
@@ -197,9 +208,9 @@ describe('the report HTML', () => {
 
   it('shows the cases with their totals, deadlines, pursuit cost and net expected value, and the evidence gaps', () => {
     expect(html).toContain('<td>$280.00</td><td>2027-01-15</td><td>11 lines, $340.00</td><td>$82.50</td><td>$197.50</td>');
-    expect(html).toContain('Pursuit cost of the open cases: $82.50; net expected value $197.50.');
+    expect(html).toContain('Pursuit cost of the open cases: <span class="figure-amount">$82.50</span>; net expected value <span class="figure-amount">$197.50</span>.');
     expect(html).toContain('Below the per-line materiality');
-    expect(html).toContain('Overpayments: 1 line, -$12.00; recorded and shown, never pursued.');
+    expect(html).toContain('Overpayments: 1 line, <span class="figure-amount">-$12.00</span>; recorded and shown, never pursued.');
     expect(html).toContain('<td>NO_AGREEMENT</td><td>33</td><td>$3,000.00</td>');
   });
 

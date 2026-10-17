@@ -61,7 +61,7 @@ function message(kind: Notice, to: readonly string[], link: string, reads: strin
         to,
         subject: 'Support access opened for your practice',
         lines: [
-          'Company support was given break-glass access to your practice for one support ticket.',
+          'PaidWhole support was given break-glass access to your practice for one support ticket.',
           'It ends on its own four hours after it opened. Every record read under it is logged, and you will be sent the list when it ends.',
           'Review the access:',
         ],

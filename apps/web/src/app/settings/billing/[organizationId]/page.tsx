@@ -6,6 +6,7 @@ import { ActionForm } from '../../../../components/action-form';
 import { StripePaymentMethod } from '../../../../components/billing/stripe-payment-method';
 import { Field, SelectField } from '../../../../components/field';
 import { utc, utcDate } from '../../../../components/format';
+import { Money } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationBillingPage } from '../../../../lib/routes/billing';
@@ -36,8 +37,8 @@ export default async function OrganizationBillingPage(props: { readonly params: 
   const open = billing.invoices.filter((invoice) => invoice.status === 'open' || invoice.status === 'uncollectible');
   return (
     <AppShell shell={page.shell} section="billing">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing: {billing.name}</h1>
-      <p className="text-sm text-muted-foreground">
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Billing: {billing.name}</h1>
+      <p className="text-base text-muted-foreground">
         Standing: <Badge variant={billing.standing === 'good' ? 'outline' : 'destructive'}>{STANDING[billing.standing] ?? billing.standing}</Badge>
         {billing.pastDueSince === null ? null : <span> since {utcDate(billing.pastDueSince)}</span>}
       </p>
@@ -71,6 +72,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                 name="plan"
                 id="field-plan"
                 options={[
+                  // An <option> holds text only: the one place a price is not set in the mono face (docs/adr/0054).
                   { value: 'monthly', label: `${catalog.plans.monthly.name}: ${formatUsd(parseCents(catalog.plans.monthly.amountCents))} a month` },
                   { value: 'annual', label: `${catalog.plans.annual.name}: ${formatUsd(parseCents(catalog.plans.annual.amountCents))} a year` },
                 ]}
@@ -83,7 +85,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
               {billing.subscription.cancelAtPeriodEnd ? <> (ends then)</> : null}
             </p>
           )}
-          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until the company confirms its prices.</p>}
+          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
         </CardContent>
       </Card>
 
@@ -160,7 +162,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                     </td>
                     <td className="py-1">{KIND[invoice.kind] ?? invoice.kind}</td>
                     <td className="py-1">{utcDate(invoice.createdAt)}</td>
-                    <td className="py-1 tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
+                    <td className="py-1 font-mono tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
                     <td className="py-1">
                       <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
                       {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}
@@ -174,7 +176,16 @@ export default async function OrganizationBillingPage(props: { readonly params: 
           {open.length === 0 ? null : (
             <div className="mt-4 flex flex-col gap-2">
               {open.map((invoice) => (
-                <ActionForm key={invoice.id} action={payInvoice} submit={`Pay ${invoice.number ?? 'the open invoice'} now (${formatUsd(parseCents(invoice.amountRemainingCents))})`} variant="outline">
+                <ActionForm
+                  key={invoice.id}
+                  action={payInvoice}
+                  submit={
+                    <>
+                      Pay {invoice.number ?? 'the open invoice'} now (<Money value={invoice.amountRemainingCents} />)
+                    </>
+                  }
+                  variant="outline"
+                >
                   <FormKeys />
                   <input type="hidden" name="organizationId" value={organizationId} />
                   <input type="hidden" name="invoiceId" value={invoice.id} />

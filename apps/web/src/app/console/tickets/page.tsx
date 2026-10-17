@@ -28,8 +28,8 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
   const { tickets, status, responseTarget, supportEmail } = page.data;
   return (
     <AppShell shell={page.shell} section="tickets">
-      <h1 className="text-2xl font-semibold tracking-tight">Support tickets</h1>
-      <p className="text-sm text-muted-foreground">
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Support tickets</h1>
+      <p className="text-base text-muted-foreground">
         Answer within {responseTarget}. Mail to {supportEmail} from an account&apos;s own address opens a ticket here (screen: email); one whose text looked like it held patient
         information opens a ticket that says only that it came.
       </p>
@@ -41,7 +41,7 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
         ))}
       </nav>
       {tickets.length === 0 ? (
-        <EmptyState title="No tickets here" nextStep="Tickets opened from any screen's help appear here." />
+        <EmptyState mark title="No tickets here" nextStep="Tickets opened from any screen's help appear here." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Tickets">
           <thead className="text-muted-foreground">
@@ -57,7 +57,7 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
           <tbody>
             {tickets.map((ticket) => (
               <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
-                <td className="py-1 tabular-nums">{ticket.number}</td>
+                <td className="py-1 font-mono tabular-nums">{ticket.number}</td>
                 <td className="py-1">
                   {ticket.requesterEmail}
                   <br />

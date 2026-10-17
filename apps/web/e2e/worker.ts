@@ -72,7 +72,7 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
     handlers: {
       ...placeholderHandlers,
       monitor: onlyFor<'monitor'>(CHAINED_PRACTICES, monitorHandler(), placeholderHandlers.monitor),
-      digest: onlyFor<'digest'>(new Set([MONITORED_PRACTICE]), digestHandler({ mail: new LocalMailSender(E2E_MAIL_OUTBOX_DIR), appOrigin: E2E_ORIGIN }), placeholderHandlers.digest),
+      digest: onlyFor<'digest'>(new Set([MONITORED_PRACTICE]), digestHandler({ mail: new LocalMailSender(E2E_MAIL_OUTBOX_DIR, E2E_ORIGIN), appOrigin: E2E_ORIGIN }), placeholderHandlers.digest),
       intake: intakeHandler(services),
       parse_835: parseHandler(services),
       price: priceHandler(),
