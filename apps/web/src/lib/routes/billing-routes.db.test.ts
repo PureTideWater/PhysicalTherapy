@@ -309,9 +309,11 @@ describe('the webhook route', () => {
     expect(await recorded()).toEqual([{ outcome: 'applied' }]);
     expect(await rows('SELECT status FROM invoice WHERE organization_id = $1', [world.organizationId])).toEqual([{ status: 'open' }]);
 
-    // A body past the limit is refused before it is read.
+    // A body past the limit is refused as too large, before it is read whole or its signature is checked (docs/adr/0055).
     const big = await post(`{"pad":"${'x'.repeat(WEBHOOK_MAX_BYTES)}"}`, signature);
-    expect(big.status).toBe(400);
+    expect(big.status).toBe(413);
+    expect(await big.json()).toMatchObject({ status: 'invalid', issues: [{ field: 'payload', message: 'the body is too large' }] });
+    expect(await recorded()).toEqual([{ outcome: 'applied' }]);
   });
 });
 

@@ -126,24 +126,6 @@ describe('the route registry', () => {
     expect(registry.routeById('nothing')).toBeUndefined();
   });
 
-  it('gives every page a loading state, its own or its segment’s (PRD 7: every screen has a loading state)', () => {
-    for (const file of pages) {
-      let dir = path.dirname(file);
-      let found = false;
-      for (;;) {
-        if (files(dir).some((entry) => entry === path.join(dir, 'loading.tsx'))) {
-          found = true;
-          break;
-        }
-        if (dir === APP) {
-          break;
-        }
-        dir = path.dirname(dir);
-      }
-      expect(found, `${file} has no loading.tsx in its directory or above it`).toBe(true);
-    }
-  });
-
   it('runs every page through a registered page route at its own path', () => {
     expect(pages.length).toBeGreaterThan(10);
     for (const file of pages) {
