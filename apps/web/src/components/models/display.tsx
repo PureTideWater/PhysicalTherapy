@@ -136,7 +136,11 @@ export function ProposalList({ proposals, reject }: { readonly proposals: readon
               Proposed {utc(proposal.createdAt)}
               <Badge variant={proposal.passed ? 'outline' : 'secondary'}>{proposal.passed ? 'Every field checked' : 'Some fields did not check'}</Badge>
               <Badge variant="secondary">{decisionText(proposal.decision?.decision ?? null)}</Badge>
+              <Badge variant="outline" data-variant={proposal.ambiguous ? 'ambiguous' : 'default'}>
+                {proposal.ambiguous ? 'Marked ambiguous: read by the larger model' : 'Read by the default model'}
+              </Badge>
             </CardTitle>
+            <CardDescription>Model {proposal.modelId}.</CardDescription>
             {proposal.decision === null || proposal.decision.changedFields.length === 0 ? null : <CardDescription>Changed: {proposal.decision.changedFields.join(', ')}.</CardDescription>}
           </CardHeader>
           <CardContent className="flex flex-col gap-3">

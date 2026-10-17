@@ -10,7 +10,7 @@ import {
   removeRateRecord,
 } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit } from '@tp/db/runtime';
-import { type CandidateReview, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
+import { CONTRACT_KINDS, type CandidateReview, type ContractTermsProposal, type ProposedRateRecord, recordPermittedExampleIn, recordReviewerDecisionIn } from '@tp/model-gateway';
 import type { DocumentStore } from '@tp/worker/documents';
 
 import { evidenceFor } from '../contracts/evidence';
@@ -21,8 +21,8 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  * the specialist verifies each field against the cited page"; PRD 7, Rate record review and Specialist
  * queue; PRD 14, proposeContractTerms; docs/adr/0052).
  *
- * - propose: the contract specialist asks the gateway to read a draft version's document (its pages as
- *   intake stored them). Every candidate whose fields all verified becomes a rate record proposed by the
+ * - propose: the contract specialist asks the gateway to read a draft version's contract or exhibit (its
+ *   pages as intake stored them; a payer letter the version names is PHI and is never sent here). Every candidate whose fields all verified becomes a rate record proposed by the
  *   model (contracts' proposeVersion, which moves the version to proposed: "proposals awaiting
  *   verification" in the specialist queue); a candidate with a rejected field becomes none, and its
  *   fields stay on the review screen with their problems for the specialist to enter by hand. The model
@@ -51,6 +51,8 @@ export interface StoredCandidate extends Omit<CandidateReview, 'rateRecord'> {
 export interface StoredContractProposal {
   readonly format: typeof CONTRACT_PROPOSAL_FORMAT;
   readonly documentId: string;
+  /** The specialist marked the contract ambiguous: the prompt's larger model read it (PRD 14). Absent on proposals written before it was recorded. */
+  readonly ambiguous?: boolean;
   readonly candidates: readonly StoredCandidate[];
 }
 
@@ -60,6 +62,8 @@ export interface ProposeInput {
   readonly practiceId: string;
   readonly versionId: string;
   readonly documentId: string;
+  /** The specialist marked the contract ambiguous: the prompt's larger model reads it (PRD 14, Provider and data path). */
+  readonly ambiguous: boolean;
   readonly userId: string;
   /** The form's request key: the same key never pays for a second call. */
   readonly requestKey: string;
@@ -74,7 +78,7 @@ interface ProposeServices extends ModelServices {
 export class ProposalRefusedError extends Error {
   override readonly name = 'ProposalRefusedError';
   constructor(
-    readonly reason: 'not_found' | 'not_draft' | 'document_not_in_version' | 'pages_unavailable' | 'already_reviewed',
+    readonly reason: 'not_found' | 'not_draft' | 'document_not_in_version' | 'document_kind' | 'pages_unavailable' | 'already_reviewed',
     message: string,
   ) {
     super(message);
@@ -117,6 +121,12 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
   if (document === undefined) {
     throw new ProposalRefusedError('not_found', 'no such document in this practice');
   }
+  // A version may name a payer letter beside its contract; a letter is PHI and is read only through
+  // readDenialLetter, with its minimization (PRD 14). Only a contract or an exhibit is proposed from.
+  const kind = CONTRACT_KINDS.find((candidate) => candidate === document.kind);
+  if (kind === undefined) {
+    throw new ProposalRefusedError('document_kind', 'the model proposes terms from a contract or an exhibit only; enter terms from this document by hand');
+  }
   const cipher = await loadPracticeCipher(scope, services.keys, input.practiceId);
   const evidence = resolver(scope, services, cipher, input.practiceId, input.requestId);
   const pages = await evidence.pages(input.documentId);
@@ -131,7 +141,7 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
   try {
     result = await gateway.proposeContractTerms(
       { practiceId: input.practiceId, requestKey: input.requestKey },
-      { documentId: input.documentId, documentSha256: document.sha256, kind: document.kind === 'exhibit' ? 'exhibit' : 'contract', pages: pages.pages },
+      { documentId: input.documentId, documentSha256: document.sha256, kind, pages: pages.pages, ambiguous: input.ambiguous },
     );
   } catch (error) {
     const problem = modelProblem(error);
@@ -160,7 +170,7 @@ export async function proposeTerms(scope: PracticeScope<ScopeClient>, services: 
     );
     ids.push(...checks.map((check) => check.rateRecordId));
   }
-  const stored: StoredContractProposal = { format: CONTRACT_PROPOSAL_FORMAT, documentId: input.documentId, candidates: storedCandidates(result.proposal, ids) };
+  const stored: StoredContractProposal = { format: CONTRACT_PROPOSAL_FORMAT, documentId: input.documentId, ambiguous: input.ambiguous, candidates: storedCandidates(result.proposal, ids) };
   const { rows } = await scope.client.query<{ id: string }>(
     `INSERT INTO model_proposal (practice_id, model_call_id, purpose, contract_version_id, source_document_id, proposal, verifier_passed, proposed_by)
      VALUES ($1, $2, 'proposeContractTerms', $3, $4, $5::jsonb, $6, app_actor_id()) RETURNING id`,
@@ -184,6 +194,10 @@ export interface ProposalView {
   readonly id: string;
   readonly modelCallId: string;
   readonly documentId: string;
+  /** Whether the specialist marked the contract ambiguous, so the prompt's larger model read it. */
+  readonly ambiguous: boolean;
+  /** The model the call was made to (model_call.model_id). */
+  readonly modelId: string;
   readonly createdAt: string;
   readonly passed: boolean;
   readonly candidates: readonly StoredCandidate[];
@@ -202,11 +216,12 @@ interface ProposalRow {
   readonly eval_example_id: string | null;
   readonly reviewer_decision: string | null;
   readonly reviewer_changed_fields: string[] | null;
+  readonly model_id: string;
 }
 
 async function proposalRows(scope: PracticeScope<ScopeClient>, practiceId: string, versionId: string): Promise<ProposalRow[]> {
   const { rows } = await scope.client.query<ProposalRow>(
-    `SELECT p.id, p.model_call_id, p.source_document_id, p.created_at, p.verifier_passed, p.proposal, p.reviewed_at, p.eval_example_id, c.reviewer_decision, c.reviewer_changed_fields
+    `SELECT p.id, p.model_call_id, p.source_document_id, p.created_at, p.verifier_passed, p.proposal, p.reviewed_at, p.eval_example_id, c.reviewer_decision, c.reviewer_changed_fields, c.model_id
        FROM model_proposal p JOIN model_call c ON c.id = p.model_call_id
       WHERE p.practice_id = $1 AND p.contract_version_id = $2 AND p.purpose = 'proposeContractTerms'
       ORDER BY p.created_at, p.id`,
@@ -221,6 +236,8 @@ export async function versionProposals(scope: PracticeScope<ScopeClient>, practi
     id: row.id,
     modelCallId: row.model_call_id,
     documentId: row.source_document_id,
+    ambiguous: row.proposal.ambiguous === true,
+    modelId: row.model_id,
     createdAt: row.created_at.toISOString(),
     passed: row.verifier_passed,
     candidates: row.proposal.candidates,

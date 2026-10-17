@@ -74,6 +74,7 @@ export async function seedModelProposals(options: ModelWorldOptions): Promise<Mo
       practiceId: options.practiceId,
       versionId: options.draftVersionId,
       documentId: options.contractDocumentId,
+      ambiguous: false,
       userId: options.specialistId,
       requestKey: `seed:${randomUUID()}`,
       requestId: `seed-${randomUUID()}`,

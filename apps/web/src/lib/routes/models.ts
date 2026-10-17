@@ -46,13 +46,15 @@ export const proposeTermsAction = practiceRoute({
   phi: true,
   permission: 'rate_record.edit',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ versionId: opaqueId, documentId: opaqueId, requestKey: z.uuid() }),
+  // The specialist marks a contract ambiguous for the prompt's larger model (PRD 14, Provider and data path).
+  input: z.object({ versionId: opaqueId, documentId: opaqueId, ambiguous: optionalText(z.literal('on')), requestKey: z.uuid() }),
   audit: { action: 'model_proposal_requested', objectType: 'contract_version' },
   handle: async ({ scope, practiceId, input, request, services, actor }): Promise<MutationResult> => {
     const outcome = await proposeTerms(scope, services, {
       practiceId,
       versionId: input.versionId,
       documentId: input.documentId,
+      ambiguous: input.ambiguous === 'on',
       userId: actor.userId,
       requestKey: `propose:${input.requestKey}`,
       requestId: request.requestId,

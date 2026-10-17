@@ -67,7 +67,7 @@ export interface ContractWorldOptions {
  * A clean, stored contract document of the practice, as intake leaves one: its bytes sealed in the
  * document store and its page text, read by the bounded reader, sealed beside them (docs/adr/0033).
  */
-export async function storeContractDocument(options: ContractWorldOptions, pages: readonly (readonly string[])[] = CONTRACT_PAGES): Promise<string> {
+export async function storeContractDocument(options: ContractWorldOptions, pages: readonly (readonly string[])[] = CONTRACT_PAGES, kind: 'contract' | 'exhibit' | 'payer_letter' = 'contract'): Promise<string> {
   const id = randomUUID();
   const bytes = syntheticPdf(pages);
   await options.documents.write(options.cipher, documentObjectKey(options.practiceId, id), Readable.from([bytes]));
@@ -79,8 +79,8 @@ export async function storeContractDocument(options: ContractWorldOptions, pages
   await asOwner(options.owner, [options.practiceId], () =>
     options.owner.query(
       `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status, page_text_status, page_count)
-       VALUES ($1, $2, 'contract', $3, $4, 'application/pdf', $5, 'clean', now(), 'stored', 'ready', $6)`,
-      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId, read.pages.length],
+       VALUES ($1, $2, $7, $3, $4, 'application/pdf', $5, 'clean', now(), 'stored', 'ready', $6)`,
+      [id, options.practiceId, createHash('sha256').update(bytes).digest('hex'), bytes.length, options.customerId, read.pages.length, kind],
     ),
   );
   return id;

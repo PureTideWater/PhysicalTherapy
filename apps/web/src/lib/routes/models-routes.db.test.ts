@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { RATE_RECORD_FIELDS, createContract, createDraftVersion } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
-import { LocalDeterministicProvider, type ModelPurpose, type PurposeInputs, requestFor, setFeatureFlag } from '@tp/model-gateway';
+import { LocalDeterministicProvider, type ModelProvider, type ModelPurpose, type ModelRequest, type ModelResponse, PROMPTS, type PurposeInputs, modelFor, requestFor, setFeatureFlag } from '@tp/model-gateway';
 import { createLogger } from '@tp/observability';
 import { draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
@@ -179,20 +179,46 @@ interface DraftContract {
   readonly versionId: string;
 }
 
-/** A practice (its CAS-08 remittance loaded, for its payer) with a draft version naming a stored SYNTHETIC contract whose pages intake read. */
-async function draftContract(label: string): Promise<DraftContract> {
+/** A SYNTHETIC payer letter naming two invented patients: PHI-shaped text that must never reach a contract proposal. */
+const SYNTHETIC_PAYER_LETTER: readonly (readonly string[])[] = [
+  [
+    'SYNTHETIC PAYER Q - NOTICE OF ADJUSTMENT',
+    'RE: SYNTHETIC PATIENT QUILLAN VORTA, DOB 01/02/1960, MEMBER ID SYNLETTERMEMBER01',
+    'RE: SYNTHETIC PATIENT ZEPHYRA MOLT, DOB 03/04/1970, MEMBER ID SYNLETTERMEMBER02',
+    'Effective March 1, 2026, CPT 97110 is paid at $32.00 per unit.',
+  ],
+];
+
+/** A practice (its CAS-08 remittance loaded, for its payer) with a draft version naming a stored SYNTHETIC contract whose pages intake read, and any further documents given. */
+async function draftContract(label: string, extra: readonly { readonly pages: readonly (readonly string[])[]; readonly kind: 'exhibit' | 'payer_letter' }[] = []): Promise<DraftContract & { readonly extraIds: readonly string[] }> {
   const practice = await w.practice(label);
   await w.load(practice, CAS08);
   const specialist = await specialistOf(practice);
   const payerId = await w.pricing.payerOf(practice);
-  const documentId = await storeContractDocument({ owner: w.owner, app: w.app, documents, cipher: practice.cipher, practiceId: practice.practiceId, payerId, customerId: practice.manager, specialistId: specialist });
+  const options = { owner: w.owner, app: w.app, documents, cipher: practice.cipher, practiceId: practice.practiceId, payerId, customerId: practice.manager, specialistId: specialist };
+  const documentId = await storeContractDocument(options);
+  const extraIds: string[] = [];
+  for (const document of extra) {
+    extraIds.push(await storeContractDocument(options, document.pages, document.kind));
+  }
   const { contractId, versionId } = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => {
     const context = { scope, requestId: `test-${randomUUID()}` };
     const contract = await createContract(context, { practiceId: practice.practiceId, payerId, title: `SYNTHETIC ${label} AGREEMENT` });
-    const version = await createDraftVersion(context, { practiceId: practice.practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId] });
+    const version = await createDraftVersion(context, { practiceId: practice.practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId, ...extraIds] });
     return { contractId: contract.contractId, versionId: version.versionId };
   });
-  return { practice, specialist, documentId, contractId, versionId };
+  return { practice, specialist, documentId, contractId, versionId, extraIds };
+}
+
+/** Stands in for Bedrock in one test: not a model and not the SDK; it records each request and answers with a fixed output. */
+class RecordingStandIn implements ModelProvider {
+  readonly kind = 'bedrock' as const;
+  readonly requests: ModelRequest[] = [];
+  constructor(private readonly output: unknown) {}
+  complete(request: ModelRequest): Promise<ModelResponse> {
+    this.requests.push(request);
+    return Promise.resolve({ text: JSON.stringify(this.output), tokensIn: 1000, tokensOut: 200, stopReason: 'end' });
+  }
 }
 
 /** What the gateway is given for the document: its pages as intake stored them. */
@@ -362,6 +388,52 @@ describe('the specialist’s proposal of a draft version’s terms (MOD-01, MOD-
     await approveEveryField(accepted, made?.candidates[0]?.rateRecordId ?? '');
     ok(await call(approveVersionAction, accepted.specialist, { practiceId: accepted.practice.practiceId }, { versionId: accepted.versionId }));
     expect(await callOf(accepted.practice.practiceId, made?.modelCallId ?? '')).toMatchObject({ reviewer_decision: 'accepted', reviewer_changed_fields: [] });
+  });
+});
+
+describe('what a contract proposal reads (PRD 14, PHI minimization; Provider and data path)', () => {
+  it('refuses a payer letter the version names before anything is sent or logged: a letter is PHI, read only through readDenialLetter', async () => {
+    const draft = await draftContract('MODELS LETTER', [{ pages: SYNTHETIC_PAYER_LETTER, kind: 'payer_letter' }]);
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const [letterId] = draft.extraIds;
+    const sentBefore = provider.requests.length;
+    // The database lets a version name the letter beside its contract; the model never reads it.
+    const page = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId }));
+    expect(page.review.documents.map((document) => document.kind).sort()).toEqual(['contract', 'payer_letter']);
+    expect(refused(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: letterId }))).toMatch(/contract or an exhibit only/);
+    expect(provider.requests.length).toBe(sentBefore);
+    expect(provider.requests.some((request) => request.user.includes('SYNLETTERMEMBER'))).toBe(false);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_call WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(await rows(practiceId, 'SELECT 1 FROM model_proposal WHERE practice_id = $1', [practiceId])).toEqual([]);
+    expect(ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).review.version.status).toBe('draft');
+  });
+
+  it('sends a contract the specialist marks ambiguous to the larger model the prompt pins, logs that model, and shows which read it', async () => {
+    const draft = await draftContract('MODELS AMBIGUOUS');
+    const { practiceId } = draft.practice;
+    const P = { practiceId };
+    const standIn = new RecordingStandIn({ candidates: [fixed('97110', Q97110, '$32.00')] });
+    // Only a production model path sends a practice's material to a provider other than the local one.
+    assignModelPath(services, { kind: 'available', production: true, provider: () => standIn });
+    try {
+      ok(await call(proposeTermsAction, draft.specialist, P, { versionId: draft.versionId, documentId: draft.documentId, ambiguous: 'on' }));
+    } finally {
+      assignModelPath(services, { kind: 'available', production: false, provider: () => provider });
+    }
+    const larger = modelFor(PROMPTS.proposeContractTerms, 'bedrock', 'ambiguous');
+    expect(larger).not.toBe(modelFor(PROMPTS.proposeContractTerms, 'bedrock'));
+    expect(standIn.requests.map((request) => request.modelId)).toEqual([larger]);
+    const [proposal] = ok(await call(abstractionVersionPage, draft.specialist, { ...P, versionId: draft.versionId })).proposals;
+    expect(proposal).toMatchObject({ ambiguous: true, modelId: larger, passed: true });
+    expect(await rows(practiceId, 'SELECT provider, model_id FROM model_call WHERE id = $1', [proposal?.modelCallId])).toEqual([{ provider: 'bedrock', model_id: larger }]);
+
+    // Unmarked, the default model reads it.
+    const plain = await draftContract('MODELS NOT AMBIGUOUS');
+    answer('proposeContractTerms', await pagesInput(plain), { candidates: [fixed('97110', Q97110, '$32.00')] });
+    ok(await call(proposeTermsAction, plain.specialist, { practiceId: plain.practice.practiceId }, { versionId: plain.versionId, documentId: plain.documentId }));
+    const [unmarked] = ok(await call(abstractionVersionPage, plain.specialist, { practiceId: plain.practice.practiceId, versionId: plain.versionId })).proposals;
+    expect(unmarked).toMatchObject({ ambiguous: false, modelId: modelFor(PROMPTS.proposeContractTerms, 'local') });
   });
 });
 

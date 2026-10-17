@@ -281,6 +281,13 @@ describe('preparing the call', () => {
     expect(() => contractTermsSpec.prepare({ ...input, pages: Array.from({ length: MAX_PAGES + 1 }, () => 'SYNTHETIC') })).toThrow(expect.objectContaining({ code: 'too_many_pages' }));
   });
 
+  it('reads a contract or an exhibit only: a payer letter (PHI) or any other kind is refused before anything is framed', () => {
+    expect(contractTermsSpec.prepare({ ...input, kind: 'exhibit' }).user).toContain('<document kind="exhibit"');
+    for (const kind of ['payer_letter', 'remittance_835', 'posting_export', '']) {
+      expect(() => contractTermsSpec.prepare({ ...input, kind } as unknown as typeof input), kind).toThrow(expect.objectContaining({ code: 'document_kind' }));
+    }
+  });
+
   it('validates the answer’s shape strictly: no field the schema does not name', () => {
     expect(contractTermsOutput.safeParse(syntheticContractOutput()).success).toBe(true);
     expect(contractTermsOutput.safeParse({ candidates: [{ ...first(), approve: true }] }).success).toBe(false);

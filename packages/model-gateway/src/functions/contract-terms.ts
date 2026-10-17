@@ -76,11 +76,15 @@ export type ContractTermsCandidate = z.output<typeof candidateSchema>;
 export const contractTermsOutput = z.strictObject({ candidates: z.array(candidateSchema).max(500) });
 export type ContractTermsOutput = z.output<typeof contractTermsOutput>;
 
+/** The stored document kinds a contract proposal reads: no other kind is ever sent (a payer letter is PHI). */
+export const CONTRACT_KINDS = ['contract', 'exhibit'] as const;
+
 export interface ContractPagesInput {
   readonly documentId: string;
   /** The stored document's SHA-256. */
   readonly documentSha256: string;
-  readonly kind: 'contract' | 'exhibit';
+  /** The stored document's kind: contract or exhibit only (CONTRACT_KINDS); anything else is refused before it is framed. */
+  readonly kind: (typeof CONTRACT_KINDS)[number];
   /** Each page's text, page 1 first, as intake stored it. */
   readonly pages: readonly string[];
   /** The specialist marked the contract ambiguous: the prompt's larger model reads it (PRD 14). */
@@ -381,6 +385,11 @@ export const contractTermsSpec: PurposeSpec<ContractPagesInput, ContractTermsOut
   prepare(input) {
     if (!UUID.test(input.documentId) || !isSha256(input.documentSha256)) {
       throw new InputRefusedError('input_invalid', 'a contract is read by its document ID and SHA-256');
+    }
+    // Contracts and exhibits carry no PHI and are sent as stored (PRD 14); a payer letter, or any other
+    // kind, is PHI or unknown and never reaches this purpose (a letter goes only through readDenialLetter).
+    if (!(CONTRACT_KINDS as readonly string[]).includes(input.kind)) {
+      throw new InputRefusedError('document_kind', 'only a contract or an exhibit is read for its terms');
     }
     if (input.pages.length === 0 || input.pages.every((text) => normalized(text) === '')) {
       throw new InputRefusedError('no_text', 'the document has no page text to read');

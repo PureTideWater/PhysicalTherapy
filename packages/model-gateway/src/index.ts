@@ -57,6 +57,7 @@ export {
 } from './postgres-store';
 export { PURPOSE_SPECS, type PurposeInputs, type PurposeOutputs, type PurposeProposals, requestFor } from './specs';
 export {
+  CONTRACT_KINDS,
   type CandidateReview,
   type CodeDefault,
   type ContractPagesInput,

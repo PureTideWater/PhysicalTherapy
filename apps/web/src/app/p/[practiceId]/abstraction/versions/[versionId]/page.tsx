@@ -72,6 +72,8 @@ export default async function AbstractionVersionPage(props: Props) {
   }
   const { practiceId, review, questions, proposals, canPropose, modelNotice } = page.data;
   const { version, documents } = review;
+  // The model reads a contract or an exhibit only; a payer letter the version names is PHI and is never sent to it.
+  const proposable = documents.filter((document) => document.kind === 'contract' || document.kind === 'exhibit');
   const path = `/p/${practiceId}/abstraction/versions/${version.id}`;
   const editable = version.status === 'draft' || version.status === 'proposed';
   // Each form carries its own request key.
@@ -97,13 +99,13 @@ export default async function AbstractionVersionPage(props: Props) {
       <VersionStateNotice review={review} />
       <ModelNoticeAlert notice={modelNotice} />
       <VersionFacts review={review} versionHref={(versionId) => `/p/${practiceId}/abstraction/versions/${versionId}`} />
-      {version.status === 'draft' && documents.length > 0 && proposals.length === 0 ? (
+      {version.status === 'draft' && proposable.length > 0 && proposals.length === 0 ? (
         <Card role="region" aria-label="Propose the terms">
           <CardHeader>
             <CardTitle>Have the model propose the terms</CardTitle>
             <CardDescription>
-              The model reads one of the version’s documents and proposes its rate records, each field with its page and quote. Code checks every field against its page; you
-              then approve each field yourself, and nothing prices until the practice signs the version off.
+              The model reads one of the version’s contracts or exhibits and proposes its rate records, each field with its page and quote. Code checks every field against its
+              page; you then approve each field yourself, and nothing prices until the practice signs the version off. A payer letter is never sent to it.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -111,7 +113,11 @@ export default async function AbstractionVersionPage(props: Props) {
               <ActionForm action={proposeTermsFormAction} submit="Propose the terms" className="flex max-w-xl flex-col gap-3">
                 {hidden()}
                 <input type="hidden" name="versionId" value={version.id} />
-                <SelectField label="Document to read" name="documentId" id="propose-document" options={documents.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
+                <SelectField label="Document to read" name="documentId" id="propose-document" options={proposable.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" name="ambiguous" className="mt-1" />
+                  <span>This contract is ambiguous: have the larger model the prompt reserves for ambiguous contracts read it.</span>
+                </label>
               </ActionForm>
             ) : (
               <HandEntryNotice what="enter the rate records below" />
