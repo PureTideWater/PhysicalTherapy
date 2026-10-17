@@ -327,7 +327,8 @@ identifiers are pinned per prompt version in its `prompt.json`; prices are in `c
 refuses a real provider until a person confirms them there. Outside production the gateway sends no practice's material
 to a real provider. The kill switch (`model.kill_switch`), the denial-letter reader (`model.read_denial_letter`, v1.5,
 off by default) and the daily budget (`model.daily_budget_cents`, 500 by default) are rows in `feature_flag`, set by a
-platform administrator through `set_feature_flag()` (`setFeatureFlag` in the gateway); each attempt is cut at 60
+platform administrator on the console's model features screen (`/console/models`, which also shows each practice's model
+calls and cost today against its budget) through `set_feature_flag()`; each attempt is cut at 60
 seconds with one retry under the same idempotency key. Before a call the gateway holds the most it can cost against the
 practice's budget under a per-practice lock (`model_budget_hold`, migration `20261031090000_model_budget_holds.sql`), so
 calls made at once cannot all pass it, and the budget codes it logs raise an alarm to the operator (ADR 0054). Verifiers
@@ -404,8 +405,9 @@ pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in forc
 Production compute (ADR 0049; `infra/`): each environment's stack runs the web app, the worker's practice jobs and its
 platform jobs as three Fargate services (`WORKER_JOBS=practice` and `platform`; unset, one worker runs both) in private
 subnets, behind an HTTPS-only load balancer with a WAF web ACL (rate limits and AWS managed rules), with CloudFront for
-`/_next/static/` only. A migration task (the worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the
-application, operator and queue logins from their secrets) runs before any service moves to a new release; pg-boss
+`/_next/static/` only (the web image built with `--build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin>` loads its assets
+from there; ADR 0055). A migration task (the worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the
+application, operator, queue and billing logins from their secrets) runs before any service moves to a new release; pg-boss
 connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
 certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
 image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
@@ -415,7 +417,8 @@ organization's administrator (a group's practice administrator, a firm's princip
 annual), its payment method (ACH or card, through Stripe Elements) and its invoices at `/settings/billing`; platform
 administrators see every organization's standing and issue audit invoices at `/console/billing`. Stripe's events arrive
 at `POST /api/billing/webhook`, verified by signature and recorded once by event ID. Billing's transactions run as the
-role `tp_billing`, which has no privilege on any table that can hold PHI. An invoice unpaid 30 days after its payment
+role `tp_billing`, which has no privilege on any table that can hold PHI, on a login of their own that alone may switch
+to it (`BILLING_DATABASE_URL`; locally `tp_billing_dev`), never the application's (ADR 0055). An invoice unpaid 30 days after its payment
 failed suspends the organization: new runs are refused with the reason (routes, jobs and the database), every screen
 stays readable, and runs start again the moment it is paid. The nightly `usage_snapshot` job counts each organization's
 practices for milestone 12. Development and the e2e suite run a local simulator of Stripe's test mode (its test bank
@@ -434,6 +437,19 @@ evidence checklist at `/console/compliance` (`packages/compliance`), whose expor
 policies are drafts in `docs/policies/` for the security official; the incident runbook is
 `docs/runbooks/incident-response.md`. Production needs `SUPPORT_EMAIL` (the stack's `SupportEmail` parameter),
 `TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets.
+
+Review fixes for milestones 10 and 11 (ADR 0055): a model call never waits on the connection its request holds (the
+gateway's store has its own small pool, every pool gives up on a connection after ten seconds, a server makes at most
+four model calls at once and a practice two, and the load balancer checks `GET /api/health`, which touches the
+database); the e-signature webhook records agreements as `tp_esign` from its own login (`ESIGN_DATABASE_URL`; locally
+`tp_esign_dev`); request bodies are counted as they stream and refused past their route's limit; support tickets are
+screened for written dates, names after a title and identifiers; an invitation to an address already in use answers
+the same way wherever the address belongs; platform administrators suspend and reinstate an organization from the
+console; a late `invoice.payment_failed` still starts the dunning clock, the dunning job reaches every new failure, and
+an organization subscribes once; mail to the support address opens a ticket (SES receiving into the stack's support
+inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DIR`; docs/runbooks/support-mail.md);
+deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
+`docs/runbooks/`.
 
 **Milestone 11 is not complete.** Its done check is "a new customer signs up, enrolls MFA, pays by test ACH and reaches
 the dashboard; Type I readiness checklist green". The first half holds on the local providers

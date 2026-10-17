@@ -181,6 +181,7 @@ export class PlatformStack extends Stack {
       ApplicationRoleArn: this.application.role.roleArn,
       OperatorRoleArn: this.operator.role.roleArn,
       QueueLoginSecretArn: this.database.queueSecret.secretArn,
+      BillingLoginSecretArn: this.database.billingSecret.secretArn,
       MigrationSecurityGroupId: this.network.migrationSecurityGroup.securityGroupId,
       WebRepositoryUri: this.images.repositories.web.repositoryUri,
       WorkerRepositoryUri: this.images.repositories.worker.repositoryUri,
