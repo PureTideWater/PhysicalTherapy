@@ -114,7 +114,7 @@ const EXPORT_STATUS_TEXT: Readonly<Partial<Record<DocumentStatus, string>>> = {
   unreadable: 'Could not be read with the template: no row was stored',
   duplicate: 'The same file as an export already uploaded: nothing read again',
   quarantined: 'Quarantined by the malware scan',
-  wrong_type: 'Not a CSV: save it as CSV and upload it again',
+  wrong_type: 'Not a CSV export: save a spreadsheet as CSV, or check this is the right file',
   failed: 'Intake failed; retry it from Uploads',
 };
 

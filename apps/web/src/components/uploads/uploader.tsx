@@ -4,6 +4,7 @@ import { Alert, AlertDescription, AlertTitle, Badge, Button, Card, CardContent, 
 import { useRouter } from 'next/navigation';
 import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react';
 
+import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
@@ -163,10 +164,14 @@ export function Uploader(props: UploaderProps) {
         found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
       }
       chosen.forEach((file, index) => {
+        // A spreadsheet chosen as a posting or EFT export: those are read as CSV only (docs/adr/0059).
+        const spreadsheet = spreadsheetExportProblem(kind.kind, file, index + 1);
         if (file.size === 0) {
           found.push(`File ${String(index + 1)} is empty.`);
         } else if (file.size > limits.maxBytes) {
           found.push(`File ${String(index + 1)} is larger than ${formatBytes(limits.maxBytes)}; split it or zip it.`);
+        } else if (spreadsheet !== null) {
+          found.push(spreadsheet);
         }
       });
       setProblems(found);
