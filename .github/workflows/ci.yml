@@ -21,6 +21,9 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      # The database logs every deliberate refusal the tests provoke; its log is printed after the job and,
+      # unquieted, buries the failing test's own output. Only the database's log level changes.
+      - run: psql postgres://postgres:test@localhost:5432/postgres -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
       - run: pnpm install --frozen-lockfile
       - run: pip install pyx12
       - run: pnpm audit --prod
