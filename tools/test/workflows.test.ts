@@ -56,6 +56,18 @@ describe('workflows', () => {
     expect(steps[scan]?.with).toMatchObject({ severity: 'HIGH,CRITICAL' });
   });
 
+  it('take Debian security updates into both runtime images and leave no package manager in them', () => {
+    for (const app of ['web', 'worker']) {
+      const dockerfile = readFileSync(path.join(repositoryRoot, 'apps', app, 'Dockerfile'), 'utf8');
+      const runtime = dockerfile.slice(dockerfile.indexOf('AS runtime'));
+      expect(runtime, app).toContain('apt-get upgrade -y');
+      for (const removed of ['/usr/local/lib/node_modules/npm', '/usr/local/bin/npm', '/usr/local/bin/npx', '/usr/local/bin/corepack']) {
+        expect(runtime, `${app}: ${removed}`).toContain(removed);
+      }
+      expect(runtime.indexOf('apt-get upgrade'), app).toBeLessThan(runtime.indexOf('/usr/local/bin/npm'));
+    }
+  });
+
   it('check production licenses against the allowlist on every pull request', () => {
     const steps = workflow('supply-chain.yml').jobs.licenses?.steps ?? [];
     expect(steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);

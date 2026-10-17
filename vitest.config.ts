@@ -37,6 +37,9 @@ export default defineConfig({
           env: { DATABASE_URL: process.env.DATABASE_URL ?? LOCAL_DATABASE_URL },
           testTimeout: 30_000,
           hookTimeout: 30_000,
+          // global.gc, so a memory bound counts what a path holds after full collections rather than
+          // the garbage V8 has yet to collect (apps/worker/src/intake/intake.large.db.test.ts).
+          execArgv: ['--expose-gc'],
         },
       },
       {
