@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { type CopyRule, copyExemptions, copyFiles, copyViolations, isScreeningFile, scanSource, sentences } from './scan';
+import { type CopyRule, copyExemptions, copyFiles, copyViolations, isScreeningFile, recoveredUnlabelled, scanSource, sentences } from './scan';
 
 /**
  * The product-copy lint (Change Order 001, CO-11): each forbidden term fails in each place copy stands (a
@@ -55,6 +55,25 @@ describe('the copy lint: forbidden terms (CO-11)', () => {
     expect(rules(TEMPLATE, 'export const html = `<section><h2>Cases</h2><p>Built by AI.</p></section>`;')).toEqual(['ai']);
   });
 
+  it('reads the words an HTML template’s tags carry: aria-label, title, alt and placeholder', () => {
+    expect(rules(TEMPLATE, 'export const html = `<section aria-label="AI findings"><p>Cases.</p></section>`;')).toEqual(['ai']);
+    expect(rules(TEMPLATE, 'export const html = `<td title="Recovered">${x}</td>`;')).toEqual(['recovered-unlabelled']);
+    expect(rules(TEMPLATE, 'export const html = `<img alt="ProofPack seal" src="x">`;')).toEqual(['proof-pack']);
+    expect(rules(TEMPLATE, 'export const html = `<input placeholder="Ask the AI">`;')).toEqual(['ai']);
+    // Codes in a tag are not read: its class, its id, its data attributes.
+    expect(rules(TEMPLATE, 'export const html = `<td class="recovered intelligence" data-stage="recovered" id="AI">${x}</td>`;')).toEqual([]);
+  });
+
+  it('reads the value a person reads on an input (submit, button, reset) and a textarea, and a component’s prop that holds words', () => {
+    expect(rules(PAGE, 'export const A = () => <input type="submit" value="Download the ProofPack" />;')).toEqual(['proof-pack']);
+    expect(rules(PAGE, 'export const A = () => <input type="button" value={\'Ask the AI\'} />;')).toEqual(['ai']);
+    expect(rules(PAGE, 'export const A = () => <textarea defaultValue="Our AI drafted this" />;')).toEqual(['ai']);
+    expect(rules(PAGE, 'export const A = () => <Field name="Contract intelligence" />;')).toEqual(['intelligence']);
+    expect(rules(PAGE, 'export const A = () => <Panel as="AI review" />;')).toEqual(['ai']);
+    // A code stays a code: a hidden input's value, an element's name, a component's variant or size.
+    expect(rules(PAGE, 'export const A = () => <><input type="hidden" name="stage" value="Recovered AI" /><select name="AI"><option value="Recovered">x</option></select><Badge variant="destructive" size="sm">Open</Badge><Field name="recovered" /></>;')).toEqual([]);
+  });
+
   it('leaves words that only contain the letters alone', () => {
     expect(rules(PAGE, "const a = 'MAINTAIN the PAID amounts'; const b = 'API keys'; const c = 'Said in plain words'; const d = 'An independent review'; const e = 'Proof of posting';")).toEqual([]);
   });
@@ -72,15 +91,30 @@ describe('the copy lint: recovered is labelled posted or deposited (CO-11)', () 
     expect(rules(text.includes('<') && !text.includes('`') ? PAGE : TEMPLATE, text)).toEqual(['recovered-unlabelled']);
   });
 
-  it('passes recovered beside posted or deposited in the same sentence', () => {
+  it('passes recovered labelled by its cash: in parentheses after it, in its clause, or under a Posted: or Deposited: label', () => {
     const text = [
       "const a = 'Recovered (posted)';",
       "const b = 'Recovered (posted or deposited)';",
       "const c = 'Recovered principal, net (deposited)';",
       "const d = 'Payer approved and recovered (posted or deposited) amounts come from the ledger.';",
       "const e = 'Cash deposited against the remittance is recovered.';",
+      "const f = 'Totals by stage; recovered is the cash posted or deposited at the practice’s proof level.';",
+      "const g = 'Deposited: recovered once the deposit is matched in your bank export';",
+      'const h = `Recovered (posted or deposited), net of recoupments and reversals: ${usd} on ${lines}.`;',
     ].join('\n');
     expect(rules(TEMPLATE, text)).toEqual([]);
+  });
+
+  it('fails recovered whose posted or deposited is in another clause, or denied', () => {
+    // The monthly digest's sentence as it stood: "posted" names the count, in the clause before the colon.
+    expect(rules(TEMPLATE, 'export const s = `Recoveries posted: ${n}, recovered ${usd}.`;')).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const s = 'Recovered $5 on 3 lines; 2 not yet posted';")).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const s = 'Recovered $5 on 3 lines, 2 not yet posted';")).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const s = 'Recovered before it posted';")).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const s = 'Recovered (pending): nothing deposited';")).toEqual(['recovered-unlabelled']);
+    expect(recoveredUnlabelled('Recovered principal, net ({…})')).toBe(true);
+    expect(recoveredUnlabelled('Posted: recovered once the payment is posted')).toBe(false);
+    expect(recoveredUnlabelled('Approved: recovered once the payer pays')).toBe(true);
   });
 
   it('reads the label as one across inline elements, and a block element ends it', () => {
@@ -92,6 +126,23 @@ describe('the copy lint: recovered is labelled posted or deposited (CO-11)', () 
     expect(rules(PAGE, "export const note = 'Recovered moves back with it. The posting is offset.';")).toEqual(['recovered-unlabelled']);
     expect(rules(PAGE, "export const note = 'Recovered moves back with it. Nothing posted stays.';")).toEqual(['recovered-unlabelled']);
     expect(sentences('Recovered is cash. It posted.\nNext line')).toEqual(['Recovered is cash.', 'It posted.', 'Next line']);
+  });
+
+  it('reads an HTML template’s line breaks as spaces, as a browser renders them', () => {
+    expect(rules(TEMPLATE, 'export const html = `<div class="label">Recovered\n(posted)</div>`;')).toEqual([]);
+    expect(rules(TEMPLATE, 'export const html = `<div>Recovered\nis the ledger’s.</div>`;')).toEqual(['recovered-unlabelled']);
+  });
+
+  it('reads a choice of words in place, one branch at a time, whatever its case (decision D10: a code is a lone token, not a word shown)', () => {
+    expect(rules(PAGE, "export const A = (p) => <Badge>{p.done ? 'recovered' : 'open'}</Badge>;")).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const A = (p) => <dt>{p.done ? 'Recovered' : 'Open'} (posted)</dt>;")).toEqual([]);
+    expect(rules(PAGE, "export const A = (p) => <p>{p.label ?? 'Recovered'} today</p>;")).toEqual(['recovered-unlabelled']);
+    expect(rules(PAGE, "export const A = (p) => <p>{p.ai && 'AI review'}</p>;")).toEqual(['ai']);
+    expect(rules(PAGE, "export const A = (p) => <p>Kill switch {p.on ? 'on' : 'off'}; {p.done ? 'in force' : 'expired'}</p>;")).toEqual([]);
+    expect(rules(TEMPLATE, "export const s = `Lines ${done ? 'recovered' : 'open'} this month.`;")).toEqual(['recovered-unlabelled']);
+    // A comparison's operand and a code built from a choice are codes.
+    expect(rules(PAGE, "export const A = (p) => <p>{p.stage === 'recovered' ? 'Done' : 'Open'}</p>;")).toEqual([]);
+    expect(rules(TEMPLATE, "export const id = `chip-${done ? 'recovered' : 'open'}`;")).toEqual([]);
   });
 
   it('reads a JSX text’s line breaks as spaces, as React renders them', () => {
@@ -159,6 +210,12 @@ describe('the copy lint: the brand’s words come from the tokens', () => {
     expect(rules(PAGE, "const a = 'RECONCILED TO CASH';")).toEqual(['brand-words-literal']);
   });
 
+  it('matches a phrase whole, and a seal line only in its capitals or as the whole string: plain words that share them pass', () => {
+    expect(rules(PAGE, "const a = 'Each figure is reconciled to cash by the ledger.';")).toEqual([]);
+    expect(rules(PAGE, "const a = 'Reconciled to cash';")).toEqual(['brand-words-literal']);
+    expect(rules(PAGE, "const a = 'Payment for therapy groups, contract-verified payments for therapy groups everywhere';")).toEqual([]);
+  });
+
   it('passes the words read from the tokens', () => {
     expect(rules(PAGE, "import { badgeText, descriptor } from '@paidwhole/brand/tokens';\nexport const A = () => <p>{descriptor}. {badgeText}</p>;")).toEqual([]);
   });
@@ -188,42 +245,70 @@ describe('the copy lint: what it reads', () => {
     writeFileSync(path.join(fixture, file), text);
   };
 
-  it('reads the web app’s source, the report templates and the stage labels, never docs, tests, test support or other code', () => {
+  it('reads the web app’s source, the report templates, the email, and the packages whose words the screens show; never docs, tests, test support or other code', () => {
     const forbidden = "export const words = 'The ProofPack, by AI';\n";
-    write('apps/web/src/app/page.tsx', forbidden);
-    write('apps/worker/src/report/html.ts', forbidden);
-    write('apps/worker/src/reconcile/statement-html.ts', forbidden);
+    const read = [
+      'apps/web/src/app/page.tsx',
+      'apps/worker/src/billing/dunning.ts',
+      'apps/worker/src/digest/view.ts',
+      'apps/worker/src/mail/template.ts',
+      'apps/worker/src/packets/export.ts',
+      'apps/worker/src/platform/support-notices.ts',
+      'apps/worker/src/reconcile/stages.ts',
+      'apps/worker/src/reconcile/statement-html.ts',
+      'apps/worker/src/report/html.ts',
+      'apps/worker/src/support/support-mail.ts',
+      'packages/contracts/src/calendar.ts',
+      'packages/packets/src/draft.ts',
+      'packages/triage/src/headline.ts',
+      'packages/triage/src/stages.ts',
+      'packages/ui/src/states/empty-state.tsx',
+    ];
+    for (const file of read) {
+      write(file, forbidden);
+    }
     write('docs/product/PRD.md', 'The ProofPack specification. AI. Recovered.\n');
     write('docs/notes.ts', forbidden);
     write('apps/web/src/app/page.test.tsx', forbidden);
     write('apps/web/src/lib/routes/test-support/world.ts', forbidden);
+    write('packages/packets/src/test-support.ts', forbidden);
     write('apps/web/e2e/journey.spec.ts', forbidden);
     write('apps/web/src/types.d.ts', forbidden);
     write('apps/worker/src/reconcile/ledger.ts', forbidden);
-    write('packages/triage/src/stages.ts', forbidden);
-    write('packages/triage/src/headline.ts', forbidden);
-    expect(copyFiles(fixture)).toEqual(['apps/web/src/app/page.tsx', 'apps/worker/src/reconcile/statement-html.ts', 'apps/worker/src/report/html.ts', 'packages/triage/src/headline.ts']);
-    expect(copyViolations(fixture).map((finding) => `${finding.file} ${finding.rule}`)).toEqual([
-      'apps/web/src/app/page.tsx proof-pack',
-      'apps/web/src/app/page.tsx ai',
-      'apps/worker/src/reconcile/statement-html.ts proof-pack',
-      'apps/worker/src/reconcile/statement-html.ts ai',
-      'apps/worker/src/report/html.ts proof-pack',
-      'apps/worker/src/report/html.ts ai',
-      'packages/triage/src/headline.ts proof-pack',
-      'packages/triage/src/headline.ts ai',
-    ]);
+    write('packages/pricing/src/engine.ts', forbidden);
+    write('packages/brand/src/tokens.ts', forbidden);
+    expect(copyFiles(fixture)).toEqual(read);
+    expect(copyViolations(fixture).map((finding) => `${finding.file} ${finding.rule}`)).toEqual(read.flatMap((file) => [`${file} proof-pack`, `${file} ai`]));
   });
 
-  it('reads the real tree: the web app, every report template, the ROI statement and the packet', () => {
+  it('reads the real tree: the web app, every report template, the ROI statement, the packet, the email and the words the screens show from packages', () => {
     const files = copyFiles(ROOT);
-    expect(files).toContain('apps/web/src/app/layout.tsx');
-    expect(files).toContain('apps/web/src/components/reconciliation/display.tsx');
-    expect(files).toContain('apps/worker/src/report/html.ts');
-    expect(files).toContain('apps/worker/src/report/documents.ts');
-    expect(files).toContain('apps/worker/src/reconcile/statement-html.ts');
-    expect(files).toContain('apps/worker/src/packets/html.ts');
-    expect(files).toContain('packages/triage/src/headline.ts');
+    for (const file of [
+      'apps/web/src/app/layout.tsx',
+      'apps/web/src/components/reconciliation/display.tsx',
+      'apps/worker/src/report/html.ts',
+      'apps/worker/src/report/documents.ts',
+      'apps/worker/src/reconcile/statement-html.ts',
+      'apps/worker/src/reconcile/stages.ts',
+      'apps/worker/src/packets/html.ts',
+      'apps/worker/src/packets/services.ts',
+      'apps/worker/src/digest/view.ts',
+      'apps/worker/src/digest/job.ts',
+      'apps/worker/src/mail/template.ts',
+      'apps/worker/src/billing/dunning.ts',
+      'apps/worker/src/platform/support-notices.ts',
+      'apps/worker/src/support/support-mail.ts',
+      'packages/ui/src/states/empty-state.tsx',
+      'packages/ui/src/states/loading-state.tsx',
+      'packages/ui/src/states/permission-state.tsx',
+      'packages/triage/src/headline.ts',
+      'packages/triage/src/cases.ts',
+      'packages/triage/src/behavior.ts',
+      'packages/packets/src/draft.ts',
+      'packages/contracts/src/calendar.ts',
+    ]) {
+      expect(files, file).toContain(file);
+    }
     expect(files.some((file) => /\.(test|spec)\.tsx?$/.test(file) || file.includes('/test-support/'))).toBe(false);
   }, 60_000);
 

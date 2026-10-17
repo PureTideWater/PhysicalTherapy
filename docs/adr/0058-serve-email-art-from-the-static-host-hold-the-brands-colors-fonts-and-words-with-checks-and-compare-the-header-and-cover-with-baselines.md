@@ -98,17 +98,33 @@ user-facing "recovered" now says posted or deposited, either by the practice's p
 a report that stored a bare "Recovered" shows today's stage label from code.
 
 **The copy lint, and codes are not copy (D10).** `tools/brand-copy` (in `pnpm test`; `pnpm lint:copy` prints its
-findings) parses `apps/web/src`, `apps/worker/src/report`, the ROI statement and packet templates and the stage labels
-(`packages/triage/src/headline.ts`) with the TypeScript compiler and reads string literals, template literals and JSX
-text, a label split across inline elements as one, each sentence on its own. It fails on "ProofPack" or "proof pack" in
-any case, "AI" as a word, "intelligence", "independent verification platform", "recovered" in a sentence without posted
-or deposited, the brand's words typed out instead of imported, and, in any path with a `screening` directory, owed,
-underpaid, recovered and the tagline. Codes are exempt and never renamed (D10): a one-token lowercase string such as the
-stage value `recovered`, SQL, module paths, types, object keys, code-valued attributes and comments are not read, so
-`line_status.stage`, CSV column codes and API codes keep their values. An exception is a comment
-`brand-copy-exempt: <reason>` on the string's line or the line above; one without a reason, or one that no longer
-covers a finding, is itself a finding, and the tree passes with none (a test pins that). Tests, test support and `e2e`
-are not read.
+findings) parses, with the TypeScript compiler, the words the product shows wherever they are written: `apps/web/src`;
+the report templates (`apps/worker/src/report`, the ROI statement, the packet's template, narrative and refusals in
+`apps/worker/src/packets` and `packages/packets/src`); the email (the digest's sentences, which the digest page shows
+too, the mail template, dunning, support notices and support mail); the notes a line's stage keeps when the ledger
+moves it back (`apps/worker/src/reconcile/stages.ts`); and the packages whose words the screens show (`packages/ui/src`'s
+states, all of `packages/triage/src`, the contract calendar). It reads string literals, template literals and JSX
+text, a label split across inline elements as one, a choice of words shown in place (`{done ? 'Recovered' : 'Open'}`,
+`??`, `||`, `&&`, in JSX or a template's span) one branch at a time in its context, the words an HTML template's tags
+carry (aria-label, title, alt, placeholder), and each sentence on its own; in an HTML template a line break is only
+whitespace. It fails on "ProofPack" or "proof pack" in any case, "AI" as a word, "intelligence", "independent
+verification platform", the brand's words typed out instead of imported (a phrase matched whole; a seal line only in its
+capitals or as the whole string, so "reconciled to cash" in plain wording passes), and, in any path with a `screening`
+directory, owed, underpaid, recovered and the tagline. "Recovered" must be labelled by its cash: posted or deposited in
+parentheses right after it ("Recovered (posted)", "Recovered principal, net (deposited)"), or posted or deposited said
+and not denied in its own clause (cut at a semicolon or a colon: "recovered is the cash posted or deposited" passes,
+"Recoveries posted: 3, recovered $1,200.00" and "recovered $5; 2 not yet posted" fail), or a "Posted:" or "Deposited:"
+label heading the clause. Codes are exempt and never renamed (D10): a one-token lowercase string standing alone such as
+the stage value `recovered` or a comparison's operand, SQL, module paths, types, object keys, code-valued attributes
+(className, id, href, data-* and the like; on a component, variant, size, name and the like only when the value is one
+lowercase token; an input's value only when a person does not read it) and comments are not read, so
+`line_status.stage`, CSV column codes and API codes keep their values. A word shown as a JSX child or in a template's text
+is copy whatever its case. An exception is a comment `brand-copy-exempt: <reason>` on the string's line or the line
+above; one without a reason, or one that no longer covers a finding, is itself a finding, and the tree passes with none
+(a test pins that). Tests, test support and `e2e` are not read. The digest's recovered sentence now reads "Recovered
+(posted or deposited), net of recoupments and reversals: $X on N lines" (its code key `recoveries_posted` unchanged), the
+audit report's page says recovered is cash posted or deposited at the practice's proof level as its PDF does, and the
+ledger's move-back notes name the cash.
 
 **Visual baselines, and CI on the same Chromium.** The brand journey (`apps/web/e2e/brand.spec.ts`) compares four
 regions, and three bands inside them (below), with `toHaveScreenshot` against baselines committed in `apps/web/e2e/brand.spec.ts-snapshots/`: the app header at
