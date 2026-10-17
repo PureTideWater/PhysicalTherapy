@@ -22,8 +22,10 @@ import { startLocalWorker } from './worker';
  * right and the single brass underline under the active rail item; the dashboard's tiles, a table's status
  * tints and the sign-in page are on brand; and a printed statement's cover carries the Verified seal only
  * when the ledger says its recovered total reconciles to cash. Screenshots of each go to brand-screenshots/
- * (gitignored; BRAND_SCREENSHOTS_DIR moves them) for a person to look at. In a practice of its own, with
- * SYNTHETIC remittances (CAS-08, CAS-04) priced under a signed-off schedule. Synthetic data only.
+ * (gitignored; BRAND_SCREENSHOTS_DIR moves them) for a person to look at, and the header at 1280 and 390 px
+ * and the cover with and without the seal are also compared with committed baselines (CO-01; see VISUAL).
+ * In a practice of its own, with SYNTHETIC remittances (CAS-08, CAS-04) priced under a signed-off schedule.
+ * Synthetic data only.
  */
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
@@ -35,6 +37,64 @@ const FONT_SERVICES = /fonts\.googleapis\.com|fonts\.gstatic\.com/;
 const BRAND_PATH = '/brand/';
 /** Brass, rgb() as the browser computes it: the active rail item's underline. */
 const BRASS = 'rgb(201, 154, 59)';
+/** Paper (the cover's ground) and Brass (the seal's keystone) as a screenshot's pixels hold them. */
+const PAPER_RGB: Rgb = [246, 244, 238];
+const BRASS_RGB: Rgb = [201, 154, 59];
+
+/**
+ * The visual baselines (CO-01: "visual tests of the header at 1280 and 390 px and the report cover with and without
+ * the seal"; docs/adr/0058), committed beside this file in brand.spec.ts-snapshots/. They are Playwright's own
+ * Chromium on Linux, the build ci.yml installs before the e2e step, so CI renders with the browser that made them.
+ * Animations are off, the caret is hidden, pixels are CSS pixels, and any <time> is masked, although neither region
+ * shows the clock: the header's words are the persona's address and the journey's practice, and the cover prints the
+ * statement's fixed generatedAt. A pixel counts as changed past Playwright's default color threshold (0.2), and up
+ * to 1% of them may change: that absorbs antialiasing at glyph edges, the one thing a machine's font configuration
+ * can move with the same browser and the same self-hosted faces, while a moved, missing or recolored element (the
+ * lockup, the brass underline, the switcher, a line of the cover) changes more. The seal's absence is not left to that
+ * tolerance: the cover's foot, where the seal prints, must hold Paper and nothing else (pixelsUnlike).
+ */
+const VISUAL = { animations: 'disabled', caret: 'hide', scale: 'css', maxDiffPixelRatio: 0.01 } as const;
+
+type Rgb = readonly [number, number, number];
+interface Box {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * How many pixels of a PNG inside a box are not the given color (any channel more than 8 away), or -1 when the box
+ * does not fit the image; decoded by the browser itself on a blank page, so it reads exactly what a baseline file or a
+ * screenshot holds.
+ */
+async function pixelsUnlike(page: Page, png: Buffer, box: Box, rgb: Rgb): Promise<number> {
+  return page.evaluate(
+    async ({ data, area, color }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${data}`;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext('2d');
+      if (context === null || area.x + area.width > image.naturalWidth || area.y + area.height > image.naturalHeight) {
+        return -1;
+      }
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(area.x, area.y, area.width, area.height).data;
+      let unlike = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        const [red, green, blue] = [pixels[index] ?? 0, pixels[index + 1] ?? 0, pixels[index + 2] ?? 0];
+        if (Math.abs(red - color[0]) > 8 || Math.abs(green - color[1]) > 8 || Math.abs(blue - color[2]) > 8) {
+          unlike += 1;
+        }
+      }
+      return unlike;
+    },
+    { data: png.toString('base64'), area: box, color: rgb },
+  );
+}
 
 function shot(name: string): string {
   mkdirSync(SHOTS, { recursive: true });
@@ -185,7 +245,10 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expect(page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Uploads', exact: true })).not.toHaveCSS('text-decoration-color', BRASS);
     await expect(header.locator('[data-slot="lockup"] span').first()).toHaveCSS('font-family', /display/i);
     await page.waitForLoadState('networkidle');
+    // The pointer rests away from the header, so no hover state is in the picture.
+    await page.mouse.move(1279, 899);
     await header.screenshot({ path: shot('header-1280.png') });
+    await expect(header).toHaveScreenshot('header-1280.png', { ...VISUAL, mask: [header.locator('time')] });
   });
 
   await test.step('the dashboard tiles: label in Slate, the figure in Plex Mono, recovered named with its proof level', async () => {
@@ -265,8 +328,9 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expect(header.locator('[data-slot="lockup"]')).toBeVisible();
     await expect(header.getByText('Menu')).toBeVisible();
     await page.waitForLoadState('networkidle');
-    await page.mouse.move(0, 0);
+    await page.mouse.move(389, 843);
     await header.screenshot({ path: shot('header-390.png') });
+    await expect(header).toHaveScreenshot('header-390.png', { ...VISUAL, mask: [header.locator('time')] });
     // The header itself fits the phone's width: nothing in it overflows or scrolls sideways.
     expect(await header.evaluate((element) => [element.scrollWidth, element.clientWidth, Math.round(element.getBoundingClientRect().width), window.innerWidth])).toEqual([390, 390, 390, 390]);
     // And so does the whole page: a wide table scrolls inside its own card, never the page.
@@ -317,8 +381,17 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
         );
         const section = printed.locator('section.cover');
         await printed.evaluate(() => document.fonts.ready);
-        await section.screenshot({ path: shot(name) });
-        return { seal: await section.locator('[data-verified="seal"]').count(), text: await section.innerText() };
+        const picture = await section.screenshot({ path: shot(name) });
+        await expect(section).toHaveScreenshot(name, { ...VISUAL, mask: [section.locator('time')] });
+        // The cover's foot, where the seal prints (bottom right; it keeps its height with no seal in it), as a box
+        // inside the cover's picture.
+        const foot = await section.evaluate((element): Box | null => {
+          const outer = element.getBoundingClientRect();
+          const inner = element.querySelector('.cover-foot')?.getBoundingClientRect();
+          return inner === undefined ? null : { x: Math.round(inner.left - outer.left), y: Math.round(inner.top - outer.top), width: Math.round(inner.width), height: Math.round(inner.height) };
+        });
+        expect(foot, 'the cover has its foot').not.toBeNull();
+        return { seal: await section.locator('[data-verified="seal"]').count(), text: await section.innerText(), picture, foot: foot as Box };
       } finally {
         await printed.close();
       }
@@ -333,5 +406,22 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const withoutSeal = await cover(refused, 'report-cover-without-seal.png');
     expect(withoutSeal.seal).toBe(0);
     expect(withoutSeal.text).not.toContain('Verified:');
+    // In pixels: where the seal is earned, its ink, its brass keystone and its definition line draw thousands of pixels
+    // in the foot, so that box is where it prints. They are about half of one percent of the whole cover, under the
+    // comparison's tolerance, so the seal's absence is checked here and not left to it: where the seal is not earned
+    // the foot is Paper and nothing else, in this run's picture and in the committed baseline, so no tolerance can let
+    // a seal through and no baseline can be updated to hold one.
+    const scratch = await browser.newPage();
+    try {
+      const area = (box: Box) => box.width * box.height;
+      expect(await pixelsUnlike(scratch, withSeal.picture, withSeal.foot, PAPER_RGB)).toBeGreaterThan(2000);
+      expect(area(withSeal.foot) - (await pixelsUnlike(scratch, withSeal.picture, withSeal.foot, BRASS_RGB))).toBeGreaterThan(0);
+      expect(area(withoutSeal.foot)).toBeGreaterThan(0);
+      expect(await pixelsUnlike(scratch, withoutSeal.picture, withoutSeal.foot, PAPER_RGB)).toBe(0);
+      const baseline = readFileSync(test.info().snapshotPath('report-cover-without-seal.png', { kind: 'screenshot' }));
+      expect(await pixelsUnlike(scratch, baseline, withoutSeal.foot, PAPER_RGB)).toBe(0);
+    } finally {
+      await scratch.close();
+    }
   });
 });

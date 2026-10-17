@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -96,6 +96,21 @@ describe('workflows', () => {
     expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
     // The release-immutability gate still runs, unchanged, on every pull request.
     expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
+  });
+
+  it('install Playwright’s own Chromium, with its system libraries, right before the e2e suite, so the brand baselines compare under the build that made them', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
+    expect(install).toBe(stepIndex(steps, (step) => step.run === 'pnpm test:e2e') - 1);
+    expect(install).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+    // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
+    expect(config).toContain("...(bundledChromium ? {} : { channel: 'chrome' })");
+    // The baselines the brand journey compares are committed for that browser on Linux.
+    for (const name of ['header-1280', 'header-390', 'report-cover-with-seal', 'report-cover-without-seal']) {
+      expect(existsSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts-snapshots', `${name}-chromium-linux.png`)), name).toBe(true);
+    }
   });
 
   it('run the content checker on each outgoing release before publishing it', () => {

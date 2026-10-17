@@ -20,8 +20,11 @@ import {
 import { developmentMasterKey } from './src/lib/server/config';
 
 /**
- * Playwright's own Chromium is used where it is installed (PLAYWRIGHT_BROWSERS_PATH). Where it is
- * not, such as a hosted CI runner, the system Google Chrome is used instead of downloading one.
+ * Playwright's own Chromium is used where it is installed (PLAYWRIGHT_BROWSERS_PATH, or Playwright's
+ * cache). CI installs it before the e2e step (ci.yml: playwright install --with-deps chromium), so the
+ * brand journey's pixel baselines, made with this build, are compared under the same one (docs/adr/0058).
+ * Where it is not installed, the system Google Chrome is used instead of downloading one; the other
+ * journeys run there as they are, and the pixel comparisons may differ.
  */
 const bundledChromium = existsSync(chromium.executablePath());
 
