@@ -43,7 +43,10 @@ function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: stri
           <CardHeader>
             <div className="flex flex-wrap items-center gap-2">
               <FormatUnconfirmedBadge />
-              <CardTitle>{source.name}</CardTitle>
+              {/* Under the section's own h2, so a level below it: CardTitle's type, as an h3. */}
+              <h3 data-slot="card-title" className="text-lg font-bold leading-snug tracking-display">
+                {source.name}
+              </h3>
             </div>
             <CardDescription>{unconfirmedFormatExplanation(source.name)}</CardDescription>
           </CardHeader>
