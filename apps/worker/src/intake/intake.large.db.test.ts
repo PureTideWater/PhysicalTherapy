@@ -24,15 +24,17 @@ import { type StreamedEntry, streamZip } from './test-support/zip-writer';
  * SYNTHETIC 835 entries of about a mebibyte each, generated as a stream and sealed into the local store
  * as the upload receiver leaves it. The intake handler scans, hashes, inspects and expands it against
  * PostgreSQL as the application role: every entry becomes its own source_document, sniffed as an 835,
- * and gets its own parse_835 job, recorded here. Memory (heap plus buffers) never grows by more than a
- * small bound, whatever the zip's size, and no piece handed to the store is larger than one sealed
- * chunk (docs/adr/0026 has the arithmetic for 2 GiB).
+ * and gets its own parse_835 job, recorded here. What the path holds (heap plus buffers, after full
+ * collections) never grows by more than a small bound, whatever the zip's size, and no piece handed to
+ * the store is larger than one sealed chunk (docs/adr/0026 has the arithmetic for 2 GiB).
  */
 
 const MIB = 1024 * 1024;
 const ZIP_MIB = Number.parseInt(process.env.TP_LARGE_ZIP_MB ?? '256', 10);
 /** What the path may hold at once, whatever the zip's size: far below the zip. */
 const MEMORY_BOUND = 96 * MIB;
+/** Between one memory sample's end and the next one's start. */
+const SAMPLE_MS = 250;
 
 /** Transaction sets per entry, so an entry is about a mebibyte. */
 const SET_BYTES = Buffer.byteLength(syntheticInterchange([SYNTHETIC_BODY, SYNTHETIC_BODY])) - Buffer.byteLength(syntheticInterchange([SYNTHETIC_BODY]));
@@ -92,7 +94,19 @@ class Watched implements SealedBytes {
   }
 }
 
-function used(): number {
+/**
+ * What the process holds now, heap plus buffers, after two full collections. Garbage V8 has yet to
+ * collect is not held, and how much of it lies about between collections is V8's schedule, not the
+ * path's: on Node 24 it put a path that holds about 4 MiB at 112 MiB, over the bound. The second
+ * collection waits for the first one's buffers to be swept, which happens off the main thread.
+ */
+function held(): number {
+  const collect = globalThis.gc;
+  if (collect === undefined) {
+    throw new Error('this test measures memory after full collections: the db project runs with --expose-gc (vitest.config.ts)');
+  }
+  collect();
+  collect();
   const memory = process.memoryUsage();
   return memory.heapUsed + memory.arrayBuffers;
 }
@@ -117,11 +131,13 @@ describe('a large zip of 835s', () => {
     const bytes = new Watched(new LocalSealedBytes(root));
     const documents = new DocumentStore(bytes);
     const id = randomUUID();
-    const baseline = used();
+    const baseline = held();
     let peak = 0;
-    const sampler = setInterval(() => {
-      peak = Math.max(peak, used() - baseline);
-    }, 10);
+    // Each sample is timed from the end of the last, so the collections never crowd out the work.
+    let sampler = setTimeout(function sample() {
+      peak = Math.max(peak, held() - baseline);
+      sampler = setTimeout(sample, SAMPLE_MS);
+    }, SAMPLE_MS);
     const queued: { type: JobType; payload: unknown }[] = [];
     try {
       // The browser's PUT, as the local upload receiver seals it under the document's key.
@@ -142,14 +158,15 @@ describe('a large zip of 835s', () => {
         transaction: (work) => withJobScope(app, { jobId, practiceId: world.practiceId }, work),
         enqueue: <T extends JobType>(type: T, payload: JobPayload<T>) => {
           queued.push({ type, payload });
-          peak = Math.max(peak, used() - baseline);
           return Promise.resolve(randomUUID());
         },
         lastAttempt: false,
       };
       await intakeHandler({ documents, landing: new LocalLanding(documents), scan: new LocalScanService(), keys })({ practice_id: world.practiceId, document_id: id }, context);
+      // And once with every entry queued.
+      peak = Math.max(peak, held() - baseline);
     } finally {
-      clearInterval(sampler);
+      clearTimeout(sampler);
     }
     const counts = await asOwner(owner, [world.practiceId], async () => ({
       zip: (await owner.query<{ status: string }>('SELECT status FROM source_document WHERE id = $1', [id])).rows[0]?.status,

@@ -45,7 +45,8 @@ waits up to `SCAN_WAIT_SECONDS` (600) for it. The database holds the malware gat
 cleared, only a clean document is scanned or queued for parse, and a zip entry is clean only with its zip. A zip whose
 entries would expand past 100 times its size is refused whole, and an entry its first bytes hold is never written.
 `TP_LARGE_ZIP_MB` sizes the large-zip intake test (`apps/worker/src/intake/intake.large.db.test.ts`, 256 MiB by default;
-the weekly `large-zip` workflow runs 2048).
+the weekly `large-zip` workflow runs 2048). Its memory bound counts what the path holds after full collections (the db
+project's workers run with `--expose-gc`), never the garbage V8 has yet to collect, whose amount depends on the Node version.
 
 Parse and load (ADRs 0027 and 0031): the worker's `parse_835` job (`apps/worker/src/parse`) parses each clean 835 twice
 as a stream, once for the parser's final report and once to load every loadable transaction set, with the report, in
