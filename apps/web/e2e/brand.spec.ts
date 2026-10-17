@@ -161,8 +161,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.goto(`/p/${practiceId}/claims`);
     const table = page.getByRole('table', { name: 'Claims and lines' });
     // The three numbers side by side in the brand's order: expected, paid (what the payer allowed), short.
-    const headers = (await table.locator('thead th').allTextContents()).map((text) => text.replace(/\s+/g, ' ').trim());
-    expect(headers).toEqual([
+    // toHaveText waits for the streamed table and reads every header in order.
+    await expect(table.locator('thead th')).toHaveText([
       'Patient reference',
       'Claim control numbers',
       'Service date',
