@@ -1,4 +1,9 @@
 @import 'tailwindcss';
+/* The PaidWhole tokens (the only brand values), the brand's utilities, and its base styles in the base
+   layer so a component's utilities still win; then shadcn/ui's variables, mapped to the tokens. */
+@import '@paidwhole/brand/tokens.css';
+@import '@paidwhole/brand/tailwind-theme.css';
+@import './brand.css' layer(base);
 @import '@tp/ui/styles.css';
 
 @source '../';

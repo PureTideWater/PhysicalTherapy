@@ -10,7 +10,8 @@ export const badgeVariants = cva(
       variant: {
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        destructive: 'border-transparent bg-destructive text-white',
+        // Status is text on a quiet tint, never white text on a saturated fill (docs/brand/BRAND.md, section 4).
+        destructive: 'border-transparent bg-status-short-bg text-status-short',
         outline: 'text-foreground',
       },
     },

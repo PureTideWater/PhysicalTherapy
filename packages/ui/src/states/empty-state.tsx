@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { cn } from '../lib/cn';
+import { StateMark } from './state-mark';
 
 export type EmptyStateProps = {
   title: string;
@@ -11,6 +12,7 @@ export type EmptyStateProps = {
   className?: string;
 };
 
+/** An empty screen or section: the mark alone, still (docs/brand/BRAND.md, section 7), then what to do next. */
 export function EmptyState({ title, nextStep, action, className }: EmptyStateProps) {
   return (
     <section
@@ -18,6 +20,7 @@ export function EmptyState({ title, nextStep, action, className }: EmptyStatePro
       aria-label={title}
       className={cn('flex flex-col items-start gap-3 rounded-xl border border-dashed p-8', className)}
     >
+      <StateMark />
       <h2 className="text-base font-semibold">{title}</h2>
       <p className="max-w-prose text-sm text-muted-foreground">{nextStep}</p>
       {action}
