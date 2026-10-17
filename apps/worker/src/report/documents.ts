@@ -4,7 +4,7 @@ import { UNPRICED_REASONS } from '@tp/pricing';
 import { STAGE_LABELS } from '@tp/triage';
 import { z } from 'zod';
 
-import { brandedDocument, figureColumns } from './brand';
+import { type FigureColumns, brandedDocument, figureColumns } from './brand';
 import { type CsvCell, csvDocument } from './csv';
 import { escapeHtml, escapeWithFigures } from './escape';
 import { UNPRICED_REMEDIES } from './remedies';
@@ -221,14 +221,14 @@ interface Cell {
   readonly amount?: boolean;
 }
 
-/** A table; amount cells are classed, and `codeColumns` (1-based) names its columns of codes and references, all in the mono face. */
-function table(caption: string, headers: readonly Cell[], rows: readonly (readonly Cell[])[], empty: string, codeColumns: readonly number[] = []): string {
+/** A table; amount cells are classed, and `figures` names its columns (1-based) of codes, identifiers and dates, all in the mono face. */
+function table(caption: string, headers: readonly Cell[], rows: readonly (readonly Cell[])[], empty: string, figures: Pick<FigureColumns, 'code' | 'id' | 'date'> = {}): string {
   if (rows.length === 0) {
     return `<p class="empty">${escapeHtml(empty)}</p>`;
   }
   const head = headers.map((header) => `<th scope="col"${header.amount === true ? ' class="amount"' : ''}>${escapeHtml(header.value)}</th>`).join('');
   const body = rows.map((row) => `<tr>${row.map((cell) => `<td${cell.amount === true ? ' class="amount"' : ''}>${escapeHtml(cell.value)}</td>`).join('')}</tr>`).join('');
-  return `<table${figureColumns({ code: codeColumns })}><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  return `<table${figureColumns(figures)}><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /** Who generated a document, and when (for its PDF's header line). */
@@ -297,7 +297,7 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     [{ value: 'Reason' }, { value: 'Meaning' }, { value: 'Lines', amount: true }, { value: 'Remedy' }],
     content.reasons.map((entry) => [{ value: entry.reason }, { value: UNPRICED_REMEDIES[entry.reason].meaning }, { value: String(entry.lines), amount: true }, { value: UNPRICED_REMEDIES[entry.reason].remedy }]),
     'No reason applies.',
-    [1],
+    { code: [1] },
   )}
   <h2>Dollars waiting on mappings: ${escapeWithFigures(usd(content.waiting.charge_cents))} billed</h2>
   <p>${escapeWithFigures(`${plural(content.waiting.lines, 'line')} in ${plural(content.waiting.claims, 'claim')} had no mapping on their service date, ${usd(content.waiting.paid_cents)} paid.`)}</p>
@@ -313,7 +313,7 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
       { value: usd(plan.paid_cents), amount: true },
     ]),
     'Nothing was waiting on a mapping.',
-    [2],
+    { code: [2] },
   )}`,
   );
 }
@@ -370,7 +370,7 @@ function approvedAloneHtml(rows: readonly ApprovedAloneRow[]): string {
     [{ value: 'Packet version' }, { value: 'Case' }, { value: 'Approved on' }, { value: 'Hours after it was written', amount: true }],
     rows.map((row) => [{ value: row.packet_version_id }, { value: row.case_id }, { value: row.approved_on }, { value: String(row.hours_waited), amount: true }]),
     'No packet of the practice was approved by its own writer.',
-    [1, 2],
+    { id: [1, 2], date: [3] },
   )}`;
 }
 

@@ -59,9 +59,12 @@ h3 { font-family: var(--pw-font-display); font-weight: 600; font-size: 11.5pt; m
 /* Figures: Plex Mono, tabular, right aligned; status colors as text only */
 table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
 caption { text-align: left; font-family: var(--pw-font-display); font-weight: 600; font-size: 10pt; padding: 2pt 0 4pt; }
+/* No table is wider than the inside pages, or Chromium shrinks the whole PDF to fit, the cover and the 16 px
+   mark with it: no cell holding words is kept on one line (an amount itself has no break opportunity and stays
+   whole), only date columns are, and identifier columns break inside an ID where they must (report/brand.ts). */
 th { text-align: left; font-weight: 500; color: var(--pw-slate); border-bottom: 1px solid var(--pw-line); padding: 5pt 6pt; vertical-align: bottom; }
 td { border-bottom: 1px solid color-mix(in srgb, var(--pw-line) 50%, var(--pw-white)); padding: 5pt 6pt; vertical-align: top; }
-td.num, td.amount { text-align: right; white-space: nowrap; font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }
+td.num, td.amount { text-align: right; font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }
 th.num, th.amount { text-align: right; }
 td.code { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }
 tr.total td { font-family: var(--pw-font-mono); font-weight: 500; border-top: 1px solid var(--pw-ink); border-bottom: none; }

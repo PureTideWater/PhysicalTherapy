@@ -71,6 +71,7 @@ const STYLE = `
   .meta { color: var(--pw-slate); font-size: 9pt; }
   blockquote { margin: 4pt 0 4pt 12pt; padding-left: 8pt; border-left: 2px solid var(--pw-border-strong); font-style: italic; }
   table { margin: 4pt 0 8pt; font-size: 8pt; }
+  th, td { padding: 4pt 3pt; }
   .narrative p { margin: 0 0 6pt; }
   .flag { font-weight: 600; }
   footer { margin-top: 16pt; font-size: 8pt; color: var(--pw-slate); border-top: 1px solid var(--pw-line); padding-top: 4pt; }
@@ -114,7 +115,7 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, r
       ]),
       ['', '', '', '', '', '', '', '', pattern.units, usd(pattern.expected_cents), usd(pattern.observed_cents), usd(pattern.variance_cents), 'Total'],
     ],
-    { code: [1, 2, 3, 5, 7, 8, 13], date: [6], amount: [9, 10, 11, 12] },
+    { code: [1, 7, 8], id: [2, 3, 5, 13], date: [6], amount: [9, 10, 11, 12] },
   );
   const interestSection =
     interest === null

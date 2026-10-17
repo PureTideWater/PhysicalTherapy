@@ -110,10 +110,13 @@ describe('workflows', () => {
     expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
   });
 
-  it('install Playwright’s own Chromium, with its system libraries, right before the e2e suite, so the brand baselines compare under the build that made them', () => {
+  it('install Playwright’s own Chromium, with its system libraries, before the unit tests, so the worker’s print checks run and the brand baselines compare under the build that made them', () => {
     const steps = workflow('ci.yml').jobs.check?.steps ?? [];
     const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
-    expect(install).toBe(stepIndex(steps, (step) => step.run === 'pnpm test:e2e') - 1);
+    // Right before the unit tests, which print reports with it (apps/worker/src/report/print-layout.test.ts fails in
+    // CI without it), and so before the e2e suite.
+    expect(install).toBe(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle') - 1);
+    expect(install).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
     expect(install).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
     // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
     const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');

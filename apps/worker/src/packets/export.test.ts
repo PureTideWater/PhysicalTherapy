@@ -1,9 +1,8 @@
-import { type RowIdentifiers, assemblePacket, draftNarrative, insertIdentifiers } from '@tp/packets';
-import { assemblyInput, line, promptPayRecord } from '@tp/packets/testing';
 import { describe, expect, it } from 'vitest';
 
 import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
 import { GAP_CODES, gapText, packetHtml } from './html';
+import { approval, exported } from './test-support/exported-packet';
 import { chromiumInstalled } from '../report/pdf';
 import { amountsNotInMono } from '../report/test-support/figures';
 
@@ -11,20 +10,6 @@ import { amountsNotInMono } from '../report/test-support/figures';
  * The export's documents (PRD 12, The packet; CAS-11, CAS-12, CAS-15): the HTML the worker prints to
  * PDF and the CSV schedule, from a SYNTHETIC version with its identifiers inserted.
  */
-
-const content = assemblePacket(
-  assemblyInput({
-    asOf: '2026-05-01',
-    lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: null })],
-    interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
-  }),
-);
-const identifiers = new Map<number, RowIdentifiers>([
-  [1, { claim_control_number: 'SYNCCN0001', patient_control_number: '=SYNPCN0001', patient_name: 'SYNTHETIC, PATIENT <ONE>', member_id: 'SYNMBR1' }],
-  [2, { claim_control_number: 'SYNCCN0002', patient_control_number: 'SYNPCN0002', patient_name: 'SYNTHETIC, PATIENT TWO', member_id: null }],
-]);
-const exported = insertIdentifiers(content, `${draftNarrative(content)}\n\nClaim {{claim_control_number:1}} is the first [3].`, identifiers);
-const approval = { versionNo: 2, versionSha256: 'c'.repeat(64), draftedBy: 'drafter@synthetic.test', approvedBy: 'approver@synthetic.test', approvedAt: '2026-05-02T10:00:00.000Z', approvedAlone: false, regulationConfirmedBy: null };
 
 describe('packetHtml', () => {
   const html = packetHtml(exported, approval);

@@ -31,11 +31,12 @@ jobs:
       - run: pnpm verify-content
       - run: tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"
       - run: pnpm synth --all
+      # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
+      # worker's tests print reports with: installed before the unit tests, so none of them skips (docs/adr/0058).
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       - run: pnpm test && pnpm test:golden && pnpm test:oracle
       - run: pnpm db:migrate && pnpm test:db
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
-      # Playwright's own Chromium, the build the brand journey's pixel baselines were made with (docs/adr/0058).
-      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       - run: pnpm test:e2e
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
       - uses: actions/upload-artifact@v4

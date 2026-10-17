@@ -69,7 +69,7 @@ function entryTable(caption: string, entries: readonly LedgerEntry[], empty: str
         `<tr><td>${escapeHtml(entry.id)}</td><td>${escapeHtml(entry.caseId)}</td><td>${escapeHtml(STAGE_WORDS[entry.stage] ?? entry.stage)}${entry.allocated ? ' (allocated pro rata)' : ''}</td><td>${escapeHtml(entry.effectiveOn)}</td><td class="amount">${escapeHtml(usd(entry.amountCents))}</td></tr>`,
     )
     .join('');
-  return `<table${figureColumns({ code: [1, 2], date: [4] })}><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Entry</th><th scope="col">Case</th><th scope="col">Stage</th><th scope="col">Money moved</th><th scope="col" class="amount">Amount</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table${figureColumns({ id: [1, 2], date: [4] })}><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Entry</th><th scope="col">Case</th><th scope="col">Stage</th><th scope="col">Money moved</th><th scope="col" class="amount">Amount</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function figure(title: string, note: string, check: FigureCheck, empty: string): string {

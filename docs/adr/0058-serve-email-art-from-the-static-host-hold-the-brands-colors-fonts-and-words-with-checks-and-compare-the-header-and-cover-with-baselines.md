@@ -125,9 +125,25 @@ the frame printing the seal with its definition for `false` fails the comparison
 without its `data-verified` marker or caption, passes the comparison and the DOM check and fails the foot check. The
 baselines are Playwright's Chromium (141.0.7390.37 for `@playwright/test` 1.56.1) on Ubuntu 24.04. CI ran Google Chrome
 where Playwright's Chromium was not installed, so `ci.yml` now runs `pnpm --filter @tp/web exec playwright install
---with-deps chromium` right before the e2e step and the config takes that build. The screenshots for people stay in
+--with-deps chromium` right before the unit tests (so the worker's print checks below run there too, and a test fails in
+CI if Chromium is missing rather than skipping) and the config takes that build. The screenshots for people stay in
 `brand-screenshots/`, and CI uploads them with the Playwright report and test results (the diffs of a failed
 comparison included) after the e2e step, failed runs included.
+
+**Printed documents print at full size.** Chromium shrinks a whole PDF to fit when anything is wider than the inside
+pages' content box (8.5 in less the stylesheet's 0.75 in margins: 672 CSS px), the full-bleed Paper cover and the 16 px
+running-header mark with it. The audit report's ten-column cases table did, because every amount and date column was
+kept on one line, mixed cells ("3 lines, $90.00", "not estimated") included; the dispute packet's thirteen-column line
+schedule did too. The report frame (`FIGURE_COLUMN_STYLES` in `apps/worker/src/report/brand.ts`, `brand.css`) now keeps
+only date columns on one line; an amount column's cells wrap between words while an amount itself, which has no break
+opportunity, stays whole; a new `data-id` column kind (IDs, claim control numbers, trace references, plan keys) breaks
+inside an identifier where it must, while short codes ("97110") stay whole. The audit report's and the packet's tables
+take 4 pt of side padding instead of 6. `apps/worker/src/report/print-layout.test.ts` lays out every printed template
+(audit report, ROI statement, coverage report, monthly summary, packet), with its tests' figures and with the widest a
+practice's documents plausibly hold, under print media at 672 px and requires nothing wider and no amount or date broken
+across lines; it then prints each with `ChromiumPdfRenderer` and reads the PDF's text layer (pdf.js) for the cover's
+headline at its 26 pt and the running header's title at its 10 pt, which hold only when nothing shrank. Both checks
+are shown to fail on a table kept on one line, and fail on the frame as it stood before this change.
 
 ## Alternatives considered
 
@@ -150,7 +166,8 @@ comparison included) after the e2e step, failed runs included.
 - `pnpm test` runs the hex check, the font-host scan and its ESLint fixture tests, and the copy lint; `pnpm lint`
   refuses Google's font loader; `pnpm test:e2e` runs the font-host journey, the copy journey (`e2e/copy.spec.ts`, the D11
   placements and the undecorated sign-in) and the brand journey with its baselines. `tools/test/workflows.test.ts` pins
-  the Chromium install step right before the e2e step, the artifact upload right after it, and the four baselines.
+  the Chromium install step right before the unit tests (and so before the e2e step), the artifact upload right after
+  the e2e step, and the four baselines.
 - A deliberate change to the header or the cover, or an upgrade of `@playwright/test` (which moves Chromium; Dependabot
   proposes one weekly), may need new baselines: on Linux with Playwright's Chromium, run
   `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the four images (the

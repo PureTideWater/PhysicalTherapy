@@ -159,27 +159,37 @@ ${body}
 /**
  * Per-column figure styling for tables whose cells carry no class (docs/brand/BRAND.md, section 5: every
  * dollar figure, code, unit count and rate in the mono face with tabular numerals): `data-code` names the
- * columns (1-based) of codes and references, `data-date` those of dates, kept on one line, and
- * `data-amount` those of amounts and counts, kept on one line and right aligned with their headers.
+ * columns (1-based) of short codes ("97110", "NO_AGREEMENT"), `data-id` those of identifiers and references
+ * (an ID, a claim control number, a trace reference), `data-date` those of dates, and `data-amount` those of
+ * amounts and counts, right aligned with their headers.
+ *
+ * A table never lays out wider than the inside pages, or Chromium shrinks the whole PDF to fit, cover and
+ * running header with it (BRAND.md, sections 2 and 7). So no cell holding words is kept on one line: an amount
+ * column's cells wrap between words ("3 lines, $90.00", "not estimated"), while an amount itself has no break
+ * opportunity and stays whole. A date column is kept on one line, since its cells hold one date ("2027-01-15",
+ * which would otherwise break at a hyphen) or two short words ("none open"). An identifier holds no spaces and
+ * breaks where it must; a short code stays whole.
  */
 export const FIGURE_COLUMN_STYLES = Array.from({ length: 14 }, (_, index) => {
   const column = String(index + 1);
   const cells = (attribute: string, header: boolean) => `table[${attribute}~="${column}"] td:nth-child(${column})${header ? `, table[${attribute}~="${column}"] th:nth-child(${column})` : ''}`;
   return [
-    `${cells('data-code', false)}, ${cells('data-date', false)}, ${cells('data-amount', false)} { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }`,
-    `${cells('data-date', false)}, ${cells('data-amount', false)} { white-space: nowrap; }`,
+    `${cells('data-code', false)}, ${cells('data-id', false)}, ${cells('data-date', false)}, ${cells('data-amount', false)} { font-family: var(--pw-font-mono); font-variant-numeric: tabular-nums; }`,
+    `${cells('data-id', false)} { overflow-wrap: anywhere; }`,
+    `${cells('data-date', false)} { white-space: nowrap; }`,
     `${cells('data-amount', true)} { text-align: right; }`,
   ].join('\n');
 }).join('\n');
 
 export interface FigureColumns {
   readonly code?: readonly number[];
+  readonly id?: readonly number[];
   readonly date?: readonly number[];
   readonly amount?: readonly number[];
 }
 
-/** A table's figure columns (1-based) as its data-code, data-date and data-amount attributes. */
+/** A table's figure columns (1-based) as its data-code, data-id, data-date and data-amount attributes. */
 export function figureColumns(columns: FigureColumns): string {
   const attribute = (name: string, list: readonly number[] | undefined) => (list === undefined || list.length === 0 ? '' : ` ${name}="${list.map(String).join(' ')}"`);
-  return `${attribute('data-code', columns.code)}${attribute('data-date', columns.date)}${attribute('data-amount', columns.amount)}`;
+  return `${attribute('data-code', columns.code)}${attribute('data-id', columns.id)}${attribute('data-date', columns.date)}${attribute('data-amount', columns.amount)}`;
 }
