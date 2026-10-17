@@ -16,8 +16,9 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * one who drafts and one who approves, in a practice of its own that the journey adds; and, each in a
  * practice of its own its journey adds, a billing manager for the triage journey, one for the monthly
  * monitoring journey, and a billing manager, a viewer and a reimbursement reviewer for the reporting
- * journey; and two billing managers of the other group and a contract specialist for the model
- * features' journey, in a practice of its own).
+ * journey; and two billing managers of the other group, a contract specialist and a platform
+ * administrator (who turns the kill switch on in the console) for the model features' journey, in a
+ * practice of its own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -80,6 +81,8 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'models-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'models-approver', organization: 'other_group', role: 'billing_manager' },
   { key: 'models-specialist', organization: 'internal', role: 'contract_specialist' },
+  // The model features' journey (MOD-06): the platform administrator who turns the kill switch on from the console.
+  { key: 'models-admin', organization: 'internal', role: 'platform_admin' },
   // Onboarding (docs/adr/0053): the platform administrator who turns an audit request into a customer.
   { key: 'onboarding-admin', organization: 'internal', role: 'platform_admin' },
 ];

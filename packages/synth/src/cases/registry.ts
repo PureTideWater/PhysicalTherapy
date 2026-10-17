@@ -228,11 +228,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/narrative.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts', 'apps/web/e2e/models.spec.ts'],
   },
   'MOD-04': { completesIn: 10, build: workflow.mod04, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/untrusted.test.ts', 'packages/model-gateway/src/gateway.db.test.ts'] },
-  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.', ['packages/model-gateway/src/gateway.test.ts', 'packages/model-gateway/src/gateway.db.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts']),
+  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
   'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.', [
     'packages/model-gateway/src/gateway.test.ts',
     'packages/model-gateway/src/gateway.db.test.ts',
     'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
     'apps/web/e2e/models.spec.ts',
   ]),
 };

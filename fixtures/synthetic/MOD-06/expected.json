@@ -9,6 +9,7 @@
     "packages/model-gateway/src/gateway.test.ts",
     "packages/model-gateway/src/gateway.db.test.ts",
     "apps/web/src/lib/routes/models-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
     "apps/web/e2e/models.spec.ts"
   ],
   "codeListRelease": null,

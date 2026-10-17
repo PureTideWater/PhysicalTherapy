@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { createContract, createDraftVersion } from '@tp/contracts';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, loadPracticeCipher, openPool, withPracticeScope } from '@tp/db';
-import { LOCAL_OUTPUT_FORMAT, type ModelPurpose, type PurposeInputs, localOutputKey, requestFor, setFeatureFlag } from '@tp/model-gateway';
+import { LOCAL_OUTPUT_FORMAT, type ModelPurpose, type PurposeInputs, localOutputKey, requestFor } from '@tp/model-gateway';
 import { draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
@@ -117,12 +117,6 @@ export async function expectNarrative(practiceId: string, caseId: string, drafte
   const narrative = draftNarrative(inputs.content);
   expectModelOutput('draftPacketNarrative', inputs, { paragraphs: narrative.split('\n\n') });
   return narrative;
-}
-
-/** Turns the kill switch on for the practice, as a platform administrator does from the console. */
-export async function killSwitch(practiceId: string): Promise<void> {
-  const admin = await userId('platform-admin');
-  await withPool((pool) => setFeatureFlag(pool, admin, { key: 'model.kill_switch', scope: 'practice', scopeId: practiceId, value: true }));
 }
 
 /** The practice's model calls: purpose and the reviewer's decision, oldest first. */

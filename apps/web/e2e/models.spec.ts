@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type Page, expect, test } from '@playwright/test';
+import { type Browser, type Page, expect, test } from '@playwright/test';
 
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 import { journeyPractice, pricedAndTriaged, signedOffSchedule, until } from './journeys';
-import { MODELS_PRACTICE, Q97110, Q97140, draftContract, expectModelOutput, expectNarrative, fixedCandidate, killSwitch, modelCalls } from './models';
+import { MODELS_PRACTICE, Q97110, Q97140, draftContract, expectModelOutput, expectNarrative, fixedCandidate, modelCalls } from './models';
 import { startLocalWorker } from './worker';
 
 /**
@@ -20,6 +20,8 @@ import { startLocalWorker } from './worker';
  *   the call records the decision, accepted;
  * - a billing manager drafts the packet's first version with the model, sees the verifier pass, and is
  *   refused its approval as its drafter; a second billing manager approves it;
+ * - a platform administrator turns the kill switch on for the practice on the console's model
+ *   features screen, which then shows the practice switched off beside its spend today;
  * - with the kill switch on, the same journeys are done by hand: the specialist is offered no proposal
  *   and enters the record, the drafter is offered no draft and edits the narrative, a second person
  *   approves, the coverage screen offers its remedies, and no call reaches the model.
@@ -51,6 +53,29 @@ async function verifyAndApprove(specialist: Page): Promise<void> {
   await expect(specialist.locator('[data-state="blocked"]')).toHaveCount(0);
   await specialist.getByRole('button', { name: 'Approve the version' }).click();
   await expect(specialist.locator('[data-state="approved"]')).toBeVisible();
+}
+
+/** A platform administrator turns the kill switch on for the practice from the console's model features screen (MOD-06). */
+async function killSwitchFromConsole(browser: Browser, practiceId: string): Promise<void> {
+  const context = await browser.newContext();
+  const admin = await context.newPage();
+  try {
+    await registerKeyAndSignIn(admin, 'models-admin');
+    await admin.goto('/console/models');
+    const spend = admin.locator(`[data-practice-spend="${practiceId}"]`);
+    await expect(spend).toBeVisible();
+    await expect(spend).not.toContainText('Switched off');
+    await admin.getByLabel('Flag', { exact: true }).selectOption('model.kill_switch');
+    await admin.getByLabel('Applies to', { exact: true }).selectOption(`practice:${practiceId}`);
+    await admin.getByLabel('Value', { exact: true }).fill('on');
+    await admin.getByRole('button', { name: 'Set the flag' }).click();
+    await expect(admin.locator('[data-notice="flag_set"]')).toBeVisible();
+    await expect(admin.getByRole('table', { name: 'Model flags' })).toContainText(MODELS_PRACTICE);
+    await expect(spend).toContainText('Switched off');
+    await expectAccessible(admin, 'Model features');
+  } finally {
+    await context.close();
+  }
 }
 
 async function approveAsSecondPerson(approver: Page, packetPath: string, versionNo: number): Promise<void> {
@@ -135,8 +160,11 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       ]);
     });
 
+    await test.step('a platform administrator turns the kill switch on for the practice from the console (MOD-06)', async () => {
+      await killSwitchFromConsole(browser, practiceId);
+    });
+
     await test.step('with the kill switch on, the specialist abstracts a version by hand (MOD-06)', async () => {
-      await killSwitch(practiceId);
       const contract = await draftContract(practiceId, 'models-approver', 'SYNTHETIC HAND-ABSTRACTED AGREEMENT');
       expectModelOutput('proposeContractTerms', contract.input, { candidates: [fixedCandidate('97140', Q97140, '$30.50')] });
       await specialist.goto(`/p/${practiceId}/abstraction/versions/${contract.versionId}`);
