@@ -125,6 +125,15 @@ describe('a statement’s cover', () => {
     expect(html.slice(html.indexOf('<table class="pages"'))).not.toContain('data-verified');
   });
 
+  it('counts the entries a figure is recomputed from with its noun and verb in the singular for one (the screen tour’s C1)', () => {
+    const text = (recovered: typeof CHECK.recovered) =>
+      statementHtml({ statementId: 'statement-1', practiceName: 'SYNTHETIC PRACTICE', statement: STATEMENT, check: { ...CHECK, recovered }, generatedBy: null, generatedAt: '2026-10-01 09:00:00', reconciliation: gate(1300n) }).replace(/<[^>]+>/g, '');
+    const [deposit] = ENTRIES;
+    expect(text({ storedCents: cents(3000n), recomputedCents: cents(3000n), matches: true, entries: deposit === undefined ? [] : [deposit] })).toContain('Its 1 linked entry gives $30.00.');
+    expect(text(CHECK.recovered)).toContain('Its 2 linked entries give $12.00.');
+    expect(text(CHECK.recovered)).not.toMatch(/\b1 linked entries\b|\bentry give\b|\bentries gives\b/);
+  });
+
   it('names the recovered figure with its proof level and the fees as PaidWhole’s', () => {
     const html = statement(1200n);
     expect(html).toContain('Recovered principal, net (deposited): <span class="figure-amount">$12.00</span>');

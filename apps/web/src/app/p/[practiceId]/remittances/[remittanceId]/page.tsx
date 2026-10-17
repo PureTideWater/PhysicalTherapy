@@ -91,10 +91,10 @@ export default async function RemittancePage(props: { readonly params: Promise<{
             <table className="w-full text-left text-sm" aria-label="Provider adjustments">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Reason</th>
-                  <th className="py-1 font-medium">Kind</th>
-                  <th className="py-1 font-medium">Fiscal period</th>
-                  {canReadPhi ? <th className="py-1 font-medium">Reference</th> : null}
+                  <th className="py-1 pr-3 font-medium">Reason</th>
+                  <th className="py-1 pr-3 font-medium">Kind</th>
+                  <th className="py-1 pr-3 font-medium">Fiscal period</th>
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Reference</th> : null}
                   <th className="py-1 text-right font-medium">Amount</th>
                 </tr>
               </thead>
@@ -129,14 +129,14 @@ export default async function RemittancePage(props: { readonly params: Promise<{
             <table className="w-full text-left text-sm" aria-label="Claims">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">#</th>
-                  {canReadPhi ? <th className="py-1 font-medium">Patient</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Service dates</th> : null}
-                  <th className="py-1 font-medium">Status</th>
-                  <th className="py-1 text-right font-medium">Charge</th>
-                  <th className="py-1 text-right font-medium">Paid</th>
-                  <th className="py-1 text-right font-medium">Patient responsibility</th>
+                  <th className="py-1 pr-3 font-medium">#</th>
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Patient</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Claim control numbers</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Service dates</th> : null}
+                  <th className="py-1 pr-3 font-medium">Status</th>
+                  <th className="py-1 pr-3 text-right font-medium">Charge</th>
+                  <th className="py-1 pr-3 text-right font-medium">Paid</th>
+                  <th className="py-1 pr-3 text-right font-medium">Patient responsibility</th>
                   <th className="py-1 font-medium">Links</th>
                 </tr>
               </thead>

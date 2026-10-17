@@ -5,10 +5,9 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { DiffSummaryText, DiffTable } from '../../../../../components/pricing/diff';
-import { CoverageShares, FAILURE_TEXT, PatternTable, RERUN_TEXT, RunStateBadges, RunStatusBadge } from '../../../../../components/pricing/display';
+import { CoverageShares, FAILURE_TEXT, PatternTable, RERUN_TEXT, RunStateBadges, RunStatusBadge, UnpricedReasons } from '../../../../../components/pricing/display';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
-import { unpricedReasonText } from '../../../../../lib/contracts/remedies';
 import { loadPage } from '../../../../../lib/http/next';
 import { pricingRunPage } from '../../../../../lib/routes/pricing';
 import { acceptPricingRunFormAction, rerunPricingRunFormAction } from '../actions';
@@ -185,36 +184,7 @@ export default async function PricingRunPage(props: Props) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <table className="w-full text-left text-sm" aria-label="Unpriced reasons">
-                <thead className="text-muted-foreground">
-                  <tr>
-                    <th className="py-1 font-medium">Reason</th>
-                    <th className="py-1 font-medium">Remedy</th>
-                    <th className="py-1 text-right font-medium">Lines</th>
-                    <th className="py-1 text-right font-medium">Billed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {coverage.reasons
-                    .filter((entry) => entry.lines > 0)
-                    .map((entry) => (
-                      <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
-                        <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
-                        <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
-                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
-                        <td className="py-1 text-right">
-                          <Money value={entry.charge_cents} />
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-              {coverage.engine_errors.length === 0 ? null : (
-                <p className="pt-3 text-sm">
-                  Engine errors by detail:{' '}
-                  {coverage.engine_errors.map((entry) => `${entry.detail} (${String(entry.lines)}${entry.pages_operator ? ', operator alerted' : ', for review'})`).join('; ')}.
-                </p>
-              )}
+              <UnpricedReasons coverage={coverage} />
             </CardContent>
           </Card>
           <Card role="region" aria-label="Contract versions">
@@ -264,12 +234,12 @@ export default async function PricingRunPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Run lines">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Code and modifiers</th>
-                <th className="py-1 text-right font-medium">Units</th>
-                <th className="py-1 text-right font-medium">Expected allowed</th>
-                <th className="py-1 text-right font-medium">Observed allowed</th>
-                <th className="py-1 text-right font-medium">Variance</th>
-                <th className="py-1 font-medium">Method or reason</th>
+                <th className="py-1 pr-3 font-medium">Code and modifiers</th>
+                <th className="py-1 pr-3 text-right font-medium">Units</th>
+                <th className="py-1 pr-3 text-right font-medium">Expected allowed</th>
+                <th className="py-1 pr-3 text-right font-medium">Observed allowed</th>
+                <th className="py-1 pr-3 text-right font-medium">Variance</th>
+                <th className="py-1 pr-3 font-medium">Method or reason</th>
                 <th className="py-1 font-medium">
                   <span className="sr-only">Open</span>
                 </th>
