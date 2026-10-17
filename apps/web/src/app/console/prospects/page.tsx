@@ -34,7 +34,7 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
   const { prospects, status, page: current, pages, total } = page.data;
   return (
     <AppShell shell={page.shell} section="prospects">
-      <h1 className="text-2xl font-bold tracking-display">Audit requests</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Audit requests</h1>
       <nav aria-label="Filter" className="flex gap-3 text-sm">
         {FILTERS.map((filter) => (
           <Link key={filter.value} href={`/console/prospects?status=${filter.value}`} aria-current={filter.value === status ? 'page' : undefined} className={filter.value === status ? 'font-semibold underline' : 'underline'}>
@@ -43,7 +43,7 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
         ))}
       </nav>
       {prospects.length === 0 ? (
-        <EmptyState title="No requests here" nextStep="Requests from the public form at /request-audit appear here." />
+        <EmptyState mark title="No requests here" nextStep="Requests from the public form at /request-audit appear here." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Audit requests">
           <thead className="text-muted-foreground">

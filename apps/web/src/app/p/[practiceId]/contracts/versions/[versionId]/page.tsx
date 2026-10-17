@@ -41,7 +41,7 @@ export default async function VersionPage(props: Props) {
           </Link>{' '}
           <span className="text-muted-foreground">with {version.payerName}</span>
         </p>
-        <h1 className="text-2xl font-bold tracking-display">Version {version.versionNo}: rate record review</h1>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Version {version.versionNo}: rate record review</h1>
       </div>
       {notice === 'signed_off' ? (
         <Alert data-notice="signed_off">
@@ -78,7 +78,7 @@ export default async function VersionPage(props: Props) {
       ) : null}
       <ReviewBody review={review} href={reviewHref(path)} />
       <section aria-label="The specialist's questions" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">The contract specialist’s questions about this version</h2>
+        <h2 className="text-xl font-bold tracking-display">The contract specialist’s questions about this version</h2>
         {questions.length === 0 ? (
           <p className="text-sm text-muted-foreground">None.</p>
         ) : (

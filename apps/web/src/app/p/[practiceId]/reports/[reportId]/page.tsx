@@ -36,10 +36,10 @@ export default async function ReportPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
           Reports
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-display">
+        <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           Audit report, service {report.periodFrom} to {report.periodTo} <ReportStatusBadge status={report.status} /> <ReleaseState report={report} />
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Requested {utc(report.createdAt)} by {report.requestedBy ?? 'a member of the practice'}
           {report.generatedAt === null ? '' : `; generated ${utc(report.generatedAt)}; windows and deadlines judged on ${report.asOf ?? '—'}`}.
         </p>
@@ -119,7 +119,7 @@ export default async function ReportPage(props: Props) {
         </>
       )}
       <section aria-label="Export history" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Export history</h2>
+        <h2 className="text-xl font-bold tracking-display">Export history</h2>
         {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No file of this report has been downloaded.</p>
         ) : (

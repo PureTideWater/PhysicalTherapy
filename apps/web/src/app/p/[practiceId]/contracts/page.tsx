@@ -39,8 +39,8 @@ export default async function ContractsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="contracts">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Contracts</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Contracts</h1>
+        <p className="text-base text-muted-foreground">
           The practice’s agreements with its payers. A version prices lines only once the contract specialist has verified every term against its page and the practice has signed it
           off.
         </p>
@@ -79,6 +79,7 @@ export default async function ContractsPage(props: Props) {
       </form>
       {list.total === 0 ? (
         <EmptyState
+          mark
           title={filtered ? 'No contracts match these filters' : 'No contracts yet'}
           nextStep={filtered ? 'Choose all payers or any status.' : 'Upload a contract or a fee-schedule exhibit below and tag it to its payer; the contract specialist abstracts it.'}
         />
@@ -132,7 +133,7 @@ export default async function ContractsPage(props: Props) {
       <Pager path={path} query={{ payer: filters.payer, status: filters.status }} page={list.page} pages={list.pages} total={list.total} noun="contracts" />
 
       <section aria-label="Contract calendar" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Contract calendar</h2>
+        <h2 className="text-xl font-bold tracking-display">Contract calendar</h2>
         {calendar.length === 0 ? (
           <p className="text-sm text-muted-foreground">No dates ahead. Signing off a version records its anniversary, notice deadline, fee-schedule year and amendment dates here.</p>
         ) : (
@@ -164,7 +165,7 @@ export default async function ContractsPage(props: Props) {
       </section>
 
       <section aria-label="The specialist's questions" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">The contract specialist’s questions</h2>
+        <h2 className="text-xl font-bold tracking-display">The contract specialist’s questions</h2>
         {questions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No open questions.</p>
         ) : (
@@ -205,7 +206,7 @@ export default async function ContractsPage(props: Props) {
       </Card>
 
       <section aria-label="Documents to tag" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Documents to tag to a payer</h2>
+        <h2 className="text-xl font-bold tracking-display">Documents to tag to a payer</h2>
         {untagged.total === 0 ? (
           <p className="text-sm text-muted-foreground">Every uploaded contract document is tagged.</p>
         ) : !upload.canUpload ? (

@@ -37,7 +37,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
         <Link className="text-sm underline" href={`/p/${practiceId}/remittances`}>
           Remittances
         </Link>
-        <h1 className="text-2xl font-bold tracking-display">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           {remittance.payerName}, paid {remittance.paymentDate}
         </h1>
       </div>
@@ -56,7 +56,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
           <CardDescription>The 835 transaction set {remittance.st02} of interchange {remittance.isa13}.</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <Fact label="Amount">
               <Money value={remittance.amountCents} /> by {remittance.method}
             </Fact>

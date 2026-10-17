@@ -31,7 +31,7 @@ export default async function ProofLevelPage(props: { readonly params: Promise<{
   const other = level === 'posted' ? 'deposited' : 'posted';
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-bold tracking-display">Proof level</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Proof level</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="proof_level" />
       {notice === null ? null : (
         <Alert>

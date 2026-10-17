@@ -5,6 +5,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
 
+import { mailBodyHtml } from '../../worker/src/mail/mail';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
 import { expectAccessible } from './a11y';
 import { signInWithTotp } from './helpers';
@@ -35,6 +36,11 @@ function shot(name: string): string {
   return path.join(SHOTS, name);
 }
 
+/** The page's width as the document lays it out, beside the window's: equal when nothing scrolls sideways. */
+async function pageWidths(page: Page): Promise<[number, number]> {
+  return page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth] as [number, number]);
+}
+
 /** Every request a page makes, kept so the test can say none left this origin. */
 function recordRequests(page: Page): string[] {
   const urls: string[] = [];
@@ -62,6 +68,32 @@ test('no page asks a font service or another origin for anything; the brand face
   expect(requests.filter((url) => !url.startsWith(baseURL ?? 'http://localhost') && !url.startsWith('data:') && !url.startsWith('blob:'))).toEqual([]);
   // The fonts are next/font/local's files, served from this origin.
   expect(requests.some((url) => url.startsWith(`${baseURL ?? ''}/_next/static/media/`) && url.endsWith('.woff2'))).toBe(true);
+});
+
+test('the email header is the outlined lockup with its tagline at 160 px on White, served from this origin to any mail client', async ({ page, baseURL }) => {
+  const origin = baseURL ?? 'http://localhost:3100';
+  // The public brand art alone may be embedded from a mail client's own origin; every other response keeps same-origin.
+  const art = await page.request.get('/brand/paidwhole-lockup-horizontal-tagline-1200w.png');
+  expect(art.status()).toBe(200);
+  expect(art.headers()['content-type']).toBe('image/png');
+  expect(art.headers()['cross-origin-resource-policy']).toBe('cross-origin');
+  expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
+  const html = mailBodyHtml(
+    {
+      to: ['admin@synthetic.test'],
+      subject: 'Monitoring digest for October 2026',
+      lines: ['SYNTHETIC: 3 new lines were flagged and 1 case reached its materiality this month.'],
+      links: [`${origin}/p/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01/notifications`],
+    },
+    origin,
+  );
+  await page.setViewportSize({ width: 640, height: 520 });
+  await page.setContent(html, { waitUntil: 'load' });
+  const lockup = page.getByRole('img', { name: 'PaidWhole' });
+  await expect(lockup).toHaveJSProperty('complete', true);
+  expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await page.screenshot({ path: shot('email.png'), fullPage: true });
 });
 
 test('the sign-in page is the stacked lockup on Paper, and nothing else decorative', async ({ page }) => {
@@ -128,6 +160,25 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
   await test.step('a table of lines with their status as text on a quiet tint, each with its label', async () => {
     await page.goto(`/p/${practiceId}/claims`);
     const table = page.getByRole('table', { name: 'Claims and lines' });
+    // The three numbers side by side in the brand's order: expected, paid (what the payer allowed), short.
+    const headers = (await table.locator('thead th').allTextContents()).map((text) => text.replace(/\s+/g, ' ').trim());
+    expect(headers).toEqual([
+      'Patient reference',
+      'Claim control numbers',
+      'Service date',
+      'Code and modifiers',
+      'Units',
+      'Charge',
+      'Expected allowed',
+      'Observed allowed',
+      'Short (variance)',
+      'Paid',
+      'Patient share',
+      'Status',
+      'Open',
+    ]);
+    // Each short is the line's variance in the mono face.
+    await expect(table.locator('td[data-variance] .font-mono').first()).toHaveCSS('font-family', /mono/i);
     const chips = table.locator('[data-slot="status-chip"]');
     await expect(chips.first()).toBeVisible();
     await expect(chips.first()).not.toHaveText('');
@@ -138,6 +189,31 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expectAccessible(page, 'Claims and lines on brand');
     await page.mouse.move(0, 0);
     await table.screenshot({ path: shot('status-table.png') });
+    await page.screenshot({ path: shot('claims-1280.png'), fullPage: true });
+  });
+
+  await test.step('the dashboard and the Reconciliation screen at desktop width, and the dashboard on a dark ground', async () => {
+    await page.goto(`/p/${practiceId}`);
+    await page.waitForLoadState('networkidle');
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: shot('dashboard-1280.png'), fullPage: true });
+    // The page title, a section's heading and a card's title, each a step down the one scale.
+    const sizes = await page.evaluate(() => {
+      const size = (selector: string) => {
+        const element = document.querySelector(selector);
+        return element === null ? null : [getComputedStyle(element).fontSize, getComputedStyle(element).fontWeight];
+      };
+      return { title: size('main h1'), card: size('main [data-slot="card-title"]') };
+    });
+    expect(sizes).toEqual({ title: ['32px', '700'], card: ['18px', '700'] });
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+    await page.screenshot({ path: shot('dashboard-dark-1280.png'), fullPage: true });
+    await page.evaluate(() => document.documentElement.removeAttribute('data-theme'));
+    await page.goto(`/p/${practiceId}/reconciliation`);
+    await page.waitForLoadState('networkidle');
+    // One screen, one mark at most: an empty section is its words alone.
+    expect(await page.locator('main [data-slot="state-mark"]').count()).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: shot('reconciliation-1280.png'), fullPage: true });
   });
 
   await test.step('the header at a phone width: the lockup, the switcher, the account and the menu fit', async () => {
@@ -151,8 +227,15 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await header.screenshot({ path: shot('header-390.png') });
     // The header itself fits the phone's width: nothing in it overflows or scrolls sideways.
     expect(await header.evaluate((element) => [element.scrollWidth, element.clientWidth, Math.round(element.getBoundingClientRect().width), window.innerWidth])).toEqual([390, 390, 390, 390]);
+    // And so does the whole page: a wide table scrolls inside its own card, never the page.
+    expect(await pageWidths(page)).toEqual([390, 390]);
+    await page.screenshot({ path: shot('dashboard-390.png'), fullPage: true });
     await header.getByText('Menu').click();
     await expect(header.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true })).toHaveCSS('text-decoration-color', BRASS);
+    await page.goto(`/p/${practiceId}/claims`);
+    await page.waitForLoadState('networkidle');
+    expect(await pageWidths(page)).toEqual([390, 390]);
+    await page.screenshot({ path: shot('claims-390.png'), fullPage: true });
   });
 
   await test.step('no request of the workspace left this origin, fonts included', () => {

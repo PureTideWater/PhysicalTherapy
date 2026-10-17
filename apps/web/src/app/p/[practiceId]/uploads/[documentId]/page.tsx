@@ -35,7 +35,7 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
         <Link className="text-sm underline" href={`/p/${practiceId}/uploads`}>
           Uploads
         </Link>
-        <h1 className="text-2xl font-bold tracking-display">Receipt {receipt.documentId.slice(0, 8)}</h1>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Receipt {receipt.documentId.slice(0, 8)}</h1>
       </div>
       <Card>
         <CardHeader>
@@ -43,7 +43,7 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
           <CardDescription>Received {utcMinute(receipt.receivedAt)}</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-2 text-sm">
             <dt className="text-muted-foreground">Status</dt>
             <dd>
               <ReceiptStatus receipt={receipt} />
@@ -162,7 +162,7 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
       )}
       {receipt.entries === null ? null : (
         <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Files in this zip</h2>
+          <h2 className="text-xl font-bold tracking-display">Files in this zip</h2>
           <ReceiptList csrfToken={await pageCsrfToken()} practiceId={practiceId} parentId={receipt.documentId} canUpload={canUpload} title="Files in this zip" />
         </div>
       )}

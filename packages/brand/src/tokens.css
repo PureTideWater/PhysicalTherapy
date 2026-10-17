@@ -27,6 +27,8 @@
   --pw-fg-inverse: var(--pw-white);
   --pw-border: var(--pw-line);
   --pw-border-strong: #B9BEC8;
+  /* A form field's outline: 3:1 or more on White (3.5:1), Paper (3.2:1) and the raised surface (WCAG 1.4.11) */
+  --pw-input-border: #808996;
 
   /* Semantic: actions */
   --pw-primary: var(--pw-ink);
@@ -36,6 +38,9 @@
   --pw-link: #1F4E9A;
   --pw-focus: #2F5DA8;
   --pw-danger: var(--pw-short);
+  /* A failure that is not a payment status (a failed job, a refused check): named apart from Short, the
+     data color, so the two can part without touching a component. The brand defines no other red yet. */
+  --pw-danger-bg: var(--pw-short-bg);
 
   /* The mark */
   --pw-mark-ring: var(--pw-ink);
@@ -72,6 +77,7 @@
   --pw-fg-inverse: var(--pw-ink);
   --pw-border: #243654;
   --pw-border-strong: #3A4F70;
+  --pw-input-border: #5A6E8E;
 
   --pw-primary: #F4F6FA;
   --pw-primary-fg: var(--pw-ink);
@@ -87,6 +93,7 @@
   --pw-unpriced-bg: #1A2537;
 
   --pw-mark-ring: var(--pw-white);
+  --pw-danger-bg: var(--pw-short-bg);
 }
 
 /* Print: reports and statements */

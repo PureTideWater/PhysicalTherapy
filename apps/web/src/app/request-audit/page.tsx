@@ -22,7 +22,7 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
     <>
       <PublicHeader />
       <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-8 md:p-10">
-      <h1 className="text-2xl font-bold tracking-display">Request a PaidWhole contract-payment audit</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Request a PaidWhole contract-payment audit</h1>
       {sent ? (
         <Alert>
           <AlertTitle>Request received</AlertTitle>

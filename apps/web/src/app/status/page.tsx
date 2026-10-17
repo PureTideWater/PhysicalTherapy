@@ -21,7 +21,7 @@ export default async function StatusPage() {
       <PublicHeader />
       <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 md:p-10">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">PaidWhole service status</h1>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">PaidWhole service status</h1>
         <p className="text-sm" data-overall={overall}>
           {maintenance ? 'Scheduled maintenance is in progress.' : overall === 'operational' ? 'All systems operational.' : STATUS_LABELS[overall]}
         </p>
@@ -46,7 +46,7 @@ export default async function StatusPage() {
         </CardContent>
       </Card>
       <section className="flex flex-col gap-3" aria-label="Incidents">
-        <h2 className="text-lg font-semibold">Incidents</h2>
+        <h2 className="text-xl font-bold tracking-display">Incidents</h2>
         {incidents.length === 0 ? (
           <EmptyState title="No incidents in the last 14 days" nextStep="Problems we know of are posted here as we work on them." />
         ) : (

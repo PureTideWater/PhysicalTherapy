@@ -2,24 +2,27 @@
 paths:
   - "apps/web/**"
   - "packages/brand/**"
-  - "apps/worker/src/reports/**"
-  - "apps/worker/src/email/**"
+  - "packages/ui/**"
+  - "apps/worker/src/report/**"
+  - "apps/worker/src/mail/**"
+  - "apps/worker/src/reconcile/statement-html.ts"
+  - "apps/worker/src/packets/html.ts"
 ---
 # Brand (full specification: docs/brand/BRAND.md)
 
 - Colors come from tokens: CSS variables in packages/brand/src/tokens.css or the Tailwind preset
   (bg-ink, text-fg-muted, text-status-short ...). No hex values in components; tokens.css is the
   only file that holds brand hex. Email templates are the one exception and take their hex from
-  packages/brand/src/tokens.ts.
-- The mark is <PaidWholeMark/> (apps/web/components/brand) or markSvg() from @paidwhole/brand.
+  packages/brand/src/tokens.ts (apps/worker/src/mail/template.ts).
+- The mark is <PaidWholeMark/> (apps/web/src/components/brand) or markSvg() from @paidwhole/brand.
   Never redraw it, copy its paths, or place a PNG of it in the app. The small cut switches on
   automatically at 32 px and below; minimum 16 px.
 - The lockup is <PaidWholeLockup/>; the wordmark is one word, display font 700, -0.03em, one
   color. Never split "Paid" and "Whole", never two colors, never another face. Below 120 px wide,
   use the mark alone.
-- Fonts load only through apps/web/lib/fonts.ts (next/font, self-hosted). Never add a Google
+- Fonts load only through apps/web/src/lib/fonts.ts (next/font/local, self-hosted). Never add a Google
   Fonts <link> or any third-party request to a page that can show PHI. The report renderer uses
-  the bundled woff2 files via assetPath() from @paidwhole/brand.
+  the bundled woff2 files via assetPath() from @paidwhole/brand (apps/worker/src/report/brand-files.ts).
 - Status colors (whole, short, unpriced) are for data only, as colored text on the matching tint,
   never white text on a saturated fill, never in or near the logo, never color alone (always with
   a label or reason code).

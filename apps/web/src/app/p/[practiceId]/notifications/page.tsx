@@ -28,8 +28,8 @@ export default async function NotificationsPage(props: { readonly params: Promis
   return (
     <AppShell shell={page.shell} section="notifications">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Notifications</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Notifications</h1>
+        <p className="text-base text-muted-foreground">
           What monitoring did for this practice, as counts and dollar totals. Choose what reaches you, in the app or by email, in your{' '}
           <Link className="underline" href="/account/notifications">
             notification preferences
@@ -44,7 +44,7 @@ export default async function NotificationsPage(props: { readonly params: Promis
         </ActionForm>
       )}
       {notifications.length === 0 ? (
-        <EmptyState title="No notifications yet" nextStep="Monitoring tells you here when it has priced and triaged new files, and when a month's digest is ready." />
+        <EmptyState mark title="No notifications yet" nextStep="Monitoring tells you here when it has priced and triaged new files, and when a month's digest is ready." />
       ) : (
         <ul className="flex flex-col gap-3" aria-label="Notifications">
           {notifications.map((notification) => (

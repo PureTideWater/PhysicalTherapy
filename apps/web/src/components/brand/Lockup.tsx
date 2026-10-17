@@ -52,8 +52,9 @@ const STACKED: Readonly<Record<LockupSize, Geometry>> = {
 
 /**
  * Lockup for app chrome, sign-in and marketing headers: the mark plus the wordmark set live in the
- * display face. The wordmark is one word, 700 weight, -0.03em, never split or recolored; for print,
- * email or anywhere fonts may not load, use the outlined SVGs in /public/brand instead.
+ * display face. The wordmark is one word, 700 weight, -0.03em, never split or recolored: it takes the
+ * ring's own token, so the two are one color (Ink, and White together in dark mode). For print, email or
+ * anywhere fonts may not load, use the outlined SVGs in /public/brand instead.
  */
 export function PaidWholeLockup({ size = 20, stacked = false, tagline = false, reversed = false, className }: Props) {
   if (!stacked && size * 6.5 < 120) {
@@ -67,7 +68,7 @@ export function PaidWholeLockup({ size = 20, stacked = false, tagline = false, r
     <div className={[`inline-flex items-center ${layout} ${geometry.gap}`, className].filter(Boolean).join(' ')} data-slot="lockup">
       <PaidWholeMark size={geometry.mark} variant={reversed ? 'reversed' : 'color'} decorative />
       <div className={`flex flex-col ${stacked ? 'items-center' : 'items-start'} ${geometry.inner}`}>
-        <span className={`font-display font-bold leading-none tracking-wordmark whitespace-nowrap ${geometry.text} ${reversed ? 'text-white' : 'text-fg'}`}>PaidWhole</span>
+        <span className={`font-display font-bold leading-none tracking-wordmark whitespace-nowrap ${geometry.text} ${reversed ? 'text-white' : 'text-mark-ring'}`}>PaidWhole</span>
         {tagline ? <span className={`font-sans text-[12px] leading-[1.3] tracking-[0.005em] whitespace-nowrap ${reversed ? 'text-white/78' : 'text-fg-muted'}`}>{brandTagline}</span> : null}
       </div>
     </div>

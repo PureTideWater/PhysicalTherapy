@@ -14,7 +14,10 @@ import path from 'node:path';
 /** A hex color: #rgb, #rgba, #rrggbb or #rrggbbaa, not part of a longer word, an HTML entity (&#39;) or a CSS id-like name. */
 export const HEX_COLOR = /(?<![\w&#])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})(?![\w-])/g;
 
-/** Where a hex color may stand, relative to the repository root. */
+/**
+ * Where a hex color may stand, relative to the repository root: a directory (ending in "/") and everything
+ * under it, or one file by its exact path (never another file whose name begins the same way).
+ */
 export const ALLOWED_PREFIXES = ['packages/brand/src/', 'apps/worker/src/mail/template.ts'] as const;
 
 export const SCANNED_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.css', '.scss', '.html']);
@@ -31,7 +34,7 @@ export interface HexFinding {
 
 export function isAllowed(file: string): boolean {
   const normalized = file.split(path.sep).join('/');
-  return ALLOWED_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(prefix));
+  return ALLOWED_PREFIXES.some((allowed) => normalized === allowed || (allowed.endsWith('/') && normalized.startsWith(allowed)));
 }
 
 /** The hex colors in one file's text, with their lines. */

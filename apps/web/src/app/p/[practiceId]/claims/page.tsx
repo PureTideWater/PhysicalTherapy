@@ -42,8 +42,8 @@ export default async function ClaimsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="claims">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Claims and lines</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Claims and lines</h1>
+        <p className="text-base text-muted-foreground">
           {filters.view === 'net'
             ? 'Net view: each adjudicated claim once. A reversed claim and the claims a correction replaced are left out.'
             : 'Every claim as the 835s sent it, reversals and superseded claims included.'}
@@ -124,6 +124,7 @@ export default async function ClaimsPage(props: Props) {
       ) : null}
       {list.total === 0 ? (
         <EmptyState
+          mark
           title={narrowed ? 'No lines match these filters' : 'No claims loaded yet'}
           nextStep={narrowed ? 'Widen the period, clear the code, or choose every claim as sent.' : 'Upload 835 files on the Uploads screen; each claim that loads appears here with its lines.'}
         />

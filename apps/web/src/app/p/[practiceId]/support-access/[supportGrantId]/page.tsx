@@ -20,7 +20,7 @@ export default async function SupportAccessPage(props: { readonly params: Promis
   const { grant, reads } = page.data;
   return (
     <AppShell shell={page.shell} section="practice">
-      <h1 className="text-2xl font-bold tracking-display">Support access for ticket {grant.ticket}</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Support access for ticket {grant.ticket}</h1>
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

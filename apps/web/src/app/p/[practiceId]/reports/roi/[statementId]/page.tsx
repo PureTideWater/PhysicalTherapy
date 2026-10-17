@@ -34,12 +34,13 @@ function Figure({
   readonly practiceId: string;
   readonly empty: string;
 }) {
+  // The region's name is the figure's whole label: a recovered figure's proof level is heard, not only seen.
+  const label = qualifier === undefined ? title : `${title} ${qualifier}`;
   return (
-    <Card role="region" aria-label={title} id={id}>
+    <Card role="region" aria-label={label} id={id}>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-baseline gap-2">
-          {title}
-          {qualifier === undefined ? '' : ` ${qualifier}`}: <Money value={figure.storedCents} />
+          {label}: <Money value={figure.storedCents} />
         </CardTitle>
         <CardDescription>
           {note}{' '}
@@ -54,7 +55,7 @@ function Figure({
         {figure.entries.length === 0 ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <table aria-label={`Entries of ${title.toLowerCase()}`} className="w-full text-sm">
+          <table aria-label={`Entries of ${label.toLowerCase()}`} className="w-full text-sm">
             <thead>
               <tr className="border-b text-left">
                 <th className="py-1 pr-3">Money moved</th>
@@ -110,10 +111,10 @@ export default async function RoiStatementPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports/roi`}>
           ROI statements
         </Link>
-        <h1 className="text-2xl font-bold tracking-display">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           ROI statement, {detail.periodFrom} to {detail.periodTo}
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           {detail.quarterly ? 'The quarterly statement, written by the reconcile job' : `Generated on demand by ${detail.generatedBy ?? 'a member of the practice'}`}, {utc(detail.generatedAt)}. Recovered is{' '}
           <span data-proof-level={detail.proofLevel}>{proofLevelWords(detail.proofLevel)}</span>.
         </p>

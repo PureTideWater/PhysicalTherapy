@@ -37,8 +37,8 @@ export default async function PricingRunsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="pricing_runs">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Pricing runs</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Pricing runs</h1>
+        <p className="text-base text-muted-foreground">
           Each run prices every line of a period under the signed-off contract version in force on its service date and one numbered rule release, and keeps the result as it was priced.
         </p>
       </div>
@@ -134,7 +134,7 @@ export default async function PricingRunsPage(props: Props) {
       )}
       <section aria-label="Runs" className="flex flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-lg font-semibold">Runs</h2>
+          <h2 className="text-xl font-bold tracking-display">Runs</h2>
           <Link className="text-sm underline" href={`/p/${practiceId}/releases`}>
             Rule release notes
           </Link>

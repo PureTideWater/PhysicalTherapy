@@ -15,7 +15,7 @@ export default async function SignInPage(props: { readonly searchParams: Promise
   const { reason } = await loadPublicPage(signInPage, props);
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
-      <h1 className="text-2xl font-bold tracking-display">Sign in</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Sign in</h1>
       <SignInNotice reason={reason} />
       <Card>
         <CardHeader>

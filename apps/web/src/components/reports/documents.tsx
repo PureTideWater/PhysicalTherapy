@@ -54,7 +54,7 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
         </CardHeader>
       </Card>
       <section aria-label="Unpriced reasons" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Unpriced reasons</h2>
+        <h2 className="text-xl font-bold tracking-display">Unpriced reasons</h2>
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>
@@ -90,7 +90,7 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
         </table>
       </section>
       <section aria-label="Dollars waiting on mappings" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-xl font-bold tracking-display">
           Dollars waiting on mappings:{' '}
           <Link className="underline" href={`/p/${practiceId}/mapping`} data-figure="waiting">
             <Money value={content.waiting.charge_cents} /> billed

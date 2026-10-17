@@ -34,8 +34,8 @@ export default async function RuleReleasesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="rule_releases">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Rule releases</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Rule releases</h1>
+        <p className="text-base text-muted-foreground">
           Prepare and check releases here; CI publishes a prepared release when its pull request merges, and <span className="font-mono text-xs">pnpm release:load</span> and{' '}
           <span className="font-mono text-xs">pnpm release:rollback</span> load and withdraw it. Runs pinned to a release never change.
         </p>
@@ -49,7 +49,7 @@ export default async function RuleReleasesPage(props: Props) {
         </Alert>
       )}
       <section aria-label="Published releases" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Published releases</h2>
+        <h2 className="text-xl font-bold tracking-display">Published releases</h2>
         {releases.length === 0 ? (
           <EmptyState title="No release is published" nextStep="Prepare release 1 from the verified drafts and open its pull request." />
         ) : (

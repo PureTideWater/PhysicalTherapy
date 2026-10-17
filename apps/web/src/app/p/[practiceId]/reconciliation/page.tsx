@@ -218,8 +218,8 @@ export default async function ReconciliationPage(props: Props) {
             Reconciliation
           </Link>
         )}
-        <h1 className="text-2xl font-bold tracking-display">{caseId === null ? 'Reconciliation' : 'Case ledger'}</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">{caseId === null ? 'Reconciliation' : 'Case ledger'}</h1>
+        <p className="text-base text-muted-foreground">
           The recovery ledger: every amount is an entry with its evidence, never typed; recovered is the proof level’s cash net of recoupments and reversals. Nothing unmatched counts.
         </p>
       </div>
@@ -275,7 +275,7 @@ export default async function ReconciliationPage(props: Props) {
             </CardContent>
           </Card>
           <section aria-label="Exports" className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold">Exports</h2>
+            <h2 className="text-xl font-bold tracking-display">Exports</h2>
             {data.exports.total === 0 ? (
               <EmptyState title="No export uploaded yet" nextStep="Upload the practice-management system’s payment-posting export and the bank’s EFT export above." />
             ) : (
@@ -307,7 +307,7 @@ export default async function ReconciliationPage(props: Props) {
             <Pager path={path} query={query} page={data.exports.page} pages={data.exports.pages} total={data.exports.total} noun="Exports" param="exports" />
           </section>
           <section aria-label="Unmatched" className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold">Unmatched: counted in no total</h2>
+            <h2 className="text-xl font-bold tracking-display">Unmatched: counted in no total</h2>
             <p className="text-sm text-muted-foreground">
               What matched nothing, with its evidence beside the records it could belong to. A match by hand records you, and the amounts must still agree to the cent.
             </p>
@@ -417,7 +417,7 @@ export default async function ReconciliationPage(props: Props) {
         </>
       ) : null}
       <section aria-label="Linkage" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Case lines: ERA to posting to EFT</h2>
+        <h2 className="text-xl font-bold tracking-display">Case lines: ERA to posting to EFT</h2>
         {data.linkage.total === 0 ? (
           <EmptyState title="No case line has a ledger entry or a match yet" nextStep="Adjusted remittances are matched to case lines after they load; posting and EFT exports after they are uploaded." />
         ) : (
@@ -430,7 +430,7 @@ export default async function ReconciliationPage(props: Props) {
         <Pager path={path} query={query} page={data.linkage.page} pages={data.linkage.pages} total={data.linkage.total} noun="Case lines" param="lines" />
       </section>
       <section aria-label="Ledger entries" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Ledger entries</h2>
+        <h2 className="text-xl font-bold tracking-display">Ledger entries</h2>
         <p className="text-sm text-muted-foreground">Newest first. An entry never changes; a correction is an entry of its own, with its reason.</p>
         {data.entries.total === 0 ? (
           <EmptyState title="No entry yet" nextStep="Entries appear when a remittance, a posting or a deposit is matched to a case line." />

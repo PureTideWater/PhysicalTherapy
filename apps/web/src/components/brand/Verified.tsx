@@ -44,7 +44,8 @@ const BADGE = {
 /** Pill badge for billing-firm and white-label report footers: the mark and "Verified by PaidWhole". */
 export function VerifiedBadge({ reconciledToCash, source, size = 'md', reversed = false, className }: BadgeProps) {
   if (!reconciledToCash) return refuse('VERIFIED_BADGE_NOT_EARNED');
-  const color = reversed ? 'border-white text-white' : 'border-ink text-ink';
+  // The foreground token, so the pill turns white with the ground in dark mode (never a hex or a fixed Ink).
+  const color = reversed ? 'border-white text-white' : 'border-fg text-fg';
   return (
     <span
       className={[`inline-flex items-center whitespace-nowrap rounded-pill font-display font-semibold tracking-[-0.01em] ${BADGE[size].box} ${color}`, className].filter(Boolean).join(' ')}
@@ -70,11 +71,22 @@ type SealProps = Gate & {
 /** The seal for report covers and statements. Uses the outlined SVG so it prints identically everywhere. */
 export function VerifiedSeal({ reconciledToCash, source, size = 96, reversed = false, withDefinition = true, className }: SealProps) {
   if (!reconciledToCash) return refuse('VERIFIED_SEAL_NOT_EARNED');
-  const src = reversed ? '/brand/paidwhole-seal-reversed.svg' : '/brand/paidwhole-seal.svg';
+  const alt = 'Verified by PaidWhole. Reconciled to cash.';
   return (
     <figure className={[`m-0 inline-flex flex-col items-center gap-2 ${size <= 220 ? 'max-w-[220px]' : 'max-w-none'}`, className].filter(Boolean).join(' ')} data-slot="verified-seal" data-source={source}>
-      {/* eslint-disable-next-line @next/next/no-img-element -- a fixed-size outlined SVG from /public; next/image would add a style attribute the CSP refuses */}
-      <img src={src} width={size} height={size} alt="Verified by PaidWhole. Reconciled to cash." />
+      {/* Fixed-size outlined SVGs from /public; next/image would add a style attribute the CSP refuses. On a dark ground
+          (the tokens' [data-theme="dark"] or .dark) the reversed seal shows instead of the Ink one; one is ever displayed. */}
+      {reversed ? (
+        // eslint-disable-next-line @next/next/no-img-element -- see above
+        <img src="/brand/paidwhole-seal-reversed.svg" width={size} height={size} alt={alt} />
+      ) : (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
+          <img src="/brand/paidwhole-seal.svg" width={size} height={size} alt={alt} className="dark:hidden" data-seal="ink" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- see above */}
+          <img src="/brand/paidwhole-seal-reversed.svg" width={size} height={size} alt={alt} className="hidden dark:block" data-seal="reversed" />
+        </>
+      )}
       {withDefinition ? <figcaption className={`text-center font-sans text-[11px] leading-[1.4] ${reversed ? 'text-white/78' : 'text-fg-muted'}`}>{verifiedDefinition}</figcaption> : null}
     </figure>
   );

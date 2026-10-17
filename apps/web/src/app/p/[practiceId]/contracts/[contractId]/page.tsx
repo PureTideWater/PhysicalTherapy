@@ -39,14 +39,14 @@ export default async function ContractPage(props: Props) {
             Contracts
           </Link>
         </p>
-        <h1 className="text-2xl font-bold tracking-display">{contract.title}</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">{contract.title}</h1>
+        <p className="text-base text-muted-foreground">
           With {contract.payerName}
           {contract.billingEntity === null ? '' : `; billing entity ${contract.billingEntity}`}.
         </p>
       </div>
       <section aria-label="Versions" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Versions</h2>
+        <h2 className="text-xl font-bold tracking-display">Versions</h2>
         {versions.length === 0 ? (
           <EmptyState title="No version yet" nextStep="Add an uploaded document to this contract below to start its first version." />
         ) : (
@@ -86,7 +86,7 @@ export default async function ContractPage(props: Props) {
         )}
       </section>
       <section aria-label="Plans mapped" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Plans mapped to this contract</h2>
+        <h2 className="text-xl font-bold tracking-display">Plans mapped to this contract</h2>
         {plans.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No plan is mapped to it yet. Once a version is signed off, map the payer’s plans to it on{' '}
@@ -109,7 +109,7 @@ export default async function ContractPage(props: Props) {
         )}
       </section>
       <section aria-label="Contract calendar" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Calendar</h2>
+        <h2 className="text-xl font-bold tracking-display">Calendar</h2>
         {calendar.length === 0 ? (
           <p className="text-sm text-muted-foreground">No dates ahead.</p>
         ) : (
@@ -124,7 +124,7 @@ export default async function ContractPage(props: Props) {
         )}
       </section>
       <section aria-label="The specialist's questions" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">The contract specialist’s questions</h2>
+        <h2 className="text-xl font-bold tracking-display">The contract specialist’s questions</h2>
         {questions.length === 0 ? (
           <p className="text-sm text-muted-foreground">None about this contract.</p>
         ) : (

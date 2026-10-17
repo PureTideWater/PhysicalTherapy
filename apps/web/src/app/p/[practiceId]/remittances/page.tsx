@@ -27,8 +27,8 @@ export default async function RemittancesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="remittances">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Remittances</h1>
-        <p className="text-sm text-muted-foreground">Every 835 transaction set that balanced and loaded. A held one never loads; its upload’s receipt says why.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Remittances</h1>
+        <p className="text-base text-muted-foreground">Every 835 transaction set that balanced and loaded. A held one never loads; its upload’s receipt says why.</p>
       </div>
       <form method="get" action={path} className="flex flex-wrap items-end gap-3" aria-label="Filter remittances">
         <div className="flex flex-col gap-1">
@@ -61,6 +61,7 @@ export default async function RemittancesPage(props: Props) {
       </form>
       {list.total === 0 ? (
         <EmptyState
+          mark
           title={filtered ? 'No remittances match these filters' : 'No remittances loaded yet'}
           nextStep={filtered ? 'Widen the period or choose all payers.' : 'Upload your first 835 files on the Uploads screen; each one that balances loads here.'}
         />

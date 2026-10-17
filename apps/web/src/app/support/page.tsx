@@ -29,7 +29,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
   const { from, sent, supportEmail, responseTarget, categories, tickets } = page.data;
   return (
     <AppShell shell={page.shell} section="home">
-      <h1 className="text-2xl font-bold tracking-display">Support</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Support</h1>
       {sent === null ? null : (
         <Alert>
           <AlertTitle>Ticket {sent} opened</AlertTitle>
@@ -55,7 +55,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
         </CardContent>
       </Card>
       <section aria-label="Your tickets" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Your tickets</h2>
+        <h2 className="text-xl font-bold tracking-display">Your tickets</h2>
         {tickets.length === 0 ? (
           <p className="text-sm text-muted-foreground">You have not opened a ticket yet.</p>
         ) : (

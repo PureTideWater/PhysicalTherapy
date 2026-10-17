@@ -28,7 +28,8 @@
   --destructive: var(--pw-danger);
   --destructive-foreground: var(--pw-fg-inverse);
   --border: var(--pw-border);
-  --input: var(--pw-border-strong);
+  /* A field's outline at 3:1 or more on White and Paper (WCAG 1.4.11); the quiet rules stay --pw-border. */
+  --input: var(--pw-input-border);
   --ring: var(--pw-focus);
   --sidebar: var(--pw-bg-raised);
   --sidebar-foreground: var(--pw-fg);
@@ -70,6 +71,12 @@
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;
+  }
+  /* Every form field is outlined so it can be found (WCAG 1.4.11), the native selects and text areas too. */
+  input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='file']),
+  select,
+  textarea {
+    @apply border-input;
   }
 }
 

@@ -9,6 +9,7 @@ export default function NotFound() {
       <PublicHeader />
       <main className="mx-auto w-full max-w-3xl px-4 py-8 md:p-10">
       <EmptyState
+        mark
         title="Not found"
         nextStep="This page does not exist, or your account has no current access to it. Access to a practice comes from your organization's membership or a grant the practice approved."
         action={

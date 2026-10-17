@@ -156,8 +156,8 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">{practice.name}</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">{practice.name}</h1>
+        <p className="text-base text-muted-foreground">
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
       </div>
@@ -181,6 +181,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
       )}
       {freshness.lastFileAt === null ? (
         <EmptyState
+          mark
           title="Upload your first 835 files"
           nextStep="The practice's workspace fills as its billing team uploads 835 files and contracts: each file's receipt follows it from received to loaded, and the dashboard counts what it finds here. Uploads open once the agreement chain below is on file."
           action={
@@ -192,7 +193,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
       ) : (
         <>
           <section aria-label="Headline" className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold">The headline</h2>
+            <h2 className="text-xl font-bold tracking-display">The headline</h2>
             <p className="text-sm text-muted-foreground">Three numbers, never one: each is its own stage, and none is added to another. Each opens the screen it comes from.</p>
             <div className="grid gap-3 sm:grid-cols-3" data-slot="tile-row">
               <Link href={`/p/${practice.id}/cases`} className={TILE} data-figure="actionable">
@@ -243,7 +244,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               <CardTitle>Data freshness</CardTitle>
             </CardHeader>
             <CardContent>
-              <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+              <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
                 <dt className="text-muted-foreground">Last file</dt>
                 <dd data-figure="last-file">
                   {utc(freshness.lastFileAt)}{' '}
@@ -281,7 +282,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
               <CardDescription>Counts and dollar totals, each at its own stage; each opens the screen it counts.</CardDescription>
             </CardHeader>
             <CardContent>
-              <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
+              <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-2 text-sm">
                 <dt className="text-muted-foreground">Coverage</dt>
                 <dd data-figure="coverage">
                   {dashboard.coverage === null ? (
@@ -406,7 +407,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           <CardTitle>Practice record</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <dt className="text-muted-foreground">NPI</dt>
             <dd>{practice.npi ?? '—'}</dd>
             <dt className="text-muted-foreground">Tax ID (last four)</dt>
@@ -427,30 +428,33 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           {agreements.length === 0 ? (
             <EmptyState title="No agreements on file" nextStep="A platform administrator records the signed BAA and engagement letter. Nothing can be uploaded until they exist." />
           ) : (
-            <table className="w-full text-left text-sm">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="py-1 font-medium">Agreement</th>
-                  <th className="py-1 font-medium">Version</th>
-                  <th className="py-1 font-medium">Signer</th>
-                  <th className="py-1 font-medium">Signed</th>
-                  <th className="py-1 font-medium">SHA-256</th>
-                </tr>
-              </thead>
-              <tbody>
-                {agreements.map((agreement) => (
-                  <tr key={agreement.id} className="border-t">
-                    <td className="py-1">{AGREEMENT_NAMES[agreement.kind] ?? agreement.kind}</td>
-                    <td className="py-1">{agreement.version}</td>
-                    <td className="py-1">{agreement.signer}</td>
-                    <td className="py-1">{utcDate(agreement.signedAt)}</td>
-                    <td className="py-1 font-mono text-xs" title={agreement.sha256}>
-                      {agreement.sha256.slice(0, 12)}…
-                    </td>
+            // Its own scroller at a phone's width: the page never scrolls sideways.
+            <div className="relative overflow-x-auto">
+              <table className="w-full text-left text-sm" aria-label="Agreements">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-3 font-medium">Agreement</th>
+                    <th className="py-1 pr-3 font-medium">Version</th>
+                    <th className="py-1 pr-3 font-medium">Signer</th>
+                    <th className="py-1 pr-3 font-medium">Signed</th>
+                    <th className="py-1 font-medium">SHA-256</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {agreements.map((agreement) => (
+                    <tr key={agreement.id} className="border-t align-top">
+                      <td className="py-1 pr-3">{AGREEMENT_NAMES[agreement.kind] ?? agreement.kind}</td>
+                      <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{agreement.version}</td>
+                      <td className="py-1 pr-3">{agreement.signer}</td>
+                      <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap">{utcDate(agreement.signedAt)}</td>
+                      <td className="py-1 font-mono text-xs whitespace-nowrap" title={agreement.sha256}>
+                        {agreement.sha256.slice(0, 12)}…
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>

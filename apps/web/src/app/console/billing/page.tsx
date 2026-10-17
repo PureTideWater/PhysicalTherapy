@@ -5,6 +5,7 @@ import type { Metadata } from 'next';
 import { ActionForm } from '../../../components/action-form';
 import { SelectField } from '../../../components/field';
 import { utcDate } from '../../../components/format';
+import { Money } from '../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
 import { consoleBillingPage } from '../../../lib/routes/billing';
@@ -31,9 +32,9 @@ export default async function ConsoleBillingPage() {
   const { organizations, catalog } = page.data;
   return (
     <AppShell shell={page.shell} section="console_billing">
-      <h1 className="text-2xl font-bold tracking-display">Billing status</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Billing status</h1>
       {organizations.length === 0 ? (
-        <EmptyState title="No customer organizations yet" nextStep="Create a practice group or a billing firm under Organizations and practices." />
+        <EmptyState mark title="No customer organizations yet" nextStep="Create a practice group or a billing firm under Organizations and practices." />
       ) : (
         <>
           <table className="w-full text-left text-sm" aria-label="Billing status">
@@ -72,7 +73,7 @@ export default async function ConsoleBillingPage() {
             <CardHeader>
               <CardTitle>Issue an audit invoice</CardTitle>
               <CardDescription>
-                {catalog.audit.name}, {formatUsd(parseCents(catalog.audit.amountCents))}, charged to the organization&apos;s payment method on file (its administrator adds one in Settings first).
+                {catalog.audit.name}, <Money value={catalog.audit.amountCents} />, charged to the organization&apos;s payment method on file (its administrator adds one in Settings first).
               </CardDescription>
             </CardHeader>
             <CardContent>

@@ -8,10 +8,12 @@ export const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-transparent bg-primary text-primary-foreground',
+        // Status is text on a quiet tint, never white text on a saturated fill (docs/brand/BRAND.md, section 4):
+        // Ink fills are the primary button's alone. A neutral state is the inset tint with its rule.
+        default: 'border-border bg-bg-inset text-fg',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
-        // Status is text on a quiet tint, never white text on a saturated fill (docs/brand/BRAND.md, section 4).
-        destructive: 'border-transparent bg-status-short-bg text-status-short',
+        // A failure (a failed job, a refused check) is danger text on its tint: not the Short data color by name.
+        destructive: 'border-transparent bg-danger-bg text-danger',
         outline: 'text-foreground',
       },
     },

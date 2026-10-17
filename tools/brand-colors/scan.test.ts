@@ -30,6 +30,11 @@ describe('the hex color check (docs/brand/BRAND.md, section 4)', () => {
     expect(isAllowed('apps/web/src/app/brand.css')).toBe(false);
     expect(isAllowed('apps/worker/src/report/brand.css')).toBe(false);
     expect(isAllowed('packages/ui/src/styles.css')).toBe(false);
+    // A file is allowed by its exact path: a neighbour whose name begins the same way is read like any other.
+    expect(isAllowed('apps/worker/src/mail/template.tsx')).toBe(false);
+    expect(isAllowed('apps/worker/src/mail/template.ts.bak.ts')).toBe(false);
+    expect(isAllowed('packages/brand/src-other/tokens.css')).toBe(false);
+    expect(isAllowed(path.join('packages', 'brand', 'src', 'tokens.ts'))).toBe(true);
   });
 
   it('reads the source and stylesheets of every workspace, never dependencies or build output', () => {

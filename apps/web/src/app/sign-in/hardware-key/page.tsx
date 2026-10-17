@@ -13,7 +13,7 @@ export default async function HardwareKeyPage(props: { readonly searchParams: Pr
   const { reason } = await loadPublicPage(hardwareKeyPage, props);
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
-      <h1 className="text-2xl font-bold tracking-display">Sign in with a hardware key</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Sign in with a hardware key</h1>
       <SignInNotice reason={reason} />
       <HardwareKeyRequirement />
       <Card>

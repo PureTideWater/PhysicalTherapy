@@ -64,15 +64,15 @@ export default async function ComparePricingRunsPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/pricing-runs`}>
           Pricing runs
         </Link>
-        <h1 className="text-2xl font-bold tracking-display">Compare two runs</h1>
-        <p className="text-sm text-muted-foreground">Lines are matched by service line. Complete runs never change, so this comparison reads the same tomorrow.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Compare two runs</h1>
+        <p className="text-base text-muted-foreground">Lines are matched by service line. Complete runs never change, so this comparison reads the same tomorrow.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <RunHead label="First run" practiceId={practiceId} run={before} />
         <RunHead label="Second run" practiceId={practiceId} run={after} />
       </div>
       {diff === null ? (
-        <EmptyState title="A run is still being priced" nextStep="Two runs compare once both are complete; reload this page in a moment." />
+        <EmptyState mark title="A run is still being priced" nextStep="Two runs compare once both are complete; reload this page in a moment." />
       ) : (
       <Card role="region" aria-label="Diff">
         <CardHeader>

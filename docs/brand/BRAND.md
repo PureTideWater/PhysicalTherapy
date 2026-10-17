@@ -2,8 +2,15 @@
 
 This is the source of truth for how PaidWhole looks in the product, in reports, in email and on the
 web. Code reads it through `packages/brand` (tokens, mark geometry, assets) and
-`apps/web/components/brand` (React components). Nothing brand-related is hand-drawn or hard-coded
+`apps/web/src/components/brand` (React components). Nothing brand-related is hand-drawn or hard-coded
 outside those two places.
+
+**In this repository** (the drop-in assumed `apps/web/app`, `apps/web/components` and `apps/web/lib`, a
+Tailwind v3 preset and `apps/worker/src/reports`): the web app's code is under `apps/web/src` (`src/app`,
+`src/components/brand`, `src/lib/fonts.ts`), Tailwind is v4 and reads `packages/brand/src/tailwind-theme.css`,
+the PDF frame and stylesheet are `apps/worker/src/report/brand.ts` and `apps/worker/src/report/brand.css`,
+and the email template is `apps/worker/src/mail/template.ts`. The readings this file leaves open are recorded
+in docs/adr/0054.
 
 ## 1. The idea
 
@@ -84,7 +91,7 @@ hex values in a component.
 | Body and UI | IBM Plex Sans | 400, 500, 600 | 16/24 body; 14 in dense tables; labels 500; buttons 600 |
 | Money and tables | IBM Plex Mono | 400, 500 | Every dollar figure, code, unit count and rate. `font-variant-numeric: tabular-nums`. Totals 500. |
 
-Fonts load through `apps/web/lib/fonts.ts` (next/font, self-hosted at build time). No page may load
+Fonts load through `apps/web/src/lib/fonts.ts` (next/font/local, self-hosted at build time). No page may load
 fonts from a third party at runtime; PHI pages make no third-party requests of any kind. The report
 renderer uses the bundled woff2 files in `packages/brand/assets/fonts` (SIL Open Font License; the
 license text ships beside them).
@@ -94,7 +101,8 @@ license text ships beside them).
 The seal reads **VERIFIED BY PAIDWHOLE** around the top and **RECONCILED TO CASH** around the bottom.
 It states who makes the claim and what the claim is. The badge is the pill "Verified by PaidWhole".
 
-Rule, enforced in code (`apps/web/components/brand/Verified.tsx`): either mark renders only when
+Rule, enforced in code (`apps/web/src/components/brand/Verified.tsx`, from `reportReconciliation()` in
+`packages/ledger`): either mark renders only when
 `reconciledToCash` is true, meaning every line in the report's recovered total has a `posted` or
 `deposited` ledger entry net of recoupment and reversal. The caller passes the fact from the ledger
 and names its source. Flagged, validated or actionable amounts never earn the mark. The definition
@@ -119,7 +127,7 @@ Contract-verified calculation without cash is a line status (validated), never a
 - Email: outlined SVG lockup in the header at 160 px wide, hex colors (CSS variables do not work in
   email), Plex Sans falls back to system sans.
 - Reports (PDF): Paper cover with lockup top left and seal bottom right when earned; white inside
-  pages with a 16 px mark in the running header; styles in `apps/worker/src/reports/brand.css`.
+  pages with a 16 px mark in the running header; styles in `apps/worker/src/report/brand.css`.
 - Billing-firm white label: the firm's name and logo lead; PaidWhole appears only as the Verified
   badge in the footer, when earned.
 

@@ -24,7 +24,7 @@ export default async function OrganizationsPage() {
   const { organizations } = page.data;
   return (
     <AppShell shell={page.shell} section="organizations">
-      <h1 className="text-2xl font-bold tracking-display">Organizations and practices</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Organizations and practices</h1>
       <Card>
         <CardHeader>
           <CardTitle>New organization</CardTitle>
@@ -46,7 +46,7 @@ export default async function OrganizationsPage() {
         </CardContent>
       </Card>
       {organizations.length === 0 ? (
-        <EmptyState title="No organizations yet" nextStep="Create the practice group for the first customer above." />
+        <EmptyState mark title="No organizations yet" nextStep="Create the practice group for the first customer above." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Organizations">
           <thead className="text-muted-foreground">

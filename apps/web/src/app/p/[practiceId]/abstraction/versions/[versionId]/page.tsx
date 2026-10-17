@@ -89,10 +89,10 @@ export default async function AbstractionVersionPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-bold tracking-display">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           {version.contractTitle}, version {version.versionNo}
         </h1>
-        <p className="text-sm text-muted-foreground">With {version.payerName}.</p>
+        <p className="text-base text-muted-foreground">With {version.payerName}.</p>
       </div>
       <VersionStateNotice review={review} />
       <ModelNoticeAlert notice={modelNotice} />
@@ -284,7 +284,7 @@ export default async function AbstractionVersionPage(props: Props) {
             </CardHeader>
             <CardContent>
               {review.records.length === 0 || review.unresolved > 0 ? (
-                <p className="text-sm text-destructive">Blocked: {review.records.length === 0 ? 'the version has no rate record yet.' : `${String(review.unresolved)} record(s) are not verified or no longer resolve.`}</p>
+                <p className="text-sm text-destructive">Blocked: {review.records.length === 0 ? 'the version has no rate record yet.' : `${String(review.unresolved)} record(s) are not checked against the cited page yet or no longer resolve.`}</p>
               ) : (
                 <ActionForm action={approveVersionFormAction} submit="Approve the version">
                   {hidden()}

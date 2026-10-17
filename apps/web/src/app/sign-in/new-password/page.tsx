@@ -14,7 +14,7 @@ export default async function NewPasswordPage() {
   const { email } = await loadPublicPage(newPasswordPage, {});
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
-      <h1 className="text-2xl font-bold tracking-display">Choose a password</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Choose a password</h1>
       <Card>
         <CardHeader>
           <CardTitle>{email}</CardTitle>

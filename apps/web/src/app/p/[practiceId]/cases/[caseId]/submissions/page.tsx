@@ -54,10 +54,10 @@ export default async function SubmissionsPage(props: Props) {
         <Link className="text-sm underline" href={casePath}>
           The case
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-display">
+        <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           Submissions and responses: {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           {stageLabel('actionable')}: <Money value={item.actionableNowCents} />. The practice submits the exported packet through the payer’s own channel and logs it here; payer approved and recovered amounts come from the recovery ledger, not
           from a response recorded here.
         </p>

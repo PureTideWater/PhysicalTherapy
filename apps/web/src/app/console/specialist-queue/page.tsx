@@ -29,8 +29,8 @@ export default async function SpecialistQueuePage(props: Props) {
   return (
     <AppShell shell={page.shell} section="specialist_queue">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Specialist queue</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Specialist queue</h1>
+        <p className="text-base text-muted-foreground">
           Counts only: a practice’s documents and contracts open only under its support grant, which a platform administrator opens from a ticket for four hours.
         </p>
       </div>
@@ -74,7 +74,7 @@ export default async function SpecialistQueuePage(props: Props) {
         )}
       </p>
       {total === 0 ? (
-        <EmptyState title="Nothing waiting" nextStep="Practices appear here when they upload contracts or exhibits, or when a version or question waits." />
+        <EmptyState mark title="Nothing waiting" nextStep="Practices appear here when they upload contracts or exhibits, or when a version or question waits." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Practices">
           <thead className="text-muted-foreground">

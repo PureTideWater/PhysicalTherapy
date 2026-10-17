@@ -65,6 +65,20 @@ describe('VerifiedSeal and VerifiedBadge', () => {
     expect(badge).toContain(`title="${verifiedDefinition}"`);
   });
 
+  it('follow dark mode through the tokens: the badge in the foreground color, the reversed seal on a dark ground', () => {
+    const earned = reconciliation(3000n);
+    const badge = renderToStaticMarkup(<VerifiedBadge {...earned} />);
+    expect(badge).toContain('border-fg text-fg');
+    expect(badge).not.toMatch(/border-ink|text-ink/);
+    const seal = renderToStaticMarkup(<VerifiedSeal {...earned} />);
+    // One shows at a time: the Ink seal on a light ground, the reversed one under [data-theme="dark"] or .dark.
+    expect(seal).toMatch(/<img src="\/brand\/paidwhole-seal.svg"[^>]*class="dark:hidden"/);
+    expect(seal).toMatch(/<img src="\/brand\/paidwhole-seal-reversed.svg"[^>]*class="hidden dark:block"/);
+    const reversed = renderToStaticMarkup(<VerifiedSeal {...earned} reversed />);
+    expect(reversed.match(/<img /g)).toHaveLength(1);
+    expect(reversed).toContain('src="/brand/paidwhole-seal-reversed.svg"');
+  });
+
   it('cannot be handed a literal true', () => {
     // @ts-expect-error reconciledToCash is the ledger's answer, never a literal
     const literal = <VerifiedSeal reconciledToCash={true} source="anything" />;
@@ -85,6 +99,8 @@ describe('PaidWholeMark and PaidWholeLockup', () => {
     expect(header).toContain('>PaidWhole</span>');
     expect(header).toContain('font-display font-bold');
     expect(header).toContain('tracking-wordmark');
+    // One color with the ring: the wordmark reads the ring's token, so both are Ink, or both White on dark.
+    expect(header).toContain('text-mark-ring');
     expect(header).toContain('width="17"');
     const stacked = renderToStaticMarkup(<PaidWholeLockup size={28} stacked tagline />);
     expect(stacked).toContain('flex-col');

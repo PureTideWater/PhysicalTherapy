@@ -45,8 +45,27 @@ bar that stands still under reduced motion).
 **Chrome.** The header carries `<PaidWholeLockup size={20}/>` left and the practice switcher and account right; the
 rail's active item has the single brass underline; below the md breakpoint the rail folds into the header's Menu.
 Sign-in steps sit on Paper under the stacked lockup. Dashboard tiles: label in Slate at 12 px, value in Plex Mono 500,
-note in Slate. Every money figure, code, unit count and rate is in the mono face with tabular numerals. Every recovered
-dollar label names its proof level ("Recovered (posted)", "Recovered principal, net (deposited)").
+note in Slate. One type scale: a page's title 32 px/700, a section's heading 20 px/700, a card's title 18 px/700, all
+in the display face at -0.02em; running text (a page's lede, a card's description) 16/24; tables and dense controls
+14. Every money figure, code, unit count and rate is in the mono face with tabular numerals, running text and button
+words included (`<Money/>`); the one exception is a price inside a native `<option>`, which holds text only. At a
+phone's width no page scrolls sideways: a wide table scrolls inside its own card (its scroller is `relative`, so a
+visually hidden header stays inside it), and a definition list stacks its terms over their values.
+
+**Tables: expected, paid, short.** The brand's three numbers stand side by side in that order. In a table of lines the
+comparison is at the allowed level (the variance is expected allowed less observed allowed), so "paid" in the brand's
+order is the observed allowed amount: Charge, then Expected allowed, Observed allowed and Short (variance), then the
+remittance's Paid and Patient share, the two parts of what it allowed. The brand journey pins the order.
+
+**Recovered.** "Recovered" is never shown without "posted" or "deposited". Where the practice's proof level is at hand
+the label names it (`recoveredLabel` in `@tp/ledger`: "Recovered (posted)", "Recovered principal, net (deposited)", the
+audit report's headline under the proof level its gate judged it); a stage label that stands without one (a line's
+chip, the monthly summary's row and column, a case's timeline) reads "Recovered (posted or deposited)", the plan's
+stage five as `STAGE_LABELS` names it. A region's accessible name carries the same words as its visible label.
+
+**Empty states.** The mark alone, still, belongs to a screen-level empty state, one per page at most, and is
+decorative beside the heading that names the state; an empty section inside a screen is its words alone, so the mark
+is not repeated down a page and a screen reader does not hear "PaidWhole" for each empty list.
 
 **Status as text on tint.** A chip is colored text on its quiet tint with its label, never color alone:
 
@@ -66,8 +85,46 @@ dollar label names its proof level ("Recovered (posted)", "Recovered principal, 
 | Deadline later, none | neutral | |
 
 Whole and short are their colors on their tints (4.7:1 and better). Unpriced's own gray is 3.7:1 on white, below the
-4.5:1 text minimum, so an unpriced chip's text is Slate and its hue is the chip's border. A destructive badge (a failed
-run or report) is short text on the short tint, not white on red.
+4.5:1 text minimum, so an unpriced chip's text is Slate and its hue is the chip's border; the report stylesheet's
+`.unpriced` is Slate text likewise. A system state that is not a payment status (succeeded, ready, released, open) is a
+neutral badge, Ink text on the inset tint with its rule: Ink fills are the primary button's alone. A failure (a failed
+run, a refused check, an evidence gap) is danger text on the danger tint: `--pw-danger` and `--pw-danger-bg` are named
+apart from Short, the data color, although the brand defines no other red yet and both still read Short's values. A
+rate record checked against its page reads "Fields checked", never "Verified", which the brand keeps for the
+ledger-gated seal. A form field's outline is `--pw-input-border` (3.5:1 on White, 3.2:1 on Paper; WCAG 1.4.11), the
+native selects and text areas included; the quiet rules stay `--pw-border`.
+
+**Email.** The header is the outlined horizontal lockup with its tagline, the delivered
+`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, drawn at 160 px from the application's origin (APP_ORIGIN, which
+every message already links to) with the alternative text "PaidWhole": every mail client renders an image where some
+strip inline SVG, and the wordmark is never typed in a fallback face. The ground is White (Paper is for print). The
+public brand art under `/brand` alone answers `Cross-Origin-Resource-Policy: cross-origin`, so a web mail client on its
+own origin may embed it; every other response keeps `same-origin`.
+
+**PDFs.** A report's inside pages carry the 16 px mark alone beside the document's title in the running header (no
+lockup is built from the mark and live text below 120 px). Dollar amounts in headings and running text are wrapped in
+the mono face as table figures are (`escapeWithFigures`); a test lays each template out in Chromium and finds no amount
+outside IBM Plex Mono. A white label's name, not PaidWhole's, is the document's title, which Chromium copies into the
+PDF's Title.
+
+**Dispute packets lead with the practice.** A packet is the practice's own letter to its payer, which it submits
+through its own channel (PRD, the packet builder). It keeps the brand's type and tokens but leads with the practice's
+name on its cover and in its running header (the frame's white-label slot), and carries neither PaidWhole's lockup nor
+its name; it never earns the seal or the badge. Nothing it computes or contains changed. This is the conservative
+reading of a choice the brand does not make (it frames "Reports (PDF)" and lets a white label lead); the product owner
+may decide instead that packets carry the PaidWhole cover, which is the frame's default and a one-line change.
+
+**Readings of the specification.** BRAND.md disagrees with itself in two places, and one of its rules cannot be met;
+until the brand owner settles them this repository reads them so: sign-in uses the stacked lockup on Paper, as section
+7 says for sign-in, over section 3's "Horizontal: sign-in" and section 4's "Paper: report covers and print only"; and
+the unpriced status's text is Slate with the unpriced gray as its chip's border, since `--pw-unpriced` is 3.7:1 on
+white and 3.3:1 on its own tint, below the 4.5:1 text minimum. The brand owner is asked to settle sign-in and to darken
+`--pw-unpriced` to at least 4.5:1 on `--pw-unpriced-bg`.
+
+**Dark mode** is wired through the tokens and correct when forced (`[data-theme="dark"]` or `.dark`): the ring and the
+wordmark turn white together (the wordmark reads `--pw-mark-ring`), the Verified badge takes the foreground color, and
+the reversed seal replaces the Ink one. Nothing switches it on: there is no toggle and no `prefers-color-scheme` hook,
+because no user has asked for it and a half-checked dark mode on PHI screens is worse than none. Revisit with a setting.
 
 **The name.** "PaidWhole" replaces the working name and every placeholder for the vendor in user-facing text: page
 titles (`%s | PaidWhole`), the manifest, the home, status, terms, request-audit and invitation pages, the hardware-key
@@ -89,8 +146,10 @@ roles and environment variables keep their names.
 - The brand e2e journey (`e2e/brand.spec.ts`) proves no page asks a font service or another origin for anything,
   checks the header, the brass underline, mono figures and a short chip's colors, and writes the screenshots to
   `brand-screenshots/` (gitignored).
-- `.claude/rules/brand.md` is the drop-in's, kept as given; its path scope names `apps/worker/src/reports/**` and
-  `apps/worker/src/email/**`, while this repository's are `apps/worker/src/report` and `apps/worker/src/mail`.
+- `.claude/rules/brand.md` is the drop-in's with its path scope and file paths corrected to this repository
+  (`apps/worker/src/report/**`, `apps/worker/src/mail/**`, the statement and packet templates, `packages/ui/**`), so it
+  loads where the hex and seal exceptions live; BRAND.md says where its paths are here.
+- The hex check allows a directory by prefix and a file only by its exact path.
 - Dark mode is wired through the tokens but nothing switches it on yet (no `data-theme` toggle).
 - The drop-in's `tailwind-preset.ts` stays in the package for a v3 consumer; this repository reads `tailwind-theme.css`.
 

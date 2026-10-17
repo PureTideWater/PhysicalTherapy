@@ -38,7 +38,7 @@ export function Citation({ content }: { readonly content: PacketContent }) {
     );
   }
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm" data-citation="contract">
+    <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm" data-citation="contract">
       <dt className="text-muted-foreground">Contract</dt>
       <dd>
         {citation.contract_title}, version {citation.version_no} (in effect {citation.effective_from}
@@ -160,7 +160,7 @@ export function EvidenceList({ content }: { readonly content: PacketContent }) {
         ))}
       </ol>
       {content.evidence_gaps.length === 0 ? null : (
-        <ul className="list-disc pl-5 text-status-short" aria-label="Evidence gaps">
+        <ul className="list-disc pl-5 text-danger" aria-label="Evidence gaps">
           {content.evidence_gaps.map((gap) => (
             <li key={`${gap.code}:${String(gap.row)}`}>
               {gap.row === null ? '' : `Row ${String(gap.row)}: `}

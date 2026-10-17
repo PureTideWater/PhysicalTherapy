@@ -47,10 +47,10 @@ export default async function CasePage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/cases`}>
           Cases
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-display">
+        <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
-        <p className="text-sm text-muted-foreground">{item.behaviorText}.</p>
+        <p className="text-base text-muted-foreground">{item.behaviorText}.</p>
       </div>
       {dispute.latestSubmission?.followUpDue === true ? (
         <Alert variant="destructive" data-follow-up="due">
@@ -65,7 +65,7 @@ export default async function CasePage(props: Props) {
       ) : null}
       <Card role="region" aria-label="Case summary">
         <CardContent className="pt-6">
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-2 text-sm sm:grid-cols-[max-content_1fr_max-content_1fr]">
             <Fact label={stageLabel('actionable')}>
               <span data-figure="actionable">
                 <Money value={item.actionableNowCents} />
@@ -150,7 +150,7 @@ export default async function CasePage(props: Props) {
         </CardContent>
       </Card>
       <section aria-label="Lines" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Lines ({detail.totalLines})</h2>
+        <h2 className="text-xl font-bold tracking-display">Lines ({detail.totalLines})</h2>
         <ul className="flex flex-col gap-3" aria-label="Case lines">
           {detail.lines.map((line) => (
             <li key={line.id} className="rounded-md border p-4" data-case-line={line.id} data-actionable={line.actionable ? 'yes' : 'no'}>

@@ -34,6 +34,11 @@
   --color-link: var(--pw-link);
   --color-focus: var(--pw-focus);
   --color-danger: var(--pw-danger);
+  --color-danger-bg: var(--pw-danger-bg);
+  --color-input-border: var(--pw-input-border);
+
+  /* The mark's ring and the wordmark beside it: Ink, White on dark (one color for both). */
+  --color-mark-ring: var(--pw-mark-ring);
 
   --color-status-whole: var(--pw-whole);
   --color-status-short: var(--pw-short);

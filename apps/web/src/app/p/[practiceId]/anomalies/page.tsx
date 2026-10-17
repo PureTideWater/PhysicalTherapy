@@ -33,10 +33,10 @@ export default async function AnomaliesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="anomalies">
       <div className="flex flex-col gap-1">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-display">
+        <h1 className="flex items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           Anomalies <Investigatory />
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Lines a pricing run could not price, each compared with its cohort: the same payer and plan, code and modifiers, place of service and quarter, at least {minimumCohort} lines. A line counts when it was paid short of
           the cohort’s mode by more than <Money value={thresholdCents} />. Cohorts under the minimum are not shown.
         </p>
@@ -126,7 +126,7 @@ export default async function AnomaliesPage(props: Props) {
         </Card>
       )}
       <section aria-label="Cohorts" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Cohorts</h2>
+        <h2 className="text-xl font-bold tracking-display">Cohorts</h2>
         <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cohorts">
           <div className="flex flex-col gap-1">
             <Label htmlFor="anomalies-run">Pricing run</Label>

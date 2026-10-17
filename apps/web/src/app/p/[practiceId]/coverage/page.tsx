@@ -39,8 +39,8 @@ export default async function CoveragePage(props: Props) {
   return (
     <AppShell shell={page.shell} section="coverage">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-bold tracking-display">Coverage</h1>
-        <p className="text-sm text-muted-foreground">How much of the practice’s billing PaidWhole can price under its agreements, why the rest is unpriced, and what raises it.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Coverage</h1>
+        <p className="text-base text-muted-foreground">How much of the practice’s billing PaidWhole can price under its agreements, why the rest is unpriced, and what raises it.</p>
       </div>
       <ModelNoticeAlert notice={modelNotice} />
       <Card role="region" aria-label="Priced share">
@@ -142,7 +142,7 @@ export default async function CoveragePage(props: Props) {
         </CardContent>
       </Card>
       <section aria-label="Unpriced reasons" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Unpriced reasons</h2>
+        <h2 className="text-xl font-bold tracking-display">Unpriced reasons</h2>
         <p className="text-sm text-muted-foreground">{run === null ? 'Counts appear once a pricing run completes.' : 'Lines of the latest complete pricing run, by the reason it left them unpriced.'}</p>
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
@@ -178,7 +178,7 @@ export default async function CoveragePage(props: Props) {
         </table>
       </section>
       <section aria-label="What to obtain" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">What to obtain</h2>
+        <h2 className="text-xl font-bold tracking-display">What to obtain</h2>
         {obtain.length === 0 ? (
           <EmptyState
             title="The contract specialist is not waiting on any document"

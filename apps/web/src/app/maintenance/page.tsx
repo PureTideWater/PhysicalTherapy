@@ -14,7 +14,7 @@ export default async function MaintenancePage() {
     <>
       <PublicHeader />
       <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8 md:p-10" data-maintenance={maintenance ? 'on' : 'off'}>
-      <h1 className="text-2xl font-bold tracking-display">{maintenance ? 'We are doing scheduled maintenance' : 'Maintenance is over'}</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">{maintenance ? 'We are doing scheduled maintenance' : 'Maintenance is over'}</h1>
       <p className="text-sm">
         {maintenance
           ? 'The workspace is closed for a short while. Nothing you saved is lost, and uploads and runs already queued continue when we are back.'
