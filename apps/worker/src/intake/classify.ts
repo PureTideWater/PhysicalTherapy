@@ -18,14 +18,20 @@ import type { Sniffed } from './sniff';
  */
 export type ContentClass = 'x12' | 'pdf' | 'spreadsheet' | 'legacy_spreadsheet' | 'csv' | 'unknown';
 
-/** The contents each declared kind may hold. */
+/**
+ * The contents each declared kind may hold. A posting or EFT export is CSV only (docs/adr/0059): the
+ * reconcile step reads an export as text with the practice's template (reconcile/exports.ts), and the
+ * one workbook reader in the repository (packages/contracts' evidence reader) keeps a sheet's text but
+ * not its cells' columns, so a workbook would be stored and then never read into a row. It is held as
+ * wrong_type at intake instead, and the receipt says to save it as CSV.
+ */
 export const ACCEPTED_CONTENT: Readonly<Record<DocumentKind, ReadonlySet<ContentClass>>> = {
   x12_835: new Set(['x12']),
   contract: new Set(['pdf']),
   payer_letter: new Set(['pdf']),
   exhibit: new Set(['pdf', 'spreadsheet', 'csv']),
-  posting_export: new Set(['csv', 'spreadsheet', 'legacy_spreadsheet']),
-  eft_export: new Set(['csv', 'spreadsheet', 'legacy_spreadsheet']),
+  posting_export: new Set(['csv']),
+  eft_export: new Set(['csv']),
   other: new Set(['x12', 'pdf', 'spreadsheet', 'legacy_spreadsheet', 'csv', 'unknown']),
 };
 

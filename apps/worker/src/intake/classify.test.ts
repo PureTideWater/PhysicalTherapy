@@ -13,7 +13,7 @@ describe('dispose', () => {
     expect(dispose('x12_835', { type: 'x12' }, entry)).toEqual({ action: 'parse', status: 'scanned' });
     expect(dispose('contract', { type: 'pdf' }, top)).toEqual({ action: 'store', status: 'stored' });
     expect(dispose('posting_export', { type: 'csv' }, top)).toEqual({ action: 'store', status: 'stored' });
-    expect(dispose('eft_export', { type: 'ole2' }, top)).toEqual({ action: 'store', status: 'stored' });
+    expect(dispose('eft_export', { type: 'csv' }, entry)).toEqual({ action: 'store', status: 'stored' });
     expect(dispose('exhibit', { type: 'zip' }, { entry: false, spreadsheetZip: true })).toEqual({ action: 'store', status: 'stored' });
     expect(dispose('other', { type: 'unknown' }, top)).toEqual({ action: 'store', status: 'stored' });
   });
@@ -24,6 +24,18 @@ describe('dispose', () => {
     expect(dispose('contract', { type: 'csv' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
     expect(dispose('contract', { type: 'x12_malformed' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
     expect(dispose('payer_letter', { type: 'x12' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+  });
+
+  it('holds a posting or EFT export that is a workbook, .xlsx or .xls, as not its type: exports are read as CSV only (docs/adr/0059)', () => {
+    for (const kind of ['posting_export', 'eft_export'] as const) {
+      expect(ACCEPTED_CONTENT[kind]).toEqual(new Set(['csv']));
+      expect(dispose(kind, { type: 'zip' }, { entry: false, spreadsheetZip: true })).toEqual({ action: 'hold', status: 'wrong_type' });
+      expect(dispose(kind, { type: 'zip' }, { entry: true, spreadsheetZip: true })).toEqual({ action: 'hold', status: 'wrong_type' });
+      expect(dispose(kind, { type: 'ole2' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+      expect(dispose(kind, { type: 'pdf' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+      // A zip of exports is still expanded, each entry judged on its own.
+      expect(dispose(kind, { type: 'zip' }, top)).toEqual({ action: 'expand' });
+    }
   });
 
   it('expands a zip, but holds a zip inside a zip', () => {

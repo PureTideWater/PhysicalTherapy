@@ -89,6 +89,9 @@ describe('receipt states', () => {
   it('name every kind, and format sizes, dates and IDs for people', () => {
     expect(Object.keys(KIND_NAMES).sort()).toEqual([...DOCUMENT_KINDS].sort());
     expect(receiptState({ ...base, kind: 'contract', status: 'wrong_type' }).detail).toBe('Not a contract: the file is another type of document.');
+    // A workbook uploaded as an export is held: exports are read as CSV only (docs/adr/0059).
+    expect(receiptState({ ...base, kind: 'posting_export', status: 'wrong_type' }).detail).toBe('Not a CSV: posting exports are read as CSV only. Save it as CSV (comma-separated) and upload it again.');
+    expect(receiptState({ ...base, kind: 'eft_export', status: 'wrong_type' })).toMatchObject({ held: true, detail: 'Not a CSV: EFT exports are read as CSV only. Save it as CSV (comma-separated) and upload it again.' });
     expect(receiptState({ ...base, kind: 'contract', status: 'stored' }).detail).toContain('contract is kept for its review');
     expect([formatBytes(1000), formatBytes(2048), formatBytes(5 * 1024 ** 2), formatBytes(2 * 1024 ** 3), formatBytes(8 * 1024 ** 4)]).toEqual(['1000 bytes', '2.0 KiB', '5.0 MiB', '2.0 GiB', '8192.0 GiB']);
     expect(utcMinute('2026-10-16T12:34:56.000Z')).toBe('2026-10-16 12:34 UTC');
