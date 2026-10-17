@@ -7,8 +7,9 @@
  * (the local simulator on days 3, 7 and 14); the organization's administrators are told on the day it
  * fails, a week later, two weeks later, a week before the suspension and on the day it takes effect, 30
  * days after the failure, when the database starts refusing new runs (billing_standing, in SQL, holds the
- * same 30 days; a database test proves the two agree). Paying the invoice ends it: a suspended
- * organization is told it is reinstated, one paid earlier that its payment arrived ("resolved", quietly).
+ * same 30 days; a database test proves the two agree). Paying the invoice ends it: an organization paid at or
+ * after the suspension took effect is told it is reinstated (whether or not the suspension's notice had gone
+ * out yet), one paid before it that its payment arrived ("resolved", quietly).
  */
 
 export const SUSPENSION_DAYS = 30;
@@ -62,6 +63,8 @@ export interface DunningState {
   /** The invoice was paid (a voided one is neither). */
   readonly paid: boolean;
   readonly firstFailedAt: Date | null;
+  /** When it was paid (a paid invoice always has its time). */
+  readonly paidAt?: Date | null;
   /** The last notice recorded for it. */
   readonly stage: DunningStageCode | null;
 }
@@ -69,17 +72,23 @@ export interface DunningState {
 /**
  * What to send now for one invoice, or null: the latest notice the schedule has reached that has not been
  * sent (a notice missed on a day the job did not run is skipped for the latest one, never sent late in a
- * pile), or, once paid, the ending (reinstated after a suspension, resolved before one).
+ * pile), or, once paid, the ending: reinstated when the organization was suspended for it (paid at or after
+ * suspensionAt, or its suspension notice went out), resolved before that. An invoice paid before any notice
+ * went out and before the suspension needs no word at all.
  */
 export function nextDunningStep(state: DunningState, now: Date): DunningStageCode | null {
   if (state.firstFailedAt === null) {
     return null;
   }
   if (state.paid) {
-    if (state.stage === null || state.stage === 'reinstated' || state.stage === 'resolved') {
+    if (state.stage === 'reinstated' || state.stage === 'resolved') {
       return null;
     }
-    return state.stage === 'suspended' ? 'reinstated' : 'resolved';
+    const suspended = state.stage === 'suspended' || (state.paidAt !== undefined && state.paidAt !== null && state.paidAt.getTime() >= suspensionAt(state.firstFailedAt).getTime());
+    if (suspended) {
+      return 'reinstated';
+    }
+    return state.stage === null ? null : 'resolved';
   }
   if (!state.unpaid || state.stage === 'reinstated' || state.stage === 'resolved') {
     return null;

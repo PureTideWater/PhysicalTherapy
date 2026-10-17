@@ -32,6 +32,9 @@ let app: DatabasePool;
 let operator: DatabasePool;
 let billing: LocalBillingProvider;
 const outcomes: string[] = [];
+/** While on, the simulator's webhooks wait, as Stripe's may (delivered by deliverHeld). */
+const held = { on: false };
+const waiting: { payload: string; signature: string }[] = [];
 
 beforeAll(async () => {
   database = await createMigratedDatabase(readDatabaseUrl());
@@ -43,6 +46,10 @@ beforeAll(async () => {
     webhookSecret: SECRET,
     store: new MemorySimulatorStore(),
     deliver: async (payload, signature) => {
+      if (held.on) {
+        waiting.push({ payload, signature });
+        return;
+      }
       outcomes.push((await receiveWebhook({ pool: app, provider: billing }, { payload, signature, requestId: `test-${randomUUID()}` })).outcome);
     },
   });
@@ -66,6 +73,22 @@ async function customerWithMethod(label: string, details = GOOD_ACH): Promise<Te
   const world = await createTenantWorld(owner, label);
   const intent = await startPaymentMethodSetup(services(), world.organizationId, randomUUID());
   await billing.confirmSetupIntent({ setupIntentRef: intent.setupIntentRef, details, idempotencyKey: randomUUID() });
+  return world;
+}
+
+/** Delivers the webhooks held back, in the order they were sent. */
+async function deliverHeld(): Promise<void> {
+  for (const event of waiting.splice(0)) {
+    outcomes.push((await receiveWebhook({ pool: app, provider: billing }, { ...event, requestId: `test-${randomUUID()}` })).outcome);
+  }
+}
+
+/** A customer with a method on file while webhooks are held: the method is delivered first, then delivery is held again. */
+async function customerWithMethodHeld(label: string): Promise<TenantWorld> {
+  held.on = false;
+  await deliverHeld();
+  const world = await customerWithMethod(label);
+  held.on = true;
   return world;
 }
 
@@ -167,7 +190,85 @@ describe('billing with the local Stripe test-mode simulator', () => {
     expect(await receive(signed('charge.refunded', { id: 'ch_1' }))).toMatchObject({ outcome: 'ignored' });
   });
 
-  it('suspends an organization 30 days after a failed payment: new work refused with the reason, data readable, runs again once paid', async () => {
+  it('records a failed payment delivered after a newer update of the same invoice, and moves the clock back to an earlier failure delivered late', async () => {
+    const world = await customerWithMethod('out of order');
+    const customer = await customerRef(world.organizationId);
+    const invoiceId = `in_hand${randomBytes(6).toString('hex')}`;
+    const failedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 3_600_000);
+    // Stripe sends invoice.updated (open, its attempt counted) a minute after invoice.payment_failed; it arrives first.
+    expect(await receive(signed('invoice.updated', invoiceObject(invoiceId, customer, 'open', 50000, 0), new Date(failedAt.getTime() + 60_000)))).toMatchObject({ outcome: 'applied' });
+    expect(await receive(signed('invoice.payment_failed', invoiceObject(invoiceId, customer, 'open', 50000, 0), failedAt))).toMatchObject({ outcome: 'applied' });
+    const row = await one<{ first_failed_at: Date; code: string | null; standing: string }>(
+      'SELECT i.first_failed_at, i.last_failure_code AS code, s.standing FROM invoice i JOIN billing_standing s ON s.organization_id = i.organization_id WHERE i.stripe_invoice_id = $1',
+      [invoiceId],
+    );
+    expect(row).toEqual({ first_failed_at: failedAt, code: 'payment_failed', standing: 'past_due' });
+    // The same failure delivered again changes nothing; an earlier failure delivered late starts the clock there.
+    const earlier = new Date(failedAt.getTime() - 2 * 86_400_000);
+    expect(await receive(signed('invoice.payment_failed', invoiceObject(invoiceId, customer, 'open', 50000, 0), failedAt))).toMatchObject({ outcome: 'stale' });
+    expect(await receive(signed('invoice.payment_failed', invoiceObject(invoiceId, customer, 'open', 50000, 0), earlier))).toMatchObject({ outcome: 'applied' });
+    expect(await one<{ first_failed_at: Date }>('SELECT first_failed_at FROM invoice WHERE stripe_invoice_id = $1', [invoiceId])).toEqual({ first_failed_at: earlier });
+    // Nothing moves it later.
+    await expect(owner.query('UPDATE invoice SET first_failed_at = first_failed_at + interval \'1 day\' WHERE stripe_invoice_id = $1', [invoiceId])).rejects.toMatchObject({ code: '23514' });
+    // A failure reported for an invoice already paid starts no clock.
+    const paidId = `in_hand${randomBytes(6).toString('hex')}`;
+    await receive(signed('invoice.paid', invoiceObject(paidId, customer, 'paid', 100, 100)));
+    expect(await receive(signed('invoice.payment_failed', invoiceObject(paidId, customer, 'open', 100, 0), failedAt))).toMatchObject({ outcome: 'stale' });
+    expect(await one<{ first_failed_at: Date | null }>('SELECT first_failed_at FROM invoice WHERE stripe_invoice_id = $1', [paidId])).toEqual({ first_failed_at: null });
+  });
+
+  it('subscribes an organization once while the first subscription’s webhook is still on its way', async () => {
+    const world = await customerWithMethod('one plan');
+    held.on = true;
+    try {
+      const first = await subscribe(services(), world.organizationId, 'monthly', randomUUID());
+      expect(first).toMatch(/^sub_/);
+      // No webhook has arrived: no subscription row yet, but the claim refuses a second plan.
+      expect(await one<{ n: string }>('SELECT count(*)::text AS n FROM subscription WHERE organization_id = $1', [world.organizationId])).toEqual({ n: '0' });
+      await expect(subscribe(services(), world.organizationId, 'annual', randomUUID())).rejects.toThrow(/already being set up/);
+      const other = await customerWithMethodHeld('two at once');
+      const both = await Promise.allSettled([subscribe(services(), other.organizationId, 'monthly', randomUUID()), subscribe(services(), other.organizationId, 'annual', randomUUID())]);
+      expect(both.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(both.filter((outcome) => outcome.status === 'rejected').map((outcome) => String(outcome.reason))).toEqual([expect.stringMatching(/already being set up/)]);
+    } finally {
+      held.on = false;
+      await deliverHeld();
+    }
+    expect(await one<{ n: string }>('SELECT count(*)::text AS n FROM subscription WHERE organization_id = $1', [world.organizationId])).toEqual({ n: '1' });
+    expect(await one<{ status: string; ref: string }>('SELECT status, stripe_subscription_id AS ref FROM subscription_claim WHERE organization_id = $1', [world.organizationId])).toMatchObject({ status: 'created' });
+    // A claim moves forward only, and is kept.
+    await expect(owner.query("UPDATE subscription_claim SET status = 'pending' WHERE organization_id = $1", [world.organizationId])).rejects.toMatchObject({ code: '23514' });
+    await expect(owner.query('DELETE FROM subscription_claim WHERE organization_id = $1', [world.organizationId])).rejects.toMatchObject({ code: '23514' });
+    // Stripe's refusal frees the claim.
+    const refused = await customerWithMethod('refused plan');
+    const original = billing.createSubscription.bind(billing);
+    billing.createSubscription = () => Promise.reject(new Error('synthetic refusal'));
+    try {
+      await expect(subscribe(services(), refused.organizationId, 'monthly', randomUUID())).rejects.toThrow(/synthetic refusal/);
+    } finally {
+      billing.createSubscription = original;
+    }
+    expect(await one<{ status: string }>('SELECT status FROM subscription_claim WHERE organization_id = $1', [refused.organizationId])).toEqual({ status: 'failed' });
+    await subscribe(services(), refused.organizationId, 'monthly', randomUUID());
+    // A canceled subscription ends its claim, and a new plan may be chosen.
+    const sub = (await one<{ ref: string }>('SELECT stripe_subscription_id AS ref FROM subscription_claim WHERE organization_id = $1 AND status = $2', [world.organizationId, 'created'])).ref;
+    const customer = await customerRef(world.organizationId);
+    await receive(
+      signed('customer.subscription.deleted', {
+        id: sub,
+        object: 'subscription',
+        customer,
+        status: 'canceled',
+        cancel_at_period_end: false,
+        canceled_at: Math.floor(Date.now() / 1000),
+        items: { data: [{ price: { id: 'price_synthetic_monthly', recurring: { interval: 'month' } }, current_period_start: Math.floor(Date.now() / 1000) - 60, current_period_end: Math.floor(Date.now() / 1000) }] },
+        metadata: { tp_plan: 'monthly' },
+      }),
+    );
+    expect(await one<{ status: string }>('SELECT status FROM subscription_claim WHERE stripe_subscription_id = $1', [sub])).toEqual({ status: 'ended' });
+  });
+
+    it('suspends an organization 30 days after a failed payment: new work refused with the reason, data readable, runs again once paid', async () => {
     const world = await customerWithMethod('suspended', FAILING_ACH);
     const customer = await customerRef(world.organizationId);
     // An upload made before the suspension (its zip entries may still land).
@@ -277,7 +378,47 @@ describe('billing with the local Stripe test-mode simulator', () => {
     );
   });
 
-  it('issues an audit invoice from the console only to an organization with a payment method on file, and pays an open invoice on demand', async () => {
+  it('reaches a new failure past more than 500 settled invoices, and tells an organization paid after its suspension took effect that runs started again', async () => {
+    const settled = await createTenantWorld(owner, 'settled invoices');
+    // 501 invoices paid before their suspension with no notice sent, and 501 unpaid ones whose suspension notice went out.
+    await owner.query(
+      `INSERT INTO invoice (organization_id, stripe_invoice_id, stripe_customer_id, kind, status, currency, amount_due_cents, amount_paid_cents, amount_remaining_cents,
+                            paid_at, first_failed_at, dunning_stage, dunning_notified_at, stripe_event_at)
+       SELECT $1::uuid, 'in_settled' || n || 'p' || $2, 'cus_settled' || $2, 'audit', 'paid', 'usd', 100, 100, 0, now() - interval '50 days', now() - interval '60 days', NULL, NULL, now()
+         FROM generate_series(1, 501) n
+       UNION ALL
+       SELECT $1::uuid, 'in_settled' || n || 's' || $2, 'cus_settled' || $2, 'audit', 'open', 'usd', 100, 0, 100, NULL, now() - interval '90 days', 'suspended', now(), now()
+         FROM generate_series(1, 501) n`,
+      [settled.organizationId, randomBytes(4).toString('hex')],
+    );
+    const world = await customerWithMethod('crowded out');
+    const customer = await customerRef(world.organizationId);
+    const fresh = `in_hand${randomBytes(6).toString('hex')}`;
+    await receive(signed('invoice.payment_failed', invoiceObject(fresh, customer, 'open', 1200, 0), new Date(Date.now() - 3_600_000)));
+    const mail = new MemoryMailSender();
+    const options = { pool: operator, mail, origin: 'http://localhost:3000', requestId: `job-${randomUUID()}`, now: new Date() };
+    await runDunning(options);
+    expect(await one<{ stage: string }>('SELECT dunning_stage AS stage FROM invoice WHERE stripe_invoice_id = $1', [fresh])).toEqual({ stage: 'payment_failed' });
+    const notice = mail.sent.find((message) => message.links[0]?.endsWith(world.organizationId));
+    const suspends = new Date(Date.now() - 3_600_000 + 30 * 86_400_000);
+    expect(notice?.lines[1]).toMatch(new RegExp(`^Update the payment method or pay the invoice before ${suspends.toISOString().slice(0, 10)} at \\d{2}:\\d{2} UTC; from then new runs stop until it is paid\\.$`));
+    expect(await one<{ n: string }>("SELECT count(*)::text AS n FROM invoice WHERE organization_id = $1 AND dunning_stage IS NULL AND status = 'paid'", [settled.organizationId])).toEqual({ n: '501' });
+
+    // Suspended for an hour, paid before the next day's job: the final notice was the last one sent, and the
+    // organization still hears that runs started again, with its audit event.
+    const late = `in_hand${randomBytes(6).toString('hex')}`;
+    const failedAt = new Date(Math.floor(Date.now() / 1000) * 1000 - 30 * 86_400_000 - 3_600_000);
+    await receive(signed('invoice.payment_failed', invoiceObject(late, customer, 'open', 900, 0), failedAt));
+    await owner.query("UPDATE invoice SET dunning_stage = 'final_notice', dunning_notified_at = now() - interval '7 days' WHERE stripe_invoice_id = $1", [late]);
+    await receive(signed('invoice.paid', invoiceObject(late, customer, 'paid', 900, 900)));
+    // The fresh failure still holds the organization past due, never suspended: reinstated, not resolved.
+    await runDunning({ ...options, requestId: `job-${randomUUID()}` });
+    expect(await one<{ stage: string }>('SELECT dunning_stage AS stage FROM invoice WHERE stripe_invoice_id = $1', [late])).toEqual({ stage: 'reinstated' });
+    expect(mail.sent.filter((message) => message.links[0]?.endsWith(world.organizationId) && message.subject === 'New runs have started again')).toHaveLength(1);
+    expect(await one<{ n: string }>("SELECT count(*)::text AS n FROM audit_event WHERE action = 'billing_reinstated' AND object_id = $1", [world.organizationId])).toEqual({ n: '1' });
+  });
+
+    it('issues an audit invoice from the console only to an organization with a payment method on file, and pays an open invoice on demand', async () => {
     const world = await customerWithMethod('audit invoice');
     const invoice = await issueAuditInvoice(services(), world.organizationId, randomUUID());
     expect(await one<Record<string, unknown>>('SELECT kind, status, amount_due_cents::text AS due FROM invoice WHERE stripe_invoice_id = $1', [invoice])).toEqual({ kind: 'audit', status: 'open', due: '250000' });
@@ -356,6 +497,18 @@ describe('billing with the local Stripe test-mode simulator', () => {
     // The ROI statement takes its fees from them (the milestone 9 seam).
     const generated = await withJobScope(app, { jobId: randomUUID(), practiceId: world.practiceId }, (scope) => generateRoiStatement(scope, { practiceId: world.practiceId, periodFrom: today, periodTo: today, requestId: 'test' }));
     expect(generated?.statement.feesCents).toBe(33334n);
+
+    // Deleting a practice later never changes a past period's fees: the share is of the practices that existed then.
+    await new Promise((resolve) => setTimeout(resolve, Math.max(0, paidAt * 1000 - Date.now() + 50)));
+    await asOwner(owner, [practices[2] as string], () => owner.query("UPDATE practice SET status = 'deleted', data_key_ref = NULL WHERE id = $1", [practices[2]]));
+    expect(await one<{ deleted: boolean }>('SELECT deleted_at IS NOT NULL AS deleted FROM practice WHERE id = $1', [practices[2]])).toEqual({ deleted: true });
+    const after = await Promise.all(
+      practices.slice(0, 2).map((practiceId) =>
+        withJobScope(app, { jobId: randomUUID(), practiceId }, async (scope) => (await scope.client.query<{ fees: string }>('SELECT practice_fees_paid($1, $2::date, $2::date)::text AS fees', [practiceId, today])).rows[0]?.fees),
+      ),
+    );
+    expect(after).toEqual(['33334', '33334']);
+    await expect(owner.query('UPDATE practice SET deleted_at = now() - interval \'1 day\' WHERE id = $1', [practices[2]])).rejects.toMatchObject({ code: '23514' });
   });
 });
 
@@ -379,7 +532,7 @@ describe('billing reads no PHI table (PRD 8)', () => {
         WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v') AND (has_table_privilege('tp_billing', c.oid, 'SELECT') OR has_any_column_privilege('tp_billing', c.oid, 'SELECT'))
         ORDER BY 1`,
     );
-    expect(held.rows.map((row) => row.table_name)).toEqual(['billing_event', 'billing_standing', 'invoice', 'organization', 'subscription', 'usage_snapshot']);
+    expect(held.rows.map((row) => row.table_name)).toEqual(['billing_event', 'billing_standing', 'invoice', 'organization', 'subscription', 'subscription_claim', 'usage_snapshot']);
   });
 
   it('refuses tp_billing a PHI read even inside a practice’s scope', async () => {

@@ -122,7 +122,32 @@ export const billingEvent = pgTable(
   (table) => [index('billing_event_by_organization').on(table.organizationId, table.receivedAt)],
 );
 
+/** A subscription claim's states (migrations/20261101090000_billing_review.sql; docs/adr/0055). */
+export const SUBSCRIPTION_CLAIM_STATUSES = ['pending', 'created', 'failed', 'ended'] as const;
+export type SubscriptionClaimStatus = (typeof SUBSCRIPTION_CLAIM_STATUSES)[number];
+
+/**
+ * One subscription being set up or in place per organization, claimed before Stripe is asked (a unique partial
+ * index on the organization while pending or created), so two submissions cannot both subscribe.
+ */
+export const subscriptionClaim = pgTable(
+  'subscription_claim',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organization.id),
+    plan: text('plan', { enum: PLAN_INTERVALS }).notNull(),
+    status: text('status', { enum: SUBSCRIPTION_CLAIM_STATUSES }).notNull().default('pending'),
+    stripeSubscriptionId: text('stripe_subscription_id'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [index('subscription_claim_by_subscription').on(table.stripeSubscriptionId)],
+);
+
 export type SubscriptionRow = typeof subscription.$inferSelect;
 export type InvoiceRow = typeof invoice.$inferSelect;
 export type UsageSnapshotRow = typeof usageSnapshot.$inferSelect;
 export type BillingEventRow = typeof billingEvent.$inferSelect;
+export type SubscriptionClaimRow = typeof subscriptionClaim.$inferSelect;

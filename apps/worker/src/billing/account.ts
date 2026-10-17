@@ -221,8 +221,18 @@ async function currentSubscription(services: BillingServices, organizationId: st
   );
 }
 
-/** Subscribes the organization to a plan, charged to the payment method on file; refused while one is current. */
-export async function subscribe(services: BillingServices, organizationId: string, plan: PlanInterval, requestKey: string): Promise<string> {
+/** How long a claim may wait on Stripe's answer before it is taken for abandoned (its process gone). */
+const ABANDONED_CLAIM = "interval '1 hour'";
+
+/**
+ * Subscribes the organization to a plan, charged to the payment method on file; refused while one is current
+ * or being set up. The database holds one claim per organization while a subscription is being set up or in
+ * place (subscription_claim), taken before Stripe is asked: two submissions made before the first one's
+ * webhook arrives (two tabs, a form rendered twice) cannot both subscribe. Stripe's idempotency key is the
+ * claim's, so a retry of the same claim never creates a second subscription. The claim ends when the
+ * subscription does (events.ts).
+ */
+export async function subscribe(services: BillingServices, organizationId: string, plan: PlanInterval, _requestKey: string): Promise<string> {
   if ((await currentSubscription(services, organizationId)) !== undefined) {
     throw new BillingRefusedError('plan', 'the organization already has a plan; cancel it first to choose another');
   }
@@ -230,7 +240,22 @@ export async function subscribe(services: BillingServices, organizationId: strin
   if ((await services.provider.paymentMethodOnFile(customer)) === null) {
     throw new BillingRefusedError('plan', 'add a payment method (ACH or card) before choosing a plan');
   }
-  return services.provider.createSubscription({ customerRef: customer, organizationId, plan, idempotencyKey: `subscribe:${organizationId}:${requestKey}` });
+  const claim = await withBilling(services.pool, async (client) => {
+    await client.query(`UPDATE subscription_claim SET status = 'failed' WHERE organization_id = $1 AND status = 'pending' AND created_at < now() - ${ABANDONED_CLAIM}`, [organizationId]);
+    return (await billingRows<{ id: string }>(client, 'INSERT INTO subscription_claim (organization_id, plan) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING id', [organizationId, plan]))[0]?.id;
+  });
+  if (claim === undefined) {
+    throw new BillingRefusedError('plan', 'a plan is already being set up for the organization, or is in place; reload the page to see it');
+  }
+  let subscriptionRef: string;
+  try {
+    subscriptionRef = await services.provider.createSubscription({ customerRef: customer, organizationId, plan, idempotencyKey: `subscribe:${organizationId}:${claim}` });
+  } catch (error) {
+    await withBilling(services.pool, (client) => client.query("UPDATE subscription_claim SET status = 'failed' WHERE id = $1 AND status = 'pending'", [claim]));
+    throw error;
+  }
+  await withBilling(services.pool, (client) => client.query("UPDATE subscription_claim SET status = 'created', stripe_subscription_id = $2 WHERE id = $1 AND status = 'pending'", [claim, subscriptionRef]));
+  return subscriptionRef;
 }
 
 /** Cancels the current plan at the end of its period. */

@@ -18,13 +18,17 @@ export {
   PLAN_INTERVALS,
   type PaymentMethodKind,
   type PlanInterval,
+  SUBSCRIPTION_CLAIM_STATUSES,
   SUBSCRIPTION_STATUSES,
+  type SubscriptionClaimRow,
+  type SubscriptionClaimStatus,
   type SubscriptionRow,
   type SubscriptionStatus,
   type UsageSnapshotRow,
   billingEvent,
   invoice,
   subscription,
+  subscriptionClaim,
   usageSnapshot,
 } from './billing';
 export {

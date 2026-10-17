@@ -10,8 +10,10 @@ import { type BillingClient, type BillingPool, billingRows, withBilling } from '
  * - a subscription event writes the subscription as the event reports it, and an invoice event the invoice,
  *   for the organization whose Stripe customer it names; an event older than the one a record already took
  *   (Stripe does not promise order) is stale and changes nothing, and an invoice's status only moves forward;
- * - an invoice's first failed payment starts its dunning clock (first_failed_at, the event's time), which
- *   nothing moves afterwards; a paid one records how it was paid;
+ * - an invoice's first failed payment starts its dunning clock (first_failed_at, the event's time). A failure
+ *   is recorded whether or not the event's snapshot of the invoice is stale: a newer update delivered first
+ *   (an open invoice, its attempt counted) must not hide the failure that came before it. An earlier failure
+ *   delivered late moves the clock back to it; nothing moves it later. A paid one records how it was paid;
  * - a confirmed setup intent makes its payment method the customer's default (at Stripe, keyed by the event,
  *   so a repeat sets nothing twice);
  * - every other type is recorded and ignored, as is an event for a customer no organization has.
@@ -67,8 +69,15 @@ async function upsertSubscription(client: BillingClient, organizationId: string,
       occurredAt,
     ],
   );
+  if (rows.length > 0 && ENDED_SUBSCRIPTIONS.has(subscription.status)) {
+    // The organization may choose a plan again (account.ts subscribe's claim).
+    await client.query("UPDATE subscription_claim SET status = 'ended' WHERE stripe_subscription_id = $1 AND status = 'created'", [subscription.subscriptionRef]);
+  }
   return rows.length > 0;
 }
+
+/** A subscription in one of these has ended for good. */
+const ENDED_SUBSCRIPTIONS: ReadonlySet<string> = new Set(['canceled', 'incomplete_expired']);
 
 /** Status rank: an invoice's status moves forward only (the database refuses the rest). */
 const RANK = `CASE $STATUS WHEN 'draft' THEN 0 WHEN 'open' THEN 1 WHEN 'uncollectible' THEN 2 ELSE 3 END`;
@@ -98,7 +107,8 @@ async function upsertInvoice(
        due_at = EXCLUDED.due_at, paid_at = EXCLUDED.paid_at,
        payment_method_kind = coalesce(EXCLUDED.payment_method_kind, invoice.payment_method_kind),
        attempt_count = greatest(EXCLUDED.attempt_count, invoice.attempt_count),
-       first_failed_at = coalesce(invoice.first_failed_at, EXCLUDED.first_failed_at),
+       first_failed_at = CASE WHEN invoice.first_failed_at IS NULL OR EXCLUDED.first_failed_at < invoice.first_failed_at THEN coalesce(EXCLUDED.first_failed_at, invoice.first_failed_at)
+                              ELSE invoice.first_failed_at END,
        last_failure_code = coalesce(EXCLUDED.last_failure_code, invoice.last_failure_code),
        hosted_invoice_url = coalesce(EXCLUDED.hosted_invoice_url, invoice.hosted_invoice_url),
        stripe_event_at = greatest(EXCLUDED.stripe_event_at, invoice.stripe_event_at)
@@ -129,7 +139,23 @@ async function upsertInvoice(
       invoice.hostedInvoiceUrl,
     ],
   );
-  return rows.length > 0;
+  const snapshot = rows.length > 0;
+  if (!failed) {
+    return snapshot;
+  }
+  // The failure itself, apart from the snapshot's staleness: an unpaid invoice's clock starts at its earliest
+  // failure, and its failure code is kept when none is recorded yet.
+  const recorded = await billingRows<{ id: string }>(
+    client,
+    `UPDATE invoice SET first_failed_at = CASE WHEN first_failed_at IS NULL OR first_failed_at > $2 THEN $2 ELSE first_failed_at END,
+                        last_failure_code = coalesce(last_failure_code, $3),
+                        attempt_count = greatest(attempt_count, $4)
+      WHERE stripe_invoice_id = $1 AND organization_id = $5 AND status IN ('open', 'uncollectible')
+        AND (first_failed_at IS NULL OR first_failed_at > $2 OR last_failure_code IS NULL OR attempt_count < $4)
+      RETURNING id`,
+    [invoice.invoiceRef, occurredAt, failureCode, invoice.attemptCount, organizationId],
+  );
+  return snapshot || recorded.length > 0;
 }
 
 /** Applies one verified event inside a billing transaction; `payment` is what Stripe said of an invoice's payment. */

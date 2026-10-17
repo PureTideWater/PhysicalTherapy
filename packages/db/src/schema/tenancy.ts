@@ -90,6 +90,8 @@ export const practice = pgTable(
     status: text('status', { enum: PRACTICE_STATUSES }).notNull().default('active'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** When it was deleted, stamped by the database (migrations/20261101090000_billing_review.sql). */
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   (table) => [index('practice_by_organization').on(table.organizationId)],
 );

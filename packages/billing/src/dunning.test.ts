@@ -46,11 +46,23 @@ describe('the dunning schedule', () => {
   it('ends with reinstated after a suspension and resolved before one, once', () => {
     const paid = { unpaid: false, paid: true, firstFailedAt: failed };
     expect(nextDunningStep({ ...paid, stage: 'suspended' }, day(31))).toBe('reinstated');
-    expect(nextDunningStep({ ...paid, stage: 'second_notice' }, day(9))).toBe('resolved');
+    expect(nextDunningStep({ ...paid, stage: 'second_notice', paidAt: day(8) }, day(9))).toBe('resolved');
     expect(nextDunningStep({ ...paid, stage: 'reinstated' }, day(32))).toBeNull();
     expect(nextDunningStep({ ...paid, stage: 'resolved' }, day(32))).toBeNull();
     // Paid before any notice went out: nothing to say.
     expect(nextDunningStep({ ...paid, stage: null }, day(1))).toBeNull();
+    expect(nextDunningStep({ ...paid, stage: null, paidAt: day(29, 86_399_999) }, day(31))).toBeNull();
+  });
+
+  it('decides reinstated from when it was paid, not from the last notice recorded', () => {
+    const paid = { unpaid: false, paid: true, firstFailedAt: failed };
+    // Suspended at 15:00 on day 30 and paid before the next daily job: the last notice was the final one,
+    // but runs were refused, so the organization hears that they started again.
+    expect(nextDunningStep({ ...paid, stage: 'final_notice', paidAt: day(30, 3_600_000) }, day(30, 7_200_000))).toBe('reinstated');
+    expect(nextDunningStep({ ...paid, stage: 'final_notice', paidAt: day(30) }, day(31))).toBe('reinstated');
+    expect(nextDunningStep({ ...paid, stage: 'final_notice', paidAt: day(30, -1) }, day(31))).toBe('resolved');
+    // No notice had gone out at all, but the suspension had taken effect.
+    expect(nextDunningStep({ ...paid, stage: null, paidAt: day(40) }, day(41))).toBe('reinstated');
   });
 
   it('says nothing for an invoice whose payment never failed, a voided one, or one already ended', () => {

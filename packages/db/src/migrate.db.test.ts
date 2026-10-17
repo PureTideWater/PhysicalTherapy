@@ -167,6 +167,7 @@ describe('migrate', () => {
           'status_incident_update',
           'submission',
           'subscription',
+          'subscription_claim',
           'support_grant',
           'support_ticket',
           'terms_acceptance',

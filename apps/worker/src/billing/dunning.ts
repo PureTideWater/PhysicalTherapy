@@ -1,4 +1,4 @@
-import { type DunningStageCode, nextDunningStep, suspensionAt } from '@tp/billing';
+import { DUNNING_SCHEDULE, type DunningStageCode, SUSPENSION_DAYS, nextDunningStep, suspensionAt } from '@tp/billing';
 import { formatUsd, parseCents } from '@tp/money';
 
 import type { MailMessage, MailSender } from '../mail/mail';
@@ -11,6 +11,9 @@ import { type BillingPool, billingRows, withBilling } from './scope';
  * (@tp/billing nextDunningStep: on the day it failed, a week later, two weeks later, a week before the
  * suspension, on the day the suspension takes effect), and once it is paid the ending (reinstated after a
  * suspension, unless another unpaid invoice still holds the organization suspended; resolved before one).
+ * It looks only at invoices that may still need a word: unpaid ones short of the suspension's notice, and
+ * paid ones whose ending has not been recorded (a payment before any notice and before the suspension needs
+ * none). Invoices never notified come first, so a new failure is never crowded out by older ones.
  *
  * The suspension itself is the database's (billing_standing): it takes effect 30 days after the failure
  * whether or not this job runs, and lifts the moment the invoice is paid. This job tells the
@@ -41,6 +44,7 @@ interface DueRow {
   readonly number: string | null;
   readonly amount_remaining_cents: string;
   readonly first_failed_at: Date;
+  readonly paid_at: Date | null;
   readonly dunning_stage: DunningStageCode | null;
   readonly standing: 'good' | 'past_due' | 'suspended';
 }
@@ -48,12 +52,19 @@ interface DueRow {
 /** How many invoices one run looks at; the next run takes the rest. */
 const AT_MOST = 500;
 
+/** The notices before the suspension's: an unpaid invoice at one of them may still be due another. */
+const NOTICES_BEFORE_SUSPENSION = DUNNING_SCHEDULE.filter((step) => step.notice !== 'suspended')
+  .map((step) => `'${step.notice}'`)
+  .join(', ');
+
 export function billingLink(origin: string, organizationId: string): string {
   return `${new URL(origin).origin}/settings/billing/${organizationId}`;
 }
 
-function day(date: Date): string {
-  return date.toISOString().slice(0, 10);
+/** The moment new runs stop, as a notice states it: the day and the time, in UTC. */
+export function suspensionText(firstFailedAt: Date): string {
+  const at = suspensionAt(firstFailedAt).toISOString();
+  return `${at.slice(0, 10)} at ${at.slice(11, 16)} UTC`;
 }
 
 /** The notice's fixed sentences: the invoice's number and amount, dates and one link. */
@@ -61,9 +72,9 @@ export function dunningMessage(step: Exclude<DunningStageCode, 'resolved'>, to: 
   const invoice = row.number === null ? 'an invoice' : `invoice ${row.number}`;
   const Invoice = row.number === null ? 'An invoice' : `Invoice ${row.number}`;
   const owed = formatUsd(parseCents(row.amount_remaining_cents));
-  const suspends = day(suspensionAt(row.first_failed_at));
+  const suspends = suspensionText(row.first_failed_at);
   const lines: Record<typeof step, readonly string[]> = {
-    payment_failed: [`The payment for ${invoice} (${owed}) failed.`, `Update the payment method or pay the invoice by ${suspends}; after that day new runs stop until it is paid.`],
+    payment_failed: [`The payment for ${invoice} (${owed}) failed.`, `Update the payment method or pay the invoice before ${suspends}; from then new runs stop until it is paid.`],
     second_notice: [`${Invoice} (${owed}) is still unpaid.`, `New runs stop on ${suspends} unless it is paid.`],
     third_notice: [`${Invoice} (${owed}) is still unpaid.`, `New runs stop on ${suspends} unless it is paid.`],
     final_notice: [`Final notice: ${invoice} (${owed}) is unpaid.`, `New runs stop on ${suspends}: pricing, monitoring, packet exports and reports. Your data stays readable.`],
@@ -87,10 +98,13 @@ export async function runDunning(options: DunningOptions): Promise<DunningResult
   const due = await withBilling(options.pool, (client) =>
     billingRows<DueRow>(
       client,
-      `SELECT i.id, i.organization_id, i.status, i.number, i.amount_remaining_cents::text AS amount_remaining_cents, i.first_failed_at, i.dunning_stage, s.standing
+      `SELECT i.id, i.organization_id, i.status, i.number, i.amount_remaining_cents::text AS amount_remaining_cents, i.first_failed_at, i.paid_at, i.dunning_stage, s.standing
          FROM invoice i JOIN billing_standing s ON s.organization_id = i.organization_id
-        WHERE i.first_failed_at IS NOT NULL AND i.status <> 'void' AND (i.dunning_stage IS NULL OR i.dunning_stage NOT IN ('reinstated', 'resolved'))
-        ORDER BY i.first_failed_at, i.id
+        WHERE i.first_failed_at IS NOT NULL
+          AND ((i.status IN ('open', 'uncollectible') AND (i.dunning_stage IS NULL OR i.dunning_stage IN (${NOTICES_BEFORE_SUSPENSION})))
+               OR (i.status = 'paid' AND (i.dunning_stage IN (${NOTICES_BEFORE_SUSPENSION}, 'suspended')
+                                          OR (i.dunning_stage IS NULL AND i.paid_at >= i.first_failed_at + interval '${String(SUSPENSION_DAYS)} days'))))
+        ORDER BY i.dunning_stage IS NOT NULL, i.first_failed_at, i.id
         LIMIT ${String(AT_MOST)}`,
     ),
   );
@@ -98,7 +112,7 @@ export async function runDunning(options: DunningOptions): Promise<DunningResult
   let undeliverable = 0;
   for (const row of due) {
     let step = nextDunningStep(
-      { unpaid: row.status === 'open' || row.status === 'uncollectible', paid: row.status === 'paid', firstFailedAt: row.first_failed_at, stage: row.dunning_stage },
+      { unpaid: row.status === 'open' || row.status === 'uncollectible', paid: row.status === 'paid', firstFailedAt: row.first_failed_at, paidAt: row.paid_at, stage: row.dunning_stage },
       options.now,
     );
     if (step === null) {
