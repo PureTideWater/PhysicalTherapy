@@ -1,6 +1,6 @@
 # Reconciliation 001: the build against the Build Plan and Change Order 001
 
-**Status:** awaiting the owner's approval. No change-order code or schema change is made until it is approved.
+**Status:** approved by the owner on October 17, 2026, with every recommendation accepted (see Approval at the end).
 
 This is the reconciliation report that Change Order 001 (issued October 16, 2026) requires before any code changes, dated October 17, 2026. It compares the repository with the Build Plan (`docs/product/PRD.md` and its tabs) and the change order, milestone by milestone and for each section the change order amends. The evidence comes from `claude/build-platform` at `2582768` (39 migrations, head `20261101120000_support_mail.sql`), checked in a clone, and from the unmerged `brand/paidwhole` at `7994f15`. The first draft was written at `0b1c32c`; since then the fix pass has committed the support-mail migration (`c220f82`) and ADR 0055 (`2582768`), and every row below is corrected to that head. The fix pass may still commit, so step 0 re-checks the head before PR 1. Effort is given in the plan's hours (PRD 17). The report ends with the pull requests proposed, in order, and stops for the owner's approval.
 
@@ -453,3 +453,15 @@ Every pull request above passes these checks. A pull request that cannot pass on
 **Applied migrations**
 - No applied migration is edited, and every schema change arrives through `/new-migration`.
 - Each schema change regenerates `docs/product/domain-model.md` in the same pull request, and its approval line carries the founder's name, a date and the document's hash (`--check --require-approval`).
+
+## Approval
+
+Approved by the owner on October 17, 2026, in the build session. Every recommendation, D1 to D36, is accepted as written, with these answers to the questions put to the owner:
+
+- **Sequence (D5):** option (a). All of the change order, in its order: PR 1 to PR 17, then milestone 12 at its reduced scope, then milestone 13 and the final pass.
+- **Delivery (D4):** option (a). One GitHub pull request per item above, opened against `claude/build-platform`. Each is merged once its acceptance check and the full CI are green, and each ends with a report of what changed, which check proves it and what the next pull request is.
+- **Independent sign-off (D29):** the default threshold is $2,500 per case (`250000` cents), held in `practice.settings` and changeable per practice.
+- **Email art (D7):** option (b). `/brand/*` is served from the CloudFront static host, and the application's own response headers stay as ADR 0053 and ADR 0055 set them.
+- **Gates (D23):** option (b). `docs/product/gates.md` is reconstructed from the plan and CO-10, marked as reconstructed, and replaced by the owner's text when it arrives.
+
+The domain model (CO-02) is approved separately: PR 2 regenerates `docs/product/domain-model.md` and stops for the founder's name, date and the hash of the text approved.
