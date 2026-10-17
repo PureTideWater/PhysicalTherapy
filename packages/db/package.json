@@ -10,7 +10,8 @@
     "./testing": "./src/testing.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:domain-model": "tsx src/cli/domain-model.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1152.0",

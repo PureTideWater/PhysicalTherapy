@@ -18,7 +18,7 @@ import {
   readDatabaseUrl,
   withJobScope,
 } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, createMigratedDatabase, createTenantWorld } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { LocalByteStore, PracticeObjectStore } from './practice-objects';
@@ -64,7 +64,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
   rmSync(root, { recursive: true, force: true });

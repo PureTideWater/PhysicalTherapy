@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 
 import { S3Client } from '@aws-sdk/client-s3';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, placeholderDataKeyRef } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type JobContext, intakeHandler, intakeServices, parseHandler } from '@tp/worker/runtime';
@@ -85,7 +85,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
   rmSync(documentsDir, { recursive: true, force: true });

@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 
 import { parsePageText, serializePageText } from '@tp/contracts';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, documentPagesKey, openPool, provisionPracticeKey, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, asOwner, createMigratedDatabase, createTenantWorld } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, asOwner, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { CORRECTION_FORMAT, LocalDeterministicProvider, PROMPTS, permittedRegressions } from '@tp/model-gateway';
 import { SYNTHETIC_CONTRACT_PAGES, capturingLogger, registerOutput, syntheticContractOutput } from '@tp/model-gateway/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -114,7 +114,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

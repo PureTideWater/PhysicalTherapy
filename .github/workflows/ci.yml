@@ -46,7 +46,10 @@ jobs:
       - run: pnpm test && pnpm test:golden && pnpm test:oracle
       - run: pnpm db:migrate && pnpm test:db
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
+      # The domain model's approval case (CO-02) fails in test:db until the founder signs the document;
+      # the steps below still run and report, so the run shows every other check's result.
       - run: pnpm test:e2e
+        if: ${{ !cancelled() }}
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
       - uses: actions/upload-artifact@v4
         if: always()
@@ -67,7 +70,9 @@ jobs:
             echo "$file $(base64 -w 0 "$file")"
           done
       - run: pnpm build
+        if: ${{ !cancelled() }}
       - run: pnpm cdk:diff
+        if: ${{ !cancelled() }}
   mutation:
     if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'money')
     runs-on: ubuntu-latest

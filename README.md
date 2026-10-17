@@ -22,8 +22,8 @@ pnpm db:migrate && pnpm test:db
 E2E_DATABASE=tp_e2e_pg18 E2E_PORT=3391 pnpm test:e2e
 ```
 
-An older server (16 or 17) runs the suites too, but CI and production run 18, so a change is checked there. The
-restore drill through `pg_dump` needs client tools at least as new as the server (`PG_BIN_DIR`); without them that one
+An older server (16 or 17) runs the suites too, apart from the domain model test (below), but CI and production run
+18, so a change is checked there. The restore drill through `pg_dump` needs client tools at least as new as the server (`PG_BIN_DIR`); without them that one
 database test skips and says why.
 
 ```sh
@@ -37,10 +37,48 @@ pnpm build           # web (Next.js standalone) and worker (esbuild bundle)
 pnpm dev             # Postgres and MinIO in Docker, then the web app and the worker
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
+pnpm db:domain-model --check --strict   # docs/product/domain-model.md against the migrated database (--out rewrites it)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```
+
+The domain model gate (CO-02; reconciliation-001, D1 and D2): `docs/product/domain-model.md` describes the schema the
+migrations build, by area: every table and view with its keys, PHI flag, row-level security, policies, invariants and
+privileges, and every divergence from the Data dictionary tab with its reviewed explanation. It is generated, never
+edited by hand. `pnpm db:domain-model` (`packages/db/src/domain-model`) reads the catalog of the database at
+`DATABASE_URL` (or `--database-url`) in a read-only transaction and migrates nothing; the area map and the explanations
+are `packages/db/domain-model/areas.json` and `divergence-explanations.json`. To regenerate it, on a new database:
+
+```sh
+psql postgres://postgres:test@localhost:5432/postgres -c 'CREATE DATABASE tp_domain_model'
+export DATABASE_URL=postgres://postgres:test@localhost:5432/tp_domain_model
+pnpm db:migrate && pnpm db:domain-model --out --strict
+```
+
+A table no area places, or under `--strict` an unexplained or stale divergence, exits 2; `--check` exits 1 when the
+document differs from the schema. The commit and branch sit on a provenance line that `--check` ignores; it says so when
+the generator's inputs had uncommitted changes. It is skipped only as the document's fifth line, where the generator
+writes it, and only with a commit of 7 to 40 hexadecimal digits (or `unknown`) and a branch that is a git ref name
+(letters, digits, `.`, `_`, `/`, `-`); the tool refuses any other `--commit` or `--branch` (exit 2), and a provenance
+line moved elsewhere or with other text in those fields is compared and hashed like any other line. `pnpm test:db` makes
+the same comparison on its own scratch database (`domain-model.db.test.ts`), so a migration merged without regenerating
+the document fails. Its second case is the approval: the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the
+change order was issued, to today) and the document's SHA-256 on the "Approved by" line (`--require-approval`, which
+prints the hash to sign when it refuses). The name must be exactly an entry of the reviewed approver list,
+`packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
+(TBD, N/A, name, first name, last name, full name, founder, approver, VERIFY ONLY, Claude, in any case and their common
+spellings such as T.B.D., N.A., VERIFY-ONLY or ClaudeCode, or text in angle brackets) or a name with no letters. The
+list changes only with the founder's approval, in the same pull request as a document the founder signs. It starts
+empty, so every approval is refused until the founder's name is added to it in that pull request. The hash covers every
+line but that one (the last line) and the provenance line, and must be the hash of both the regenerated text and the
+committed one, so any schema change, or an edit to the document alone, leaves it awaiting a new approval, and no
+migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
+function body's, and shows a disabled or replica-only trigger as not enforced, rewrite rules and default privileges, so
+an edit to a migration after it was signed fails the gate too (`domain-model-drift.db.test.ts`). Milestone 1 does not
+start until the founder approves the document; until then that case fails. The document records PostgreSQL's major
+version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older server its drift case
+fails (on 16, at the version line alone).
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds

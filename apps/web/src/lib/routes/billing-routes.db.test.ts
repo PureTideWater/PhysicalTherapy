@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { signPayload } from '@tp/billing';
 import { LocalBillingProvider, MemorySimulatorStore, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -104,9 +104,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await billingPool.end();
-  await esignPool.end();
+  await endPool(app);
+  await endPool(billingPool);
+  await endPool(esignPool);
   await owner.end();
   await database.drop();
 });

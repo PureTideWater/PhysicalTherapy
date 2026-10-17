@@ -4,7 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { LocalKeyProvider, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { asOwner, createMigratedDatabase, createTenantWorld, withScratchDatabase } from '@tp/db/testing';
+import { asOwner, createMigratedDatabase, createTenantWorld, endPool, withScratchDatabase } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { PgBoss } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
@@ -84,7 +84,7 @@ describe('worker against PostgreSQL', () => {
         expect(await seen).toBe(id);
       } finally {
         await worker.stop();
-        await pool.end();
+        await endPool(pool);
       }
     } finally {
       await database.drop();
@@ -157,7 +157,7 @@ describe('practice jobs against PostgreSQL', () => {
       expect(counts.rows[0]).toEqual({ remittances: expected.outcome.remittanceRows, claims: expected.outcome.claimRows });
       expect((await owner.query<{ outcome: string }>('SELECT outcome FROM job_run WHERE practice_id = $1', [world.practiceId])).rows).toEqual([{ outcome: 'succeeded' }, { outcome: 'succeeded' }]);
     } finally {
-      await pool.end();
+      await endPool(pool);
       await owner.end();
       await database.drop();
     }
@@ -200,7 +200,7 @@ describe('practice jobs against PostgreSQL', () => {
       const [row] = (await owner.query('SELECT practice_id, job_type, singleton_key, idempotency_key, finished_at IS NOT NULL AS finished FROM job_run WHERE job_id = $1', [jobId])).rows;
       expect(row).toEqual({ practice_id: world.practiceId, job_type: 'parse_835', singleton_key: `parse_835:${world.practiceId}:${DOCUMENT}`, idempotency_key: DOCUMENT, finished: true });
     } finally {
-      await pool.end();
+      await endPool(pool);
       await owner.end();
       await database.drop();
     }

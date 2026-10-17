@@ -1,0 +1,203 @@
+{
+  "_comment": "Reviewed explanations of each divergence the generator finds between docs/product/data-dictionary.md and the live schema. Keys are table|field|kind exactly as the generator computes them. With --strict, the generator fails on a divergence that is not informational and has no entry here, on an entry whose divergence no longer exists, and on a policy note whose list differs from the table's live policies in either direction (a policy it names that does not exist, or a live policy it does not name). Status: 'explained' (an ADR records it), 'stricter than the dictionary' (the schema enforces more), 'not built (milestone N)', or 'founder ruling needed'.",
+  "rows": {
+    "rule_record|record_type|enumeration differs": {
+      "by": "ADR 0008 (decision and revisit condition)",
+      "status": "founder ruling needed",
+      "text": "denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2)."
+    },
+    "priced_line|expected_unrounded|retyped": {
+      "by": "ADR 0029; ADR 0035",
+      "status": "explained",
+      "text": "numeric with no scale keeps the exact unrounded value; numeric(18,6) would round it (ADR 0029: golden line G09 carries more than six decimal places). CLAUDE.md rule 2 keeps the unrounded value beside the rounded one."
+    },
+    "line_status|reason|encryption": {
+      "by": "ADR 0047 (Encryption and keys)",
+      "status": "stricter than the dictionary",
+      "text": "A person's free text can name a patient, so it is encrypted with the practice data key; ENCRYPTED_COLUMNS in packages/db/src/crypto/cipher.ts lists it and the catalog test requires its enc:v1 CHECK."
+    },
+    "case_line|written_off_text|encryption": {
+      "by": "ADR 0038; ADR 0047 (Encryption and keys)",
+      "status": "stricter than the dictionary",
+      "text": "The write-off's free text, beside the closed written_off_reason code the dictionary lists."
+    },
+    "case_line|reopen_reason|encryption": {
+      "by": "ADR 0038; ADR 0047 (Encryption and keys)",
+      "status": "stricter than the dictionary",
+      "text": "The reopen reason is a person's free text."
+    },
+    "packet_version|narrative|encryption": {
+      "by": "ADR 0041",
+      "status": "stricter than the dictionary",
+      "text": "The narrative is the person's words, encrypted with the practice key; identifiers stay placeholders until export."
+    },
+    "submission|reference|encryption": {
+      "by": "ADR 0041 (migration 20261023090000 header)",
+      "status": "stricter than the dictionary",
+      "text": "The payer's reference (a portal confirmation, a fax receipt) is free text a person types."
+    },
+    "payer_response|notes|encryption": {
+      "by": "ADR 0041 (migration 20261023090000 header)",
+      "status": "stricter than the dictionary",
+      "text": "Notes on a payer response are a person's free text."
+    },
+    "ledger_entry|reason|encryption": {
+      "by": "ADR 0042; ADR 0047 (Encryption and keys)",
+      "status": "stricter than the dictionary",
+      "text": "A ledger correction's reason is the person's words, encrypted; the amount, stage and evidence stay plain."
+    },
+    "model_call|actor|renamed": {
+      "by": "ADR 0048",
+      "status": "explained",
+      "text": "The dictionary's single actor field is two columns: actor_kind (user, service or evaluation) and actor_id (null only for a synthetic evaluation call), with CHECKs model_call_actor and model_call_evaluation_is_synthetic."
+    },
+    "model_call|updated_at|convention": {
+      "by": "ADR 0048",
+      "status": "explained",
+      "text": "A model call is written once (model_call_rules: 'a model call never changes; only the reviewer's decision is recorded, once'); reviewed_at records that one later change."
+    },
+    "eval_example|updated_at|convention": {
+      "by": "ADR 0048; ADR 0051",
+      "status": "explained",
+      "text": "An evaluation example is never changed or deleted (eval_example_rules)."
+    },
+    "audit_event|updated_at|convention": {
+      "by": "ADR 0014",
+      "status": "explained",
+      "text": "audit_event is append-only (audit_event_append_only, audit_event_no_truncate). The dictionary's own row gives `at` as its time, which the schema has."
+    },
+    "usage_snapshot|updated_at|convention": {
+      "by": "ADR 0050",
+      "status": "explained",
+      "text": "A usage snapshot never changes (usage_snapshot_kept: 'a usage snapshot never changes')."
+    },
+    "job||missing table": {
+      "by": "ADR 0004; ADR 0049; README (pg-boss connects as its own login in the role tp_queue, which owns the pgboss schema)",
+      "status": "explained",
+      "text": "The queue is pg-boss's own tables, which pg-boss installs in its own schema pgboss on start, owned by tp_queue, outside schema public and outside this document. The product's record of each job is job_run (singleton key, practice_id, idempotency key, attempts, outcome)."
+    },
+    "job_run||classification": {
+      "by": "ADR 0019 (migration 20261016121000); catalog rule in packages/db/src/catalog.ts",
+      "status": "stricter than the dictionary",
+      "text": "The dictionary files job_run under 'Operations (no PHI by design)', and it holds no PHI column. Because it carries practice_id NOT NULL, the catalog rule requires a registry row, FORCE RLS and the tenant policy, so a practice's job history is tenant-scoped like its data."
+    },
+    "notification||classification": {
+      "by": "ADR 0039 (Counts and totals only, in the schema)",
+      "status": "stricter than the dictionary",
+      "text": "The dictionary lists notification with user_id only. The schema adds practice_id NOT NULL and subject_id, so it is registered and tenant-scoped; its figures columns admit only integer counts and integer-cent totals (figures_are_counts, figures_are_cents), so no PHI can be written to it."
+    },
+    "digest||classification": {
+      "by": "ADR 0039 (Counts and totals only, in the schema)",
+      "status": "stricter than the dictionary",
+      "text": "digest has practice_id in the dictionary too; with practice_id NOT NULL the catalog rule registers it. Counts and totals only."
+    },
+    "legal_hold||missing table": {
+      "by": "PRD 17, milestone 12 (no ADR yet)",
+      "status": "not built (milestone 12)",
+      "text": "Lifecycle tables for export and deletion are milestone 12 work, not started; /p/[practiceId]/settings/data shows placeholders. Kept in milestone 12 by CO-08."
+    },
+    "deletion_request||missing table": {
+      "by": "PRD 17, milestone 12 (no ADR yet)",
+      "status": "not built (milestone 12)",
+      "text": "As legal_hold."
+    },
+    "export_job||missing table": {
+      "by": "PRD 17, milestone 12 (no ADR yet)",
+      "status": "not built (milestone 12)",
+      "text": "As legal_hold. Not to be confused with the job type 'export' in job_run."
+    },
+    "claim|index (practice_id, payer_claim_control_number)|index": {
+      "by": "ADR 0027",
+      "status": "explained",
+      "text": "payer_claim_control_number is encrypted, so the index is claim_by_payer_claim_control_number on (practice_id, payer_claim_control_number_hash), the deterministic hash the dictionary's own note asks for."
+    }
+  },
+  "policies": [
+    {
+      "table": "organization",
+      "policies": ["organization_members", "organization_platform_admin_insert", "organization_platform_admin_update", "organization_billing_read", "organization_billing_customer", "organization_owner"],
+      "by": "ADR 0013; ADR 0050",
+      "status": "explained",
+      "text": "Members read their own organizations. Platform administrators also read every one, create group and firm organizations and edit them (the console). The billing role tp_billing reads every row and sets billing_customer_ref only while it is null."
+    },
+    {
+      "table": "practice",
+      "policies": ["practice_tenant", "practice_platform_admin_insert", "practice_administrators_update", "practice_resolver"],
+      "by": "ADR 0013",
+      "status": "explained",
+      "text": "'By grant or ownership' is implemented as the registered tenant policy on app.practice_ids, which the handler sets from the person's memberships intersected with grants in force (effective_practice_access). Platform administrators create practices; only the practice's administrators update it (restrictive)."
+    },
+    {
+      "table": "user",
+      "policies": ["user_self_and_administrators", "user_invited_by_administrators", "user_self_and_platform_admin_update", "user_owner"],
+      "by": "ADR 0013; ADR 0016",
+      "status": "conforms",
+      "text": "Self and administrators, as the dictionary says; administrators may only create an invited user without MFA."
+    },
+    {
+      "table": "membership",
+      "policies": ["membership_self_and_administrators", "membership_administrators_insert", "membership_administrators_update", "membership_owner"],
+      "by": "ADR 0013",
+      "status": "explained",
+      "text": "Adds a person's read of their own memberships and platform administrators. An organization administrator may not add a person already known to another organization (user_known_elsewhere)."
+    },
+    {
+      "table": "grant",
+      "policies": ["grant_tenant", "grant_approved_by_practice_administrator", "grant_revoked_by_practice_administrator", "grant_practice_administrators_and_grantee_read", "grant_resolver"],
+      "by": "ADR 0013",
+      "status": "conforms",
+      "text": "Practice administrators approve and revoke; the practice's administrators and the grantee read. No route or screen yet approves or revokes a grant (CO-08)."
+    },
+    {
+      "table": "agreement",
+      "policies": ["agreement_parties", "agreement_read_by_parties", "agreement_recorded_by_signers", "agreement_owner"],
+      "by": "ADR 0013; ADR 0053; ADR 0055",
+      "status": "explained",
+      "text": "Parties to it read it, as the dictionary says; platform administrators also read and record agreements. An e-signed agreement is recorded only through record_esigned_agreement(), executable by tp_esign alone (migration 20261101100000)."
+    },
+    {
+      "table": "support_grant",
+      "policies": ["support_grant_tenant", "support_grant_platform_administrators_insert", "support_grant_created_by_platform_administrator", "support_grant_platform_administrators_read", "support_grant_read_by_practice_and_platform", "support_grant_not_updated_by_the_application", "support_grant_resolver"],
+      "by": "ADR 0013; ADR 0019; ADR 0028; ADR 0038",
+      "status": "conforms",
+      "text": "Platform administrators create one; members of the practice's own group and platform administrators read it; the application never updates one. ADR 0028 extends support grants to contract specialists and ADR 0038 to reimbursement reviewers (read-only); PRD 3 names support engineers only."
+    }
+  ],
+  "plan": [
+    {
+      "subject": "Remittance duplicate key",
+      "where": "PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary",
+      "says": "PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents).",
+      "schema": "remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate.",
+      "status": "founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule"
+    },
+    {
+      "subject": "CO-12 names tables that do not exist",
+      "where": "Change Order 001, CO-12",
+      "says": "practice_settings gains two columns; packet_export records five parts.",
+      "schema": "Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at).",
+      "status": "proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts"
+    },
+    {
+      "subject": "CO-12 'roles enum' and 'enum' columns",
+      "where": "Change Order 001, CO-12",
+      "says": "Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums.",
+      "schema": "There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK.",
+      "status": "proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is"
+    },
+    {
+      "subject": "CO-12 case_transition_log has no practice_id",
+      "where": "Change Order 001, CO-12; CLAUDE.md rule 4",
+      "says": "CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY.",
+      "schema": "Not built.",
+      "status": "proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code"
+    },
+    {
+      "subject": "CO-12 screening tables 'outside the RLS catalog'",
+      "where": "Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts",
+      "says": "CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it.",
+      "schema": "Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed).",
+      "status": "proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change"
+    }
+  ]
+}

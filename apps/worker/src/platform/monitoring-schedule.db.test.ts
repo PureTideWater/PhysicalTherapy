@@ -1,5 +1,5 @@
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withJobScope } from '@tp/db';
-import { type MigratedDatabase, createMigratedDatabase, createTenantWorld } from '@tp/db/testing';
+import { type MigratedDatabase, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -27,8 +27,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await operator.end();
+  await endPool(app);
+  await endPool(operator);
   await owner.end();
   await database.drop();
 });

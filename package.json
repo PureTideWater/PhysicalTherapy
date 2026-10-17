@@ -23,6 +23,7 @@
     "rules:import": "tsx packages/rules/src/cli/import.ts",
     "synth": "tsx packages/synth/src/cli.ts",
     "db:migrate": "tsx packages/db/src/cli/migrate.ts",
+    "db:domain-model": "tsx packages/db/src/cli/domain-model.ts",
     "db:seed": "tsx apps/web/scripts/seed.ts",
     "release:assemble": "tsx tools/release/index.ts assemble",
     "release:dry-run": "tsx tools/release/index.ts dry-run",

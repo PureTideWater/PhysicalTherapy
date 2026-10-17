@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MEMBERSHIP_ROLES, PERMISSION_NAMES, PERSONAS, STRUCTURAL_RULES, type StructuralRule, matrixRows, rolesPermit, withActor, withPracticeScope } from './index';
 import { readDatabaseUrl } from './config';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from './testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * Migration 20261015170000 (docs/adr/0016 and 0017): the permission matrix in the database, the
@@ -29,7 +29,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

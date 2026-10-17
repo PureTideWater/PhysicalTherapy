@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, createMigratedDatabase, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, createMigratedDatabase, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -35,8 +35,8 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await serverA.end();
-  await serverB.end();
+  await endPool(serverA);
+  await endPool(serverB);
   await owner.end();
   await database.drop();
 });
