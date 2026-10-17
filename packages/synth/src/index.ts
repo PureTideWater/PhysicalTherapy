@@ -62,7 +62,7 @@ export { NARRATIVE_SET_DIR, NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetF
 export { SCAN_HEIGHT, SCAN_WIDTH, TEXTRACT_RECORDING_FORMAT, type RecordedBlock, type TextractRecording, scannedPdf, textractRecording } from './formats/scan';
 
 // Writing fixtures.
-export { SyntheticSenderError, assertSyntheticX12, driftFrom, writeCases } from './write';
+export { SYNTHETIC_FIXTURES, SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, driftFrom, writeCases } from './write';
 
 // The twin generator (production only; synthetic input elsewhere).
 export { TwinBoundary, TwinBoundaryError } from './twin/boundary';

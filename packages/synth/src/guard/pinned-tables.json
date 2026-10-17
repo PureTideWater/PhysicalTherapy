@@ -1,0 +1,106 @@
+{
+  "format": "tp-synth-pinned-tables/1",
+  "note": "Tabular fixtures that carry no SYNTHSENDER column because other files pin their exact bytes (docs/adr/0059). A file passes the fixture guard without the marker only when its repository path and sha256 are both here. Add an entry only with the reason another file pins it; a changed table is re-pinned in the same pull request as what pins it.",
+  "tables": [
+    {
+      "path": "fixtures/golden/sources/GPCI_SYNTHETIC_2025.csv",
+      "sha256": "134489e1ba85c954feabaea2856a75ddb491795523c40fe9a920618e118d927a",
+      "reason": "A golden-line source: the release-synth-900002 manifest pins its sha256, and fixtures/golden stays unchanged (pnpm test:golden)."
+    },
+    {
+      "path": "fixtures/golden/sources/MPPR_SYNTHETIC_900003.csv",
+      "sha256": "5bae8cf1092b4a209942dcd79eebe9212a39567b469c97529e8307ab2fa54db9",
+      "reason": "A golden-line source: the release-synth-900003 manifest pins its sha256, and fixtures/golden stays unchanged (pnpm test:golden)."
+    },
+    {
+      "path": "fixtures/golden/sources/PPRRVU_SYNTHETIC_2025.csv",
+      "sha256": "a7e3c7218f513f2da01ec80d7df1c136f6f1a8a6a376520ce4b34a028577acd3",
+      "reason": "A golden-line source: the release-synth-900002 manifest pins its sha256, and fixtures/golden stays unchanged (pnpm test:golden)."
+    },
+    {
+      "path": "fixtures/golden/sources/conversion-factor-SYNTHETIC-2025-pass-1.csv",
+      "sha256": "bf4df13a381ce067058acc9cc7d905f252811102bdecf889b441a9c9b4ae8011",
+      "reason": "A golden-line source: the release-synth-900002 manifest pins its sha256, and fixtures/golden stays unchanged (pnpm test:golden)."
+    },
+    {
+      "path": "fixtures/golden/sources/conversion-factor-SYNTHETIC-2025-pass-2.csv",
+      "sha256": "5de27b1f7e12053f7b92763a20b3349b6bf8ccfc9e119b6c650b386175c220ac",
+      "reason": "A golden-line source: the second preparation of the conversion-factor CSV. tools/golden-worksheet/synthetic-release.ts reads it beside the first and refuses to build unless the two agree, and pass 1's sha256 is in the release-synth-900002 manifest. fixtures/golden stays unchanged (pnpm test:golden)."
+    },
+    {
+      "path": "fixtures/synthetic/MOD-01/contract-set/C11-table/exhibit.csv",
+      "sha256": "864f8c11ff981051ceb174bc733f6cc0dd31fcf5fd237c1a13152adf6ec8c2b7",
+      "reason": "A MOD-01 contract-set exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
+    },
+    {
+      "path": "fixtures/synthetic/MOD-01/contract-set/C12-table/exhibit.csv",
+      "sha256": "bc601e624e475c709dd613f63fa91a14e6ba5a9f460cf812797f16419440bf8c",
+      "reason": "A MOD-01 contract-set exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
+    },
+    {
+      "path": "fixtures/synthetic/MOD-01/contract-set/C13-table/exhibit.csv",
+      "sha256": "bbfdcec9aeae93be89486e2ba5ac3d9b41c4b68c89bfc6073a37e8af93a36140",
+      "reason": "A MOD-01 contract-set exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
+    },
+    {
+      "path": "fixtures/synthetic/MOD-01/contract-set/C14-table/exhibit.csv",
+      "sha256": "a7d95906cf729649f2bf4df5e232bb6bd6a6d599c26794c5a758cbdba1f93d15",
+      "reason": "A MOD-01 contract-set exhibit table: the set's expected.json records its sha256 and the model gateway's evaluation baseline (packages/model-gateway/eval/baseline.json, set_sha256) is held to the set as it is."
+    },
+    {
+      "path": "fixtures/synthetic/audit/AUDIT-01/expected-lines.csv",
+      "sha256": "d0d0c4465bc658d184cd8596f4e29e39d749fb94d61657cdd1192a8a40e9039b",
+      "reason": "AUDIT-01's expected lines, written by the independent Python worksheet (tools/audit-worksheet) from inputs.json alone; apps/web/src/lib/routes/audit-e2e.db.test.ts matches the audit to it line for line."
+    },
+    {
+      "path": "fixtures/synthetic/cms/CARC_SYNTHETIC.csv",
+      "sha256": "aaf6864a0765f36adb9d83a24535085c6d468cce68ac2adb939411aba80220f9",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/CLAIM_STATUS_SYNTHETIC.csv",
+      "sha256": "ec495c2996299976ec61e6bbf8f887eefe42abddcf016c71b67353a9256783d3",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/GPCI_SYNTHETIC.csv",
+      "sha256": "1a20190a02a0e836309f71eb49dd5e085c973b1b5a8753ec658b0dbab4784b0d",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/MPPR_SYNTHETIC.csv",
+      "sha256": "be8068eec0ee6543be4258ac9ffb58f91f483a8c2c0d7320e2fd084e2eea46d5",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/NCCI_MUE_SYNTHETIC.csv",
+      "sha256": "61320bb25bebfbbe11aa4f09d16477653dbd819ee000be2bada6cd8f278aa5ab",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/PPRRVU_SYNTHETIC.csv",
+      "sha256": "1fbfcf98e0cb580b7428821d5dd11a4b284b1e47ba752213a30769149fa5f003",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/PPRRVU_SYNTHETIC_900004.csv",
+      "sha256": "0cf4d0563d0981cacda912a0f6fae3a1e364b77a912d23dea8c302f7eee43113",
+      "reason": "A SYNTHETIC reference table: the release-synth-900004 manifest pins its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/RARC_SYNTHETIC.csv",
+      "sha256": "eeca4d4163ec238d88c686380a15bdb8c03eb34d0870bc9ae706ee55f05bdf0f",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/conversion-factor-SYNTHETIC-pass-1.csv",
+      "sha256": "1032acce581b3c0ffe95563dbd1f8218c1158e7bf45a110ec31ddf6499c10688",
+      "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
+      "path": "fixtures/synthetic/cms/conversion-factor-SYNTHETIC-pass-2.csv",
+      "sha256": "89d581f4701264dab16b2a0beaf63aa957fde5a9e4ebc4b71013bed2a2153940",
+      "reason": "A SYNTHETIC reference table: the second preparation of the conversion-factor CSV. The rule importer reads it beside the first and refuses unless the two agree (packages/rules), so it changes only with pass 1, whose sha256 the release-synth-900001 to 900004 manifests pin."
+    }
+  ]
+}

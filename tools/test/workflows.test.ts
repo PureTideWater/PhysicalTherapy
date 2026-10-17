@@ -158,6 +158,17 @@ describe('workflows', () => {
     }
   });
 
+  it('run the fixture check on every pull request, as a step of its own right after the fixtures are generated (CO-03)', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const check = stepIndex(steps, (step) => step.run === 'pnpm check:fixtures');
+    // After pnpm synth --all, so the files it generates are read too, and before the tests.
+    expect(check).toBe(stepIndex(steps, (step) => step.run === 'pnpm synth --all') + 1);
+    expect(check).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle'));
+    expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
+    const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
+  });
+
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);

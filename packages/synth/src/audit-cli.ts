@@ -2,12 +2,14 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { auditFiles, readAuditInputs } from './audit';
+import { SYNTHETIC_FIXTURES, assertSyntheticFixture } from './write';
 
 /**
  * `tsx packages/synth/src/audit-cli.ts [--check]`: for every synthetic audit under
  * fixtures/synthetic/audit (a directory with an inputs.json), writes its remit.835 and the
  * expected.json the 835 oracle reads, or with --check only reports a file that differs from a fresh
  * generation (exit 1). Generation is deterministic; `pnpm synth --all` never touches these directories.
+ * Every file is checked by the fixture guard (assertSyntheticFixture) before it is written.
  */
 
 export const AUDIT_ROOT = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/audit');
@@ -45,6 +47,7 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.reso
         differs += 1;
         process.stdout.write(`differs: ${path.relative(AUDIT_ROOT, target)}\n`);
       } else {
+        assertSyntheticFixture(bytes, `${SYNTHETIC_FIXTURES}/audit/${path.relative(AUDIT_ROOT, target).split(path.sep).join('/')}`);
         writeFileSync(target, bytes);
         process.stdout.write(`wrote ${path.relative(AUDIT_ROOT, target)}\n`);
       }

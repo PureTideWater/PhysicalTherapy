@@ -1,14 +1,20 @@
 /**
  * Writes generated cases under fixtures/synthetic and checks the committed fixtures against a fresh
- * generation. Every X12 file is checked for the synthetic sender before it is written (ISA06
- * SYNTHSENDER, GS02 SYNTH, in every interchange, a byte-order mark or a zip around it included), and
- * nothing outside a case's own directory is touched: never cms/ or rules/, never a README.
+ * generation. Every file is checked by assertSyntheticFixture before anything is written: an X12 file for
+ * the synthetic sender (ISA06 SYNTHSENDER, GS02 SYNTH, in every interchange, a byte-order mark or a zip
+ * around it included), a CSV, TSV or .xlsx for SYNTHSENDER in an identifier column (docs/adr/0059). Nothing
+ * outside a case's own directory is touched: never cms/ or rules/, never a README.
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { readZip } from './formats/zip';
-import { SYNTH_GS02, SYNTH_ISA06 } from './identity';
+import { Archive, ArchiveReadError, isZip } from './guard/archive';
+import { isPinnedTable, repositoryPath } from './guard/pinned';
+import { type Separator, TableReadError, markerProblem, readTable } from './guard/tabular';
+import { vendorMarkerColumn } from './guard/vendors';
+import { WorkbookReadError, isOpenDocumentSpreadsheet, isWorkbook, workbookSheets } from './guard/xlsx';
+import { SYNTH_GS02, SYNTH_ISA06, SYNTH_SENDER_ID } from './identity';
 import { type GeneratedCase } from './cases/builder';
 
 export class SyntheticSenderError extends Error {
@@ -73,6 +79,141 @@ export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
     }
     position = end < 0 ? text.length : end + 1;
   }
+}
+
+/** The tabular fixtures the marker rule reads, by extension, and the separator each is read with. */
+const TABULAR: Readonly<Record<string, Separator>> = { '.csv': ',', '.tsv': '\t' };
+/** Spreadsheets no fixture may be: binary, macro-enabled, template or OpenDocument workbooks. */
+const REFUSED_SPREADSHEETS = new Set(['.xls', '.xlsm', '.xlsb', '.xltx', '.xltm', '.ods', '.fods', '.numbers']);
+/** A zip inside a zip is read this many levels deep and no deeper. */
+const MAX_ARCHIVE_DEPTH = 3;
+const OLE2 = Buffer.from('d0cf11e0a1b11ae1', 'hex');
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+
+/** The repository directory writeCases writes; a file's label there is its repository path. */
+export const SYNTHETIC_FIXTURES = 'fixtures/synthetic';
+
+const refuse = (label: string, rule: string) => new SyntheticSenderError(`${label}: ${rule}`);
+/** The marker rule, as a refusal states it after what the file lacks. */
+const MARKER_RULE = `${SYNTH_SENDER_ID} in an identifier column, such as a payee or sender ID, of every data row`;
+
+function extensionOf(label: string): string {
+  return path.posix.extname(label.split('!').at(-1) ?? '').toLowerCase();
+}
+
+function assertTable(bytes: Uint8Array, label: string, separator: Separator): void {
+  let text: string;
+  try {
+    text = utf8.decode(bytes);
+  } catch {
+    throw refuse(label, 'a tabular fixture is UTF-8 text');
+  }
+  let rows: string[][];
+  try {
+    rows = readTable(text, separator);
+  } catch (error) {
+    if (!(error instanceof TableReadError)) {
+      throw error;
+    }
+    throw refuse(label, `it cannot be read as ${separator === ',' ? 'CSV' : 'TSV'} (${error.message})`);
+  }
+  const problem = markerProblem(rows, { markerColumn: vendorMarkerColumn(label) });
+  if (problem !== null) {
+    throw refuse(label, `${problem} (a tabular fixture carries ${MARKER_RULE})`);
+  }
+}
+
+function assertWorkbook(archive: Archive, label: string): void {
+  const markerColumn = vendorMarkerColumn(label);
+  let withData = 0;
+  for (const sheet of workbookSheets(archive)) {
+    if (sheet.rows.every((row) => row.every((cell) => cell.trim() === ''))) {
+      continue;
+    }
+    withData += 1;
+    const problem = markerProblem(sheet.rows, { markerColumn });
+    if (problem !== null) {
+      throw refuse(`${label}!${sheet.part}`, `${problem} (every sheet of a workbook fixture that holds data carries ${MARKER_RULE})`);
+    }
+  }
+  if (withData === 0) {
+    throw refuse(label, `no sheet holds data (a workbook fixture carries ${MARKER_RULE})`);
+  }
+}
+
+function assertArchive(bytes: Uint8Array, label: string, depth: number): void {
+  const extension = extensionOf(label);
+  try {
+    const archive = new Archive(bytes);
+    if (isWorkbook(archive)) {
+      if (extension !== '.xlsx') {
+        throw refuse(label, 'a workbook fixture is an .xlsx file, and this is a workbook under another name');
+      }
+      assertWorkbook(archive, label);
+      return;
+    }
+    if (extension === '.xlsx') {
+      throw refuse(label, 'an .xlsx fixture is a workbook, and this archive has no workbook part');
+    }
+    if (isOpenDocumentSpreadsheet(archive)) {
+      throw refuse(label, 'an OpenDocument spreadsheet is refused; write a CSV, TSV or .xlsx');
+    }
+    for (const name of archive.names()) {
+      checkFixture(archive.read(name) as Uint8Array, `${label}!${name}`, depth + 1);
+    }
+  } catch (error) {
+    if (error instanceof ArchiveReadError || error instanceof WorkbookReadError) {
+      throw refuse(label, `the archive cannot be read by the fixture guard (${error.message})`);
+    }
+    throw error;
+  }
+}
+
+function checkFixture(bytes: Uint8Array, label: string, depth: number): void {
+  if (depth > MAX_ARCHIVE_DEPTH) {
+    throw refuse(label, `archives nest more than ${String(MAX_ARCHIVE_DEPTH)} deep`);
+  }
+  const extension = extensionOf(label);
+  if (REFUSED_SPREADSHEETS.has(extension)) {
+    throw refuse(label, `${extension} fixtures are refused; write a CSV, TSV or .xlsx`);
+  }
+  if (bytes.length >= OLE2.length && OLE2.equals(Buffer.from(bytes.buffer, bytes.byteOffset, OLE2.length))) {
+    throw refuse(label, 'a legacy binary Office file (OLE2, such as an .xls) is refused');
+  }
+  if (isZip(bytes)) {
+    assertArchive(bytes, label, depth);
+    return;
+  }
+  if (extension === '.xlsx') {
+    throw refuse(label, 'an .xlsx fixture is a workbook, and this is not a zip');
+  }
+  assertSyntheticX12(bytes, label);
+  const separator = TABULAR[extension];
+  if (separator !== undefined) {
+    assertTable(bytes, label, separator);
+  }
+}
+
+/**
+ * Throws SyntheticSenderError unless `bytes` may be a fixture. `label` is the file's repository path
+ * (fixtures/synthetic/LED-04/posting-export.csv) or a name for it; errors name it and the rule broken,
+ * never a cell's value.
+ *
+ * - X12 content goes to assertSyntheticX12, whatever the file is called.
+ * - A .csv or .tsv carries SYNTHSENDER in every data row of one identifier column (the column the vendor
+ *   format registry names for a file under emr/<format_id>/, else a column whose header says ID): the
+ *   marker rule in guard/tabular.ts.
+ * - An .xlsx is read with the guard's own bounded reader, and every sheet with data meets the same rule.
+ * - .xls, .xlsm, .xlsb, .ods and other spreadsheets, and OLE2 content, are refused.
+ * - A zip is read entry by entry (stored or deflated, within the guard's caps), each entry checked as a
+ *   file of its own name; a zip it cannot read is refused.
+ * - A table listed in guard/pinned-tables.json passes at its path with its exact bytes.
+ */
+export function assertSyntheticFixture(bytes: Uint8Array, label: string): void {
+  if (isPinnedTable(label, bytes)) {
+    return;
+  }
+  checkFixture(bytes, repositoryPath(label), 0);
 }
 
 /** Directories under fixtures/synthetic that packages/synth never writes or removes. */
@@ -156,9 +297,11 @@ export interface WriteResult {
  * directories the registry no longer has are removed too.
  */
 export function writeCases(root: string, cases: readonly GeneratedCase[], scope: 'all' | 'cases'): WriteResult {
+  // Every file is checked before any is written. A file's label is the path it has in the repository,
+  // which is what guard/pinned-tables.json lists.
   for (const generated of cases) {
     for (const file of generated.files) {
-      assertSyntheticX12(file.bytes, file.path);
+      assertSyntheticFixture(file.bytes, `${SYNTHETIC_FIXTURES}/${file.path}`);
     }
   }
   const drift = driftFrom(root, cases, scope);
