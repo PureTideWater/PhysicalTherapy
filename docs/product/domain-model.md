@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `1cdf703a2c23550d6c47ceaaf6ac7ec9cd0f27d9` on branch `co-001/pr-02-domain-model` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 39; head `20261101120000_support_mail.sql`
+- Generated at commit `64e5006a369863f45fc52a5d43066f2d688facdd` on branch `co-001/pr-04-era-intake` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 40; head `20261102090000_era_export_intake.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
 - Functions in `public`: 240 (110 SECURITY DEFINER); triggers: 212, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 22 to approve, 31 tables and 133 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 31 tables and 135 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -845,17 +845,17 @@ Every uploaded file, and the 835 remittance loaded from it: transaction sets, cl
 - Class: PHI (registered); registry policy `source_document_tenant`, registered by `20261016090000_documents_payers_plans`, qualifies: yes
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Documents and remittances (PHI): Every uploaded file
-- Created by `20261016090000_documents_payers_plans` (ADR 0013, ADR 0015, ADR 0018); its DDL, policies or trigger functions changed by `20261017090000_document_scan_gate`, `20261017120000_document_page_text`, `20261029150000_billing`
+- Created by `20261016090000_documents_payers_plans` (ADR 0013, ADR 0015, ADR 0018); its DDL, policies or trigger functions changed by `20261017090000_document_scan_gate`, `20261017120000_document_page_text`, `20261029150000_billing`, `20261102090000_era_export_intake`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
-- Column grant: `tp_app` INSERT (`content_type`, `id`, `kind`, `parent_document_id`, `practice_id`, `scan_at`, `scan_status`, `sha256`, `size_bytes`, `status`, `uploaded_by`)
+- Column grant: `tp_app` INSERT (`content_type`, `format_id`, `id`, `kind`, `parent_document_id`, `practice_id`, `scan_at`, `scan_status`, `sha256`, `size_bytes`, `status`, `uploaded_by`)
 - Column grant: `tp_app` UPDATE (`page_count`, `page_text_status`, `scan_at`, `scan_status`, `sha256`, `status`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261016090000` |  |
 | 2 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261016090000` |  |
-| 3 | `kind` | `text` | NOT NULL |  |  | `20261016090000` | one of x12_835, contract, exhibit, posting_export, eft_export, payer_letter, other |
+| 3 | `kind` | `text` | NOT NULL |  |  | `20261016090000` | one of x12_835, era_export, contract, exhibit, posting_export, eft_export, payer_letter, other |
 | 4 | `s3_key` | `text` | NOT NULL |  |  | `20261016090000` | generated from `((('practices/'::text \|\| (practice_id)::text) \|\| '/documents/'::text) \|\| (id)::text)` |
 | 5 | `sha256` | `text` | null |  |  | `20261016090000` |  |
 | 6 | `size_bytes` | `bigint` | NOT NULL |  |  | `20261016090000` |  |
@@ -870,6 +870,7 @@ Every uploaded file, and the 835 remittance loaded from it: transaction sets, cl
 | 15 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261016090000` |  |
 | 16 | `page_text_status` | `text` | null |  |  | `20261017120000` | one of ready, unsupported_document, document_unreadable; not in the dictionary |
 | 17 | `page_count` | `integer` | null |  |  | `20261017120000` | not in the dictionary |
+| 18 | `format_id` | `text` | null |  |  | `20261102090000` | one of webpt_billing_era_v0, prompt_era_v0, spry_era_v0, raintree_era_v0; not in the dictionary |
 
 Keys:
 - Primary: (id)
@@ -895,7 +896,9 @@ Policies (4):
 
 Invariants enforced by constraints:
 - `source_document_content_type_check`: `CHECK (content_type ~ '^[a-z0-9][a-z0-9.+-]{0,62}/[a-z0-9][a-z0-9.+-]{0,126}$'::text)`
-- `source_document_kind_check`: `CHECK (kind = ANY (ARRAY['x12_835'::text, 'contract'::text, 'exhibit'::text, 'posting_export'::text, 'eft_export'::text, 'payer_letter'::text, 'other'::text]))`
+- `source_document_format_id_check`: `CHECK (format_id = ANY (ARRAY['webpt_billing_era_v0'::text, 'prompt_era_v0'::text, 'spry_era_v0'::text, 'raintree_era_v0'::text]))`
+- `source_document_format_of_era_export`: `CHECK ((kind = 'era_export'::text) = (format_id IS NOT NULL))`
+- `source_document_kind_check`: `CHECK (kind = ANY (ARRAY['x12_835'::text, 'era_export'::text, 'contract'::text, 'exhibit'::text, 'posting_export'::text, 'eft_export'::text, 'payer_letter'::text, 'other'::text]))`
 - `source_document_not_its_own_entry`: `CHECK (parent_document_id IS DISTINCT FROM id)`
 - `source_document_page_count_check`: `CHECK (page_count >= 0)`
 - `source_document_page_count_when_ready`: `CHECK ( CASE     WHEN page_text_status = 'ready'::text THEN page_count IS NOT NULL     ELSE page_count IS NULL END)`
@@ -914,6 +917,7 @@ Invariants enforced by triggers:
 - `source_document_rules`: `BEFORE INSERT OR UPDATE ON source_document FOR EACH ROW EXECUTE FUNCTION source_document_rules()`
   - "a zip entry belongs to a top-level document of the same practice"
   - "a zip entry carries its zip's uploader"
+  - "a zip entry carries its zip's export format"
   - "a zip entry is clean only when its zip's malware scan is"
   - "a document is scanned or queued for parse only when its malware scan is clean"
   - "a document's SHA-256 never changes once recorded"
@@ -930,31 +934,31 @@ Maintains `updated_at`: `source_document_updated_at`.
 - Class: PHI (registered); registry policy `remittance_tenant`, registered by `20261016120000_remittances`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Documents and remittances (PHI): One 835 transaction set
-- Created by `20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)
+- Created by `20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027); its DDL, policies or trigger functions changed by `20261102090000_era_export_intake`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
-- Column grant: `tp_app` INSERT (`balance_diff_cents`, `bpr02_cents`, `bpr16_date`, `bpr_credit_debit`, `bpr_method`, `claim_count`, `gs06`, `held_reason`, `id`, `isa13`, `payee_id_qualifier`, `payee_npi`, `payer_id`, `payer_name`, `plb_total_cents`, `practice_id`, `production_date`, `receiver_id`, `review_of_remittance_id`, `review_reason`, `sender_id`, `source_document_id`, `st02`, `status`, `trn02`, `trn03`)
+- Column grant: `tp_app` INSERT (`balance_diff_cents`, `bpr02_cents`, `bpr16_date`, `bpr_credit_debit`, `bpr_method`, `claim_count`, `gs06`, `held_reason`, `id`, `isa13`, `payee_id_qualifier`, `payee_npi`, `payer_id`, `payer_name`, `plb_total_cents`, `practice_id`, `production_date`, `provenance`, `receiver_id`, `review_of_remittance_id`, `review_reason`, `sender_id`, `source_document_id`, `st02`, `status`, `trn02`, `trn03`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261016120000` |  |
 | 2 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261016120000` |  |
 | 3 | `source_document_id` | `uuid` | NOT NULL |  | `source_document(id)` | `20261016120000` |  |
-| 4 | `sender_id` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 5 | `receiver_id` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 6 | `isa13` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 7 | `gs06` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 8 | `st02` | `text` | NOT NULL |  |  | `20261016120000` |  |
+| 4 | `sender_id` | `text` | null |  |  | `20261016120000` |  |
+| 5 | `receiver_id` | `text` | null |  |  | `20261016120000` |  |
+| 6 | `isa13` | `text` | null |  |  | `20261016120000` |  |
+| 7 | `gs06` | `text` | null |  |  | `20261016120000` |  |
+| 8 | `st02` | `text` | null |  |  | `20261016120000` |  |
 | 9 | `trn02` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 10 | `trn03` | `text` | NOT NULL |  |  | `20261016120000` | not in the dictionary |
+| 10 | `trn03` | `text` | null |  |  | `20261016120000` | not in the dictionary |
 | 11 | `bpr02_cents` | `bigint` | NOT NULL |  |  | `20261016120000` |  |
 | 12 | `bpr_credit_debit` | `text` | NOT NULL |  |  | `20261016120000` | one of C, D; not in the dictionary |
-| 13 | `bpr_method` | `text` | NOT NULL |  |  | `20261016120000` |  |
+| 13 | `bpr_method` | `text` | null |  |  | `20261016120000` |  |
 | 14 | `bpr16_date` | `date` | NOT NULL |  |  | `20261016120000` |  |
 | 15 | `payer_name` | `text` | NOT NULL |  |  | `20261016120000` |  |
 | 16 | `payer_id` | `uuid` | NOT NULL |  | `payer(id)` | `20261016120000` |  |
 | 17 | `payee_npi` | `text` | NOT NULL |  |  | `20261016120000` |  |
-| 18 | `payee_id_qualifier` | `text` | NOT NULL |  |  | `20261016120000` | not in the dictionary |
+| 18 | `payee_id_qualifier` | `text` | null |  |  | `20261016120000` | not in the dictionary |
 | 19 | `production_date` | `date` | null |  |  | `20261016120000` |  |
 | 20 | `balance_diff_cents` | `bigint` | NOT NULL | `0` |  | `20261016120000` |  |
 | 21 | `balanced` | `boolean` | NOT NULL |  |  | `20261016120000` | generated from `(balance_diff_cents = 0)` |
@@ -966,10 +970,12 @@ Maintains `updated_at`: `source_document_updated_at`.
 | 27 | `review_of_remittance_id` | `uuid` | null |  | `remittance(id)` | `20261016120000` | not in the dictionary |
 | 28 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261016120000` |  |
 | 29 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261016120000` |  |
+| 30 | `provenance` | `text` | NOT NULL | `'x12_835'::text` |  | `20261102090000` | one of x12_835, era_export; not in the dictionary |
 
 Keys:
 - Primary: (id)
 - Unique `remittance_once`: `UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents)`
+- Unique index `remittance_export_once`: `USING btree (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) WHERE (provenance = 'era_export'::text)`
 - Foreign `remittance_payer_id_fkey`: (payer_id) -> `payer`(id), on delete no action
 - Foreign `remittance_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
 - Foreign `remittance_review_of_remittance_id_fkey`: (review_of_remittance_id) -> `remittance`(id), on delete no action
@@ -991,6 +997,7 @@ Invariants enforced by constraints:
 - `remittance_bpr_credit_debit_check`: `CHECK (bpr_credit_debit = ANY (ARRAY['C'::text, 'D'::text]))`
 - `remittance_bpr_method_check`: `CHECK (btrim(bpr_method) <> ''::text)`
 - `remittance_claim_count_check`: `CHECK (claim_count >= 0)`
+- `remittance_export_has_no_envelope`: `CHECK (provenance <> 'era_export'::text OR receiver_id IS NULL AND isa13 IS NULL AND gs06 IS NULL AND st02 IS NULL AND trn03 IS NULL AND payee_id_qualifier IS NULL)`
 - `remittance_gs06_check`: `CHECK (btrim(gs06) <> ''::text)`
 - `remittance_held_reason_check`: `CHECK (held_reason ~ '^[a-z][a-z0-9_]{0,63}$'::text)`
 - `remittance_isa13_check`: `CHECK (btrim(isa13) <> ''::text)`
@@ -999,6 +1006,7 @@ Invariants enforced by constraints:
 - `remittance_payee_id_qualifier_check`: `CHECK (btrim(payee_id_qualifier) <> ''::text)`
 - `remittance_payee_npi_check`: `CHECK (btrim(payee_npi) <> ''::text)`
 - `remittance_payer_name_check`: `CHECK (btrim(payer_name) <> ''::text)`
+- `remittance_provenance_check`: `CHECK (provenance = ANY (ARRAY['x12_835'::text, 'era_export'::text]))`
 - `remittance_receiver_id_check`: `CHECK (btrim(receiver_id) <> ''::text)`
 - `remittance_review_names_its_remittance`: `CHECK ((review_reason IS NULL) = (review_of_remittance_id IS NULL))`
 - `remittance_review_reason_check`: `CHECK (review_reason = ANY (ARRAY['trace_reused_another_date'::text, 'trace_reused_same_date'::text]))`
@@ -1007,12 +1015,15 @@ Invariants enforced by constraints:
 - `remittance_status_check`: `CHECK (status = ANY (ARRAY['loaded'::text, 'held'::text, 'duplicate'::text]))`
 - `remittance_trn02_check`: `CHECK (btrim(trn02) <> ''::text)`
 - `remittance_trn03_check`: `CHECK (btrim(trn03) <> ''::text)`
+- `remittance_x12_envelope`: `CHECK (provenance <> 'x12_835'::text OR sender_id IS NOT NULL AND receiver_id IS NOT NULL AND isa13 IS NOT NULL AND gs06 IS NOT NULL AND st02 IS NOT NULL AND trn03 IS NOT NULL AND bpr_method IS NOT NULL AND payee_id_qualifier IS NOT NULL)`
 
 Invariants enforced by triggers:
 - `remittance_references_in_practice`: `BEFORE INSERT ON remittance FOR EACH ROW EXECUTE FUNCTION remittance_references_in_practice()`
-  - "a remittance comes from an 835 document of the same practice"
+  - "a remittance comes from a document of its provenance (an 835 or an ERA export) of the same practice"
   - "a remittance names a payer of the same practice"
   - "a remittance is reviewed against a remittance of the same practice"
+  - "an ERA export of a payment already loaded loads nothing"
+  - "an 835 of a payment loaded from an ERA export is held for review, never loaded beside it"
 
 Maintains `updated_at`: `remittance_updated_at`.
 
@@ -1023,7 +1034,7 @@ Maintains `updated_at`: `remittance_updated_at`.
 - Class: PHI (registered); registry policy `claim_tenant`, registered by `20261016120000_remittances`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Documents and remittances (PHI): CLP
-- Created by `20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027); its DDL, policies or trigger functions changed by `20261023090000_packets_submissions_and_responses`, `20261023120000_recovery_ledger`
+- Created by `20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027); its DDL, policies or trigger functions changed by `20261023090000_packets_submissions_and_responses`, `20261023120000_recovery_ledger`, `20261102090000_era_export_intake`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`allowed_cents`, `charge_cents`, `claim_no`, `claim_status_code`, `facility_type`, `filing_indicator`, `frequency_code`, `id`, `insured_ref_id`, `interest_cents`, `paid_cents`, `patient_control_number`, `patient_ref_id`, `patient_resp_cents`, `payer_claim_control_number`, `payer_claim_control_number_hash`, `practice_id`, `received_on`, `remittance_id`, `reversal_of_claim_id`, `service_from`, `service_to`, `superseded_by_claim_id`)
@@ -1042,7 +1053,7 @@ Maintains `updated_at`: `remittance_updated_at`.
 | 9 | `charge_cents` | `bigint` | NOT NULL |  |  | `20261016120000` |  |
 | 10 | `paid_cents` | `bigint` | NOT NULL |  |  | `20261016120000` |  |
 | 11 | `patient_resp_cents` | `bigint` | null |  |  | `20261016120000` |  |
-| 12 | `filing_indicator` | `text` | NOT NULL |  |  | `20261016120000` | not in the dictionary |
+| 12 | `filing_indicator` | `text` | null |  |  | `20261016120000` | not in the dictionary |
 | 13 | `facility_type` | `text` | null |  |  | `20261016120000` |  |
 | 14 | `frequency_code` | `text` | null |  |  | `20261016120000` |  |
 | 15 | `patient_ref_id` | `uuid` | NOT NULL |  | `patient_ref(id)` | `20261016120000` |  |
@@ -1093,6 +1104,7 @@ Invariants enforced by triggers:
   - "a reversal's link to the claim it reverses never changes once set"
   - "a claim's superseding correction never changes once set"
   - "a claim belongs to a remittance of the same practice"
+  - "a claim of an 835 carries its claim filing indicator (CLP06)"
   - "a claim names patient references of the same practice"
   - "a reversal reverses a claim of the same practice that is not itself a reversal"
   - "a claim is superseded by a corrected claim of the same practice"
@@ -5231,58 +5243,60 @@ Invariants enforced by constraints:
 
 The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1, are what the founder approves. C2, C3, C4 and C5 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
 
-Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 16 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `source_document.kind (7)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
+Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 15 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
 
 ### A. Schema divergences to approve
 
 | # | Table | Field | Kind | Data dictionary | Live schema | Explained by | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| A1 | [`rule_record`](#table-rule-record) | `record_type` | enumeration differs | pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map | pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map, denial_category (schema adds denial_category) | ADR 0008 (decision and revisit condition) | founder ruling needed |
-| A2 | [`priced_line`](#table-priced-line) | `expected_unrounded` | retyped | numeric(18,6) | numeric | ADR 0029; ADR 0035 | explained |
-| A3 | [`line_status`](#table-line-status) | `reason` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0047 (Encryption and keys) | stricter than the dictionary |
-| A4 | [`case_line`](#table-case-line) | `written_off_text` | encryption | not listed | encrypted: enc:v1 CHECK | ADR 0038; ADR 0047 (Encryption and keys) | stricter than the dictionary |
-| A5 | [`case_line`](#table-case-line) | `reopen_reason` | encryption | not listed | encrypted: enc:v1 CHECK | ADR 0038; ADR 0047 (Encryption and keys) | stricter than the dictionary |
-| A6 | [`packet_version`](#table-packet-version) | `narrative` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 | stricter than the dictionary |
-| A7 | [`submission`](#table-submission) | `reference` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 (migration 20261023090000 header) | stricter than the dictionary |
-| A8 | [`payer_response`](#table-payer-response) | `notes` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 (migration 20261023090000 header) | stricter than the dictionary |
-| A9 | [`ledger_entry`](#table-ledger-entry) | `reason` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0042; ADR 0047 (Encryption and keys) | stricter than the dictionary |
-| A10 | [`model_call`](#table-model-call) | `actor` | renamed | actor | absent; nearest columns: actor_kind, actor_id | ADR 0048 | explained |
-| A11 | [`model_call`](#table-model-call) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0048 | explained |
-| A12 | [`eval_example`](#table-eval-example) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0048; ADR 0051 | explained |
-| A13 | [`audit_event`](#table-audit-event) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0014 | explained |
-| A14 | `job` |  | missing table | Operations (no PHI by design): Queue | absent from schema public | ADR 0004; ADR 0049; README (pg-boss connects as its own login in the role tp_queue, which owns the pgboss schema) | explained |
-| A15 | [`job_run`](#table-job-run) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0019 (migration 20261016121000); catalog rule in packages/db/src/catalog.ts | stricter than the dictionary |
-| A16 | [`notification`](#table-notification) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0039 (Counts and totals only, in the schema) | stricter than the dictionary |
-| A17 | [`digest`](#table-digest) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0039 (Counts and totals only, in the schema) | stricter than the dictionary |
-| A18 | [`usage_snapshot`](#table-usage-snapshot) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0050 | explained |
-| A19 | `legal_hold` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
-| A20 | `deletion_request` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
-| A21 | `export_job` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
-| A22 | [`claim`](#table-claim) | `index (practice_id, payer_claim_control_number)` | index | `claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value) | claim_by_patient (practice_id, patient_ref_id); claim_by_payer_claim_control_number (practice_id, payer_claim_control_number_hash) | ADR 0027 | explained |
+| A1 | [`source_document`](#table-source-document) | `kind` | enumeration differs | x12_835, contract, exhibit, posting_export, eft_export, payer_letter, other | x12_835, era_export, contract, exhibit, posting_export, eft_export, payer_letter, other (schema adds era_export) | ADR 0060; reconciliation-001 D12 (a), approved 2026-10-17 | explained |
+| A2 | [`rule_record`](#table-rule-record) | `record_type` | enumeration differs | pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map | pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map, denial_category (schema adds denial_category) | ADR 0008 (decision and revisit condition) | founder ruling needed |
+| A3 | [`priced_line`](#table-priced-line) | `expected_unrounded` | retyped | numeric(18,6) | numeric | ADR 0029; ADR 0035 | explained |
+| A4 | [`line_status`](#table-line-status) | `reason` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0047 (Encryption and keys) | stricter than the dictionary |
+| A5 | [`case_line`](#table-case-line) | `written_off_text` | encryption | not listed | encrypted: enc:v1 CHECK | ADR 0038; ADR 0047 (Encryption and keys) | stricter than the dictionary |
+| A6 | [`case_line`](#table-case-line) | `reopen_reason` | encryption | not listed | encrypted: enc:v1 CHECK | ADR 0038; ADR 0047 (Encryption and keys) | stricter than the dictionary |
+| A7 | [`packet_version`](#table-packet-version) | `narrative` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 | stricter than the dictionary |
+| A8 | [`submission`](#table-submission) | `reference` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 (migration 20261023090000 header) | stricter than the dictionary |
+| A9 | [`payer_response`](#table-payer-response) | `notes` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0041 (migration 20261023090000 header) | stricter than the dictionary |
+| A10 | [`ledger_entry`](#table-ledger-entry) | `reason` | encryption | listed, not marked (enc) | encrypted: enc:v1 CHECK | ADR 0042; ADR 0047 (Encryption and keys) | stricter than the dictionary |
+| A11 | [`model_call`](#table-model-call) | `actor` | renamed | actor | absent; nearest columns: actor_kind, actor_id | ADR 0048 | explained |
+| A12 | [`model_call`](#table-model-call) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0048 | explained |
+| A13 | [`eval_example`](#table-eval-example) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0048; ADR 0051 | explained |
+| A14 | [`audit_event`](#table-audit-event) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0014 | explained |
+| A15 | `job` |  | missing table | Operations (no PHI by design): Queue | absent from schema public | ADR 0004; ADR 0049; README (pg-boss connects as its own login in the role tp_queue, which owns the pgboss schema) | explained |
+| A16 | [`job_run`](#table-job-run) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0019 (migration 20261016121000); catalog rule in packages/db/src/catalog.ts | stricter than the dictionary |
+| A17 | [`notification`](#table-notification) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0039 (Counts and totals only, in the schema) | stricter than the dictionary |
+| A18 | [`digest`](#table-digest) |  | classification | Operations (no PHI by design) | PHI (registered): practice_id NOT NULL and a phi_table_registry row | ADR 0039 (Counts and totals only, in the schema) | stricter than the dictionary |
+| A19 | [`usage_snapshot`](#table-usage-snapshot) | `updated_at` | convention | updated_at timestamptz (dictionary convention) | absent | ADR 0050 | explained |
+| A20 | `legal_hold` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
+| A21 | `deletion_request` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
+| A22 | `export_job` |  | missing table | Operations (no PHI by design): Lifecycle | absent from schema public | PRD 17, milestone 12 (no ADR yet) | not built (milestone 12) |
+| A23 | [`claim`](#table-claim) | `index (practice_id, payer_claim_control_number)` | index | `claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value) | claim_by_patient (practice_id, patient_ref_id); claim_by_payer_claim_control_number (practice_id, payer_claim_control_number_hash) | ADR 0027 | explained |
 
 Notes:
-- A1 (`rule_record.record_type`): denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2).
-- A2 (`priced_line.expected_unrounded`): numeric with no scale keeps the exact unrounded value; numeric(18,6) would round it (ADR 0029: golden line G09 carries more than six decimal places). CLAUDE.md rule 2 keeps the unrounded value beside the rounded one.
-- A3 (`line_status.reason`): A person's free text can name a patient, so it is encrypted with the practice data key; ENCRYPTED_COLUMNS in packages/db/src/crypto/cipher.ts lists it and the catalog test requires its enc:v1 CHECK.
-- A4 (`case_line.written_off_text`): The write-off's free text, beside the closed written_off_reason code the dictionary lists.
-- A5 (`case_line.reopen_reason`): The reopen reason is a person's free text.
-- A6 (`packet_version.narrative`): The narrative is the person's words, encrypted with the practice key; identifiers stay placeholders until export.
-- A7 (`submission.reference`): The payer's reference (a portal confirmation, a fax receipt) is free text a person types.
-- A8 (`payer_response.notes`): Notes on a payer response are a person's free text.
-- A9 (`ledger_entry.reason`): A ledger correction's reason is the person's words, encrypted; the amount, stage and evidence stay plain.
-- A10 (`model_call.actor`): The dictionary's single actor field is two columns: actor_kind (user, service or evaluation) and actor_id (null only for a synthetic evaluation call), with CHECKs model_call_actor and model_call_evaluation_is_synthetic.
-- A11 (`model_call.updated_at`): A model call is written once (model_call_rules: 'a model call never changes; only the reviewer's decision is recorded, once'); reviewed_at records that one later change.
-- A12 (`eval_example.updated_at`): An evaluation example is never changed or deleted (eval_example_rules).
-- A13 (`audit_event.updated_at`): audit_event is append-only (audit_event_append_only, audit_event_no_truncate). The dictionary's own row gives `at` as its time, which the schema has.
-- A14 (`job`): The queue is pg-boss's own tables, which pg-boss installs in its own schema pgboss on start, owned by tp_queue, outside schema public and outside this document. The product's record of each job is job_run (singleton key, practice_id, idempotency key, attempts, outcome).
-- A15 (`job_run`): The dictionary files job_run under 'Operations (no PHI by design)', and it holds no PHI column. Because it carries practice_id NOT NULL, the catalog rule requires a registry row, FORCE RLS and the tenant policy, so a practice's job history is tenant-scoped like its data.
-- A16 (`notification`): The dictionary lists notification with user_id only. The schema adds practice_id NOT NULL and subject_id, so it is registered and tenant-scoped; its figures columns admit only integer counts and integer-cent totals (figures_are_counts, figures_are_cents), so no PHI can be written to it.
-- A17 (`digest`): digest has practice_id in the dictionary too; with practice_id NOT NULL the catalog rule registers it. Counts and totals only.
-- A18 (`usage_snapshot.updated_at`): A usage snapshot never changes (usage_snapshot_kept: 'a usage snapshot never changes').
-- A19 (`legal_hold`): Lifecycle tables for export and deletion are milestone 12 work, not started; /p/[practiceId]/settings/data shows placeholders. Kept in milestone 12 by CO-08.
-- A20 (`deletion_request`): As legal_hold.
-- A21 (`export_job`): As legal_hold. Not to be confused with the job type 'export' in job_run.
-- A22 (`claim.index (practice_id, payer_claim_control_number)`): payer_claim_control_number is encrypted, so the index is claim_by_payer_claim_control_number on (practice_id, payer_claim_control_number_hash), the deterministic hash the dictionary's own note asks for.
+- A1 (`source_document.kind`): era_export is a ninth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence.
+- A2 (`rule_record.record_type`): denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2).
+- A3 (`priced_line.expected_unrounded`): numeric with no scale keeps the exact unrounded value; numeric(18,6) would round it (ADR 0029: golden line G09 carries more than six decimal places). CLAUDE.md rule 2 keeps the unrounded value beside the rounded one.
+- A4 (`line_status.reason`): A person's free text can name a patient, so it is encrypted with the practice data key; ENCRYPTED_COLUMNS in packages/db/src/crypto/cipher.ts lists it and the catalog test requires its enc:v1 CHECK.
+- A5 (`case_line.written_off_text`): The write-off's free text, beside the closed written_off_reason code the dictionary lists.
+- A6 (`case_line.reopen_reason`): The reopen reason is a person's free text.
+- A7 (`packet_version.narrative`): The narrative is the person's words, encrypted with the practice key; identifiers stay placeholders until export.
+- A8 (`submission.reference`): The payer's reference (a portal confirmation, a fax receipt) is free text a person types.
+- A9 (`payer_response.notes`): Notes on a payer response are a person's free text.
+- A10 (`ledger_entry.reason`): A ledger correction's reason is the person's words, encrypted; the amount, stage and evidence stay plain.
+- A11 (`model_call.actor`): The dictionary's single actor field is two columns: actor_kind (user, service or evaluation) and actor_id (null only for a synthetic evaluation call), with CHECKs model_call_actor and model_call_evaluation_is_synthetic.
+- A12 (`model_call.updated_at`): A model call is written once (model_call_rules: 'a model call never changes; only the reviewer's decision is recorded, once'); reviewed_at records that one later change.
+- A13 (`eval_example.updated_at`): An evaluation example is never changed or deleted (eval_example_rules).
+- A14 (`audit_event.updated_at`): audit_event is append-only (audit_event_append_only, audit_event_no_truncate). The dictionary's own row gives `at` as its time, which the schema has.
+- A15 (`job`): The queue is pg-boss's own tables, which pg-boss installs in its own schema pgboss on start, owned by tp_queue, outside schema public and outside this document. The product's record of each job is job_run (singleton key, practice_id, idempotency key, attempts, outcome).
+- A16 (`job_run`): The dictionary files job_run under 'Operations (no PHI by design)', and it holds no PHI column. Because it carries practice_id NOT NULL, the catalog rule requires a registry row, FORCE RLS and the tenant policy, so a practice's job history is tenant-scoped like its data.
+- A17 (`notification`): The dictionary lists notification with user_id only. The schema adds practice_id NOT NULL and subject_id, so it is registered and tenant-scoped; its figures columns admit only integer counts and integer-cent totals (figures_are_counts, figures_are_cents), so no PHI can be written to it.
+- A18 (`digest`): digest has practice_id in the dictionary too; with practice_id NOT NULL the catalog rule registers it. Counts and totals only.
+- A19 (`usage_snapshot.updated_at`): A usage snapshot never changes (usage_snapshot_kept: 'a usage snapshot never changes').
+- A20 (`legal_hold`): Lifecycle tables for export and deletion are milestone 12 work, not started; /p/[practiceId]/settings/data shows placeholders. Kept in milestone 12 by CO-08.
+- A21 (`deletion_request`): As legal_hold.
+- A22 (`export_job`): As legal_hold. Not to be confused with the job type 'export' in job_run.
+- A23 (`claim.index (practice_id, payer_claim_control_number)`): payer_claim_control_number is encrypted, so the index is claim_by_payer_claim_control_number on (practice_id, payer_claim_control_number_hash), the deterministic hash the dictionary's own note asks for.
 
 ### B. Policy divergences to approve
 
@@ -5302,7 +5316,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 
 | # | Subject | Where | What each says | Live schema | Status |
 | --- | --- | --- | --- | --- | --- |
-| C1 | Remittance duplicate key | PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary | PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents). | remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. | founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule |
+| C1 | Remittance duplicate key | PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary | PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents). | remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. An ERA export (provenance era_export, ADR 0060, D12 a) is keyed by remittance_export_once (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) over export rows, and the 835 is authoritative between the two (D13 a). | founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule |
 | C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
 | C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
@@ -5352,8 +5366,8 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | --- | --- |
 | [`practice`](#table-practice) | `deleted_at` (`20261101090000_billing_review` (ADR 0050, ADR 0055)) |
 | [`user`](#table-user) | `failed_sign_ins`, `locked_at` (`20261015170000_identity_and_permissions` (ADR 0012, ADR 0016, ADR 0017))<br>`settings` (`20261020090000_monitoring_digests_notifications` (ADR 0039)) |
-| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033)) |
-| [`remittance`](#table-remittance) | `trn03`, `bpr_credit_debit`, `payee_id_qualifier`, `review_reason`, `review_of_remittance_id` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
+| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033))<br>`format_id` (`20261102090000_era_export_intake` (ADR 0031)) |
+| [`remittance`](#table-remittance) | `trn03`, `bpr_credit_debit`, `payee_id_qualifier`, `review_reason`, `review_of_remittance_id` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`provenance` (`20261102090000_era_export_intake` (ADR 0031)) |
 | [`claim`](#table-claim) | `claim_no`, `payer_claim_control_number_hash`, `filing_indicator` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`received_on` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`interest_cents` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`service_line`](#table-service-line) | `procedure_qualifier`, `service_date_to`, `observed_allowed_allocated`, `patient_share_cents` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`adjustment`](#table-adjustment) | `unknown_code` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
@@ -5395,13 +5409,15 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `role_permission.effect` | `allow`, `deny` |
 | `user_session.mfa_method` | `totp`, `webauthn` |
 | `user_session.end_reason` | `signed_out`, `idle`, `expired`, `device_revoked`, `revoked`, `user_disabled` |
-| `source_document.kind` | `x12_835`, `contract`, `exhibit`, `posting_export`, `eft_export`, `payer_letter`, `other` |
+| `source_document.kind` | `x12_835`, `era_export`, `contract`, `exhibit`, `posting_export`, `eft_export`, `payer_letter`, `other` |
 | `source_document.scan_status` | `pending`, `clean`, `flagged`, `unscannable`, `failed` |
 | `source_document.status` | `awaiting_upload`, `received`, `scanned`, `stored`, `expanded`, `parse_queued`, `parsed`, `balanced`, `loaded`, `held`, `duplicate`, `quarantined`, `not_835`, `wrong_type`, `unreadable`, `too_large`, `too_compressed`, `nested_zip`, `unsafe_entry`, `encrypted`, `too_many_entries`, `failed` |
 | `source_document.page_text_status` | `ready`, `unsupported_document`, `document_unreadable` |
+| `source_document.format_id` | `webpt_billing_era_v0`, `prompt_era_v0`, `spry_era_v0`, `raintree_era_v0` |
 | `remittance.bpr_credit_debit` | `C`, `D` |
 | `remittance.status` | `loaded`, `held`, `duplicate` |
 | `remittance.review_reason` | `trace_reused_another_date`, `trace_reused_same_date` |
+| `remittance.provenance` | `x12_835`, `era_export` |
 | `service_line.observed_allowed_basis` | `amt_b6`, `paid_plus_pr` |
 | `provider_adjustment.category` | `recoupment`, `forward_balance`, `interest`, `authorized_return`, `other` |
 | `parse_report.outcome` | `loaded`, `held`, `partially_held`, `duplicate` |
@@ -5541,7 +5557,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b8dacedadc46c5e7` |
 | `case_reopened_levels(uuid)` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9e04003e8f9e60cf` |
 | `case_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0292837d38e4bad` |
-| `claim_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `486976a848250105` |
+| `claim_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `daa5449712c05f35` |
 | `compliance_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7f1e947036b56ec1` |
 | `compliance_workforce()` | `TABLE(user_id uuid, email text, roles text[])` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7cc132ead4ab0ff3` |
 | `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
@@ -5685,7 +5701,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `record_sign_in_with_mfa()` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `33357d6149a90f6c` |
 | `refuse_new_work_while_suspended()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0a92559e621ef0f0` |
 | `reject_change()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `9a6259207407034b` |
-| `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `577067b04e348bbf` |
+| `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `e23bac606a695625` |
 | `report_document_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1f2bfc271aad9a0c` |
 | `report_document_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a4415278b751e6c5` |
 | `report_document_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `ae5caa9ac79ee5fe` |
@@ -5706,7 +5722,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `sign_in_account(text,text)` | `TABLE(user_id uuid, cognito_sub text, email text, status text, mfa_enrolled boolean, locked boolean, hardware_key_required boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a888c9484d2ed7a` |
 | `sign_in_failed(uuid,text,text)` | `TABLE(failures integer, locked boolean, newly_locked boolean, burst boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a209dae56d884725` |
 | `sign_in_succeeded(uuid)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `60e683f0dc8ba129` |
-| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `07a490baf022b29b` |
+| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `b77558b4de441f4f` |
 | `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82c436362d600ad2` |
 | `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `92eec267bf1252eb` |
 | `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
@@ -5787,6 +5803,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 37 | `20261101100000_esign_and_billing_logins.sql` | ADR 0053, ADR 0055 | `10e0cd84499263e3b9d946cc57ce2a2c7123ae409c935e8796df032b8bb8ffe9` |
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
+| 40 | `20261102090000_era_export_intake.sql` | ADR 0031 | `63f3074830858be05d3e78d6213637f6d6a1c342eb66531ae6f2df8d7769cfc9` |
 
 ## Cross-checks
 
@@ -5802,6 +5819,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261101120000_support_mail.sql` (39 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261102090000_era_export_intake.sql` (40 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: Tyler Williams  Date: 2026-10-17  Document SHA-256: `ec475408c5e37f1e7342028a400df43e06b78d968c419ad5889e72ccfbea03a8`
+Approved by: ________  Date: ________  Document SHA-256: `64841251cad3927d0f0a9658db7930f3e0e46f73e79918d27a9276eb4e3cee1a`
