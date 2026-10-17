@@ -1,4 +1,6 @@
 import { mkdirSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
 import { type Page, expect, test } from '@playwright/test';
@@ -29,9 +31,6 @@ const SHOTS = process.env.BRAND_SCREENSHOTS_DIR ?? path.resolve(import.meta.dirn
 const PRACTICE = 'SYNTHETIC OTHER PRACTICE BRAND';
 const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT', case_materiality_cents: '1000' };
 const FONT_SERVICES = /fonts\.googleapis\.com|fonts\.gstatic\.com/;
-/** A static host and a web mail client of their own, which page.route answers (synthetic names; nothing leaves the machine). */
-const STATIC_HOST = 'https://static.synthetic.test';
-const MAIL_CLIENT = 'https://mail.synthetic.test';
 /** The path CloudFront serves the brand art under (infra/lib/constructs/edge.ts, BRAND_PATH_PATTERN, without its *). */
 const BRAND_PATH = '/brand/';
 /** Brass, rgb() as the browser computes it: the active rail item's underline. */
@@ -84,44 +83,54 @@ test('the email header is the outlined lockup with its tagline at 160 px on Whit
   expect(art.headers()['cross-origin-resource-policy']).toBe('same-origin');
   expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
   const body = await art.body();
-  // The CloudFront static host (STATIC_ASSET_ORIGIN) as infra/lib/constructs/edge.ts builds it: /brand/* fetched from the
-  // application and answered under the static response headers policy, whose Cross-Origin-Resource-Policy is cross-origin.
-  // Here a route stands in for it, giving the application's own bytes; `policy` is what it answers.
-  let policy = 'cross-origin';
-  const served: string[] = [];
-  await page.route(
-    (url) => url.origin === STATIC_HOST && url.pathname.startsWith(BRAND_PATH),
-    async (route) => {
-      served.push(new URL(route.request().url()).pathname);
-      await route.fulfill({ status: 200, contentType: 'image/png', body, headers: { 'cross-origin-resource-policy': policy, 'x-content-type-options': 'nosniff' } });
-    },
-  );
   const message = {
     to: ['admin@synthetic.test'],
     subject: 'Monitoring digest for October 2026',
     lines: ['SYNTHETIC: 3 new lines were flagged and 1 case reached its materiality this month.'],
     links: [`${baseURL ?? 'http://localhost:3100'}/p/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01/notifications`],
   };
-  const html = mailBodyHtml(message, STATIC_HOST);
-  expect(html).toContain(`src="${STATIC_HOST}${EMAIL_LOCKUP_PATH}"`);
-  // A web mail client opens the message on an origin of its own, neither the application's nor the static host's.
-  let opened = html;
-  await page.route((url) => url.origin === MAIL_CLIENT, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: opened }));
-  await page.setViewportSize({ width: 640, height: 520 });
-  await page.goto(`${MAIL_CLIENT}/message`, { waitUntil: 'load' });
-  const lockup = page.getByRole('img', { name: 'PaidWhole' });
-  await expect(lockup).toHaveJSProperty('complete', true);
-  expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
-  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
-  await page.screenshot({ path: shot('email.png'), fullPage: true });
-  // Answered as the application answers (same-origin), the mail client could not embed the art at all: the
-  // exception lives on the static host alone. (Another address for the art, so no cache answers for it.)
-  policy = 'same-origin';
-  opened = html.replace(`${EMAIL_LOCKUP_PATH}"`, `${EMAIL_LOCKUP_PATH}?as-the-application-answers"`);
-  await page.goto(`${MAIL_CLIENT}/message-again`, { waitUntil: 'load' });
-  await expect(lockup).toHaveJSProperty('complete', true);
-  expect(await lockup.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
-  expect(served).toEqual([EMAIL_LOCKUP_PATH, EMAIL_LOCKUP_PATH]);
+  // A server of the test's own, reached under two origins: as 127.0.0.1 it stands in for the CloudFront static host
+  // (STATIC_ASSET_ORIGIN; infra/lib/constructs/edge.ts), answering /brand/* with the application's bytes under
+  // `policy`, which CloudFront's response headers policy sets to cross-origin; as localhost it is a web mail client,
+  // another origin, that opens the message. The browser enforces the resource policy on real responses only.
+  let policy = 'cross-origin';
+  let opened = '';
+  const served: string[] = [];
+  const server = createServer((request, response) => {
+    const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+    if (pathname.startsWith(BRAND_PATH)) {
+      served.push(pathname);
+      response.writeHead(200, { 'content-type': 'image/png', 'cross-origin-resource-policy': policy, 'x-content-type-options': 'nosniff', 'cache-control': 'no-store' }).end(body);
+    } else {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }).end(opened);
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = String((server.address() as AddressInfo).port);
+  const staticHost = `http://127.0.0.1:${port}`;
+  const mailClient = `http://localhost:${port}`;
+  try {
+    const html = mailBodyHtml(message, staticHost);
+    expect(html).toContain(`src="${staticHost}${EMAIL_LOCKUP_PATH}"`);
+    opened = html;
+    await page.setViewportSize({ width: 640, height: 520 });
+    await page.goto(`${mailClient}/message`, { waitUntil: 'load' });
+    const lockup = page.getByRole('img', { name: 'PaidWhole' });
+    await expect(lockup).toHaveJSProperty('complete', true);
+    expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
+    await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await page.screenshot({ path: shot('email.png'), fullPage: true });
+    // Answered as the application answers (same-origin), the mail client could not embed the art at all: the
+    // exception lives on the static host alone. (Another address for the art, so no cache answers for it.)
+    policy = 'same-origin';
+    opened = html.replace(`${EMAIL_LOCKUP_PATH}"`, `${EMAIL_LOCKUP_PATH}?as-the-application-answers"`);
+    await page.goto(`${mailClient}/message-again`, { waitUntil: 'load' });
+    await expect(lockup).toHaveJSProperty('complete', true);
+    expect(await lockup.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
+    expect(served).toEqual([EMAIL_LOCKUP_PATH, EMAIL_LOCKUP_PATH]);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
   // With no static host configured (a local build) the message goes without the art, never with the name typed instead.
   const bare = mailBodyHtml(message, null);
   expect(bare).not.toMatch(/<img\b/);
