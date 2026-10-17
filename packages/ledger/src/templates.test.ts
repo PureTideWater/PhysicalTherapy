@@ -3,7 +3,24 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { EFT_FIELDS, POSTING_FIELDS, REQUIRED_EFT_FIELDS, REQUIRED_POSTING_FIELDS, SYNTHETIC_BANK_EXPORT_V1, SYNTHETIC_PM_EXPORT_V1, type PostingTemplate, exportColumns, procedureCodeOf, readDate, readEftExport, readPostingExport, templateProblems } from './templates';
+import {
+  BUILT_IN_POSTING_TEMPLATES,
+  EFT_FIELDS,
+  POSTING_FIELDS,
+  REQUIRED_EFT_FIELDS,
+  REQUIRED_POSTING_FIELDS,
+  SYNTHETIC_BANK_EXPORT_V1,
+  SYNTHETIC_PM_EXPORT_V1,
+  TEMPLATE_STATUSES,
+  VENDOR_POSTING_TEMPLATES,
+  type PostingTemplate,
+  exportColumns,
+  procedureCodeOf,
+  readDate,
+  readEftExport,
+  readPostingExport,
+  templateProblems,
+} from './templates';
 
 const FIXTURES = path.resolve(import.meta.dirname, '../../../fixtures/synthetic');
 const fixture = (name: string) => readFileSync(path.join(FIXTURES, name), 'utf8');
@@ -45,6 +62,80 @@ describe('the built-in templates read packages/synth’s exports (PRD 20, Postin
 });
 
 const SYNTHETIC_HEADER = 'Post Date,Check/EFT #,Payer,Claim Ref,CPT,DOS,Paid Amount,Batch';
+
+/** What packages/synth's vendor manifest says of a format and the rows its export holds (fixtures/synthetic/emr/<id>/manifest.json). */
+interface VendorManifest {
+  readonly format: string;
+  readonly kind: string;
+  readonly status: string;
+  readonly layout: { readonly dateFormat: string; readonly markerColumn: string };
+  readonly columns: readonly { readonly header: string; readonly field: string }[];
+  readonly rows: readonly { readonly postedOn: string; readonly checkOrTrace: string; readonly amountCents: string; readonly payerName: string | null; readonly claimReference: string | null; readonly procedureCode: string | null; readonly serviceDate: string | null; readonly batch: string | null }[];
+}
+
+describe('the vendor posting templates read packages/synth’s placeholders of their exports (CO-03; docs/adr/0059)', () => {
+  const manifest = (id: string) => JSON.parse(fixture(`emr/${id}/manifest.json`)) as VendorManifest;
+
+  it('are built in beside the SYNTHETIC template, each unconfirmed, and usable', () => {
+    expect(BUILT_IN_POSTING_TEMPLATES.map((template) => [template.id, template.status])).toEqual([
+      ['synthetic_pm_export_v1', 'confirmed'],
+      ['webpt_billing_posting_v0', 'unconfirmed'],
+      ['prompt_posting_v0', 'unconfirmed'],
+      ['spry_posting_v0', 'unconfirmed'],
+      ['raintree_posting_v0', 'unconfirmed'],
+    ]);
+    expect(TEMPLATE_STATUSES).toEqual(['confirmed', 'unconfirmed']);
+    for (const template of BUILT_IN_POSTING_TEMPLATES) {
+      expect(templateProblems(template, POSTING_FIELDS, REQUIRED_POSTING_FIELDS), template.id).toEqual([]);
+      // posting_row.template's CHECK.
+      expect(template.id).toMatch(/^[a-z][a-z0-9_]{0,63}$/);
+    }
+  });
+
+  it('map each format’s columns to the posting fields as its manifest says, and its marker column to none', () => {
+    for (const template of VENDOR_POSTING_TEMPLATES) {
+      const read = manifest(template.id);
+      expect([read.format, read.kind, read.status, read.layout.dateFormat], template.id).toEqual([template.id, 'posting_export', 'FORMAT_UNCONFIRMED', template.dateFormat]);
+      const mapped = Object.fromEntries(read.columns.filter((column) => column.header !== read.layout.markerColumn).map((column) => [column.field, column.header]));
+      expect(template.columns, template.id).toEqual(mapped);
+      expect(Object.values(template.columns), template.id).not.toContain(read.layout.markerColumn);
+    }
+  });
+
+  it('read each vendor export by path into the manifest’s rows, amounts in integer cents, nothing left out', () => {
+    for (const template of VENDOR_POSTING_TEMPLATES) {
+      const read = readPostingExport(fixture(`emr/${template.id}/posting-export.csv`), template);
+      if (read.kind !== 'read') {
+        throw new Error(`${template.id} reads`);
+      }
+      expect(read.problems, template.id).toEqual([]);
+      expect(
+        read.rows.map((row) => ({ postedOn: row.postedOn, checkOrTrace: row.checkOrTrace, amountCents: row.amountCents.toString(), payerName: row.payerName, claimReference: row.claimReference, procedureCode: row.procedureCode, serviceDate: row.serviceDate, batch: row.batch })),
+        template.id,
+      ).toEqual(manifest(template.id).rows);
+      expect(read.rows.every((row) => typeof row.amountCents === 'bigint'), template.id).toBe(true);
+    }
+  });
+
+  it('read the same rows, with the same fingerprints, as the SYNTHETIC template reads from the source cases', () => {
+    const sources = [readPostingExport(fixture('LED-04/posting-export.csv'), SYNTHETIC_PM_EXPORT_V1), readPostingExport(fixture('LED-08/posting-export-again.csv'), SYNTHETIC_PM_EXPORT_V1), readPostingExport(fixture('LED-09/lines-posting-export.csv'), SYNTHETIC_PM_EXPORT_V1)];
+    const synthetic = sources.flatMap((read) => (read.kind === 'read' ? read.rows : []));
+    expect(synthetic).toHaveLength(4);
+    const fields = (row: (typeof synthetic)[number]) => [row.postedOn, row.checkOrTrace, row.amountCents, row.payerName, row.claimReference, row.procedureCode, row.serviceDate, row.batch];
+    for (const template of VENDOR_POSTING_TEMPLATES) {
+      const read = readPostingExport(fixture(`emr/${template.id}/posting-export.csv`), template);
+      const rows = read.kind === 'read' ? read.rows : [];
+      expect(rows.map(fields), template.id).toEqual(synthetic.map(fields));
+      // The same posting in a vendor's export is the same posting_row: it is stored, and matched, once.
+      expect(rows.map((row) => JSON.parse(row.fingerprint) as unknown), template.id).toEqual(synthetic.map((row) => JSON.parse(row.fingerprint) as unknown));
+    }
+  });
+
+  it('do not read another vendor’s export: its columns are missing', () => {
+    const [webpt, prompt] = VENDOR_POSTING_TEMPLATES as [PostingTemplate, PostingTemplate];
+    expect(readPostingExport(fixture(`emr/${prompt.id}/posting-export.csv`), webpt)).toMatchObject({ kind: 'refused', reason: 'missing_columns' });
+  });
+});
 
 describe('reading an export row by row', () => {
   it('reads a line-level row with its claim reference, code and service date, the claim reference left out of raw', () => {

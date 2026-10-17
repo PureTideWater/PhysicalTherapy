@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { LedgerSettingsError, ledgerSettings, postingTemplateOf, postingTemplateSetting } from './settings';
-import { SYNTHETIC_PM_EXPORT_V1 } from './templates';
+import { SYNTHETIC_PM_EXPORT_V1, VENDOR_POSTING_TEMPLATES } from './templates';
 
 describe('the ledger’s practice settings (Data dictionary, practice.settings: proof level; PRD 20)', () => {
   it('proves by posting with no template mapped when nothing is set', () => {
@@ -31,6 +31,20 @@ describe('the ledger’s practice settings (Data dictionary, practice.settings: 
       expect(() => ledgerSettings({ posting_export_template: template })).toThrow(new LedgerSettingsError('posting_export_template'));
     }
     expect(() => postingTemplateOf(null)).toThrow(LedgerSettingsError);
+  });
+
+  it('stores each vendor template by its ID and reads it back with its status, unconfirmed (docs/adr/0059)', () => {
+    for (const template of VENDOR_POSTING_TEMPLATES) {
+      const stored = postingTemplateSetting(template);
+      expect(stored).toEqual({ template: template.id });
+      expect(postingTemplateOf(stored)).toBe(template);
+      expect(ledgerSettings({ posting_export_template: stored }).postingTemplate?.status).toBe('unconfirmed');
+    }
+    expect(ledgerSettings({ posting_export_template: { template: 'synthetic_pm_export_v1' } }).postingTemplate?.status).toBe('confirmed');
+    // A practice's own mapping carries no status, stored or read.
+    const own = postingTemplateOf({ system: 'S', columns: { posted_on: 'P', check_or_trace: 'C', amount: 'A' }, date_format: 'MM/DD/YYYY' });
+    expect(own.status).toBeUndefined();
+    expect(Object.keys(postingTemplateSetting(own)).sort()).toEqual(['columns', 'date_format', 'system']);
   });
 
   it('stores a built-in template by its ID and a practice’s own by its mapping, and reads both back', () => {

@@ -52,7 +52,7 @@ export default async function TemplatePage(props: Props) {
           <CardDescription>
             {current === null
               ? `Posting exports are stored and wait until a template is mapped${waiting === 0 ? '' : `: ${String(waiting)} ${waiting === 1 ? 'waits' : 'wait'} now`}.`
-              : `${current.id === 'practice' ? 'The practice’s own mapping' : 'A built-in template'}; dates written ${current.dateFormat}.`}
+              : `${current.id === 'practice' ? 'The practice’s own mapping' : current.status === 'unconfirmed' ? 'A built-in template, format unconfirmed' : 'A built-in template'}; dates written ${current.dateFormat}.`}
           </CardDescription>
         </CardHeader>
         {current === null ? null : (
