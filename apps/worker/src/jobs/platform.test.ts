@@ -17,7 +17,7 @@ const JOB = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
 
 describe('platform job registry', () => {
   it('names the platform jobs and validates their payloads', () => {
-    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot']);
+    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot', 'support_mail']);
     expect(parsePlatformPayload('billing_dunning', {})).toEqual({});
     expect(parsePlatformPayload('usage_snapshot', { day: '2026-11-01' })).toEqual({ day: '2026-11-01' });
     expect(() => parsePlatformPayload('billing_dunning', { organization_id: JOB })).toThrow(ZodError);
@@ -39,6 +39,14 @@ describe('platform job registry', () => {
     assertNoPhi('job_payload', parsePlatformPayload('audit_copy', { day: '2026-10-14' }));
     assertNoPhi('job_payload', parsePlatformPayload('restore_drill', {}));
     assertNoPhi('job_payload', parsePlatformPayload('support_grant_notices', {}));
+    assertNoPhi('job_payload', parsePlatformPayload('support_mail', {}));
+    expect(() => parsePlatformPayload('support_mail', { sender: 'someone@synthetic.test' })).toThrow(ZodError);
+  });
+
+  it('reads support mail every five minutes', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-15T00:01:00Z');
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.support_mail, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:05:00Z'), new Date('2026-10-15T00:10:00Z')]);
   });
 
   it('queues the monitoring schedule daily at 05:10 UTC', () => {

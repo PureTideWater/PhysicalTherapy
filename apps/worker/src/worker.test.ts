@@ -182,7 +182,7 @@ describe('startWorker', () => {
       pool,
       logger,
       handlers: { ...placeholderHandlers, price: failing },
-      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing, billing_dunning: failing, usage_snapshot: failing },
+      platform: { audit_copy: failing, restore_drill: failing, support_grant_notices: failing, monitoring_schedule: failing, billing_dunning: failing, usage_snapshot: failing, support_mail: failing },
       heartbeatMs: 60_000,
     });
     const job = (retryCount: number) => ({ id: `job-${String(retryCount)}`, retryCount, data: { practice_id: PRACTICE, pricing_run_id: DOCUMENT } });
@@ -361,6 +361,7 @@ describe('startWorker', () => {
       monitoring_schedule: () => Promise.resolve(),
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
+      support_mail: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
@@ -386,6 +387,7 @@ describe('startWorker', () => {
       monitoring_schedule: () => Promise.resolve(),
       billing_dunning: () => Promise.resolve(),
       usage_snapshot: () => Promise.resolve(),
+      support_mail: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
     for (const type of JOB_TYPES) {

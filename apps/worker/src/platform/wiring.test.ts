@@ -6,12 +6,14 @@ import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
 import { LocalMailSender, SesMailSender } from '../mail/mail';
-import { auditStore, mailSender, platformRuntime, snapshotRestorer } from './wiring';
+import { LocalSupportInbox, S3SupportInbox } from '../support/inbox';
+import { auditStore, mailSender, platformRuntime, snapshotRestorer, supportInbox } from './wiring';
 
 const local: PlatformConfig = {
   operatorDatabaseUrl: 'postgres://operator:synthetic@localhost:5432/tp',
   auditStore: { kind: 'local', dir: '/tmp/tp-audit' },
   restoreDrill: { kind: 'local', workDir: '/tmp/tp-drill', binDir: '/usr/lib/postgresql/18/bin', adminUrl: 'postgres://admin:synthetic@localhost:5432/tp' },
+  supportInbox: { kind: 'local', dir: '/tmp/tp-support-inbox' },
   mail: { kind: 'local', dir: '/tmp/tp-mail' },
   appOrigin: 'http://localhost:3000',
 };
@@ -27,6 +29,7 @@ const deployed: PlatformConfig = {
     subnetGroupName: 'tp-data',
     securityGroupIds: ['sg-a'],
   },
+  supportInbox: { kind: 's3', bucket: 'support-mail' },
   mail: { kind: 'ses', from: 'notices@synthetic.test' },
   appOrigin: 'https://app.synthetic.test',
 };
@@ -58,9 +61,18 @@ describe('platform wiring', () => {
     expect(mailSender(local)).toBeInstanceOf(LocalMailSender);
   });
 
+  it('reads support mail from the bucket SES writes it to when deployed, verifying senders, and from a directory in development', () => {
+    const deployedInbox = supportInbox(deployed);
+    expect(deployedInbox).toBeInstanceOf(S3SupportInbox);
+    expect(deployedInbox.verifiesSenders).toBe(true);
+    const localInbox = supportInbox(local);
+    expect(localInbox).toBeInstanceOf(LocalSupportInbox);
+    expect(localInbox.verifiesSenders).toBe(false);
+  });
+
   it('builds every handler over one small operator pool', async () => {
     const runtime = platformRuntime(local);
-    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'billing_dunning', 'monitoring_schedule', 'restore_drill', 'support_grant_notices', 'usage_snapshot']);
+    expect(Object.keys(runtime.handlers).sort()).toEqual(['audit_copy', 'billing_dunning', 'monitoring_schedule', 'restore_drill', 'support_grant_notices', 'support_mail', 'usage_snapshot']);
     expect(runtime.operator.options.max).toBe(2);
     await runtime.operator.end();
     // With the queue, the monitoring schedule queues each practice's jobs; without it, it refuses (platform.test.ts).

@@ -30,9 +30,9 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
   const idOf = (bucket: Parameters<typeof logicalIdOf>[1]) => logicalIdOf(stack, bucket);
   const writeOnce = [idOf(stack.storage.packets), idOf(stack.storage.auditCopies)];
 
-  it('has the documents, packets, audit-copy, trail and canary-artifact buckets and no other', () => {
+  it('has the documents, packets, audit-copy, trail, canary-artifact and support-inbox buckets and no other', () => {
     expect(buckets.map(([id]) => id).sort()).toEqual(
-      [idOf(stack.storage.documents), ...writeOnce, idOf(stack.accountSecurity.trailBucket), idOf(stack.uptime.artifacts)].sort(),
+      [idOf(stack.storage.documents), ...writeOnce, idOf(stack.accountSecurity.trailBucket), idOf(stack.uptime.artifacts), idOf(stack.supportMail.bucket)].sort(),
     );
   });
 
@@ -128,6 +128,9 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
     }
     const trail = policies.find((p) => JSON.stringify(p.Bucket) === JSON.stringify(ref(idOf(stack.accountSecurity.trailBucket))));
     expect(JSON.stringify(trail)).not.toContain('WriteOnceKeys');
+    // SES cannot send If-None-Match; every message it writes has a key of its own (support-mail.test.ts).
+    const inbox = policies.find((p) => JSON.stringify(p.Bucket) === JSON.stringify(ref(idOf(stack.supportMail.bucket))));
+    expect(JSON.stringify(inbox)).not.toContain('WriteOnceKeys');
   });
 
   it('locks packets and audit copies for seven years by default', () => {
@@ -143,7 +146,7 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
     }
   });
 
-  it('does not lock the documents, trail or canary-artifact buckets', () => {
+  it('does not lock the documents, trail, canary-artifact or support-inbox buckets', () => {
     for (const [id, bucket] of buckets.filter(([candidate]) => !writeOnce.includes(candidate))) {
       expect(propertiesOf(bucket).ObjectLockEnabled, id).toBeUndefined();
       expect(propertiesOf(bucket).ObjectLockConfiguration, id).toBeUndefined();

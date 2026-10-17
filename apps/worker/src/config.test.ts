@@ -99,6 +99,7 @@ describe('readPlatformConfig', () => {
     AUDIT_COPY_LOCK_MODE: 'COMPLIANCE',
     MAIL_FROM: 'notices@synthetic.test',
     APP_ORIGIN: 'https://app.synthetic.test',
+    SUPPORT_MAIL_BUCKET: 'tp-production-support-mail',
     ...RDS,
   };
 
@@ -112,6 +113,7 @@ describe('readPlatformConfig', () => {
       operatorDatabaseUrl: OPERATOR_DATABASE_URL,
       auditStore: { kind: 'local', dir: '/var/tp/audit' },
       restoreDrill: { kind: 'local', workDir: '/var/tp/drill', binDir: '/usr/lib/postgresql/18/bin', adminUrl: OPERATOR_DATABASE_URL },
+      supportInbox: { kind: 'local', dir: expect.stringContaining('tp-support-inbox') },
       mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox') },
       appOrigin: 'http://localhost:3000',
     });
@@ -134,10 +136,16 @@ describe('readPlatformConfig', () => {
         subnetGroupName: 'tp-data',
         securityGroupIds: ['sg-a', 'sg-b'],
       },
+      supportInbox: { kind: 's3', bucket: 'tp-production-support-mail' },
       mail: { kind: 'ses', from: 'notices@synthetic.test' },
       appOrigin: 'https://app.synthetic.test',
     });
     expect(readPlatformConfig({ ...PRODUCTION, AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'tp-production-audit-copies', lockMode: 'GOVERNANCE' });
+  });
+
+  it('reads support mail from SUPPORT_MAIL_BUCKET or a directory of .eml files (SUPPORT_MAIL_DIR)', () => {
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_MAIL_DIR: '/var/tp/inbox' })?.supportInbox).toEqual({ kind: 'local', dir: '/var/tp/inbox' });
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_MAIL_BUCKET: 'mail' })?.supportInbox).toEqual({ kind: 's3', bucket: 'mail' });
   });
 
   it('sends notices through SES from MAIL_FROM or to MAIL_OUTBOX_DIR, linking to APP_ORIGIN', () => {
@@ -151,6 +159,7 @@ describe('readPlatformConfig', () => {
   it.each([
     [{ AUDIT_COPY_DIR: 'a', MAIL_FROM: 'n@synthetic.test', MAIL_OUTBOX_DIR: 'm' }, /at most one of MAIL_FROM and MAIL_OUTBOX_DIR/],
     [{ AUDIT_COPY_DIR: 'a', MAIL_FROM: 'not an address' }, /MAIL_FROM is an email address/],
+    [{ AUDIT_COPY_DIR: 'a', SUPPORT_MAIL_BUCKET: 'b', SUPPORT_MAIL_DIR: 'd' }, /at most one of SUPPORT_MAIL_BUCKET and SUPPORT_MAIL_DIR/],
     [{ AUDIT_COPY_DIR: 'a', APP_ORIGIN: 'not a url' }, /APP_ORIGIN is the application's URL/],
     [{ AUDIT_COPY_DIR: 'a', AUDIT_COPY_BUCKET: 'b', AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' }, /exactly one of AUDIT_COPY_BUCKET and AUDIT_COPY_DIR/],
     [{}, /exactly one of AUDIT_COPY_BUCKET and AUDIT_COPY_DIR/],
@@ -169,6 +178,8 @@ describe('readPlatformConfig', () => {
     ['no audit bucket', { AUDIT_COPY_BUCKET: undefined }, /AUDIT_COPY_BUCKET is required when NODE_ENV is production/],
     ['the local mailer', { MAIL_FROM: undefined, MAIL_OUTBOX_DIR: '/var/tp/mail' }, /MAIL_OUTBOX_DIR is refused when NODE_ENV is production/],
     ['no sender', { MAIL_FROM: undefined }, /MAIL_FROM is required when NODE_ENV is production/],
+    ['the local support inbox', { SUPPORT_MAIL_BUCKET: undefined, SUPPORT_MAIL_DIR: '/var/tp/inbox' }, /SUPPORT_MAIL_DIR is refused when NODE_ENV is production/],
+    ['no support mail bucket', { SUPPORT_MAIL_BUCKET: undefined }, /SUPPORT_MAIL_BUCKET is required when NODE_ENV is production/],
     ['the pg_dump restorer', { RESTORE_DRILL_MODE: 'local' }, /RESTORE_DRILL_MODE is rds when NODE_ENV is production/],
     ['no drill mode', { RESTORE_DRILL_MODE: undefined }, /RESTORE_DRILL_MODE is required when NODE_ENV is production/],
     ['a local drill setting', { RESTORE_DRILL_WORK_DIR: '/tmp/drill' }, /RESTORE_DRILL_WORK_DIR is refused when NODE_ENV is production/],

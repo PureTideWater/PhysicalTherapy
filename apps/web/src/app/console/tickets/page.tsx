@@ -30,7 +30,8 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
     <AppShell shell={page.shell} section="tickets">
       <h1 className="text-2xl font-semibold tracking-tight">Support tickets</h1>
       <p className="text-sm text-muted-foreground">
-        Answer within {responseTarget}. Mail to {supportEmail} is answered from that mailbox; it does not open a ticket here yet.
+        Answer within {responseTarget}. Mail to {supportEmail} from an account&apos;s own address opens a ticket here (screen: email); one whose text looked like it held patient
+        information opens a ticket that says only that it came.
       </p>
       <nav aria-label="Filter" className="flex gap-3 text-sm">
         {FILTERS.map((filter) => (

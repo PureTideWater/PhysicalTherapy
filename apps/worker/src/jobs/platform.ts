@@ -9,6 +9,8 @@ import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
 import { sendSupportGrantNotices } from '../platform/support-notices';
 import type { ObjectStore } from '../storage/object-store';
+import type { SupportInbox } from '../support/inbox';
+import { readSupportMail } from '../support/support-mail';
 import type { JobSender } from './enqueue';
 
 /**
@@ -20,13 +22,14 @@ import type { JobSender } from './enqueue';
  * practices' IDs through one more and queues each practice's own monitor and digest jobs (docs/adr/0039).
  * Billing's two (docs/adr/0050) run as tp_billing, which the operator login switches to: the dunning
  * notices read invoices and the organization administrators' addresses, and the nightly usage snapshot
- * counts each organization's practices through one function that returns counts only.
+ * counts each organization's practices through one function that returns counts only. Support mail
+ * (docs/adr/0055) reads the support inbox and opens tickets through one function that names no sender.
  * They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
  * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
  */
-export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot'] as const;
+export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot', 'support_mail'] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
 const day = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'a calendar day, YYYY-MM-DD');
@@ -41,6 +44,7 @@ export const PLATFORM_JOB_PAYLOADS = {
   billing_dunning: z.strictObject({}),
   /** The day to count; the scheduled run omits it and takes today (UTC). */
   usage_snapshot: z.strictObject({ day: day.optional() }),
+  support_mail: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -54,7 +58,8 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * restore drill on the first Monday of each month at 06:00 (PRD 19 Runbooks, Restore drill); the
  * support-grant notices every minute, so a notice goes out within a minute of a grant opening or
  * ending; the monitoring schedule daily at 05:10, so the month's digest goes out on its first morning;
- * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40.
+ * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40;
+ * support mail every five minutes, well inside the published response target (docs/adr/0055).
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -63,6 +68,7 @@ export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   monitoring_schedule: '10 5 * * *',
   billing_dunning: '10 14 * * *',
   usage_snapshot: '40 0 * * *',
+  support_mail: '*/5 * * * *',
 };
 
 export interface PlatformContext {
@@ -87,12 +93,19 @@ export interface PlatformDependencies {
   readonly appOrigin: string;
   /** Where the monitoring schedule queues each practice's jobs (pg-boss). */
   readonly queue?: JobSender;
+  /** Where mail to the support address waits (SES's bucket, or a local directory). */
+  readonly inbox?: SupportInbox;
   readonly now?: () => Date;
 }
 
 /** The monitoring schedule ran on a worker that has no queue to send to. */
 export class NoQueueError extends Error {
   override readonly name = 'NoQueueError';
+}
+
+/** The support mail job ran on a worker that has no inbox to read. */
+export class NoInboxError extends Error {
+  override readonly name = 'NoInboxError';
 }
 
 async function withOperator<T>(pool: OperatorPool, use: (client: Awaited<ReturnType<OperatorPool['connect']>>) => Promise<T>): Promise<T> {
@@ -159,6 +172,22 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
         context.logger.info('usage snapshot recorded', { job_id: context.jobId });
       } else {
         context.logger.info('usage snapshot already recorded', { job_id: context.jobId });
+      }
+    },
+    support_mail: async (_payload, context) => {
+      const { inbox } = dependencies;
+      if (inbox === undefined) {
+        throw new NoInboxError('the support mail job needs the inbox');
+      }
+      const result = await withOperator(dependencies.operator, (client) => readSupportMail({ client, inbox, requestId: context.jobId }));
+      if (result.outcomes.opened + result.outcomes.withheld > 0) {
+        context.logger.info('support mail opened tickets', { job_id: context.jobId });
+      }
+      if (result.outcomes.withheld > 0) {
+        context.logger.warn('support mail looked like it held patient information; its tickets say only that it came', { job_id: context.jobId, error_code: 'SUPPORT_MAIL_WITHHELD' });
+      }
+      if (result.outcomes.unverified_sender + result.outcomes.unknown_sender + result.outcomes.unreadable > 0) {
+        context.logger.info('support mail opened no ticket for some messages: unverified or unknown senders, or unreadable', { job_id: context.jobId, error_code: 'SUPPORT_MAIL_REFUSED' });
       }
     },
     support_grant_notices: async (_payload, context) => {

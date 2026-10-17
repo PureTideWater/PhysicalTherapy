@@ -134,11 +134,15 @@ export type RestoreDrillConfig =
 export type MailConfig = { readonly kind: 'ses'; readonly from: string } | { readonly kind: 'local'; readonly dir: string };
 
 /** The platform jobs' settings (docs/adr/0014 and 0017), or null when this worker runs none. */
+/** Where mail to the support address waits: SES's bucket, or (development) a directory of .eml files. */
+export type SupportInboxConfig = { readonly kind: 's3'; readonly bucket: string } | { readonly kind: 'local'; readonly dir: string };
+
 export interface PlatformConfig {
   /** A login that can SET ROLE to tp_operator; every platform transaction runs as that role. */
   readonly operatorDatabaseUrl: string;
   readonly auditStore: AuditStoreConfig;
   readonly restoreDrill: RestoreDrillConfig;
+  readonly supportInbox: SupportInboxConfig;
   /** The support-grant notices: where they are sent from, and the application they link to. */
   readonly mail: MailConfig;
   readonly appOrigin: string;
@@ -153,7 +157,10 @@ const IN_PRODUCTION = 'when NODE_ENV is production';
  * drill restores RDS snapshots (RESTORE_DRILL_MODE=rds with the RESTORE_DRILL_* settings) or, in
  * development, pg_dump and pg_restore on the operator's server (RESTORE_DRILL_WORK_DIR, optionally
  * PG_BIN_DIR and RESTORE_DRILL_ADMIN_URL). The support-grant notices go through SES from MAIL_FROM or,
- * in development, to a local outbox directory (MAIL_OUTBOX_DIR), and link to APP_ORIGIN.
+ * in development, to a local outbox directory (MAIL_OUTBOX_DIR), and link to APP_ORIGIN. Support mail is
+ * read from the bucket SES writes it to (SUPPORT_MAIL_BUCKET) or, in development, a directory of .eml
+ * files (SUPPORT_MAIL_DIR, by default under the system's temporary directory), whose senders nothing
+ * verifies.
  *
  * With NODE_ENV=production every local implementation is refused and nothing falls back to one: S3,
  * RDS, SES and an https APP_ORIGIN are required (house rules: local implementations in development and
@@ -166,7 +173,7 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
   }
   const production = isProduction(env);
   if (production) {
-    for (const name of ['AUDIT_COPY_DIR', 'MAIL_OUTBOX_DIR', 'RESTORE_DRILL_WORK_DIR', 'RESTORE_DRILL_ADMIN_URL', 'PG_BIN_DIR']) {
+    for (const name of ['AUDIT_COPY_DIR', 'MAIL_OUTBOX_DIR', 'RESTORE_DRILL_WORK_DIR', 'RESTORE_DRILL_ADMIN_URL', 'PG_BIN_DIR', 'SUPPORT_MAIL_DIR']) {
       refused(env, name, `${IN_PRODUCTION} (it selects a local implementation)`);
     }
   }
@@ -214,7 +221,13 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
   } else {
     throw new WorkerConfigError(production ? `RESTORE_DRILL_MODE is rds ${IN_PRODUCTION}` : 'RESTORE_DRILL_MODE is rds or local');
   }
-  return { operatorDatabaseUrl, auditStore, restoreDrill, ...readNotificationConfig(env) };
+  const mailBucket = production ? required(env, 'SUPPORT_MAIL_BUCKET', IN_PRODUCTION) : value(env, 'SUPPORT_MAIL_BUCKET');
+  const mailDir = value(env, 'SUPPORT_MAIL_DIR');
+  if (mailBucket !== undefined && mailDir !== undefined) {
+    throw new WorkerConfigError('at most one of SUPPORT_MAIL_BUCKET and SUPPORT_MAIL_DIR is set');
+  }
+  const supportInbox: SupportInboxConfig = mailBucket !== undefined ? { kind: 's3', bucket: mailBucket } : { kind: 'local', dir: mailDir ?? path.join(tmpdir(), 'tp-support-inbox') };
+  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...readNotificationConfig(env) };
 }
 
 /** Where email goes from and the application it links to: the platform's notices and the practices' digests. */

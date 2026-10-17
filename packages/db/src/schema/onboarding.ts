@@ -12,7 +12,8 @@ import { agreement, membership, organization, user } from './tenancy';
  * - invitation: one per membership of an invited user, with its seven-day expiry (J2).
  * - terms_version, terms_acceptance: the terms of use by version and each customer's acceptance.
  * - agreement_event: each e-signature webhook event, once.
- * - support_ticket: a ticket from any screen (PRD 19, Support).
+ * - support_ticket: a ticket from any screen (PRD 19, Support), or from mail to the support address.
+ * - support_mail_receipt: each message the support_mail job read, once (migrations/20261101120000_support_mail.sql).
  * - rate_limit_counter: fixed-window counters shared by every web task, touched only by rate_limit_take().
  * - status_component, status_incident, status_incident_update: the public status page.
  * - compliance_record: evidence a person records for the SOC 2 Type I checklist.
@@ -126,6 +127,12 @@ export const SUPPORT_TICKET_CATEGORIES = ['question', 'problem', 'access', 'bill
 export type SupportTicketCategory = (typeof SUPPORT_TICKET_CATEGORIES)[number];
 export const SUPPORT_TICKET_STATUSES = ['open', 'answered', 'closed'] as const;
 export type SupportTicketStatus = (typeof SUPPORT_TICKET_STATUSES)[number];
+/** Where a ticket came from: the in-app form, or mail to the support address (migrations/20261101120000_support_mail.sql). */
+export const SUPPORT_TICKET_SOURCES = ['form', 'mail'] as const;
+export type SupportTicketSource = (typeof SUPPORT_TICKET_SOURCES)[number];
+/** What came of a message the support_mail job read. */
+export const SUPPORT_MAIL_OUTCOMES = ['opened', 'withheld', 'unknown_sender', 'unverified_sender', 'unreadable'] as const;
+export type SupportMailOutcome = (typeof SUPPORT_MAIL_OUTCOMES)[number];
 
 export const supportTicket = pgTable(
   'support_ticket',
@@ -145,11 +152,26 @@ export const supportTicket = pgTable(
     statusChangedAt: timestamp('status_changed_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    source: text('source', { enum: SUPPORT_TICKET_SOURCES }).notNull().default('form'),
+    /** A mailed ticket's message: the SHA-256 of where the inbox holds it. */
+    mailRef: text('mail_ref').unique(),
   },
   (table) => [
     index('support_ticket_by_requester').on(table.requesterId, table.createdAt.desc()),
     index('support_ticket_by_status').on(table.status, table.createdAt.desc()),
   ],
+);
+
+/** Every message the support_mail job read, once, with what came of it: no address, subject or text. */
+export const supportMailReceipt = pgTable(
+  'support_mail_receipt',
+  {
+    mailRef: text('mail_ref').primaryKey(),
+    outcome: text('outcome', { enum: SUPPORT_MAIL_OUTCOMES }).notNull(),
+    ticketId: uuid('ticket_id').references(() => supportTicket.id),
+    readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('support_mail_receipt_by_read_at').on(table.readAt)],
 );
 
 export const rateLimitCounter = pgTable(
@@ -248,6 +270,7 @@ export type TermsVersionRow = typeof termsVersion.$inferSelect;
 export type TermsAcceptanceRow = typeof termsAcceptance.$inferSelect;
 export type AgreementEventRow = typeof agreementEvent.$inferSelect;
 export type SupportTicketRow = typeof supportTicket.$inferSelect;
+export type SupportMailReceiptRow = typeof supportMailReceipt.$inferSelect;
 export type StatusComponentRow = typeof statusComponent.$inferSelect;
 export type StatusIncidentRow = typeof statusIncident.$inferSelect;
 export type StatusIncidentUpdateRow = typeof statusIncidentUpdate.$inferSelect;

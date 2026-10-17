@@ -9,6 +9,7 @@ import { LocalMailSender, type MailSender, sesMailSender } from '../mail/mail';
 import { LocalObjectStore } from '../storage/local-object-store';
 import type { ObjectStore } from '../storage/object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
+import { LocalSupportInbox, S3SupportInbox, type SupportInbox } from '../support/inbox';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
 import type { SnapshotRestorer } from './restore-drill';
@@ -35,6 +36,11 @@ export function snapshotRestorer(config: PlatformConfig): SnapshotRestorer {
   });
 }
 
+export function supportInbox(config: Pick<PlatformConfig, 'supportInbox'>): SupportInbox {
+  const inbox = config.supportInbox;
+  return inbox.kind === 's3' ? new S3SupportInbox({ client: new S3Client({}), bucket: inbox.bucket }) : new LocalSupportInbox(inbox.dir);
+}
+
 export function mailSender(config: Pick<NotificationConfig, 'mail'>): MailSender {
   return config.mail.kind === 'ses' ? sesMailSender(config.mail.from) : new LocalMailSender(config.mail.dir);
 }
@@ -49,6 +55,7 @@ export function platformRuntime(config: PlatformConfig, queue?: JobSender): { ha
       store: auditStore(config),
       restorer: snapshotRestorer(config),
       mail: mailSender(config),
+      inbox: supportInbox(config),
       appOrigin: config.appOrigin,
       ...(queue === undefined ? {} : { queue }),
     }),

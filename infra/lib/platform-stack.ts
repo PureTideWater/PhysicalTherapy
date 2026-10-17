@@ -14,6 +14,7 @@ import { Network } from './constructs/network';
 import { OperatorRole } from './constructs/operator-role';
 import { PullRequestDiffRole } from './constructs/pull-request-diff-role';
 import { Storage } from './constructs/storage';
+import { SupportMail } from './constructs/support-mail';
 import { Uptime } from './constructs/uptime';
 import { DeployParameters } from './deploy-parameters';
 import { type EnvironmentName, type EnvironmentSettings, GITHUB_REPOSITORY, environmentSettings } from './environments';
@@ -44,6 +45,7 @@ export class PlatformStack extends Stack {
   readonly key: EnvironmentKey;
   readonly network: Network;
   readonly storage: Storage;
+  readonly supportMail: SupportMail;
   readonly database: Database;
   readonly identity: Identity;
   readonly monitoring: Monitoring;
@@ -91,12 +93,14 @@ export class PlatformStack extends Stack {
       appSecret: this.database.appSecret,
       userPool: this.identity.userPool,
     });
+    this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
     this.operator = new OperatorRole(this, 'Operator', {
       key,
       auditCopies: this.storage.auditCopies,
       operatorSecret: this.database.operatorSecret,
       database: this.database.instance,
       restoreDrillInstanceId: this.database.restoreDrillInstanceId,
+      supportMail: this.supportMail.bucket,
     });
     if (this.settings.pullRequestDiffRole) {
       this.pullRequestDiff = new PullRequestDiffRole(this, 'PullRequestDiff', { repository: GITHUB_REPOSITORY });
@@ -123,6 +127,7 @@ export class PlatformStack extends Stack {
       identity: this.identity,
       documents: this.storage.documents,
       auditCopies: this.storage.auditCopies,
+      supportMail: this.supportMail.bucket,
       repositories: this.images.repositories,
       applicationRole: this.application.role,
       operatorRole: this.operator.role,
@@ -158,6 +163,8 @@ export class PlatformStack extends Stack {
       PacketsBucket: this.storage.packets.bucketName,
       AuditCopiesBucket: this.storage.auditCopies.bucketName,
       AuditCopyLockMode: this.settings.objectLockMode,
+      SupportMailBucket: this.supportMail.bucket.bucketName,
+      SupportMailRuleSet: this.supportMail.ruleSet.receiptRuleSetName,
       DatabaseEndpoint: this.database.instance.dbInstanceEndpointAddress,
       DatabaseInstanceId: this.database.instance.instanceIdentifier,
       DatabaseSubnetGroup: this.database.subnetGroup.subnetGroupName,

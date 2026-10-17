@@ -64,6 +64,8 @@ export interface ComputeProps {
   readonly identity: Identity;
   readonly documents: s3.IBucket;
   readonly auditCopies: s3.IBucket;
+  /** The support inbox SES writes mail to (SupportMail), which the platform jobs read. */
+  readonly supportMail: s3.IBucket;
   readonly repositories: { readonly web: ecr.IRepository; readonly worker: ecr.IRepository };
   readonly applicationRole: iam.IRole;
   readonly operatorRole: iam.IRole;
@@ -98,7 +100,7 @@ interface ContainerSpec {
  * - worker: the practice jobs (WORKER_JOBS=practice), as ApplicationRole, with the application and
  *   queue logins.
  * - platform: the platform jobs (WORKER_JOBS=platform: the audit copy, the restore drill, the support
- *   notices, the monitoring schedule), as OperatorRole, with the operator and queue logins; the only
+ *   notices, the monitoring schedule, billing's two and support mail), as OperatorRole, with the operator and queue logins; the only
  *   task with the operator login, and without the application login.
  * - migration: the worker image's migrator with the owner login, the only task with it, then the
  *   logins the services connect as, created from their secrets when missing (it reads their current
@@ -264,6 +266,7 @@ export class Compute extends Construct {
         RESTORE_DRILL_INSTANCE_CLASS: `db.${settings.database.instanceType.toString()}`,
         RESTORE_DRILL_SUBNET_GROUP: database.subnetGroup.subnetGroupName,
         RESTORE_DRILL_SECURITY_GROUPS: database.securityGroup.securityGroupId,
+        SUPPORT_MAIL_BUCKET: props.supportMail.bucketName,
         MAIL_FROM: parameters.mailFromAddress,
         APP_ORIGIN: appOrigin,
       },
