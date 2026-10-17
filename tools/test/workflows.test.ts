@@ -158,11 +158,16 @@ describe('workflows', () => {
     }
   });
 
-  it('run the fixture check on every pull request, as a step of its own right after the fixtures are generated (CO-03)', () => {
+  it('run the fixture check on every pull request on the commit as it is, and fail when the generation changes a committed fixture (CO-03)', () => {
     const steps = workflow('ci.yml').jobs.check?.steps ?? [];
     const check = stepIndex(steps, (step) => step.run === 'pnpm check:fixtures');
-    // After pnpm synth --all, so the files it generates are read too, and before the tests.
-    expect(check).toBe(stepIndex(steps, (step) => step.run === 'pnpm synth --all') + 1);
+    const synth = stepIndex(steps, (step) => step.run === 'pnpm synth --all');
+    // Right after the secret scan and before pnpm synth --all, which rewrites a hand-edited generated file and removes
+    // an extra one, so the check reads the commit's own bytes.
+    expect(check).toBe(stepIndex(steps, (step) => step.uses?.startsWith('gitleaks/gitleaks-action@') === true) + 1);
+    expect(check).toBeLessThan(synth);
+    // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
+    expect(steps[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
     expect(check).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle'));
     expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
     const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;

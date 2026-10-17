@@ -11,7 +11,8 @@ import { SyntheticSenderError, assertSyntheticFixture } from '@tp/synth';
  * one the guard reads. By name, every CSV, TSV and spreadsheet; by content, every X12 interchange (with or
  * without a byte-order mark), every zip (an .xlsx among them, read sheet by sheet) and every OLE2 file (a
  * legacy .xls). `pnpm test` runs it on the tree (check.test.ts) and CI runs it as a step of its own
- * (`pnpm check:fixtures`, after `pnpm synth --all`).
+ * (`pnpm check:fixtures`) on the commit as it is, before `pnpm synth --all` regenerates the tree; after the
+ * generation, CI fails unless fixtures/synthetic is unchanged.
  */
 
 /** Files the guard reads by their name: its tables and the spreadsheets it refuses. */
