@@ -566,8 +566,8 @@
     },
     {
       "path": "eft-export.csv",
-      "sha256": "b04db02a0ec51ad4ee30fb31087c24a053ba3ce17069c536ec6c4a8db7d57e21",
-      "bytes": 117,
+      "sha256": "fbcd730ed76beba30fd5116d1cf88edfdafb708ebaada4c0533ac1f41c84a312",
+      "bytes": 143,
       "kind": "csv",
       "description": "The bank export: one deposit matched by trace number and amount."
     }

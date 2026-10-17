@@ -151,7 +151,7 @@ describe('reading an export row by row', () => {
 
 describe('an export’s columns, for the template mapping screen (PRD 20)', () => {
   it('gives the header row’s columns, trimmed and without blanks', () => {
-    expect(exportColumns(fixture('LED-04/posting-export.csv'))).toEqual(['Post Date', 'Check/EFT #', 'Payer', 'Claim Ref', 'CPT', 'DOS', 'Paid Amount', 'Batch']);
+    expect(exportColumns(fixture('LED-04/posting-export.csv'))).toEqual(['Post Date', 'Check/EFT #', 'Payer', 'Claim Ref', 'CPT', 'DOS', 'Paid Amount', 'Batch', 'Payee ID']);
     expect(exportColumns(' Date , Amount ,,"Trace, Number"\r\n2026-06-09,30.00,,T1\r\n')).toEqual(['Date', 'Amount', 'Trace, Number']);
   });
 
