@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { assetPath, assets } from '@paidwhole/brand';
@@ -20,7 +21,9 @@ export type BrandFileName = string;
 export function brandFileSources(): ReadonlyMap<BrandFileName, string> {
   return new Map<BrandFileName, string>([
     ['tokens.css', assetPath('../src/tokens.css')],
-    ['report.css', fileURLToPath(new URL('./brand.css', import.meta.url))],
+    // Joined rather than `new URL('./brand.css', import.meta.url)`, which the web app's bundler would take for
+    // a stylesheet to bundle: the web app imports the report modules for their CSV and never prints.
+    ['report.css', path.join(path.dirname(fileURLToPath(import.meta.url)), 'brand.css')],
     ['lockup.svg', assetPath(assets.lockup)],
     ['seal.svg', assetPath(assets.seal)],
     ['badge.svg', assetPath(assets.badge)],
