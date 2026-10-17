@@ -93,8 +93,14 @@ export interface AnomalyView {
   };
   readonly lineIds: readonly string[];
   readonly reviewedAt: string | null;
+  /**
+   * Who marked it reviewed, once reviewed: their email where the user directory lets the reader see it
+   * (themselves, or a person they administer), else "a member of the practice", never a dash (the screen
+   * tour's N3, as the audit report names its signer). Null until reviewed.
+   */
   readonly reviewedBy: string | null;
   readonly validationRequestedAt: string | null;
+  /** Who converted it to a validation request, named as reviewedBy is. Null until converted. */
   readonly validationRequestedBy: string | null;
 }
 
@@ -145,9 +151,9 @@ function anomalyView(row: AnomalyRow): AnomalyView {
     stats: row.stats,
     lineIds: row.line_ids,
     reviewedAt: row.reviewed_at?.toISOString() ?? null,
-    reviewedBy: row.reviewed_by,
+    reviewedBy: row.reviewed_at === null ? null : (row.reviewed_by ?? 'a member of the practice'),
     validationRequestedAt: row.validation_requested_at?.toISOString() ?? null,
-    validationRequestedBy: row.validation_requested_by,
+    validationRequestedBy: row.validation_requested_at === null ? null : (row.validation_requested_by ?? 'a member of the practice'),
   };
 }
 
@@ -427,7 +433,10 @@ export interface CaseLineView {
   readonly id: string;
   readonly serviceLineId: string;
   readonly pricingRunId: string;
+  /** The line's number inside its own claim (CAS-08's three claims each have a line 1). */
   readonly lineNo: number;
+  /** The line's place in the case's schedule, 1 to the case's line count: what names it on the page for every role, since it is unique there and not PHI. */
+  readonly position: number;
   /** For the roles that read PHI; null otherwise. */
   readonly serviceDate: string | null;
   readonly procedureCode: string;
@@ -459,7 +468,8 @@ export interface CaseLineView {
 export interface CaseEvent {
   readonly at: string;
   readonly serviceLineId: string;
-  readonly lineNo: number;
+  /** The line's place in the case's schedule (CaseLineView.position), as the page names it. */
+  readonly position: number;
   readonly kind: 'stage' | 'reopened_stage' | 'written_off' | 'reopened';
   readonly stage: LineStage | null;
   readonly reopenedFrom: LineStage | null;
@@ -550,11 +560,12 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
   );
   const emails = await peopleEmails(scope, practiceId, [...rows.flatMap((row) => [row.written_off_by, row.reopened_by]), ...stages.map((row) => row.set_by)]);
   const person = (id: string | null) => (id === null ? null : (emails.get(id) ?? 'a former member of the practice'));
-  const lines: CaseLineView[] = rows.map((row) => ({
+  const lines: CaseLineView[] = rows.map((row, index) => ({
     id: row.id,
     serviceLineId: row.service_line_id,
     pricingRunId: row.pricing_run_id,
     lineNo: row.line_no,
+    position: at.offset + index + 1,
     serviceDate: cipher === null ? null : row.service_date,
     procedureCode: row.procedure_code,
     modifiers: (row.modifiers ?? []).filter((modifier) => modifier !== ''),
@@ -575,11 +586,11 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     reopenedAt: row.reopened_at?.toISOString() ?? null,
     payerClaimControlNumber: decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
   }));
-  const lineNo = new Map(lines.map((line) => [line.serviceLineId, line.lineNo]));
+  const position = new Map(lines.map((line) => [line.serviceLineId, line.position]));
   const events: CaseEvent[] = stages.map((row) => ({
     at: row.set_at.toISOString(),
     serviceLineId: row.service_line_id,
-    lineNo: lineNo.get(row.service_line_id) ?? 0,
+    position: position.get(row.service_line_id) ?? 0,
     kind: row.reopened_from === null ? 'stage' : 'reopened_stage',
     stage: row.stage,
     reopenedFrom: row.reopened_from,
@@ -588,13 +599,13 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
   }));
   for (const line of lines) {
     if (line.writtenOffAt !== null) {
-      events.push({ at: line.writtenOffAt, serviceLineId: line.serviceLineId, lineNo: line.lineNo, kind: 'written_off', stage: null, reopenedFrom: null, writeOffReason: line.writtenOffReason, by: line.writtenOffBy });
+      events.push({ at: line.writtenOffAt, serviceLineId: line.serviceLineId, position: line.position, kind: 'written_off', stage: null, reopenedFrom: null, writeOffReason: line.writtenOffReason, by: line.writtenOffBy });
     }
     if (line.reopenedAt !== null) {
-      events.push({ at: line.reopenedAt, serviceLineId: line.serviceLineId, lineNo: line.lineNo, kind: 'reopened', stage: null, reopenedFrom: null, writeOffReason: null, by: line.reopenedBy });
+      events.push({ at: line.reopenedAt, serviceLineId: line.serviceLineId, position: line.position, kind: 'reopened', stage: null, reopenedFrom: null, writeOffReason: null, by: line.reopenedBy });
     }
   }
-  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.lineNo - b.lineNo));
+  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.position - b.position));
   return { lines, events, page: at.page, pages: at.pages, totalLines };
 }
 

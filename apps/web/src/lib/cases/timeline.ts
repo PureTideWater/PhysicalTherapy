@@ -27,10 +27,10 @@ export const CHANNEL_TEXT = {
 
 export type TimelineEvent =
   | { readonly kind: 'opened'; readonly at: string; readonly by: string | null }
-  | { readonly kind: 'stage'; readonly at: string; readonly by: string | null; readonly lineNo: number; readonly stage: LineStage }
-  | { readonly kind: 'reopened_stage'; readonly at: string; readonly by: string | null; readonly lineNo: number; readonly stage: LineStage; readonly from: LineStage }
-  | { readonly kind: 'written_off'; readonly at: string; readonly by: string | null; readonly lineNo: number; readonly reason: WriteOffReason }
-  | { readonly kind: 'line_reopened'; readonly at: string; readonly by: string | null; readonly lineNo: number }
+  | { readonly kind: 'stage'; readonly at: string; readonly by: string | null; readonly position: number; readonly stage: LineStage }
+  | { readonly kind: 'reopened_stage'; readonly at: string; readonly by: string | null; readonly position: number; readonly stage: LineStage; readonly from: LineStage }
+  | { readonly kind: 'written_off'; readonly at: string; readonly by: string | null; readonly position: number; readonly reason: WriteOffReason }
+  | { readonly kind: 'line_reopened'; readonly at: string; readonly by: string | null; readonly position: number }
   | { readonly kind: 'note'; readonly at: string; readonly by: string | null; readonly text: string | null }
   | { readonly kind: 'assigned'; readonly at: string; readonly by: string | null; readonly owner: string | null }
   | { readonly kind: 'approval_requested'; readonly at: string; readonly by: string | null; readonly versionNo: number }
@@ -46,15 +46,15 @@ export function eventText(event: TimelineEvent): string {
     case 'opened':
       return event.by === null ? 'Case opened by triage from its payer pattern' : 'Case opened from its payer pattern';
     case 'stage':
-      return `Line ${String(event.lineNo)}: ${STAGE_LABELS[event.stage]}`;
+      return `Line ${String(event.position)}: ${STAGE_LABELS[event.stage]}`;
     case 'reopened_stage':
-      return `Line ${String(event.lineNo)}: reopened from ${STAGE_LABELS[event.from]} to ${STAGE_LABELS[event.stage]}, with a reason`;
+      return `Line ${String(event.position)}: reopened from ${STAGE_LABELS[event.from]} to ${STAGE_LABELS[event.stage]}, with a reason`;
     case 'written_off':
       return event.reason === 'window_passed' && event.by === null
-        ? `Line ${String(event.lineNo)}: struck through, WINDOW_PASSED (its dispute window closed)`
-        : `Line ${String(event.lineNo)}: written off, ${WRITE_OFF_TEXT[event.reason]}`;
+        ? `Line ${String(event.position)}: struck through, WINDOW_PASSED (its dispute window closed)`
+        : `Line ${String(event.position)}: written off, ${WRITE_OFF_TEXT[event.reason]}`;
     case 'line_reopened':
-      return `Line ${String(event.lineNo)}: reopened into the case, with a reason`;
+      return `Line ${String(event.position)}: reopened into the case, with a reason`;
     case 'note':
       return event.text === null ? 'Note added (its words show to the roles that read PHI)' : `Note: ${event.text}`;
     case 'assigned':

@@ -173,13 +173,13 @@ export async function caseTimeline(
   const events: TimelineEvent[] = [{ kind: 'opened', at: input.openedAt, by: opener }];
   for (const event of input.lineEvents) {
     if (event.kind === 'stage' && event.stage !== null) {
-      events.push({ kind: 'stage', at: event.at, by: event.by, lineNo: event.lineNo, stage: event.stage });
+      events.push({ kind: 'stage', at: event.at, by: event.by, position: event.position, stage: event.stage });
     } else if (event.kind === 'reopened_stage' && event.stage !== null && event.reopenedFrom !== null) {
-      events.push({ kind: 'reopened_stage', at: event.at, by: event.by, lineNo: event.lineNo, stage: event.stage, from: event.reopenedFrom });
+      events.push({ kind: 'reopened_stage', at: event.at, by: event.by, position: event.position, stage: event.stage, from: event.reopenedFrom });
     } else if (event.kind === 'written_off' && event.writeOffReason !== null) {
-      events.push({ kind: 'written_off', at: event.at, by: event.by, lineNo: event.lineNo, reason: event.writeOffReason });
+      events.push({ kind: 'written_off', at: event.at, by: event.by, position: event.position, reason: event.writeOffReason });
     } else if (event.kind === 'reopened') {
-      events.push({ kind: 'line_reopened', at: event.at, by: event.by, lineNo: event.lineNo });
+      events.push({ kind: 'line_reopened', at: event.at, by: event.by, position: event.position });
     }
   }
   for (const item of input.activity) {

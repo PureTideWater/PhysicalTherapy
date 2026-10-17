@@ -96,8 +96,8 @@ test('a viewer’s case detail names each line by its number, and no screen the 
     await page.goto(`/p/${practiceId}/cases/${caseId}`);
     const lines = page.getByRole('list', { name: 'Case lines' }).getByRole('listitem');
     await expect(lines).toHaveCount(3);
-    for (const date of PHI.serviceDates) {
-      await expect(lines.filter({ hasText: `Line 1, ${date}` })).toHaveCount(1);
+    for (const [index, date] of PHI.serviceDates.entries()) {
+      await expect(lines.getByRole('link', { name: `Line ${String(index + 1)} of 3, ${date}`, exact: true })).toHaveCount(1);
     }
   });
 
@@ -111,7 +111,10 @@ test('a viewer’s case detail names each line by its number, and no screen the 
       expect(response.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
       const lines = viewer.getByRole('list', { name: 'Case lines' }).getByRole('listitem');
       await expect(lines).toHaveCount(3);
-      await expect(lines.getByRole('link', { name: 'Line 1', exact: true })).toHaveCount(3);
+      // Each line's link names it uniquely on the page (its place in the schedule), though each is line 1 of its own claim.
+      for (const name of ['Line 1 of 3', 'Line 2 of 3', 'Line 3 of 3']) {
+        await expect(lines.getByRole('link', { name, exact: true })).toHaveCount(1);
+      }
       expect([...PHI.serviceDates, ...PHI.identifiers].filter((value) => body.includes(value)), 'PHI in the viewer’s case detail').toEqual([]);
     });
 

@@ -6,7 +6,7 @@ import { ActionForm } from '../../../../components/action-form';
 import { utc } from '../../../../components/format';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
-import { Investigatory } from '../../../../components/triage/display';
+import { Investigatory, lineName } from '../../../../components/triage/display';
 import { loadPage } from '../../../../lib/http/next';
 import { anomaliesPage } from '../../../../lib/routes/triage';
 import { requestValidationFormAction, reviewAnomalyFormAction } from './actions';
@@ -69,12 +69,12 @@ export default async function AnomaliesPage(props: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {open.lines.map((line) => (
+                  {open.lines.map((line, index) => (
                     <tr key={line.serviceLineId} className="border-b last:border-0">
                       {canReadPhi ? <td className="px-2 py-1">{line.payerClaimControlNumber}</td> : null}
                       <td className="px-2 py-1">
                         <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}`}>
-                          {line.serviceDate ?? 'Line trace'}
+                          {line.serviceDate ?? lineName(index + 1, open.lines.length)}
                         </Link>
                       </td>
                       <td className="px-2 py-1 font-mono">{[line.procedureCode, ...line.modifiers].join(' ')}</td>

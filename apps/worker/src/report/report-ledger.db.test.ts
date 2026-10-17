@@ -127,5 +127,15 @@ describe('an audit report generated after a recovery (N4)', () => {
     expect(html).not.toContain('nothing has been deposited yet');
     expect(html).not.toContain('closed (written off)');
     expect(html).toContain('submitted');
+    // Its printed cases table counts the headline's lines: L's one line is no longer actionable, Q's three are.
+    const printed = html.slice(html.indexOf('<caption>Cases</caption>'));
+    const caseRows = [...printed.slice(0, printed.indexOf('</table>')).matchAll(/<tr>(.*?)<\/tr>/g)]
+      .map((row) => [...(row[1] ?? '').matchAll(/<td[^>]*>(.*?)<\/td>/g)].map((cell) => cell[1] ?? ''))
+      .filter((cells) => cells.length > 0);
+    expect(caseRows.map((cells) => [cells[1], cells[3]])).toEqual([
+      ['CE:SYNPLAN-FIX-LED', '0 of 1'],
+      ['CE:SYNPLAN-FIX-ONE', '3 of 3'],
+    ]);
+    expect(caseRows.reduce((sum, cells) => sum + Number.parseInt(cells[3] ?? '', 10), 0)).toBe(content.headline.actionable_lines);
   }, 300_000);
 });

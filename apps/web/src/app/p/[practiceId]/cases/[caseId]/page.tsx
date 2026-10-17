@@ -8,7 +8,7 @@ import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
-import { CaseStateBadge, Deadline, stageLabel, writeOffText } from '../../../../../components/triage/display';
+import { CaseStateBadge, Deadline, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
@@ -23,11 +23,6 @@ export const metadata: Metadata = { title: 'Case' };
 type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the practice’s payment posting', deposited: 'deposited in the practice’s bank' };
-
-/** A line by its number, and its service date where the handler returned one (the roles that read PHI only, as on Claims and lines). */
-function lineLabel(line: { readonly lineNo: number; readonly serviceDate: string | null }): string {
-  return line.serviceDate === null ? `Line ${String(line.lineNo)}` : `Line ${String(line.lineNo)}, ${line.serviceDate}`;
-}
 
 /**
  * A case (PRD 7, Cases: "detail with lines, trace, deadline, pursuit cost, notes, timeline"; "assign;
@@ -162,7 +157,7 @@ export default async function CasePage(props: Props) {
               <div className={line.actionable ? 'flex flex-wrap items-center gap-3 text-sm' : 'flex flex-wrap items-center gap-3 text-sm text-muted-foreground line-through'}>
                 {canReadPhi && line.payerClaimControlNumber !== null ? <span>{line.payerClaimControlNumber}</span> : null}
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${line.pricingRunId}`}>
-                  {lineLabel(line)}
+                  {lineName(line.position, detail.totalLines, line.serviceDate)}
                 </Link>
                 <span className="font-mono tabular-nums">
                   {[line.procedureCode, ...line.modifiers].join(' ')} x {line.units}

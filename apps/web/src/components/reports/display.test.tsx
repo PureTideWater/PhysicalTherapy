@@ -90,7 +90,8 @@ describe('the audit report on screen after a recovery (N4)', () => {
   it('shows each case still actionable in the cases table and its payer approved and recovered by case, the headline’s sums', () => {
     const shown = text(renderToStaticMarkup(<ReportSections content={CONTENT} practiceId="p" />));
     // The cases table: the case's state in words, nothing still actionable.
-    expect(shown).toContain('Paid below the contract rateResolved1 of 1$0.002036-03-29');
+    // Its lines still actionable beside their variance, the lines the headline counts: none of its one line.
+    expect(shown).toContain('Paid below the contract rateResolved0 of 1$0.002036-03-29');
     // By case: approved and recovered from the ledger's entries.
     expect(shown).toContain('SYNTHETIC PAYER LCE:SYNPLAN-FIX-LEDResolved$30.00$30.00');
     expect(shown).toContain('the headline is the sum of each column');

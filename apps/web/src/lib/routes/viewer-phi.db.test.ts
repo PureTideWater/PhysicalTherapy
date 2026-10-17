@@ -27,6 +27,7 @@ import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Outcome, Route, SampleRefs } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
@@ -40,7 +41,7 @@ import { seedPacketLine, seedPackets } from './test-support/packet-world';
 import { loadRouteRelease, seedPricingRun } from './test-support/pricing-world';
 import { seedReportDocument } from './test-support/report-world';
 import { seedTriage, seedTriageLine } from './test-support/triage-world';
-import { anomaliesPage, casePage } from './triage';
+import { anomaliesPage, casePage, reviewAnomalyAction } from './triage';
 
 /**
  * What a role that does not read PHI (the viewer: a CFO or owner; also the practice administrator, who
@@ -113,8 +114,12 @@ function caller(pool: DatabasePool, services: Services) {
     }
     return token;
   };
-  return async <R>(route: Route<R>, userId: string, params: Record<string, unknown>, method: 'totp' | 'webauthn' = 'totp'): Promise<Outcome<R>> =>
-    route.invoke({ cookies: new Jar(await sessionOf(userId, method)), params, input: undefined, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  return async <R>(route: Route<R>, userId: string, params: Record<string, unknown>, method: 'totp' | 'webauthn' = 'totp', input?: Record<string, unknown>): Promise<Outcome<R>> => {
+    const session = await sessionOf(userId, method);
+    // A mutation carries its CSRF token and request key, as the form sends them.
+    const body = input === undefined ? undefined : { csrfToken: csrfTokenFor(services.sealer, session), requestKey: randomUUID(), ...input };
+    return route.invoke({ cookies: new Jar(session), params, input: body, requestId: `test-${randomUUID()}`, userAgent: null }, services);
+  };
 }
 
 function ok<R>(outcome: Outcome<R>): R {
@@ -270,18 +275,21 @@ describe('the case detail and the cohort a viewer opens (the screen tour, P1)', 
     const outcome = await call(casePage, viewer, P);
     const seen = ok(outcome);
     expect([seen.canReadPhi, seen.detail.totalLines]).toEqual([false, 3]);
-    expect(seen.detail.lines.map((line) => [line.lineNo, line.serviceDate, line.payerClaimControlNumber])).toEqual([
-      [1, null, null],
-      [1, null, null],
-      [1, null, null],
+    // Each line is named by its place in the schedule, unique on the page: its number inside its claim is 1 on all three claims.
+    expect(seen.detail.lines.map((line) => [line.position, line.lineNo, line.serviceDate, line.payerClaimControlNumber])).toEqual([
+      [1, 1, null, null],
+      [2, 1, null, null],
+      [3, 1, null, null],
     ]);
+    const timeline = seen.timeline.flatMap((event) => (event.kind === 'stage' ? [event.position] : []));
+    expect(new Set(timeline)).toEqual(new Set([1, 2, 3]));
     expect(phiIn(answerText(outcome), PHI), 'PHI in the viewer’s case detail').toEqual([]);
     // The route is a PHI route: the page is sent private, no-store.
     expect(casePage.phi).toBe(true);
 
     // The billing manager, who reads PHI, sees the lines by their dates and claim numbers.
     const managed = ok(await call(casePage, practice.manager, P));
-    expect(managed.detail.lines.map((line) => line.serviceDate)).toEqual(cas08.serviceDates);
+    expect(managed.detail.lines.map((line) => [line.position, line.serviceDate])).toEqual(cas08.serviceDates.map((date, index) => [index + 1, date]));
     expect(managed.detail.lines.every((line) => line.payerClaimControlNumber?.startsWith('SYNCCNCAS08') === true)).toBe(true);
   });
 
@@ -298,6 +306,18 @@ describe('the case detail and the cohort a viewer opens (the screen tour, P1)', 
     expect(anomaliesPage.phi).toBe(true);
     const managed = ok(await call(anomaliesPage, practice.manager, P));
     expect(managed.open?.lines.map((line) => line.serviceDate)).toEqual(cas08.serviceDates);
+  });
+
+  it('names who reviewed the cohort to a viewer the user directory hides them from by role, never a dash (N3)', async () => {
+    const P = { practiceId: practice.practiceId, anomaly: anomalyId };
+    ok(await call(reviewAnomalyAction, practice.manager, { practiceId: practice.practiceId }, 'totp', { anomalyId }));
+    // The viewer reads no other person's user row: the reviewer is named as a member of the practice.
+    const seen = ok(await call(anomaliesPage, viewer, P)).open?.anomaly;
+    expect(seen?.reviewedAt).not.toBeNull();
+    expect(seen?.reviewedBy).toBe('a member of the practice');
+    // The reviewer reads their own row, and sees their own address.
+    const own = ok(await call(anomaliesPage, practice.manager, P)).open?.anomaly;
+    expect(own?.reviewedBy).toMatch(/@/);
   });
 
   it('answers the viewer on every other screen the tour opened with none of the 835’s PHI', async () => {

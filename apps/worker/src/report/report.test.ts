@@ -158,7 +158,7 @@ describe('the report HTML', () => {
     expect(recovered).not.toContain('recorded yet');
     expect(recovered).not.toContain('nothing has posted yet');
     // The case's share at each stage now, beside its state in words: nothing still actionable, 30.00 approved and recovered.
-    expect(recovered).toContain('<td>Paid below the contract rate</td><td>8 of 8</td><td>$0.00</td><td>2027-01-15</td>');
+    expect(recovered).toContain('<td>Paid below the contract rate</td><td>0 of 8</td><td>$0.00</td><td>2027-01-15</td>');
     expect(recovered).toContain('<td>SYNTHETIC PAYER Q</td><td>SYNPLAN-FIX-ONE</td><td>resolved</td><td>$30.00</td><td>$30.00</td>');
     expect(recovered).toContain('The headline is the sum of each column.');
     expect(recovered).not.toContain('Neither had an entry');

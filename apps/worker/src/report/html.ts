@@ -150,8 +150,8 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     item.payer,
     item.plan,
     item.behavior_text,
-    `${String(item.actionable_lines)} of ${String(item.lines)}`,
-    // Its lines still actionable (a report stored before the stages were read shows its share).
+    // Its lines still actionable and their variance, the lines the headline sums (a report stored before the stages were read shows its share).
+    `${String(item.actionable_now_lines ?? item.actionable_lines)} of ${String(item.lines)}`,
     usd(item.actionable_now_cents ?? item.actionable_cents),
     item.deadline_on ?? 'none open',
     `${count(item.case_lines, 'line')}, ${usd(item.case_actionable_cents)}`,
