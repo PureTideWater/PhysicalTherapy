@@ -1,0 +1,5 @@
+Drizzle tables: 78; migrated tables (excluding schema_migrations): 78
+In the database, not in Drizzle: none
+In Drizzle, not in the database: none
+Column differences (name, type, nullability): 0
+catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)

@@ -1,0 +1,4063 @@
+{
+  "entries": [
+    {
+      "table": "organization",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Contracting account",
+      "policy": "Members only",
+      "fields": [
+        {
+          "name": "kind",
+          "type": null,
+          "paren": "group, firm, internal",
+          "rest": null,
+          "enumeration": [
+            "group",
+            "firm",
+            "internal"
+          ]
+        },
+        {
+          "name": "name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "billing_customer_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "practice",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "The tenant",
+      "policy": "By grant or ownership",
+      "fields": [
+        {
+          "name": "organization_id",
+          "type": null,
+          "paren": "owning group or null",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "tax_id_last4",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "npi",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "locality_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "zip",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "settings",
+          "type": "jsonb",
+          "paren": "jsonb: materiality, anomaly threshold, proof level, staff rate",
+          "rest": null,
+          "jsonbNote": "materiality, anomaly threshold, proof level, staff rate"
+        },
+        {
+          "name": "data_key_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "user",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Identity reference",
+      "policy": "Self and administrators",
+      "fields": [
+        {
+          "name": "cognito_sub",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "email",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "mfa_enrolled",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "hardware_key_required",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "membership",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Role in an organization",
+      "policy": "Organization administrators",
+      "fields": [
+        {
+          "name": "organization_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "user_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "role",
+          "type": null,
+          "paren": "practice_admin, billing_manager, analyst, viewer, firm_principal, firm_analyst, platform_admin, contract_specialist, reviewer, support",
+          "rest": null,
+          "enumeration": [
+            "practice_admin",
+            "billing_manager",
+            "analyst",
+            "viewer",
+            "firm_principal",
+            "firm_analyst",
+            "platform_admin",
+            "contract_specialist",
+            "reviewer",
+            "support"
+          ]
+        },
+        {
+          "name": "ends_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "grant",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Organization access to a practice",
+      "policy": "Practice administrators; firm sees its own",
+      "fields": [
+        {
+          "name": "organization_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "scope",
+          "type": null,
+          "paren": "jsonb",
+          "rest": null,
+          "note": "jsonb"
+        },
+        {
+          "name": "starts_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "ends_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "approved_by_user_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "agreement_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "revoked_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "revoked_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "agreement",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Signed documents",
+      "policy": "Parties to it",
+      "fields": [
+        {
+          "name": "organization_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "kind",
+          "type": null,
+          "paren": "baa, engagement, terms, data_rights, dpa",
+          "rest": null,
+          "enumeration": [
+            "baa",
+            "engagement",
+            "terms",
+            "data_rights",
+            "dpa"
+          ]
+        },
+        {
+          "name": "version",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "signed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "signer",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "document_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "support_grant",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Break-glass access",
+      "policy": "Platform administrators; practice sees its own",
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "user_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "ticket",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "expires_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "notified_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "phi_table_registry",
+      "section": "Tenancy and access (PHI-adjacent; policies apply where noted)",
+      "purpose": "Catalog of PHI tables",
+      "policy": "Global",
+      "fields": [
+        {
+          "name": "table_name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "registered_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "policy_name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "source_document",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "Every uploaded file",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "kind",
+          "type": null,
+          "paren": "x12_835, contract, exhibit, posting_export, eft_export, payer_letter, other",
+          "rest": null,
+          "enumeration": [
+            "x12_835",
+            "contract",
+            "exhibit",
+            "posting_export",
+            "eft_export",
+            "payer_letter",
+            "other"
+          ]
+        },
+        {
+          "name": "s3_key",
+          "type": null,
+          "paren": "opaque",
+          "rest": null,
+          "note": "opaque"
+        },
+        {
+          "name": "sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "size_bytes",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "content_type",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "uploaded_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "scan_status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "scan_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "retention_class",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "parent_document_id",
+          "type": null,
+          "paren": "zip entry",
+          "rest": null,
+          "note": "zip entry"
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "remittance",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "One 835 transaction set",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source_document_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "sender_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "receiver_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "isa13",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "gs06",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "st02",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "trn02",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "bpr02_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "bpr_method",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "bpr16_date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payee_npi",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "production_date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "balanced",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "balance_diff_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "claim_count",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "plb_total_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": "loaded, held, duplicate",
+          "rest": null,
+          "enumeration": [
+            "loaded",
+            "held",
+            "duplicate"
+          ]
+        },
+        {
+          "name": "held_reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [
+        [
+          "practice_id",
+          "sender_id",
+          "isa13",
+          "trn02",
+          "bpr02_cents"
+        ]
+      ],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "claim",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "CLP",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "remittance_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "patient_control_number",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "payer_claim_control_number",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "claim_status_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "charge_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "paid_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "patient_resp_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "facility_type",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "frequency_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "patient_ref_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "insured_ref_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reversal_of_claim_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "superseded_by_claim_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "allowed_cents",
+          "type": null,
+          "paren": "AMT AU",
+          "rest": null,
+          "note": "AMT AU"
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "service_line",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "SVC",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "claim_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "line_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "procedure_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "modifiers",
+          "type": "text[]",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "revenue_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "charge_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "paid_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "units",
+          "type": "numeric(9,3)",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "original_units",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "place_of_service",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "line_allowed_cents",
+          "type": null,
+          "paren": "AMT B6",
+          "rest": null,
+          "note": "AMT B6"
+        },
+        {
+          "name": "observed_allowed_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "observed_allowed_basis",
+          "type": null,
+          "paren": "amt_b6, paid_plus_pr",
+          "rest": null,
+          "enumeration": [
+            "amt_b6",
+            "paid_plus_pr"
+          ]
+        },
+        {
+          "name": "rendering_npi",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_plan_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "adjustment",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "CAS",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "claim_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_line_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "group_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reason_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "quantity",
+          "type": "numeric(9,3)",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "position",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "provider_adjustment",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "PLB",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "remittance_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reason_code",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reference",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "fiscal_period_date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "patient_ref",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "Minimal identity",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pseudonym",
+          "type": null,
+          "paren": "stable hash",
+          "rest": null,
+          "note": "stable hash"
+        },
+        {
+          "name": "last_name",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "first_name",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "dob",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "member_id",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "group_number",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "parse_report",
+      "section": "Documents and remittances (PHI)",
+      "purpose": "Per document",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source_document_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "transactions",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "claims",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "lines",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reversals",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "held",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "errors",
+          "type": "jsonb",
+          "paren": "segment, position, code; never fields",
+          "rest": null,
+          "note": "segment, position, code; never fields"
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "payer",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "Payer identity",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_id_raw",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "name_raw",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "canonical_payer_id",
+          "type": null,
+          "paren": "nullable, global reference",
+          "rest": null,
+          "nullable": true
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "plan",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "Product or plan",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "plan_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "name",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "network_status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "is_medicare_advantage",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "ma_contracted",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "payer_plan_mapping",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "Plan to agreement",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "plan_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "contract_version_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "mapping_kind",
+          "type": null,
+          "paren": "contract, no_agreement, ma_noncontracted, government, other",
+          "rest": null,
+          "enumeration": [
+            "contract",
+            "no_agreement",
+            "ma_noncontracted",
+            "government",
+            "other"
+          ]
+        },
+        {
+          "name": "effective_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "effective_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "mapped_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "supersedes_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "contract",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "Agreement with a payer",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "title",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "billing_entity",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "contract_version",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "A version or amendment",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "contract_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "version_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source_document_ids",
+          "type": "uuid[]",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "effective_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "effective_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": "draft, proposed, approved, signed_off, superseded",
+          "rest": null,
+          "enumeration": [
+            "draft",
+            "proposed",
+            "approved",
+            "signed_off",
+            "superseded"
+          ]
+        },
+        {
+          "name": "approved_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "approved_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "signed_off_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "signed_off_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "supersedes_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "timely_filing_days",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "dispute_window_days",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "appeal_levels",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "rate_record",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "A pricing term",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "contract_version_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "scope",
+          "type": "jsonb",
+          "paren": "codes, modifier sets, places of service, provider types",
+          "rest": null,
+          "note": "codes, modifier sets, places of service, provider types"
+        },
+        {
+          "name": "method",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "parameters",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "flags",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "rounding",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "evidence",
+          "type": "jsonb",
+          "paren": "document id, page, quote, hash",
+          "rest": null,
+          "note": "document id, page, quote, hash"
+        },
+        {
+          "name": "proposed_by",
+          "type": null,
+          "paren": "specialist or model",
+          "rest": null,
+          "note": "specialist or model"
+        },
+        {
+          "name": "verified_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "verified_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "contract_calendar_event",
+      "section": "Payers, contracts and rates (PHI-adjacent; confidential)",
+      "purpose": "Dates to act on",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "contract_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "kind",
+          "type": null,
+          "paren": "anniversary, notice_deadline, fee_schedule_year, amendment",
+          "rest": null,
+          "enumeration": [
+            "anniversary",
+            "notice_deadline",
+            "fee_schedule_year",
+            "amendment"
+          ]
+        },
+        {
+          "name": "on_date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "note",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "rule_release",
+      "section": "Global content (no practice_id; read-only to the application role)",
+      "purpose": "Numbered release",
+      "policy": null,
+      "fields": [
+        {
+          "name": "release_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "published_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "manifest_sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "notes",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "rule_record",
+      "section": "Global content (no practice_id; read-only to the application role)",
+      "purpose": "One record",
+      "policy": null,
+      "fields": [
+        {
+          "name": "release_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "record_type",
+          "type": null,
+          "paren": "pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map",
+          "rest": null,
+          "enumeration": [
+            "pfs_rvu",
+            "pfs_gpci",
+            "conversion_factor",
+            "mppr_rate",
+            "therapy_threshold",
+            "assistant_modifier",
+            "sequestration",
+            "ncci_ptp",
+            "ncci_mue",
+            "carc",
+            "rarc",
+            "claim_status_code",
+            "state_prompt_pay",
+            "dispute_window",
+            "locality_map"
+          ]
+        },
+        {
+          "name": "key",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "effective_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "effective_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "verification",
+          "type": null,
+          "paren": "L1, L2, L3",
+          "rest": null,
+          "enumeration": [
+            "L1",
+            "L2",
+            "L3"
+          ]
+        },
+        {
+          "name": "sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "pricing_run",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "A run",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "period_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "period_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "release_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "engine_version",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "created_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "coverage",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "completed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "priced_line",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Per run and line",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pricing_run_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_line_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "mapping_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "contract_version_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "rate_record_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "method",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "expected_allowed_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "expected_unrounded",
+          "type": "numeric(18,6)",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "observed_allowed_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "variance_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "unpriced_reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "adjustments_applied",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "window_ends_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "trace",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [
+        [
+          "pricing_run_id",
+          "service_line_id"
+        ]
+      ],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "anomaly",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Investigatory cohort",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pricing_run_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "cohort_key",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "cohort_size",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "modal_allowed_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "stats",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "line_ids",
+          "type": "uuid[]",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reviewed_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reviewed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "line_status",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Stage per line",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_line_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "stage",
+          "type": null,
+          "paren": "flagged, validated, actionable, payer_approved, recovered",
+          "rest": null,
+          "enumeration": [
+            "flagged",
+            "validated",
+            "actionable",
+            "payer_approved",
+            "recovered"
+          ]
+        },
+        {
+          "name": "set_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "set_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reopened_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "case",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "A payer pattern to pursue",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pattern_key",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "payer_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "plan_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "rate_record_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "owner_user_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "state",
+          "type": null,
+          "paren": "open, submitted, awaiting_response, partially_resolved, resolved, closed_written_off",
+          "rest": null,
+          "enumeration": [
+            "open",
+            "submitted",
+            "awaiting_response",
+            "partially_resolved",
+            "resolved",
+            "closed_written_off"
+          ]
+        },
+        {
+          "name": "deadline_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "materiality_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pursuit_cost_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "actionable_cents",
+          "type": null,
+          "paren": "derived",
+          "rest": null,
+          "note": "derived"
+        },
+        {
+          "name": "opened_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "closed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "case_line",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Membership",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "case_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_line_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "priced_line_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "actionable",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "written_off_reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "written_off_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "packet",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "The dispute document",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "case_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "current_version_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "packet_version",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Immutable version",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "packet_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "version_no",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "citation",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "line_table",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "narrative",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "interest_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "evidence",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "verifier_passed",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "verifier_report",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "drafted_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "approved_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "approved_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "export_pdf_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "export_csv_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "export_sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "exported_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "submission",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Sent by the customer",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "case_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "packet_version_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "submitted_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "channel",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reference",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "submitted_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "follow_up_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "payer_response",
+      "section": "Pricing, triage and cases (PHI)",
+      "purpose": "Response captured",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "submission_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "kind",
+          "type": null,
+          "paren": "accepted, partial, denied, info_requested, reprocessed_no_change",
+          "rest": null,
+          "enumeration": [
+            "accepted",
+            "partial",
+            "denied",
+            "info_requested",
+            "reprocessed_no_change"
+          ]
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "document_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "received_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "notes",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "posting_row",
+      "section": "Ledger and reconciliation (PHI)",
+      "purpose": "From the practice's posting export",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source_document_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "check_or_trace",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "posted_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "claim_reference",
+          "type": null,
+          "paren": "enc",
+          "rest": null,
+          "enc": true
+        },
+        {
+          "name": "raw",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "eft_row",
+      "section": "Ledger and reconciliation (PHI)",
+      "purpose": "From the EFT or bank export",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "source_document_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "trace",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "deposited_on",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "batch_reference",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "ledger_entry",
+      "section": "Ledger and reconciliation (PHI)",
+      "purpose": "Signed, append-only",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "case_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "service_line_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "stage",
+          "type": null,
+          "paren": "approved, posted, deposited, recouped, reversed, adjusted, interest",
+          "rest": null,
+          "enumeration": [
+            "approved",
+            "posted",
+            "deposited",
+            "recouped",
+            "reversed",
+            "adjusted",
+            "interest"
+          ]
+        },
+        {
+          "name": "amount_cents",
+          "type": null,
+          "paren": "signed",
+          "rest": null,
+          "note": "signed"
+        },
+        {
+          "name": "evidence_kind",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "evidence_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "allocated",
+          "type": "boolean",
+          "paren": "bool",
+          "rest": null
+        },
+        {
+          "name": "created_by",
+          "type": null,
+          "paren": "user or system",
+          "rest": null,
+          "note": "user or system"
+        },
+        {
+          "name": "reason",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [
+        "triggers reject update and delete"
+      ],
+      "notes": [
+        "triggers reject update and delete"
+      ]
+    },
+    {
+      "table": "roi_statement",
+      "section": "Ledger and reconciliation (PHI)",
+      "purpose": "Generated statement",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "period_from",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "period_to",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "fees_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "recovered_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "interest_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "approved_unposted_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "actionable_open_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "pursuit_hours",
+          "type": "numeric(9,2)",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "generated_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "document_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "model_call",
+      "section": "Model gateway (PHI references only)",
+      "purpose": "One call",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": "nullable for synthetic evaluation",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "actor",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "purpose",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "model_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "prompt_version",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "input_hashes",
+          "type": "text[]",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "output_sha256",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "tokens_in",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "tokens_out",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "cost_cents",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "citations",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "verifier_passed",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reviewer_decision",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "reviewer_changed_fields",
+          "type": "text[]",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "latency_ms",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "eval_example",
+      "section": "Model gateway (PHI references only)",
+      "purpose": "Evaluation data",
+      "policy": null,
+      "fields": [
+        {
+          "name": "source",
+          "type": null,
+          "paren": "synthetic, permitted",
+          "rest": null,
+          "enumeration": [
+            "synthetic",
+            "permitted"
+          ]
+        },
+        {
+          "name": "purpose",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "input_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "expected",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "permission_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "audit_event",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Append-only",
+      "policy": null,
+      "fields": [
+        {
+          "name": "actor_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "actor_kind",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "action",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "object_type",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "object_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": "nullable",
+          "rest": null,
+          "nullable": true
+        },
+        {
+          "name": "grant_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "purpose",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "request_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [
+        "triggers reject update and delete",
+        "nightly copy to S3 Object Lock"
+      ],
+      "notes": [
+        "triggers reject update and delete",
+        "nightly copy to S3 Object Lock"
+      ]
+    },
+    {
+      "table": "job",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Queue",
+      "policy": null,
+      "fields": [
+        {
+          "name": "singleton_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "idempotency_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "attempts",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "outcome",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": [
+        "pg-boss tables plus"
+      ]
+    },
+    {
+      "table": "job_run",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Queue",
+      "policy": null,
+      "fields": [
+        {
+          "name": "singleton_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "idempotency_key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "attempts",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "outcome",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": [
+        "pg-boss tables plus"
+      ]
+    },
+    {
+      "table": "notification",
+      "section": "Operations (no PHI by design)",
+      "purpose": "In-app",
+      "policy": null,
+      "fields": [
+        {
+          "name": "user_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "kind",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "counts",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "totals_cents",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "read_at",
+          "type": null,
+          "paren": "no PHI columns exist",
+          "rest": null,
+          "note": "no PHI columns exist"
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "digest",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Email digest",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "period",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "counts",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "totals_cents",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "sent_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "subscription",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Billing",
+      "policy": null,
+      "fields": [],
+      "uniques": [],
+      "extra": [],
+      "notes": [
+        "Stripe references;"
+      ]
+    },
+    {
+      "table": "invoice",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Billing",
+      "policy": null,
+      "fields": [],
+      "uniques": [],
+      "extra": [],
+      "notes": [
+        "Stripe references;"
+      ]
+    },
+    {
+      "table": "usage_snapshot",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Billing",
+      "policy": null,
+      "fields": [
+        {
+          "name": "organization_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "date",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "granted_practices",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "active_practices",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": [
+        "Stripe references;"
+      ]
+    },
+    {
+      "table": "feature_flag",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Flags",
+      "policy": null,
+      "fields": [
+        {
+          "name": "key",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "scope",
+          "type": null,
+          "paren": "global, organization, practice",
+          "rest": null,
+          "enumeration": [
+            "global",
+            "organization",
+            "practice"
+          ]
+        },
+        {
+          "name": "scope_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "value",
+          "type": "jsonb",
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "legal_hold",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Lifecycle",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "completed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "certificate_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "deletion_request",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Lifecycle",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "completed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "certificate_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    },
+    {
+      "table": "export_job",
+      "section": "Operations (no PHI by design)",
+      "purpose": "Lifecycle",
+      "policy": null,
+      "fields": [
+        {
+          "name": "practice_id",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_by",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "requested_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "status",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "completed_at",
+          "type": null,
+          "paren": null,
+          "rest": null
+        },
+        {
+          "name": "certificate_ref",
+          "type": null,
+          "paren": null,
+          "rest": null
+        }
+      ],
+      "uniques": [],
+      "extra": [],
+      "notes": []
+    }
+  ],
+  "wantedIndexes": [
+    {
+      "table": "service_line",
+      "cols": [
+        "practice_id",
+        "service_date"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`service_line (practice_id, service_date)`"
+    },
+    {
+      "table": "service_line",
+      "cols": [
+        "practice_id",
+        "payer_plan_key",
+        "procedure_code"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`service_line (practice_id, payer_plan_key, procedure_code)`"
+    },
+    {
+      "table": "claim",
+      "cols": [
+        "practice_id",
+        "payer_claim_control_number"
+      ],
+      "predicate": null,
+      "note": "(on the deterministic hash of the encrypted value)",
+      "raw": "`claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value)"
+    },
+    {
+      "table": "priced_line",
+      "cols": [
+        "pricing_run_id",
+        "unpriced_reason"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`priced_line (pricing_run_id, unpriced_reason)`"
+    },
+    {
+      "table": "priced_line",
+      "cols": [
+        "practice_id",
+        "variance_cents desc"
+      ],
+      "predicate": "where variance_cents > 0",
+      "note": null,
+      "raw": "`priced_line (practice_id, variance_cents desc) where variance_cents > 0`"
+    },
+    {
+      "table": "case",
+      "cols": [
+        "practice_id",
+        "state",
+        "deadline_on"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`case (practice_id, state, deadline_on)`"
+    },
+    {
+      "table": "ledger_entry",
+      "cols": [
+        "practice_id",
+        "case_id",
+        "stage"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`ledger_entry (practice_id, case_id, stage)`"
+    },
+    {
+      "table": "audit_event",
+      "cols": [
+        "practice_id",
+        "at"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`audit_event (practice_id, at)`"
+    },
+    {
+      "table": "audit_event",
+      "cols": [
+        "object_type",
+        "object_id"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`audit_event (object_type, object_id)`"
+    },
+    {
+      "table": "remittance",
+      "cols": [
+        "practice_id",
+        "trn02"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`remittance (practice_id, trn02)`"
+    },
+    {
+      "table": "posting_row",
+      "cols": [
+        "practice_id",
+        "check_or_trace"
+      ],
+      "predicate": null,
+      "note": null,
+      "raw": "`posting_row (practice_id, check_or_trace)`"
+    },
+    {
+      "table": "eft_row",
+      "cols": [
+        "practice_id",
+        "trace"
+      ],
+      "predicate": null,
+      "note": ".",
+      "raw": "`eft_row (practice_id, trace)`.\n\n"
+    }
+  ],
+  "divergences": [
+    {
+      "table": "practice",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "deleted_at timestamp with time zone null",
+      "note": ""
+    },
+    {
+      "table": "user",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "failed_sign_ins integer, locked_at timestamp with time zone null, settings jsonb",
+      "note": ""
+    },
+    {
+      "table": "source_document",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "page_text_status text null, page_count integer null",
+      "note": ""
+    },
+    {
+      "table": "remittance",
+      "field": "sender_id",
+      "kind": "type note (informational)",
+      "dictionary": "uuid (by the _id suffix)",
+      "schema": "text",
+      "note": "an identifier from the source file, not a key, when text"
+    },
+    {
+      "table": "remittance",
+      "field": "receiver_id",
+      "kind": "type note (informational)",
+      "dictionary": "uuid (by the _id suffix)",
+      "schema": "text",
+      "note": "an identifier from the source file, not a key, when text"
+    },
+    {
+      "table": "remittance",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "trn03 text, bpr_credit_debit text, payee_id_qualifier text, review_reason text null, review_of_remittance_id uuid null",
+      "note": ""
+    },
+    {
+      "table": "claim",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "claim_no integer, payer_claim_control_number_hash text, filing_indicator text, received_on date null, interest_cents bigint null",
+      "note": ""
+    },
+    {
+      "table": "service_line",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "procedure_qualifier text, service_date_to date null, observed_allowed_allocated boolean, patient_share_cents bigint",
+      "note": ""
+    },
+    {
+      "table": "adjustment",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "unknown_code boolean",
+      "note": ""
+    },
+    {
+      "table": "provider_adjustment",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "position integer, provider_id text, category text, counted boolean",
+      "note": ""
+    },
+    {
+      "table": "patient_ref",
+      "field": "member_id",
+      "kind": "type note (informational)",
+      "dictionary": "uuid (by the _id suffix)",
+      "schema": "text",
+      "note": "an identifier from the source file, not a key, when text"
+    },
+    {
+      "table": "parse_report",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "outcome text, plb_total_cents bigint, loaded_transactions integer, loaded_claims integer, loaded_lines integer, duplicate_transactions integer, unknown_codes text[], transaction_outcomes jsonb, code_list_release integer null",
+      "note": ""
+    },
+    {
+      "table": "contract_version",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "notice_days integer null",
+      "note": ""
+    },
+    {
+      "table": "rule_record",
+      "field": "record_type",
+      "kind": "enumeration differs",
+      "dictionary": "pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map",
+      "schema": "pfs_rvu, pfs_gpci, conversion_factor, mppr_rate, therapy_threshold, assistant_modifier, sequestration, ncci_ptp, ncci_mue, carc, rarc, claim_status_code, state_prompt_pay, dispute_window, locality_map, denial_category",
+      "note": "schema only: denial_category"
+    },
+    {
+      "table": "pricing_run",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "failure_code text null, rerun_of_id uuid null, lines_loaded_by timestamp with time zone null, accepted_by uuid null, accepted_at timestamp with time zone null, created_by_job_id uuid null",
+      "note": ""
+    },
+    {
+      "table": "priced_line",
+      "field": "expected_unrounded",
+      "kind": "retyped",
+      "dictionary": "numeric(18,6)",
+      "schema": "numeric",
+      "note": ""
+    },
+    {
+      "table": "anomaly",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "validation_requested_by uuid null, validation_requested_at timestamp with time zone null",
+      "note": ""
+    },
+    {
+      "table": "line_status",
+      "field": "reason",
+      "kind": "encryption",
+      "dictionary": "not marked (enc)",
+      "schema": "enc:v1 CHECK",
+      "note": ""
+    },
+    {
+      "table": "line_status",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "seq bigint, priced_line_id uuid null",
+      "note": ""
+    },
+    {
+      "table": "case_line",
+      "field": "written_off_text",
+      "kind": "encryption",
+      "dictionary": "not listed",
+      "schema": "enc:v1 CHECK (extra encrypted column)",
+      "note": ""
+    },
+    {
+      "table": "case_line",
+      "field": "reopen_reason",
+      "kind": "encryption",
+      "dictionary": "not listed",
+      "schema": "enc:v1 CHECK (extra encrypted column)",
+      "note": ""
+    },
+    {
+      "table": "case_line",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "written_off_text text null, written_off_at timestamp with time zone null, reopen_reason text null, reopened_by uuid null, reopened_at timestamp with time zone null",
+      "note": ""
+    },
+    {
+      "table": "packet_version",
+      "field": "narrative",
+      "kind": "encryption",
+      "dictionary": "not marked (enc)",
+      "schema": "enc:v1 CHECK",
+      "note": ""
+    },
+    {
+      "table": "packet_version",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "content jsonb, dispute_level integer null, content_sha256 text, regulation_confirmed_by uuid null, regulation_confirmed_at timestamp with time zone null, approved_sha256 text null, approved_alone boolean, export_csv_sha256 text null",
+      "note": ""
+    },
+    {
+      "table": "submission",
+      "field": "reference",
+      "kind": "encryption",
+      "dictionary": "not marked (enc)",
+      "schema": "enc:v1 CHECK",
+      "note": ""
+    },
+    {
+      "table": "submission",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "export_sha256 text, export_csv_sha256 text, dispute_level integer",
+      "note": ""
+    },
+    {
+      "table": "payer_response",
+      "field": "notes",
+      "kind": "encryption",
+      "dictionary": "not marked (enc)",
+      "schema": "enc:v1 CHECK",
+      "note": ""
+    },
+    {
+      "table": "payer_response",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "remittance_id uuid null, denial_category text null, reopens_case boolean, next_window_ends_on date null, recorded_by uuid null",
+      "note": ""
+    },
+    {
+      "table": "posting_row",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "row_no integer, procedure_code text null, service_date date null, payer_name text null, batch text null, template text, fingerprint text",
+      "note": ""
+    },
+    {
+      "table": "eft_row",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "row_no integer, fingerprint text",
+      "note": ""
+    },
+    {
+      "table": "ledger_entry",
+      "field": "reason",
+      "kind": "encryption",
+      "dictionary": "not marked (enc)",
+      "schema": "enc:v1 CHECK",
+      "note": ""
+    },
+    {
+      "table": "ledger_entry",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "seq bigint, match_id uuid null, effective_on date",
+      "note": ""
+    },
+    {
+      "table": "roi_statement",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "proof_level text, links jsonb, generated_by uuid null, pdf_sha256 text null",
+      "note": ""
+    },
+    {
+      "table": "model_call",
+      "field": "actor",
+      "kind": "missing (possible rename)",
+      "dictionary": "actor",
+      "schema": "candidates: actor_kind, actor_id",
+      "note": ""
+    },
+    {
+      "table": "model_call",
+      "field": "model_id",
+      "kind": "type note (informational)",
+      "dictionary": "uuid (by the _id suffix)",
+      "schema": "text",
+      "note": "an identifier from the source file, not a key, when text"
+    },
+    {
+      "table": "model_call",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "actor_kind text, actor_id uuid null, provider text, idempotency_key text, cost_unrounded numeric(18,6), outcome text, error_code text null, attempts integer, reviewed_by uuid null, reviewed_at timestamp with time zone null",
+      "note": ""
+    },
+    {
+      "table": "model_call",
+      "field": "updated_at",
+      "kind": "convention (informational)",
+      "dictionary": "updated_at timestamptz",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "eval_example",
+      "field": "updated_at",
+      "kind": "convention (informational)",
+      "dictionary": "updated_at timestamptz",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "audit_event",
+      "field": "request_id",
+      "kind": "type note (informational)",
+      "dictionary": "uuid (by the _id suffix)",
+      "schema": "text",
+      "note": "an identifier from the source file, not a key, when text"
+    },
+    {
+      "table": "audit_event",
+      "field": "created_at",
+      "kind": "convention",
+      "dictionary": "created_at timestamptz",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "audit_event",
+      "field": "updated_at",
+      "kind": "convention (informational)",
+      "dictionary": "updated_at timestamptz",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "job",
+      "field": "",
+      "kind": "missing table",
+      "dictionary": "Operations (no PHI by design): Queue",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "job_run",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "job_id uuid, job_type text, error_code text null, started_at timestamp with time zone, finished_at timestamp with time zone null",
+      "note": ""
+    },
+    {
+      "table": "notification",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "practice_id uuid, subject_id uuid",
+      "note": ""
+    },
+    {
+      "table": "subscription",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "organization_id uuid, stripe_subscription_id text, stripe_customer_id text, stripe_price_id text, plan text, status text, current_period_start timestamp with time zone null, current_period_end timestamp with time zone null, cancel_at_period_end boolean, canceled_at timestamp with time zone null, stripe_event_at timestamp with time zone",
+      "note": ""
+    },
+    {
+      "table": "invoice",
+      "field": "",
+      "kind": "extra columns (informational)",
+      "dictionary": "-",
+      "schema": "organization_id uuid, stripe_invoice_id text, stripe_customer_id text, stripe_subscription_id text null, kind text, number text null, status text, currency text, amount_due_cents bigint, amount_paid_cents bigint, amount_remaining_cents bigint, period_start timestamp with time zone null, period_end timestamp with time zone null, due_at timestamp with time zone null, paid_at timestamp with time zone null, payment_method_kind text null, attempt_count integer, first_failed_at timestamp with time zone null, last_failure_code text null, hosted_invoice_url text null, dunning_stage text null, dunning_notified_at timestamp with time zone null, stripe_event_at timestamp with time zone",
+      "note": ""
+    },
+    {
+      "table": "usage_snapshot",
+      "field": "updated_at",
+      "kind": "convention (informational)",
+      "dictionary": "updated_at timestamptz",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "legal_hold",
+      "field": "",
+      "kind": "missing table",
+      "dictionary": "Operations (no PHI by design): Lifecycle",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "deletion_request",
+      "field": "",
+      "kind": "missing table",
+      "dictionary": "Operations (no PHI by design): Lifecycle",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "export_job",
+      "field": "",
+      "kind": "missing table",
+      "dictionary": "Operations (no PHI by design): Lifecycle",
+      "schema": "absent",
+      "note": ""
+    },
+    {
+      "table": "claim",
+      "field": "index (practice_id, payer_claim_control_number)",
+      "kind": "index missing",
+      "dictionary": "`claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value)",
+      "schema": "claim_by_patient (practice_id, patient_ref_id); claim_by_payer_claim_control_number (practice_id, payer_claim_control_number_hash)",
+      "note": ""
+    },
+    {
+      "table": "agreement_event",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "audit_report",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261019160000_triage_cases_and_audit_reports",
+      "note": ""
+    },
+    {
+      "table": "audit_report_download",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261019160000_triage_cases_and_audit_reports",
+      "note": ""
+    },
+    {
+      "table": "billing_event",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "billing_standing",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "view",
+      "note": ""
+    },
+    {
+      "table": "case_activity",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261024110000_case_workbench",
+      "note": ""
+    },
+    {
+      "table": "compliance_record",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "contract_question",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261016200000_contract_questions_and_queue",
+      "note": ""
+    },
+    {
+      "table": "invitation",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "ledger_match",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261023120000_recovery_ledger",
+      "note": ""
+    },
+    {
+      "table": "line_note",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261016120000_remittances",
+      "note": ""
+    },
+    {
+      "table": "model_budget_hold",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261031090000_model_budget_holds",
+      "note": ""
+    },
+    {
+      "table": "model_proposal",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261029190000_model_proposals",
+      "note": ""
+    },
+    {
+      "table": "mutation_request",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "prospect_request",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "rate_limit_counter",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "report_document",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "PHI (registered); registered by 20261025090000_report_documents_and_export_history",
+      "note": ""
+    },
+    {
+      "table": "restore_drill",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "global (no practice_id, no RLS)",
+      "note": ""
+    },
+    {
+      "table": "role_permission",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "global (no practice_id, no RLS)",
+      "note": ""
+    },
+    {
+      "table": "rule_release_withdrawal",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "global (no practice_id, no RLS)",
+      "note": ""
+    },
+    {
+      "table": "schema_migrations",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "global (no practice_id, no RLS)",
+      "note": ""
+    },
+    {
+      "table": "status_component",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "status_incident",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "status_incident_update",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "subscription_claim",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "support_ticket",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "terms_acceptance",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "terms_version",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "user_device",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    },
+    {
+      "table": "user_session",
+      "field": "",
+      "kind": "extra table",
+      "dictionary": "not in the data dictionary",
+      "schema": "RLS, no practice_id (organization- or user-scoped)",
+      "note": ""
+    }
+  ]
+}
