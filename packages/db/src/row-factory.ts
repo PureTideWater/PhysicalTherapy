@@ -180,6 +180,12 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
 };
 
 /**
+ * Columns the factory never writes: the database stamps them itself, and the application may not write them.
+ * A practice's deleted_at is set as its status moves to deleted (migration 20261101090000).
+ */
+const DATABASE_STAMPED: ReadonlySet<string> = new Set(['practice.deleted_at']);
+
+/**
  * Columns that must equal a column of the row another of their columns references: a case's payer is
  * its plan's payer, and a case line's service line is its priced line's. Filled after the reference.
  */
@@ -577,7 +583,7 @@ export class RowFactory {
         row.practice_id = world.practiceId;
         continue;
       }
-      if (SAME_AS[`${table}.${column.name}`] !== undefined || DERIVED_VALUES[`${table}.${column.name}`] !== undefined) {
+      if (SAME_AS[`${table}.${column.name}`] !== undefined || DERIVED_VALUES[`${table}.${column.name}`] !== undefined || DATABASE_STAMPED.has(`${table}.${column.name}`)) {
         continue;
       }
       const fixed = FIXED_VALUES[`${table}.${column.name}`];
