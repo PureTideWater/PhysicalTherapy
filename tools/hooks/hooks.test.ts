@@ -77,6 +77,11 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(other.status).toBe(2);
     expect(other.stderr).toContain('contains an X12 interchange whose sender is not SYNTHSENDER');
     expect(run(script, { tool_name: 'Edit', cwd: repositoryRoot, tool_input: { file_path: 'docs/x.md', new_string: synthetic.replace('SYNTHSENDER    ', 'OTHERSENDER    ') } }).status).toBe(2);
+    // A MultiEdit creating the same interchange is held to the same rule, edit by edit.
+    const multi = run(script, { tool_name: 'MultiEdit', cwd: repositoryRoot, tool_input: { file_path: 'docs/remit.835', edits: [{ old_string: '', new_string: synthetic.replace('SYNTHSENDER    ', 'OTHERSENDER    ') }] } });
+    expect(multi.status).toBe(2);
+    expect(multi.stderr).toContain('contains an X12 interchange whose sender is not SYNTHSENDER');
+    expect(run(script, { tool_name: 'MultiEdit', cwd: repositoryRoot, tool_input: { file_path: 'docs/remit.835', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: '', new_string: synthetic }] } }).status).toBe(0);
     expect(write('anywhere/remit.835', synthetic).status).toBe(0);
     expect(write('fixtures/synthetic/PAR-99/remit.835', synthetic).status).toBe(0);
     // Under fixtures/ the file is checked whole, so a byte-order mark before another sender is refused too.
@@ -95,6 +100,15 @@ const CASES: Readonly<Record<string, () => void>> = {
     const linked = path.join(scratch('link'), 'fixtures');
     symlinkSync(path.join(repositoryRoot, 'fixtures'), linked);
     expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: path.join(linked, 'synthetic/LED-99/a.csv'), content: 'Post Date,Paid\n06/11/2026,30.00\n' } }).status).toBe(2);
+    // A link to a fixture file, outside fixtures/: a Write follows it into the fixture, so the fixture's rule applies.
+    const fileLink = path.join(scratch('file-link'), 'link.csv');
+    symlinkSync(path.join(repositoryRoot, 'fixtures/synthetic/LED-04/posting-export.csv'), fileLink);
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: fileLink, content: 'Post Date,Paid\n06/11/2026,1.00\n' } }).status).toBe(2);
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: fileLink, content: 'Post Date,Payee ID\n06/11/2026,SYNTHSENDER\n' } }).status).toBe(0);
+    // A link to a link, relative, ends at the fixture too.
+    const chain = path.join(path.dirname(fileLink), 'chain.csv');
+    symlinkSync('link.csv', chain);
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: chain, content: 'Post Date,Paid\n06/11/2026,1.00\n' } }).status).toBe(2);
     // A spreadsheet there is refused whatever it holds; with no file path the hook has nothing to check.
     expect(write('fixtures/synthetic/LED-99/export.xlsx', 'PK').status).toBe(2);
     expect(run(script, { tool_name: 'Write', tool_input: { content: 'a,b\n' } }).status).toBe(0);
@@ -167,12 +181,32 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(call('Edit', { file_path: path.join(root, model), old_string: '________  Document', new_string: '2026-10-17  Document' }).status).toBe(2);
     expect(call('Write', { file_path: model, content: 'Regenerated.\n' }).status).toBe(2);
     expect(call('MultiEdit', { file_path: model, edits: [{ old_string: 'Generated.', new_string: 'Regenerated.' }, { old_string: '`00`', new_string: '`11`' }] }).status).toBe(2);
-    // Anything else in the document, or an edit that cannot apply, passes.
+    // Anything else in the document passes.
     expect(call('Edit', { file_path: model, old_string: 'Generated.', new_string: 'Regenerated.' }).status).toBe(0);
     expect(call('Write', { file_path: model, content: document.replace('Generated.', 'Regenerated.') }).status).toBe(0);
-    expect(call('Edit', { file_path: model, old_string: 'not in the file', new_string: 'Approved by: X' }).status).toBe(0);
-    expect(call('Edit', { file_path: model, old_string: '________', new_string: 'X' }).status).toBe(0);
     expect(call('Edit', { file_path: model, old_string: '________', new_string: 'X', replace_all: true }).status).toBe(2);
+    // An edit the hook cannot rebuild exactly is refused: Claude Code may still apply it, reading curly quotes as
+    // straight ones and CRLF as LF, so the hook would not have seen the approval change.
+    const unseen = call('Edit', { file_path: model, old_string: 'not in the file', new_string: 'Approved by: X' });
+    expect(unseen.status).toBe(2);
+    expect(unseen.stderr).toContain('cannot rebuild what this call leaves');
+    expect(call('Edit', { file_path: model, old_string: '________', new_string: 'X' }).status).toBe(2);
+    const curly = gitRepository('approval-curly', {
+      [model]: 'Approved over the SHA-256 of this text’s.\n\nApproved by: ________  Date: ________\n',
+      [list]: '{\n  "note": "the founder’s approval, in the same pull request as a document the founder signs.",\n  "approvers": []\n}\n',
+    });
+    const curlyCall = (toolName: string, toolInput: Record<string, unknown>) => run(script, { tool_name: toolName, cwd: curly, tool_input: toolInput });
+    expect(curlyCall('Edit', { file_path: model, old_string: "this text's.\n\nApproved by: ________  Date: ________", new_string: 'Approved by: Review Test  Date: 2026-10-17' }).status).toBe(2);
+    expect(curlyCall('Edit', { file_path: list, old_string: 'founder\'s approval, in the same pull request as a document the founder signs.",\n  "approvers": []', new_string: 'x", "approvers": ["Review Test"]' }).status).toBe(2);
+    expect(curlyCall('MultiEdit', { file_path: model, edits: [{ old_string: "text's", new_string: 'text' }] }).status).toBe(2);
+    const crlf = gitRepository('approval-crlf', { [model]: 'Generated.\r\n\r\nApproved by: ________  Date: ________\r\n' });
+    expect(run(script, { tool_name: 'Edit', cwd: crlf, tool_input: { file_path: model, old_string: 'Generated.\n\nApproved by: ________', new_string: 'Approved by: X' } }).status).toBe(2);
+    // A link to the document, as a directory or as the file itself, is the document.
+    symlinkSync(path.join(root, 'docs/product'), path.join(root, 'docs/plink'));
+    expect(call('Edit', { file_path: 'docs/plink/domain-model.md', old_string: 'Date: ________', new_string: 'Date: 2026-10-17' }).status).toBe(2);
+    symlinkSync(path.join(root, model), path.join(root, 'docs/model-link.md'));
+    expect(call('Write', { file_path: 'docs/model-link.md', content: 'Regenerated.\n' }).status).toBe(2);
+    expect(call('Edit', { file_path: 'docs/plink/domain-model.md', old_string: 'Generated.', new_string: 'Regenerated.' }).status).toBe(0);
     // A document that does not exist yet (PR 2 adds it) is held to the same rule.
     const empty = gitRepository('approval-new');
     expect(run(script, { tool_name: 'Write', cwd: empty, tool_input: { file_path: model, content: document } }).status).toBe(2);

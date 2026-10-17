@@ -20,29 +20,50 @@ if [ -n "$content" ]; then
       fi ;;
   esac
 fi
+# The same rule for each edit of a MultiEdit, whose new strings the line above does not read.
+edit_senders=$(printf '%s' "$input" | jq -r '.tool_input.edits[]? | (.new_string // "") | strings | select(startswith("ISA")) | .[35:50] | gsub(" "; "")') || { echo "fixture-guard: the hook input is not JSON" >&2; exit 2; }
+while IFS= read -r sender; do
+  if [ -n "$sender" ] && [ "$sender" != "SYNTHSENDER" ]; then
+    echo "Blocked: $file_path contains an X12 interchange whose sender is not SYNTHSENDER. Real remittances never enter the repository. Generate a twin with pnpm synth." >&2
+    exit 2
+  fi
+done <<< "$edit_senders"
 
 # The file's path in its own repository (a worktree is its own): "." and ".." segments taken out, symbolic links
-# in the part that exists resolved, and compared in any case, so no spelling of a fixture's path slips past.
+# resolved (the file itself, as a Write follows it, and the part of its directory that exists), and compared in any
+# case, so no spelling of a fixture's path slips past.
 [ -n "$file_path" ] || exit 0
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 root=$(cd "${cwd:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || root="${cwd:-$PWD}"
 case "$file_path" in /*) abs="$file_path" ;; *) abs="$root/$file_path" ;; esac
-parts=()
-clean=()
-IFS=/ read -r -a parts <<< "$abs"
-for part in ${parts[@]+"${parts[@]}"}; do
-  case "$part" in
-    ''|.) ;;
-    ..) [ "${#clean[@]}" -eq 0 ] || unset 'clean[${#clean[@]}-1]' ;;
-    *) clean+=("$part") ;;
-  esac
+clean_path() {
+  local parts=() clean=() part
+  IFS=/ read -r -a parts <<< "$1"
+  for part in ${parts[@]+"${parts[@]}"}; do
+    case "$part" in
+      ''|.) ;;
+      ..) [ "${#clean[@]}" -eq 0 ] || unset 'clean[${#clean[@]}-1]' ;;
+      *) clean+=("$part") ;;
+    esac
+  done
+  printf '/%s' ${clean[@]+"${clean[@]}"}
+}
+abs=$(clean_path "$abs")
+hops=0
+while :; do
+  dir=$(dirname "$abs")
+  while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
+  real=$(cd "$dir" 2>/dev/null && pwd -P) || real="$dir"
+  tail=${abs#"$dir"}
+  abs="${real%/}/${tail#/}"
+  [ -L "$abs" ] && [ "$hops" -lt 40 ] || break
+  target=$(readlink "$abs") || { echo "fixture-guard: could not read the link $file_path, so it is refused" >&2; exit 2; }
+  case "$target" in /*) ;; *) target="$(dirname "$abs")/$target" ;; esac
+  abs=$(clean_path "$target")
+  hops=$((hops + 1))
 done
-abs=$(printf '/%s' ${clean[@]+"${clean[@]}"})
-dir=$(dirname "$abs")
-while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
-real=$(cd "$dir" 2>/dev/null && pwd -P) || real="$dir"
-tail=${abs#"$dir"}
-abs="${real%/}/${tail#/}"
+real=$(dirname "$abs")
+while [ ! -d "$real" ]; do real=$(dirname "$real"); done
 own=$(cd "$real" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || own="$root"
 rel=${abs#"$own"/}
 lower=$(printf '%s' "$rel" | tr '[:upper:]' '[:lower:]')
