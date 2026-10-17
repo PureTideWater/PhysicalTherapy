@@ -201,6 +201,8 @@ export const CONTROLS: readonly Control[] = [
     evidence: [
       { kind: 'ci_job', workflow: CI, step: 'gitleaks/gitleaks-action@v2', what: 'the secret scan on every pull request' },
       { kind: 'cdk_assertion', file: 'infra/test/database.test.ts', test: 'rotates the owner login by itself' },
+      { kind: 'cdk_assertion', file: 'infra/test/encryption.test.ts', test: 'rotates every 365 days' },
+      { kind: 'runbook', file: 'docs/runbooks/key-rotation.md' },
     ],
   },
   {
@@ -214,6 +216,7 @@ export const CONTROLS: readonly Control[] = [
       { kind: 'record', record: 'restore_drill', withinDays: 35, what: 'a passing restore drill on staging or production, its row counts and catalog test on the copy' },
       { kind: 'database_test', file: 'apps/worker/src/platform/restore-drill.db.test.ts', test: 'restores the source, passes the row counts and the catalog test on the copy, records the evidence and destroys the copy' },
       { kind: 'cdk_assertion', file: 'infra/test/database.test.ts', test: 'keeps point-in-time recovery and daily snapshots for 35 days' },
+      { kind: 'runbook', file: 'docs/runbooks/restore-drill.md' },
       { kind: 'policy', policy: 'data-retention' },
     ],
   },
@@ -270,6 +273,7 @@ export const CONTROLS: readonly Control[] = [
       { kind: 'external', system: 'github', what: 'branch protection on main: required review and the ci workflow’s checks, collected by the compliance platform' },
       { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'migrations applied before the suite on every pull request' },
       { kind: 'database_test', file: 'packages/db/src/migrate.db.test.ts', test: 'migrate --dry-run' },
+      { kind: 'runbook', file: 'docs/runbooks/deploy-and-rollback.md' },
       { kind: 'policy', policy: 'change-management' },
     ],
   },
