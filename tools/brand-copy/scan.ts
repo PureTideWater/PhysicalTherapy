@@ -9,8 +9,9 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
  * The product-copy lint (Change Order 001, CO-11; docs/brand/BRAND.md, sections 1 and 7; .claude/rules/brand.md).
  * It reads the words a person sees, never the code around them: every string literal, template literal and
  * JSX text in the web app's source and in the report templates (the audit report, the ROI statement, the
- * coverage report, the monthly summary and the frame and packet templates they print in), parsed with the
- * TypeScript compiler, so comments, identifiers and object keys are never read. It fails on:
+ * coverage report, the monthly summary and the frame and packet templates they print in) and the stage labels
+ * they show, parsed with the TypeScript compiler, so comments, identifiers and object keys are never read. It
+ * fails on:
  *
  * - "ProofPack" or "proof pack", in any case (the word is packet);
  * - the word AI standing alone, and "intelligence" (product copy is neither);
@@ -33,8 +34,11 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
 /** The directories read, relative to the repository root. */
 export const COPY_ROOTS = ['apps/web/src', 'apps/worker/src/report'] as const;
 
-/** The templates outside apps/worker/src/report that print in its frame: the ROI statement and the packet. */
-export const COPY_FILES = ['apps/worker/src/reconcile/statement-html.ts', 'apps/worker/src/packets/html.ts'] as const;
+/**
+ * The copy outside those directories that they show: the ROI statement and the packet, which print in the report
+ * frame, and the five stage labels every screen and report names a stage with (STAGE_LABELS).
+ */
+export const COPY_FILES = ['apps/worker/src/reconcile/statement-html.ts', 'apps/worker/src/packets/html.ts', 'packages/triage/src/headline.ts'] as const;
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx']);
 

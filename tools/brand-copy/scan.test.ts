@@ -188,7 +188,7 @@ describe('the copy lint: what it reads', () => {
     writeFileSync(path.join(fixture, file), text);
   };
 
-  it('reads the web app’s source and the report templates, never docs, tests, test support or other code', () => {
+  it('reads the web app’s source, the report templates and the stage labels, never docs, tests, test support or other code', () => {
     const forbidden = "export const words = 'The ProofPack, by AI';\n";
     write('apps/web/src/app/page.tsx', forbidden);
     write('apps/worker/src/report/html.ts', forbidden);
@@ -200,8 +200,9 @@ describe('the copy lint: what it reads', () => {
     write('apps/web/e2e/journey.spec.ts', forbidden);
     write('apps/web/src/types.d.ts', forbidden);
     write('apps/worker/src/reconcile/ledger.ts', forbidden);
+    write('packages/triage/src/stages.ts', forbidden);
     write('packages/triage/src/headline.ts', forbidden);
-    expect(copyFiles(fixture)).toEqual(['apps/web/src/app/page.tsx', 'apps/worker/src/reconcile/statement-html.ts', 'apps/worker/src/report/html.ts']);
+    expect(copyFiles(fixture)).toEqual(['apps/web/src/app/page.tsx', 'apps/worker/src/reconcile/statement-html.ts', 'apps/worker/src/report/html.ts', 'packages/triage/src/headline.ts']);
     expect(copyViolations(fixture).map((finding) => `${finding.file} ${finding.rule}`)).toEqual([
       'apps/web/src/app/page.tsx proof-pack',
       'apps/web/src/app/page.tsx ai',
@@ -209,6 +210,8 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/reconcile/statement-html.ts ai',
       'apps/worker/src/report/html.ts proof-pack',
       'apps/worker/src/report/html.ts ai',
+      'packages/triage/src/headline.ts proof-pack',
+      'packages/triage/src/headline.ts ai',
     ]);
   });
 
@@ -220,6 +223,7 @@ describe('the copy lint: what it reads', () => {
     expect(files).toContain('apps/worker/src/report/documents.ts');
     expect(files).toContain('apps/worker/src/reconcile/statement-html.ts');
     expect(files).toContain('apps/worker/src/packets/html.ts');
+    expect(files).toContain('packages/triage/src/headline.ts');
     expect(files.some((file) => /\.(test|spec)\.tsx?$/.test(file) || file.includes('/test-support/'))).toBe(false);
   }, 60_000);
 
