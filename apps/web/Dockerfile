@@ -20,6 +20,14 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 WORKDIR /app
+# Debian's security updates published since the base image, and no package manager left in the running
+# image: the image scan (supply-chain.yml) fails on any HIGH or CRITICAL finding that has a fix, and the
+# npm, npx and corepack the base image bundles are never run by the server.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
 # Amazon RDS's certificate bundle: every database connection verifies the server (sslmode=verify-full)
