@@ -17,8 +17,9 @@ import { startLocalWorker } from './worker';
  * flagged as investigatory); and the billing manager writes the case's first packet version. Then, as the billing
  * manager, no page scrolls sideways (document.documentElement.scrollWidth is 1280): the contract version's rate record
  * fields, the packet's line schedule and the claims table (the billing manager's, with its PHI columns) each fit their
- * card with their last column inside it; each table's headers stand apart; a trace's step reads NCCI PTP; and a run
- * that priced every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every
+ * card with their last column inside it; the pricing runs' compare form fits its card; each table's headers stand apart
+ * (the uploads, an upload, a contract and the coverage report's too); a trace's step reads NCCI PTP; and a run that
+ * priced every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every
  * screen that fails. Synthetic data only.
  */
 
@@ -144,17 +145,19 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await local.close();
   }
 
-  const { caseId, versionId, marchRun, aprilRun, remittanceId } = await withDatabase(async (client) => {
+  const { caseId, versionId, contractId, documentId, marchRun, aprilRun, remittanceId } = await withDatabase(async (client) => {
     const one = async (sql: string) => (await client.query<{ id: string }>(sql, [practiceId])).rows[0]?.id ?? '';
     return {
       caseId: await one('SELECT case_id AS id FROM case_line WHERE practice_id = $1 LIMIT 1'),
       versionId: await one("SELECT id FROM contract_version WHERE practice_id = $1 AND status = 'signed_off' ORDER BY created_at LIMIT 1"),
+      contractId: await one("SELECT contract_id AS id FROM contract_version WHERE practice_id = $1 AND status = 'signed_off' ORDER BY created_at LIMIT 1"),
+      documentId: await one("SELECT d.id FROM source_document d JOIN remittance r ON r.source_document_id = d.id WHERE d.practice_id = $1 AND r.trn02 = 'SYNEFTCAS08001' LIMIT 1"),
       marchRun: await one("SELECT id FROM pricing_run WHERE practice_id = $1 AND period_from = '2026-03-01' AND status = 'complete' ORDER BY created_at LIMIT 1"),
       aprilRun: await one("SELECT id FROM pricing_run WHERE practice_id = $1 AND period_from = '2026-04-01' AND status = 'complete' ORDER BY created_at LIMIT 1"),
       remittanceId: await one("SELECT r.id FROM remittance r WHERE r.practice_id = $1 AND r.trn02 = 'SYNEFTCAS08001' LIMIT 1"),
     };
   });
-  for (const found of [caseId, versionId, marchRun, aprilRun, remittanceId]) {
+  for (const found of [caseId, versionId, contractId, documentId, marchRun, aprilRun, remittanceId]) {
     expect(found).not.toBe('');
   }
 
@@ -222,6 +225,35 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expectHeadersApart(page.getByRole('table', { name: 'Unpriced reasons' }), 'the April run’s unpriced reasons');
     await expect(page.getByRole('table', { name: 'Unpriced reasons' }).locator('[data-reason="NO_AGREEMENT"]')).toBeVisible();
     await expectNoSidewaysScroll(page, 'the April run');
+  });
+
+  await test.step('the pricing runs: comparing the March and April runs, each select as wide as its column, not its longest run’s name', async () => {
+    await page.goto(at('/pricing-runs'));
+    const compare = page.getByRole('region', { name: 'Compare two runs' });
+    await expect(compare.getByLabel('Second run')).toBeVisible();
+    await expectNoSidewaysScroll(page, 'the pricing runs');
+    const past = await compare.evaluate((card) => {
+      const right = card.getBoundingClientRect().right;
+      return [...card.querySelectorAll('select, button')].filter((control) => control.getBoundingClientRect().right > right + 0.5).length;
+    });
+    expect.soft(past, 'controls past the compare card').toBe(0);
+  });
+
+  await test.step('the uploads, an upload, a contract and the coverage report: every header stands apart from the next (C2)', async () => {
+    await page.goto(at('/uploads'));
+    await expectHeadersApart(page.getByRole('region', { name: 'Receipts' }).getByRole('table'), 'the uploads’ receipts');
+    await expectNoSidewaysScroll(page, 'the uploads');
+    await page.goto(at(`/uploads/${documentId}`));
+    await expectHeadersApart(page.getByRole('table', { name: 'Transaction sets' }), 'the upload’s transaction sets');
+    await expectNoSidewaysScroll(page, 'the upload');
+    await page.goto(at(`/contracts/${contractId}`));
+    await expectHeadersApart(page.getByRole('table', { name: 'Versions' }), 'the contract’s versions');
+    await expectNoSidewaysScroll(page, 'the contract');
+    await page.goto(at('/coverage'));
+    await page.getByRole('region', { name: 'Coverage report' }).getByRole('button', { name: 'Generate the coverage report' }).click();
+    await expect(page).toHaveURL(/\/reports\/documents\/[0-9a-f-]{36}$/);
+    await expectHeadersApart(page.getByRole('table', { name: 'Unpriced reasons and their remedies' }), 'the coverage report’s unpriced reasons');
+    await expectNoSidewaysScroll(page, 'the coverage report');
   });
 
   await test.step('a line’s trace names its code-pair step NCCI PTP, never “Ncci ptp” (C1)', async () => {

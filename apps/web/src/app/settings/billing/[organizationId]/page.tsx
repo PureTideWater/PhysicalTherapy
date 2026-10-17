@@ -140,18 +140,18 @@ export default async function OrganizationBillingPage(props: { readonly params: 
             <table className="w-full text-left text-sm" aria-label="Invoices">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Invoice</th>
-                  <th className="py-1 font-medium">For</th>
-                  <th className="py-1 font-medium">Issued</th>
-                  <th className="py-1 font-medium">Amount</th>
-                  <th className="py-1 font-medium">Status</th>
+                  <th className="py-1 pr-3 font-medium">Invoice</th>
+                  <th className="py-1 pr-3 font-medium">For</th>
+                  <th className="py-1 pr-3 font-medium">Issued</th>
+                  <th className="py-1 pr-3 font-medium">Amount</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
                   <th className="py-1 font-medium">Paid</th>
                 </tr>
               </thead>
               <tbody>
                 {billing.invoices.map((invoice) => (
                   <tr key={invoice.id} className="border-t" data-invoice-status={invoice.status}>
-                    <td className="py-1">
+                    <td className="py-1 pr-3">
                       {invoice.hostedInvoiceUrl === null ? (
                         (invoice.number ?? '—')
                       ) : (
@@ -160,10 +160,10 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                         </a>
                       )}
                     </td>
-                    <td className="py-1">{KIND[invoice.kind] ?? invoice.kind}</td>
-                    <td className="py-1">{utcDate(invoice.createdAt)}</td>
-                    <td className="py-1 font-mono tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
-                    <td className="py-1">
+                    <td className="py-1 pr-3">{KIND[invoice.kind] ?? invoice.kind}</td>
+                    <td className="py-1 pr-3">{utcDate(invoice.createdAt)}</td>
+                    <td className="py-1 pr-3 font-mono tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
+                    <td className="py-1 pr-3">
                       <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
                       {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}
                     </td>

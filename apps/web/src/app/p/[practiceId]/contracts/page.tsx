@@ -91,13 +91,13 @@ export default async function ContractsPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Contracts">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Payer</th>
-                  <th className="py-1 font-medium">Contract</th>
-                  <th className="py-1 font-medium">Plans</th>
-                  <th className="py-1 font-medium">Version</th>
-                  <th className="py-1 font-medium">Effective</th>
-                  <th className="py-1 font-medium">Method</th>
-                  <th className="py-1 font-medium">Status</th>
+                  <th className="py-1 pr-3 font-medium">Payer</th>
+                  <th className="py-1 pr-3 font-medium">Contract</th>
+                  <th className="py-1 pr-3 font-medium">Plans</th>
+                  <th className="py-1 pr-3 font-medium">Version</th>
+                  <th className="py-1 pr-3 font-medium">Effective</th>
+                  <th className="py-1 pr-3 font-medium">Method</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
                   <th className="py-1 font-medium">Coverage share</th>
                 </tr>
               </thead>
@@ -148,9 +148,9 @@ export default async function ContractsPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Calendar">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Date</th>
-                <th className="py-1 font-medium">What</th>
-                <th className="py-1 font-medium">Contract</th>
+                <th className="py-1 pr-3 font-medium">Date</th>
+                <th className="py-1 pr-3 font-medium">What</th>
+                <th className="py-1 pr-3 font-medium">Contract</th>
                 <th className="py-1 font-medium">Note</th>
               </tr>
             </thead>

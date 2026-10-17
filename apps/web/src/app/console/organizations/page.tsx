@@ -51,22 +51,22 @@ export default async function OrganizationsPage() {
         <table className="w-full text-left text-sm" aria-label="Organizations">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Name</th>
-              <th className="py-1 font-medium">Kind</th>
-              <th className="py-1 font-medium">Status</th>
+              <th className="py-1 pr-3 font-medium">Name</th>
+              <th className="py-1 pr-3 font-medium">Kind</th>
+              <th className="py-1 pr-3 font-medium">Status</th>
               <th className="py-1 font-medium">Created</th>
             </tr>
           </thead>
           <tbody>
             {organizations.map((organization) => (
               <tr key={organization.id} className="border-t">
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   <Link className="underline" href={`/console/organizations/${organization.id}`}>
                     {organization.name}
                   </Link>
                 </td>
-                <td className="py-1">{KIND_NAMES[organization.kind] ?? organization.kind}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3">{KIND_NAMES[organization.kind] ?? organization.kind}</td>
+                <td className="py-1 pr-3">
                   <Badge variant="outline">{organization.status}</Badge>
                 </td>
                 <td className="py-1">{utcDate(organization.createdAt)}</td>
