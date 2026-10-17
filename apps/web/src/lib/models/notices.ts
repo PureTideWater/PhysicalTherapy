@@ -5,7 +5,7 @@
  */
 
 /** Why a model call proposed nothing. */
-export const MODEL_PROBLEMS = ['off', 'budget', 'failed', 'refused', 'invalid_output', 'unavailable'] as const;
+export const MODEL_PROBLEMS = ['off', 'budget', 'failed', 'refused', 'invalid_output', 'misstated', 'unavailable'] as const;
 export type ModelProblem = (typeof MODEL_PROBLEMS)[number];
 
 export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
@@ -14,6 +14,7 @@ export const MODEL_PROBLEM_TEXT: Readonly<Record<ModelProblem, string>> = {
   failed: 'The model did not answer (it timed out, was busy or refused); nothing was proposed. Enter it by hand, or try again.',
   refused: 'The input cannot be sent to a model as it is; enter it by hand.',
   invalid_output: 'The model’s answer did not follow its schema; nothing was proposed. Enter it by hand.',
+  misstated: 'The model’s narrative stated a figure in the wrong place (one amount or count as another); nothing was written. Draft it by hand, or ask again.',
   unavailable: 'No model is configured for this environment; enter it by hand.',
 };
 

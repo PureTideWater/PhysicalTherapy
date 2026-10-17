@@ -7,7 +7,7 @@ import type { ModelProvider } from '../src/provider';
 import { LocalDeterministicProvider } from '../src/providers/local';
 import { MemoryModelCallStore } from '../src/store';
 import { BASELINE_PATH, type Baseline, gate, readBaseline } from './baseline';
-import { addFigure, dropCitation, dropFact, dropField, misquote, wrongValue } from './faults';
+import { addFigure, dropCitation, dropFact, dropField, misquote, swapAmounts, swapCounts, wrongValue } from './faults';
 import { type EvaluationReport, runEvaluation } from './harness';
 import { registerReferences } from './reference';
 import { precision, recall } from './score';
@@ -192,6 +192,32 @@ describe('the gate fails on injected faults', () => {
     expect(gate(scored, baseline).passed).toBe(false);
     expect(scored.narratives?.failures).toEqual([expect.objectContaining({ problems: ['fact_missing'], mismatches: [] })]);
     expect(scored.narratives?.failures[0]?.missing).toContain('shortfall');
+  }, 60_000);
+
+  it('a narrative that swaps what the contract requires and what the remittances show fails: every figure is an input, but in the wrong role', async () => {
+    const scored = await narrativesOnly(swapAmounts(reference, { calls: new Set([0, 1, 2]) }));
+    const result = gate(scored, baseline);
+    expect(result.passed).toBe(false);
+    // Each of the three reference styles, swapped.
+    expect(result.problems).toEqual([{ code: 'narrative_failures', count: 3, cases: narratives.cases.slice(0, 3).map((item) => item.id) }]);
+    for (const failure of scored.narratives?.failures ?? []) {
+      expect(failure, failure.id).toMatchObject({ problems: ['verifier_failed'], mismatches: ['figure_in_wrong_role'] });
+    }
+  }, 60_000);
+
+  it('a narrative that swaps the line count with the claim or patient count fails the same way', async () => {
+    // Cases whose line count differs from both other counts, so the swap changes the text: one of each style.
+    const differing = narratives.cases.flatMap((item, index) => {
+      const { pattern } = item.input.content;
+      return pattern.lines !== pattern.claims && pattern.lines !== pattern.patients ? [index] : [];
+    });
+    const picked = [0, 1, 2].map((style) => differing.find((index) => index % 3 === style) ?? -1);
+    expect(picked.every((index) => index >= 0)).toBe(true);
+    const scored = await narrativesOnly(swapCounts(reference, { calls: new Set(picked) }));
+    expect(gate(scored, baseline).passed).toBe(false);
+    expect(scored.narratives?.failures.map((failure) => [failure.id, failure.problems, failure.mismatches])).toEqual(
+      [...picked].sort((a, b) => a - b).map((index) => [narratives.cases[index]?.id, ['verifier_failed'], ['figure_in_wrong_role']]),
+    );
   }, 60_000);
 
   it('a changed set, or a provider with no recorded baseline, fails until a person records one', () => {

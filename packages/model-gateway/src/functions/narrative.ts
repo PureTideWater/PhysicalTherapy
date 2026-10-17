@@ -2,6 +2,7 @@ import { type PacketContent, type VerifierReport, dollars, identifierForms, narr
 import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
+import { type RoleMismatch, roleMismatches } from './narrative-roles';
 import { jsonSha256 } from '../hash';
 import { PROMPTS } from '../prompts';
 import type { PurposeSpec, Verified } from '../spec';
@@ -19,7 +20,10 @@ import { frameFacts } from '../untrusted';
  * Out: paragraphs with a citation marker on every sentence. The verifier is the packets verifier
  * itself (@tp/packets verifyNarrative): any number, date, code or count not among the version's inputs,
  * a sentence without a citation, a marker naming no source, a hidden character, or an identifier of
- * the case fails it, and a version whose narrative fails it cannot be approved (CAS-08).
+ * the case fails it, and a version whose narrative fails it cannot be approved (CAS-08). On top of it,
+ * every amount and count is held to the role its own words give it (./narrative-roles.ts): a
+ * narrative that states the payer's amount as the contract's, or the claim count as the line count,
+ * fails, and the packet builder writes no version from it.
  */
 
 export const narrativeOutput = z.strictObject({ paragraphs: z.array(z.string().min(1).max(4000)).min(1).max(20) });
@@ -40,6 +44,11 @@ export interface NarrativeProposal {
   readonly narrative: string;
   /** The packets verifier's report, as a version would store it. */
   readonly report: VerifierReport;
+  /**
+   * Figures the packets verifier passed but whose own words give them a role whose inputs do not hold
+   * them (./narrative-roles.ts): a model's draft with any is not written as a version.
+   */
+  readonly roles: readonly RoleMismatch[];
 }
 
 const money = (cents: string | null) => (cents === null ? null : dollars(cents));
@@ -106,7 +115,8 @@ export const narrativeSpec: PurposeSpec<NarrativeInput, NarrativeOutput, Narrati
   verify(input, output): Verified<NarrativeProposal> {
     const narrative = output.paragraphs.join('\n\n');
     const report = verifyNarrative(narrative, narrativeFacts(input.content), input.identifiers);
+    const roles = roleMismatches(narrative, input.content);
     const markers = [...new Set([...narrative.matchAll(/\[(\d{1,4})\]/g)].map((match) => Number.parseInt(match[1] ?? '', 10)))].filter((marker) => marker >= 1).sort((a, b) => a - b);
-    return { proposal: { narrative, report }, passed: report.passed, citations: markers.map((marker) => ({ marker })) };
+    return { proposal: { narrative, report, roles }, passed: report.passed && roles.length === 0, citations: markers.map((marker) => ({ marker })) };
   },
 };

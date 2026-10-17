@@ -9,7 +9,7 @@ import { readDatabaseUrl, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { LocalDeterministicProvider, type ModelProvider, type ModelPurpose, type ModelRequest, type ModelResponse, PROMPTS, type PurposeInputs, modelFor, requestFor, setFeatureFlag } from '@tp/model-gateway';
 import { createLogger } from '@tp/observability';
-import { draftNarrative } from '@tp/packets';
+import { dollars, draftNarrative } from '@tp/packets';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetDraftInputs } from '@tp/worker/packets';
 import type { Practice } from '@tp/worker/testing';
@@ -508,6 +508,23 @@ describe('the packet builder’s narrative draft (MOD-03)', () => {
     expect(await callOf(practice.practiceId, second?.model_call_id ?? '')).toMatchObject({ reviewer_decision: 'accepted_with_changes', reviewer_changed_fields: ['narrative'] });
     // No narrative becomes an evaluation example.
     expect(await rows(practice.practiceId, 'SELECT 1 FROM eval_example WHERE practice_id = $1', [practice.practiceId])).toEqual([]);
+
+    // A narrative that swaps what the contract requires and what the remittances show passes the packets verifier but
+    // states the dispute backwards: the gateway's role check fails it, and no version is written from it.
+    const swappedInputs = await inputs();
+    const { pattern } = swappedInputs.content;
+    const [expectedText, observedText] = [dollars(pattern.expected_cents), dollars(pattern.observed_cents)];
+    const swapped = draftNarrative(swappedInputs.content).replaceAll(expectedText, '\u0000').replaceAll(observedText, expectedText).replaceAll('\u0000', observedText);
+    expect(swapped).not.toBe(draftNarrative(swappedInputs.content));
+    answer('draftPacketNarrative', swappedInputs, { paragraphs: [swapped] });
+    expect(redirectOf(await call(draftNarrativeAction, drafter, P, { caseId, basedOnVersionId: third?.id }))).toBe(`/p/${practice.practiceId}/cases/${caseId}/packet?model=misstated`);
+    expect(ok(await call(packetPage, drafter, { ...P, caseId })).builder.version).toMatchObject({ id: third?.id, versionNo: 3 });
+    const [misstated] = await rows<{ verifier_passed: boolean; n: string }>(
+      practice.practiceId,
+      "SELECT verifier_passed, (SELECT count(*) FROM model_proposal p WHERE p.model_call_id = c.id)::text AS n FROM model_call c WHERE c.practice_id = $1 AND c.purpose = 'draftPacketNarrative' ORDER BY c.created_at DESC LIMIT 1",
+      [practice.practiceId],
+    );
+    expect(misstated).toEqual({ verifier_passed: false, n: '0' });
 
     // The budget: a practice that has spent it today is refused before anything is sent, and the screen says so (MOD-05).
     await setFeatureFlag(w.app, platformAdmin, { key: 'model.daily_budget_cents', scope: 'practice', scopeId: practice.practiceId, value: '0' });

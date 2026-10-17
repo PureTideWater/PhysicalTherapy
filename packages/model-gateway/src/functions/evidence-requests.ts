@@ -1,5 +1,5 @@
 import { QUESTION_TOPICS } from '@tp/db/runtime';
-import { EVIDENCE_GAP_CODES } from '@tp/packets';
+import { EVIDENCE_GAP_CODES, canonicalNumber, readableText, scanText } from '@tp/packets';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import { z } from 'zod';
 
@@ -17,8 +17,12 @@ import { frameFacts } from '../untrusted';
  * method), and a packet's evidence gaps (@tp/packets). Counts, codes and payer names only: no patient,
  * claim or line identifier is ever an input.
  *
- * The verifier: every item maps to a known reason code, and to one of the reasons the input gave; an
- * item that does not is rejected and left out of the checklist.
+ * The verifier: every item maps to a known reason code, and to one of the reasons the input gave; and
+ * its customer-facing text (the document and the why, read by the packets verifier's own scanner)
+ * states no figure but its gap's own: a procedure code the gap names and the gap's count. Any amount,
+ * percentage, date, modifier, other number, identifier or another code is the model's own (CLAUDE.md
+ * rule 1: a model never produces a dollar amount), and so is a payer of the input that is not its gap's.
+ * An item that fails is rejected and left out of the checklist.
  */
 
 export const KNOWN_REASON_CODES: readonly string[] = [...UNPRICED_REASONS, ...QUESTION_TOPICS.map((topic) => `contract_${topic}`), ...EVIDENCE_GAP_CODES];
@@ -46,7 +50,7 @@ export interface EvidenceRequestsInput {
   readonly gaps: readonly EvidenceGap[];
 }
 
-export const EVIDENCE_ITEM_PROBLEMS = ['unknown_reason', 'reason_not_in_input'] as const;
+export const EVIDENCE_ITEM_PROBLEMS = ['unknown_reason', 'reason_not_in_input', 'figure_not_in_gap', 'payer_not_in_gap'] as const;
 export type EvidenceItemProblem = (typeof EVIDENCE_ITEM_PROBLEMS)[number];
 
 export interface EvidenceRequest {
@@ -64,8 +68,24 @@ export interface EvidenceRequestsProposal {
 
 const CODE = /^[0-9A-Z]{5}$/;
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Whether every figure of the text is a code the item's gaps name or one of their counts. */
+function onlyGapFigures(text: string, gaps: readonly EvidenceGap[]): boolean {
+  const codes = new Set(gaps.flatMap((gap) => gap.codes));
+  const counts = new Set(gaps.map((gap) => canonicalNumber(String(gap.count))));
+  return scanText(readableText(text).text).figures.every((figure) => (figure.kind === 'code' && codes.has(figure.value)) || (figure.kind === 'number' && counts.has(figure.value)));
+}
+
+/** Whether the text names a payer of the input that none of the item's gaps is about. */
+function namesAnotherPayer(text: string, gaps: readonly EvidenceGap[], payers: readonly string[]): boolean {
+  const own = new Set(gaps.flatMap((gap) => (gap.payer === null ? [] : [gap.payer.toUpperCase()])));
+  return payers.some((payer) => !own.has(payer.toUpperCase()) && new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(payer).replace(/\s+/g, '\\s+')}(?![\\p{L}\\p{N}])`, 'iu').test(text.normalize('NFKC')));
+}
+
 export function verifyEvidenceRequests(input: EvidenceRequestsInput, output: EvidenceRequestsOutput): Verified<EvidenceRequestsProposal> {
   const given = new Set(input.gaps.map((gap) => gap.reason));
+  const payers = [...new Set(input.gaps.flatMap((gap) => (gap.payer === null || gap.payer.trim() === '' ? [] : [gap.payer.trim()])))];
   const items: EvidenceRequest[] = [];
   const rejected: { index: number; problems: EvidenceItemProblem[] }[] = [];
   output.items.forEach((item, index) => {
@@ -74,6 +94,15 @@ export function verifyEvidenceRequests(input: EvidenceRequestsInput, output: Evi
       problems.push('unknown_reason');
     } else if (!given.has(item.reason)) {
       problems.push('reason_not_in_input');
+    } else {
+      const gaps = input.gaps.filter((gap) => gap.reason === item.reason);
+      const text = `${item.document}\n${item.why}`;
+      if (!onlyGapFigures(text, gaps)) {
+        problems.push('figure_not_in_gap');
+      }
+      if (namesAnotherPayer(text, gaps, payers)) {
+        problems.push('payer_not_in_gap');
+      }
     }
     if (problems.length === 0) {
       items.push({ reason: item.reason, document: item.document.trim(), why: item.why.trim() });

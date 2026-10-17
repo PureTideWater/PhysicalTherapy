@@ -44,6 +44,34 @@ describe('the verifier', () => {
   });
 });
 
+describe('the customer-facing text states only its gap’s own figures and payer (CLAUDE.md rule 1)', () => {
+  const gaps = { gaps: [{ reason: 'NO_RATE_FOR_CODE', count: 3, payer: 'SYNTHETIC PAYER Q', codes: ['97110'] }, { reason: 'contract_missing_pages', count: 1, payer: 'SYNTHETIC PAYER R', codes: [] }] };
+  const check = (document: string, why: string, reason = 'NO_RATE_FOR_CODE') => verifyEvidenceRequests(gaps, { items: [{ reason, document, why }] }).proposal;
+
+  it('keeps an item naming its gap’s codes, count and payer', () => {
+    expect(check('The fee schedule page that lists 97110 for SYNTHETIC PAYER Q', 'It lets the practice check the 3 lines billed with 97110.').items).toHaveLength(1);
+    expect(check('The fee schedule page that lists 97110', 'It covers the three lines billed with it.').items).toHaveLength(1);
+    expect(check('Every page of the signed agreement', 'Pages are missing from the copy on file.', 'contract_missing_pages').items).toHaveLength(1);
+  });
+
+  it.each([
+    ['another gap’s code', 'The fee schedule page for 97530 and 97140', 'So the lines can be priced.'],
+    ['an amount', 'The fee schedule page for 97110', 'It will recover the $4,812.00 the payer owes.'],
+    ['another count', 'The fee schedule page for 97110', 'It covers 40 lines.'],
+    ['a percentage', 'The fee schedule page for 97110', 'The contract pays 110% of Medicare.'],
+    ['a date', 'The fee schedule effective January 1, 2026', 'So the 3 lines can be priced.'],
+    ['a modifier', 'The fee schedule page for 97110 with modifier GP', 'So the 3 lines can be priced.'],
+    ['an identifier', 'The fee schedule for plan SYN-4471', 'So the 3 lines can be priced.'],
+  ])('rejects an item whose text holds %s', (_what, document, why) => {
+    expect(check(document, why)).toEqual({ items: [], rejected: [{ index: 0, problems: ['figure_not_in_gap'] }] });
+  });
+
+  it('rejects an item naming a payer of the input its gap is not about', () => {
+    expect(check('The fee schedule page for 97110 from SYNTHETIC PAYER R', 'So the 3 lines can be priced.')).toEqual({ items: [], rejected: [{ index: 0, problems: ['payer_not_in_gap'] }] });
+    expect(check('The schedule for 97110 from SYNTHETIC PAYER R, at $40.00', 'So the 3 lines can be priced.').rejected).toEqual([{ index: 0, problems: ['figure_not_in_gap', 'payer_not_in_gap'] }]);
+  });
+});
+
 describe('preparing the call', () => {
   it('sends counts, codes and payer names as facts', () => {
     const prepared = evidenceRequestsSpec.prepare(input);

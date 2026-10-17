@@ -12,7 +12,8 @@ import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from 
  *
  * The person asks; the gateway is given the pattern statement's inputs only (the content the case's
  * next version would hold, its identifiers placeholders) and the schedule rows' own identifiers to
- * check against, never to send. Its narrative is written as a new version exactly as a person's would
+ * check against, never to send. A narrative that states a figure in the wrong role (the gateway's role
+ * check) is not written at all: the packets verifier would pass it, and it says the dispute backwards. Its narrative is written as a new version exactly as a person's would
  * be (writeVersionOnce: assembled again by code, verified by the packets verifier, a failing one stored
  * and unapprovable, CAS-08), in the person's name: the approval rules do not change (CAS-09, CAS-10).
  * The person edits it as any version; a model_proposal row ties the call to the version it wrote.
@@ -70,6 +71,11 @@ export async function draftNarrativeWithModel(scope: PracticeScope<ScopeClient>,
   }
   if (result.proposal === null) {
     return { kind: 'not_drafted', problem: 'invalid_output' };
+  }
+  // A figure the packets verifier passes but whose own words give it the wrong role (the payer's amount
+  // stated as the contract's) would make an approvable version that says the dispute backwards: none is written.
+  if (result.proposal.roles.length > 0) {
+    return { kind: 'not_drafted', problem: 'misstated' };
   }
   const written = await writeVersionOnce(scope, services, {
     practiceId: input.practiceId,

@@ -163,8 +163,11 @@ describe('narrative checks', () => {
   it('fails a call that failed, an answer off the schema, a verifier failure and a missing fact', () => {
     expect(checkNarrative(required, null, 'call_failed').problems).toEqual(['call_failed']);
     expect(checkNarrative(required, null, null).problems).toEqual(['invalid_output']);
-    expect(checkNarrative(required, { narrative: 'The 3 lines fell short by $90.00 at 112.5% [3].', report: report(false) }, null)).toEqual({ problems: ['verifier_failed'], mismatches: ['figure_not_in_input'], missing: [] });
-    expect(checkNarrative(required, { narrative: 'The lines fell short [3].', report: report(true) }, null).problems).toEqual(['fact_missing']);
+    expect(checkNarrative(required, { narrative: 'The 3 lines fell short by $90.00 at 112.5% [3].', report: report(false), roles: [] }, null)).toEqual({ problems: ['verifier_failed'], mismatches: ['figure_not_in_input'], missing: [] });
+    expect(checkNarrative(required, { narrative: 'The lines fell short [3].', report: report(true), roles: [] }, null).problems).toEqual(['fact_missing']);
+    // A figure in the wrong role fails it though the packets verifier passed it.
+    const swapped = { code: 'figure_in_wrong_role' as const, role: 'lines' as const, kind: 'number' as const, sentence: 0, start: 4, end: 5 };
+    expect(checkNarrative(required, { narrative: 'The 3 lines fell short by $90.00 at 112.5% [3].', report: report(true), roles: [swapped] }, null)).toEqual({ problems: ['verifier_failed'], mismatches: ['figure_in_wrong_role'], missing: [] });
   });
 });
 

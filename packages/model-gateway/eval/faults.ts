@@ -1,3 +1,5 @@
+import { type Figure, scanText } from '@tp/packets';
+
 import type { CompleteOptions, ModelProvider, ModelRequest, ModelResponse, ProviderKind } from '../src/provider';
 import { PROMPTS } from '../src/prompts';
 
@@ -13,7 +15,10 @@ import { PROMPTS } from '../src/prompts';
  * - addFigure: adds a sentence to a narrative with a figure that is not among the inputs (the packets
  *   verifier fails it);
  * - dropCitation: removes the citation markers from a narrative's last sentence;
- * - dropFact: rewrites a narrative without its shortfall, which still verifies but misses a required fact.
+ * - dropFact: rewrites a narrative without its shortfall, which still verifies but misses a required fact;
+ * - swapAmounts: swaps what the contract requires and what the remittances show, so the narrative states
+ *   the dispute backwards with every figure still among the inputs (the role check fails it);
+ * - swapCounts: swaps the line count and the claim (or patient) count the same way.
  */
 
 type Transform = (output: unknown, request: ModelRequest) => unknown;
@@ -141,6 +146,65 @@ export function dropFact(inner: ModelProvider, options: FaultOptions = {}): Mode
       const sentences = paragraphs(output).join(' ').split(/(?<=\])\.\s+|(?<=\]\.)\s+/);
       const kept = sentences.filter((sentence) => !/shortfall|underpaid|difference owed/.test(sentence));
       return { paragraphs: [kept.join(' ')] };
+    },
+    options,
+  );
+}
+
+/** The pattern-level facts the gateway framed for the narrative (the <facts> element of the request). */
+function patternFacts(request: ModelRequest): { readonly expected: string; readonly observed: string; readonly lines: number; readonly claims: number; readonly patients: number } {
+  const json = /<facts kind="pattern_statement">\n([\s\S]*)\n<\/facts>/.exec(request.user)?.[1] ?? '{}';
+  const { pattern } = JSON.parse(json.replaceAll('<\\/', '</')) as { pattern: { expected: string; observed: string; lines: number; claims: number; patients: number } };
+  const cents = (dollars: string) => scanText(dollars).figures[0]?.value ?? '';
+  return { expected: cents(pattern.expected), observed: cents(pattern.observed), lines: pattern.lines, claims: pattern.claims, patients: pattern.patients };
+}
+
+/** The text with the spans of two sets of figures exchanged (each span takes the other set's first text). */
+function exchange(text: string, a: (figure: Figure) => boolean, b: (figure: Figure) => boolean): string {
+  const figures = scanText(text).figures;
+  const first = figures.find(a);
+  const second = figures.find(b);
+  if (first === undefined || second === undefined) {
+    return text;
+  }
+  const aText = text.slice(first.start, first.end);
+  const bText = text.slice(second.start, second.end);
+  let swapped = '';
+  let at = 0;
+  for (const figure of figures) {
+    const replacement = a(figure) ? bText : b(figure) ? aText : null;
+    if (replacement !== null) {
+      swapped += text.slice(at, figure.start) + replacement;
+      at = figure.end;
+    }
+  }
+  return swapped + text.slice(at);
+}
+
+export function swapAmounts(inner: ModelProvider, options: FaultOptions = {}): ModelProvider {
+  return new FaultyProvider(
+    inner,
+    PROMPTS.draftPacketNarrative.id,
+    (output, request) => {
+      const facts = patternFacts(request);
+      const isAmount = (value: string) => (figure: Figure) => figure.kind === 'amount' && figure.value === value;
+      return { paragraphs: paragraphs(output).map((text) => exchange(text, isAmount(facts.expected), isAmount(facts.observed))) };
+    },
+    options,
+  );
+}
+
+export function swapCounts(inner: ModelProvider, options: FaultOptions = {}): ModelProvider {
+  return new FaultyProvider(
+    inner,
+    PROMPTS.draftPacketNarrative.id,
+    (output, request) => {
+      const facts = patternFacts(request);
+      const text = paragraphs(output).join('\n\n');
+      // The count beside the lines swaps with the claim count where the narrative states one, else the patient count.
+      const other = scanText(text).figures.some((figure) => figure.kind === 'number' && figure.value === String(facts.claims) && /^\s+claims?\b/.test(text.slice(figure.end))) ? facts.claims : facts.patients;
+      const isCount = (value: number, noun: RegExp) => (figure: Figure) => figure.kind === 'number' && figure.value === String(value) && noun.test(text.slice(figure.end));
+      return { paragraphs: exchange(text, isCount(facts.lines, /^\s+lines?\b/), isCount(other, /^\s+(?:claims?|patients?)\b/)).split('\n\n') };
     },
     options,
   );

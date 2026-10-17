@@ -248,18 +248,19 @@ export function missingFacts(narrative: string, required: readonly RequiredFact[
   });
 }
 
-/** One narrative case's check: the gateway's proposal (its verifier report), or the failure that left none. */
+/** One narrative case's check: the gateway's proposal (its verifier report and role check), or the failure that left none. */
 export function checkNarrative(required: readonly RequiredFact[], proposal: NarrativeProposal | null, failure: 'call_failed' | 'invalid_output' | null): NarrativeCheck {
   if (failure !== null || proposal === null) {
     return { problems: [failure ?? 'invalid_output'], mismatches: [], missing: [] };
   }
   const problems: NarrativeProblem[] = [];
-  if (!proposal.report.passed) {
+  // A figure stated in the wrong role (the payer's amount as the contract's) is a verifier failure too.
+  if (!proposal.report.passed || proposal.roles.length > 0) {
     problems.push('verifier_failed');
   }
   const missing = missingFacts(proposal.narrative, required);
   if (missing.length > 0) {
     problems.push('fact_missing');
   }
-  return { problems, mismatches: [...new Set(proposal.report.mismatches.map((mismatch) => mismatch.code))].sort(), missing };
+  return { problems, mismatches: [...new Set([...proposal.report.mismatches.map((mismatch) => mismatch.code), ...proposal.roles.map((mismatch) => mismatch.code)])].sort(), missing };
 }
