@@ -1,0 +1,443 @@
+import { APP_ROLE, OWNER_ROLE } from '../roles';
+import { APPROVAL_PREFIX, PROVENANCE_PREFIX, awaitingApprovalLine, documentSha256 } from './approval';
+import { type Catalog } from './catalog-reads';
+import { type Dictionary, type Divergence, INFORMATIONAL, type Matches, STANDARD } from './dictionary';
+import { type MigrationText, shortName } from './migration-text';
+import { type Model, type TableModel } from './model';
+import { type Area, type Explanations } from './sources';
+
+/** Everything the document is written from. */
+export interface RenderInput {
+  readonly catalog: Catalog;
+  readonly migrations: MigrationText;
+  readonly model: Model;
+  readonly areas: readonly Area[];
+  readonly areaOf: ReadonlyMap<string, Area>;
+  readonly dictionary: Dictionary;
+  readonly divergences: readonly Divergence[];
+  readonly matches: Matches;
+  readonly explanations: Explanations;
+  /** The Drizzle and catalog cross-check report (cross-check.ts). */
+  readonly crossCheck: string;
+  readonly provenance: { readonly commit: string; readonly branch: string };
+}
+
+const esc = (s: string | null | undefined): string => (s === null || s === undefined ? '' : s.replace(/\|/g, '\\|').replace(/\n/g, ' '));
+const code = (s: string | null | undefined): string => (s === null || s === undefined || s === '' ? '' : '`' + esc(s).replace(/`/g, "'") + '`');
+const anchor = (t: string): string => `table-${t.replace(/_/g, '-')}`;
+const link = (t: string): string => `[\`${t}\`](#${anchor(t)})`;
+const priv = (t: TableModel, r: string): string => (t.privileges[r]?.length ? (t.privileges[r] ?? []).join(', ') : '-');
+const sinceCell = (file: string | null): string => (file ? `\`${file.slice(0, 14)}\`` : '?');
+const listIds = (ids: readonly string[]): string => (ids.length <= 1 ? ids.join('') : `${ids.slice(0, -1).join(', ')} and ${ids[ids.length - 1] ?? ''}`);
+
+/** The document, with its approval line awaiting a name and a date. */
+export function renderDocument(input: RenderInput): string {
+  const { catalog, migrations, model, areas, areaOf, dictionary, divergences, matches, explanations } = input;
+  const { meta, roles, groupRoles, enumTypes, otherSchemas, policies, triggers } = catalog;
+  const byName = model.byName;
+  const table = (name: string): TableModel => {
+    const t = byName.get(name);
+    if (t === undefined) throw new Error(`${name} is not in the model`);
+    return t;
+  };
+  const areaTitle = (name: string): string => areaOf.get(name)?.title ?? '';
+  const adrList = (file: string | null): string => (file === null ? '' : (migrations.adrs.get(file) ?? []).map((a) => `ADR ${a}`).join(', '));
+  const migRef = (file: string | null): string => (file ? `\`${shortName(file)}\`${adrList(file) ? ` (${adrList(file)})` : ''}` : 'not found in the migration files');
+  const notApplied = migrations.files.filter((f) => !catalog.appliedMigrations.includes(f));
+  const appliedNotOnDisk = catalog.appliedMigrations.filter((f) => !migrations.files.includes(f));
+
+  const L: string[] = [];
+  const out = (s = ''): void => {
+    L.push(s);
+  };
+
+  const tables = model.tables.filter((t) => !t.isView);
+  const views = model.tables.filter((t) => t.isView);
+  const phi = tables.filter((t) => t.registry);
+  const tenantNotReg = tables.filter((t) => !t.registry && t.practiceId);
+  const scoped = tables.filter((t) => !t.practiceId && t.rls);
+  const globals = tables.filter((t) => !t.practiceId && !t.rls);
+  const fns = model.functions;
+
+  out('# Domain model');
+  out();
+  out(
+    '> Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.',
+  );
+  out();
+  out(
+    `${PROVENANCE_PREFIX}\`${input.provenance.commit || 'unknown'}\` on branch \`${input.provenance.branch || 'unknown'}\` (provenance only: \`--check\` ignores this line, so a commit that changes no schema keeps the document valid)`,
+  );
+  out(
+    `- Migrations applied: ${String(meta.migrations)}; head \`${String(meta.head)}\`${notApplied.length ? `; on disk but NOT applied: ${notApplied.map(code).join(', ')}` : ''}${appliedNotOnDisk.length ? `; applied but not on disk: ${appliedNotOnDisk.map(code).join(', ')}` : ''}`,
+  );
+  out(
+    `- PostgreSQL ${String(meta.major)}; schema \`public\`: ${String(tables.length)} tables (including \`schema_migrations\`), ${String(views.length)} view(s); PostgreSQL enum types: ${String(enumTypes.length)}${enumTypes.length ? '' : ' (every enumeration is a CHECK constraint)'}`,
+  );
+  out(
+    `- PHI flag: ${String(phi.length)} tables in \`phi_table_registry\`; ${String(tenantNotReg.length)} tenant tables with a nullable \`practice_id\` outside it; ${String(scoped.length)} organization- or user-scoped tables with RLS forced; ${String(globals.length)} global tables`,
+  );
+  out(
+    `- RLS: ${String(tables.filter((t) => t.rls && t.forced).length)} tables ENABLE and FORCE row-level security; ${String(tables.filter((t) => t.rls && !t.forced).length)} enable without forcing; ${String(tables.filter((t) => !t.rls).length)} have none (the global tables); ${String(policies.length)} policies`,
+  );
+  out(`- Functions in \`public\`: ${String(fns.length)} (${String(fns.filter((f) => f.securityDefiner).length)} SECURITY DEFINER); triggers: ${String(triggers.length)}`);
+  out(
+    `- Roles (group roles; login roles are per environment and not listed): ${roles
+      .filter((r) => !r.login)
+      .map((r) => `\`${r.name}\`${r.bypass ? ' BYPASSRLS' : ''}${r.super ? ' SUPERUSER' : ''}`)
+      .join(', ')}; every relation is owned by \`${OWNER_ROLE}\`${
+      model.tables.every((t) => t.owner === OWNER_ROLE)
+        ? ''
+        : ' EXCEPT ' +
+          model.tables
+            .filter((t) => t.owner !== OWNER_ROLE)
+            .map((t) => t.name)
+            .join(', ')
+    }`,
+  );
+  if (otherSchemas.length) out(`- Other schemas: ${otherSchemas.map((s) => `\`${s.schema}\` (${String(s.tables)} tables, owner \`${s.owner}\`)`).join(', ')}; not described here`);
+  out(
+    `- Divergences from the Data dictionary: ${String(divergences.filter((d) => !INFORMATIONAL.has(d.kind)).length)} to approve, ${String(divergences.filter((d) => d.kind === 'extra table').length)} tables and ${String(divergences.filter((d) => d.kind === 'extra column').length)} columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)`,
+  );
+  out();
+  out('## Contents');
+  out();
+  out('1. [How to read this document](#how-to-read-this-document)');
+  out('2. [Areas](#areas)');
+  out('3. [PHI flag and row-level security by table](#phi-flag-and-row-level-security-by-table)');
+  areas.forEach((a, i) => {
+    out(`${String(i + 4)}. [${a.title}](#area-${a.id})`);
+  });
+  let n = areas.length + 4;
+  out(`${String(n++)}. [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)`);
+  out(`${String(n++)}. [Appendix A: enumerations](#appendix-a-enumerations)`);
+  out(`${String(n++)}. [Appendix B: encrypted columns](#appendix-b-encrypted-columns)`);
+  out(`${String(n++)}. [Appendix C: functions](#appendix-c-functions)`);
+  out(`${String(n++)}. [Cross-checks](#cross-checks)`);
+  out(`${String(n)}. [Approval](#approval)`);
+  out();
+
+  out('## How to read this document');
+  out();
+  out(
+    "- **Class** (the PHI flag): `PHI (registered)` means `practice_id uuid NOT NULL`, a row in `phi_table_registry`, ENABLE and FORCE ROW LEVEL SECURITY, and the registered tenant policy, PERMISSIVE FOR ALL with USING and WITH CHECK exactly `practice_id = ANY (current_setting('app.practice_ids', true)::uuid[])` (`id` for `practice`). `tenant (nullable practice_id), not registered` is a table the catalog test allows with a nullable `practice_id` (`NULLABLE_PRACTICE_ID_TABLES` in `packages/db/src/catalog.ts`). `organization- or user-scoped` has no `practice_id` and forces RLS on another key. `global` has no `practice_id` and no RLS; the application role may only read it.",
+  );
+  out(
+    `- **Roles**: \`${OWNER_ROLE}\` owns every relation and runs migrations; \`${APP_ROLE}\` is the application role (owns nothing, cannot bypass RLS); the other group roles appear where they hold a privilege. Privileges are listed as SELECT, INSERT, UPDATE, DELETE; \`(cols)\` means a column-level grant, listed under the table.`,
+  );
+  out('- **Since**: the migration that created the table or added the column, read from the migration files. The ADRs a migration cites in its header are shown beside it.');
+  out(
+    '- **Invariants** are what the database enforces: CHECK, UNIQUE, foreign key and exclusion constraints, and triggers, each trigger with the exceptions its function raises (the invariant in its own words). Policies are the row-level security policies.',
+  );
+  out('- **Dictionary**: the section and purpose the Data dictionary tab gives the table, or "not in the Data dictionary".');
+  out();
+
+  out('## Areas');
+  out();
+  out('| # | Area | Data dictionary section | Tables | PHI (registered) | About |');
+  out('| --- | --- | --- | --- | --- | --- |');
+  areas.forEach((a, i) => {
+    out(
+      `| ${String(i + 4)} | [${a.title}](#area-${a.id}) | ${esc(a.dictionary)} | ${String(a.tables.length)} | ${String(a.tables.filter((t) => table(t).registry).length)} | ${esc(a.about)} |`,
+    );
+  });
+  out();
+
+  const privRoles = model.rolesWithTablePrivileges;
+  out('## PHI flag and row-level security by table');
+  out();
+  out(`| Table | Area | Class | practice_id | RLS | FORCE | Policies | Triggers | ${privRoles.join(' | ')} |`);
+  out(`| --- | --- | --- | --- | --- | --- | --- | --- | ${privRoles.map(() => '---').join(' | ')} |`);
+  for (const t of model.tables) {
+    out(
+      `| ${link(t.name)} | ${areaTitle(t.name)} | ${t.classification} | ${t.practiceId ?? '-'} | ${t.rls ? 'yes' : 'no'} | ${t.forced ? 'yes' : 'no'} | ${String(t.policies.length)} | ${String(t.triggers.length)} | ${privRoles.map((r) => priv(t, r)).join(' | ')} |`,
+    );
+  }
+  out();
+  out(
+    `Registered tables whose registered policy does not qualify: ${
+      phi
+        .filter((t) => !t.tenantPolicyOk)
+        .map((t) => code(t.name))
+        .join(', ') || 'none'
+    }. Tenant tables with practice_id NOT NULL outside the registry: ${
+      tables
+        .filter((t) => t.classification === 'tenant, NOT registered')
+        .map((t) => code(t.name))
+        .join(', ') || 'none'
+    }. Tables with RLS enabled but not forced: ${
+      tables
+        .filter((t) => t.rls && !t.forced)
+        .map((t) => code(t.name))
+        .join(', ') || 'none'
+    }.`,
+  );
+  out();
+
+  areas.forEach((a, ai) => {
+    renderArea(a, ai);
+  });
+
+  function renderArea(a: Area, ai: number): void {
+    out(`## ${String(ai + 4)}. ${a.title}`);
+    out();
+    out(`<a id="area-${a.id}"></a>`);
+    out();
+    out(esc(a.about));
+    out();
+    out(`| Table | Class | RLS / FORCE | Policies | ${APP_ROLE} | Created by | Dictionary |`);
+    out('| --- | --- | --- | --- | --- | --- | --- |');
+    for (const name of a.tables) {
+      const t = table(name);
+      const d = dictionary.byTable.get(name);
+      out(
+        `| ${link(name)} | ${t.classification} | ${t.rls ? 'yes' : 'no'} / ${t.forced ? 'yes' : 'no'} | ${String(t.policies.length)} | ${priv(t, APP_ROLE)} | ${t.createdBy ? code(shortName(t.createdBy)) : t.createdOutside ? esc(t.createdOutside) : '?'} | ${d ? esc(d.purpose) : 'not in the Data dictionary'} |`,
+      );
+    }
+    out();
+    for (const name of a.tables) renderTable(table(name));
+  }
+
+  function renderTable(t: TableModel): void {
+    const d = dictionary.byTable.get(t.name);
+    out(`### ${t.isView ? 'View' : 'Table'} \`${t.name}\``);
+    out();
+    out(`<a id="${anchor(t.name)}"></a>`);
+    out();
+    out(`- Class: ${t.classification}${t.registry ? `; registry policy \`${t.registry.policy}\`, registered by \`${t.registry.registeredBy}\`, qualifies: ${t.tenantPolicyOk ? 'yes' : '**NO**'}` : ''}`);
+    out(`- Row-level security: ${t.rls ? 'enabled' : 'not enabled'}${t.forced ? ', forced' : ''}; ${String(t.policies.length)} ${t.policies.length === 1 ? 'policy' : 'policies'}; owner \`${t.owner}\``);
+    out(`- Dictionary: ${d ? `${esc(d.section)}: ${esc(d.purpose)}${d.policy ? `; policy "${esc(d.policy)}"` : ''}` : 'not in the Data dictionary'}`);
+    const later = t.touchedBy.filter((f) => f !== t.createdBy);
+    out(`- Created by ${t.createdOutside ? esc(t.createdOutside) : migRef(t.createdBy)}${later.length ? `; its DDL, policies or trigger functions changed by ${later.map((f) => code(shortName(f))).join(', ')}` : ''}`);
+    if (!t.isView) out(`- Primary key: ${t.primaryKey ? t.primaryKey.map(code).join(', ') : '**none**'}`);
+    out(
+      `- Privileges: ${
+        groupRoles
+          .filter((r) => (t.privileges[r] ?? []).length)
+          .map((r) => `\`${r}\` ${(t.privileges[r] ?? []).join(', ')}`)
+          .join('; ') || 'none for any group role'
+      }`,
+    );
+    for (const g of t.columnGrants) out(`- Column grant: \`${g.role}\` ${g.priv} (${g.cols.map(code).join(', ')})`);
+    out();
+    out('| # | Column | Type | Null | Default | References | Since | Notes |');
+    out('| --- | --- | --- | --- | --- | --- | --- | --- |');
+    t.columns.forEach((c, i) => {
+      const notes: string[] = [];
+      if (c.encrypted) notes.push('encrypted (enc:v1)');
+      if (c.enumeration) notes.push('one of ' + c.enumeration.join(', '));
+      if (c.identity) notes.push('identity ' + c.identity);
+      if (c.generated) notes.push('generated from ' + code(c.generated));
+      if (d && !STANDARD.has(c.name) && !d.fields.some((f) => f.name === c.name)) notes.push('not in the dictionary');
+      out(
+        `| ${String(i + 1)} | \`${c.name}\` | ${code(c.type)} | ${c.notNull ? 'NOT NULL' : 'null'} | ${code(c.default)} | ${c.fk.map(code).join('<br>')} | ${t.isView ? '' : t.createdOutside ? 'runner' : sinceCell(c.addedBy)} | ${notes.join('; ')} |`,
+      );
+    });
+    out();
+    if (t.isView) {
+      out(`View options: ${code((t.options ?? []).join(', ')) || 'none'}.`);
+      out();
+      out('```sql');
+      out((t.view ?? '').trim());
+      out('```');
+      out();
+      return;
+    }
+    out('Keys:');
+    out(`- Primary: ${t.primaryKey ? '(' + t.primaryKey.join(', ') + ')' : 'none'}`);
+    for (const u of t.uniques) out(`- Unique \`${u.name}\`: ${code(u.def)}`);
+    for (const i of t.indexes.filter((x) => x.unique && !x.primary && !x.backsConstraint)) out(`- Unique index \`${i.name}\`: ${code(i.def.replace(/^CREATE UNIQUE INDEX \S+ ON public\.\S+ /, ''))}`);
+    for (const f of t.foreignKeys) {
+      out(`- Foreign \`${f.name}\`: (${f.cols.join(', ')}) -> \`${String(f.refTable)}\`(${f.refCols.join(', ')}), on delete ${f.onDelete}${f.deferrable ? ', deferrable' : ''}`);
+    }
+    out();
+    const nonUniqueIdx = t.indexes.filter((x) => !x.unique);
+    if (nonUniqueIdx.length) {
+      out('Indexes:');
+      for (const i of nonUniqueIdx) out(`- \`${i.name}\`: ${code(i.def.replace(/^CREATE INDEX \S+ ON public\.\S+ /, ''))}`);
+      out();
+    }
+    out(`Policies (${String(t.policies.length)}):`);
+    if (!t.policies.length) out('- none');
+    for (const p of t.policies) {
+      out(`- \`${p.name}\`: ${p.permissive ? 'PERMISSIVE' : 'RESTRICTIVE'} FOR ${p.command} TO ${p.roles.join(', ')}`);
+      if (p.using) out(`  - USING ${code(p.using)}`);
+      if (p.withCheck) out(`  - WITH CHECK ${code(p.withCheck)}`);
+    }
+    out();
+    if (t.checks.length || t.exclusions.length) {
+      out('Invariants enforced by constraints:');
+      for (const c of t.checks) out(`- \`${c.name}\`: ${code(c.def)}`);
+      for (const c of t.exclusions) out(`- \`${c.name}\` (exclusion): ${code(c.def)}`);
+      out();
+    }
+    const invariantTriggers = t.triggers.filter((x) => x.function !== 'set_updated_at');
+    const housekeeping = t.triggers.filter((x) => x.function === 'set_updated_at');
+    if (invariantTriggers.length) {
+      out('Invariants enforced by triggers:');
+      for (const tr of invariantTriggers) {
+        out(`- \`${tr.name}\`: ${code(tr.def.replace(/^CREATE (CONSTRAINT )?TRIGGER \S+ /, ''))}`);
+        for (const r of tr.raises) out(`  - "${esc(r)}"`);
+      }
+      out();
+    }
+    if (housekeeping.length) {
+      out(`Maintains \`updated_at\`: ${housekeeping.map((x) => code(x.name)).join(', ')}.`);
+      out();
+    }
+  }
+
+  // Divergences
+  out('## Divergences from the Data dictionary');
+  out();
+  out(
+    'The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and the rows of C that describe the live schema, are what the founder approves. The rows of C marked "proposed" are Change Order 001 items that are not in the schema yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.',
+  );
+  out();
+  const toApprove = divergences.filter((d) => !INFORMATIONAL.has(d.kind));
+  out(
+    `Checked and matching: ${String(matches.fields)} dictionary key fields exist (${String(matches.typed)} with the dictionary's type or convention); ${String(matches.enumerations.length)} enumerations equal their CHECK (${matches.enumerations.map(code).join(', ')}); ${String(matches.uniques.length)} unique keys (${matches.uniques.map(code).join(', ')}); ${String(matches.indexes.length)} of the ${String(dictionary.wantedIndexes.length)} "Indexes that matter" exactly; ${String(matches.encrypted.length)} columns marked (enc) are encrypted; append-only triggers on ${matches.immutable.map(code).join(', ') || 'none'}.`,
+  );
+  out();
+  out('### A. Schema divergences to approve');
+  out();
+  out('| # | Table | Field | Kind | Data dictionary | Live schema | Explained by | Status |');
+  out('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  toApprove.forEach((d, i) => {
+    out(
+      `| A${String(i + 1)} | ${byName.has(d.table) ? link(d.table) : code(d.table)} | ${d.field ? code(d.field) : ''} | ${d.kind} | ${esc(d.dictionary)} | ${esc(d.schema)} | ${esc(d.by ?? '**no reviewed explanation**')} | ${esc(d.status ?? 'needs review')} |`,
+    );
+  });
+  out();
+  if (toApprove.some((d) => d.text)) {
+    out('Notes:');
+    toApprove.forEach((d, i) => {
+      if (d.text) out(`- A${String(i + 1)} (\`${d.table}${d.field ? '.' + d.field : ''}\`): ${esc(d.text)}`);
+    });
+    out();
+  }
+  out('### B. Policy divergences to approve');
+  out();
+  out('The dictionary gives each tenancy table a one-phrase policy. The live policies, reviewed against it:');
+  out();
+  out('| # | Table | Data dictionary | Live policies | Explained by | Status | Note |');
+  out('| --- | --- | --- | --- | --- | --- | --- |');
+  explanations.policies.forEach((p, i) => {
+    out(`| B${String(i + 1)} | ${link(p.table)} | ${esc(dictionary.byTable.get(p.table)?.policy ?? '-')} | ${p.policies.map(code).join(', ')} | ${esc(p.by)} | ${esc(p.status)} | ${esc(p.text)} |`);
+  });
+  out();
+  out('### C. Disagreements inside the plan documents');
+  out();
+  out('| # | Subject | Where | What each says | Live schema | Status |');
+  out('| --- | --- | --- | --- | --- | --- |');
+  explanations.plan.forEach((p, i) => {
+    out(`| C${String(i + 1)} | ${esc(p.subject)} | ${esc(p.where)} | ${esc(p.says)} | ${esc(p.schema)} | ${esc(p.status)} |`);
+  });
+  out();
+  out('### D. Tables not in the Data dictionary (informational)');
+  out();
+  out('| # | Table | Area | Class | Created by | Explained by |');
+  out('| --- | --- | --- | --- | --- | --- |');
+  divergences
+    .filter((d) => d.kind === 'extra table')
+    .forEach((d, i) => {
+      const t = table(d.table);
+      out(
+        `| D${String(i + 1)} | ${link(d.table)} | ${areaTitle(d.table)} | ${t.classification} | ${t.createdBy ? code(shortName(t.createdBy)) : esc(t.createdOutside ?? '?')} | ${esc(d.by ?? (t.createdBy ? adrList(t.createdBy) || 'its migration header cites no ADR' : '-'))} |`,
+      );
+    });
+  out();
+  out('### E. Columns not in the Data dictionary (informational)');
+  out();
+  out('Per dictionary table, the columns the build added beyond the key fields the dictionary lists (`id`, `created_at` and `updated_at` aside), grouped by the migration that added them.');
+  out();
+  out('| Table | Columns, by the migration that added them |');
+  out('| --- | --- |');
+  {
+    const extraCols = divergences.filter((d) => d.kind === 'extra column');
+    const tablesWithExtra = [...new Set(extraCols.map((d) => d.table))];
+    for (const tn of tablesWithExtra) {
+      const t = table(tn);
+      const groups = new Map<string | null, string[]>();
+      for (const d of extraCols.filter((x) => x.table === tn)) {
+        const f = t.columns.find((c) => c.name === d.field)?.addedBy ?? null;
+        const group = groups.get(f) ?? [];
+        group.push(d.field);
+        groups.set(f, group);
+      }
+      out(`| ${link(tn)} | ${[...groups].map(([f, cols]) => `${cols.map(code).join(', ')} (${migRef(f)})`).join('<br>')} |`);
+    }
+  }
+  out();
+  const typeNotes = divergences.filter((d) => d.kind === 'type note');
+  if (typeNotes.length) {
+    out(
+      `Type notes: ${typeNotes.map((d) => `\`${d.table}.${d.field}\` is ${esc(d.schema.split(':')[0])}`).join('; ')}. The dictionary does not give their type; each is an identifier read from the source file (an 835 envelope or a model ID), not a key, so text is right.`,
+    );
+    out();
+  }
+
+  // Appendices
+  out('## Appendix A: enumerations');
+  out();
+  if (enumTypes.length) {
+    for (const e of enumTypes) out(`- \`${e.name}\`: ${e.labels.map(code).join(', ')}`);
+    out();
+  }
+  out('Columns whose CHECK constraint admits a closed list of values.');
+  out();
+  out('| Table.column | Values |');
+  out('| --- | --- |');
+  for (const a of areas) for (const tn of a.tables) for (const c of table(tn).columns) if (c.enumeration) out(`| \`${tn}.${c.name}\` | ${c.enumeration.map(code).join(', ')} |`);
+  out();
+  out('## Appendix B: encrypted columns');
+  out();
+  out('Columns whose CHECK admits only `enc:v1:` ciphertext (application-layer encryption with the practice data key).');
+  out();
+  out('| Table | Columns |');
+  out('| --- | --- |');
+  for (const a of areas) {
+    for (const tn of a.tables) {
+      const enc = table(tn)
+        .columns.filter((c) => c.encrypted)
+        .map((c) => code(c.name));
+      if (enc.length) out(`| ${link(tn)} | ${enc.join(', ')} |`);
+    }
+  }
+  out();
+  out('## Appendix C: functions');
+  out();
+  out('Every function in schema `public`. SECURITY DEFINER functions run as their owner; "Sets app.practice_ids" marks a function that sets the tenant scope itself.');
+  out();
+  out('| Function | Returns | Lang | Security | Volatility | Config | EXECUTE granted to | Sets app.practice_ids |');
+  out('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const f of fns) {
+    out(
+      `| ${code(f.signature)} | ${code(f.returns)} | ${f.language} | ${f.securityDefiner ? 'DEFINER' : 'invoker'} | ${f.volatility} | ${f.config.map(code).join('<br>')} | ${[f.executePublic ? 'PUBLIC' : null, ...f.executeRoles].filter(Boolean).join(', ')} | ${f.setsScope ? 'yes' : ''} |`,
+    );
+  }
+  out();
+  out('## Cross-checks');
+  out();
+  out(
+    "Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.",
+  );
+  out();
+  out('```text');
+  out(input.crossCheck.trim());
+  out('```');
+  out();
+  out('## Approval');
+  out();
+  const planRows = explanations.plan.map((p, i) => ({ id: `C${String(i + 1)}`, proposed: /^proposed\b/i.test(p.status) }));
+  const liveC = planRows.filter((r) => !r.proposed).map((r) => r.id);
+  const proposedC = planRows.filter((r) => r.proposed).map((r) => r.id);
+  out(
+    `This document describes the schema at migration head \`${String(meta.head)}\` (${String(meta.migrations)} migrations). Approving it approves the schema as described, every divergence in sections A and B${liveC.length ? `, and the ruling asked for in ${listIds(liveC)}` : ''}.${proposedC.length ? ` It does not decide ${listIds(proposedC)}, which are proposals for schema that does not exist yet (reconciliation-001).` : ''} Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line); \`--check --require-approval\` refuses a line whose hash is not this text's.`,
+  );
+  out();
+  const PLACEHOLDER = `${APPROVAL_PREFIX} PLACEHOLDER`;
+  out(PLACEHOLDER);
+  const text = L.join('\n') + '\n';
+  return text.replace(PLACEHOLDER, () => awaitingApprovalLine(documentSha256(text)));
+}
