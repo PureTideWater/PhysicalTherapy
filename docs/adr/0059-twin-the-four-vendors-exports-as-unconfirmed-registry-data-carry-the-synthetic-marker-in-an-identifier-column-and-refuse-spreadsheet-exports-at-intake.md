@@ -96,28 +96,81 @@ worker sniffs the bytes. This is the smaller and safer option: no new dependency
 evidence reader or its hashes, and no export stored that would never be read.
 
 **One guard, three places.** `assertSyntheticFixture(bytes, label)` in `packages/synth/src/write.ts` is the
-one implementation of the marker rule. It sends X12 to `assertSyntheticX12` and reads a `.csv` (comma), a
-`.tsv` (tab) or an `.xlsx` (every sheet, with inflate caps) as RFC 4180 text in UTF-8 with an optional
-byte-order mark: row 1 is a header, there is at least one data row, and one identifier column holds exactly
-`SYNTHSENDER` in every non-blank data row (for a vendor fixture, the registry's `markerColumn`). `.xls`,
-`.xlsm` and `.ods` fixtures are refused. The only other way to pass is to be one of the reference tables
-listed by path and exact sha256 in `packages/synth/src/guard/pinned-tables.json`, each with the reason
-another file pins its bytes: the ten `fixtures/synthetic/cms` tables (the release-synth-900001 to 900004
-manifests), the five `fixtures/golden/sources` tables (release-synth-900002 and 900003, and the golden rule
-that `fixtures/golden` stays unchanged), the four MOD-01 contract-set exhibit tables (the set's hash in the
-evaluation baseline) and AUDIT-01's `expected-lines.csv` (the Python worksheet, matched line for line). A
-refusal names the file and the rule, never a cell value. `writeCases` and the audit writer call it on every
-file; `fixture-guard.sh` applies it to the file a Write, Edit or MultiEdit under `fixtures/` or
-`packages/synth/` would leave, through `packages/synth/src/guard/cli.ts`, refuses any write of a spreadsheet
-there (a workbook fixture is generated, never written by hand), and fails closed without `jq`, `node` or
-`tsx`; `pnpm check:fixtures` (`tools/fixture-check`) reads every file git would commit, as a CI step and
-from its test in `pnpm test`.
+one implementation of the marker rule. `label` is the file's repository path; a refusal
+(`SyntheticSenderError`) names it and the rule broken, never a cell's value, and whatever the guard cannot read
+it refuses.
+
+- X12 content, whatever the file is called, goes to `assertSyntheticX12`, unchanged.
+- A `.csv` (comma) or `.tsv` (tab) is read as RFC 4180 text in UTF-8: a byte-order mark ignored, CRLF or LF;
+  text that is not UTF-8, a quote never closed or text after a closing quote is refused. Blank rows are skipped
+  as the ledger skips them, so the header is the row the ledger reads as one. There is at least one data row,
+  and one identifier column holds exactly `SYNTHSENDER` in every data row. For a vendor fixture
+  (`fixtures/synthetic/emr/<format_id>/`) the identifier column is the registry's `markerColumn`, matched as
+  the ledger matches a header (trimmed, in any case), and no other column stands in for it. For any other
+  table it is a column whose header has the word ID or identifier (Payee ID, payee_id, PayeeID, Originator ID;
+  not Paid): D14 (a) puts the marker in a real identifier field, and a column named for nothing would be a
+  marker row by another name.
+- An `.xlsx` is read by the guard's own reader (`guard/archive.ts`, `guard/xlsx.ts`): the zip's central
+  directory, stored or deflated entries, at most 10,000 entries, 64 MiB inflated per entry and 256 MiB per
+  archive, sizes checked before and while inflating. Every worksheet the content types declare or
+  `xl/worksheets/` holds is read, hidden ones included, with shared strings, inline strings and cached values,
+  each cell at the column its reference names. Every sheet that holds data meets the same rule, and one at least
+  does. `formats/zip.ts` stays the writer's stored-only reader and `sheetText` stays the contract evidence's.
+- `.xls`, `.xlsm`, `.xlsb`, `.xltx`, `.xltm`, `.ods`, `.fods` and `.numbers` are refused by name; OLE2 content
+  (a legacy `.xls`), an OpenDocument spreadsheet and a workbook under any name but `.xlsx` by content. Any other
+  zip is checked entry by entry, each entry as a file of its own name, three levels deep. A zip64, encrypted or
+  otherwise compressed archive, or one whose sizes disagree, is refused.
+- The only other way to pass is the pin: the file's repository path and exact sha256 are listed in
+  `packages/synth/src/guard/pinned-tables.json`, each with the reason another file pins its bytes. The 20
+  tables are the ten `fixtures/synthetic/cms` tables (the release-synth-900001 to 900004 manifests hash them,
+  and the importer refuses a second conversion-factor preparation that differs from the first), the five
+  `fixtures/golden/sources` tables (release-synth-900002 and 900003, the same two-preparation check in
+  `tools/golden-worksheet`, and `fixtures/golden` staying unchanged), the four MOD-01 contract-set exhibit
+  tables (MOD-01's `expected.json` and the evaluation baseline's `set_sha256`), and AUDIT-01's
+  `expected-lines.csv` (written by the Python worksheet; the audit test matches it line for line). A changed byte,
+  or the same bytes at another path, falls back to the marker rule.
+
+`writeCases` checks every file it is given, labelled `fixtures/synthetic/<path>`, before it writes any, so the
+LED exports, the EMR sets and the MOD-01 tables meet the rule (or their pin) as `pnpm synth --all` writes them;
+the audit writer checks what it writes, and the PAR-29 large file its envelope header.
+
+`.claude/hooks/fixture-guard.sh` keeps its X12 rule word for word: anywhere, a Write's content or an Edit's new
+string that is an interchange from another sender is refused. Under `fixtures/` or `packages/synth/` (the path
+taken relative to the file's own repository, so a worktree's file is its own, with dot segments taken out,
+links in its existing part resolved and in any case, so no other spelling of a fixture's path slips past) it
+refuses any Write, Edit or MultiEdit of a spreadsheet by name, lets source and documents through (`.ts`, `.tsx`, `.js`, `.json`, `.md`),
+and checks every other file, a CSV or TSV above all, as the call would leave it:
+`packages/synth/src/guard/cli.ts` rebuilds the result from the call and the file on disk (an edit Claude Code
+would refuse writes nothing and passes) and runs `assertSyntheticFixture` on it. That also closes two gaps the
+X12 rule alone leaves there: an Edit that changes ISA06 inside a committed file, and an interchange behind a
+byte-order mark. It fails closed (exit 2) without `jq`, `node` or `tsx`, on input that is not JSON, and on any
+error of the check.
+
+`pnpm check:fixtures` (`tools/fixture-check`) reads every file git would commit (`git ls-files --cached
+--others --exclude-standard`), anywhere in the tree: by name every CSV, TSV and spreadsheet, by content every X12
+interchange, zip and OLE2 file. It is CI's step right after `pnpm synth --all`, so what was just generated is
+read too, and `pnpm test` runs it on the tree (`check.test.ts`, with negative cases in a scratch repository).
+It reads the whole tree, not only `fixtures/`, because CLAUDE.md keeps a real 835 or export out of the
+repository, not only out of its fixtures; today every table is under `fixtures/`.
+
+**The founder's approval, guarded.** `.claude/hooks/protect-approval.sh` (PreToolUse on Edit, Write and
+MultiEdit) refuses, with exit 2 and its reason, any call whose result changes an "Approved by:" line of
+`docs/product/domain-model.md` (the result rebuilt with `jq` from the call and the file on disk), and any change
+at all to `packages/db/domain-model/approvers.json`: the founder's approval is written only on the founder's
+instruction, by the founder. It keys on both paths though PR 2, which adds the files, is not merged on this
+base, and a file that does not exist yet is held to the same rule. Paths resolve from the hook input's cwd as
+`protect-content.sh` resolves them, with dot segments taken out and in any case, and it fails closed without
+`jq` or on input it cannot read. `protect-content.sh` and `typecheck.sh` are unchanged.
+`tools/hooks/hooks.test.ts` runs every `.claude/hooks/*.sh` with JSON on stdin, with allowed and refused cases
+for each, in scratch repositories and workspaces under the temporary directory (never
+`.claude/.allow-protected-edit` in the worktree), and fails for a hook script without cases.
 
 **`.claude/settings.json` lands in the final pass.** The owner approved committing it (D14), but it denies
 `git push` and turns on a sandbox, which would stop this build's own agents from pushing the remaining pull
 requests of the change order. It lands as the final pass's last commit. Until then the hook rules written
 here (the tabular rule in `fixture-guard.sh`, and `.claude/hooks/protect-approval.sh`) do not run in a
-session; the writer and CI enforce the marker rule.
+session; the writer and CI enforce the marker rule. When it lands, both run as PreToolUse hooks on
+`Edit|Write|MultiEdit`, beside `protect-content.sh` (PreToolUse) and `typecheck.sh` (PostToolUse), unchanged.
 
 ## Alternatives considered
 
@@ -130,6 +183,10 @@ session; the writer and CI enforce the marker rule.
 | Vendor templates as practice mappings in settings, not built-ins | Every practice on a vendor would map the same columns by hand, and `posting_row.template` would read `practice` instead of naming the format. |
 | Add the vendor fixtures to the test matrix and the case registry | The matrix has no row for them (CO-09 adds none), and the registry holds exactly the matrix's rows; named fixtures keep both unchanged. |
 | Pass the source 835s through the twin generator | Its input is a parsed X12 document under a production-only boundary; the sources are already synthetic, and its amount scaling would break the totals to the cent. |
+| Any column holding `SYNTHSENDER`, whatever its header | D14 (a) puts the marker in a real identifier field; a column named for nothing, or "Paid", is a marker row by another name. A vendor format's own column is required, so another identifier column cannot stand in for it. |
+| The tabular rule in bash and `jq` inside the hook | A second CSV reader (quoting, a byte-order mark, an edit's result rebuilt) would drift from the writer's. One implementation behind `guard/cli.ts` keeps the writer, the hook and CI the same, at the cost of `node` and `tsx`, without which the hook fails closed. |
+| Add the marker column to the reference tables | Their exact bytes are pinned by the release manifests, the golden lines, the evaluation baseline and the audit worksheet, which must stay unchanged; the pin admits those bytes at that path only. |
+| Check only `fixtures/` and `packages/synth/` in CI | CLAUDE.md keeps a real 835 or export out of the whole repository. The hook keeps the narrower scope so it stays fast in a session; CI and `pnpm test` read the whole tree. |
 | Commit `.claude/settings.json` in this pull request | It denies `git push` and sandboxes the build's agents, which would stop the remaining pull requests; it lands as the final pass's last commit. |
 
 ## Consequences
@@ -143,6 +200,11 @@ session; the writer and CI enforce the marker rule.
   ID that changes keeps its old version for the rows read under it.
 - An `.xlsx` or `.xls` posting or bank export is held at intake with a reason instead of being stored and
   failing later. Exhibits still accept `.xlsx` (docs/adr/0033).
+- A table that is neither generated with the marker nor pinned cannot be committed: CI and `pnpm test` refuse
+  it. A new reference table is pinned in the same pull request as what pins it, with that reason.
+- A file a shell command writes passes no hook (the hooks see Write, Edit and MultiEdit); the writer, the check
+  in `pnpm test` and CI's step still refuse it. A hook check of a fixture file starts `tsx` (about a third of a
+  second); source and documents under those directories are let through without it.
 - Checks: `packages/synth/src/formats/vendors/vendors.test.ts` (determinism, drift, marker, ERA totals, every
   format unconfirmed), `packages/ledger/src/templates.test.ts` and `settings.test.ts` (each template reads its
   fixture by path, round-trips with its status), `apps/worker/src/reconcile/vendor-exports.db.test.ts` (each
