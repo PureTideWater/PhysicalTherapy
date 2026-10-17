@@ -28,7 +28,7 @@ export function CaseStateBadge({ state }: { readonly state: CaseState }) {
   );
 }
 
-/** A deadline's tint (docs/adr/0054): within 14 days is short (act now), a passed window is unpriced gray (nothing left to pursue), later and none are neutral; always with its words. */
+/** A deadline's tint (docs/adr/0056): within 14 days is short (act now), a passed window is unpriced gray (nothing left to pursue), later and none are neutral; always with its words. */
 const DEADLINE_TONE: Readonly<Record<DeadlineState, StatusTone>> = {
   passed: 'unpriced',
   soon: 'short',

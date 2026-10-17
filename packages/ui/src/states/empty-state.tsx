@@ -20,7 +20,7 @@ export type EmptyStateProps = {
 /**
  * An empty screen or section, then what to do next (PRD section 7). A screen-level one carries the mark alone,
  * still (docs/brand/BRAND.md, section 7), decorative beside the heading that names the state, so a reader
- * does not hear "PaidWhole" for every empty list; a section's is text alone (docs/adr/0054).
+ * does not hear "PaidWhole" for every empty list; a section's is text alone (docs/adr/0056).
  */
 export function EmptyState({ title, nextStep, action, mark = false, className }: EmptyStateProps) {
   return (

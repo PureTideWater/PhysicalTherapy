@@ -10,7 +10,7 @@ Tailwind v3 preset and `apps/worker/src/reports`): the web app's code is under `
 `src/components/brand`, `src/lib/fonts.ts`), Tailwind is v4 and reads `packages/brand/src/tailwind-theme.css`,
 the PDF frame and stylesheet are `apps/worker/src/report/brand.ts` and `apps/worker/src/report/brand.css`,
 and the email template is `apps/worker/src/mail/template.ts`. The readings this file leaves open are recorded
-in docs/adr/0054.
+in docs/adr/0056.
 
 ## 1. The idea
 

@@ -1,10 +1,10 @@
-# 0055. Render the Verified seal and badge only from the ledger's reconciliation of the report's recovered total
+# 0057. Render the Verified seal and badge only from the ledger's reconciliation of the report's recovered total
 
 - **Status:** accepted
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 7 ("recovered" only beside stage five), 12 (the headline), 13 (Entries; ROI statement; proof
-  level); docs/brand/BRAND.md, section 6; ADRs 0042, 0043, 0054
+  level); docs/brand/BRAND.md, section 6; ADRs 0042, 0043, 0056
 
 ## Context
 

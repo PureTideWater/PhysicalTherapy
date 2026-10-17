@@ -16,7 +16,7 @@ import { escapeHtml, escapeWithFigures } from '../report/escape';
  * stored sealed with the practice's key. Nothing loads from outside the document. It is set in the report
  * frame's type and tokens (report/brand.ts) as the practice's own correspondence: the practice submits it to
  * its payer through its own channel, so the practice's name leads the cover and the running header (the
- * frame's white-label slot) and PaidWhole's lockup and name are not on it (docs/adr/0054). A packet states
+ * frame's white-label slot) and PaidWhole's lockup and name are not on it (docs/adr/0056). A packet states
  * no recovered total, so it never earns the seal or the badge.
  */
 
@@ -58,7 +58,7 @@ function table(caption: string, headers: readonly string[], rows: readonly (read
 }
 
 /**
- * The Verified gate for a packet (docs/adr/0055): a dispute packet asks for money and states no recovered
+ * The Verified gate for a packet (docs/adr/0057): a dispute packet asks for money and states no recovered
  * total, so reportReconciliation finds none and the seal never prints on it.
  */
 export function packetReconciliation(approval: ApprovalRecord): ReportReconciliation {

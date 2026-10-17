@@ -582,7 +582,7 @@ export interface StatementDetail extends StatementSummary {
   /** Every entry-backed figure equals what its entries give (test matrix LED-11). */
   readonly matches: boolean;
   /**
-   * The Verified gate's answer for this statement (docs/adr/0055): whether its recovered total reconciles to
+   * The Verified gate's answer for this statement (docs/adr/0057): whether its recovered total reconciles to
    * posted or deposited cash under its proof level, from the ledger. The seal renders only from this.
    */
   readonly verified: ReportReconciliation;
@@ -681,7 +681,7 @@ export async function statementOf(scope: Scope, practiceId: string, statementId:
   const statement = storedStatement(row);
   const ledger = await ledgerById(scope, practiceId);
   const check = recomputeStatement(statement, ledger);
-  // The Verified gate (docs/adr/0055), as the print job runs it: a statement whose figures no longer match their entries never carries the seal.
+  // The Verified gate (docs/adr/0057), as the print job runs it: a statement whose figures no longer match their entries never carries the seal.
   const verified = reportReconciliation({
     report: { kind: 'roi_statement', id: row.id },
     proofLevel: statement.proofLevel,

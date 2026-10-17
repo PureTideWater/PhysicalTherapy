@@ -35,7 +35,7 @@ export function claimStatusName(code: string): string {
 const STATUS_LABELS: Readonly<Record<LineStatus, string>> = { ...STAGE_LABELS, unpriced: 'Unpriced' };
 
 /**
- * Each status's tint (docs/adr/0054): recovered is whole (cash at the proof level); validated and actionable
+ * Each status's tint (docs/adr/0056): recovered is whole (cash at the proof level); validated and actionable
  * are short (paid below the contract); flagged and unpriced are unpriced (no contract price yet; flagged is
  * investigatory); payer approved is neutral (accepted, not yet cash). Always with its label.
  */

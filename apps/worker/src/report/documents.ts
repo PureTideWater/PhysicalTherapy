@@ -242,7 +242,7 @@ export interface DocumentPins {
 }
 
 /**
- * The Verified gate for a v1 report document (docs/adr/0055): neither the coverage report nor the monthly
+ * The Verified gate for a v1 report document (docs/adr/0057): neither the coverage report nor the monthly
  * summary states a recovered dollar total (recovered is a count there; its dollars are the ledger's), so
  * reportReconciliation finds none and the seal never prints on them.
  */

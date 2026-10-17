@@ -4,7 +4,7 @@ import { type LedgerEntry, type ProofLevel, countedStage, isCorrecting } from '.
 import { ledgerTotals } from './totals';
 
 /**
- * Whether a report's recovered total reconciles to cash (docs/adr/0055; docs/brand/BRAND.md, section 6):
+ * Whether a report's recovered total reconciles to cash (docs/adr/0057; docs/brand/BRAND.md, section 6):
  * the one fact the "Verified by PaidWhole" seal and badge render from. It is derived from the ledger,
  * never typed:
  *

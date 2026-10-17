@@ -13,7 +13,7 @@ import { journeyPractice, pricedAndTriaged, signedOffSchedule } from './journeys
 import { startLocalWorker } from './worker';
 
 /**
- * The PaidWhole brand in the browser (docs/brand/BRAND.md; docs/adr/0054 and 0055): no page asks a font
+ * The PaidWhole brand in the browser (docs/brand/BRAND.md; docs/adr/0056 and 0057): no page asks a font
  * service or any other origin for anything (the brand's faces are self-hosted by next/font/local and load
  * from this origin); the header carries the lockup with the practice switcher and the account on the
  * right and the single brass underline under the active rail item; the dashboard's tiles, a table's status

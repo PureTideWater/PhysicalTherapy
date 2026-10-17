@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PaidWholeLockup, PaidWholeMark, VerifiedBadge, VerifiedSeal } from './index';
 
 /**
- * The brand's React pieces (docs/brand/BRAND.md; docs/adr/0055): the Verified marks render nothing unless
+ * The brand's React pieces (docs/brand/BRAND.md; docs/adr/0057): the Verified marks render nothing unless
  * the ledger says the report's recovered total reconciles to cash, and nothing here writes a style
  * attribute, which the pages' Content-Security-Policy refuses.
  */

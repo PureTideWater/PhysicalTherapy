@@ -4,7 +4,7 @@ import type { ReconciledToCash } from '@tp/ledger';
 import { PaidWholeMark } from './Mark';
 
 /**
- * The "Verified" marks are claims, and the code enforces the claim (docs/adr/0055).
+ * The "Verified" marks are claims, and the code enforces the claim (docs/adr/0057).
  *
  * Both components take `reconciledToCash`, which the caller must derive from the ledger with
  * reportReconciliation() (@tp/ledger): every line in the report's recovered total has a `posted` or

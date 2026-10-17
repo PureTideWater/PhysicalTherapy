@@ -48,7 +48,7 @@ function input(linked: readonly LedgerEntry[], stated: Cents | null, options: { 
   };
 }
 
-describe('reportReconciliation: the Verified gate (docs/adr/0055)', () => {
+describe('reportReconciliation: the Verified gate (docs/adr/0057)', () => {
   it('names its source: the function, the report kind and its opaque ID', () => {
     expect(reconciliationSource(REPORT)).toBe('ledger.reportReconciliation(roi_statement 7d1f0c52-3c3a-4f43-9d8e-0a6b2f9c1e01)');
     expect(reportReconciliation(input([], null)).source).toBe(reconciliationSource(REPORT));

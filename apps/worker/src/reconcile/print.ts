@@ -100,7 +100,7 @@ export async function printRoiStatement(context: JobContext, services: Statement
     if (!check.matches) {
       throw new StatementMismatchError();
     }
-    // The Verified gate (docs/adr/0055): the seal prints only when the ledger says the statement's recovered
+    // The Verified gate (docs/adr/0057): the seal prints only when the ledger says the statement's recovered
     // total reconciles to cash, under the proof level it was stated in.
     const reconciliation = reportReconciliation({
       report: { kind: 'roi_statement', id: row.id },

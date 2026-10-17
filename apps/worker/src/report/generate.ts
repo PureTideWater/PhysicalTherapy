@@ -68,7 +68,7 @@ export async function generateAuditReport(context: TriageJobContext, services: R
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const { content, lines } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher });
-    // The Verified gate (docs/adr/0055), under the practice's proof level: the seal prints only from the ledger's answer.
+    // The Verified gate (docs/adr/0057), under the practice's proof level: the seal prints only from the ledger's answer.
     const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
     const pdf = await services.pdf.render(auditHtml(content, reconciliation));
     const csv = Buffer.from(auditCsv(lines), 'utf8');

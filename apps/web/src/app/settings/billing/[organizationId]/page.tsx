@@ -72,7 +72,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                 name="plan"
                 id="field-plan"
                 options={[
-                  // An <option> holds text only: the one place a price is not set in the mono face (docs/adr/0054).
+                  // An <option> holds text only: the one place a price is not set in the mono face (docs/adr/0056).
                   { value: 'monthly', label: `${catalog.plans.monthly.name}: ${formatUsd(parseCents(catalog.plans.monthly.amountCents))} a month` },
                   { value: 'annual', label: `${catalog.plans.annual.name}: ${formatUsd(parseCents(catalog.plans.annual.amountCents))} a year` },
                 ]}

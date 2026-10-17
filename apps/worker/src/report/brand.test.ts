@@ -9,7 +9,7 @@ import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { amountsNotInMono } from './test-support/figures';
 
 /**
- * The PaidWhole report frame (docs/brand/BRAND.md, section 7; docs/adr/0055): the brand's styles and fonts
+ * The PaidWhole report frame (docs/brand/BRAND.md, section 7; docs/adr/0057): the brand's styles and fonts
  * travel inside the document, the cover leads with the lockup and carries the seal and its definition only
  * when the ledger says the report's recovered total reconciles to cash, and a white label shows the badge
  * in its footer only then. SYNTHETIC ledger entries.

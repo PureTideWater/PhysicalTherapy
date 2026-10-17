@@ -26,7 +26,7 @@ export interface StatementDocument {
   readonly generatedBy: string | null;
   /** UTC, ISO 8601. */
   readonly generatedAt: string;
-  /** The Verified gate's answer for this statement, from the ledger (reportReconciliation; docs/adr/0055). */
+  /** The Verified gate's answer for this statement, from the ledger (reportReconciliation; docs/adr/0057). */
   readonly reconciliation: ReportReconciliation;
 }
 

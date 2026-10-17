@@ -1,4 +1,4 @@
-# 0054. Wear the PaidWhole brand from one token source, with self-hosted fonts and status as text on tint
+# 0056. Wear the PaidWhole brand from one token source, with self-hosted fonts and status as text on tint
 
 - **Status:** accepted
 - **Date:** 2026-10-17
@@ -34,7 +34,7 @@ background. A test (`tools/brand-colors`, in `pnpm test`) fails on any hex color
 under the variables tokens.css reads (`--font-display`, `--font-sans`, `--font-mono`, display swap); nothing is
 fetched from a font service at build or run time. Tailwind's font theme keys are declared `inline` so it never writes
 those variables to `:root`, where they would collide with the ones next/font sets on `<html>`. The PDF renderer embeds
-the same files as data URLs (ADR 0055 covers its gate); the worker's bundle embeds them too.
+the same files as data URLs (ADR 0057 covers its gate); the worker's bundle embeds them too.
 
 **Components under the CSP.** `PaidWholeMark`, `PaidWholeLockup`, `VerifiedSeal` and `VerifiedBadge` keep the drop-in's
 props and proportions but write classes and SVG attributes, never a `style` attribute, which the pages' CSP would

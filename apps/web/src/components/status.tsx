@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 /**
  * Status as text on a quiet tint, never color alone and never white text on a saturated fill
- * (docs/brand/BRAND.md, section 4; docs/adr/0054 maps the line stages to the tints). The status colors are
+ * (docs/brand/BRAND.md, section 4; docs/adr/0056 maps the line stages to the tints). The status colors are
  * for data only and never sit near the logo. Whole and short are colored text on their tints (4.7:1 and
  * better); unpriced's own gray is 3.7:1 on white, under the 4.5:1 text minimum, so its text is Slate and its
  * hue the chip's border. Neutral is a stage that is neither whole nor short yet.

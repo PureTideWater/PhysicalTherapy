@@ -70,7 +70,7 @@ const STYLE = `
 `;
 
 /**
- * The Verified gate for an audit report, from the ledger (docs/adr/0055): the report states its recovered
+ * The Verified gate for an audit report, from the ledger (docs/adr/0057): the report states its recovered
  * total and links no ledger entries, so it earns the seal only if that ever changes; today its recovered is
  * zero (the recovery ledger starts after the audit), and the seal never prints.
  */

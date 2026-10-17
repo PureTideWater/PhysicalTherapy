@@ -259,7 +259,7 @@ describe('the Reconciliation screen (PRD 7)', () => {
     firstStatement = statementId;
     expect(queue.jobs.at(-1)).toEqual({ type: 'roi_statement', payload: { practice_id: practice.practiceId, roi_statement_id: statementId } });
     const page = ok(await call(roiStatementPage, viewer, { ...P(), statementId }));
-    // The Verified gate on the stored statement and the practice's ledger (docs/adr/0055): every linked entry is a
+    // The Verified gate on the stored statement and the practice's ledger (docs/adr/0057): every linked entry is a
     // deposit or its reversal, the line has cash standing, and nothing linked was corrected since.
     expect(page.detail.verified).toEqual({
       reconciledToCash: true,
@@ -313,7 +313,7 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect(ok(await call(roiStatementsPage, viewer, P())).statements.items).toEqual([expect.objectContaining({ id: statementId, recoveredCents: '3000', quarterly: false, print: 'printed' })]);
   });
 
-  it('withdraws the seal from a statement whose linked deposit the ledger has since reversed, on the page and in print (docs/adr/0055)', async () => {
+  it('withdraws the seal from a statement whose linked deposit the ledger has since reversed, on the page and in print (docs/adr/0057)', async () => {
     const generated = ok(await call(generateRoiAction, practice.manager, P(), { periodFrom: '2026-04-01', periodTo: '2026-06-30' }));
     const statementId = generated.objectId ?? '';
     expect(ok(await call(roiStatementPage, viewer, { ...P(), statementId })).detail.verified).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });

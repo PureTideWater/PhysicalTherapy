@@ -12,12 +12,12 @@ import { escapeHtml } from './escape';
  * cash, the seal bottom right with its definition line; white inside pages with the 16 px mark in a running
  * header beside the document's title (the mark alone: below 120 px no lockup is built from it and live text).
  * A white label leads with another name: a billing firm's (milestone 12 builds the flow; this is its slot), or
- * the practice's own for its correspondence to a payer (a dispute packet, docs/adr/0054). PaidWhole then
+ * the practice's own for its correspondence to a payer (a dispute packet, docs/adr/0056). PaidWhole then
  * appears nowhere but as the Verified badge in the footer, and only when earned: not on the cover, not in the
  * running header, not in the document's title (which Chromium copies into the PDF's Title).
  *
  * The seal and the badge render only through verifiedSeal and verifiedBadge, which take the ledger's
- * answer (reportReconciliation in @tp/ledger, docs/adr/0055): its `reconciledToCash` is `false` or a `true`
+ * answer (reportReconciliation in @tp/ledger, docs/adr/0057): its `reconciledToCash` is `false` or a `true`
  * only that function returns, so no template can pass a literal.
  */
 
