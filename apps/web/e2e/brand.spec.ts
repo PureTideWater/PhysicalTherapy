@@ -360,8 +360,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     // The three numbers side by side in the brand's order: expected, paid (what the payer allowed), short.
     // toHaveText waits for the streamed table and reads every header in order.
     await expect(table.locator('thead th')).toHaveText([
-      'Patient reference',
-      'Claim control numbers',
+      // The patient and the claim's numbers share one cell, so the PHI roles' table fits its card at 1280 (the screen tour's L3).
+      'Patient reference and claim control numbers',
       'Service date',
       'Code and modifiers',
       'Units',
