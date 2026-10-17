@@ -7,13 +7,14 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 
 import { readZip } from './formats/zip';
-import { Archive, ArchiveReadError, isZip } from './guard/archive';
+import { ARCHIVE_LIMITS, Archive, ArchiveReadError, isZip } from './guard/archive';
 import { isPinnedTable, repositoryPath } from './guard/pinned';
-import { type Separator, TableReadError, markerProblem, readTable } from './guard/tabular';
+import { type Separator, TableReadError, markerProblem, readTable, sniffedSeparator } from './guard/tabular';
 import { vendorMarkerColumn } from './guard/vendors';
-import { WorkbookReadError, isOpenDocumentSpreadsheet, isWorkbook, workbookSheets } from './guard/xlsx';
+import { WorkbookReadError, foreignParts, isOpenDocumentSpreadsheet, isWorkbook, workbookSheets } from './guard/xlsx';
 import { SYNTH_GS02, SYNTH_ISA06, SYNTH_SENDER_ID } from './identity';
 import { type GeneratedCase } from './cases/builder';
 
@@ -81,13 +82,19 @@ export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
   }
 }
 
-/** The tabular fixtures the marker rule reads, by extension, and the separator each is read with. */
-const TABULAR: Readonly<Record<string, Separator>> = { '.csv': ',', '.tsv': '\t' };
+/** The tables the marker rule reads by their name's extension, and the separator each is read with. */
+const TABULAR: Readonly<Record<string, Separator>> = { csv: ',', tsv: '\t', tab: '\t', psv: '|' };
+/**
+ * Text files whose name does not say what they hold (a .txt, a .dat, a name with no extension): read as a table
+ * when their lines split as one (guard/tabular.ts sniffedSeparator), as intake reads a text/plain export.
+ */
+const TEXT_TABLES: ReadonlySet<string> = new Set(['', 'txt', 'text', 'dat', 'prn', 'asc']);
 /** Spreadsheets no fixture may be: binary, macro-enabled, template or OpenDocument workbooks. */
-const REFUSED_SPREADSHEETS = new Set(['.xls', '.xlsm', '.xlsb', '.xltx', '.xltm', '.ods', '.fods', '.numbers']);
-/** A zip inside a zip is read this many levels deep and no deeper. */
+const REFUSED_SPREADSHEETS = new Set(['xls', 'xlsm', 'xlsb', 'xltx', 'xltm', 'ods', 'fods', 'numbers']);
+/** A zip inside a zip (or a gzip around a file) is read this many levels deep and no deeper. */
 const MAX_ARCHIVE_DEPTH = 3;
 const OLE2 = Buffer.from('d0cf11e0a1b11ae1', 'hex');
+const GZIP = Buffer.from([0x1f, 0x8b]);
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 /** The repository directory writeCases writes; a file's label there is its repository path. */
@@ -97,16 +104,37 @@ const refuse = (label: string, rule: string) => new SyntheticSenderError(`${labe
 /** The marker rule, as a refusal states it after what the file lacks. */
 const MARKER_RULE = `${SYNTH_SENDER_ID} in an identifier column, such as a payee or sender ID, of every data row`;
 
-function extensionOf(label: string): string {
-  return path.posix.extname(label.split('!').at(-1) ?? '').toLowerCase();
+/**
+ * A file's extension, lower case and without its dot, from the last segment of its own name (a path, or an
+ * archive entry's name): "x!.csv" and ".csv" are CSV files; "" for a name with none.
+ */
+export function extensionOf(name: string): string {
+  const base = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
+  return /\.([^.]*)$/.exec(base)?.[1]?.toLowerCase() ?? '';
 }
 
-function assertTable(bytes: Uint8Array, label: string, separator: Separator): void {
+/**
+ * A file the guard checks: `label` names it in a refusal (an archive entry as archive!entry), `name` is its
+ * own name, which its kind is read from, and `outer` is the repository path of the file it is in, which says
+ * whether it is a vendor fixture. An entry's name is never read back out of a label, so a "!" in a name is a
+ * character like any other.
+ */
+interface Checked {
+  readonly label: string;
+  readonly name: string;
+  readonly outer: string;
+}
+
+const entryOf = (file: Checked, name: string): Checked => ({ label: `${file.label}!${name}`, name, outer: file.outer });
+
+const separatorName = (separator: Separator) => ({ ',': 'CSV', '\t': 'TSV', '|': 'pipe-separated text', ';': 'semicolon-separated text' })[separator];
+
+function assertTable(bytes: Uint8Array, file: Checked, separator: Separator): void {
   let text: string;
   try {
     text = utf8.decode(bytes);
   } catch {
-    throw refuse(label, 'a tabular fixture is UTF-8 text');
+    throw refuse(file.label, 'a tabular fixture is UTF-8 text');
   }
   let rows: string[][];
   try {
@@ -115,16 +143,31 @@ function assertTable(bytes: Uint8Array, label: string, separator: Separator): vo
     if (!(error instanceof TableReadError)) {
       throw error;
     }
-    throw refuse(label, `it cannot be read as ${separator === ',' ? 'CSV' : 'TSV'} (${error.message})`);
+    throw refuse(file.label, `it cannot be read as ${separatorName(separator)} (${error.message})`);
   }
-  const problem = markerProblem(rows, { markerColumn: vendorMarkerColumn(label) });
+  const problem = markerProblem(rows, { markerColumn: vendorMarkerColumn(file.outer) });
   if (problem !== null) {
-    throw refuse(label, `${problem} (a tabular fixture carries ${MARKER_RULE})`);
+    throw refuse(file.label, `${problem} (a tabular fixture carries ${MARKER_RULE})`);
   }
 }
 
-function assertWorkbook(archive: Archive, label: string): void {
-  const markerColumn = vendorMarkerColumn(label);
+/** The separator of a text file that holds a table under a name that does not say so; null for any other. */
+function textTableSeparator(bytes: Uint8Array): Separator | null {
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (buffer.includes(0)) {
+    return null;
+  }
+  // Read as Latin-1 to decide, so a table in another encoding is found too (and then refused for not being UTF-8).
+  return sniffedSeparator(buffer.subarray(0, 64 * 1024).toString('latin1'));
+}
+
+function assertWorkbook(archive: Archive, file: Checked): void {
+  // A generated workbook holds only its own parts; an embedded file, a drawing or a sheet under another name is refused.
+  const foreign = foreignParts(archive)[0];
+  if (foreign !== undefined) {
+    throw refuse(`${file.label}!${foreign}`, 'a workbook fixture holds only the parts packages/synth writes (no embedded file, drawing or part under another name)');
+  }
+  const markerColumn = vendorMarkerColumn(file.outer);
   let withData = 0;
   for (const sheet of workbookSheets(archive)) {
     if (sheet.rows.every((row) => row.every((cell) => cell.trim() === ''))) {
@@ -133,64 +176,83 @@ function assertWorkbook(archive: Archive, label: string): void {
     withData += 1;
     const problem = markerProblem(sheet.rows, { markerColumn });
     if (problem !== null) {
-      throw refuse(`${label}!${sheet.part}`, `${problem} (every sheet of a workbook fixture that holds data carries ${MARKER_RULE})`);
+      throw refuse(`${file.label}!${sheet.part}`, `${problem} (every sheet of a workbook fixture that holds data carries ${MARKER_RULE})`);
     }
   }
   if (withData === 0) {
-    throw refuse(label, `no sheet holds data (a workbook fixture carries ${MARKER_RULE})`);
+    throw refuse(file.label, `no sheet holds data (a workbook fixture carries ${MARKER_RULE})`);
   }
 }
 
-function assertArchive(bytes: Uint8Array, label: string, depth: number): void {
-  const extension = extensionOf(label);
+function assertArchive(bytes: Uint8Array, file: Checked, depth: number): void {
+  const extension = extensionOf(file.name);
   try {
     const archive = new Archive(bytes);
     if (isWorkbook(archive)) {
-      if (extension !== '.xlsx') {
-        throw refuse(label, 'a workbook fixture is an .xlsx file, and this is a workbook under another name');
+      if (extension !== 'xlsx') {
+        throw refuse(file.label, 'a workbook fixture is an .xlsx file, and this is a workbook under another name');
       }
-      assertWorkbook(archive, label);
+      assertWorkbook(archive, file);
       return;
     }
-    if (extension === '.xlsx') {
-      throw refuse(label, 'an .xlsx fixture is a workbook, and this archive has no workbook part');
+    if (extension === 'xlsx') {
+      throw refuse(file.label, 'an .xlsx fixture is a workbook, and this archive has no workbook part');
     }
     if (isOpenDocumentSpreadsheet(archive)) {
-      throw refuse(label, 'an OpenDocument spreadsheet is refused; write a CSV, TSV or .xlsx');
+      throw refuse(file.label, 'an OpenDocument spreadsheet is refused; write a CSV, TSV or .xlsx');
     }
     for (const name of archive.names()) {
-      checkFixture(archive.read(name) as Uint8Array, `${label}!${name}`, depth + 1);
+      checkFixture(archive.read(name) as Uint8Array, entryOf(file, name), depth + 1);
     }
   } catch (error) {
     if (error instanceof ArchiveReadError || error instanceof WorkbookReadError) {
-      throw refuse(label, `the archive cannot be read by the fixture guard (${error.message})`);
+      throw refuse(file.label, `the archive cannot be read by the fixture guard (${error.message})`);
     }
     throw error;
   }
 }
 
-function checkFixture(bytes: Uint8Array, label: string, depth: number): void {
+/** A gzip file, inflated within the archive caps and checked as the file it holds (remit.835.gz as remit.835). */
+function assertGzip(bytes: Uint8Array, file: Checked, depth: number): void {
+  let inflated: Buffer;
+  try {
+    inflated = gunzipSync(bytes, { maxOutputLength: ARCHIVE_LIMITS.maxEntryBytes });
+  } catch {
+    throw refuse(file.label, 'a gzip file the fixture guard cannot inflate within its limits');
+  }
+  const base = file.name.slice(Math.max(file.name.lastIndexOf('/'), file.name.lastIndexOf('\\')) + 1);
+  // remit.835.gz holds remit.835 and a.tgz a.tar; a gzip under another name is read under that name.
+  const inner = /\.tgz$/i.test(base) ? base.replace(/\.tgz$/i, '.tar') : base.replace(/\.(?:gz|gzip)$/i, '');
+  checkFixture(new Uint8Array(inflated.buffer, inflated.byteOffset, inflated.byteLength), entryOf(file, inner), depth + 1);
+}
+
+function checkFixture(bytes: Uint8Array, file: Checked, depth: number): void {
   if (depth > MAX_ARCHIVE_DEPTH) {
-    throw refuse(label, `archives nest more than ${String(MAX_ARCHIVE_DEPTH)} deep`);
+    throw refuse(file.label, `archives nest more than ${String(MAX_ARCHIVE_DEPTH)} deep`);
   }
-  const extension = extensionOf(label);
+  const extension = extensionOf(file.name);
   if (REFUSED_SPREADSHEETS.has(extension)) {
-    throw refuse(label, `${extension} fixtures are refused; write a CSV, TSV or .xlsx`);
+    throw refuse(file.label, `.${extension} fixtures are refused; write a CSV, TSV or .xlsx`);
   }
-  if (bytes.length >= OLE2.length && OLE2.equals(Buffer.from(bytes.buffer, bytes.byteOffset, OLE2.length))) {
-    throw refuse(label, 'a legacy binary Office file (OLE2, such as an .xls) is refused');
+  const head = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(bytes.byteLength, OLE2.length));
+  if (head.length >= OLE2.length && OLE2.equals(head)) {
+    throw refuse(file.label, 'a legacy binary Office file (OLE2, such as an .xls) is refused');
   }
   if (isZip(bytes)) {
-    assertArchive(bytes, label, depth);
+    assertArchive(bytes, file, depth);
     return;
   }
-  if (extension === '.xlsx') {
-    throw refuse(label, 'an .xlsx fixture is a workbook, and this is not a zip');
+  if (extension === 'xlsx') {
+    throw refuse(file.label, 'an .xlsx fixture is a workbook, and this is not a zip');
   }
-  assertSyntheticX12(bytes, label);
-  const separator = TABULAR[extension];
-  if (separator !== undefined) {
-    assertTable(bytes, label, separator);
+  if (head.length >= GZIP.length && GZIP.equals(head.subarray(0, GZIP.length))) {
+    assertGzip(bytes, file, depth);
+    return;
+  }
+  assertSyntheticX12(bytes, file.label);
+  const separator = TABULAR[extension] ?? (TEXT_TABLES.has(extension) ? textTableSeparator(bytes) : null);
+  if (separator !== null) {
+    assertTable(bytes, file, separator);
   }
 }
 
@@ -200,20 +262,22 @@ function checkFixture(bytes: Uint8Array, label: string, depth: number): void {
  * never a cell's value.
  *
  * - X12 content goes to assertSyntheticX12, whatever the file is called.
- * - A .csv or .tsv carries SYNTHSENDER in every data row of one identifier column (the column the vendor
- *   format registry names for a file under emr/<format_id>/, else a column whose header says ID): the
- *   marker rule in guard/tabular.ts.
- * - An .xlsx is read with the guard's own bounded reader, and every sheet with data meets the same rule.
+ * - A .csv, .tsv, .tab or .psv carries SYNTHSENDER in every data row of one identifier column (the column the
+ *   vendor format registry names for a file under emr/<format_id>/, else a column whose header says ID): the
+ *   marker rule in guard/tabular.ts. So does a .txt, .dat or extensionless file whose lines split as a table.
+ * - An .xlsx is read with the guard's own bounded reader: it holds only the parts a generated workbook holds,
+ *   and every sheet with data meets the same rule.
  * - .xls, .xlsm, .xlsb, .ods and other spreadsheets, and OLE2 content, are refused.
  * - A zip is read entry by entry (stored or deflated, within the guard's caps), each entry checked as a
- *   file of its own name; a zip it cannot read is refused.
+ *   file of its own name, and a gzip as the file it holds; an archive it cannot read is refused.
  * - A table listed in guard/pinned-tables.json passes at its path with its exact bytes.
  */
 export function assertSyntheticFixture(bytes: Uint8Array, label: string): void {
   if (isPinnedTable(label, bytes)) {
     return;
   }
-  checkFixture(bytes, repositoryPath(label), 0);
+  const file = repositoryPath(label);
+  checkFixture(bytes, { label: file, name: file, outer: file }, 0);
 }
 
 /** Directories under fixtures/synthetic that packages/synth never writes or removes. */

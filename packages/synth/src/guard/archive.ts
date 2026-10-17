@@ -2,8 +2,9 @@
  * A bounded zip reader for the fixture guard: the central directory, stored and deflated entries, and
  * caps on the entry count and on what is inflated, checked before and while inflating, so a crafted
  * archive cannot make the guard exhaust memory. Anything it does not read (zip64, several disks,
- * encryption, another method, sizes that disagree) is an ArchiveReadError, and the guard refuses the
- * file: it fails closed. formats/zip.ts stays the writer's own deterministic, stored-only reader.
+ * encryption, another method, sizes that disagree, two entries of one name) is an ArchiveReadError, and
+ * the guard refuses the file: it fails closed. formats/zip.ts stays the writer's own deterministic,
+ * stored-only reader.
  */
 import { inflateRawSync } from 'node:zlib';
 
@@ -84,6 +85,7 @@ export class Archive {
       throw new ArchiveReadError(`the archive has more than ${String(this.limits.maxEntries)} entries`);
     }
     const entries: CentralEntry[] = [];
+    const seen = new Set<string>();
     let position = offset;
     for (let index = 0; index < count; index += 1) {
       if (position + 46 > end || buffer.readUInt32LE(position) !== CENTRAL) {
@@ -96,8 +98,14 @@ export class Archive {
       if (position + 46 + nameLength > end) {
         throw new ArchiveReadError('the central directory is malformed');
       }
+      const name = buffer.toString((flags & 0x800) === 0 ? 'latin1' : 'utf8', position + 46, position + 46 + nameLength);
+      // Extractors keep the last of two entries of one name and a reader by name the first: the guard reads neither.
+      if (seen.has(name)) {
+        throw new ArchiveReadError('the archive holds two entries of one name');
+      }
+      seen.add(name);
       entries.push({
-        name: buffer.toString((flags & 0x800) === 0 ? 'latin1' : 'utf8', position + 46, position + 46 + nameLength),
+        name,
         flags,
         method: buffer.readUInt16LE(position + 10),
         compressedSize: buffer.readUInt32LE(position + 20),

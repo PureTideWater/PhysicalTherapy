@@ -78,6 +78,11 @@
       "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
     },
     {
+      "path": "fixtures/synthetic/cms/NCCI_PTP_SYNTHETIC.txt",
+      "sha256": "ab081001c236f0bc4423df3a2373bbec9ddddeaad59f35bdb812d0a7c28dda21",
+      "reason": "A SYNTHETIC reference table, tab-separated under a banner line as the CMS file is: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."
+    },
+    {
       "path": "fixtures/synthetic/cms/PPRRVU_SYNTHETIC.csv",
       "sha256": "1fbfcf98e0cb580b7428821d5dd11a4b284b1e47ba752213a30769149fa5f003",
       "reason": "A SYNTHETIC reference table: the release-synth-900001 to 900004 manifests pin its sha256 (fixtures/synthetic/rules stays unchanged; a new fixture release takes a new number)."

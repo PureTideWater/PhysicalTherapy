@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -10,9 +11,9 @@ import { minimalFile } from './cases/par';
 import { VENDOR_FORMATS } from './formats/vendors/registry';
 import { writeZip } from './formats/zip';
 import { ARCHIVE_LIMITS, Archive, ArchiveReadError } from './guard/archive';
-import { resultingText } from './guard/hook';
+import { UnbuildableEditError, resultingText } from './guard/hook';
 import { PINNED_TABLES } from './guard/pinned';
-import { TableReadError, isIdentifierHeader, markerProblem, readTable } from './guard/tabular';
+import { TableReadError, isIdentifierHeader, markerProblem, readTable, sniffedSeparator } from './guard/tabular';
 import { testWorkbook, testZip } from './guard/test-workbook';
 import { vendorFormatOf, vendorMarkerColumn } from './guard/vendors';
 import { workbookSheets } from './guard/xlsx';
@@ -79,6 +80,13 @@ describe('the fixture hook (SEC-14)', () => {
     expect(refused.stderr).not.toContain('REALCHECK0001');
     expect(runHook(MARKED, target).status).toBe(0);
     expect(runHook(UNMARKED.replaceAll('\r\n', '\n').replaceAll(',', '\t'), path.join(repository, 'packages/synth/scratch.tsv')).status).toBe(2);
+    // A name with a "!", a dot-file name, and a table under a text name or none are tables too.
+    for (const name of ['fixtures/synthetic/LED-04/export!.csv', 'fixtures/synthetic/LED-04/.csv', 'fixtures/synthetic/LED-04/export.txt', 'fixtures/synthetic/LED-04/export']) {
+      const result = runHook(name.endsWith('.txt') ? UNMARKED.replaceAll(',', '\t') : UNMARKED, path.join(repository, name));
+      expect(result.status, name).toBe(2);
+      expect(result.stderr, name).toContain('identifier column');
+    }
+    expect(runHook(MARKED.replaceAll(',', '\t'), path.join(repository, 'fixtures/synthetic/LED-04/export.txt')).status).toBe(0);
   });
 
   it('checks the file an Edit or MultiEdit would leave, so an edit that removes the marker from a committed fixture is refused', () => {
@@ -87,6 +95,26 @@ describe('the fixture hook (SEC-14)', () => {
     expect(runHookWith({ file_path: file, old_string: ',SYNTHSENDER\r\n', new_string: ',OTHER\r\n', replace_all: true }).status).toBe(2);
     expect(runHookWith({ file_path: file, old_string: 'SYNBATCH-0401', new_string: 'SYNBATCH-0402', replace_all: true }).status).toBe(0);
     expect(runHookWith({ file_path: file, edits: [{ old_string: 'Payee ID', new_string: 'Payee' }] }, 'MultiEdit').status).toBe(2);
+  });
+
+  it('refuses an Edit or MultiEdit it cannot rebuild exactly, which Claude Code may still apply: LF for CRLF, straight for curly quotes', () => {
+    // fixtures/synthetic/LED-04/posting-export.csv is CRLF; the model sends LF. The edit would take the marker out of row 1.
+    const file = path.join(repository, 'fixtures/synthetic/LED-04/posting-export.csv');
+    const crlf = readFileSync(file, 'utf8');
+    const [header = '', row = ''] = crlf.split('\r\n');
+    expect(crlf).toContain(`${header}\r\n${row}\r\n`);
+    const lf = runHookWith({ file_path: file, old_string: `${header}\n${row}`, new_string: `${header}\n${row.replace('SYNTHSENDER', 'REALSENDER1')}` });
+    expect(lf.status).toBe(2);
+    expect(lf.stderr).toContain('cannot see what this call leaves in fixtures/synthetic/LED-04/posting-export.csv');
+    expect(lf.stderr).not.toContain('REALSENDER1');
+    expect(runHookWith({ file_path: file, edits: [{ old_string: 'SYNBATCH-0401', new_string: 'SYNBATCH-0402' }, { old_string: `${header}\n${row}`, new_string: header }] }, 'MultiEdit').status).toBe(2);
+    // The same edit sent with the file's own CRLF is rebuilt and checked: it is refused for the marker, not for being unseen.
+    const exact = runHookWith({ file_path: file, old_string: `${header}\r\n${row}`, new_string: `${header}\r\n${row.replace('SYNTHSENDER', 'REALSENDER1')}` });
+    expect(exact.status).toBe(2);
+    expect(exact.stderr).toContain('identifier column');
+    // A straight quote for a curly one, and an old_string not in the file at all.
+    expect(runHookWith({ file_path: file, old_string: "SYNTHETIC PAYER L's", new_string: 'x' }).status).toBe(2);
+    expect(runHookWith({ file_path: file, old_string: 'not in the file', new_string: 'x' }).status).toBe(2);
   });
 
   it('refuses any write of a spreadsheet under fixtures/ or packages/synth/, and leaves other places to their own rules', () => {
@@ -207,7 +235,9 @@ describe('the tabular marker rule (D14 option a)', () => {
   });
 
   it('lets a pinned reference table through only at its path with its exact bytes', () => {
-    expect(PINNED_TABLES).toHaveLength(20);
+    // The twenty CSV reference tables, and the tab-separated NCCI PTP table the guard reads as a table by its lines.
+    expect(PINNED_TABLES).toHaveLength(21);
+    expect(PINNED_TABLES.filter((table) => !table.path.endsWith('.csv')).map((table) => table.path)).toEqual(['fixtures/synthetic/cms/NCCI_PTP_SYNTHETIC.txt']);
     for (const table of PINNED_TABLES) {
       expect(table.reason.length, table.path).toBeGreaterThan(40);
       const pinned = readFileSync(path.join(repository, table.path));
@@ -221,6 +251,50 @@ describe('the tabular marker rule (D14 option a)', () => {
     const pinned = readFileSync(path.join(repository, first.path));
     expect(refusal(Buffer.concat([pinned, Buffer.from('\n')]), first.path)).toContain(first.path);
     expect(refusal(pinned, 'fixtures/synthetic/LED-99/copied.csv')).toContain('identifier column');
+  });
+});
+
+describe('the marker rule for a table under any name', () => {
+  it('reads a file named "x!.csv" or ".csv" as the CSV it is', () => {
+    for (const label of ['fixtures/synthetic/LED-04/x!.csv', 'fixtures/synthetic/LED-04/.csv', 'fixtures/synthetic/x!.tsv', 'fixtures/golden/review-bang!.csv']) {
+      const content = label.endsWith('.tsv') ? UNMARKED.replaceAll(',', '\t') : UNMARKED;
+      expect(refusal(content, label), label).toContain(`${label}: no column of its header is an identifier column`);
+    }
+    expect(() => assertSyntheticFixture(bytes(MARKED), 'fixtures/synthetic/LED-04/x!.csv')).not.toThrow();
+  });
+
+  it('reads a .txt, .dat, .tab, .psv or extensionless file whose lines split as a table as one, and leaves prose alone', () => {
+    const tab = UNMARKED.replaceAll(',', '\t');
+    const pipe = UNMARKED.replaceAll(',', '|');
+    for (const [label, content] of [
+      ['fixtures/x/posting-export.txt', UNMARKED],
+      ['fixtures/x/posting-export', UNMARKED],
+      ['fixtures/synthetic/ZZZ-01/x.txt', tab],
+      ['fixtures/synthetic/ZZZ-01/x.tab', tab],
+      ['fixtures/synthetic/ZZZ-01/x.psv', pipe],
+      ['fixtures/synthetic/ZZZ-01/x.dat', pipe],
+      ['fixtures/synthetic/ZZZ-01/x.txt', UNMARKED.replaceAll(',', ';')],
+    ] as const) {
+      expect(refusal(content, label), `${label} ${content.slice(9, 10)}`).toContain('no column of its header is an identifier column');
+    }
+    expect(() => assertSyntheticFixture(bytes(MARKED.replaceAll(',', '\t')), 'fixtures/x/posting-export.txt')).not.toThrow();
+    // A table in another encoding is found, and refused for not being UTF-8.
+    expect(refusal(Buffer.from('Post Date\tPaid\tPayer\r\n06/11/2026\t30.00\tPAYER \xe9\r\n', 'latin1'), 'fixtures/x/a.txt')).toContain('a tabular fixture is UTF-8 text');
+    // Prose with a comma per line, a fixed-width file and a banner are not tables; nor is a single delimited line.
+    expect(() => assertSyntheticFixture(bytes('SYNTHETIC agreement, version 1\nPage 1, of 2\n'), 'fixtures/synthetic/CON-01/version-1.txt')).not.toThrow();
+    expect(() => assertSyntheticFixture(bytes('ZZ000119999901 01   0      20261\nZZ000229999901 01   0      20261\n'), 'fixtures/x/ZIP5.txt')).not.toThrow();
+    expect(() => assertSyntheticFixture(bytes('a\tb\n'), 'fixtures/x/one.txt')).not.toThrow();
+    expect(sniffedSeparator('a,b,c\n\nd,e,f\n')).toBe(',');
+    expect(sniffedSeparator('a,b\nc,d\n')).toBeNull();
+    expect(sniffedSeparator('\uFEFFa|b\nc|d\n')).toBe('|');
+  });
+
+  it('reads a gzip file as the file it holds, within the archive caps', () => {
+    expect(refusal(gzipSync(bytes(otherSender)), 'fixtures/x/review-remit.835.gz')).toContain('review-remit.835.gz!review-remit.835: ISA06 is not SYNTHSENDER');
+    expect(refusal(gzipSync(bytes(UNMARKED)), 'fixtures/x/export.csv.gz')).toContain('export.csv.gz!export.csv: no column');
+    expect(refusal(gzipSync(bytes(UNMARKED)), 'fixtures/x/export.csv')).toContain('export.csv!export.csv: no column');
+    expect(() => assertSyntheticFixture(gzipSync(bytes(synthetic)), 'fixtures/x/remit.835.gz')).not.toThrow();
+    expect(refusal(new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x01]), 'fixtures/x/broken.gz')).toContain('a gzip file the fixture guard cannot inflate within its limits');
   });
 });
 
@@ -277,6 +351,21 @@ describe('the workbook rule', () => {
     expect(refusal(nested, 'fixtures/x/deep.zip')).toContain('archives nest more than 3 deep');
   });
 
+  it('reads an entry by its own name, so a "!" or a dot-file name is a table like any other, and refuses two entries of one name', () => {
+    for (const name of ['x!.csv', 'dir/.csv', '.tsv', 'a!b!c.csv']) {
+      const unmarked = name.endsWith('.tsv') ? UNMARKED.replaceAll(',', '\t') : UNMARKED;
+      expect(refusal(testZip([{ name, bytes: bytes(unmarked) }], true), 'fixtures/x/a.zip'), name).toContain(`a.zip!${name}: no column`);
+    }
+    const duplicate = testZip(
+      [
+        { name: 'a.csv', bytes: bytes(MARKED) },
+        { name: 'a.csv', bytes: bytes(UNMARKED) },
+      ],
+      false,
+    );
+    expect(refusal(duplicate, 'fixtures/synthetic/ZZZ-01/dup.zip')).toContain('the archive holds two entries of one name');
+  });
+
   it('refuses an archive it cannot read within its limits: it fails closed', () => {
     const zip = testZip([{ name: 'a.csv', bytes: bytes(MARKED) }], true);
     const message = (archive: Uint8Array) => refusal(archive, 'fixtures/x/a.zip');
@@ -310,6 +399,47 @@ describe('the workbook rule', () => {
     expect(archive.read('a.csv')).toBeDefined();
     expect(() => archive.read('b.csv')).toThrow(/limit/);
     expect(archive.read('missing.csv')).toBeUndefined();
+  });
+
+  it('checks what a workbook holds besides its sheets: only a generated workbook’s parts, no hidden sheet, comment-only marker or unshown string', () => {
+    const book = testWorkbook([marked]);
+    const parts = new Archive(book);
+    const entries = parts.names().map((name) => ({ name, bytes: parts.read(name) as Uint8Array }));
+    const withEntry = (name: string, content: Uint8Array, deflate = false) => testZip([...entries, { name, bytes: content }], deflate);
+    // An 835 from another sender, an unmarked CSV or a workbook inside the workbook, stored or deflated.
+    for (const deflate of [false, true]) {
+      expect(refusal(withEntry('xl/embeddings/remit.835', bytes(otherSender), deflate), 'fixtures/synthetic/ZZZ-01/book.xlsx')).toContain('book.xlsx!xl/embeddings/remit.835: a workbook fixture holds only the parts packages/synth writes');
+      expect(refusal(withEntry('xl/embeddings/export.csv', bytes(UNMARKED), deflate), 'fixtures/x/book.xlsx')).toContain('book.xlsx!xl/embeddings/export.csv');
+      expect(refusal(withEntry('xl/embeddings/inner.xlsx', testWorkbook([[['Paid'], ['1.00']]]), deflate), 'fixtures/x/book.xlsx')).toContain('book.xlsx!xl/embeddings/inner.xlsx');
+    }
+    // A second sheet under another name, typed by extension or named by the workbook's relationships.
+    const sheet2 = bytes('<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Paid</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>1.00</t></is></c></row></sheetData></worksheet>');
+    expect(refusal(withEntry('xl/data/s2.sht', sheet2), 'fixtures/x/book.xlsx')).toContain('book.xlsx!xl/data/s2.sht');
+    expect(refusal(withEntry('xl/s2.xml', sheet2), 'fixtures/x/book.xlsx')).toContain('book.xlsx!xl/s2.xml');
+    const typed = entries.map((entry) =>
+      entry.name === '[Content_Types].xml' ? { ...entry, bytes: bytes(Buffer.from(entry.bytes).toString('utf8').replace('<Default Extension="xml" ContentType="application/xml"/>', '<Default Extension="xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')) } : entry,
+    );
+    expect(refusal(testZip(typed, false), 'fixtures/x/book.xlsx')).toContain('types a worksheet, its shared strings or itself by extension');
+    const rels = (target: string, mode = '') =>
+      testZip([...entries, { name: 'xl/_rels/workbook.xml.rels', bytes: bytes(`<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}"${mode}/></Relationships>`) }], false);
+    expect(() => assertSyntheticFixture(rels('worksheets/sheet1.xml'), 'fixtures/x/book.xlsx')).not.toThrow();
+    // xl/styles.xml read as the worksheet the relationships say it is: an unmarked table there is refused.
+    const styled = testZip([...entries.filter((entry) => entry.name !== 'xl/_rels/workbook.xml.rels'), { name: 'xl/styles.xml', bytes: sheet2 }, { name: 'xl/_rels/workbook.xml.rels', bytes: bytes('<Relationships><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="/xl/styles.xml"/></Relationships>') }], false);
+    expect(refusal(styled, 'fixtures/x/book.xlsx')).toContain('book.xlsx!xl/styles.xml: no column of its header is an identifier column');
+    expect(refusal(rels('worksheets/sheet9.xml'), 'fixtures/x/book.xlsx')).toContain('declares a worksheet it does not hold');
+    expect(refusal(rels('https://example.invalid/x.xml', ' TargetMode="External"'), 'fixtures/x/book.xlsx')).toContain('links to a target outside itself');
+    // The marker only inside a comment, CDATA or a document type, and a shared string no cell shows.
+    const commented = bytes('<worksheet><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Payee ID</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><!--<is><t>SYNTHSENDER</t></is>--><is><t>M000</t></is></c></row></sheetData></worksheet>');
+    const withSheet = (sheet: Uint8Array) => testZip([...entries.filter((entry) => !['xl/worksheets/sheet1.xml', 'xl/sharedStrings.xml'].includes(entry.name)), { name: 'xl/worksheets/sheet1.xml', bytes: sheet }], false);
+    expect(refusal(withSheet(commented), 'fixtures/x/book.xlsx')).toContain('no identifier column holds SYNTHSENDER in every data row');
+    expect(() => assertSyntheticFixture(withSheet(bytes(Buffer.from(commented).toString('utf8').replace('<!--<is><t>SYNTHSENDER</t></is>--><is><t>M000</t></is>', '<is><t>SYNTHSENDER</t></is>'))), 'fixtures/x/book.xlsx')).not.toThrow();
+    for (const hidden of ['<![CDATA[SYNTHSENDER]]>', '<!DOCTYPE x>', '<!-- never closed']) {
+      expect(refusal(withSheet(bytes(`<worksheet>${hidden}<sheetData/></worksheet>`)), 'fixtures/x/book.xlsx'), hidden).toContain('CDATA, a document type or an unclosed comment');
+    }
+    const unshown = entries.map((entry) => (entry.name === 'xl/sharedStrings.xml' ? { ...entry, bytes: bytes(Buffer.from(entry.bytes).toString('utf8').replace('</sst>', '<si><t>PATIENT ZZTEST</t></si></sst>')) } : entry));
+    const unshownRefusal = refusal(testZip(unshown, false), 'fixtures/x/book.xlsx');
+    expect(unshownRefusal).toContain('a shared string no cell shows');
+    expect(unshownRefusal).not.toContain('ZZTEST');
   });
 
   it('refuses a workbook that declares a worksheet it does not hold', () => {
@@ -398,24 +528,32 @@ describe('writing cases', () => {
 });
 
 describe('the hook’s view of an edit', () => {
-  it('rebuilds what a Write, Edit or MultiEdit leaves, and nothing for a call that cannot apply', () => {
+  it('rebuilds what a Write, Edit or MultiEdit leaves exactly, and refuses to guess at an edit it cannot rebuild', () => {
+    const unbuildable = (input: Parameters<typeof resultingText>[0], current: string | null) => () => resultingText(input, current);
     expect(resultingText({ tool_name: 'Write', tool_input: { content: 'a' } }, 'old')).toBe('a');
     expect(resultingText({ tool_name: 'Write', tool_input: {} }, null)).toBe('');
     expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: 'b', new_string: 'x' } }, 'abc')).toBe('axc');
-    expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: 'b', new_string: 'x' } }, 'abcb')).toBeNull();
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: 'b', new_string: 'x' } }, 'abcb')).toThrow(UnbuildableEditError);
     expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: 'b', new_string: 'x', replace_all: true } }, 'abcb')).toBe('axcx');
-    expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: 'z', new_string: 'x' } }, 'abc')).toBeNull();
-    expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: 'z', new_string: 'x' } }, null)).toBeNull();
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: 'z', new_string: 'x' } }, 'abc')).toThrow(/not in the file exactly as written/);
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: 'z', new_string: 'x' } }, null)).toThrow(/does not exist/);
     expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: '', new_string: 'new' } }, null)).toBe('new');
-    expect(resultingText({ tool_name: 'Edit', tool_input: { old_string: '', new_string: 'new' } }, 'full')).toBeNull();
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: '', new_string: 'new' } }, 'full')).toThrow(/empty old_string/);
+    // Claude Code applies an old_string with LF to a CRLF file, and straight quotes to curly ones; the guard does not
+    // imitate that matching, so neither edit is rebuilt, and the hook refuses both.
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: 'a,b\nc,d', new_string: 'x' } }, 'a,b\r\nc,d\r\n')).toThrow(UnbuildableEditError);
+    expect(unbuildable({ tool_name: 'Edit', tool_input: { old_string: "the payer's", new_string: 'x' } }, 'the payer’s')).toThrow(UnbuildableEditError);
     const edits = [
       { old_string: 'a', new_string: 'b' },
       { old_string: 'bc', new_string: 'd' },
     ];
     expect(resultingText({ tool_name: 'MultiEdit', tool_input: { edits } }, 'ac')).toBe('d');
-    expect(resultingText({ tool_name: 'MultiEdit', tool_input: { edits: [...edits, { old_string: 'q' }] } }, 'ac')).toBeNull();
-    expect(resultingText({ tool_name: 'MultiEdit', tool_input: { edits: [null] } }, 'ac')).toBeNull();
-    expect(resultingText({ tool_name: 'MultiEdit', tool_input: {} }, 'ac')).toBeNull();
+    expect(unbuildable({ tool_name: 'MultiEdit', tool_input: { edits: [...edits, { old_string: 'q' }] } }, 'ac')).toThrow(UnbuildableEditError);
+    expect(unbuildable({ tool_name: 'MultiEdit', tool_input: { edits: [null] } }, 'ac')).toThrow(UnbuildableEditError);
+    expect(unbuildable({ tool_name: 'MultiEdit', tool_input: { edits: 'a' } }, 'ac')).toThrow(/not a list/);
+    // No edit leaves the file as it is.
+    expect(resultingText({ tool_name: 'MultiEdit', tool_input: {} }, 'ac')).toBe('ac');
+    expect(resultingText({ tool_name: 'MultiEdit', tool_input: { edits: [] } }, null)).toBeNull();
     expect(resultingText({ tool_name: 'Read', tool_input: {} }, 'ac')).toBeNull();
     expect(resultingText({}, 'ac')).toBeNull();
   });

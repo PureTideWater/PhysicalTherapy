@@ -6,6 +6,8 @@
  * column positions and is the contract evidence's, and intake refuses a spreadsheet posting or bank
  * export (docs/adr/0059). A part it cannot read throws WorkbookReadError, and the guard refuses the file.
  */
+import path from 'node:path';
+
 import { type Archive } from './archive';
 
 export class WorkbookReadError extends Error {
@@ -31,16 +33,52 @@ const MAX_COLUMN = 16_384;
 
 const decoder = new TextDecoder('utf-8', { fatal: true });
 
+/**
+ * The parts a generated workbook holds, by name: the package's content types and relationships, its
+ * properties, the workbook, its relationships, styles and theme, shared strings and worksheets. Any other
+ * part (an embedded file, a drawing, a part under another name) is refused unread: a workbook fixture is
+ * generated, never saved from a spreadsheet program (docs/adr/0059).
+ */
+const WORKBOOK_PARTS = [
+  /^\[Content_Types\]\.xml$/,
+  /^_rels\/\.rels$/,
+  /^docProps\/(?:app|core)\.xml$/,
+  /^xl\/workbook\.xml$/,
+  /^xl\/_rels\/workbook\.xml\.rels$/,
+  /^xl\/styles\.xml$/,
+  /^xl\/theme\/theme\d+\.xml$/,
+  /^xl\/sharedStrings\.xml$/,
+  /^xl\/worksheets\/sheet\d+\.xml$/,
+];
+const WORKBOOK_RELATIONSHIPS = 'xl/_rels/workbook.xml.rels';
+const WORKSHEET_RELATIONSHIP = /\/relationships\/worksheet$/;
+
+/** A part's XML with its comments taken out; CDATA, a document type or an unclosed comment is refused. */
+function xmlOf(value: string): string {
+  const uncommented = value.replace(/<!--[\s\S]*?-->/g, '');
+  if (/<!\[CDATA\[|<!DOCTYPE|<!ENTITY|<!--/i.test(uncommented)) {
+    throw new WorkbookReadError('a workbook part holds CDATA, a document type or an unclosed comment');
+  }
+  return uncommented;
+}
+
 function text(archive: Archive, part: string): string | undefined {
   const bytes = archive.read(part);
   if (bytes === undefined) {
     return undefined;
   }
+  let decoded: string;
   try {
-    return decoder.decode(bytes);
+    decoded = decoder.decode(bytes);
   } catch {
     throw new WorkbookReadError('a workbook part is not UTF-8');
   }
+  return xmlOf(decoded);
+}
+
+/** The workbook's parts that a generated workbook does not hold, in the archive's order. */
+export function foreignParts(archive: Archive): string[] {
+  return archive.names().filter((name) => !WORKBOOK_PARTS.some((pattern) => pattern.test(name)));
 }
 
 /** True for an Office Open XML workbook (.xlsx, .xlsm, .xltx, .xltm): it has a workbook part. */
@@ -106,7 +144,7 @@ function columnOf(reference: string | undefined): number | undefined {
   return column - 1;
 }
 
-function sheetRows(xml: string, shared: readonly string[]): string[][] {
+function sheetRows(xml: string, shared: readonly string[], referenced: Set<number>): string[][] {
   const rows: string[][] = [];
   let rowNumber = 0;
   const rowPattern = new RegExp(String.raw`<${tag('row')}\b([^>]*?)(?:/>|>([\s\S]*?)</${tag('row')}>)`, 'g');
@@ -143,6 +181,7 @@ function sheetRows(xml: string, shared: readonly string[]): string[][] {
           if (found === undefined) {
             throw new WorkbookReadError('a cell names a shared string the workbook does not have');
           }
+          referenced.add(index);
           value = found;
         } else {
           value = raw;
@@ -170,26 +209,56 @@ function declaredParts(contentTypes: string | undefined, type: string): string[]
       parts.push(name.replace(/^\//, ''));
     }
   }
+  // A worksheet, shared strings or a workbook typed by extension makes every part of that extension one, read or
+  // not; a generated workbook names each such part on its own.
+  for (const fallback of (contentTypes ?? '').matchAll(new RegExp(String.raw`<${tag('Default')}\b([^>]*?)/?>`, 'g'))) {
+    const declared = attribute(fallback[1] ?? '', 'ContentType') ?? '';
+    if (declared === WORKSHEET_TYPE || declared === SHARED_STRINGS_TYPE || WORKBOOK_TYPES.test(declared)) {
+      throw new WorkbookReadError('the workbook types a worksheet, its shared strings or itself by extension');
+    }
+  }
+  return parts;
+}
+
+/** The worksheets xl/_rels/workbook.xml.rels names, by archive name; a link outside the workbook is refused. */
+function relatedWorksheets(archive: Archive): string[] {
+  const parts: string[] = [];
+  for (const relationship of (text(archive, WORKBOOK_RELATIONSHIPS) ?? '').matchAll(new RegExp(String.raw`<${tag('Relationship')}\b([^>]*?)/?>`, 'g'))) {
+    const attributes = relationship[1] ?? '';
+    const mode = attribute(attributes, 'TargetMode');
+    if (mode !== undefined && mode !== 'Internal') {
+      throw new WorkbookReadError('the workbook links to a target outside itself');
+    }
+    const target = attribute(attributes, 'Target');
+    if (WORKSHEET_RELATIONSHIP.test(attribute(attributes, 'Type') ?? '') && target !== undefined) {
+      parts.push(target.startsWith('/') ? target.slice(1) : path.posix.normalize(`xl/${target}`));
+    }
+  }
   return parts;
 }
 
 /**
- * Every worksheet of the workbook: the parts [Content_Types].xml declares as worksheets and every part
- * under xl/worksheets/, hidden sheets included.
+ * Every worksheet of the workbook: the parts [Content_Types].xml declares as worksheets, the parts its
+ * relationships name as worksheets, and every part under xl/worksheets/, hidden sheets included. A shared
+ * string no cell shows is refused: it is text the marker rule would never read.
  */
 export function workbookSheets(archive: Archive): Sheet[] {
   const names = archive.names();
   const contentTypes = text(archive, CONTENT_TYPES);
   const sharedPart = declaredParts(contentTypes, SHARED_STRINGS_TYPE)[0] ?? 'xl/sharedStrings.xml';
   const shared = sharedStrings(text(archive, sharedPart));
-  const parts = new Set([...declaredParts(contentTypes, WORKSHEET_TYPE), ...names.filter((name) => /^xl\/worksheets\/[^/]+\.xml$/i.test(name))]);
+  const parts = new Set([...declaredParts(contentTypes, WORKSHEET_TYPE), ...relatedWorksheets(archive), ...names.filter((name) => /^xl\/worksheets\/[^/]+\.xml$/i.test(name))]);
+  const referenced = new Set<number>();
   const sheets: Sheet[] = [];
   for (const part of [...parts].sort()) {
     const xml = text(archive, part);
     if (xml === undefined) {
       throw new WorkbookReadError('the workbook declares a worksheet it does not hold');
     }
-    sheets.push({ part, rows: sheetRows(xml, shared) });
+    sheets.push({ part, rows: sheetRows(xml, shared, referenced) });
+  }
+  if (referenced.size < shared.length) {
+    throw new WorkbookReadError('the workbook holds a shared string no cell shows');
   }
   return sheets;
 }

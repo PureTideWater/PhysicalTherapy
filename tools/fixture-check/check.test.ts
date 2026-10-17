@@ -2,11 +2,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { render835 } from '../../packages/synth/src/cases/builder';
 import { minimalFile } from '../../packages/synth/src/cases/par';
+import { Archive } from '../../packages/synth/src/guard/archive';
 import { PINNED_TABLES } from '../../packages/synth/src/guard/pinned';
 import { testWorkbook, testZip } from '../../packages/synth/src/guard/test-workbook';
 import { repositoryRoot } from '../content-files';
@@ -24,7 +26,7 @@ describe('the fixture check on this repository', () => {
   it('passes: every table git would commit carries SYNTHSENDER or is pinned, and every interchange is synthetic', () => {
     const { checked, problems } = checkFixtures(repositoryRoot);
     expect(problems).toEqual([]);
-    // The 30 tables of the base, the vendor exports, the 835s and the two zips at the least.
+    // The 30 tables of the base, the vendor exports, the 835s, the two zips and the text fixtures at the least.
     expect(checked).toBeGreaterThan(150);
   });
 });
@@ -91,6 +93,35 @@ describe('the fixture check on a scratch repository', () => {
     expect(refused(root)).toEqual(['fixtures/synthetic/LED-99/book.ods', 'fixtures/synthetic/LED-99/legacy.bin', 'fixtures/synthetic/LED-99/renamed.zip', 'fixtures/synthetic/LED-99/unmarked.xlsx']);
   });
 
+  it('refuses what a workbook hides, a table named with a "!" or as a dot file, a table under a text name and a gzipped interchange', () => {
+    const synthetic = render835(minimalFile()).text;
+    const other = synthetic.replace('SYNTHSENDER    ', 'OTHERSENDER    ');
+    const marked = [['Payment Date', 'Payee ID'], ['06/11/2026', 'SYNTHSENDER']];
+    const book = testWorkbook([marked]);
+    const parts = new Archive(book);
+    const carrier = testZip([...parts.names().map((name) => ({ name, bytes: parts.read(name) as Uint8Array })), { name: 'xl/embeddings/remit.835', bytes: Buffer.from(other) }], true);
+    const root = repository({
+      'fixtures/golden/review-carrier.xlsx': carrier,
+      'fixtures/golden/marked.xlsx': book,
+      'fixtures/golden/review-bang!.csv': UNMARKED,
+      'fixtures/golden/.csv': UNMARKED,
+      'fixtures/golden/review-plain.txt': UNMARKED.replaceAll(',', '\t'),
+      'fixtures/golden/review-plain': UNMARKED,
+      'fixtures/golden/prose.txt': 'A SYNTHETIC note, with a comma.\nAnother line, with one.\n',
+      'fixtures/golden/review-remit.835.gz': gzipSync(Buffer.from(other)),
+      'fixtures/golden/remit.835.gz': gzipSync(Buffer.from(synthetic)),
+      'docs/notes.txt': UNMARKED,
+    });
+    expect(refused(root)).toEqual([
+      'fixtures/golden/.csv',
+      'fixtures/golden/review-bang!.csv',
+      'fixtures/golden/review-carrier.xlsx',
+      'fixtures/golden/review-plain',
+      'fixtures/golden/review-plain.txt',
+      'fixtures/golden/review-remit.835.gz',
+    ]);
+  });
+
   it('lets a pinned table through only at its path with its exact bytes', () => {
     const table = PINNED_TABLES[0];
     if (table === undefined) {
@@ -119,5 +150,13 @@ describe('the fixture check on a scratch repository', () => {
     expect(guardReads('a/b.dat', Buffer.from('PK\u0003\u0004'))).toBe(true);
     expect(guardReads('a/b.json', Buffer.from('{"a":1}'))).toBe(false);
     expect(guardReads('a/b.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
+    expect(guardReads('a/b.gz', Buffer.from([0x1f, 0x8b, 0x08]))).toBe(true);
+    // A text file is read as a possible table under fixtures/ and packages/synth/ only; elsewhere it is prose.
+    for (const file of ['fixtures/x/export.txt', 'fixtures/x/export', 'packages/synth/x.DAT', 'fixtures/a/b/c.prn']) {
+      expect(guardReads(file, Buffer.from('a')), file).toBe(true);
+    }
+    for (const file of ['docs/notes.txt', 'apps/web/public/robots.txt', 'fixtures/x/.gitignore', 'LICENSE']) {
+      expect(guardReads(file, Buffer.from('a')), file).toBe(false);
+    }
   });
 });

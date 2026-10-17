@@ -8,9 +8,9 @@ import { VENDOR_FORMATS } from '../formats/vendors/registry';
 
 const MARKER_COLUMNS: ReadonlyMap<string, string> = new Map(VENDOR_FORMATS.map((format) => [format.id, format.markerColumn]));
 
-/** The vendor format a label's file belongs to, from its emr/<format_id>/ directory. */
+/** The vendor format a label's file belongs to, from its emr/<format_id>/ directory (an archive's entries are in it too). */
 export function vendorFormatOf(label: string): string | undefined {
-  return /(?:^|\/)emr\/([a-z][a-z0-9_]{0,63})\/[^!]+/.exec(label.split('!')[0] ?? '')?.[1];
+  return /(?:^|\/)emr\/([a-z][a-z0-9_]{0,63})\/./.exec(label)?.[1];
 }
 
 /** The column that must hold the marker in the file `label` names; undefined for any identifier column. */

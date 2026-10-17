@@ -3,7 +3,8 @@
  * identifier column, and that column holds exactly SYNTHSENDER in every data row. One reading for the
  * writer, the hook and the repository check (packages/synth/src/write.ts assertSyntheticFixture).
  *
- * A CSV is comma-separated and a TSV tab-separated, both read as RFC 4180 has it: a field in double
+ * A CSV is comma-separated and a TSV tab-separated (a text table found by sniffedSeparator may be pipe- or
+ * semicolon-separated too), each read as RFC 4180 has it: a field in double
  * quotes may hold the separator, a quote (doubled) or a line break; CRLF or LF ends a row; the text is
  * UTF-8, a byte-order mark ignored. A row whose cells are all empty is blank and skipped, as the
  * ledger's reader skips it, so the header is the first row that is not blank.
@@ -12,7 +13,8 @@
  */
 import { SYNTH_SENDER_ID } from '../identity';
 
-export type Separator = ',' | '\t';
+/** A comma (CSV), a tab (TSV), a pipe or a semicolon: the separators a table's lines may be split by. */
+export type Separator = ',' | '\t' | '|' | ';';
 
 export class TableReadError extends Error {
   override readonly name = 'TableReadError';
@@ -72,6 +74,40 @@ export function readTable(text: string, separator: Separator): string[][] {
     endRow();
   }
   return rows;
+}
+
+/** How many lines of a text file sniffedSeparator reads, and how many characters of it at most. */
+const SNIFF_LINES = 50;
+const SNIFF_CHARACTERS = 64 * 1024;
+
+/**
+ * The separator a text file's lines are split by, when it holds a table under a name that does not say so (a
+ * .txt, a .dat, no extension): two consecutive non-blank lines among its first fifty that split into the same
+ * number of fields, two or more on a tab or a pipe, three or more on a comma or a semicolon. Null for prose,
+ * whose lines rarely agree so. Quotes are not read here: it only decides whether the marker rule applies.
+ */
+export function sniffedSeparator(text: string): Separator | null {
+  const lines = text
+    .slice(0, SNIFF_CHARACTERS)
+    .replace(/^\uFEFF/, '')
+    .split(/\r\n|\n|\r/)
+    .filter((line) => line.trim() !== '')
+    .slice(0, SNIFF_LINES);
+  const separators: readonly (readonly [Separator, number])[] = [
+    ['\t', 2],
+    ['|', 2],
+    [',', 3],
+    [';', 3],
+  ];
+  for (const [separator, least] of separators) {
+    for (let index = 1; index < lines.length; index += 1) {
+      const fields = (lines[index - 1] ?? '').split(separator).length;
+      if (fields >= least && fields === (lines[index] ?? '').split(separator).length) {
+        return separator;
+      }
+    }
+  }
+  return null;
 }
 
 /** The words of a header: camelCase and PascalCase split, lower-cased, on any run of other characters. */
