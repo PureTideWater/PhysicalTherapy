@@ -41,20 +41,23 @@ export interface ReportFrame {
 
 let styles: string | undefined;
 
+/** A stylesheet without its comments: the reader of a PDF needs none of them. */
+function uncommented(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '').trim();
+}
+
 /** tokens.css, then the report stylesheet with every font as a data URL (read once). */
 export function reportStyles(): string {
   if (styles === undefined) {
     const fonts = new Map(REPORT_FONT_FILES.map((file) => [file, `data:font/woff2;base64,${brandFile(file).toString('base64')}`]));
-    const report = brandFile('report.css')
-      .toString('utf8')
-      .replace(/url\("__FONT_DIR__\/([a-z0-9-]+\.woff2)"\)/g, (_match, file: string) => {
+    const report = uncommented(brandFile('report.css').toString('utf8')).replace(/url\("__FONT_DIR__\/([a-z0-9-]+\.woff2)"\)/g, (_match, file: string) => {
         const url = fonts.get(file);
         if (url === undefined) {
           throw new Error('the report stylesheet names a font the brand does not bundle');
         }
         return `url("${url}")`;
       });
-    styles = `${brandFile('tokens.css').toString('utf8')}\n${report}\n${FIGURE_COLUMN_STYLES}`;
+    styles = `${uncommented(brandFile('tokens.css').toString('utf8'))}\n${report}\n${FIGURE_COLUMN_STYLES}`;
   }
   return styles;
 }
