@@ -16,7 +16,8 @@
     "./runtime": "./src/runtime.ts",
     "./testing": "./src/price/test-support/pricing-world.ts",
     "./testing/triage": "./src/triage/test-support/triage-world.ts",
-    "./billing": "./src/billing/public.ts"
+    "./billing": "./src/billing/public.ts",
+    "./era-formats": "./src/parse/era/formats.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

@@ -1,4 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 
 import { assertNoPhi } from '@tp/observability';
 import pg from 'pg';
@@ -6,12 +8,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withJobScope, withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
-import { documentObjectKey } from './schema';
+import { DOCUMENT_KINDS, ERA_FORMAT_IDS, documentObjectKey } from './schema';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from './testing';
 
 /**
- * The rules of migrations 20261016090000 (source_document, payer, plan) and 20261017090000 (the malware
- * gate and the uploader) against the application role (PRD 6, Agreements: "no upload without a BAA";
+ * The rules of migrations 20261016090000 (source_document, payer, plan), 20261017090000 (the malware
+ * gate and the uploader) and 20261102090000 (the ERA export kind and its vendor format; docs/adr/0060) against
+ * the application role (PRD 6, Agreements: "no upload without a BAA";
  * Intake and documents; PRD 8: one row per upload even for duplicates; PRD 10: the practice's own
  * prefix, "Malware scan result must be clean"; test matrix PAR-06, PAR-28, PAR-30, SEC-08). The catalog
  * test and the generated cross-tenant tests cover the tenant policies themselves.
@@ -250,6 +253,94 @@ describe('source_document', () => {
     await withJobScope(app, { jobId: randomUUID(), practiceId: other.practiceId }, (scope) =>
       scope.client.query("UPDATE source_document SET sha256 = $2, status = 'scanned', scan_status = 'clean', scan_at = now() WHERE id = $1", [theirs, hash]),
     );
+  });
+});
+
+/** The literals of a CHECK of the form `column = ANY (ARRAY[...])`, in order. */
+async function checkList(constraint: string): Promise<string[]> {
+  const { rows } = await owner.query<{ definition: string }>('SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = $1 AND conrelid = $2::regclass', [
+    constraint,
+    'source_document',
+  ]);
+  return [...(rows[0]?.definition ?? '').matchAll(/'([^']*)'::text/g)].map((match) => match[1] as string);
+}
+
+const EMR = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/emr');
+
+describe('source_document: the ERA export kind and its vendor format (migration 20261102090000; docs/adr/0060)', () => {
+  const insertAs = (kind: string, formatId: string | null, parent: string | null = null) =>
+    asApp(manager, [north.practiceId], `INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id, format_id) VALUES ($1, $2, $3, 1200, 'text/csv', $4, $5, $6) RETURNING format_id`, [
+      randomUUID(),
+      north.practiceId,
+      kind,
+      manager,
+      parent,
+      formatId,
+    ]);
+
+  it('keeps the kind CHECK in DOCUMENT_KINDS’ order, x12_835 first, and the format CHECK equal to ERA_FORMAT_IDS and the registry’s ERA formats', async () => {
+    expect(await checkList('source_document_kind_check')).toEqual([...DOCUMENT_KINDS]);
+    expect(DOCUMENT_KINDS[0]).toBe('x12_835');
+    expect(await checkList('source_document_format_id_check')).toEqual([...ERA_FORMAT_IDS]);
+    // packages/synth's registry writes each format's manifest; its ERA formats are exactly these IDs.
+    const eraFormats = readdirSync(EMR)
+      .map((id) => JSON.parse(readFileSync(path.join(EMR, id, 'manifest.json'), 'utf8')) as { format: string; kind: string })
+      .filter((manifest) => manifest.kind === 'era_export')
+      .map((manifest) => manifest.format)
+      .sort();
+    expect(eraFormats).toEqual([...ERA_FORMAT_IDS].sort());
+  });
+
+  it('takes an ERA export only with one of the registry’s formats, and a format on no other kind', async () => {
+    for (const formatId of ERA_FORMAT_IDS) {
+      expect((await insertAs('era_export', formatId)).rows).toEqual([{ format_id: formatId }]);
+    }
+    await expect(insertAs('era_export', null)).rejects.toMatchObject({ code: '23514', constraint: 'source_document_format_of_era_export' });
+    await expect(insertAs('era_export', 'webpt_billing_posting_v0')).rejects.toMatchObject({ code: '23514', constraint: 'source_document_format_id_check' });
+    await expect(insertAs('era_export', 'webpt_billing_era_v1')).rejects.toMatchObject({ code: '23514' });
+    for (const kind of DOCUMENT_KINDS.filter((item) => item !== 'era_export')) {
+      await expect(insertAs(kind, 'prompt_era_v0'), kind).rejects.toMatchObject({ code: '23514', constraint: 'source_document_format_of_era_export' });
+      expect((await insertAs(kind, null)).rows, kind).toEqual([{ format_id: null }]);
+    }
+  });
+
+  it('never changes a document’s format once inserted', async () => {
+    const id = randomUUID();
+    await withPracticeScope(app, { actorId: manager, practiceIds: [north.practiceId] }, (scope) =>
+      scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, format_id) VALUES ($1, $2, 'era_export', 1200, 'text/csv', $3, 'spry_era_v0')", [
+        id,
+        north.practiceId,
+        manager,
+      ]),
+    );
+    await expect(asApp(manager, [north.practiceId], "UPDATE source_document SET format_id = 'prompt_era_v0' WHERE id = $1", [id])).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query('UPDATE source_document SET format_id = NULL WHERE id = $1', [id])),
+    ).rejects.toMatchObject({ code: '42501' });
+  });
+
+  it('gives a zip’s entries the zip’s format, and no other', async () => {
+    const zip = randomUUID();
+    await withPracticeScope(app, { actorId: manager, practiceIds: [north.practiceId] }, (scope) =>
+      scope.client.query("INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, format_id) VALUES ($1, $2, 'era_export', 1200, 'application/zip', $3, 'raintree_era_v0')", [
+        zip,
+        north.practiceId,
+        manager,
+      ]),
+    );
+    const entry = (formatId: string | null) =>
+      withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) =>
+        scope.client.query(
+          "INSERT INTO source_document (id, practice_id, kind, size_bytes, content_type, uploaded_by, parent_document_id, format_id) VALUES ($1, $2, 'era_export', 10, 'application/octet-stream', $3, $4, $5)",
+          [randomUUID(), north.practiceId, manager, zip, formatId],
+        ),
+      );
+    expect((await entry('raintree_era_v0')).rowCount).toBe(1);
+    await expect(entry('prompt_era_v0')).rejects.toMatchObject({ code: '23514', message: expect.stringMatching(/zip's export format/) });
+    await expect(entry(null)).rejects.toMatchObject({ code: '23514' });
+    // An 835 zip's entries carry no format, as before.
+    const x12 = await upload();
+    expect((await withJobScope(app, { jobId: randomUUID(), practiceId: north.practiceId }, (scope) => scope.client.query(INSERT, [randomUUID(), north.practiceId, manager, x12]))).rowCount).toBe(1);
   });
 });
 

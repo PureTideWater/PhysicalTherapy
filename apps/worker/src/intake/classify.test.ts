@@ -1,7 +1,7 @@
 import { DOCUMENT_KINDS, type DocumentKind } from '@tp/db';
 import { describe, expect, it } from 'vitest';
 
-import { ACCEPTED_CONTENT, dispose } from './classify';
+import { ACCEPTED_CONTENT, PARSED_KINDS, dispose } from './classify';
 import type { Sniffed } from './sniff';
 
 const top = { entry: false };
@@ -38,6 +38,23 @@ describe('dispose', () => {
     }
   });
 
+  it('queues a clean ERA export for parse as CSV only, and holds a workbook, an 835 or a PDF declared as one as not its type (docs/adr/0060)', () => {
+    expect(ACCEPTED_CONTENT.era_export).toEqual(new Set(['csv']));
+    expect([...PARSED_KINDS].sort()).toEqual(['era_export', 'x12_835']);
+    expect(dispose('era_export', { type: 'csv' }, top)).toEqual({ action: 'parse', status: 'scanned' });
+    expect(dispose('era_export', { type: 'csv' }, entry)).toEqual({ action: 'parse', status: 'scanned' });
+    expect(dispose('era_export', { type: 'zip' }, { entry: false, spreadsheetZip: true })).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'zip' }, { entry: true, spreadsheetZip: true })).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'ole2' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'x12' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'x12_malformed' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'pdf' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'unknown' }, top)).toEqual({ action: 'hold', status: 'wrong_type' });
+    expect(dispose('era_export', { type: 'empty' }, top)).toEqual({ action: 'hold', status: 'unreadable' });
+    // A zip of exports is expanded, each entry judged on its own.
+    expect(dispose('era_export', { type: 'zip' }, top)).toEqual({ action: 'expand' });
+  });
+
   it('expands a zip, but holds a zip inside a zip', () => {
     expect(dispose('x12_835', { type: 'zip' }, top)).toEqual({ action: 'expand' });
     expect(dispose('x12_835', { type: 'zip' }, entry)).toEqual({ action: 'hold', status: 'nested_zip' });
@@ -62,7 +79,7 @@ describe('dispose', () => {
     for (const kind of DOCUMENT_KINDS as readonly DocumentKind[]) {
       for (const content of contents) {
         const accepted = ACCEPTED_CONTENT[kind].has(classes[content.type as keyof typeof classes]);
-        expect(dispose(kind, content, top).action, `${kind} ${content.type}`).toBe(accepted ? (kind === 'x12_835' ? 'parse' : 'store') : 'hold');
+        expect(dispose(kind, content, top).action, `${kind} ${content.type}`).toBe(accepted ? (PARSED_KINDS.has(kind) ? 'parse' : 'store') : 'hold');
       }
     }
   });

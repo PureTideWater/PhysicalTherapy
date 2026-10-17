@@ -11,9 +11,21 @@ import { practice, user } from './tenancy';
  * src/authz.
  */
 
-/** What a document is declared to be (the data dictionary's kinds). */
-export const DOCUMENT_KINDS = ['x12_835', 'contract', 'exhibit', 'posting_export', 'eft_export', 'payer_letter', 'other'] as const;
+/**
+ * What a document is declared to be: the data dictionary's kinds and era_export, a practice-management
+ * system's ERA export (migration 20261102090000; docs/adr/0060), in the order of the kind CHECK (x12_835 first).
+ */
+export const DOCUMENT_KINDS = ['x12_835', 'era_export', 'contract', 'exhibit', 'posting_export', 'eft_export', 'payer_letter', 'other'] as const;
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
+
+/**
+ * The vendor ERA export formats a document of kind era_export may be (source_document.format_id): the ERA
+ * entries of the format registry (packages/synth/src/formats/vendors/registry.ts and the worker's runtime
+ * registry), in the order of the format_id CHECK. A new format version (a `_v1`) needs a migration; confirming
+ * a format is a change to registry data only. A test holds the CHECK, this list and the registries equal.
+ */
+export const ERA_FORMAT_IDS = ['webpt_billing_era_v0', 'prompt_era_v0', 'spry_era_v0', 'raintree_era_v0'] as const;
+export type EraFormatId = (typeof ERA_FORMAT_IDS)[number];
 
 /**
  * A document's receipt state. The intake pipeline moves a document from awaiting_upload to received,
@@ -130,6 +142,8 @@ export const sourceDocument = pgTable(
     /** Set by intake for contracts, exhibits and payer letters (migration 20261017120000; docs/adr/0033). */
     pageTextStatus: text('page_text_status', { enum: PAGE_TEXT_STATUSES }),
     pageCount: integer('page_count'),
+    /** An ERA export's vendor format, set exactly for kind era_export and never changed (migration 20261102090000). */
+    formatId: text('format_id', { enum: ERA_FORMAT_IDS }),
   },
   (table) => [
     index('source_document_by_practice').on(table.practiceId, table.createdAt.desc(), table.id),
