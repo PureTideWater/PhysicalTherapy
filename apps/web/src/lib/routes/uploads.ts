@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, NotFoundError } from '../http/route';
+import { declaredTypeProblem } from '../uploads/csv-exports';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES, allowedContentType } from '../uploads/limits';
 import type { Receipt } from '../uploads/receipt-labels';
 import { type ReceiptPage, listReceipts, receiptOf, receiptReport } from '../uploads/receipts';
@@ -144,17 +145,32 @@ export const uploadReceipts = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
 });
 
-const fileSchema = z
-  .strictObject({
-    kind: z.enum(DOCUMENT_KINDS),
-    contentType: z.string().trim().toLowerCase().max(200),
-    sizeBytes: z
-      .number()
-      .int()
-      .min(1, 'an empty file')
-      .max(MAX_UPLOAD_BYTES, `larger than ${String(MAX_UPLOAD_BYTES / 1024 ** 3)} GiB; split it or zip it`),
-  })
-  .refine((file) => allowedContentType(file.kind, file.contentType), { message: 'not a type of file this kind of document accepts', path: ['contentType'] });
+const fileSchema = z.strictObject({
+  kind: z.enum(DOCUMENT_KINDS),
+  contentType: z.string().trim().toLowerCase().max(200),
+  sizeBytes: z
+    .number()
+    .int()
+    .min(1, 'an empty file')
+    .max(MAX_UPLOAD_BYTES, `larger than ${String(MAX_UPLOAD_BYTES / 1024 ** 3)} GiB; split it or zip it`),
+});
+
+/**
+ * The batch, each file's declared type checked against its kind. A posting or EFT export the request does
+ * not accept (a workbook among them, which the uploader declares generically) is named by its place in the
+ * batch, with what to do: save it as CSV (docs/adr/0059).
+ */
+const filesSchema = z
+  .array(fileSchema)
+  .min(1, 'choose at least one file')
+  .max(MAX_FILES_PER_BATCH, `at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest`)
+  .superRefine((files, context) => {
+    files.forEach((file, index) => {
+      if (!allowedContentType(file.kind, file.contentType)) {
+        context.addIssue({ code: 'custom', message: declaredTypeProblem(file.kind, index + 1), path: [index, 'contentType'] });
+      }
+    });
+  });
 
 export interface RequestedUpload {
   readonly documentId: string;
@@ -170,7 +186,7 @@ export const requestUploads = practiceRoute({
   phi: true,
   permission: 'file.upload',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ files: z.array(fileSchema).min(1, 'choose at least one file').max(MAX_FILES_PER_BATCH, `at most ${String(MAX_FILES_PER_BATCH)} files at once; zip the rest`) }),
+  input: z.object({ files: filesSchema }),
   audit: { action: 'upload_batch_requested', objectType: 'source_document' },
   handle: async ({ scope, practiceId, input, actor, services, request }): Promise<{ readonly documents: readonly RequestedUpload[] }> => {
     if (!(await baaOnFile(scope, practiceId))) {

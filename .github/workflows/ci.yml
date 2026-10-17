@@ -30,10 +30,16 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Every table, interchange and workbook in the commit, read before anything regenerates the tree, through the
+      # writer's own fixture guard: SYNTHSENDER in an identifier column, or a pinned table (CO-03, docs/adr/0059).
+      - run: pnpm check:fixtures
       - run: pnpm typecheck && pnpm lint && pnpm lint:logs
       - run: pnpm verify-content
       - run: tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"
       - run: pnpm synth --all
+      # The generation is deterministic, so a committed fixture it rewrites, or a file it removes from a case or EMR
+      # directory, is a fixture the commit holds that packages/synth did not write: the run fails on it.
+      - run: git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"
       # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
       # worker's tests print reports with: installed before the unit tests, so none of them skips (docs/adr/0058).
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium

@@ -18,6 +18,7 @@ import { TRANSACTION_VERSION } from '../x12/model';
 import { DEFAULT_DELIMITERS, type X12Segment, seg, segmentText } from '../x12/segments';
 import { summarize835 } from '../x12/summary';
 import { canonicalJson, sha256 as sha256Of } from '../core/json';
+import { assertSyntheticX12 } from '../write';
 import { TIMED_CODES, controlNumber, therapyClaim, therapyLine, traceNumber } from './common';
 
 export const LARGE_CASE = 'PAR-29';
@@ -128,7 +129,13 @@ export async function writeLargeFixture(syntheticRoot: string, expectedSha256?: 
   }
   mkdirSync(path.dirname(target), { recursive: true });
   const stream = createWriteStream(target);
+  let first = true;
   for (const chunk of largeFixtureChunks()) {
+    if (first) {
+      // The first chunk is the envelope header (ISA and GS): the fixture guard's sender check reads it.
+      assertSyntheticX12(new Uint8Array(Buffer.from(chunk)), LARGE_FIXTURE_PATH);
+      first = false;
+    }
     if (!stream.write(chunk)) {
       await new Promise<void>((resolve) => stream.once('drain', () => resolve()));
     }

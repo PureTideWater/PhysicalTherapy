@@ -568,8 +568,8 @@
     },
     {
       "path": "posting-export.csv",
-      "sha256": "8e8ed34d00514b8e4f3dbfaceba4755c1b846958759a15a6b0bc8e849cfb243b",
-      "bytes": 131,
+      "sha256": "bbeb008787cafcf08ba4a93a0ea757f2b6015e60480f6e0b32bad80e1f046439",
+      "bytes": 152,
       "kind": "csv",
       "description": "The practice posting export: one row posting the check, matched by check number and amount."
     },
@@ -1270,8 +1270,8 @@
     },
     {
       "path": "same-day-posting-export.csv",
-      "sha256": "16ad77ae7ab65d4dae7ace0093a9a6545f1cfe73376fef15c31f50985dc5e329",
-      "bytes": 131,
+      "sha256": "8be70d7950b75e55fa6b1d3e74dd76bf9fa46241129f9472420ff0a56a38beb2",
+      "bytes": 152,
       "kind": "csv",
       "description": "The posting export for the same-day check: one check-level row."
     }

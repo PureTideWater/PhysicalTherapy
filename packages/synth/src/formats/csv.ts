@@ -3,10 +3,15 @@
  * matrix LED cases). The posting export is laid out like a practice-management system's CSV (one
  * template, "SYNTHETIC PM EXPORT v1"); the bank export like a deposit report. Amounts are dollars with
  * two places, written from integer cents.
+ *
+ * Each export carries the synthetic marker in an identifier column of its own (docs/adr/0059, D14
+ * option a): the last column, the posting export's "Payee ID" and the bank export's "Originator ID",
+ * holds SYNTHSENDER on every row. The ledger's templates map no such column, so a row reads as before.
  */
 import { type Cents, formatCents } from '@tp/money';
 
 import { type CalendarDate, toUsDate } from '../core/dates';
+import { SYNTH_SENDER_ID } from '../identity';
 
 function cell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value;
@@ -28,9 +33,9 @@ export interface PostingRow {
   readonly batch: string;
 }
 
-export const POSTING_EXPORT_HEADER = ['Post Date', 'Check/EFT #', 'Payer', 'Claim Ref', 'CPT', 'DOS', 'Paid Amount', 'Batch'] as const;
+export const POSTING_EXPORT_HEADER = ['Post Date', 'Check/EFT #', 'Payer', 'Claim Ref', 'CPT', 'DOS', 'Paid Amount', 'Batch', 'Payee ID'] as const;
 
-/** The posting export: dates MM/DD/YYYY, CRLF line endings, a header row. */
+/** The posting export: dates MM/DD/YYYY, CRLF line endings, a header row, SYNTHSENDER as every row's payee ID. */
 export function postingExport(rows: readonly PostingRow[]): string {
   return csv([
     [...POSTING_EXPORT_HEADER],
@@ -43,6 +48,7 @@ export function postingExport(rows: readonly PostingRow[]): string {
       row.serviceDate === undefined ? '' : toUsDate(row.serviceDate),
       formatCents(row.amount),
       row.batch,
+      SYNTH_SENDER_ID,
     ]),
   ]);
 }
@@ -56,9 +62,9 @@ export interface EftRow {
   readonly batchReference?: string;
 }
 
-export const EFT_EXPORT_HEADER = ['Date', 'Description', 'Trace Number', 'Amount', 'Batch Reference'] as const;
+export const EFT_EXPORT_HEADER = ['Date', 'Description', 'Trace Number', 'Amount', 'Batch Reference', 'Originator ID'] as const;
 
-/** The bank export: ISO dates, CRLF line endings, a header row. */
+/** The bank export: ISO dates, CRLF line endings, a header row, SYNTHSENDER as every row's originator ID. */
 export function eftExport(rows: readonly EftRow[]): string {
-  return csv([[...EFT_EXPORT_HEADER], ...rows.map((row) => [row.depositedOn, row.description, row.trace, formatCents(row.amount), row.batchReference ?? ''])]);
+  return csv([[...EFT_EXPORT_HEADER], ...rows.map((row) => [row.depositedOn, row.description, row.trace, formatCents(row.amount), row.batchReference ?? '', SYNTH_SENDER_ID])]);
 }

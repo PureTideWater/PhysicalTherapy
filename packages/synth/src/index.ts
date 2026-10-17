@@ -48,6 +48,13 @@ export { type Exhibit, type ExhibitPage, EXHIBIT_BANNER, exhibitPageLines, exhib
 export { readZip, writeZip, type ZipEntry } from './formats/zip';
 export { writePdf } from './formats/pdf';
 
+// The EMR export formats (Change Order 001, CO-03; docs/adr/0059), every one FORMAT_UNCONFIRMED.
+export * from './formats/vendors/registry';
+export { type CanonicalPostingRow, POSTING_SOURCES, type PostingSource, postingSourceRows, readSyntheticPostingExport, vendorPostingExport } from './formats/vendors/posting';
+export { type CanonicalEraRow, ERA_SOURCES, type EraCheck, type EraSource, eraRowsOf, eraSourceRows, vendorEraExport } from './formats/vendors/era';
+export { EMR_DIR, EXPORT_FILES, MANIFEST_FILE, type EmrFixtureSet, type EmrManifest, emrFixtureSets, emrWritable, staleEmrDirectories } from './formats/vendors/fixtures';
+export { VendorFormatError, readTable as readVendorTable, vendorCsv, writeDate, writeMoney } from './formats/vendors/table';
+
 // The model gateway's synthetic evaluation sets (test matrix MOD-01 and MOD-03).
 export * from './eval/formats';
 export { CONTRACT_SET_DIR, CONTRACT_SET_SIZE, contractSetFiles, contractSetSpecs, normalizeText, writtenDate } from './eval/contract-set';
@@ -55,7 +62,7 @@ export { NARRATIVE_SET_DIR, NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetF
 export { SCAN_HEIGHT, SCAN_WIDTH, TEXTRACT_RECORDING_FORMAT, type RecordedBlock, type TextractRecording, scannedPdf, textractRecording } from './formats/scan';
 
 // Writing fixtures.
-export { SyntheticSenderError, assertSyntheticX12, driftFrom, writeCases } from './write';
+export { SYNTHETIC_FIXTURES, SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, driftFrom, writeCases } from './write';
 
 // The twin generator (production only; synthetic input elsewhere).
 export { TwinBoundary, TwinBoundaryError } from './twin/boundary';

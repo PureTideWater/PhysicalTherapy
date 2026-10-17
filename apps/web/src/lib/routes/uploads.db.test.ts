@@ -233,6 +233,15 @@ describe('asking for upload URLs', () => {
     expect(await call(requestUploads, manager, practice(), { files: [{ ...file, sizeBytes: 2 * 1024 ** 3 + 1 }] })).toMatchObject({ status: 'invalid', issues: [{ field: 'files.0.sizeBytes' }] });
     expect(await call(requestUploads, manager, practice(), { files: [{ ...file, contentType: 'application/pdf' }] })).toMatchObject({ status: 'invalid', issues: [{ field: 'files.0.contentType' }] });
     expect(await call(requestUploads, manager, practice(), { files: [{ ...file, kind: 'contract', contentType: 'application/pdf' }] })).toMatchObject({ status: 'ok' });
+    // An .xlsx posting export (the uploader declares a type the kind does not accept generically) is named by its place in
+    // the batch, with what to do: exports are read as CSV only (docs/adr/0059). The CSVs beside it are not the problem.
+    const csv = { kind: 'posting_export', contentType: 'text/csv', sizeBytes: 100 };
+    const save = 'posting and EFT exports are read as CSV only. Save it as CSV (comma-separated) and upload it again.';
+    for (const contentType of ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/octet-stream']) {
+      expect(await call(requestUploads, manager, practice(), { files: [csv, { ...csv, contentType }, csv] })).toEqual({ status: 'invalid', issues: [{ field: 'files.1.contentType', message: `File 2 is not a CSV: ${save}` }] });
+    }
+    expect(await call(requestUploads, manager, practice(), { files: [{ ...csv, kind: 'eft_export', contentType: 'application/octet-stream' }] })).toEqual({ status: 'invalid', issues: [{ field: 'files.0.contentType', message: `File 1 is not a CSV: ${save}` }] });
+    expect(await call(requestUploads, manager, practice(), { files: [csv, { ...csv, contentType: 'application/vnd.ms-excel' }] })).toMatchObject({ status: 'ok' });
     expect(await call(requestUploads, viewer, practice(), { files: [file] })).toMatchObject({ status: 'forbidden', permission: 'file.upload' });
   });
 });

@@ -8,7 +8,9 @@ import { parseCsv } from './csv';
  * onboarding"). A template names the column that holds each field and how dates are written; a
  * practice keeps its posting template in practice.settings (settings.ts). One built-in template reads
  * packages/synth's synthetic posting export, and one its synthetic bank export; a bank export is read
- * with the built-in layout.
+ * with the built-in layout. Four more read the posting exports of WebPT Billing, Prompt, SPRY and
+ * Raintree as packages/synth's placeholders lay them out (Change Order 001, CO-03; docs/adr/0059),
+ * each unconfirmed until a format description from the design-partner firm confirms its columns.
  */
 
 export const POSTING_FIELDS = ['posted_on', 'check_or_trace', 'amount', 'payer', 'claim_reference', 'procedure_code', 'service_date', 'batch'] as const;
@@ -22,6 +24,13 @@ export const REQUIRED_EFT_FIELDS: readonly EftField[] = ['deposited_on', 'trace'
 export const DATE_FORMATS = ['MM/DD/YYYY', 'YYYY-MM-DD'] as const;
 export type DateFormat = (typeof DATE_FORMATS)[number];
 
+/**
+ * Whether a built-in template's columns are confirmed against its system's own format description
+ * (docs/adr/0059). Plain data, shown beside the template's name: a row is read the same either way.
+ */
+export const TEMPLATE_STATUSES = ['confirmed', 'unconfirmed'] as const;
+export type TemplateStatus = (typeof TEMPLATE_STATUSES)[number];
+
 export interface ExportTemplate<F extends string> {
   /** A built-in template's ID, or "practice" for a practice's own mapping. */
   readonly id: string;
@@ -30,6 +39,8 @@ export interface ExportTemplate<F extends string> {
   /** The header of the column holding each field. */
   readonly columns: Readonly<Partial<Record<F, string>>>;
   readonly dateFormat: DateFormat;
+  /** A built-in template's status; a practice's own mapping, made against its own export, has none. */
+  readonly status?: TemplateStatus;
 }
 
 export type PostingTemplate = ExportTemplate<PostingField>;
@@ -50,6 +61,7 @@ export const SYNTHETIC_PM_EXPORT_V1: PostingTemplate = {
     batch: 'Batch',
   },
   dateFormat: 'MM/DD/YYYY',
+  status: 'confirmed',
 };
 
 /** packages/synth's bank export (src/formats/csv.ts). */
@@ -60,7 +72,82 @@ export const SYNTHETIC_BANK_EXPORT_V1: EftTemplate = {
   dateFormat: 'YYYY-MM-DD',
 };
 
-export const BUILT_IN_POSTING_TEMPLATES: readonly PostingTemplate[] = [SYNTHETIC_PM_EXPORT_V1];
+/** WebPT Billing's payment-posting export, as packages/synth's placeholder lays it out (webpt_billing_posting_v0). */
+export const WEBPT_BILLING_POSTING_V0: PostingTemplate = {
+  id: 'webpt_billing_posting_v0',
+  system: 'WebPT Billing payment posting export',
+  columns: {
+    posted_on: 'Payment Date',
+    check_or_trace: 'Check/EFT Number',
+    payer: 'Insurance Name',
+    claim_reference: 'Claim ID',
+    procedure_code: 'CPT Code',
+    service_date: 'Date of Service',
+    amount: 'Payment Amount',
+    batch: 'Deposit Batch',
+  },
+  dateFormat: 'MM/DD/YYYY',
+  status: 'unconfirmed',
+};
+
+/** Prompt's payment-posting export, as packages/synth's placeholder lays it out (prompt_posting_v0). */
+export const PROMPT_POSTING_V0: PostingTemplate = {
+  id: 'prompt_posting_v0',
+  system: 'Prompt payment posting export',
+  columns: {
+    posted_on: 'Posted Date',
+    check_or_trace: 'Payment Reference',
+    amount: 'Amount',
+    payer: 'Payer',
+    claim_reference: 'Claim Number',
+    procedure_code: 'Procedure Code',
+    service_date: 'Service Date',
+    batch: 'Batch Number',
+  },
+  dateFormat: 'YYYY-MM-DD',
+  status: 'unconfirmed',
+};
+
+/** SPRY's payment-posting export, as packages/synth's placeholder lays it out (spry_posting_v0). */
+export const SPRY_POSTING_V0: PostingTemplate = {
+  id: 'spry_posting_v0',
+  system: 'SPRY payment posting export',
+  columns: {
+    posted_on: 'Posting Date',
+    batch: 'Batch',
+    payer: 'Insurance',
+    check_or_trace: 'Check No',
+    claim_reference: 'Claim #',
+    service_date: 'DOS',
+    procedure_code: 'CPT',
+    amount: 'Paid',
+  },
+  dateFormat: 'MM/DD/YYYY',
+  status: 'unconfirmed',
+};
+
+/** Raintree's payment-posting export, as packages/synth's placeholder lays it out (raintree_posting_v0). */
+export const RAINTREE_POSTING_V0: PostingTemplate = {
+  id: 'raintree_posting_v0',
+  system: 'Raintree payment posting export',
+  columns: {
+    posted_on: 'Transaction Date',
+    payer: 'Payer Name',
+    check_or_trace: 'Check Number',
+    amount: 'Payment',
+    claim_reference: 'Account Claim No',
+    procedure_code: 'Service Code',
+    service_date: 'From Date',
+    batch: 'Batch ID',
+  },
+  dateFormat: 'YYYY-MM-DD',
+  status: 'unconfirmed',
+};
+
+/** The vendor templates, unconfirmed until each vendor's format description is received (docs/adr/0059). */
+export const VENDOR_POSTING_TEMPLATES: readonly PostingTemplate[] = [WEBPT_BILLING_POSTING_V0, PROMPT_POSTING_V0, SPRY_POSTING_V0, RAINTREE_POSTING_V0];
+
+export const BUILT_IN_POSTING_TEMPLATES: readonly PostingTemplate[] = [SYNTHETIC_PM_EXPORT_V1, ...VENDOR_POSTING_TEMPLATES];
 
 /** Why a template is not usable; empty when it is. */
 export function templateProblems<F extends string>(template: ExportTemplate<F>, fields: readonly F[], required: readonly F[]): string[] {

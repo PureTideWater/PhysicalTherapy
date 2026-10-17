@@ -566,8 +566,8 @@
     },
     {
       "path": "posting-export.csv",
-      "sha256": "0c821fd016a8ba5f98fd04c9a84a9dea437557e29797a1afe69793d4e49969b2",
-      "bytes": 131,
+      "sha256": "965afd4f5733eda0e3e820ebfdcb6126014f2422eb47d067d421de5861091da5",
+      "bytes": 152,
       "kind": "csv",
       "description": "A posting row whose check number has a typo, so it matches nothing until a person matches it."
     }

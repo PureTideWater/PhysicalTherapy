@@ -564,15 +564,15 @@
     },
     {
       "path": "posting-export.csv",
-      "sha256": "2fd1c3de26870082a506e8c48c5667cac3cb14e087d5df0b67fc5666863889f8",
-      "bytes": 131,
+      "sha256": "165ba2058753e7e3af3cc2df38cb2c804b02c92b1b15570baa4b2b41e1dc119d",
+      "bytes": 152,
       "kind": "csv",
       "description": "The posting export."
     },
     {
       "path": "posting-export-again.csv",
-      "sha256": "2354f3cd7b519b5e9a9294ec58d01a0c89c03183529061ac58713f0d530996a8",
-      "bytes": 201,
+      "sha256": "b4a6c8fc69449b2bd825edd177ea776a0a600a3924300eb1360857408ebcfd88",
+      "bytes": 234,
       "kind": "csv",
       "description": "A later export that repeats the same posting row and adds an unrelated one."
     }

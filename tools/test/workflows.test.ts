@@ -158,6 +158,22 @@ describe('workflows', () => {
     }
   });
 
+  it('run the fixture check on every pull request on the commit as it is, and fail when the generation changes a committed fixture (CO-03)', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const check = stepIndex(steps, (step) => step.run === 'pnpm check:fixtures');
+    const synth = stepIndex(steps, (step) => step.run === 'pnpm synth --all');
+    // Right after the secret scan and before pnpm synth --all, which rewrites a hand-edited generated file and removes
+    // an extra one, so the check reads the commit's own bytes.
+    expect(check).toBe(stepIndex(steps, (step) => step.uses?.startsWith('gitleaks/gitleaks-action@') === true) + 1);
+    expect(check).toBeLessThan(synth);
+    // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
+    expect(steps[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
+    expect(check).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle'));
+    expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
+    const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
+  });
+
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);

@@ -272,7 +272,13 @@ export function receiptState(receipt: Receipt): ReceiptState {
     case 'not_835':
       return held('Not an 835: the file does not start with an ISA header. Check you chose the right file.');
     case 'wrong_type':
-      return held(`Not a ${KIND_NAMES[receipt.kind]}: the file is another type of document.`);
+      // A posting or EFT export is read as CSV only (docs/adr/0059): a workbook is held as wrong_type, and so is
+      // any other file that is not CSV text (an 835, a PDF). The receipt does not know which, so it says both.
+      return held(
+        receipt.kind === 'posting_export' || receipt.kind === 'eft_export'
+          ? `Not a CSV file: ${receipt.kind === 'posting_export' ? 'posting' : 'EFT'} exports are read as CSV only. If it is a spreadsheet, save it as CSV (comma-separated) and upload it again; otherwise check you chose the right file and kind.`
+          : `Not a ${KIND_NAMES[receipt.kind]}: the file is another type of document.`,
+      );
     case 'unreadable':
       return held('Unreadable: the file is damaged, empty, or not the size it was sent as. Upload it again.');
     case 'too_large':

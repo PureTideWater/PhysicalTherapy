@@ -251,6 +251,22 @@ describe('intake of a single file', () => {
     }
   });
 
+  it('holds a workbook, .xlsx or .xls, uploaded as a posting or EFT export as not its type, and queues no reconcile (docs/adr/0059)', async () => {
+    const h = harness();
+    // Each file its own bytes, so none is held as a duplicate of the one before.
+    const workbook = (check: string) => Buffer.from(syntheticXlsx([{ name: 'Postings', rows: [['Post Date', 'Check/EFT #', 'Paid Amount', 'Payee ID'], ['06/11/2026', check, '1.00', 'SYNTHSENDER']] }]));
+    const legacy = Buffer.concat([Buffer.from('d0cf11e0a1b11ae1', 'hex'), Buffer.from(`SYNTHETIC ${randomUUID()}`), Buffer.alloc(464)]);
+    for (const [bytes, kind] of [
+      [workbook('SYN-4'), 'posting_export'],
+      [workbook('SYN-5'), 'eft_export'],
+      [legacy, 'posting_export'],
+    ] as const) {
+      const id = await upload(h, bytes, { kind });
+      expect((await intake(h, id)).queued, kind).toEqual([]);
+      expect((await one(id)).status, kind).toBe('wrong_type');
+    }
+  });
+
   it('holds an upload whose bytes are not the size it declared', async () => {
     const h = harness();
     const id = await upload(h, remit(), { size: 10 });

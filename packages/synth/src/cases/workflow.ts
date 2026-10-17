@@ -237,6 +237,14 @@ export function led06(b: CaseBuilder): void {
     providerAdjustments: [{ providerId: pair.base.payee.id.value, fiscalPeriodDate: calendarDate(2026, 12, 31), items: [{ code: 'WO', reference: pair.corrected.payerClaimControlNumber, amount: recoupment }] }],
   });
   b.add835('recoupment.835', file(b, remit, 3, recoupDate), `A later remittance whose PLB WO takes back 18.00 against the corrected claim (${pair.corrected.payerClaimControlNumber}).`);
+  // The take-back as a practice-management system posts it: a negative amount against the corrected claim, under the
+  // recoupment's trace. No ledger test of this case loads it; the vendor posting exports write it again (docs/adr/0059).
+  b.addFile(
+    'recoupment-posting-export.csv',
+    postingExport([{ postedOn: addDays(recoupDate, 2), checkOrTrace: traceNumber(b.info.id, 3), payerName: pair.base.payer.name, claimReference: pair.corrected.patientControlNumber, amount: negateCents(recoupment), batch: 'SYNBATCH-0602' }]),
+    'csv',
+    'The posting export of the take-back: the 18.00 recouped, posted as -18.00 against the corrected claim.',
+  );
   recoveryScenario(b);
   b.outcome({
     entries: [

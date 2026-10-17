@@ -33,8 +33,35 @@ pnpm synth --large         # the 10,000-claim PAR-29 file into fixtures/syntheti
   `documents`: the segment documents of its well-formed 835s, in memory). `findCase(id)` and `generateAll()`.
 - `writeLargeFixture(syntheticRoot, sha?)` streams the PAR-29 file; `largeFixtureFacts()` gives its size,
   hashes and counts.
-- Other formats: `postingExport` and `eftExport` (CSV), `exhibitText` and `exhibitPdf` (contract exhibits),
-  `writeZip` and `readZip` (stored, deterministic), `writePdf`.
+- Other formats: `postingExport` and `eftExport` (CSV, with `SYNTHSENDER` in their last column, "Payee ID" and
+  "Originator ID"), `exhibitText` and `exhibitPdf` (contract exhibits), `writeZip` and `readZip` (stored,
+  deterministic), `writePdf`.
+
+## The EMR export formats
+
+`src/formats/vendors/` (Change Order 001, CO-03; docs/adr/0059):
+
+- `registry.ts` is the declarative `VENDOR_FORMATS`: for WebPT Billing, Prompt, SPRY and Raintree, a
+  `posting_export` (`<vendor>_posting_v0`) and an `era_export` (`<vendor>_era_v0`). Each entry has its columns in
+  file order (header in the vendor's plausible vocabulary, field, type), the `markerColumn` that holds
+  `SYNTHSENDER` (the payee ID of a posting export, the interchange sender of an ERA export), its date format (one
+  of the ledger's two), plain-decimal money, line ending, byte-order mark and list separator, and `status`
+  `FORMAT_UNCONFIRMED` with `confirmation: null` and a note that no format description has been received.
+  `formatProblems(format)` checks an entry. To confirm a format, set `status` to `FORMAT_CONFIRMED` and
+  `confirmation` to the date and reference of the redacted format description (when its columns differ, add a
+  `_v1` entry and keep `_v0`), flip the ledger's matching posting template to `status: 'confirmed'`, and run
+  `pnpm synth --all`.
+- `posting.ts` reads the case registry's own posting exports (LED-04, LED-08's later export, LED-09's line-level
+  row, LED-06's take-back as a negative amount) back into canonical rows and writes them in each posting format; `era.ts` writes one row per service line
+  of loaded, balanced 835s with line-level adjustments only and no PLB (PAR-01, PAR-08, PAR-09, PAR-12, PAR-13,
+  PAR-22), so each payment's rows total its claims paid and its signed payment (BPR02, negated for a debit) to
+  the cent.
+- `fixtures.ts` builds `fixtures/synthetic/emr/<format_id>/` (the export and a `manifest.json` with the canonical
+  rows in cents); `pnpm synth --all` writes them through `writeCases` and removes a format directory the
+  registry no longer has. The packages/ledger posting templates of the same IDs read the posting exports.
+- The marker rule: every CSV, TSV or .xlsx fixture (and a .txt, .dat or extensionless one whose lines split as a
+  table) carries `SYNTHSENDER` in an identifier column of every data row (D14 option a), and the writer, the hook
+  and CI refuse one that does not.
 
 ## The twin generator
 
