@@ -1,6 +1,6 @@
 # 0056. Wear the PaidWhole brand from one token source, with self-hosted fonts and status as text on tint
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
 - **Date:** 2026-10-17
 - **Deciders:** founder (engineering)
 - **PRD sections:** 6 (Cross-cutting: accessibility; PHI pages make no third-party requests), 7 (the shell, the
@@ -100,6 +100,9 @@ every message already links to) with the alternative text "PaidWhole": every mai
 strip inline SVG, and the wordmark is never typed in a fallback face. The ground is White (Paper is for print). The
 public brand art under `/brand` alone answers `Cross-Origin-Resource-Policy: cross-origin`, so a web mail client on its
 own origin may embed it; every other response keeps `same-origin`.
+
+*Amended by [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md) (decision D7): the email art comes from the CloudFront static host (`STATIC_ASSET_ORIGIN`), not
+the application's origin, and the application's own responses keep `same-origin` everywhere, `/brand` included.*
 
 **PDFs.** A report's inside pages carry the 16 px mark alone beside the document's title in the running header (no
 lockup is built from the mark and live text below 120 px). Dollar amounts in headings and running text are wrapped in
