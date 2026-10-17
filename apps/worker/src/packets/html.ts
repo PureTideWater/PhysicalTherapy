@@ -1,7 +1,9 @@
+import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
 import { formatUsd, parseCents } from '@tp/money';
 import { EVIDENCE_GAP_CODES, type EvidenceGapCode, type ExportedPacket } from '@tp/packets';
 
-import { escapeHtml } from '../report/html';
+import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
+import { escapeHtml } from '../report/escape';
 
 /**
  * A packet as one self-contained HTML document, which the worker prints to PDF with Chromium (PRD 15,
@@ -11,7 +13,8 @@ import { escapeHtml } from '../report/html';
  * reference, interest as its own line (never inside expected), the evidence list with its gaps, the
  * requested action, and the approval record (who, when, the version's hash, and the audit flag of a
  * single-user approval). It is the export, so it carries the identifiers inserted at export: it is
- * stored sealed with the practice's key. Nothing loads from outside the document.
+ * stored sealed with the practice's key. Nothing loads from outside the document. It is set in the
+ * PaidWhole report frame (report/brand.ts); a packet states no recovered total, so it never earns the seal.
  */
 
 export interface ApprovalRecord {
@@ -44,31 +47,33 @@ export function gapText(code: EvidenceGapCode): string {
 /** Every gap code (for the tests: each has its sentence). */
 export const GAP_CODES = EVIDENCE_GAP_CODES;
 
-function table(caption: string, headers: readonly string[], rows: readonly (readonly string[])[]): string {
+/** A table; `figures` names its columns (1-based) of codes and of amounts or counts, set in the mono face. */
+function table(caption: string, headers: readonly string[], rows: readonly (readonly string[])[], figures: FigureColumns = {}): string {
   const head = headers.map((header) => `<th scope="col">${escapeHtml(header)}</th>`).join('');
   const body = rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('');
-  return `<table><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  return `<table${figureColumns(figures)}><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
+/**
+ * The Verified gate for a packet (docs/adr/0055): a dispute packet asks for money and states no recovered
+ * total, so reportReconciliation finds none and the seal never prints on it.
+ */
+export function packetReconciliation(approval: ApprovalRecord): ReportReconciliation {
+  return reportReconciliation({ report: { kind: 'packet_version', id: approval.versionSha256 }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
+}
+
+// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
 const STYLE = `
-  @page { size: Letter; }
-  * { box-sizing: border-box; }
-  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10pt; color: #111; margin: 0; }
-  h1 { font-size: 17pt; margin: 0 0 4pt; }
-  h2 { font-size: 12pt; margin: 16pt 0 6pt; border-bottom: 1px solid #999; padding-bottom: 2pt; }
-  p { margin: 4pt 0; }
-  .meta { color: #444; font-size: 9pt; }
-  blockquote { margin: 4pt 0 4pt 12pt; padding-left: 8pt; border-left: 2px solid #777; font-style: italic; }
-  table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; font-size: 8pt; }
-  caption { text-align: left; font-weight: bold; padding: 2pt 0; }
-  th, td { border: 1px solid #bbb; padding: 3pt 4pt; text-align: left; vertical-align: top; }
-  th { background: #eee; }
+  h2 { border-bottom: 1px solid var(--pw-line); padding-bottom: 3pt; }
+  .meta { color: var(--pw-slate); font-size: 9pt; }
+  blockquote { margin: 4pt 0 4pt 12pt; padding-left: 8pt; border-left: 2px solid var(--pw-border-strong); font-style: italic; }
+  table { margin: 4pt 0 8pt; font-size: 8pt; }
   .narrative p { margin: 0 0 6pt; }
-  .flag { font-weight: bold; }
-  footer { margin-top: 16pt; font-size: 8pt; color: #444; border-top: 1px solid #999; padding-top: 4pt; }
+  .flag { font-weight: 600; }
+  footer { margin-top: 16pt; font-size: 8pt; color: var(--pw-slate); border-top: 1px solid var(--pw-line); padding-top: 4pt; }
 `;
 
-export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord): string {
+export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord, reconciliation: ReportReconciliation = packetReconciliation(approval)): string {
   const { content, lines, narrative } = exported;
   const { citation, practice, payer, pattern, interest } = content;
   const identification = [
@@ -106,6 +111,7 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord): 
       ]),
       ['', '', '', '', '', '', '', '', pattern.units, usd(pattern.expected_cents), usd(pattern.observed_cents), usd(pattern.variance_cents), 'Total'],
     ],
+    { code: [1, 2, 3, 5, 7, 8, 13], date: [6], amount: [9, 10, 11, 12] },
   );
   const interestSection =
     interest === null
@@ -126,6 +132,7 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord): 
               line.days_unpaid === null ? '' : String(line.days_unpaid),
               line.interest_cents === null ? 'cannot be computed' : usd(line.interest_cents),
             ]),
+            { code: [1], date: [2, 3, 4], amount: [5, 6, 7] },
           ),
           `<p><strong>Interest ${interest.computed ? '' : 'that can be computed '}in all: ${interest.total_cents === null ? 'cannot be computed' : usd(interest.total_cents)}</strong></p>`,
         ].join('');
@@ -147,10 +154,18 @@ export function packetHtml(exported: ExportedPacket, approval: ApprovalRecord): 
     .filter((paragraph) => paragraph.trim() !== '')
     .map((paragraph) => `<p>${escapeHtml(paragraph.trim())}</p>`)
     .join('');
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Payment dispute</title><style>${STYLE}</style></head>
-<body>
-<h1>Request to reprocess underpaid claims</h1>
+  return brandedDocument(
+    {
+      title: 'Payment dispute',
+      kicker: 'Payment dispute',
+      heading: 'Request to reprocess underpaid claims',
+      practiceName: practice.name,
+      meta: [`To ${payer.name} (${payer.payer_id_raw}), plan ${payer.plan_name ?? payer.plan_key}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`],
+      reference: `Version ${String(approval.versionNo)}, SHA-256 ${approval.versionSha256.slice(0, 16)}`,
+      reconciliation,
+    },
+    STYLE,
+    `<h1>Request to reprocess underpaid claims</h1>
 ${identification}
 <h2>Contract citation</h2>
 ${cited}
@@ -167,6 +182,6 @@ ${gaps.length === 0 ? '' : `<p><strong>Evidence gaps</strong></p><ul>${gaps.join
 <p>${escapeHtml(content.requested_action)}</p>
 <h2>Approval record</h2>
 ${approvalRecord}
-<footer>Every amount in this packet was computed by code from the practice's remittances and the cited contract terms; interest is stated apart from the variance.</footer>
-</body></html>`;
+<footer>Every amount in this packet was computed by code from the practice's remittances and the cited contract terms; interest is stated apart from the variance.</footer>`,
+  );
 }

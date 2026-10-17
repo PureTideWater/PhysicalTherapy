@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { type KeyProvider, loadPracticeCipher, roiStatementKey } from '@tp/db/runtime';
-import { type StoredStatement, entriesById, recomputeStatement } from '@tp/ledger';
+import { type StoredStatement, entriesById, recomputeStatement, reportReconciliation } from '@tp/ledger';
 import { parseCents } from '@tp/money';
 
 import type { JobContext, JobHandler } from '../jobs/handlers';
@@ -95,10 +95,20 @@ export async function printRoiStatement(context: JobContext, services: Statement
       return { outcome: 'already_printed' };
     }
     const statement = storedStatement(row);
-    const check = recomputeStatement(statement, entriesById(await ledgerEntries(scope, practiceId)));
+    const ledger = entriesById(await ledgerEntries(scope, practiceId));
+    const check = recomputeStatement(statement, ledger);
     if (!check.matches) {
       throw new StatementMismatchError();
     }
+    // The Verified gate (docs/adr/0055): the seal prints only when the ledger says the statement's recovered
+    // total reconciles to cash, under the proof level it was stated in.
+    const reconciliation = reportReconciliation({
+      report: { kind: 'roi_statement', id: row.id },
+      proofLevel: statement.proofLevel,
+      statedRecoveredCents: statement.recoveredCents,
+      recoveredEntryIds: statement.links.recovered,
+      ledger,
+    });
     const html = statementHtml({
       statementId: row.id,
       practiceName: row.practice_name,
@@ -107,6 +117,7 @@ export async function printRoiStatement(context: JobContext, services: Statement
       // A person's email where the job's scope may read it (the user directory's policies); else "a member of the practice".
       generatedBy: row.generated_by === null ? null : (row.generated_by_email ?? 'a member of the practice'),
       generatedAt: row.generated_at.toISOString().slice(0, 19).replace('T', ' '),
+      reconciliation,
     });
     const pdf = await services.pdf.render(html);
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);

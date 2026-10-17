@@ -5,11 +5,15 @@ import path from 'node:path';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { urlPhiFindings } from '@tp/observability';
 
+import { brandedSubject, mailHtml, senderAddress } from './template';
+
 /**
  * Email, links only (PRD 15, Stack: "SES; links only, never PHI in a body"; CLAUDE.md: no PHI in an
  * email body). A message is fixed text, counts and links to the application; the links are checked
  * by the PHI guard before anything is sent. SES in deployed environments; a local outbox directory
- * in development and tests.
+ * in development and tests. Each message goes as plain text and as the PaidWhole HTML template
+ * (template.ts: the same lines and links under the branded header), from "PaidWhole" at the configured
+ * address, its subject followed by the product's name.
  */
 
 export interface MailMessage {
@@ -40,6 +44,12 @@ export function mailBody(message: MailMessage): string {
   return [...message.lines, '', ...message.links].join('\n');
 }
 
+/** The HTML alternative as sent: checked exactly as the text body is, then set in the brand's template. */
+export function mailBodyHtml(message: MailMessage): string {
+  mailBody(message);
+  return mailHtml(message.subject, message.lines, message.links);
+}
+
 /** SES (the account's verified sender; the configuration set and identity arrive with milestone 11). */
 export class SesMailSender implements MailSender {
   constructor(private readonly options: { readonly client: Pick<SESv2Client, 'send'>; readonly from: string }) {}
@@ -47,9 +57,14 @@ export class SesMailSender implements MailSender {
   async send(message: MailMessage): Promise<void> {
     await this.options.client.send(
       new SendEmailCommand({
-        FromEmailAddress: this.options.from,
+        FromEmailAddress: senderAddress(this.options.from),
         Destination: { ToAddresses: [...message.to] },
-        Content: { Simple: { Subject: { Data: message.subject, Charset: 'UTF-8' }, Body: { Text: { Data: mailBody(message), Charset: 'UTF-8' } } } },
+        Content: {
+          Simple: {
+            Subject: { Data: brandedSubject(message.subject), Charset: 'UTF-8' },
+            Body: { Text: { Data: mailBody(message), Charset: 'UTF-8' }, Html: { Data: mailBodyHtml(message), Charset: 'UTF-8' } },
+          },
+        },
       }),
     );
   }
@@ -65,17 +80,18 @@ export class LocalMailSender implements MailSender {
 
   async send(message: MailMessage): Promise<void> {
     const body = mailBody(message);
+    const html = mailBodyHtml(message);
     await mkdir(this.dir, { recursive: true });
-    await writeFile(path.join(this.dir, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ to: message.to, subject: message.subject, body })}\n`, { mode: 0o600 });
+    await writeFile(path.join(this.dir, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ to: message.to, subject: brandedSubject(message.subject), body, html })}\n`, { mode: 0o600 });
   }
 }
 
 /** Tests: messages kept in memory. */
 export class MemoryMailSender implements MailSender {
-  readonly sent: (MailMessage & { readonly body: string })[] = [];
+  readonly sent: (MailMessage & { readonly body: string; readonly html: string })[] = [];
 
   send(message: MailMessage): Promise<void> {
-    this.sent.push({ ...message, body: mailBody(message) });
+    this.sent.push({ ...message, body: mailBody(message), html: mailBodyHtml(message) });
     return Promise.resolve();
   }
 }
