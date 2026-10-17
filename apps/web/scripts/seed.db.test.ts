@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { openPool, readDatabaseUrl, withActor } from '@tp/db';
-import { type MigratedDatabase, createMigratedDatabase } from '@tp/db/testing';
+import { type MigratedDatabase, createMigratedDatabase, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -67,7 +67,7 @@ describe('pnpm db:seed', () => {
       const terms = await withActor(pool, admin, async (scope) => (await scope.client.query<{ version: string }>('SELECT version FROM terms_version WHERE id = current_terms_version()')).rows);
       expect(terms).toEqual([{ version: SYNTHETIC_TERMS_VERSION }]);
     } finally {
-      await pool.end();
+      await endPool(pool);
     }
   });
 });

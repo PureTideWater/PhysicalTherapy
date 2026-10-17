@@ -15,6 +15,7 @@ import {
   createOrganization,
   createTenantWorld,
   createUser,
+  endPool,
 } from './testing';
 
 /**
@@ -54,7 +55,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

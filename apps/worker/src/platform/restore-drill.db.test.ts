@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { type DatabaseClient, OWNER_ROLE, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, asOwner, createMigratedDatabase, createScratchDatabase, createTenantWorld } from '@tp/db/testing';
+import { type MigratedDatabase, asOwner, createMigratedDatabase, createScratchDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -141,7 +141,7 @@ describe('the restore_drill job handler', () => {
       expect(lines).toEqual([expect.objectContaining({ msg: 'restore drill passed', job_id: jobId, restore_drill_id: expect.any(String) })]);
       expect(await evidence(String(lines[0]?.restore_drill_id))).toMatchObject({ outcome: 'passed', snapshot_ref: 'synthetic' });
     } finally {
-      await operator.end();
+      await endPool(operator);
     }
   });
 });

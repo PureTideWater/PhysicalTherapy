@@ -9,7 +9,7 @@ import { readWithAudit, recordAuditEvent, rowTarget, withActor, withJobScope, wi
 import { readDatabaseUrl } from './config';
 import { OWNER_ROLE } from './roles';
 import { practice, supportGrant } from './schema';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from './testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * The audit log (PRD 6 Audit log; PRD 16; test matrix SEC-10): append-only for every role, PHI reads
@@ -51,7 +51,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

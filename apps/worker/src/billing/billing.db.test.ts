@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { BillingEventError, WebhookSignatureError, signPayload } from '@tp/billing';
 import { LocalBillingProvider, MemorySimulatorStore, SIMULATOR_TEST_ROUTING } from '@tp/billing/local';
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withActor, withJobScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, placeholderDataKeyRef } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MemoryMailSender } from '../mail/mail';
@@ -58,9 +58,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await billingPool.end();
-  await operator.end();
+  await endPool(app);
+  await endPool(billingPool);
+  await endPool(operator);
   await owner.end();
   await database.drop();
 });

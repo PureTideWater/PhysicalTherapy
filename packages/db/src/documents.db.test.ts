@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withJobScope, withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
 import { documentObjectKey } from './schema';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, placeholderDataKeyRef } from './testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from './testing';
 
 /**
  * The rules of migrations 20261016090000 (source_document, payer, plan) and 20261017090000 (the malware
@@ -44,7 +44,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

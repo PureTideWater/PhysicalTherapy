@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import { addRateRecord, createContract, createDraftVersion } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -11,7 +11,7 @@ import { ModelGateway } from './gateway';
 import { OperatorEvaluationStore, PostgresModelCallStore, recordPermittedExample, recordReviewerDecision, setFeatureFlag } from './postgres-store';
 import { type ModelProvider, type ModelResponse } from './provider';
 import { LocalDeterministicProvider } from './providers/local';
-import type { CallActor } from './store';
+import type { BudgetHold, BudgetHoldRequest, CallActor } from './store';
 import {
   capturingLogger,
   registerOutput,
@@ -68,8 +68,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await superuser.end();
+  await endPool(app);
+  await endPool(superuser);
   await owner.end();
   await database.drop();
 });
@@ -332,20 +332,41 @@ describe('MOD-05: the daily budget, from the calls the database holds', () => {
   it('holds each call’s most under the practice’s lock, so calls made at once cannot all pass the check', async () => {
     await clearFlags();
     await setFeatureFlag(app, platformAdmin, { key: 'model.daily_budget_cents', scope: 'practice', scopeId: north.practiceId, value: '500' });
-    // Each answer costs 300 cents and takes a moment; the most a call can cost is more than the budget.
+    // Each answer costs 300 cents; the most a call can cost is more than the budget. No answer comes until every
+    // call has tried to hold the budget, so the holds alone decide how many pass, not how long an answer takes: a
+    // hold placed after another call had logged its 300 cents would rightly pass (300 < 500).
+    const CALLS = 6;
+    let holdAttempts = 0;
+    let everyHoldReturned = (): void => undefined;
+    const allHeld = new Promise<void>((resolve) => {
+      everyHoldReturned = resolve;
+    });
+    class CountingStore extends PostgresModelCallStore {
+      override async hold(practiceId: string, request: BudgetHoldRequest): Promise<BudgetHold> {
+        try {
+          return await super.hold(practiceId, request);
+        } finally {
+          holdAttempts += 1;
+          if (holdAttempts === CALLS) everyHoldReturned();
+        }
+      }
+    }
     const output = JSON.stringify(syntheticEvidenceOutput());
     let calls = 0;
     const provider: ModelProvider = {
       kind: 'local',
-      complete: (): Promise<ModelResponse> => {
+      complete: async (): Promise<ModelResponse> => {
         calls += 1;
-        return new Promise((resolve) => setTimeout(() => resolve({ text: output, tokensIn: 300, tokensOut: 0, stopReason: 'end' }), 50));
+        await allHeld;
+        return { text: output, tokensIn: 300, tokensOut: 0, stopReason: 'end' };
       },
     };
     const prices = [{ provider: 'local' as const, modelId: 'local-deterministic', inputCentsPerMillion: 1_000_000n, outputCentsPerMillion: 1_000_000n, confirmed: true }];
     const before = await asOwner(owner, [north.practiceId], () => owner.query<{ n: number }>('SELECT count(*)::int AS n FROM model_call WHERE practice_id = $1', [north.practiceId]));
-    const { gateway: g, logger } = gateway({ kind: 'user', userId: north.adminUserId }, provider, prices);
-    const results = await Promise.allSettled(Array.from({ length: 6 }, () => g.suggestEvidenceRequests(context(undefined, north.practiceId), syntheticEvidenceInput())));
+    const logger = capturingLogger();
+    const g = new ModelGateway({ provider, store: new CountingStore(app, { kind: 'user', userId: north.adminUserId }), logger, production: false, prices });
+    const results = await Promise.allSettled(Array.from({ length: CALLS }, () => g.suggestEvidenceRequests(context(undefined, north.practiceId), syntheticEvidenceInput())));
+    expect(holdAttempts).toBe(CALLS);
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
     expect(calls).toBe(1);
     expect(logger.lines.filter((line) => line.fields.error_code === 'MODEL_BUDGET_EXCEEDED')).toHaveLength(5);

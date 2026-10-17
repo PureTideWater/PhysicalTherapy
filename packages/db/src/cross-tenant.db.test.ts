@@ -7,7 +7,7 @@ import { type PracticeScope, withJobScope, withPracticeScope } from './authz';
 import { PLATFORM_DIRECTORY_TABLES, REVIEWED_PLATFORM_POLICIES, tenantTables } from './catalog';
 import { readDatabaseUrl } from './config';
 import { APP_ROLE } from './roles';
-import { type MigratedDatabase, type Row, RowFactory, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from './testing';
+import { type MigratedDatabase, type Row, RowFactory, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * Cross-tenant negative tests generated from the schema (test matrix SEC-02; .claude/rules:
@@ -56,7 +56,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

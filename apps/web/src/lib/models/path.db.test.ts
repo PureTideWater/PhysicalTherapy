@@ -1,5 +1,5 @@
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, createMigratedDatabase, createTenantWorld } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { ModelBusyError, type ModelProvider, type ModelResponse } from '@tp/model-gateway';
 import { syntheticEvidenceInput, syntheticEvidenceOutput } from '@tp/model-gateway/testing';
 import { createLogger } from '@tp/observability';
@@ -77,8 +77,8 @@ describe('the model path’s own pool (docs/adr/0055)', () => {
       const logged = await owner.query<{ n: number }>('SELECT count(*)::int AS n FROM model_call WHERE practice_id = $1', [world.practiceId]);
       expect(logged.rows[0]?.n).toBe(2);
     } finally {
-      await requests.end();
-      await models.end();
+      await endPool(requests);
+      await endPool(models);
     }
   });
 
@@ -97,8 +97,8 @@ describe('the model path’s own pool (docs/adr/0055)', () => {
       expect(provider.calls).toBe(2);
       expect(modelLimiterOf(services).current(world.practiceId)).toEqual({ total: 0, practice: 0 });
     } finally {
-      await requests.end();
-      await models.end();
+      await endPool(requests);
+      await endPool(models);
     }
   });
 
@@ -117,7 +117,7 @@ describe('the model path’s own pool (docs/adr/0055)', () => {
       expect(String(refused[0]?.reason)).toMatch(/timeout/i);
       expect(Date.now() - started).toBeLessThan(5_000);
     } finally {
-      await shared.end();
+      await endPool(shared);
     }
   });
 });
