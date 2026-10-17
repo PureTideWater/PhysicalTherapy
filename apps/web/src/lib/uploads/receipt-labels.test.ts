@@ -88,6 +88,7 @@ describe('receipt states', () => {
 
   it('name every kind, and format sizes, dates and IDs for people', () => {
     expect(Object.keys(KIND_NAMES).sort()).toEqual([...DOCUMENT_KINDS].sort());
+    expect(KIND_NAMES.era_export).toBe('ERA export');
     expect(receiptState({ ...base, kind: 'contract', status: 'wrong_type' }).detail).toBe('Not a contract: the file is another type of document.');
     // A workbook uploaded as an export is held: exports are read as CSV only (docs/adr/0059).
     // So is any other file that is not CSV text, so the receipt names both remedies.

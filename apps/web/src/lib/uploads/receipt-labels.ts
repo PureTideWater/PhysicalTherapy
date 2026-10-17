@@ -97,6 +97,7 @@ export interface ReceiptState {
 
 export const KIND_NAMES: Readonly<Record<DocumentKind, string>> = {
   x12_835: '835 remittance',
+  era_export: 'ERA export',
   contract: 'contract',
   exhibit: 'exhibit',
   posting_export: 'posting export',
