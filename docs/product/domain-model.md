@@ -2,12 +2,13 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `0c0fb77c60f144a5068cc926232dfdd36fe6f046` on branch `co-001/pr-02-domain-model` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `1cdf703a2c23550d6c47ceaaf6ac7ec9cd0f27d9` on branch `co-001/pr-02-domain-model` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 39; head `20261101120000_support_mail.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 240 (110 SECURITY DEFINER); triggers: 212
+- Functions in `public`: 240 (110 SECURITY DEFINER); triggers: 212, none disabled or replica-only; rewrite rules on tables: none
+- Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 22 to approve, 31 tables and 133 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
@@ -30,15 +31,16 @@
 15. [Appendix A: enumerations](#appendix-a-enumerations)
 16. [Appendix B: encrypted columns](#appendix-b-encrypted-columns)
 17. [Appendix C: functions](#appendix-c-functions)
-18. [Cross-checks](#cross-checks)
-19. [Approval](#approval)
+18. [Appendix D: migrations](#appendix-d-migrations)
+19. [Cross-checks](#cross-checks)
+20. [Approval](#approval)
 
 ## How to read this document
 
 - **Class** (the PHI flag): `PHI (registered)` means `practice_id uuid NOT NULL`, a row in `phi_table_registry`, ENABLE and FORCE ROW LEVEL SECURITY, and the registered tenant policy, PERMISSIVE FOR ALL with USING and WITH CHECK exactly `practice_id = ANY (current_setting('app.practice_ids', true)::uuid[])` (`id` for `practice`). `tenant (nullable practice_id), not registered` is a table the catalog test allows with a nullable `practice_id` (`NULLABLE_PRACTICE_ID_TABLES` in `packages/db/src/catalog.ts`). `organization- or user-scoped` has no `practice_id` and forces RLS on another key. `global` has no `practice_id` and no RLS; the application role may only read it.
 - **Roles**: `tp_owner` owns every relation and runs migrations; `tp_app` is the application role (owns nothing, cannot bypass RLS); the other group roles appear where they hold a privilege. Privileges are listed as SELECT, INSERT, UPDATE, DELETE; `(cols)` means a column-level grant, listed under the table.
 - **Since**: the migration that created the table or added the column, read from the migration files. The ADRs a migration cites in its header are shown beside it.
-- **Invariants** are what the database enforces: CHECK, UNIQUE, foreign key and exclusion constraints, and triggers, each trigger with the exceptions its function raises (the invariant in its own words). Policies are the row-level security policies.
+- **Invariants** are what the database enforces: CHECK, UNIQUE, foreign key and exclusion constraints, and triggers, each trigger with the exceptions its function raises (the invariant in its own words). A trigger that is disabled, or fires only under `session_replication_role` replica, is listed apart as not enforced. Policies are the row-level security policies; rewrite rules, when a table has any, are listed after them.
 - **Dictionary**: the section and purpose the Data dictionary tab gives the table, or "not in the Data dictionary".
 
 ## Areas
@@ -1680,7 +1682,7 @@ Maintains `updated_at`: `contract_updated_at`.
 | 5 | `source_document_ids` | `uuid[]` | NOT NULL | `'{}'::uuid[]` |  | `20261016160000` |  |
 | 6 | `effective_from` | `date` | NOT NULL |  |  | `20261016160000` |  |
 | 7 | `effective_to` | `date` | null |  |  | `20261016160000` |  |
-| 8 | `status` | `text` | NOT NULL | `'draft'::text` |  | `20261016160000` | one of draft, proposed, signed_off, superseded, approved |
+| 8 | `status` | `text` | NOT NULL | `'draft'::text` |  | `20261016160000` | one of draft, proposed, approved, signed_off, superseded |
 | 9 | `approved_by` | `uuid` | null |  | `user(id)` | `20261016160000` |  |
 | 10 | `approved_at` | `timestamp with time zone` | null |  |  | `20261016160000` |  |
 | 11 | `signed_off_by` | `uuid` | null |  | `user(id)` | `20261016160000` |  |
@@ -2376,7 +2378,7 @@ Maintains `updated_at`: `anomaly_updated_at`.
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261019160000` |  |
 | 2 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261019160000` |  |
 | 3 | `service_line_id` | `uuid` | NOT NULL |  | `service_line(id)` | `20261019160000` |  |
-| 4 | `seq` | `bigint` | NOT NULL |  |  | `20261019160000` | identity a; not in the dictionary |
+| 4 | `seq` | `bigint` | NOT NULL |  |  | `20261019160000` | generated always as identity; not in the dictionary |
 | 5 | `stage` | `text` | NOT NULL |  |  | `20261019160000` | one of flagged, validated, actionable, payer_approved, recovered |
 | 6 | `set_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261019160000` |  |
 | 7 | `set_by` | `uuid` | null |  | `user(id)` | `20261019160000` |  |
@@ -3389,10 +3391,10 @@ Invariants enforced by triggers:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261023120000` |  |
 | 2 | `practice_id` | `uuid` | NOT NULL |  | `practice(id)` | `20261023120000` |  |
-| 3 | `seq` | `bigint` | NOT NULL |  |  | `20261023120000` | identity a; not in the dictionary |
+| 3 | `seq` | `bigint` | NOT NULL |  |  | `20261023120000` | generated always as identity; not in the dictionary |
 | 4 | `case_id` | `uuid` | NOT NULL |  | `case(id)` | `20261023120000` |  |
 | 5 | `service_line_id` | `uuid` | null |  | `service_line(id)` | `20261023120000` |  |
-| 6 | `stage` | `text` | NOT NULL |  |  | `20261023120000` | one of approved, posted, deposited, interest, reversed, adjusted, recouped |
+| 6 | `stage` | `text` | NOT NULL |  |  | `20261023120000` | one of approved, posted, deposited, recouped, reversed, adjusted, interest |
 | 7 | `amount_cents` | `bigint` | NOT NULL |  |  | `20261023120000` |  |
 | 8 | `evidence_kind` | `text` | NOT NULL |  |  | `20261023120000` | one of claim, payer_response, posting_row, eft_row, provider_adjustment, ledger_entry |
 | 9 | `evidence_id` | `uuid` | NOT NULL |  |  | `20261023120000` |  |
@@ -5054,7 +5056,7 @@ Invariants enforced by triggers:
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261030090000` |  |
-| 2 | `number` | `bigint` | NOT NULL |  |  | `20261030090000` | identity a |
+| 2 | `number` | `bigint` | NOT NULL |  |  | `20261030090000` | generated always as identity |
 | 3 | `requester_id` | `uuid` | NOT NULL |  | `user(id)` | `20261030090000` |  |
 | 4 | `screen` | `text` | NOT NULL |  |  | `20261030090000` |  |
 | 5 | `category` | `text` | NOT NULL |  |  | `20261030090000` | one of question, problem, access, billing, data, other |
@@ -5227,7 +5229,7 @@ Invariants enforced by constraints:
 
 ## Divergences from the Data dictionary
 
-The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and the rows of C that describe the live schema, are what the founder approves. The rows of C marked "proposed" are Change Order 001 items that are not in the schema yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
+The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1, are what the founder approves. C2, C3, C4 and C5 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
 
 Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 16 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `source_document.kind (7)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
 
@@ -5259,7 +5261,7 @@ Checked and matching: 395 dictionary key fields exist (394 with the dictionary's
 | A22 | [`claim`](#table-claim) | `index (practice_id, payer_claim_control_number)` | index | `claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value) | claim_by_patient (practice_id, patient_ref_id); claim_by_payer_claim_control_number (practice_id, payer_claim_control_number_hash) | ADR 0027 | explained |
 
 Notes:
-- A1 (`rule_record.record_type`): denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type and amends the dictionary.
+- A1 (`rule_record.record_type`): denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2).
 - A2 (`priced_line.expected_unrounded`): numeric with no scale keeps the exact unrounded value; numeric(18,6) would round it (ADR 0029: golden line G09 carries more than six decimal places). CLAUDE.md rule 2 keeps the unrounded value beside the rounded one.
 - A3 (`line_status.reason`): A person's free text can name a patient, so it is encrypted with the practice data key; ENCRYPTED_COLUMNS in packages/db/src/crypto/cipher.ts lists it and the catalog test requires its enc:v1 CHECK.
 - A4 (`case_line.written_off_text`): The write-off's free text, beside the closed written_off_reason code the dictionary lists.
@@ -5284,17 +5286,17 @@ Notes:
 
 ### B. Policy divergences to approve
 
-The dictionary gives each tenancy table a one-phrase policy. The live policies, reviewed against it:
+The dictionary gives each tenancy table a one-phrase policy. "Live policies" is every row-level security policy on the table, read from the catalog, with its command and roles (`public` is every role). The policies to `tp_owner` alone are for the SECURITY DEFINER helpers it owns, which the application's policies call (ADR 0013). Under `--strict` the generator refuses a reviewed note whose list of policies differs from the table's, so a policy added to or dropped from one of these tables needs its note reviewed. The live policies, reviewed against the dictionary:
 
 | # | Table | Data dictionary | Live policies | Explained by | Status | Note |
 | --- | --- | --- | --- | --- | --- | --- |
-| B1 | [`organization`](#table-organization) | Members only | `organization_members`, `organization_platform_admin_insert`, `organization_platform_admin_update`, `organization_billing_read`, `organization_billing_customer` | ADR 0013; ADR 0050 | explained | Members read their own organizations. Platform administrators also read every one, create group and firm organizations and edit them (the console). The billing role tp_billing reads every row and sets billing_customer_ref only while it is null. |
-| B2 | [`practice`](#table-practice) | By grant or ownership | `practice_tenant`, `practice_platform_admin_insert`, `practice_administrators_update` | ADR 0013 | explained | 'By grant or ownership' is implemented as the registered tenant policy on app.practice_ids, which the handler sets from the person's memberships intersected with grants in force (effective_practice_access). Platform administrators create practices; only the practice's administrators update it (restrictive). |
-| B3 | [`user`](#table-user) | Self and administrators | `user_self_and_administrators`, `user_invited_by_administrators`, `user_self_and_platform_admin_update` | ADR 0016 | conforms | Self and administrators, as the dictionary says; administrators may only create an invited user without MFA. |
-| B4 | [`membership`](#table-membership) | Organization administrators | `membership_self_and_administrators`, `membership_administrators_insert`, `membership_administrators_update` | ADR 0013 | explained | Adds a person's read of their own memberships and platform administrators. An organization administrator may not add a person already known to another organization (user_known_elsewhere). |
-| B5 | [`grant`](#table-grant) | Practice administrators; firm sees its own | `grant_tenant`, `grant_approved_by_practice_administrator`, `grant_revoked_by_practice_administrator`, `grant_practice_administrators_and_grantee_read` | ADR 0013 | conforms | Practice administrators approve and revoke; the practice's administrators and the grantee read. No route or screen yet approves or revokes a grant (CO-08). |
-| B6 | [`agreement`](#table-agreement) | Parties to it | `agreement_parties`, `agreement_read_by_parties`, `agreement_recorded_by_signers` | ADR 0013; ADR 0053 | explained | Parties to it read it, as the dictionary says; platform administrators also read and record agreements. An e-signed agreement is recorded only through record_esigned_agreement(), executable by tp_esign alone (migration 20261101100000). |
-| B7 | [`support_grant`](#table-support-grant) | Platform administrators; practice sees its own | `support_grant_tenant`, `support_grant_platform_administrators_insert`, `support_grant_created_by_platform_administrator`, `support_grant_platform_administrators_read`, `support_grant_read_by_practice_and_platform`, `support_grant_not_updated_by_the_application` | ADR 0013; ADR 0019; ADR 0028; ADR 0038 | conforms | Platform administrators create one; members of the practice's own group and platform administrators read it; the application never updates one. ADR 0028 extends support grants to contract specialists and ADR 0038 to reimbursement reviewers (read-only); PRD 3 names support engineers only. |
+| B1 | [`organization`](#table-organization) | Members only | `organization_billing_customer` (UPDATE to tp_billing), `organization_billing_read` (SELECT to tp_billing), `organization_members` (SELECT to tp_app), `organization_owner` (ALL to tp_owner), `organization_platform_admin_insert` (INSERT to tp_app), `organization_platform_admin_update` (UPDATE to tp_app) | ADR 0013; ADR 0050 | explained | Members read their own organizations. Platform administrators also read every one, create group and firm organizations and edit them (the console). The billing role tp_billing reads every row and sets billing_customer_ref only while it is null. |
+| B2 | [`practice`](#table-practice) | By grant or ownership | `practice_administrators_update` (RESTRICTIVE UPDATE to tp_app), `practice_platform_admin_insert` (INSERT to tp_app), `practice_resolver` (SELECT to tp_owner), `practice_tenant` (ALL to public) | ADR 0013 | explained | 'By grant or ownership' is implemented as the registered tenant policy on app.practice_ids, which the handler sets from the person's memberships intersected with grants in force (effective_practice_access). Platform administrators create practices; only the practice's administrators update it (restrictive). |
+| B3 | [`user`](#table-user) | Self and administrators | `user_invited_by_administrators` (INSERT to tp_app), `user_owner` (ALL to tp_owner), `user_self_and_administrators` (SELECT to tp_app), `user_self_and_platform_admin_update` (UPDATE to tp_app) | ADR 0013; ADR 0016 | conforms | Self and administrators, as the dictionary says; administrators may only create an invited user without MFA. |
+| B4 | [`membership`](#table-membership) | Organization administrators | `membership_administrators_insert` (INSERT to tp_app), `membership_administrators_update` (UPDATE to tp_app), `membership_owner` (ALL to tp_owner), `membership_self_and_administrators` (SELECT to tp_app) | ADR 0013 | explained | Adds a person's read of their own memberships and platform administrators. An organization administrator may not add a person already known to another organization (user_known_elsewhere). |
+| B5 | [`grant`](#table-grant) | Practice administrators; firm sees its own | `grant_approved_by_practice_administrator` (RESTRICTIVE INSERT to tp_app), `grant_practice_administrators_and_grantee_read` (RESTRICTIVE SELECT to tp_app), `grant_resolver` (SELECT to tp_owner), `grant_revoked_by_practice_administrator` (RESTRICTIVE UPDATE to tp_app), `grant_tenant` (ALL to public) | ADR 0013 | conforms | Practice administrators approve and revoke; the practice's administrators and the grantee read. No route or screen yet approves or revokes a grant (CO-08). |
+| B6 | [`agreement`](#table-agreement) | Parties to it | `agreement_owner` (ALL to tp_owner), `agreement_parties` (SELECT to tp_app), `agreement_read_by_parties` (RESTRICTIVE SELECT to tp_app), `agreement_recorded_by_signers` (INSERT to tp_app) | ADR 0013; ADR 0053; ADR 0055 | explained | Parties to it read it, as the dictionary says; platform administrators also read and record agreements. An e-signed agreement is recorded only through record_esigned_agreement(), executable by tp_esign alone (migration 20261101100000). |
+| B7 | [`support_grant`](#table-support-grant) | Platform administrators; practice sees its own | `support_grant_created_by_platform_administrator` (RESTRICTIVE INSERT to tp_app), `support_grant_not_updated_by_the_application` (RESTRICTIVE UPDATE to tp_app), `support_grant_platform_administrators_insert` (INSERT to tp_app), `support_grant_platform_administrators_read` (SELECT to tp_app), `support_grant_read_by_practice_and_platform` (RESTRICTIVE SELECT to tp_app), `support_grant_resolver` (SELECT to tp_owner), `support_grant_tenant` (ALL to public) | ADR 0013; ADR 0019; ADR 0028; ADR 0038 | conforms | Platform administrators create one; members of the practice's own group and platform administrators read it; the application never updates one. ADR 0028 extends support grants to contract specialists and ADR 0038 to reimbursement reviewers (read-only); PRD 3 names support engineers only. |
 
 ### C. Disagreements inside the plan documents
 
@@ -5304,7 +5306,7 @@ The dictionary gives each tenancy table a one-phrase policy. The live policies, 
 | C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
 | C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
-| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, written only through a SECURITY DEFINER function. | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
+| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed). | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
 
 ### D. Tables not in the Data dictionary (informational)
 
@@ -5379,7 +5381,7 @@ Type notes: `remittance.sender_id` is text; `remittance.receiver_id` is text; `p
 
 ## Appendix A: enumerations
 
-Columns whose CHECK constraint admits a closed list of values.
+Columns whose CHECK constraint admits a closed list of values: the column's own CHECK, `column = ANY (ARRAY[...])`, in its order. A column with no such CHECK whose conditional CHECKs name values is marked so; those values are not a closed list.
 
 | Table.column | Values |
 | --- | --- |
@@ -5406,7 +5408,7 @@ Columns whose CHECK constraint admits a closed list of values.
 | `plan.network_status` | `in_network`, `out_of_network`, `unknown` |
 | `payer_plan_mapping.mapping_kind` | `no_agreement`, `contract`, `ma_noncontracted`, `government`, `other` |
 | `contract.status` | `active`, `ended` |
-| `contract_version.status` | `draft`, `proposed`, `signed_off`, `superseded`, `approved` |
+| `contract_version.status` | `draft`, `proposed`, `approved`, `signed_off`, `superseded` |
 | `rate_record.method` | `FIXED_SCHEDULE`, `PERCENT_OF_MEDICARE`, `LESSER_OF`, `PER_VISIT`, `UNSUPPORTED` |
 | `rate_record.rounding` | `HALF_UP_CENT`, `HALF_EVEN_CENT`, `TRUNCATE` |
 | `rate_record.proposed_by` | `specialist`, `model` |
@@ -5430,7 +5432,7 @@ Columns whose CHECK constraint admits a closed list of values.
 | `submission.channel` | `payer_portal`, `fax`, `mail`, `provider_relations_email` |
 | `payer_response.kind` | `accepted`, `partial`, `denied`, `info_requested`, `reprocessed_no_change` |
 | `payer_response.denial_category` | `authorization`, `visit_limit`, `modifier`, `medical_necessity`, `timely_filing`, `bundling`, `other` |
-| `ledger_entry.stage` | `approved`, `posted`, `deposited`, `interest`, `reversed`, `adjusted`, `recouped` |
+| `ledger_entry.stage` | `approved`, `posted`, `deposited`, `recouped`, `reversed`, `adjusted`, `interest` |
 | `ledger_entry.evidence_kind` | `claim`, `payer_response`, `posting_row`, `eft_row`, `provider_adjustment`, `ledger_entry` |
 | `ledger_match.kind` | `claim`, `posting`, `deposit`, `recoupment`, `interest` |
 | `ledger_match.outcome` | `approved`, `decreased`, `no_change` |
@@ -5495,250 +5497,296 @@ Columns whose CHECK admits only `enc:v1:` ciphertext (application-layer encrypti
 
 ## Appendix C: functions
 
-Every function in schema `public`. SECURITY DEFINER functions run as their owner; "Sets app.practice_ids" marks a function that sets the tenant scope itself.
+Every function in schema `public`. SECURITY DEFINER functions run as their owner; "Sets app.practice_ids" marks a function that sets the tenant scope itself. "Body" is the first 16 hex digits of the SHA-256 of the function's body as the catalog holds it, so a changed body changes this document.
 
-| Function | Returns | Lang | Security | Volatility | Config | EXECUTE granted to | Sets app.practice_ids |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `allowed_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `anomaly_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `anomaly_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `app_actor_admin_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_administered_organization_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_administered_user_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_group_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_id()` | `uuid` | sql | invoker | stable |  | tp_app |  |
-| `app_actor_is_person()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_is_platform_admin()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_memberships()` | `TABLE(organization_id uuid, organization_kind text, role text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_organization_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_organization_permitted(uuid,text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_permitted(uuid,text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_platform_permitted(text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_practice_directory()` | `TABLE(practice_id uuid, name text, organization_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `app_actor_terms_required()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `assert_membership_fits_user(uuid,uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `assert_organization_keeps_administrator(uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `audit_report_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `billing_owner_emails(uuid)` | `TABLE(email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  |
-| `billing_record_audit(text,text,uuid,text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  |
-| `billing_records_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `billing_usage_counts()` | `TABLE(organization_id uuid, granted_practices integer, active_practices integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  |
-| `case_activity_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_activity_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_activity_sets_owner()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_latest_submission(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `case_line_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_line_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `case_next_dispute_window(uuid,integer,date)` | `date` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `case_reopened_levels(uuid)` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `case_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `claim_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `compliance_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `compliance_workforce()` | `TABLE(user_id uuid, email text, roles text[])` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes |
-| `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_model_spend(date)` | `TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes |
-| `console_practice_settings(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, zip text, settings jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_practices(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, status text, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes |
-| `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes |
-| `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `console_support_tickets(text,integer)` | `TABLE(ticket_id uuid, number bigint, requester_email text, organizations text[], screen text, category text, subject text, message text, status text, created_at timestamp with time zone, status_changed_at timestamp with time zone)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `contract_calendar_event_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `contract_question_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `contract_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `contract_version_documents_ok(contract_version)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `contract_version_retired_by(contract_version,contract_version,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `current_rule_release()` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  |
-| `digest_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `effective_practice_access()` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `end_support_grant(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes |
-| `eval_example_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `figures_are_cents(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `figures_are_counts(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `grant_rules()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `grant_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `invitation_email_in_use(uuid,text)` | `boolean` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `invitation_expired(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `invitation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `invoice_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_entry_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_entry_within_evidence()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_entry_within_line()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_export_row_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_line_net(uuid,text)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `ledger_line_stage(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `ledger_match_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_never_changed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `ledger_proof_level(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `line_note_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `line_stage_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `line_status_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `line_status_ledger_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `line_status_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `maintenance_on()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `membership_invitation()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `membership_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `membership_role_fits_organization()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `membership_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `membership_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `model_call_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `model_citations_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  |
-| `model_field_paths_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  |
-| `model_hashes_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  |
-| `model_proposal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `model_records_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `model_review_permission(text)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  |
-| `monitoring_figure_codes(text)` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `monitoring_figure_valid(jsonb,text)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `monitoring_figures_valid(jsonb,text)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `notification_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `open_practice_scope(uuid[])` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | plpgsql | invoker | volatile |  | tp_app | yes |
-| `operator_active_practice_ids()` | `SETOF uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `operator_assert_scope(uuid)` | `void` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `operator_practice_administrator_emails(uuid)` | `TABLE(email text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `operator_record_support_notice(uuid,text,text)` | `TABLE(recorded boolean, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `operator_support_mail_read(text[])` | `TABLE(mail_ref text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  |
-| `organization_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `organization_kind_fixed()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `organization_kind_of(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `organization_run_refusal(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packets_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `packets_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `parse_report_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `payer_plan_mapping_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `payer_response_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `payer_response_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `payer_response_within_asked()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `person_practice_roles(uuid,uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `plan_payer_of_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `practice_access_log(uuid,text,uuid,timestamp with time zone,integer)` | `TABLE(event_id uuid, at timestamp with time zone, actor_label text, via text, action text, object_type text, object_id uuid, purpose text, ticket text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_baa_on_file(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_case_workers(uuid)` | `TABLE(user_id uuid, email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_data_rights_agreement(uuid)` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_deleted_at()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_export_count(uuid)` | `integer` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_export_history(uuid,integer,integer)` | `TABLE(event_id uuid, action text, object_type text, object_id uuid, purpose text, actor_id uuid, at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_fees_paid(uuid,date,date)` | `bigint` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_grants(uuid)` | `TABLE(grant_id uuid, grantee_name text, grantee_kind text, roles jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, revoked_at timestamp with time zone, agreement_id uuid)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_has_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_has_other_packet_approver(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_has_owner()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_in_scope(uuid)` | `boolean` | sql | invoker | stable |  | tp_app |  |
-| `practice_keeps_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_notification_recipients()` | `TABLE(user_id uuid, email text, digest_email boolean, in_app boolean)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_owned_by_group()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `practice_people_emails(uuid,uuid[])` | `TABLE(user_id uuid, email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_run_refusal(uuid)` | `text` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_set_materiality(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_set_pursuit(uuid,text,integer,integer)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `practice_setting_keys()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `priced_line_immutable()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `priced_line_rows_belong()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `priced_line_visit_variance_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `pricing_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `pricing_run_changed_lines(uuid,uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `pricing_run_in_effect(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `pricing_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `prospect_payers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app |  |
-| `prospect_request_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `provider_adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `public_status_components()` | `TABLE(key text, name text, status text, changed_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `public_status_incidents(timestamp with time zone)` | `TABLE(incident_id uuid, title text, impact text, components text[], status text, started_at timestamp with time zone, resolved_at timestamp with time zone, updates jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `rate_limit_take(text,text,integer,integer)` | `TABLE(allowed boolean, hits integer, retry_after_seconds integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `rate_record_evidence_complete(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `rate_record_fields()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `rate_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `record_esigned_agreement(text,text,uuid,uuid,text,text,timestamp with time zone,text,text,text)` | `TABLE(agreement_id uuid, duplicate boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_esign |  |
-| `record_security_event(text,uuid,uuid,text)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `record_sign_in_with_mfa()` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `refuse_new_work_while_suspended()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `reject_change()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `report_document_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `report_document_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `report_document_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `resend_invitation(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `resolve_session(text)` | `TABLE(outcome text, ended_now boolean, session_id uuid, user_id uuid, device_id uuid, mfa_method text, started_at timestamp with time zone, expires_at timestamp with time zone, last_seen_at timestamp with time zone, user_status text, mfa_enrolled boolean, hardware_key_required boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `revoke_user_sessions(uuid)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `roles_permit(text[],text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `rule_content_no_truncate()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `rule_record_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `rule_release_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `service_line_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `set_feature_flag(text,text,uuid,jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `set_practice_posting_template(uuid,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `set_updated_at()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `sign_in_account(text,text)` | `TABLE(user_id uuid, cognito_sub text, email text, status text, mfa_enrolled boolean, locked boolean, hardware_key_required boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `sign_in_failed(uuid,text,text)` | `TABLE(failures integer, locked boolean, newly_locked boolean, burst boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `sign_in_succeeded(uuid)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  |
-| `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `submission_latest_response(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `support_grant_grantee()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `support_grant_role(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `support_grant_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `support_ticket_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `terms_accepted_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `terms_published_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `triage_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `triage_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `unlock_user(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `user_accepts_invitations()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_device_revocation_is_final()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_device_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_guarded_columns()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_is_customer(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_is_internal(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_is_practice_admin(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_is_support_engineer(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `user_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_known_elsewhere(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `user_reaches_practice_now(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `user_session_end_is_final()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  |
-| `user_settings_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
-| `uuid_half(uuid,boolean)` | `int8range` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  |
+| Function | Returns | Lang | Security | Volatility | Config | EXECUTE granted to | Sets app.practice_ids | Body |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `0319bb6e43992a8b` |
+| `allowed_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f2ef1aad2276f6cd` |
+| `anomaly_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5ef71bf25d7d04c3` |
+| `anomaly_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `39f030b525ce0648` |
+| `app_actor_admin_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `728d8dae3d1ee057` |
+| `app_actor_administered_organization_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2de7ac183bc20342` |
+| `app_actor_administered_user_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e0d0de37b8b4437f` |
+| `app_actor_group_practice_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e8aecee1dd00dc17` |
+| `app_actor_id()` | `uuid` | sql | invoker | stable |  | tp_app |  | `02930d0d6a6f6caa` |
+| `app_actor_is_person()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b6531b04450fa24c` |
+| `app_actor_is_platform_admin()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2e7c04621feca40` |
+| `app_actor_memberships()` | `TABLE(organization_id uuid, organization_kind text, role text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `236b8f478ee6b790` |
+| `app_actor_organization_ids()` | `uuid[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77fb57cf51a4b039` |
+| `app_actor_organization_permitted(uuid,text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4cabd5e628041cb6` |
+| `app_actor_permitted(uuid,text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ba1bea731502d75b` |
+| `app_actor_platform_permitted(text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3760f234506890ad` |
+| `app_actor_practice_directory()` | `TABLE(practice_id uuid, name text, organization_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `907cf26442af3589` |
+| `app_actor_terms_required()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ef5705187db37687` |
+| `assert_membership_fits_user(uuid,uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e9b1e3a862e37508` |
+| `assert_organization_keeps_administrator(uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `16bb83822a4c4c15` |
+| `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82eb1b21e646b556` |
+| `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
+| `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dcc9fa8b0d88cd5c` |
+| `audit_report_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b0b8fafbc10a4db3` |
+| `billing_owner_emails(uuid)` | `TABLE(email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `98dafc8c17d7f83b` |
+| `billing_record_audit(text,text,uuid,text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `f9a85d22da427ca1` |
+| `billing_records_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `610c0de9c4c6b698` |
+| `billing_usage_counts()` | `TABLE(organization_id uuid, granted_practices integer, active_practices integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_billing |  | `82e27747d11f1494` |
+| `case_activity_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `692cbfcfb09ab88d` |
+| `case_activity_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7730d96a2329a3c1` |
+| `case_activity_sets_owner()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `bf9900a96bfa0fec` |
+| `case_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `544872857d27943a` |
+| `case_latest_submission(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `6d8281aceebf0c78` |
+| `case_line_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `502a1f501004cfdb` |
+| `case_line_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `bcffaf3b76e2a516` |
+| `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8390200e0d5563a1` |
+| `case_next_dispute_window(uuid,integer,date)` | `date` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a6d8aaca2860bcf5` |
+| `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b8dacedadc46c5e7` |
+| `case_reopened_levels(uuid)` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9e04003e8f9e60cf` |
+| `case_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0292837d38e4bad` |
+| `claim_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `486976a848250105` |
+| `compliance_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7f1e947036b56ec1` |
+| `compliance_workforce()` | `TABLE(user_id uuid, email text, roles text[])` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7cc132ead4ab0ff3` |
+| `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
+| `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `99b8bdc1d3dee83b` |
+| `console_model_spend(date)` | `TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `e376a7bc2663c81e` |
+| `console_practice_settings(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, zip text, settings jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc30760ef5f79626` |
+| `console_practices(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, status text, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `76b2df303a07e7c7` |
+| `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `adc1da81e4e077a8` |
+| `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `399a93a1a8318075` |
+| `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `af645fb832f3bf10` |
+| `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b335e4849f0c246b` |
+| `console_support_tickets(text,integer)` | `TABLE(ticket_id uuid, number bigint, requester_email text, organizations text[], screen text, category text, subject text, message text, status text, created_at timestamp with time zone, status_changed_at timestamp with time zone)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `581668ca764c385c` |
+| `contract_calendar_event_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9d49e01ff62b1725` |
+| `contract_question_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8aae4f70b8112e03` |
+| `contract_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06bbdf22fc9bd64e` |
+| `contract_version_documents_ok(contract_version)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fa43e7f02e96754b` |
+| `contract_version_retired_by(contract_version,contract_version,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d28cf1aa50ff68a3` |
+| `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d19fbe631239fef` |
+| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `408d9ef506921090` |
+| `current_rule_release()` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `888c946804c94d4f` |
+| `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1f6b0bde64fc4a4b` |
+| `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  | `97a340475b983d2f` |
+| `digest_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `ece3b3718d970e66` |
+| `effective_practice_access()` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `53666b6ed9d54a7f` |
+| `end_support_grant(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `81470c8d2b42a2b3` |
+| `eval_example_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `11a31add3dfa4c6d` |
+| `figures_are_cents(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `373773096ab8e339` |
+| `figures_are_counts(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `cf797676e6189c60` |
+| `grant_rules()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1daf6a68e1b51eac` |
+| `grant_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24f79113967c9b5c` |
+| `invitation_email_in_use(uuid,text)` | `boolean` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4110c31e01ded551` |
+| `invitation_expired(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0e48c829be83ab97` |
+| `invitation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3ee00363f7b466b1` |
+| `invoice_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7c926f90860ad20e` |
+| `ledger_entry_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `abbcba68f46fd135` |
+| `ledger_entry_within_evidence()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d0bb740ca00d3883` |
+| `ledger_entry_within_line()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `559ce266b8f75722` |
+| `ledger_export_row_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `29c7670a2e40ee0d` |
+| `ledger_line_net(uuid,text)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f151e27ea09f28c1` |
+| `ledger_line_stage(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fe8938ec3ec27c76` |
+| `ledger_match_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `442d6a755ca70c28` |
+| `ledger_never_changed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e6328f4a28594a0` |
+| `ledger_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c28c8fef48df43ac` |
+| `ledger_proof_level(uuid)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9830a2f9478006bf` |
+| `line_note_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `f03b3369f30abb6f` |
+| `line_stage_rank(text)` | `integer` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `581989dfa3733186` |
+| `line_status_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7ff9c809c72d6495` |
+| `line_status_ledger_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `146f2bd81224539e` |
+| `line_status_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `02c5548a429bb9c2` |
+| `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
+| `maintenance_on()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a688a810ac58550` |
+| `membership_invitation()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5101211402a5e23c` |
+| `membership_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `974ecfab878a2e77` |
+| `membership_role_fits_organization()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `114480521bb0ddf4` |
+| `membership_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `efb897223d48b728` |
+| `membership_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e3cb30f2adcd0012` |
+| `model_call_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `deb8dd551f1aef22` |
+| `model_citations_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  | `9e885a47c2ab3c5e` |
+| `model_field_paths_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  | `4b1eb8673b5b4828` |
+| `model_hashes_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  | `67115b68576eb415` |
+| `model_proposal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `80687fccf4186aae` |
+| `model_records_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `89afc300e796c507` |
+| `model_review_permission(text)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app, tp_operator |  | `4771b6912529196b` |
+| `monitoring_figure_codes(text)` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `001f1436716766bd` |
+| `monitoring_figure_valid(jsonb,text)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `db1a5da1e003b307` |
+| `monitoring_figures_valid(jsonb,text)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0f95f76f4d8baaf9` |
+| `notification_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f5d86ea89ea32c5c` |
+| `open_practice_scope(uuid[])` | `TABLE(practice_id uuid, via text, grant_id uuid, role text)` | plpgsql | invoker | volatile |  | tp_app | yes | `e21550df4fb65689` |
+| `operator_active_practice_ids()` | `SETOF uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `b36b35df381aabd5` |
+| `operator_assert_scope(uuid)` | `void` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `533c2fbe71370114` |
+| `operator_due_support_notices(integer)` | `TABLE(support_grant_id uuid, practice_id uuid, notice text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `26a8da73c49fe312` |
+| `operator_practice_administrator_emails(uuid)` | `TABLE(email text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `e66800658c20c850` |
+| `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
+| `operator_record_support_notice(uuid,text,text)` | `TABLE(recorded boolean, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `cd723eaf7325fa60` |
+| `operator_support_mail_read(text[])` | `TABLE(mail_ref text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `da2a6ab110478618` |
+| `organization_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `45fcaf44bc28ae33` |
+| `organization_kind_fixed()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d5a3d13bd118aac9` |
+| `organization_kind_of(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `9ba89ea8163257bc` |
+| `organization_run_refusal(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `28088464051fab99` |
+| `packet_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2176280110c4aa2b` |
+| `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `6cd2db7375a3c74d` |
+| `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
+| `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
+| `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
+| `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
+| `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
+| `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b119012e56d45e9c` |
+| `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
+| `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d6f5841a2aadbeea` |
+| `packets_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0444f4a36978439f` |
+| `packets_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d55baaa259f73fa7` |
+| `parse_report_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `377d9e5cdfe2b80c` |
+| `payer_plan_mapping_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06a465c2d5277fc6` |
+| `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2031d828767ceebd` |
+| `payer_response_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b3c23aa01144ad5c` |
+| `payer_response_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3d3936c48b8d9488` |
+| `payer_response_within_asked()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `cea09f8a11e093e1` |
+| `person_practice_roles(uuid,uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `8276436b74bd81b0` |
+| `plan_payer_of_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `6e80cf334ea6cc0f` |
+| `practice_access_log(uuid,text,uuid,timestamp with time zone,integer)` | `TABLE(event_id uuid, at timestamp with time zone, actor_label text, via text, action text, object_type text, object_id uuid, purpose text, ticket text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e3a2a4b7018f631c` |
+| `practice_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `398bbc1606ac3e31` |
+| `practice_baa_on_file(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b240837ccdc53a0e` |
+| `practice_case_workers(uuid)` | `TABLE(user_id uuid, email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7a62bdc2457b55fb` |
+| `practice_data_rights_agreement(uuid)` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `015cd610493859a5` |
+| `practice_deleted_at()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d79ba5c079879579` |
+| `practice_export_count(uuid)` | `integer` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b82413ebac6e02ed` |
+| `practice_export_history(uuid,integer,integer)` | `TABLE(event_id uuid, action text, object_type text, object_id uuid, purpose text, actor_id uuid, at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2255a96c31a4fb6a` |
+| `practice_fees_paid(uuid,date,date)` | `bigint` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a9a64e6bfca4d954` |
+| `practice_grants(uuid)` | `TABLE(grant_id uuid, grantee_name text, grantee_kind text, roles jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, revoked_at timestamp with time zone, agreement_id uuid)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0dfe26d16ca76ef3` |
+| `practice_has_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b91b77291d143b70` |
+| `practice_has_other_packet_approver(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d1920a7b04d32ef7` |
+| `practice_has_owner()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `244ca9126c121a10` |
+| `practice_in_scope(uuid)` | `boolean` | sql | invoker | stable |  | tp_app |  | `7d65da587ce34ce4` |
+| `practice_keeps_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d8f15c4c80b969bb` |
+| `practice_notification_recipients()` | `TABLE(user_id uuid, email text, digest_email boolean, in_app boolean)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e3494721e080025a` |
+| `practice_owned_by_group()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `000c12c0e426949e` |
+| `practice_people_emails(uuid,uuid[])` | `TABLE(user_id uuid, email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `6c4da6036fd47a24` |
+| `practice_run_refusal(uuid)` | `text` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9d53dc3cbf35b67a` |
+| `practice_set_materiality(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bd92f0a44717170b` |
+| `practice_set_pursuit(uuid,text,integer,integer)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ba449fb1c3926ee` |
+| `practice_setting_keys()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `43b5d4392b24804a` |
+| `priced_line_immutable()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4d2d626ed295e33c` |
+| `priced_line_rows_belong()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0c2beafb3c63d2f3` |
+| `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1980a29c53080675` |
+| `priced_line_visit_variance_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ff2bbd148b2eb4ad` |
+| `pricing_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `66bbf3bfbb28631b` |
+| `pricing_run_changed_lines(uuid,uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `5ddaf57baabe280e` |
+| `pricing_run_in_effect(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `886a648f977b072d` |
+| `pricing_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3379cd08846946da` |
+| `prospect_payers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app |  | `7cf431c07bbe1f8f` |
+| `prospect_request_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a237fe3144a5d610` |
+| `provider_adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d679b25d16c44132` |
+| `public_status_components()` | `TABLE(key text, name text, status text, changed_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `79a7ae3915c12b37` |
+| `public_status_incidents(timestamp with time zone)` | `TABLE(incident_id uuid, title text, impact text, components text[], status text, started_at timestamp with time zone, resolved_at timestamp with time zone, updates jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7678a79b3367ec80` |
+| `rate_limit_take(text,text,integer,integer)` | `TABLE(allowed boolean, hits integer, retry_after_seconds integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bf108aba360585e7` |
+| `rate_record_evidence_complete(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dd3b8e4585a95c30` |
+| `rate_record_fields()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0cd3fc41fb7330df` |
+| `rate_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dd7f474c2f4ab695` |
+| `record_esigned_agreement(text,text,uuid,uuid,text,text,timestamp with time zone,text,text,text)` | `TABLE(agreement_id uuid, duplicate boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_esign |  | `c35a793ea76cc0b8` |
+| `record_security_event(text,uuid,uuid,text)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3a91f6d2aa7d0e61` |
+| `record_sign_in_with_mfa()` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `33357d6149a90f6c` |
+| `refuse_new_work_while_suspended()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0a92559e621ef0f0` |
+| `reject_change()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `9a6259207407034b` |
+| `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `577067b04e348bbf` |
+| `report_document_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1f2bfc271aad9a0c` |
+| `report_document_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a4415278b751e6c5` |
+| `report_document_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `ae5caa9ac79ee5fe` |
+| `resend_invitation(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3a38c7bc37517a80` |
+| `resolve_session(text)` | `TABLE(outcome text, ended_now boolean, session_id uuid, user_id uuid, device_id uuid, mfa_method text, started_at timestamp with time zone, expires_at timestamp with time zone, last_seen_at timestamp with time zone, user_status text, mfa_enrolled boolean, hardware_key_required boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1dc349b28fbd9045` |
+| `revoke_user_sessions(uuid)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49398f19386615ff` |
+| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49416713dd4d13dd` |
+| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5a8bc6319828acb2` |
+| `roles_permit(text[],text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1e0aed05610a51f5` |
+| `rule_content_no_truncate()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `5da9160cf53a8d06` |
+| `rule_record_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `f638f6a6b42be99a` |
+| `rule_release_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `495c52b559208d41` |
+| `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
+| `service_line_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `4a5052e6217f6e34` |
+| `set_feature_flag(text,text,uuid,jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ab0833dc69f73120` |
+| `set_practice_posting_template(uuid,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1d457cde477eec93` |
+| `set_updated_at()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `42bbab957ef0446f` |
+| `sign_in_account(text,text)` | `TABLE(user_id uuid, cognito_sub text, email text, status text, mfa_enrolled boolean, locked boolean, hardware_key_required boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a888c9484d2ed7a` |
+| `sign_in_failed(uuid,text,text)` | `TABLE(failures integer, locked boolean, newly_locked boolean, burst boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a209dae56d884725` |
+| `sign_in_succeeded(uuid)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `60e683f0dc8ba129` |
+| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `07a490baf022b29b` |
+| `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82c436362d600ad2` |
+| `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `92eec267bf1252eb` |
+| `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
+| `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `744c87f0a23fd1c1` |
+| `submission_latest_response(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9a044fc6cae7cf96` |
+| `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
+| `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
+| `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
+| `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24615116b611dcb0` |
+| `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9bff8d1f6d16f0e6` |
+| `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e2ccf3fc52ddc22` |
+| `support_grant_grantee()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `decdf5063e0c761f` |
+| `support_grant_role(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `23e71bc2ce447f8c` |
+| `support_grant_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b3584867853ea265` |
+| `support_ticket_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4a090c61fdc7f2e9` |
+| `terms_accepted_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `657b65330865e56b` |
+| `terms_published_now()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f63274938b5accb0` |
+| `triage_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `df21aee8f11b5734` |
+| `triage_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `de1aa557d4a1374d` |
+| `unlock_user(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dcb9d4ff9b6626f1` |
+| `user_accepts_invitations()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `787335bc653af7bb` |
+| `user_device_revocation_is_final()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6febf97093b3e8de` |
+| `user_device_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `17e866106b038a58` |
+| `user_guarded_columns()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9dc981bc2908f316` |
+| `user_is_customer(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `6ab6e9ff0f52272b` |
+| `user_is_internal(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `de0ae9bc719ff3fd` |
+| `user_is_practice_admin(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `358c3cd0bbf46335` |
+| `user_is_support_engineer(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `feeb17d9d1c34e9d` |
+| `user_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7067ce3a1c9d553b` |
+| `user_known_elsewhere(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `35d6cc736c81cd02` |
+| `user_reaches_practice_now(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9c88797ed038db3b` |
+| `user_session_end_is_final()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `31742acfa66c6d74` |
+| `user_settings_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `190fcd1474751d06` |
+| `uuid_half(uuid,boolean)` | `int8range` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2f6916880f7cf611` |
+
+## Appendix D: migrations
+
+Every migration applied to the database, from `schema_migrations`, with the SHA-256 of its file as applied. Any edit to any migration changes its hash here, and so this document and its hash: an approval never carries over to migration text it did not see.
+
+| # | Migration | ADRs its header cites | SHA-256 |
+| --- | --- | --- | --- |
+| 1 | `20261015120000_rule_content.sql` | - | `b61381a691defbbafe1d5174d11a4ccd4eafc68c5d2353c1b12f1e5810175867` |
+| 2 | `20261015140000_tenancy.sql` | ADR 0013 | `545f79dfa9c557697129f7e0c921eb023ee861d614a97b383e966c42699ffda3` |
+| 3 | `20261015140500_audit_and_operations.sql` | ADR 0013, ADR 0014 | `bc318f7bae6d7bd76636fd1a8a421faeadac68a3714e066ba2684dc77224de7a` |
+| 4 | `20261015170000_identity_and_permissions.sql` | ADR 0012, ADR 0016, ADR 0017 | `74073bc5c87b02b6ed1e48d890a39b4c48a8e4ea274f6a65d3e8a5da17c8b33c` |
+| 5 | `20261015180000_tenancy_hardening.sql` | ADR 0013, ADR 0014, ADR 0016, ADR 0018 | `b6201dfadf16da8a214a166cdc891a750dc2bde24a6ead187f9f672587311e18` |
+| 6 | `20261016090000_documents_payers_plans.sql` | ADR 0013, ADR 0015, ADR 0018 | `a75824bce190c83e4e3d327d4a2c8e964a7d14c4ad81a150ab1e9d9d35259c4a` |
+| 7 | `20261016120000_remittances.sql` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 | `5f61824afa62e33b7a73e975ec8f7349eaf7056878cefb2c68876f955983b1fd` |
+| 8 | `20261016121000_job_runs.sql` | ADR 0019 | `df99fd4cc2708c64420daa51c432fdfc0d240f8fb634ae1e13635b2cc38b2420` |
+| 9 | `20261016160000_contracts_and_mapping.sql` | ADR 0013, ADR 0017, ADR 0019, ADR 0028 | `d912b443b45544a6fbdb52001a440c75bafcb122b08cee76c5310b3045804175` |
+| 10 | `20261016200000_contract_questions_and_queue.sql` | ADR 0028, ADR 0030 | `f977fac5efa6a6cd3325ad3d1ff885db580b6acde20d7e0e6b6a9d3c1f69e163` |
+| 11 | `20261017090000_document_scan_gate.sql` | ADR 0026, ADR 0032 | `de35cc5d2151d2de4988a08a784bad271e4499104deb1846b90e082bf240149b` |
+| 12 | `20261017120000_document_page_text.sql` | ADR 0033 | `9b1ebefee370bd93824adab02151edb164bd5a96b54eae62bfdaef2ab8b4fa94` |
+| 13 | `20261018090000_pricing_runs.sql` | ADR 0029, ADR 0035 | `ea95a4b845c83c58db20d79829e3d198d0af72ea0d3ea27413ed8ae478e5c36c` |
+| 14 | `20261019150000_reruns_and_release_withdrawal.sql` | ADR 0037 | `e8ff601fa1d917cedc6532b5324ee6a0bad284a32d3f06aca9bd4b50a343418f` |
+| 15 | `20261019160000_triage_cases_and_audit_reports.sql` | ADR 0028, ADR 0038 | `3b64d712f6f6fef03ad75f4591af7e1ecbd362f7d919cb0ca8faac251c7277d4` |
+| 16 | `20261020090000_monitoring_digests_notifications.sql` | ADR 0039 | `10d651e5fec87b9fd9e575d67adf130ec8842dce97ba01ffeb3198e1b6686490` |
+| 17 | `20261021090000_run_diffs_and_runs_in_effect.sql` | ADR 0037, ADR 0038 | `98762c3899e4a2a40cdd6704b4cd52cdd6c0d9bbd8a6fb45628a97330da4d0fa` |
+| 18 | `20261022090000_review_guards_visit_shortfalls_and_practice_settings.sql` | ADR 0038, ADR 0039, ADR 0040 | `ff2600e577e5f65155fd3563c1c0b6ea2307719f4ef5718bd836d79d6975b637` |
+| 19 | `20261023090000_packets_submissions_and_responses.sql` | ADR 0041 | `788e4235a28f186005ebced3485f5aad8c0b2c94db7d8b457c375456d11e263e` |
+| 20 | `20261023120000_recovery_ledger.sql` | ADR 0042 | `61bb21a8e2b6fe7b590ca6bb753bef7105b9f18d526e9b1b2e9cd6bf7cc9591d` |
+| 21 | `20261024110000_case_workbench.sql` | ADR 0044 | `631e01358e887d9f1c10162105444aa9a40870d14dcaf48bdad48997f13e101c` |
+| 22 | `20261024120000_reconciliation_and_roi_documents.sql` | ADR 0042, ADR 0043 | `147040444f3b9899cbe943f396414d9bb4de0eabbd14023d2de08553cb9cfd28` |
+| 23 | `20261025090000_report_documents_and_export_history.sql` | ADR 0040, ADR 0045 | `268162ef976432fc0f3f989a2fdfdd3703827b047e02423de4adff24d5afbd90` |
+| 24 | `20261026090000_recovery_ledger_review.sql` | ADR 0042, ADR 0046 | `0e824dcc0cfd932dc6dd86b4e35c1d3e7b9e39a096175fe3f9ed45970a366543` |
+| 25 | `20261027090000_packet_and_ledger_review.sql` | ADR 0028, ADR 0047 | `0d2af91dc4dba2367814c77268a14062945be21ad90208f0466c6581b0c9c3a0` |
+| 26 | `20261028090000_specialist_queue_by_practice.sql` | ADR 0047 | `8ae15bb6d9dd049e150e551020bb83e60920e6604db17f96419e9957f1fe4cdf` |
+| 27 | `20261029090000_model_gateway.sql` | ADR 0048 | `3a99eaa8b95ab06c17a58a2c3d7b7e720e679519a30112744d5df620584c1de2` |
+| 28 | `20261029100000_model_gateway_operator.sql` | ADR 0048 | `2c258e3c97cbd19fc7489d0f2bc03ff878926f3e0b5a35517d76256d7f51225e` |
+| 29 | `20261029150000_billing.sql` | ADR 0050 | `df00d7f0b89407f0cb0360fedf99b1b692ceb68b194cdd31100d250f1e516f93` |
+| 30 | `20261029190000_model_proposals.sql` | ADR 0052 | `bb8efb974c2e0c06d0b4016ea5c21c78b5b0a616023c92b498f18ccd3f1d61b4` |
+| 31 | `20261029191000_practice_data_rights.sql` | ADR 0048, ADR 0052 | `0df52f384e699aebd180b447cdbcc8fc911fb5f1c2902836310a69a01d0626b4` |
+| 32 | `20261030090000_customer_sign_in_and_readiness.sql` | ADR 0043, ADR 0053 | `a39c4f74c40028403116acec162e851877fb9d2b3077053a96f8faedcb3d3b7f` |
+| 33 | `20261030100000_support_desk_and_workforce.sql` | ADR 0053 | `b8386f9fefd724bb0b680431437b637727d5a3335bab2243950c6739121dc0ed` |
+| 34 | `20261030110000_prospect_review_check.sql` | ADR 0053 | `846305c73f07de2475619169682fde24f4c722ba7eeba04f2fa03112d1f07682` |
+| 35 | `20261031090000_model_budget_holds.sql` | ADR 0054 | `729e29ac1334ede1c27f2fd17f0496575c217520157229eb7f60b5e858e77b82` |
+| 36 | `20261101090000_billing_review.sql` | ADR 0050, ADR 0055 | `cfeaca165d0179a7021d206fe1d223fb08305be344ab937d4bba0beca75a8c83` |
+| 37 | `20261101100000_esign_and_billing_logins.sql` | ADR 0053, ADR 0055 | `10e0cd84499263e3b9d946cc57ce2a2c7123ae409c935e8796df032b8bb8ffe9` |
+| 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
+| 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 
 ## Cross-checks
 
@@ -5754,6 +5802,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261101120000_support_mail.sql` (39 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line); `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261101120000_support_mail.sql` (39 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `c7fd037ee3ab7c0ece6659446cc5f4fa317766fcbfc47a73ff3ee85b6a7dfe85`
+Approved by: ________  Date: ________  Document SHA-256: `ec475408c5e37f1e7342028a400df43e06b78d968c419ad5889e72ccfbea03a8`
