@@ -1,0 +1,94 @@
+/** PaidWhole brand tokens as typed constants. Mirrors tokens.css; keep the two in step. */
+
+export const palette = {
+  ink: "#0D1E3A",
+  brass: "#C99A3B",
+  white: "#FFFFFF",
+  paper: "#F6F4EE",
+  slate: "#526070",
+  line: "#DAD7CF",
+} as const;
+
+/** Status colors are for data (line and case status) only. They never appear in or near the logo. */
+export const status = {
+  whole: "#1F7A4D",
+  short: "#B5452E",
+  unpriced: "#7A8594",
+} as const;
+
+export const statusDark = {
+  whole: "#4CBF84",
+  short: "#E8846B",
+  unpriced: "#9AA5B5",
+} as const;
+
+/** Contrast ratios against white, for reference when choosing text colors. */
+export const contrastOnWhite = {
+  ink: 16.6,
+  slate: 6.4,
+  brass: 2.6, // graphic only; never text on white
+  whole: 5.3,
+  short: 5.4,
+} as const;
+
+export const fonts = {
+  display: { family: "Schibsted Grotesk", weights: [500, 600, 700], cssVar: "--font-display" },
+  sans: { family: "IBM Plex Sans", weights: [400, 500, 600], cssVar: "--font-sans" },
+  mono: { family: "IBM Plex Mono", weights: [400, 500], cssVar: "--font-mono" },
+} as const;
+
+export const type = {
+  wordmark: { weight: 700, tracking: "-0.03em" },
+  display: { weight: 700, tracking: "-0.02em", lineHeight: 1.1 },
+  body: { size: 16, lineHeight: 24 },
+  money: { font: "mono", weight: 500, numeric: "tabular-nums" },
+} as const;
+
+export const radius = { sm: 4, md: 6, lg: 10, pill: 999 } as const;
+
+/** Logo rules that code can enforce. Sizes in CSS px. */
+export const logoRules = {
+  symbolMinPx: 16, // with the small cut
+  symbolStandardMinPx: 24,
+  lockupMinPx: 120,
+  smallCutMaxPx: 32, // at or below this size, use the small cut (wider seams)
+  clearSpaceRatio: 0.25, // of symbol height, all sides
+} as const;
+
+/**
+ * The product's words (Change Order 001, CO-11; docs/brand/BRAND.md, sections 1 and 6). Every place that
+ * shows one reads it from here, never a copy of the literal; tools/brand-copy lints the rest of the copy.
+ */
+
+/** The tagline. It says "owed", so screening shows the lockup without it (decision D11). */
+export const tagline = "Know what you're owed. Verify what you're paid.";
+
+/** What PaidWhole is, in one line: the page metadata, the web manifest and the request-audit lede (decision D11). */
+export const descriptor = "Contract-verified payment for therapy groups";
+
+/**
+ * The independence claim, in these words and lowercase so it runs on in a sentence: the request-audit page
+ * and the audit report cover (decision D11). Never "independent verification platform".
+ */
+export const independenceClaim = "independent of the EMR and the payer";
+
+/**
+ * The seal's two lines: around the top, then around the bottom. The seal art is outlined text in exactly
+ * these words (tokens.test.ts reads its glyphs); the words name who makes the claim and what it is.
+ */
+export const sealText = ["VERIFIED BY PAIDWHOLE", "RECONCILED TO CASH"] as const;
+
+/** The badge's words, the pill "Verified by PaidWhole": the seal's first line in the wordmark's case. */
+export const badgeText = "Verified by PaidWhole";
+
+/** A line of the seal as a sentence ("RECONCILED TO CASH" reads "Reconciled to cash"). */
+function sealSentence(line: string): string {
+  return `${line.charAt(0)}${line.slice(1).toLowerCase()}`;
+}
+
+/** The seal's accessible name and alternative text: its two lines as two sentences, the name in its own case. */
+export const sealLabel = `${badgeText}. ${sealSentence(sealText[1])}.`;
+
+/** The definition line that prints with the seal on the same page, so a reader is told what "verified" means. */
+export const verifiedDefinition =
+  "Verified: recovered amounts reconcile to posted or deposited remittance; expected amounts trace to signed-off contract versions.";

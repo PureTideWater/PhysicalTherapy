@@ -321,7 +321,7 @@ describe('the monitoring chain on an upload batch (J11)', () => {
             'New validated variance: $555.00 on 17 lines across 1 payer.',
             'Payer 1: $555.00 validated on 17 lines.',
             'Cases nearing their deadline (within 14 days): 0, actionable $0.00.',
-            'Recoveries posted: 0, recovered $0.00.',
+            'Recovered (posted or deposited), net of recoupments and reversals: $0.00 on 0 lines.',
             `Coverage: 17 of 17 lines priced (100.0%); ${usd} of ${usd} billed (100.0%). There is no earlier digest to compare it with.`,
             'Contracts expiring within 90 days: 0.',
             'Open the digest in the application for the detail:',

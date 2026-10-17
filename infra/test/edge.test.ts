@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 
@@ -6,11 +6,13 @@ import { aws_cloudfront as cloudfront } from 'aws-cdk-lib';
 import { describe, expect, it } from 'vitest';
 
 import {
+  BRAND_PATH_PATTERN,
   COUNTED_COMMON_RULES,
   LOAD_BALANCER_TLS_POLICY,
   MANAGED_RULE_GROUPS,
   RATE_LIMITS,
   STATIC_PATH_PATTERN,
+  STATIC_PATH_PATTERNS,
   LOAD_BALANCER_IDLE_TIMEOUT_SECONDS,
   WEB_HEALTH_CHECK,
   WEB_KEEP_ALIVE_MS,
@@ -204,24 +206,36 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
       }
     });
 
-    it('caches Next.js build output alone, and refuses every other path at the edge before it reaches the application', () => {
-      expect(behaviors).toHaveLength(1);
-      expect(behaviors[0]).toMatchObject({ PathPattern: STATIC_PATH_PATTERN, CachePolicyId: cloudfront.CachePolicy.CACHING_OPTIMIZED.cachePolicyId });
+    it('caches Next.js build output and the brand art alone, and refuses every other path at the edge before it reaches the application', () => {
       expect(STATIC_PATH_PATTERN).toBe('/_next/static/*');
+      // The brand art under /brand, which email embeds from this host (reconciliation-001, D7).
+      expect(BRAND_PATH_PATTERN).toBe('/brand/*');
+      expect(STATIC_PATH_PATTERNS).toEqual([STATIC_PATH_PATTERN, BRAND_PATH_PATTERN]);
+      expect(behaviors.map((behavior) => behavior.PathPattern)).toEqual(['/_next/static/*', '/brand/*']);
+      for (const behavior of behaviors) {
+        expect(behavior, String(behavior.PathPattern)).toMatchObject({
+          CachePolicyId: cloudfront.CachePolicy.CACHING_OPTIMIZED.cachePolicyId,
+          CachedMethods: ['GET', 'HEAD'],
+          Compress: true,
+          TargetOriginId: (config.Origins as { Id: string }[])[0]?.Id,
+        });
+        expect(behavior.FunctionAssociations, String(behavior.PathPattern)).toBeUndefined();
+      }
       expect(fallback.CachePolicyId).toBe(cloudfront.CachePolicy.CACHING_DISABLED.cachePolicyId);
       const [functionId, edgeFunction] = onlyResource(template, 'AWS::CloudFront::Function');
       expect(fallback.FunctionAssociations).toEqual([{ EventType: 'viewer-request', FunctionARN: getAtt(functionId, 'FunctionARN') }]);
       const code = propertiesOf(edgeFunction).FunctionCode as string;
       const handler = vm.runInNewContext(`${code}\nhandler`) as (event: unknown) => unknown;
-      for (const uri of ['/', '/p/7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01/claims', '/api/sign-in/hardware-key/options', '/sign-in']) {
+      // The fallback is every path the two patterns do not take: pages, routes, and names that only begin like them.
+      for (const uri of ['/', '/p/7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01/claims', '/api/sign-in/hardware-key/options', '/sign-in', '/brand', '/brands/x.png', '/p/x/brand/y.png', '/_next/image']) {
         expect(handler({ request: { uri, method: 'GET', headers: {} } }), uri).toEqual({ statusCode: 404, statusDescription: 'Not Found' });
       }
       expect(propertiesOf(edgeFunction).FunctionConfig).toMatchObject({ Runtime: 'cloudfront-js-2.0' });
     });
 
-    it('lets only the application origin read the assets cross-origin, with HSTS and no content sniffing', () => {
+    it('lets only the application origin read the assets cross-origin, with HSTS and no content sniffing, the brand art under the same policy', () => {
       const [policyId, policy] = onlyResource(template, 'AWS::CloudFront::ResponseHeadersPolicy');
-      expect(behaviors[0]?.ResponseHeadersPolicyId).toEqual(ref(policyId));
+      expect(behaviors.map((behavior) => behavior.ResponseHeadersPolicyId)).toEqual([ref(policyId), ref(policyId)]);
       expect((propertiesOf(policy).ResponseHeadersPolicyConfig as Record<string, unknown>).CorsConfig).toEqual({
         AccessControlAllowCredentials: false,
         AccessControlAllowHeaders: { Items: ['*'] },
@@ -233,7 +247,8 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
         ContentTypeOptions: { Override: true },
         StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true },
       });
-      // The application's own Cross-Origin-Resource-Policy (same-origin) would stop the pages loading them from here.
+      // The application's own Cross-Origin-Resource-Policy (same-origin) would stop the pages loading them from here,
+      // and a web mail client embedding the brand art from its own origin.
       expect((propertiesOf(policy).ResponseHeadersPolicyConfig as Record<string, unknown>).CustomHeadersConfig).toEqual({
         Items: [{ Header: 'Cross-Origin-Resource-Policy', Value: 'cross-origin', Override: true }],
       });
@@ -242,6 +257,42 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
 });
 
 describe('the edge contract with the web app', () => {
+  const repository = path.resolve(import.meta.dirname, '../..');
+  const source = (file: string) => readFileSync(path.join(repository, file), 'utf8');
+
+  it('publishes what CloudFront serves with every web image: the build output and the public files, the brand art among them', () => {
+    // CloudFront fetches /_next/static/ and /brand/ from the application, so the image the tasks run must carry both;
+    // Next's standalone output leaves public/ out, and the Dockerfile copies it in.
+    const dockerfile = source('apps/web/Dockerfile');
+    expect(dockerfile).toContain('COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static');
+    expect(dockerfile).toContain('COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public');
+    expect(source('.dockerignore').split('\n')).not.toContain('apps/web/public');
+    // The local production server (the e2e suite's) serves the same files the same way.
+    expect(source('apps/web/scripts/start-standalone.sh')).toContain('cp -R public "$standalone/public"');
+  });
+
+  it('serves under /brand/ only the brand art, which carries no data, and no page or route', () => {
+    const art = readdirSync(path.join(repository, 'apps/web/public/brand'));
+    expect(art.length).toBeGreaterThan(0);
+    for (const file of art) {
+      expect(path.extname(file), file).toMatch(/^\.(svg|png)$/);
+    }
+    // No route of the app answers under /brand or /_next, which the static host would cache.
+    expect(existsSync(path.join(repository, 'apps/web/src/app/brand'))).toBe(false);
+    const groups = readdirSync(path.join(repository, 'apps/web/src/app'), { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^\(.*\)$/.test(entry.name));
+    for (const group of groups) {
+      expect(existsSync(path.join(repository, 'apps/web/src/app', group.name, 'brand')), group.name).toBe(false);
+    }
+  });
+
+  it('serves the email header’s lockup, which the worker names under the static host', () => {
+    const template = source('apps/worker/src/mail/template.ts');
+    const lockup = /export const EMAIL_LOCKUP_PATH = '([^']+)';/.exec(template)?.[1] ?? '';
+    expect(lockup.startsWith(BRAND_PATH_PATTERN.slice(0, -1))).toBe(true);
+    expect(existsSync(path.join(repository, 'apps/web/public', lockup))).toBe(true);
+    expect(template).toContain('new URL(EMAIL_LOCKUP_PATH, staticOrigin)');
+  });
+
   it('health-checks the route that asks the database, which the web app serves to anyone', () => {
     const route = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/app/api/health/route.ts'), 'utf8');
     expect(route).toContain('routeHandler(healthCheck');

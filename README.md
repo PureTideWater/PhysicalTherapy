@@ -1,4 +1,4 @@
-# Therapy contract-payment platform
+# PaidWhole
 
 A contract-payment verification platform for outpatient therapy practices and their billing firms. It ingests copies of 835 remittances and payer contracts, computes expected payment per service line under approved contract versions, groups shortfalls by payer pattern into dispute packets a person approves, and proves recovery by reconciling later remittances to payment posting and deposits.
 
@@ -29,6 +29,7 @@ database test skips and says why.
 ```sh
 pnpm install
 pnpm typecheck && pnpm lint && pnpm lint:logs
+pnpm lint:copy       # the product-copy lint's findings (CO-11; pnpm test runs it too)
 pnpm test            # unit and property tests, with the 100% branch gates
 pnpm test:db         # database tests (each creates and drops its own database)
 pnpm test:e2e        # builds the web app and runs the Playwright journeys, with the axe check
@@ -457,10 +458,11 @@ pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in forc
 Production compute (ADR 0049; `infra/`): each environment's stack runs the web app, the worker's practice jobs and its
 platform jobs as three Fargate services (`WORKER_JOBS=practice` and `platform`; unset, one worker runs both) in private
 subnets, behind an HTTPS-only load balancer with a WAF web ACL (rate limits and AWS managed rules), with CloudFront for
-`/_next/static/` only (the web image built with `--build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin>` loads its assets
-from there; ADR 0055). A migration task (the worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the
-application, operator, queue and billing logins from their secrets) runs before any service moves to a new release; pg-boss
-connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
+`/_next/static/` and `/brand/` only (the web image built with `--build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin>`
+loads its assets from there, ADR 0055; email embeds the brand's lockup from there, ADR 0058). A migration task (the
+worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the application, operator, queue and billing
+logins from their secrets) runs before any service moves to a new release; pg-boss connects as its own login in the
+role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
 certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
 image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
 
@@ -502,6 +504,27 @@ an organization subscribes once; mail to the support address opens a ticket (SES
 inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DIR`; docs/runbooks/support-mail.md);
 deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
 `docs/runbooks/`.
+
+The brand and the product's words (ADRs 0056 to 0058; Change Order 001, CO-01 and CO-11): `packages/brand`
+(`@paidwhole/brand`; its README is the drop-in's wiring guide, headed by where this repository differs) holds the tokens,
+the mark, the fonts, the logo art and the product's words (the tagline, the descriptor, the independence claim, the seal
+and badge text and the Verified definition); the specification is [docs/brand/BRAND.md](docs/brand/BRAND.md). The web
+app wears it through `packages/brand/src/tailwind-theme.css`, `next/font/local` (`apps/web/src/lib/fonts.ts`) and
+`apps/web/src/components/brand`; the worker's PDFs through `apps/worker/src/report/brand.ts`; email takes the lockup's PNG
+from the CloudFront static host (`STATIC_ASSET_ORIGIN`; with none, mail goes without the art), while the application's
+own response headers stay as ADRs 0053 and 0055 set them. The Verified seal and badge render only from the ledger's
+`reportReconciliation()` (ADR 0057). `pnpm test` holds the rules: hex colors stand only in `tokens.css`, `tokens.ts` and
+`mark.ts` in `packages/brand/src` and in the email template (`tools/brand-colors`); no source names Google's font hosts
+(`tools/brand-fonts`, beside an ESLint rule against `next/font/google`); and the copy lint (`tools/brand-copy`) refuses
+ProofPack, AI and intelligence in product copy, "recovered" without posted or deposited, and the brand's words typed out
+instead of imported, with a reviewed exception only as a `brand-copy-exempt: <reason>` comment; stage values and other
+codes are not copy and keep their names. The brand journey (`apps/web/e2e/brand.spec.ts`) compares the header at 1280
+and 390 px and the report cover with and without the seal, and at a strict tolerance the header's lockup band and the
+cover's top band, against baselines in `apps/web/e2e/brand.spec.ts-snapshots/`, beside computed checks of the lockup's
+colors, face and place and the cover's ground; the baselines are made with Playwright's Chromium on Linux, which CI
+installs before the unit tests. After a deliberate change to either, or
+an upgrade of `@playwright/test`, regenerate them on Linux with
+`pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at them and commit them.
 
 **Milestone 11 is not complete.** Its done check is "a new customer signs up, enrolls MFA, pays by test ACH and reaches
 the dashboard; Type I readiness checklist green". The first half holds on the local providers
@@ -613,9 +636,10 @@ lists what a person with network access does to finish it.
 | --- | --- |
 | `apps/web` | Next.js App Router: UI, route handlers, server actions |
 | `apps/worker` | pg-boss worker: intake, parse, monitor, price, triage, audit report, reconcile, digest and export jobs |
-| `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability` |
+| `packages/*` | `db`, `edi835`, `contracts`, `rules`, `pricing`, `triage`, `packets`, `ledger`, `model-gateway`, `ui`, `synth`, `money`, `observability`, `brand` (`@paidwhole/brand`: tokens, the mark, fonts and logo assets) |
 | `infra` | AWS CDK app, one stack per environment |
 | `tools` | log lint, content checker, release scripts, CI guards |
 | `content` | global rule drafts, sources and prepared releases (CI publishes `content/releases`) |
 | `fixtures` | synthetic and golden test data, never real |
 | `docs/adr` | architecture decisions |
+| `docs/brand` | the PaidWhole brand specification ([BRAND.md](docs/brand/BRAND.md)) |

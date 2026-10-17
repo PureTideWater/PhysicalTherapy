@@ -1,4 +1,5 @@
 import { type AuditReportContent, reasonText } from '@tp/worker/reports';
+import { STAGE_LABELS } from '@tp/triage';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -51,10 +52,11 @@ const count = (value: number, noun: string) => `${String(value)} ${noun}${value 
 
 /** The headline: three numbers, then flagged and validated below, each linked to its stage. */
 export function Headline({ headline, practiceId, base }: { readonly headline: AuditReportContent['headline']; readonly practiceId: string; readonly base: string }) {
+  // Today's stage labels, not the ones a report stored when it was written: "Recovered" never stands without posted or deposited.
   const figures = [
-    { label: headline.labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
-    { label: headline.labels.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
-    { label: headline.labels.recovered, amount: headline.recovered_cents, note: 'cash posted and reconciled, net of recoupments', href: `${base}#stage-recovered` },
+    { label: STAGE_LABELS.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
+    { label: STAGE_LABELS.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
+    { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, net of recoupments and reversals', href: `${base}#stage-recovered` },
   ];
   return (
     <section aria-label="Headline" className="flex flex-col gap-3">
@@ -72,7 +74,7 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
       <ul className="flex flex-col gap-1 text-sm">
         <li>
           <a className="underline" href={`${base}#stage-flagged`}>
-            {headline.labels.flagged}
+            {STAGE_LABELS.flagged}
           </a>
           : {count(headline.flagged_lines, 'line')}, <Money value={headline.flagged_range_low_cents} /> to <Money value={headline.flagged_range_high_cents} />; investigatory, never a claim and in no
           total (
@@ -83,7 +85,7 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
         </li>
         <li>
           <a className="underline" href={`${base}#stage-validated`}>
-            {headline.labels.validated}
+            {STAGE_LABELS.validated}
           </a>
           : <Money value={headline.validated_cents} /> across {count(headline.validated_lines, 'line')}; priced under signed-off terms and paid below them, before the actionable checks.
         </li>
@@ -92,7 +94,8 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
   );
 }
 
-function Table({ caption, headers, rows, empty }: { readonly caption: string; readonly headers: readonly string[]; readonly rows: readonly (readonly ReactNode[])[]; readonly empty: string }) {
+/** A stored report's table; `figures` names its columns (0-based) of codes, counts and amounts, set in the mono face with tabular numerals. */
+function Table({ caption, headers, rows, empty, figures = [] }: { readonly caption: string; readonly headers: readonly string[]; readonly rows: readonly (readonly ReactNode[])[]; readonly empty: string; readonly figures?: readonly number[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
@@ -114,7 +117,7 @@ function Table({ caption, headers, rows, empty }: { readonly caption: string; re
             // The rows are a stored report's, in its order; nothing reorders them, so the index is their key.
             <tr key={index} className="border-b last:border-0">
               {row.map((cell, column) => (
-                <td key={column} className="px-2 py-1 align-top">
+                <td key={column} className={figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums' : 'px-2 py-1 align-top'}>
                   {cell}
                 </td>
               ))}
@@ -143,6 +146,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Unpriced lines by reason"
             headers={['Reason', 'Lines', 'Billed', 'Remedy']}
+            figures={[0, 1]}
             rows={content.coverage.reasons.map((reason) => [reason.reason, String(reason.lines), <Money key="billed" value={reason.charge_cents} />, reason.remedy])}
             empty="Every line priced."
           />
@@ -162,6 +166,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Anomaly cohorts"
             headers={['Label', 'Payer', 'Plan', 'Code', 'Quarter', 'Cohort', 'Mode per unit', 'Flagged', 'Range']}
+            figures={[3, 4, 5, 7]}
             rows={content.anomalies.map((anomaly) => [
               anomaly.label,
               anomaly.payer,
@@ -191,12 +196,14 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Validated discrepancies by payer pattern"
             headers={['Payer', 'Plan', 'Pattern', 'Lines', 'Variance']}
+            figures={[3]}
             rows={content.validated.patterns.map((pattern) => [pattern.payer, pattern.plan, pattern.behavior_text, String(pattern.lines), <Money key="variance" value={pattern.variance_cents} />])}
             empty="No line was paid below its contract."
           />
           <Table
             caption="Validated but not actionable"
             headers={['Why not actionable', 'Lines', 'Variance']}
+            figures={[1]}
             rows={content.validated.not_actionable.map((item) => [reasonText(item.reason), String(item.lines), <Money key="variance" value={item.variance_cents} />])}
             empty="Every validated line is actionable."
           />
@@ -224,6 +231,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Cases"
             headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', 'Actionable (this run)', 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
+            figures={[4, 6]}
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,
@@ -242,11 +250,13 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           />
         </CardContent>
       </Card>
-      <Card role="region" aria-label="Payer approved and recovered">
+      <Card role="region" aria-label={`${STAGE_LABELS.payer_approved} and ${STAGE_LABELS.recovered.toLowerCase()}`}>
         <CardHeader>
-          <CardTitle id="stage-payer-approved">Payer approved and recovered</CardTitle>
+          <CardTitle id="stage-payer-approved">
+            {STAGE_LABELS.payer_approved} and {STAGE_LABELS.recovered.toLowerCase()}
+          </CardTitle>
           <CardDescription id="stage-recovered">
-            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once cash is posted and reconciled. Neither has an entry yet.
+            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once its cash is posted or deposited at the practice’s proof level. Neither has an entry yet.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -259,6 +269,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Evidence gaps"
             headers={['Gap', 'Lines', 'Billed', 'Detail', 'Remedy']}
+            figures={[1]}
             rows={content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind, String(gap.lines), gap.charge_cents === null ? '—' : <Money key="billed" value={gap.charge_cents} />, gap.detail, gap.remedy])}
             empty="No evidence gap."
           />

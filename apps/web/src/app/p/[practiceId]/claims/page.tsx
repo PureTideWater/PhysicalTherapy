@@ -21,7 +21,9 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 /**
  * The Claims and lines screen (PRD 7): a server-side paginated, filterable table of every service
  * line, with patient reference, claim control numbers, service date, code and modifiers, units,
- * charge, paid, patient share, observed allowed, expected allowed and the status chips, both from the
+ * charge, then expected allowed, observed allowed and the short (variance) between them in the brand's
+ * order (expected, paid, short; docs/brand/BRAND.md, section 7), then paid and patient share, the
+ * remittance's split of what it allowed, and the status chips, the expected and short from the
  * latest complete pricing run that priced the line (unpriced with its reason, validated when the line is
  * short of its expected amount, priced without a shortfall, or not priced yet). The net view shows each adjudicated claim once, so a reversal followed by a correction
  * shows the corrected claim alone (PRD 6); the full view shows every claim as sent. PHI columns show
@@ -40,8 +42,8 @@ export default async function ClaimsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="claims">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Claims and lines</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Claims and lines</h1>
+        <p className="text-base text-muted-foreground">
           {filters.view === 'net'
             ? 'Net view: each adjudicated claim once. A reversed claim and the claims a correction replaced are left out.'
             : 'Every claim as the 835s sent it, reversals and superseded claims included.'}
@@ -122,51 +124,57 @@ export default async function ClaimsPage(props: Props) {
       ) : null}
       {list.total === 0 ? (
         <EmptyState
+          mark
           title={narrowed ? 'No lines match these filters' : 'No claims loaded yet'}
           nextStep={narrowed ? 'Widen the period, clear the code, or choose every claim as sent.' : 'Upload 835 files on the Uploads screen; each claim that loads appears here with its lines.'}
         />
       ) : (
         <Card>
-          <CardContent className="overflow-x-auto">
+          {/* relative: the scroller contains the visually hidden header text, which would otherwise widen the page at phone width. */}
+          <CardContent className="relative overflow-x-auto">
             <table className="w-full text-left text-sm" aria-label="Claims and lines">
               <thead className="text-muted-foreground">
-                <tr>
-                  {canReadPhi ? <th className="py-1 font-medium">Patient reference</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 font-medium">Service date</th> : null}
-                  <th className="py-1 font-medium">Code and modifiers</th>
-                  <th className="py-1 text-right font-medium">Units</th>
-                  <th className="py-1 text-right font-medium">Charge</th>
-                  <th className="py-1 text-right font-medium">Paid</th>
-                  <th className="py-1 text-right font-medium">Patient share</th>
-                  <th className="py-1 text-right font-medium">Observed allowed</th>
-                  <th className="py-1 text-right font-medium">Expected allowed</th>
-                  <th className="py-1 font-medium">Status</th>
-                  <th className="py-1 font-medium">
-                    <span className="sr-only">Open</span>
+                <tr className="align-bottom">
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Patient reference</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Claim control numbers</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium whitespace-nowrap">Service date</th> : null}
+                  <th className="py-1 pr-2 font-medium">Code and modifiers</th>
+                  <th className="py-1 pr-2 text-right font-medium">Units</th>
+                  <th className="py-1 pr-2 text-right font-medium">Charge</th>
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="expected">
+                    Expected allowed
                   </th>
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="paid">
+                    Observed allowed
+                  </th>
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="short">
+                    Short (variance)
+                  </th>
+                  <th className="py-1 pr-2 text-right font-medium">Paid</th>
+                  <th className="py-1 pr-2 text-right font-medium">Patient share</th>
+                  <th className="py-1 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {list.rows.map((row) => (
                   <tr key={`${row.claimId}:${row.lineId ?? 'claim'}`} className="border-t align-top" data-claim={row.claimId} data-line={row.lineId ?? ''}>
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pr-2">
                         <Link className="underline" href={`${path}?view=${filters.view}&patient=${row.patientRefId}`}>
                           {row.identifiers.patient}
                         </Link>
                       </td>
                     )}
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3 font-mono text-xs">
+                      <td className="py-2 pr-2 font-mono text-xs">
                         <div>{row.identifiers.patientControlNumber}</div>
                         <div>{row.identifiers.payerClaimControlNumber}</div>
                       </td>
                     )}
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3 whitespace-nowrap">{row.lineId === null ? period(row.identifiers.serviceFrom, row.identifiers.serviceTo) : period(row.identifiers.serviceDate, row.identifiers.serviceDateTo)}</td>
+                      <td className="py-2 pr-2 whitespace-nowrap">{row.lineId === null ? period(row.identifiers.serviceFrom, row.identifiers.serviceTo) : period(row.identifiers.serviceDate, row.identifiers.serviceDateTo)}</td>
                     )}
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pr-2">
                       {row.procedureCode === null ? (
                         <span className="text-muted-foreground">Claim without lines</span>
                       ) : (
@@ -181,37 +189,41 @@ export default async function ClaimsPage(props: Props) {
                         {row.superseded ? <Badge variant="outline">Superseded</Badge> : null}
                       </div>
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{row.units ?? '—'}</td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-2 text-right font-mono tabular-nums">{row.units ?? '—'}</td>
+                    <td className="py-2 pr-2 text-right">
                       <Money value={row.chargeCents} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={row.paidCents} />
+                    <td className="py-2 pr-2 text-right">
+                      <Money value={row.expectedAllowedCents} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={row.patientShareCents} />
-                    </td>
-                    <td className="py-2 pr-3 text-right" title={basisName(row.observedAllowedBasis, row.observedAllowedAllocated)}>
+                    <td className="py-2 pr-2 text-right" title={basisName(row.observedAllowedBasis, row.observedAllowedAllocated)}>
                       <Money value={row.observedAllowedCents} />
                       {row.observedAllowedAllocated ? <div className="text-xs text-muted-foreground">allocated</div> : null}
                     </td>
-                    <td className="py-2 pr-3 text-right">
-                      <Money value={row.expectedAllowedCents} />
+                    <td className="py-2 pr-2 text-right" data-variance={row.pricing?.varianceCents ?? ''}>
+                      <Money value={row.pricing?.varianceCents ?? null} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pr-2 text-right">
+                      <Money value={row.paidCents} />
+                    </td>
+                    <td className="py-2 pr-2 text-right">
+                      <Money value={row.patientShareCents} />
+                    </td>
+                    <td className="py-2">
                       <LineStatusChip status={row.status} priced={row.pricing !== null} shortfall={row.pricing !== null && BigInt(row.pricing.varianceCents ?? '0') > 0n} />
                       {row.pricing?.unpricedReason === null || row.pricing === null ? null : <div className="pt-1 font-mono text-xs text-muted-foreground">{row.pricing.unpricedReason}</div>}
-                    </td>
-                    <td className="py-2 whitespace-nowrap text-xs">
-                      {row.lineId === null ? (
-                        <Link className="underline" href={`/p/${practiceId}/remittances/${row.remittanceId}`}>
-                          Remittance
-                        </Link>
-                      ) : (
-                        <Link className="underline" href={`/p/${practiceId}/lines/${row.lineId}`}>
-                          Line trace
-                        </Link>
-                      )}
+                      {/* Where the status comes from, under it: the line's trace, or a claim without lines' remittance. */}
+                      <div className="pt-1 text-xs whitespace-nowrap">
+                        {row.lineId === null ? (
+                          <Link className="underline" href={`/p/${practiceId}/remittances/${row.remittanceId}`}>
+                            Remittance
+                          </Link>
+                        ) : (
+                          <Link className="underline" href={`/p/${practiceId}/lines/${row.lineId}`}>
+                            Line trace
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

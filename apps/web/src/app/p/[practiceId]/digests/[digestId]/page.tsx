@@ -25,13 +25,13 @@ export default async function DigestPage(props: { readonly params: Promise<{ pra
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Monitoring digest for {monthName(digest.period)}</h1>
-        <p className="text-sm text-muted-foreground">{digest.sentAt === null ? 'Not sent yet.' : `Sent ${utc(digest.sentAt)}.`} Its figures were fixed when it was recorded; the screens below show today's.</p>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Monitoring digest for {monthName(digest.period)}</h1>
+        <p className="text-base text-muted-foreground">{digest.sentAt === null ? 'Not sent yet.' : `Sent ${utc(digest.sentAt)}.`} Its figures were fixed when it was recorded; the screens below show today's.</p>
       </div>
       <Card role="region" aria-label="Digest">
         <CardHeader>
           <CardTitle>Counts and dollar totals</CardTitle>
-          <CardDescription>Validated is contract-supported; actionable is in cases, inside its window and above materiality; recovered is posted, net.</CardDescription>
+          <CardDescription>Validated is contract-supported; actionable is in cases, inside its window and above materiality; recovered is the cash posted or deposited at the proof level, net.</CardDescription>
         </CardHeader>
         <CardContent>
           <ul className="flex flex-col gap-1 text-sm" aria-label="Digest figures">

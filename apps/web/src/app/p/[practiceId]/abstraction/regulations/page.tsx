@@ -43,8 +43,8 @@ export default async function RegulationsPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Regulations to confirm</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Regulations to confirm</h1>
+        <p className="text-base text-muted-foreground">
           A Medicare Advantage plan the practice has no contract with owes what Original Medicare would pay. Each packet that says so waits for you to confirm the regulation applies to its case
           before anyone can approve it.
         </p>
@@ -56,7 +56,7 @@ export default async function RegulationsPage(props: Props) {
         </Alert>
       ) : null}
       {waiting.length === 0 ? (
-        <EmptyState title="No regulation waits for confirmation" nextStep="A packet citing the Medicare Advantage regulation appears here once its version is written." />
+        <EmptyState mark title="No regulation waits for confirmation" nextStep="A packet citing the Medicare Advantage regulation appears here once its version is written." />
       ) : (
         <ul aria-label="Regulations to confirm" className="flex flex-col gap-3">
           {waiting.map((item) => (

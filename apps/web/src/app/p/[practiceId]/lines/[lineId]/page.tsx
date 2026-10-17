@@ -39,7 +39,7 @@ export default async function LinePage(props: {
         <Link className="text-sm underline" href={`/p/${practiceId}/claims?view=all&claim=${line.claimId}`}>
           Claims and lines
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           Line {line.lineNo}: {line.procedureCode}
           {modifiers.length === 0 ? '' : ` ${modifiers.join(' ')}`}
         </h1>
@@ -61,7 +61,7 @@ export default async function LinePage(props: {
         </CardHeader>
         {pricing === null ? null : (
           <CardContent className="flex flex-col gap-3">
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+            <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
               {pricing.unpricedReason === null ? (
                 <>
                   <Fact label="Expected allowed">
@@ -124,7 +124,7 @@ export default async function LinePage(props: {
       </Card>
       {pricing === null ? null : (
         <section aria-label="Trace" className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Trace</h2>
+          <h2 className="text-xl font-bold tracking-display">Trace</h2>
           {!canReadPhi ? (
             <p className="text-sm text-muted-foreground">The trace records the line’s service and remittance dates, so it shows to the roles that read PHI.</p>
           ) : (
@@ -160,7 +160,7 @@ export default async function LinePage(props: {
           <CardDescription>What the 835 said about the line.</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <Fact label="Expected allowed">
               <Money value={line.expectedAllowedCents} />
             </Fact>
@@ -180,7 +180,7 @@ export default async function LinePage(props: {
               <Money value={line.patientShareCents} />
             </Fact>
             <Fact label="Units">
-              {line.units ?? '—'}
+              <span className="font-mono tabular-nums">{line.units ?? '—'}</span>
               {line.originalUnits === null ? '' : ` (billed ${line.originalUnits})`}
             </Fact>
             <Fact label="Code">
@@ -243,7 +243,7 @@ export default async function LinePage(props: {
                     <td className="py-1 pr-3 font-mono text-xs">
                       {item.reasonCode} {item.unknownCode ? <Badge variant="destructive">Unknown code</Badge> : null}
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{item.quantity ?? '—'}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.quantity ?? '—'}</td>
                     <td className="py-1 text-right">
                       <Money value={item.amountCents} />
                     </td>

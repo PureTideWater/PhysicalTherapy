@@ -40,8 +40,8 @@ export default async function MappingPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="mapping">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Payer and plan mapping</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Payer and plan mapping</h1>
+        <p className="text-base text-muted-foreground">
           Every payer and plan the 835s name, and the agreement each is paid under. Pricing never runs on a plan with no mapping; lines whose service date no mapping covers
           wait here.
         </p>
@@ -84,6 +84,7 @@ export default async function MappingPage(props: Props) {
       </form>
       {list.total === 0 ? (
         <EmptyState
+          mark
           title={filters.view === 'unmapped' ? 'Nothing is waiting on mapping' : 'No plans here yet'}
           nextStep={
             filters.view === 'unmapped'
@@ -130,7 +131,7 @@ export default async function MappingPage(props: Props) {
                     <td className="py-2 pr-3">
                       <Badge variant={STATUS[plan.status].variant}>{STATUS[plan.status].label}</Badge>
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{plan.totals.claims}</td>
+                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{plan.totals.claims}</td>
                     <td className="py-2 pr-3 text-right">
                       <Money value={plan.totals.chargeCents} />
                     </td>

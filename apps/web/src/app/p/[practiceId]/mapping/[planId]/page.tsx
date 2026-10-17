@@ -70,10 +70,10 @@ export default async function PlanPage(props: Props) {
             Payer and plan mapping
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           {plan.payerName}: {plan.planName ?? plan.planKey}
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Plan key {plan.planKey}; payer identifier {plan.payerIdentifier}
           {plan.medicareAdvantage ? '; Medicare Advantage' : ''}.
         </p>
@@ -123,7 +123,7 @@ export default async function PlanPage(props: Props) {
                         </>
                       )}
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{bucket.lines}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{bucket.lines}</td>
                     <td className="py-1 text-right">
                       <Money value={bucket.chargeCents} />
                     </td>
@@ -195,7 +195,7 @@ export default async function PlanPage(props: Props) {
         </CardContent>
       </Card>
       <section aria-label="Mapping history" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Every mapping of this plan</h2>
+        <h2 className="text-xl font-bold tracking-display">Every mapping of this plan</h2>
         {history.length === 0 ? (
           <EmptyState title="Never mapped" nextStep="Until it is mapped, every line of this plan waits on mapping and pricing refuses to run over it." />
         ) : (

@@ -24,7 +24,7 @@ export default async function NotificationPreferencesPage(props: { readonly sear
   const { preferences, saved } = page.data;
   return (
     <AppShell shell={page.shell} section="notification_preferences">
-      <h1 className="text-2xl font-semibold tracking-tight">Notification preferences</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Notification preferences</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
         Monitoring tells you what it found in each practice you work in: counts and dollar totals only, never a patient&apos;s or a claim&apos;s details. The email carries a link to the digest in the application.
       </p>

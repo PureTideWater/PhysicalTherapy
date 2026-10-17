@@ -188,7 +188,7 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
                       <td className="py-1 pr-3">{row.rowNo}</td>
                       <td className="py-1 pr-3">{row.postedOn}</td>
                       <td className="py-1 pr-3 font-mono">{row.checkOrTrace}</td>
-                      <td className="py-1 pr-3 text-right">{formatUsd(row.amountCents)}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{formatUsd(row.amountCents)}</td>
                       <td className="py-1 pr-3">{row.payerName ?? '—'}</td>
                       <td className="py-1 pr-3">{row.claimReference === null ? 'none (check level)' : 'present (line level)'}</td>
                       <td className="py-1 pr-3">{row.batch ?? '—'}</td>

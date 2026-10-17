@@ -45,7 +45,7 @@ export default async function PricingRunPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/pricing-runs`}>
           Pricing runs
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           Pricing run, {run.periodFrom} to {run.periodTo}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
@@ -114,7 +114,7 @@ export default async function PricingRunPage(props: Props) {
           <CardDescription>What the run is pinned to and who created it.</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <Fact label="Service dates">
               {run.periodFrom} to {run.periodTo}
             </Fact>
@@ -171,6 +171,7 @@ export default async function PricingRunPage(props: Props) {
       </Card>
       {coverage === null ? (
         <EmptyState
+          mark
           title={run.status === 'failed' ? 'This run priced nothing' : 'This run has not finished'}
           nextStep={run.status === 'failed' ? 'Create a new run once the reason above is dealt with.' : 'The worker prices the run; reload this page in a moment.'}
         />
@@ -200,7 +201,7 @@ export default async function PricingRunPage(props: Props) {
                       <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
                         <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
                         <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
-                        <td className="py-1 pr-3 text-right tabular-nums">{entry.lines}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
                         <td className="py-1 text-right">
                           <Money value={entry.charge_cents} />
                         </td>
@@ -242,14 +243,14 @@ export default async function PricingRunPage(props: Props) {
             </CardContent>
           </Card>
           <section aria-label="Variance by payer pattern" className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold">Variance by payer pattern</h2>
+            <h2 className="text-xl font-bold tracking-display">Variance by payer pattern</h2>
             <p className="text-sm text-muted-foreground">Expected allowed less observed allowed, over the priced lines. An underpaid line is a validated discrepancy; an overpayment is recorded and never pursued.</p>
             <PatternTable practiceId={practiceId} coverage={coverage} names={names} />
           </section>
         </>
       )}
       <section aria-label="Lines" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Lines</h2>
+        <h2 className="text-xl font-bold tracking-display">Lines</h2>
         <nav aria-label="Line filter" className="flex flex-wrap gap-2 text-sm">
           {filters.map((name) => (
             <Link key={name} href={`${path}?lines=${name}`} aria-current={name === filter ? 'page' : undefined} className={name === filter ? 'font-medium underline' : 'underline'}>
@@ -281,7 +282,7 @@ export default async function PricingRunPage(props: Props) {
                     {line.procedureCode}
                     {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
                   </td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{line.units ?? '—'}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{line.units ?? '—'}</td>
                   <td className="py-1 pr-3 text-right">
                     <Money value={line.expectedAllowedCents} />
                   </td>

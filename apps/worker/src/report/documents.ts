@@ -1,10 +1,12 @@
+import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
 import { formatCents, formatUsd, parseCents } from '@tp/money';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import { STAGE_LABELS } from '@tp/triage';
 import { z } from 'zod';
 
+import { type FigureColumns, brandedDocument, figureColumns } from './brand';
 import { type CsvCell, csvDocument } from './csv';
-import { escapeHtml } from './html';
+import { escapeHtml, escapeWithFigures } from './escape';
 import { UNPRICED_REMEDIES } from './remedies';
 
 /**
@@ -205,21 +207,13 @@ export function reportDocumentCsv(content: ReportDocumentContent): string {
 // HTML, for the PDF
 // ---------------------------------------------------------------------------------------------------
 
+// The template's own pieces, in tokens (the frame's stylesheet sets the type, tables and colors).
 const STYLE = `
-  @page { size: Letter; }
-  * { box-sizing: border-box; }
-  body { font-family: "Helvetica Neue", Arial, sans-serif; font-size: 10pt; color: #111; margin: 0; }
-  h1 { font-size: 18pt; margin: 0 0 4pt; }
-  h2 { font-size: 12.5pt; margin: 18pt 0 6pt; border-bottom: 1px solid #999; padding-bottom: 2pt; }
-  p { margin: 4pt 0; }
-  .pins { color: #444; font-size: 9pt; }
-  table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; font-size: 8.5pt; }
-  caption { text-align: left; font-weight: bold; padding: 2pt 0; }
-  th, td { border: 1px solid #bbb; padding: 3pt 4pt; text-align: left; vertical-align: top; }
-  th { background: #eee; }
-  td.amount, th.amount { text-align: right; }
-  .empty { color: #555; font-style: italic; }
-  footer { margin-top: 18pt; font-size: 8pt; color: #444; border-top: 1px solid #999; padding-top: 4pt; }
+  h2 { border-bottom: 1px solid var(--pw-line); padding-bottom: 3pt; }
+  .pins { color: var(--pw-slate); font-size: 9pt; }
+  table { margin: 4pt 0 8pt; font-size: 8.5pt; }
+  .empty { color: var(--pw-slate); font-style: italic; }
+  footer { margin-top: 18pt; font-size: 8pt; color: var(--pw-slate); border-top: 1px solid var(--pw-line); padding-top: 4pt; }
 `;
 
 interface Cell {
@@ -227,13 +221,14 @@ interface Cell {
   readonly amount?: boolean;
 }
 
-function table(caption: string, headers: readonly Cell[], rows: readonly (readonly Cell[])[], empty: string): string {
+/** A table; amount cells are classed, and `figures` names its columns (1-based) of codes, identifiers and dates, all in the mono face. */
+function table(caption: string, headers: readonly Cell[], rows: readonly (readonly Cell[])[], empty: string, figures: Pick<FigureColumns, 'code' | 'id' | 'date'> = {}): string {
   if (rows.length === 0) {
     return `<p class="empty">${escapeHtml(empty)}</p>`;
   }
   const head = headers.map((header) => `<th scope="col"${header.amount === true ? ' class="amount"' : ''}>${escapeHtml(header.value)}</th>`).join('');
   const body = rows.map((row) => `<tr>${row.map((cell) => `<td${cell.amount === true ? ' class="amount"' : ''}>${escapeHtml(cell.value)}</td>`).join('')}</tr>`).join('');
-  return `<table><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  return `<table${figureColumns(figures)}><caption>${escapeHtml(caption)}</caption><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /** Who generated a document, and when (for its PDF's header line). */
@@ -246,16 +241,34 @@ export interface DocumentPins {
   readonly generatedAt: string;
 }
 
-function document(title: string, pins: DocumentPins, body: string): string {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${STYLE}</style></head>
-<body>
-  <h1>${escapeHtml(title)}</h1>
+/**
+ * The Verified gate for a v1 report document (docs/adr/0057): neither the coverage report nor the monthly
+ * summary states a recovered dollar total (recovered is a count there; its dollars are the ledger's), so
+ * reportReconciliation finds none and the seal never prints on them.
+ */
+export function documentReconciliation(kind: ReportDocumentKind, documentId: string): ReportReconciliation {
+  return reportReconciliation({ report: { kind, id: documentId }, proofLevel: DEFAULT_PROOF_LEVEL, statedRecoveredCents: null, recoveredEntryIds: [], ledger: new Map() });
+}
+
+function document(kind: ReportDocumentKind, title: string, short: string, covers: string, pins: DocumentPins, body: string): string {
+  return brandedDocument(
+    {
+      title: short,
+      kicker: kind === 'coverage' ? 'Coverage' : 'Monitoring',
+      heading: short,
+      subheading: covers,
+      practiceName: pins.practiceName,
+      meta: [`Document ${pins.documentId}`, `Figures fixed ${pins.generatedAt} UTC`, `By ${pins.generatedBy ?? 'a member of the practice'}`],
+      reference: `Document ${pins.documentId}`,
+      reconciliation: documentReconciliation(kind, pins.documentId),
+    },
+    STYLE,
+    `<h1>${escapeHtml(title)}</h1>
   <p>${escapeHtml(pins.practiceName)}</p>
   <p class="pins">Document ${escapeHtml(pins.documentId)}; figures fixed ${escapeHtml(pins.generatedAt)} UTC by ${escapeHtml(pins.generatedBy ?? 'a member of the practice')}. Every figure is as it stood then; a later document is generated anew.</p>
   ${body}
-  <footer>Amounts are computed in integer cents; no figure adds two stages together, and recovered is only ever the recovery ledger’s.</footer>
-</body></html>`;
+  <footer>Amounts are computed in integer cents; no figure adds two stages together, and recovered (posted or deposited) is only ever the recovery ledger’s.</footer>`,
+  );
 }
 
 /** The coverage report as one self-contained HTML document: what the Coverage screen showed when it was generated. */
@@ -270,10 +283,13 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     ? 'Every plan with lines has a mapping: a pricing run can start.'
     : `${plural(content.readiness.unmapped_plans, 'plan')} had no mapping at all: a pricing run over them is refused until they are mapped.`;
   return document(
+    'coverage',
     `Coverage report, ${content.generated_on}`,
+    'Coverage report',
+    content.generated_on,
     pins,
-    `<p>${escapeHtml(run)} The practice holds ${escapeHtml(plural(content.lines.lines, 'line'))} in ${escapeHtml(plural(content.lines.claims, 'claim'))}, ${escapeHtml(usd(content.lines.charge_cents))} billed.</p>
-  <h2>Priced: ${escapeHtml(`${String(content.priced.lines)} of ${String(content.of.lines)} lines (${shareText(content.priced.lines, content.of.lines)}); ${usd(content.priced.charge_cents)} of ${usd(content.of.charge_cents)} billed (${shareText(content.priced.charge_cents, content.of.charge_cents)})`)}</h2>
+    `<p>${escapeHtml(run)} The practice holds ${escapeHtml(plural(content.lines.lines, 'line'))} in ${escapeHtml(plural(content.lines.claims, 'claim'))}, ${escapeWithFigures(usd(content.lines.charge_cents))} billed.</p>
+  <h2>Priced: ${escapeWithFigures(`${String(content.priced.lines)} of ${String(content.of.lines)} lines (${shareText(content.priced.lines, content.of.lines)}); ${usd(content.priced.charge_cents)} of ${usd(content.of.charge_cents)} billed (${shareText(content.priced.charge_cents, content.of.charge_cents)})`)}</h2>
   <p>${escapeHtml(readiness)}</p>
   <h2>Unpriced reasons</h2>
   ${table(
@@ -281,9 +297,10 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
     [{ value: 'Reason' }, { value: 'Meaning' }, { value: 'Lines', amount: true }, { value: 'Remedy' }],
     content.reasons.map((entry) => [{ value: entry.reason }, { value: UNPRICED_REMEDIES[entry.reason].meaning }, { value: String(entry.lines), amount: true }, { value: UNPRICED_REMEDIES[entry.reason].remedy }]),
     'No reason applies.',
+    { code: [1] },
   )}
-  <h2>Dollars waiting on mappings: ${escapeHtml(usd(content.waiting.charge_cents))} billed</h2>
-  <p>${escapeHtml(`${plural(content.waiting.lines, 'line')} in ${plural(content.waiting.claims, 'claim')} had no mapping on their service date, ${usd(content.waiting.paid_cents)} paid.`)}</p>
+  <h2>Dollars waiting on mappings: ${escapeWithFigures(usd(content.waiting.charge_cents))} billed</h2>
+  <p>${escapeWithFigures(`${plural(content.waiting.lines, 'line')} in ${plural(content.waiting.claims, 'claim')} had no mapping on their service date, ${usd(content.waiting.paid_cents)} paid.`)}</p>
   ${table(
     'Plans waiting on mapping',
     [{ value: 'Payer' }, { value: 'Plan' }, { value: 'Lines', amount: true }, { value: 'Claims', amount: true }, { value: 'Billed', amount: true }, { value: 'Paid', amount: true }],
@@ -296,13 +313,15 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
       { value: usd(plan.paid_cents), amount: true },
     ]),
     'Nothing was waiting on a mapping.',
+    { code: [2] },
   )}`,
   );
 }
 
+/** A payer's count (and, for a stage with dollars, its variance) at one stage: a figure cell, in the mono face. */
 function summaryCell(row: MonthlySummaryRow, bucket: SummaryBucketCode): Cell {
   const entry = row.figures[bucket];
-  return { value: SUMMARY_DOLLAR_BUCKETS.has(bucket) && entry.variance_cents !== null ? `${plural(entry.lines, 'line')}, ${usd(entry.variance_cents)}` : plural(entry.lines, 'line') };
+  return { value: SUMMARY_DOLLAR_BUCKETS.has(bucket) && entry.variance_cents !== null ? `${plural(entry.lines, 'line')}, ${usd(entry.variance_cents)}` : plural(entry.lines, 'line'), amount: true };
 }
 
 /** A month's variance summary as one self-contained HTML document: the month's lines, each counted once at the furthest stage it reached. */
@@ -323,15 +342,18 @@ export function monthlySummaryHtml(content: MonthlySummaryContent, pins: Documen
     { value: content.total.written_off.variance_cents === null ? '—' : usd(content.total.written_off.variance_cents), amount: true },
   ]);
   return document(
+    'monthly_summary',
     `Monthly variance summary, ${content.month}`,
+    'Monthly variance summary',
+    content.month,
     pins,
-    `<p>Lines with a service date in ${escapeHtml(content.month)}, each counted once at the furthest stage it has reached, as of ${escapeHtml(content.generated_on)}. Variance is expected allowed less observed allowed on the priced line the stage names. Payer approved and recovered are counts here: their dollars are the recovery ledger’s, on the practice’s Reconciliation screen and ROI statements.</p>
+    `<p>Lines with a service date in ${escapeHtml(content.month)}, each counted once at the furthest stage it has reached, as of ${escapeHtml(content.generated_on)}. Variance is expected allowed less observed allowed on the priced line the stage names. Payer approved and recovered (posted or deposited) are counts here: their dollars are the recovery ledger’s, on the practice’s Reconciliation screen and ROI statements.</p>
   <h2>By stage</h2>
   ${table('Lines by stage', [{ value: 'Stage' }, { value: 'Lines', amount: true }, { value: 'Billed', amount: true }, { value: 'Variance', amount: true }], stageRows, 'No line.')}
   <h2>By payer</h2>
   ${table(
     'Stages by payer',
-    [{ value: 'Payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => ({ value: SUMMARY_BUCKET_LABELS[bucket] }))],
+    [{ value: 'Payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => ({ value: SUMMARY_BUCKET_LABELS[bucket], amount: true }))],
     content.by_payer.map((row) => [{ value: row.payer_name ?? 'Unnamed payer' }, ...(['flagged', 'validated', 'actionable', 'payer_approved', 'recovered'] as const).map((bucket) => summaryCell(row, bucket))]),
     `No line has a service date in ${content.month}.`,
   )}${content.approved_alone === undefined ? '' : approvedAloneHtml(content.approved_alone)}`,
@@ -348,6 +370,7 @@ function approvedAloneHtml(rows: readonly ApprovedAloneRow[]): string {
     [{ value: 'Packet version' }, { value: 'Case' }, { value: 'Approved on' }, { value: 'Hours after it was written', amount: true }],
     rows.map((row) => [{ value: row.packet_version_id }, { value: row.case_id }, { value: row.approved_on }, { value: String(row.hours_waited), amount: true }]),
     'No packet of the practice was approved by its own writer.',
+    { id: [1, 2], date: [3] },
   )}`;
 }
 

@@ -37,7 +37,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
         <Link className="text-sm underline" href={`/p/${practiceId}/remittances`}>
           Remittances
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">
           {remittance.payerName}, paid {remittance.paymentDate}
         </h1>
       </div>
@@ -56,7 +56,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
           <CardDescription>The 835 transaction set {remittance.st02} of interchange {remittance.isa13}.</CardDescription>
         </CardHeader>
         <CardContent>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+          <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <Fact label="Amount">
               <Money value={remittance.amountCents} /> by {remittance.method}
             </Fact>
@@ -143,7 +143,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
               <tbody>
                 {claims.map((claim) => (
                   <tr key={claim.id} className="border-t align-top" data-claim={claim.id}>
-                    <td className="py-2 pr-3 tabular-nums">{claim.claimNo}</td>
+                    <td className="py-2 pr-3 font-mono tabular-nums">{claim.claimNo}</td>
                     {claim.identifiers === null ? null : <td className="py-2 pr-3">{claim.identifiers.patient}</td>}
                     {claim.identifiers === null ? null : (
                       <td className="py-2 pr-3 font-mono text-xs">

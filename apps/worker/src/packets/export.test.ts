@@ -1,28 +1,15 @@
-import { type RowIdentifiers, assemblePacket, draftNarrative, insertIdentifiers } from '@tp/packets';
-import { assemblyInput, line, promptPayRecord } from '@tp/packets/testing';
 import { describe, expect, it } from 'vitest';
 
 import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
 import { GAP_CODES, gapText, packetHtml } from './html';
+import { approval, exported } from './test-support/exported-packet';
+import { chromiumInstalled } from '../report/pdf';
+import { amountsNotInMono } from '../report/test-support/figures';
 
 /**
  * The export's documents (PRD 12, The packet; CAS-11, CAS-12, CAS-15): the HTML the worker prints to
  * PDF and the CSV schedule, from a SYNTHETIC version with its identifiers inserted.
  */
-
-const content = assemblePacket(
-  assemblyInput({
-    asOf: '2026-05-01',
-    lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: null })],
-    interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
-  }),
-);
-const identifiers = new Map<number, RowIdentifiers>([
-  [1, { claim_control_number: 'SYNCCN0001', patient_control_number: '=SYNPCN0001', patient_name: 'SYNTHETIC, PATIENT <ONE>', member_id: 'SYNMBR1' }],
-  [2, { claim_control_number: 'SYNCCN0002', patient_control_number: 'SYNPCN0002', patient_name: 'SYNTHETIC, PATIENT TWO', member_id: null }],
-]);
-const exported = insertIdentifiers(content, `${draftNarrative(content)}\n\nClaim {{claim_control_number:1}} is the first [3].`, identifiers);
-const approval = { versionNo: 2, versionSha256: 'c'.repeat(64), draftedBy: 'drafter@synthetic.test', approvedBy: 'approver@synthetic.test', approvedAt: '2026-05-02T10:00:00.000Z', approvedAlone: false, regulationConfirmedBy: null };
 
 describe('packetHtml', () => {
   const html = packetHtml(exported, approval);
@@ -45,6 +32,22 @@ describe('packetHtml', () => {
     expect(alone).toContain('Audit flag: approved by the person who wrote it, in a practice with no second person to approve packets, at least 24 hours after it was written.');
     expect(alone).toContain('confirmed by contract specialist specialist@synthetic.test');
   });
+
+  it('is the practice’s own letter to its payer: its name leads the cover and the running header, and PaidWhole’s lockup and name are not on it', () => {
+    const name = exported.content.practice.name;
+    const cover = html.slice(html.indexOf('<section class="cover"'), html.indexOf('<table class="pages"'));
+    expect(cover).toContain(`<div class="cover-top"><p class="firm">${name}</p></div>`);
+    // Named once on the cover, not again under the headline.
+    expect(cover.split(name)).toHaveLength(2);
+    expect(html).toContain(`<span class="title">${name} · Payment dispute</span>`);
+    expect(html).toContain(`<title>Payment dispute | ${name}</title>`);
+    expect(html).not.toMatch(/PaidWhole/i);
+    expect(html).not.toContain('data-verified');
+  });
+
+  it.skipIf(!chromiumInstalled())('sets every dollar figure in IBM Plex Mono, the narrative’s and the interest total’s included (skipped without Chromium)', async () => {
+    expect(await amountsNotInMono(html)).toEqual([]);
+  }, 60_000);
 
   it('has a sentence for every evidence gap', () => {
     for (const code of GAP_CODES) {

@@ -54,14 +54,14 @@ export default async function AbstractionPage(props: Props) {
             Ledger corrections
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Contract abstraction</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Contract abstraction</h1>
+        <p className="text-base text-muted-foreground">
           Enter each term by hand with the document, page and quote it comes from, approve it field by field against that page, then approve the version for the practice to sign
           off.
         </p>
       </div>
       <section aria-label="Documents awaiting abstraction" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Documents awaiting abstraction</h2>
+        <h2 className="text-xl font-bold tracking-display">Documents awaiting abstraction</h2>
         {documents.total === 0 ? (
           <EmptyState title="Nothing awaiting abstraction" nextStep="Contracts, exhibits and payer letters appear here once the practice uploads them and their scan is clean." />
         ) : (
@@ -93,7 +93,7 @@ export default async function AbstractionPage(props: Props) {
         <Pager path={path} query={{}} page={documents.page} pages={documents.pages} total={documents.total} noun="documents" />
       </section>
       <section aria-label="Versions in progress" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Versions in progress</h2>
+        <h2 className="text-xl font-bold tracking-display">Versions in progress</h2>
         {versions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No version is being abstracted, reviewed or awaiting sign-off.</p>
         ) : (
@@ -122,7 +122,7 @@ export default async function AbstractionPage(props: Props) {
                     <VersionStatusBadge status={version.status} />
                   </td>
                   <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
-                  <td className="py-1 text-right tabular-nums">
+                  <td className="py-1 text-right font-mono tabular-nums">
                     {version.verified} of {version.records} verified
                   </td>
                 </tr>

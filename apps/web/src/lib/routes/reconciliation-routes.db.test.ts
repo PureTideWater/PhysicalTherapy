@@ -44,6 +44,10 @@ let queue: MemoryQueue;
 let practice: Practice;
 let viewer: string;
 let caseId: string;
+/** The deposit matched by hand (LED-05), for the statements' tests to reverse and match again. */
+let depositMatch: { eftRowId: string | undefined; remittanceId: string | undefined };
+/** The first statement generated on demand (LED-11). */
+let firstStatement: string;
 
 class Jar implements CookieJar {
   private readonly values = new Map<string, string>();
@@ -218,6 +222,7 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect(candidate).toMatchObject({ paymentCents: '3000' });
     expect(listed.totals.depositedCents).toBe('0');
     const input = { eftRowId: row?.eftRowId, remittanceId: candidate?.remittanceId };
+    depositMatch = input;
     expect((await call(matchDepositAction, viewer, P(), input)).status).toBe('forbidden');
     const matched = ok(await call(matchDepositAction, practice.manager, P(), input));
     expect(matched.redirect).toBe(`/p/${practice.practiceId}/reconciliation?notice=matched`);
@@ -251,8 +256,19 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect((await call(generateRoiAction, viewer, P(), { periodFrom: '2026-04-01', periodTo: '2026-06-30' })).status).toBe('forbidden');
     const generated = ok(await call(generateRoiAction, practice.manager, P(), { periodFrom: '2026-04-01', periodTo: '2026-06-30' }));
     const statementId = generated.objectId ?? '';
+    firstStatement = statementId;
     expect(queue.jobs.at(-1)).toEqual({ type: 'roi_statement', payload: { practice_id: practice.practiceId, roi_statement_id: statementId } });
     const page = ok(await call(roiStatementPage, viewer, { ...P(), statementId }));
+    // The Verified gate on the stored statement and the practice's ledger (docs/adr/0057): every linked entry is a
+    // deposit or its reversal, the line has cash standing, and nothing linked was corrected since.
+    expect(page.detail.verified).toEqual({
+      reconciledToCash: true,
+      source: `ledger.reportReconciliation(roi_statement ${statementId})`,
+      reason: 'reconciled',
+      proofLevel: 'deposited',
+      recoveredCents: 3000n,
+      lines: 1,
+    });
     expect(page.detail).toMatchObject({
       periodFrom: '2026-04-01',
       periodTo: '2026-06-30',
@@ -274,12 +290,16 @@ describe('the Reconciliation screen (PRD 7)', () => {
     expect((await call(roiStatementPdf, viewer, { ...P(), statementId })).status).toBe('not_found');
     const jobId = randomUUID();
     const pdf = new TextEncoder().encode('%PDF-1.7\n% SYNTHETIC stand-in\n');
+    const printed: string[] = [];
     await printRoiStatement(
       { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.app, { jobId, practiceId: practice.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
-      { documents: w.pricing.parseServices.documents, keys: w.keys, pdf: { render: () => Promise.resolve(pdf) } },
+      { documents: w.pricing.parseServices.documents, keys: w.keys, pdf: { render: (html: string) => Promise.resolve(printed.push(html)).then(() => pdf) } },
       practice.practiceId,
       statementId,
     );
+    // Earned: the printed cover carries the seal, naming the ledger as its source.
+    expect(printed).toHaveLength(1);
+    expect(printed[0]).toContain(`data-verified="seal" data-source="ledger.reportReconciliation(roi_statement ${statementId})"`);
     expect(ok(await call(roiStatementPage, viewer, { ...P(), statementId })).detail).toMatchObject({ print: 'printed', pdfSha256: createHash('sha256').update(pdf).digest('hex') });
     const downloaded = ok(await call(roiStatementPdf, viewer, { ...P(), statementId }));
     expect(downloaded.download).toMatchObject({ filename: `roi-statement-${statementId}.pdf`, contentType: 'application/pdf' });
@@ -291,6 +311,40 @@ describe('the Reconciliation screen (PRD 7)', () => {
     const { rows } = await w.owner.query<{ purpose: string }>("SELECT purpose FROM audit_event WHERE practice_id = $1 AND action = 'roi_statement_downloaded' ORDER BY at", [practice.practiceId]);
     expect(rows.map((row) => row.purpose)).toEqual(['report_pdf', 'report_csv']);
     expect(ok(await call(roiStatementsPage, viewer, P())).statements.items).toEqual([expect.objectContaining({ id: statementId, recoveredCents: '3000', quarterly: false, print: 'printed' })]);
+  });
+
+  it('withdraws the seal from a statement whose linked deposit the ledger has since reversed, on the page and in print (docs/adr/0057)', async () => {
+    const generated = ok(await call(generateRoiAction, practice.manager, P(), { periodFrom: '2026-04-01', periodTo: '2026-06-30' }));
+    const statementId = generated.objectId ?? '';
+    expect(ok(await call(roiStatementPage, viewer, { ...P(), statementId })).detail.verified).toMatchObject({ reconciledToCash: true, reason: 'reconciled' });
+    // The deposit matched by hand is reversed after both statements were written: its reversal takes the deposit's date,
+    // so it falls in their period, but neither statement links it.
+    const listed = ok(await call(reconciliationPage, practice.manager, P()));
+    const standing = listed.linkage.items[0]?.deposits.find((deposit) => deposit.standing);
+    ok(await call(reverseMatchAction, practice.manager, P(), { matchId: standing?.id, reason: 'SYNTHETIC reversed after the statement', confirm: 'on' }));
+    for (const id of [firstStatement, statementId]) {
+      const detail = ok(await call(roiStatementPage, viewer, { ...P(), statementId: id })).detail;
+      // The statement still recomputes from the entries it links; the seal is withdrawn, since the ledger no longer holds that cash.
+      expect(detail.matches).toBe(true);
+      expect(detail.verified).toMatchObject({ reconciledToCash: false, reason: 'entry_corrected_since', source: `ledger.reportReconciliation(roi_statement ${id})` });
+    }
+    // Printed now, its cover carries no seal and no definition line.
+    const jobId = randomUUID();
+    const printed: string[] = [];
+    const pdf = new TextEncoder().encode('%PDF-1.7\n% SYNTHETIC stand-in\n');
+    const outcome = await printRoiStatement(
+      { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.app, { jobId, practiceId: practice.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
+      { documents: w.pricing.parseServices.documents, keys: w.keys, pdf: { render: (html: string) => Promise.resolve(printed.push(html)).then(() => pdf) } },
+      practice.practiceId,
+      statementId,
+    );
+    expect(outcome.outcome).toBe('printed');
+    expect(printed).toHaveLength(1);
+    expect(printed[0]).not.toContain('data-verified');
+    expect(printed[0]).not.toContain('Verified:');
+    // Matched again, by hand, for the tests below.
+    ok(await call(matchDepositAction, practice.manager, P(), depositMatch));
+    expect(ok(await call(reconciliationPage, practice.manager, P())).totals).toMatchObject({ depositedCents: '3000', recoveredCents: '3000' });
   });
 
   it('takes back the PLB WO at once: recovered reduced by its amount, the recoupment shown with its evidence, the dashboard reading the ledger (LED-06)', async () => {

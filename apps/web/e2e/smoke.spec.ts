@@ -12,7 +12,7 @@ test.describe('application shell', () => {
 
   test('shows internal roles the hardware-key requirement on the sign-in screen', async ({ page }) => {
     await page.goto('/sign-in');
-    await expect(page.getByText('Company staff sign in with a hardware key')).toBeVisible();
+    await expect(page.getByText('PaidWhole staff sign in with a hardware key')).toBeVisible();
     await expect(page.getByRole('link', { name: 'Sign in with a hardware key' })).toBeVisible();
   });
 

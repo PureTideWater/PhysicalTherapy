@@ -16,6 +16,7 @@ const local: PlatformConfig = {
   supportInbox: { kind: 'local', dir: '/tmp/tp-support-inbox' },
   mail: { kind: 'local', dir: '/tmp/tp-mail' },
   appOrigin: 'http://localhost:3000',
+  staticAssetOrigin: null,
 };
 
 const deployed: PlatformConfig = {
@@ -32,6 +33,7 @@ const deployed: PlatformConfig = {
   supportInbox: { kind: 's3', bucket: 'support-mail' },
   mail: { kind: 'ses', from: 'notices@synthetic.test' },
   appOrigin: 'https://app.synthetic.test',
+  staticAssetOrigin: 'https://static.synthetic.test',
 };
 
 describe('platform wiring', () => {
@@ -56,9 +58,13 @@ describe('platform wiring', () => {
     expect(options).toEqual({ sourceInstanceId: 'tp-production', scratchInstanceId: 'tp-restore-drill', instanceClass: 'db.t4g.medium', subnetGroupName: 'tp-data', securityGroupIds: ['sg-a'] });
   });
 
-  it('sends notices through SES when deployed and to a local outbox in development', () => {
-    expect(mailSender(deployed)).toBeInstanceOf(SesMailSender);
-    expect(mailSender(local)).toBeInstanceOf(LocalMailSender);
+  it('sends notices through SES when deployed and to a local outbox in development, their art from the static host when there is one', () => {
+    const ses = mailSender(deployed);
+    expect(ses).toBeInstanceOf(SesMailSender);
+    expect((ses as unknown as { options: { staticOrigin: string | null } }).options.staticOrigin).toBe('https://static.synthetic.test');
+    const outbox = mailSender(local);
+    expect(outbox).toBeInstanceOf(LocalMailSender);
+    expect((outbox as unknown as { staticOrigin: string | null }).staticOrigin).toBeNull();
   });
 
   it('reads support mail from the bucket SES writes it to when deployed, verifying senders, and from a directory in development', () => {

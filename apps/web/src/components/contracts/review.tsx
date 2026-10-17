@@ -82,7 +82,7 @@ export function VersionStateNotice({ review }: { readonly review: VersionReview 
 export function VersionFacts({ review, versionHref }: { readonly review: VersionReview; readonly versionHref: (versionId: string) => string }) {
   const { version } = review;
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm">
+    <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
       <Fact label="Status">
         <VersionStatusBadge status={version.status} />
       </Fact>
@@ -139,12 +139,12 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
         </CardContent>
       </Card>
       <section aria-label="Rate records" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Rate records</h2>
+        <h2 className="text-xl font-bold tracking-display">Rate records</h2>
         {review.unresolved > 0 ? (
           <Alert variant="destructive" data-state="blocked">
             <AlertTitle>Publication is blocked</AlertTitle>
             <AlertDescription>
-              {review.unresolved} {review.unresolved === 1 ? 'record is' : 'records are'} not verified, or cite a page that no longer resolves. Every field of every record is approved against its
+              {review.unresolved} {review.unresolved === 1 ? 'record is' : 'records are'} not checked against the cited page yet, or cite a page that no longer resolves. Every field of every record is approved against its
               cited page before the version can be approved.
             </AlertDescription>
           </Alert>
@@ -157,7 +157,8 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
               <CardHeader>
                 <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                   Record {index + 1}: {record.codes === null ? 'every code' : record.codes.join(', ')}
-                  {record.verifiedBy === null ? <Badge variant="secondary">Not verified</Badge> : <Badge>Verified</Badge>}
+                  {/* "Verified" is the brand's word for the ledger-gated seal alone (docs/brand/BRAND.md, section 6): a record's check is named for what it is. */}
+                  {record.verifiedBy === null ? <Badge variant="secondary">Not checked</Badge> : <Badge>Fields checked</Badge>}
                   {record.proposedBy === 'model' ? <Badge variant="outline">Proposed by the model</Badge> : null}
                 </CardTitle>
               </CardHeader>
@@ -193,7 +194,7 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                 </table>
                 {record.verifiedBy === null ? null : (
                   <p className="text-xs text-muted-foreground">
-                    Verified by {record.verifiedBy}
+                    Fields checked against the cited page by {record.verifiedBy}
                     {record.verifiedAt === null ? '' : `, ${utc(record.verifiedAt)}`}.
                   </p>
                 )}

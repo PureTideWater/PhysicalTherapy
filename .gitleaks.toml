@@ -1,5 +1,6 @@
 # Secret scanning (CI's gitleaks step; PRD section 16). The default rules apply in full; the only
 # exception is the lockfile, whose integrity hashes look like high-entropy secrets.
+# Single findings a review has confirmed are not secrets are listed by fingerprint in .gitleaksignore.
 title = "therapy-platform gitleaks configuration"
 
 [extend]

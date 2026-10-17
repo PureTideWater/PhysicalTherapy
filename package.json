@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck",
     "lint": "eslint . --max-warnings=0",
     "lint:logs": "tsx tools/lint-logs/index.ts",
+    "lint:copy": "tsx tools/brand-copy/index.ts",
     "test": "vitest run --project unit --coverage",
     "test:db": "vitest run --project db",
     "test:golden": "tsx tools/test-golden.ts",

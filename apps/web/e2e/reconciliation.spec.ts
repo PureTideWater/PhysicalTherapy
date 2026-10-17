@@ -139,8 +139,9 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       await expectFigure(page, practiceId, 'deposited', '$30.00');
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
-    await expect(page.locator('[data-figure="recovered"]')).toContainText('proved by deposit');
-    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered');
+    await expect(page.locator('[data-figure="recovered"]')).toContainText('Recovered (deposited)');
+    await expect(page.locator('[data-figure="recovered"]')).toContainText('stage five: cash deposited, proved by the bank export');
+    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText('Recovered (posted or deposited)');
   });
 
   await test.step('a PLB recoupment reduces recovered by exactly its amount and reopens the line', async () => {
@@ -175,13 +176,16 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
       }).toPass({ timeout: 90_000 });
     });
     await expect(page.locator('[data-state="recomputed"]')).toBeVisible();
-    const recovered = page.getByRole('region', { name: 'Recovered principal, net' });
+    // The region is named with its proof level, as the figure is labelled: never "recovered" alone.
+    const recovered = page.getByRole('region', { name: 'Recovered principal, net (deposited)', exact: true });
     await expect(recovered).toContainText('$12.00');
     await expect(recovered.locator('[data-recomputed="recovered"]')).toHaveText('Recomputed from its 2 linked entries: $12.00, the figure stored.');
     await expect(recovered.getByRole('table')).toContainText('Deposited');
     await expect(recovered.getByRole('table')).toContainText('-$18.00');
     await expect(page.locator('[data-proof-level="deposited"]')).toBeVisible();
-    await expect(page.getByRole('region', { name: 'Fees paid' }).locator('[data-ratio="none"]')).toContainText('Billing records no fees paid in the period');
+    // Recovered is labelled by the cash that proves it, everywhere on the statement (CO-11).
+    await expect(page.getByText('Recovered (deposited) is cash deposited, proved by the bank export.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Fees paid' }).locator('[data-ratio="none"]')).toHaveText('Billing records no fees paid in the period, so no ratio to the fees is given.');
     const pdf = await page.request.get(`${new URL(page.url()).pathname}/pdf`);
     expect(pdf.headers()['content-type']).toBe('application/pdf');
     expect(pdf.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
