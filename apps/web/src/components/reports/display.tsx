@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 
 import type { ReportStatus, ReportSummary } from '../../lib/reports/queries';
 import { Money } from '../remittances/display';
-import { Investigatory } from '../triage/display';
+import { CASE_STATE_TEXT, Investigatory } from '../triage/display';
 
 /**
  * Display pieces of the Reports screens (PRD 7, Reports: "every total links to its stage"; PRD 12,
@@ -50,13 +50,23 @@ export function ReleaseState({ report }: { readonly report: Pick<ReportSummary, 
 
 const count = (value: number, noun: string) => `${String(value)} ${noun}${value === 1 ? '' : 's'}`;
 
+/** A stored case's state in words, as the Cases screen says it. */
+const stateText = (state: string): string => (state in CASE_STATE_TEXT ? CASE_STATE_TEXT[state as keyof typeof CASE_STATE_TEXT] : state);
+
 /** The headline: three numbers, then flagged and validated below, each linked to its stage. */
 export function Headline({ headline, practiceId, base }: { readonly headline: AuditReportContent['headline']; readonly practiceId: string; readonly base: string }) {
   // Today's stage labels, not the ones a report stored when it was written: "Recovered" never stands without posted or deposited.
+  // The notes say what the stored figures hold: the recovery ledger's, or that it had none when the report was generated.
+  const approved = headline.payer_approved_cents !== '0';
   const figures = [
-    { label: STAGE_LABELS.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
-    { label: STAGE_LABELS.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
-    { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, net of recoupments and reversals', href: `${base}#stage-recovered` },
+    { label: STAGE_LABELS.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases, still actionable`, href: `${base}#stage-actionable` },
+    {
+      label: STAGE_LABELS.payer_approved,
+      amount: headline.payer_approved_cents,
+      note: approved ? 'what payers accepted, from the recovery ledger; not cash until it posts' : 'no payer approval was recorded yet',
+      href: `${base}#stage-payer-approved`,
+    },
+    { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, from the recovery ledger, net of recoupments and reversals', href: `${base}#stage-recovered` },
   ];
   return (
     <section aria-label="Headline" className="flex flex-col gap-3">
@@ -214,7 +224,8 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <CardTitle>Actionable cases</CardTitle>
           <CardDescription>
             One case per payer pattern at or above the case materiality; each total is the sum of its lines not written off. A pattern accumulates across runs, so a case may hold lines other runs
-            priced: the report counts this run’s lines, with the whole case beside them. Pursuit cost:{' '}
+            priced: the report counts this run’s lines, with the whole case beside them. A line counts here while it is still actionable; once its payer approves it, it counts under
+            payer approved below, and as {STAGE_LABELS.recovered.toLowerCase()} once its cash is. Pursuit cost:{' '}
             {content.pursuit.estimated ? (
               <>
                 {money(content.pursuit.cost_cents)}; net expected value {money(content.pursuit.net_expected_cents)}.
@@ -230,15 +241,16 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
         <CardContent>
           <Table
             caption="Cases"
-            headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', 'Actionable (this run)', 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
+            headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', `${STAGE_LABELS.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
             figures={[4, 6]}
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,
               item.behavior_text,
-              item.state,
+              stateText(item.state),
               `${String(item.actionable_lines)} of ${String(item.lines)}`,
-              <Money key="actionable" value={item.actionable_cents} />,
+              // Its lines still actionable (a report stored before the stages were read shows its share).
+              <Money key="actionable" value={item.actionable_now_cents ?? item.actionable_cents} />,
               item.deadline_on ?? '—',
               <span key="case">
                 {count(item.case_lines, 'line')}, <Money value={item.case_actionable_cents} />
@@ -256,9 +268,26 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             {STAGE_LABELS.payer_approved} and {STAGE_LABELS.recovered.toLowerCase()}
           </CardTitle>
           <CardDescription id="stage-recovered">
-            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once its cash is posted or deposited at the practice’s proof level. Neither has an entry yet.
+            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once its cash is posted or deposited at the practice’s proof level.{' '}
+            {content.headline.payer_approved_cents === '0' && content.headline.recovered_cents === '0'
+              ? 'Neither had an entry for these cases’ lines when the report was generated.'
+              : 'By case below, from the entries for the lines this run priced; the headline is the sum of each column.'}
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <Table
+            caption={`${STAGE_LABELS.payer_approved} and ${STAGE_LABELS.recovered.toLowerCase()} by case`}
+            headers={['Payer', 'Plan', 'State', `${STAGE_LABELS.payer_approved} (this run)`, `${STAGE_LABELS.recovered} (this run)`]}
+            rows={content.cases.map((item) => [
+              item.payer,
+              item.plan,
+              stateText(item.state),
+              <Money key="approved" value={item.payer_approved_cents ?? '0'} />,
+              <Money key="recovered" value={item.recovered_cents ?? '0'} />,
+            ])}
+            empty="No pattern reaches the case materiality yet."
+          />
+        </CardContent>
       </Card>
       <Card role="region" aria-label="Evidence gaps">
         <CardHeader>

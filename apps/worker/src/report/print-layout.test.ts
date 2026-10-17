@@ -40,7 +40,7 @@ const LONG_KEY = 'CE:SYNPLAN-MEDICARE-ADVANTAGE-PPO-REGIONAL-0001';
 const WIDE_AUDIT = {
   ...CONTENT,
   practice: { name: LONG_NAME },
-  headline: { ...CONTENT.headline, actionable_cents: TOTAL, actionable_lines: LINES, validated_cents: TOTAL, validated_lines: LINES, flagged_range_low_cents: RATE, flagged_range_high_cents: RATE },
+  headline: { ...CONTENT.headline, actionable_cents: TOTAL, actionable_lines: LINES, payer_approved_cents: TOTAL, recovered_cents: TOTAL, validated_cents: TOTAL, validated_lines: LINES, flagged_range_low_cents: RATE, flagged_range_high_cents: RATE },
   coverage: { ...CONTENT.coverage, charge_cents: TOTAL, priced_charge_cents: TOTAL, reasons: CONTENT.coverage.reasons.map((reason) => ({ ...reason, lines: LINES, charge_cents: TOTAL })) },
   anomalies: CONTENT.anomalies.map((item) => ({ ...item, payer: LONG_NAME, plan: LONG_KEY, modifiers: ['GP', 'KX', '59', 'XU'], cohort_size: LINES, modal_allowed_cents: RATE, flagged_lines: LINES, range_low_cents: RATE, range_high_cents: RATE })),
   validated: {
@@ -49,7 +49,23 @@ const WIDE_AUDIT = {
     patterns: CONTENT.validated.patterns.map((item) => ({ ...item, payer: LONG_NAME, plan: LONG_KEY, lines: LINES, variance_cents: TOTAL })),
     not_actionable: CONTENT.validated.not_actionable.map((item) => ({ ...item, reason: 'CASE_LINE_FROM_OTHER_RUN', lines: LINES, variance_cents: TOTAL })),
   },
-  cases: CONTENT.cases.map((item) => ({ ...item, payer: LONG_NAME, plan: LONG_KEY, lines: LINES, actionable_lines: LINES, actionable_cents: CASE, case_lines: LINES, case_actionable_cents: CASE, pursuit_cost_cents: null, net_expected_cents: null })),
+  cases: CONTENT.cases.map((item) => ({
+    ...item,
+    payer: LONG_NAME,
+    plan: LONG_KEY,
+    state: 'partially_resolved',
+    lines: LINES,
+    actionable_lines: LINES,
+    actionable_cents: CASE,
+    case_lines: LINES,
+    case_actionable_cents: CASE,
+    pursuit_cost_cents: null,
+    net_expected_cents: null,
+    actionable_now_lines: LINES,
+    actionable_now_cents: CASE,
+    payer_approved_cents: CASE,
+    recovered_cents: CASE,
+  })),
   pursuit: { estimated: false, cost_cents: null, net_expected_cents: null },
   evidence_gaps: CONTENT.evidence_gaps.map((gap) => ({ ...gap, lines: LINES, charge_cents: TOTAL })),
 };
