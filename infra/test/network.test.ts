@@ -81,11 +81,11 @@ describe.each(ENVIRONMENTS)('%s: network', (environment) => {
     }
   });
 
-  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR, the RDS API and the SES API, and an S3 gateway', () => {
+  it('has interface endpoints for KMS, Bedrock runtime, Secrets Manager, CloudWatch Logs, ECR, the RDS API, the SES API and Textract, and an S3 gateway', () => {
     const endpoints = resourcesOf(template, 'AWS::EC2::VPCEndpoint');
     const interfaces = endpoints.filter(([, e]) => propertiesOf(e).VpcEndpointType === 'Interface');
     expect(interfaces.map(([, e]) => endpointService(e)).sort()).toEqual(
-      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'email', 'kms', 'logs', 'rds', 'secretsmanager'].sort(),
+      ['bedrock-runtime', 'ecr.api', 'ecr.dkr', 'email', 'kms', 'logs', 'rds', 'secretsmanager', 'textract'].sort(),
     );
     const appSubnetRefs = idsIn('app').map(ref);
     for (const [id, endpoint] of interfaces) {

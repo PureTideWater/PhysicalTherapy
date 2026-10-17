@@ -10,7 +10,7 @@ import { CSV_ROWS_PER_PAGE, csvRows, csvText, decodeXml, readPagesHere, sharedSt
 import { normalizePageText, pageTextHash, quoteOnPage } from './page-text';
 import { PAGE_READ_LIMITS, documentFormat, documentPages, looksLikePdf, readDocumentPages } from './pages';
 import { type DocumentSource, EvidenceResolver, type PageSource } from './resolve';
-import { ScanReadError, type ScannedPageReader, TextractPageReader } from './scan';
+import { ScanReadError, type ScannedPageReader, TEXTRACT_ACTIONS, TextractPageReader, createTextractPageReader } from './scan';
 
 const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -221,6 +221,18 @@ describe('Textract page reader (mocked client)', () => {
       staging,
     });
     expect(await defaults.pageTexts({ bytes: new Uint8Array([1]), contentType: 'image/png' })).toEqual([]);
+  });
+
+  it('is built for a deployed task from its staging, and names the two calls it makes for the task role', async () => {
+    const send = vi.fn((command: unknown) => Promise.resolve(command instanceof StartDocumentTextDetectionCommand ? { JobId: 'j' } : { JobStatus: 'SUCCEEDED', Blocks: [{ BlockType: 'LINE', Text: 'SYNTHETIC', Page: 1 }] }));
+    const stage = vi.fn(() => Promise.resolve({ bucket: 'synthetic-documents', name: 'textract/one' }));
+    const reader = createTextractPageReader({ stage }, { client: { send } });
+    expect(reader).toBeInstanceOf(TextractPageReader);
+    expect(await reader.pageTexts({ bytes: new Uint8Array([1]), contentType: 'image/png' })).toEqual(['SYNTHETIC']);
+    expect(stage).toHaveBeenCalledOnce();
+    expect(createTextractPageReader({ stage })).toBeInstanceOf(TextractPageReader);
+    const commands = [...new Set(send.mock.calls.map(([command]) => `textract:${(command as object).constructor.name.replace(/Command$/, '')}`))].sort();
+    expect(commands).toEqual([...TEXTRACT_ACTIONS].sort());
   });
 });
 

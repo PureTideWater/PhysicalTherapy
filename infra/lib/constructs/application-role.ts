@@ -16,6 +16,9 @@ export const USER_POOL_ADMIN_ACTIONS = ['cognito-idp:AdminCreateUser', 'cognito-
 /** The Bedrock call the model gateway makes (packages/model-gateway/src/providers/bedrock.ts: InvokeModelCommand). */
 export const MODEL_INVOKE_ACTIONS = ['bedrock:InvokeModel'] as const;
 
+/** The Textract calls intake's scan reader makes (packages/contracts/src/evidence/scan.ts: TextractPageReader). */
+export const TEXTRACT_ACTIONS = ['textract:StartDocumentTextDetection', 'textract:GetDocumentTextDetection'] as const;
+
 export interface ApplicationRoleProps {
   readonly key: kms.IKey;
   readonly documents: s3.IBucket;
@@ -51,6 +54,10 @@ export interface ApplicationRoleProps {
  *   the gateway's Bedrock provider makes, on the models the current prompt versions pin and no other
  *   (MODEL_INVOKE_ACTIONS, ../models.ts). The gateway still refuses Bedrock until the pinned models'
  *   prices are confirmed and their evaluation recorded.
+ * - Scanned pages (PRD 15, Documents: Textract for scanned PDFs; docs/adr/0055): the asynchronous text
+ *   detection intake runs on a clean document's copy under `textract/` (TEXTRACT_ACTIONS). Textract's
+ *   actions take no resource, so the statement names `*`; Textract reads the object with this role's
+ *   own S3 and through-S3 KMS permissions above.
  */
 export class ApplicationRole extends Construct {
   readonly role: iam.Role;
@@ -61,7 +68,7 @@ export class ApplicationRole extends Construct {
     const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email, pinned models',
+      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email, pinned models, scanned pages',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -115,6 +122,11 @@ export class ApplicationRole extends Construct {
         sid: 'PinnedModels',
         actions: [...MODEL_INVOKE_ACTIONS],
         resources: pinnedBedrockModels().flatMap((modelId) => bedrockModelArns(modelId, stack.partition, stack.region, stack.account)),
+      }),
+      new iam.PolicyStatement({
+        sid: 'ScannedPages',
+        actions: [...TEXTRACT_ACTIONS],
+        resources: ['*'],
       }),
       new iam.PolicyStatement({
         sid: 'ApplicationLoginDecrypt',

@@ -150,7 +150,7 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
     }
   });
 
-  it('keeps noncurrent document versions for the 35-day backup window, aborts stale multipart uploads, and expires upload intake copies after a day', () => {
+  it('keeps noncurrent document versions for the 35-day backup window, aborts stale multipart uploads, and expires upload intake copies and Textract\'s copies after a day', () => {
     const [, documents] = buckets.find(([id]) => id === idOf(stack.storage.documents)) ?? ['', { Type: '' }];
     expect(propertiesOf(documents).LifecycleConfiguration).toEqual({
       Rules: [
@@ -171,6 +171,19 @@ describe.each(ENVIRONMENTS)('%s: buckets', (environment) => {
           Id: 'intake-delete-markers-expire',
           Status: 'Enabled',
           Prefix: 'intake/',
+          ExpiredObjectDeleteMarker: true,
+        },
+        {
+          Id: 'textract-copies-expire',
+          Status: 'Enabled',
+          Prefix: 'textract/',
+          ExpirationInDays: 1,
+          NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+        },
+        {
+          Id: 'textract-delete-markers-expire',
+          Status: 'Enabled',
+          Prefix: 'textract/',
           ExpiredObjectDeleteMarker: true,
         },
       ],

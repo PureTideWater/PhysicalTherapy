@@ -165,6 +165,9 @@ export class Compute extends Construct {
       [DATABASE_SETTINGS.name]: DATABASE_NAME,
     };
     const keyArn = props.key.keyArn;
+    // The model path (packages/model-gateway/src/config.ts): Bedrock in the task's own region, through
+    // the VPC's interface endpoint, on the models the application role may invoke (docs/adr/0048).
+    const modelPath = { MODEL_PROVIDER: 'bedrock', BEDROCK_REGION: stack.region };
 
     const webTask = this.taskDefinition('Web', `tp-${environmentName}-web`, compute.web, props.applicationRole);
     this.container(webTask, {
@@ -201,6 +204,7 @@ export class Compute extends Construct {
         TP_ENVIRONMENT: environmentName,
         // Longer than the load balancer's idle timeout, so it never reuses a connection the server closed.
         KEEP_ALIVE_TIMEOUT: String(WEB_KEEP_ALIVE_MS),
+        ...modelPath,
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
@@ -230,6 +234,8 @@ export class Compute extends Construct {
         KMS_KEY_ID: keyArn,
         MAIL_FROM: parameters.mailFromAddress,
         APP_ORIGIN: appOrigin,
+        // The evaluate-permitted task runs from the worker's task definition (docs/adr/0054).
+        ...modelPath,
       },
       stopTimeout: WORKER_STOP_TIMEOUT,
     });

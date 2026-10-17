@@ -296,7 +296,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       SUPPORT_EMAIL: ref(PARAMETER_NAMES.supportEmail),
       ESIGN_PROVIDER: 'none',
       TP_ENVIRONMENT: environment,
+      MODEL_PROVIDER: 'bedrock',
     });
+    expect(plain.BEDROCK_REGION).toEqual(plain.AWS_REGION);
     expect(plain.KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
     expect(plain.DOCUMENTS_KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
   });
@@ -315,6 +317,16 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(environmentOf(definitions.platform).DOCUMENTS_BUCKET).toBeUndefined();
     expect(environmentOf(definitions.worker)).toMatchObject({ MAIL_FROM: ref(PARAMETER_NAMES.mailFromAddress), DOCUMENTS_BUCKET: ref(logicalIdOf(stack, stack.storage.documents)) });
     expect(environmentOf(definitions.worker).AUDIT_COPY_BUCKET).toBeUndefined();
+  });
+
+  it('calls models on Bedrock in the task\'s own region from the web app and the worker, and from no other task', () => {
+    for (const name of ['web', 'worker'] as const) {
+      expect(environmentOf(definitions[name]), name).toMatchObject({ MODEL_PROVIDER: 'bedrock' });
+      expect(environmentOf(definitions[name]).BEDROCK_REGION, name).toEqual(environmentOf(definitions[name]).AWS_REGION);
+    }
+    for (const name of ['platform', 'migration'] as const) {
+      expect(environmentOf(definitions[name]).MODEL_PROVIDER, name).toBeUndefined();
+    }
   });
 
   it('sends each container\'s output to its own log group, without blocking on it', () => {
@@ -442,26 +454,41 @@ describe('the compute contract with the applications', () => {
     ...Object.keys(secretsOf(definition)).filter((name) => !/_URL_(USERNAME|PASSWORD)$/.test(name) && !/^TP_[A-Z]+_LOGIN_(USERNAME|PASSWORD)$/.test(name)),
   ];
 
-  it('sets only settings the web app reads (apps/web/src/lib/server/config.ts, and billing\'s in apps/web/src/lib/billing/config.ts)', () => {
+  // The model path, read by the gateway's own configuration (packages/model-gateway/src/config.ts).
+  const gatewaySettings = ['MODEL_PROVIDER', 'BEDROCK_REGION'];
+  const gatewayConfig = source('packages/model-gateway/src/config.ts');
+
+  it('sets only settings the web app reads (apps/web/src/lib/server/config.ts, billing\'s in apps/web/src/lib/billing/config.ts, and the gateway\'s)', () => {
     const config = source('apps/web/src/lib/server/config.ts') + source('apps/web/src/lib/billing/config.ts');
     // The keep-alive is the Next.js standalone server's own setting (its generated server.js reads it).
     const nextServer = ['KEEP_ALIVE_TIMEOUT'];
-    for (const name of [...configured(definitionOf('tp-staging-web')).filter((name) => !nextServer.includes(name)), 'DATABASE_URL', 'QUEUE_DATABASE_URL', 'BILLING_DATABASE_URL']) {
+    for (const name of [...configured(definitionOf('tp-staging-web')).filter((name) => !nextServer.includes(name) && !gatewaySettings.includes(name)), 'DATABASE_URL', 'QUEUE_DATABASE_URL', 'BILLING_DATABASE_URL']) {
       expect(config, name).toContain(`${name}:`);
     }
+    for (const name of gatewaySettings) {
+      expect(configured(definitionOf('tp-staging-web'))).toContain(name);
+      expect(gatewayConfig, name).toContain(`'${name}'`);
+    }
+    // The web app reads the gateway's configuration from its environment (apps/web/src/lib/models/path.ts).
+    expect(source('apps/web/src/lib/models/path.ts')).toContain('readGatewayConfig(env)');
     for (const name of nextServer) {
       expect(configured(definitionOf('tp-staging-web'))).toContain(name);
       expect(source('apps/web/node_modules/next/dist/build/utils.js'), name).toContain(`process.env.${name}`);
     }
   });
 
-  it('sets only settings the worker reads (apps/worker/src/config.ts)', () => {
+  it('sets only settings the worker reads (apps/worker/src/config.ts, and the gateway\'s for evaluate-permitted)', () => {
     const config = source('apps/worker/src/config.ts');
     for (const family of ['tp-staging-worker', 'tp-staging-platform']) {
-      for (const name of [...configured(definitionOf(family)), 'QUEUE_DATABASE_URL', 'OPERATOR_DATABASE_URL']) {
+      for (const name of [...configured(definitionOf(family)).filter((name) => !gatewaySettings.includes(name)), 'QUEUE_DATABASE_URL', 'OPERATOR_DATABASE_URL']) {
         expect(config, `${family} ${name}`).toMatch(new RegExp(`'${name}'|env\\.${name}\\b`));
       }
     }
+    for (const name of gatewaySettings) {
+      expect(configured(definitionOf('tp-staging-worker'))).toContain(name);
+      expect(gatewayConfig, name).toContain(`'${name}'`);
+    }
+    expect(source('apps/worker/src/models/permitted-cli.ts')).toContain('readGatewayConfig()');
   });
 
   it('runs the commands the images hold: the web server, the worker bundle and its migrator', () => {

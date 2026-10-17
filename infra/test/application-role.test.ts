@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
+import { MODEL_INVOKE_ACTIONS, PRACTICE_CONTEXT_KEY, TEXTRACT_ACTIONS, USER_POOL_ADMIN_ACTIONS } from '../lib/constructs/application-role';
 import { bedrockModelArns, pinnedBedrockModels } from '../lib/models';
 import { ENVIRONMENTS } from '../lib/environments';
 import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf, resourceById, roleStatements, synthesized } from './synth';
@@ -40,6 +40,13 @@ describe('the models the application may invoke (PRD 14, Provider and data path)
     const provider = readFileSync(path.resolve(import.meta.dirname, '../../packages/model-gateway/src/providers/bedrock.ts'), 'utf8');
     const commands = [...new Set([...provider.matchAll(/new (\w+)Command\(/g)].map((match) => `bedrock:${match[1] ?? ''}`))].sort();
     expect(commands).toEqual([...MODEL_INVOKE_ACTIONS].sort());
+  });
+
+  it('match the calls intake’s Textract reader makes', () => {
+    const reader = readFileSync(path.resolve(import.meta.dirname, '../../packages/contracts/src/evidence/scan.ts'), 'utf8');
+    const commands = [...new Set([...reader.matchAll(/new (\w+)Command\(/g)].map((match) => `textract:${match[1] ?? ''}`))].sort();
+    expect(commands).toEqual([...TEXTRACT_ACTIONS].sort());
+    expect(reader).toContain(`export const TEXTRACT_ACTIONS = ['${TEXTRACT_ACTIONS.join("', '")}'] as const;`);
   });
 
   it('name a foundation model in the region, or an inference profile with the models it routes to', () => {
@@ -148,6 +155,13 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     }
     expect(resources).not.toContain('foundation-model/*');
     expect(resources).toContain('AWS::Region');
+  });
+
+  it('runs Textract’s text detection for scanned pages, and nothing else of Textract', () => {
+    const textract = statements.filter((statement) => actionsOf(statement).some((action) => action.startsWith('textract:')));
+    expect(textract).toEqual([{ Sid: 'ScannedPages', Effect: 'Allow', Action: [...TEXTRACT_ACTIONS], Resource: '*' }]);
+    // Every other statement names its resources.
+    expect(statements.filter((statement) => statement.Resource === '*').map((statement) => statement.Sid)).toEqual(['ScannedPages']);
   });
 
   it('cannot delete objects, change retention or bypass Object Lock', () => {

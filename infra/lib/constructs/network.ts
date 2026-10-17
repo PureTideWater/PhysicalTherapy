@@ -10,7 +10,8 @@ export const SUBNET_GROUPS = { edge: 'edge', app: 'app', data: 'data' } as const
  * and Docker endpoints let the tasks pull images; the layers come through the S3 gateway endpoint.
  * The RDS API is for the monthly restore drill (it restores a snapshot to a scratch instance and
  * deletes it, PRD 16 Backups and restore), and the SES API for the support-access notices (PRD 5,
- * J15); both are platform jobs on the operator role.
+ * J15); both are platform jobs on the operator role. Textract reads scanned contracts for intake
+ * (PRD 15, Documents).
  */
 export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEndpointAwsService])[] = [
   ['Kms', ec2.InterfaceVpcEndpointAwsService.KMS],
@@ -21,6 +22,7 @@ export const INTERFACE_ENDPOINTS: readonly (readonly [string, ec2.InterfaceVpcEn
   ['EcrDocker', ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER],
   ['RdsApi', ec2.InterfaceVpcEndpointAwsService.RDS],
   ['SesApi', ec2.InterfaceVpcEndpointAwsService.EMAIL],
+  ['Textract', ec2.InterfaceVpcEndpointAwsService.TEXTRACT],
 ];
 
 /**

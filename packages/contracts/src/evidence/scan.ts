@@ -1,4 +1,4 @@
-import { type Block, GetDocumentTextDetectionCommand, StartDocumentTextDetectionCommand, type TextractClient } from '@aws-sdk/client-textract';
+import { type Block, GetDocumentTextDetectionCommand, StartDocumentTextDetectionCommand, TextractClient } from '@aws-sdk/client-textract';
 
 /**
  * Text for scanned pages, which carry no text layer: an interface, with Amazon Textract behind it in
@@ -79,4 +79,15 @@ export class TextractPageReader implements ScannedPageReader {
     }
     throw new ScanReadError('Textract text detection did not finish in time');
   }
+}
+
+/** The Textract calls the reader makes, for the task role's policy (infra/lib/constructs/application-role.ts). */
+export const TEXTRACT_ACTIONS = ['textract:StartDocumentTextDetection', 'textract:GetDocumentTextDetection'] as const;
+
+/**
+ * The deployed reader: Textract in the task's own region (AWS_REGION, through the VPC's interface
+ * endpoint), reading what the staging puts in S3.
+ */
+export function createTextractPageReader(staging: TextractStaging, options: { readonly client?: Pick<TextractClient, 'send'> } = {}): TextractPageReader {
+  return new TextractPageReader({ client: options.client ?? new TextractClient({}), staging });
 }

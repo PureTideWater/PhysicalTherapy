@@ -49,6 +49,9 @@ export function denyOverwrites(bucket: s3.Bucket): void {
 /** Where browsers upload documents before their malware scan (documentIntakeKey in packages/db). */
 export const INTAKE_PREFIX = 'intake/';
 
+/** Where intake puts a clean scanned document's bytes for Textract to read (apps/worker/src/intake/textract-staging.ts). */
+export const TEXTRACT_STAGING_PREFIX = 'textract/';
+
 /**
  * The headers a presigned upload PUT carries from the browser (apps/web/src/lib/uploads/targets.ts,
  * SIGNED_HEADERS; Content-Length is the browser's own and never needs CORS).
@@ -74,7 +77,9 @@ export interface StorageProps {
  *   (AccountSecurity). Incomplete multipart uploads are aborted after a week. Browsers upload under
  *   `intake/` (presigned PUTs), where GuardDuty scans the plaintext before the worker seals it under
  *   the practice's key elsewhere; nothing reads an intake object again, so it, its noncurrent
- *   version and its delete marker expire after a day (docs/adr/0018 and 0026). CORS admits a PUT
+ *   version and its delete marker expire after a day (docs/adr/0018 and 0026). Intake puts a clean
+ *   scanned document's bytes under `textract/` for Textract to read, and those expire the same way
+ *   (docs/adr/0055). CORS admits a PUT
  *   from the application's origin alone, with exactly the headers the presigned PUT signs, and
  *   exposes nothing (docs/adr/0049).
  * - `packets` and `auditCopies`: exported packets and the nightly audit_event copies. Versioned
@@ -104,6 +109,17 @@ export class Storage extends Construct {
         {
           id: 'intake-delete-markers-expire',
           prefix: INTAKE_PREFIX,
+          expiredObjectDeleteMarker: true,
+        },
+        {
+          id: 'textract-copies-expire',
+          prefix: TEXTRACT_STAGING_PREFIX,
+          expiration: Duration.days(1),
+          noncurrentVersionExpiration: Duration.days(1),
+        },
+        {
+          id: 'textract-delete-markers-expire',
+          prefix: TEXTRACT_STAGING_PREFIX,
           expiredObjectDeleteMarker: true,
         },
       ],
