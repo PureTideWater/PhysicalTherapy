@@ -94,8 +94,8 @@ locally. The stack does not activate its receipt rule set, because a region has 
 written. Change management, Backups and restore, and Secrets name them as evidence, so `controls.test.ts` fails if one
 goes missing.
 
-**Smaller fixes.** The published response target is the plan's wording. Every page has a loading state, and a test
-fails a page without one. The specialist queue's text describes the proposals that milestone 10 now makes.
+**Smaller fixes.** The published response target is the plan's wording. The specialist queue's text describes the
+proposals that milestone 10 now makes.
 
 **Identity (PRD 20's open decision, revisit at milestone 11).** Cognito stays the identity provider, under the AWS
 BAA, until the first billing firm's security review. That review, not the build, is what would change it. The decision
@@ -127,6 +127,15 @@ interface would not change.
 - **The specialist can mark a contract ambiguous** was already fixed when the review ran (commit 6b781c4).
 - **Bedrock's IAM permission and the budget alarm's metric filter** were already in place (commit b8746d0). This round
   adds the task settings, Textract and the console's spend view.
+- **A loading.tsx for every page that lacks one.** A route segment's loading.tsx wraps its pages in a Suspense boundary,
+  so Next sends a 200 and streams before the page's own checks run. A refusal then stops being a status: a 404 for
+  another practice, or the redirect of a request without a session, arrives as a 200 page. The sign-in journey holds
+  the refusal to a status ("a redirect status, not a page streamed with 200", for sessions.md's "the next request is
+  refused"), and the e2e journeys failed on exactly this when the files were added (the sign-in and hardware-key
+  journeys, and uploads made before the page hydrated). A
+  loading state that keeps the refusal statuses needs each page's checks moved into a layout above the boundary, which
+  is a change of its own. The leaf loading.tsx files from earlier milestones have the same effect on their own pages,
+  and should be reviewed against that rule in the same change.
 
 ## Consequences
 
