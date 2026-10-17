@@ -60,7 +60,7 @@ export default async function AnomaliesPage(props: Props) {
                 <thead>
                   <tr className="border-b text-left">
                     {canReadPhi ? <th className="px-2 py-1 font-medium">Payer claim control number</th> : null}
-                    <th className="px-2 py-1 font-medium">Service date</th>
+                    <th className="px-2 py-1 font-medium">{canReadPhi ? 'Service date' : 'Line'}</th>
                     <th className="px-2 py-1 font-medium">Code</th>
                     <th className="px-2 py-1 font-medium">Units</th>
                     <th className="px-2 py-1 font-medium">Observed allowed</th>
@@ -74,7 +74,7 @@ export default async function AnomaliesPage(props: Props) {
                       {canReadPhi ? <td className="px-2 py-1">{line.payerClaimControlNumber}</td> : null}
                       <td className="px-2 py-1">
                         <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}`}>
-                          {line.serviceDate}
+                          {line.serviceDate ?? 'Line trace'}
                         </Link>
                       </td>
                       <td className="px-2 py-1 font-mono">{[line.procedureCode, ...line.modifiers].join(' ')}</td>

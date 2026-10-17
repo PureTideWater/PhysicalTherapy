@@ -24,6 +24,11 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string }>;
 
 const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the practice’s payment posting', deposited: 'deposited in the practice’s bank' };
 
+/** A line by its number, and its service date where the handler returned one (the roles that read PHI only, as on Claims and lines). */
+function lineLabel(line: { readonly lineNo: number; readonly serviceDate: string | null }): string {
+  return line.serviceDate === null ? `Line ${String(line.lineNo)}` : `Line ${String(line.lineNo)}, ${line.serviceDate}`;
+}
+
 /**
  * A case (PRD 7, Cases: "detail with lines, trace, deadline, pursuit cost, notes, timeline"; "assign;
  * write off a line with reason; open the packet"; "a line past its window is struck through"; PRD 12,
@@ -155,9 +160,9 @@ export default async function CasePage(props: Props) {
           {detail.lines.map((line) => (
             <li key={line.id} className="rounded-md border p-4" data-case-line={line.id} data-actionable={line.actionable ? 'yes' : 'no'}>
               <div className={line.actionable ? 'flex flex-wrap items-center gap-3 text-sm' : 'flex flex-wrap items-center gap-3 text-sm text-muted-foreground line-through'}>
-                {canReadPhi ? <span>{line.payerClaimControlNumber}</span> : null}
+                {canReadPhi && line.payerClaimControlNumber !== null ? <span>{line.payerClaimControlNumber}</span> : null}
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${line.pricingRunId}`}>
-                  Line {line.lineNo}, {line.serviceDate}
+                  {lineLabel(line)}
                 </Link>
                 <span className="font-mono tabular-nums">
                   {[line.procedureCode, ...line.modifiers].join(' ')} x {line.units}
