@@ -7,6 +7,11 @@ name: supply-chain
 # docs/adr/0010-supply-chain-gates-beside-ci.md records why these live here.
 on: [pull_request]
 
+# A newer push to the same pull request cancels the older run, so superseded runs spend no minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -42,7 +47,7 @@ jobs:
           tags: tp-${{ matrix.app }}:scan
 
       - name: Scan the ${{ matrix.app }} image (fails on HIGH or CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: tp-${{ matrix.app }}:scan
           format: table

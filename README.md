@@ -9,9 +9,22 @@ No real PHI, real 835, real contract or real export ever enters this repository.
 ## Development
 
 Prerequisites: Node 24 (see `.nvmrc` and `engines`; Node 22 runs everything with an engine warning), pnpm 10.28 (`corepack enable` or
-`npm install --global pnpm@10.28.0`), and Docker for `pnpm dev`. Nothing in the test suites needs Docker:
-database tests use `DATABASE_URL`, defaulting to the docker-compose Postgres at
-`postgres://postgres:test@localhost:5432/postgres`.
+`npm install --global pnpm@10.28.0`), and Docker for `pnpm dev`. The local database is PostgreSQL 18, the version CI's
+`postgres:18` service and production (`infra/lib/constructs/database.ts`) run; `pnpm dev` starts it from
+`docker-compose.yml`. Nothing in the test suites needs Docker: database tests use `DATABASE_URL`, defaulting to the
+docker-compose Postgres at `postgres://postgres:test@localhost:5432/postgres`. To run them as CI does against a
+PostgreSQL 18 server of your own, point `DATABASE_URL` at its superuser (a UTF-8 cluster with password logins, as the
+image initializes one); `E2E_DATABASE` and `E2E_PORT` keep an end-to-end run apart from another on the same machine:
+
+```sh
+export DATABASE_URL=postgres://postgres:test@localhost:5433/postgres   # a PostgreSQL 18 superuser
+pnpm db:migrate && pnpm test:db
+E2E_DATABASE=tp_e2e_pg18 E2E_PORT=3391 pnpm test:e2e
+```
+
+An older server (16 or 17) runs the suites too, but CI and production run 18, so a change is checked there. The
+restore drill through `pg_dump` needs client tools at least as new as the server (`PG_BIN_DIR`); without them that one
+database test skips and says why.
 
 ```sh
 pnpm install
@@ -45,7 +58,8 @@ waits up to `SCAN_WAIT_SECONDS` (600) for it. The database holds the malware gat
 cleared, only a clean document is scanned or queued for parse, and a zip entry is clean only with its zip. A zip whose
 entries would expand past 100 times its size is refused whole, and an entry its first bytes hold is never written.
 `TP_LARGE_ZIP_MB` sizes the large-zip intake test (`apps/worker/src/intake/intake.large.db.test.ts`, 256 MiB by default;
-the weekly `large-zip` workflow runs 2048).
+the weekly `large-zip` workflow runs 2048). Its memory bound counts what the path holds after full collections (the db
+project's workers run with `--expose-gc`), never the garbage V8 has yet to collect, whose amount depends on the Node version.
 
 Parse and load (ADRs 0027 and 0031): the worker's `parse_835` job (`apps/worker/src/parse`) parses each clean 835 twice
 as a stream, once for the parser's final report and once to load every loadable transaction set, with the report, in
@@ -541,8 +555,9 @@ setting `specialist_verified` to true claim by claim; any changed answer becomes
 **Milestone 3: the 2 GB check has been run.** Its done check includes "a 2 GB zip queues per file". The intake test
 (`apps/worker/src/intake/intake.large.db.test.ts`) runs at 256 MiB by default; the 2 GiB run
 (`TP_LARGE_ZIP_MB=2048`, one source document and one parse_835 job per entry, bounded memory) passed on
-2026-10-15 in the build environment in 166 s against PostgreSQL 16. The weekly `large-zip` workflow repeats it
-on CI's PostgreSQL 18.
+2026-10-15 in the build environment in 166 s against PostgreSQL 16, and on 2026-10-17 in 223 s against PostgreSQL
+18.4 on Node 24, with memory measured after full collections. The weekly `large-zip` workflow repeats it on CI's
+PostgreSQL 18.
 
 **Milestone 2 is not complete.** Its done check asks for "code-set validation against release 1", and release 1 does
 not exist (milestone 0's note below): the parser checks CARC and RARC against SYNTHETIC release 900001 in every test,

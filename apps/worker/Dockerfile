@@ -15,9 +15,17 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
 # The audit report's PDF is printed with Chromium (docs/adr/0037): playwright-core at the version the
 # lockfile pins, beside the bundle, and its headless Chromium with the system libraries it needs.
-RUN npm install --no-save --omit=dev playwright-core@1.56.1 \
+# Debian's security updates published since the base image come first, and npm, npx and corepack are
+# removed once Chromium is in: the image scan (supply-chain.yml) fails on any HIGH or CRITICAL finding
+# that has a fix, and the worker never runs a package manager.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+ && npm install --no-save --omit=dev playwright-core@1.56.1 \
  && npx playwright-core install --with-deps chromium-headless-shell \
- && npm cache clean --force
+ && npm cache clean --force \
+ && rm -rf /var/lib/apt/lists/* /root/.npm \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
 # The one-off migration task runs dist/migrate.js from this image before a release receives traffic;
 # it applies the migrations from ../migrations (docs/adr/0049).
