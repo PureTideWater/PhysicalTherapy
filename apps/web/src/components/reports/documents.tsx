@@ -42,7 +42,15 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
               'No pricing run had taken effect when this report was generated, so every line counted as unpriced.'
             ) : (
               <>
-                From the pricing run in effect,{' '}
+                {content.runs_in_effect === undefined || content.runs_in_effect === null ? (
+                  'From the pricing run in effect, '
+                ) : (
+                  <>
+                    Each line at its pricing in effect, across <span className="font-mono tabular-nums">{content.runs_in_effect.runs}</span>{' '}
+                    {content.runs_in_effect.runs === 1 ? 'pricing run' : 'pricing runs'} in effect (service {content.runs_in_effect.period_from} to {content.runs_in_effect.period_to}); the latest to
+                    take effect,{' '}
+                  </>
+                )}
                 <Link className="underline" href={`/p/${practiceId}/pricing-runs/${content.run.id}`}>
                   service {content.run.period_from} to {content.run.period_to}
                 </Link>

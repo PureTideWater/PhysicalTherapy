@@ -70,6 +70,21 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(reportDocumentCsv(coverage({ run: null })).split('\r\n')[1]).toBe('run,,no run in effect,,,,,');
   });
 
+  it('says the shares read every run in effect, each line at its pricing in effect, where the report recorded them (the screen tour’s N2)', () => {
+    const inEffect = coverage({ runs_in_effect: { runs: 2, period_from: '2026-03-01', period_to: '2026-04-30' }, priced: { lines: 4, charge_cents: '60000' }, of: { lines: 36, charge_cents: '300000' } });
+    expect(parseReportDocument('coverage', inEffect)).toEqual(inEffect);
+    const rows = reportDocumentCsv(inEffect).split('\r\n');
+    expect(rows[2]).toBe('runs_in_effect,,"2 pricing runs in effect, service 2026-03-01 to 2026-04-30",,,,,');
+    expect(rows[3]).toBe('priced,lines,priced lines,4,,600.00,,11.1%');
+    expect(rows[4]).toBe('priced,of,lines in the share,36,,3000.00,,20.0%');
+    const html = coverageReportHtml(inEffect, PINS);
+    expect(html).toContain('Each line at its pricing in effect, across 2 pricing runs in effect (service 2026-03-01 to 2026-04-30); the latest to take effect priced service 2026-03-01 to 2026-03-31 under rule release 900001.');
+    expect(html).toContain('Priced: 4 of 36 lines (11.1%)');
+    // A report generated before the shares read every run in effect parses and prints as it did.
+    expect(parseReportDocument('coverage', coverage())).toEqual(coverage());
+    expect(coverageReportHtml(coverage(), PINS)).toContain('From the pricing run in effect, service 2026-03-01 to 2026-03-31');
+  });
+
   it('writes the monthly summary CSV: every stage per payer, dollars only where the stage carries them, names defused', () => {
     const rows = reportDocumentCsv(monthly()).split('\r\n');
     expect(rows[0]).toBe('month,payer,stage,lines,billed,variance');

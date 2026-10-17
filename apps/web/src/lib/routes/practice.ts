@@ -13,7 +13,7 @@ import { opaqueId } from './schemas';
  * and the last run, with a banner when a run failed on its last attempt; JOB-02), the practice
  * record, its agreement chain and, for its administrators, the support (break-glass) grants on it
  * with the list of records each one read (PRD 5, J15: the practice administrator's notice links
- * here), the dashboard's counts and totals (coverage of the run in effect, cases by state, deadlines
+ * here), the dashboard's counts and totals (coverage under the pricing in effect, cases by state, deadlines
  * in 14 days, recovered this quarter), and the person's latest in-app notifications from monitoring
  * (docs/adr/0039), and the dashboard's headline and queues (lib/dashboard/queries.ts; docs/adr/0045). Every read of
  * the practice record goes through readWithAudit, so a support engineer's view of it appears in that
@@ -159,7 +159,7 @@ export const practiceHome = practiceRoute({
       freshness: await freshness(scope, practiceId),
       /** Why new runs are refused now (the organization is suspended), or null (docs/adr/0050). */
       suspension: await practiceRunRefusal(scope.client, practiceId),
-      dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10), request.requestId),
+      dashboard: await dashboard(scope, practiceId, services.now().toISOString().slice(0, 10)),
       notifications: { unread: await unreadNotifications(scope, practiceId), latest: await listNotifications(scope, practiceId, 3) } satisfies { unread: number; latest: NotificationView[] },
     };
   },

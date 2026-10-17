@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { QuestionList, VersionStatusBadge } from '../../../../components/contracts/display';
+import { PricedShare } from '../../../../components/coverage/share';
 import { AnswerForm, TagForm, documentLabel } from '../../../../components/contracts/forms';
 import { roleNames } from '../../../../components/format';
 import { Pager } from '../../../../components/remittances/display';
@@ -23,8 +24,9 @@ const CALENDAR_KIND_NAMES = { anniversary: 'Anniversary', notice_deadline: 'Noti
 
 /**
  * The Contracts screen (PRD 7): each contract with its payer, the plans mapped to it, the version in
- * force (or the latest), its effective window, method and status, and its coverage share (from pricing
- * runs, none yet); the contract calendar; the upload of contracts, exhibits and payer letters through
+ * force (or the latest), its effective window, method and status, and its coverage share (of the lines
+ * its versions were to price, those priced, each line at its pricing in effect; lib/coverage/in-effect.ts);
+ * the contract calendar; the upload of contracts, exhibits and payer letters through
  * the intake flow, and the tag that gives each uploaded document its payer (J5); and the contract
  * specialist's open questions, which the practice answers here.
  */
@@ -33,7 +35,7 @@ export default async function ContractsPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="contracts" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, filters, payers, list, calendar, untagged, contracts, questions, upload, canSignOff, roles } = page.data;
+  const { practiceId, filters, payers, list, runsInEffect, calendar, untagged, contracts, questions, upload, canSignOff, roles } = page.data;
   const path = `/p/${practiceId}/contracts`;
   const filtered = filters.payer !== undefined || filters.status !== undefined;
   return (
@@ -122,7 +124,13 @@ export default async function ContractsPage(props: Props) {
                     <td className="py-2 pr-3">{contract.shown === null ? '—' : windowText(contract.shown.effectiveFrom, contract.shown.effectiveTo)}</td>
                     <td className="py-2 pr-3">{contract.methods.length === 0 ? '—' : contract.methods.map((method) => METHOD_NAMES[method]).join(', ')}</td>
                     <td className="py-2 pr-3">{contract.latestStatus === null ? '—' : <VersionStatusBadge status={contract.latestStatus} />}</td>
-                    <td className="py-2 text-muted-foreground">No pricing run yet</td>
+                    <td className="py-2" data-coverage-share={contract.coverage === null ? 'none' : 'priced'}>
+                      {contract.coverage !== null ? (
+                        <PricedShare priced={contract.coverage.priced} of={contract.coverage.of} />
+                      ) : (
+                        <span className="text-muted-foreground">{runsInEffect === 0 ? 'No pricing run in effect yet' : 'No line in effect priced under it'}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -140,10 +140,10 @@ describe('the practice dashboard (JOB-02)', () => {
     expect(home.notifications.latest.map((item) => item.kind).sort()).toEqual(['digest', 'monitoring_run']);
     expect(home.notifications.latest.find((item) => item.kind === 'monitoring_run')).toMatchObject({ subjectId: runId, periodFrom: '2026-03-01', periodTo: '2026-03-31', counts: { lines: 17, cases: 2 } });
     expect(home.freshness.failedRun).toBeNull();
-    // The dashboard's counts and totals: coverage of the run in effect, the cases by state, deadlines in 14 days (none: 2036),
+    // The dashboard's counts and totals: coverage under the pricing in effect (one run), the cases by state, deadlines in 14 days (none: 2036),
     // follow-ups due (none: nothing is submitted), recovered zero (the ledger holds no entry).
     expect(home.dashboard).toMatchObject({
-      coverage: { runId, periodFrom: '2026-03-01', periodTo: '2026-03-31', lines: 17, pricedLines: 17, chargeCents: '255500', pricedChargeCents: '255500' },
+      coverage: { runs: 1, periodFrom: '2026-03-01', periodTo: '2026-03-31', lines: 17, pricedLines: 17, chargeCents: '255500', pricedChargeCents: '255500' },
       casesByState: [{ state: 'open', cases: 2, actionableCents: '55200' }],
       deadlines: { cases: 0, actionableCents: '0', earliest: null },
       followUps: { due: 0, earliest: null, first: [] },
