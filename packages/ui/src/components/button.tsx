@@ -10,7 +10,9 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary-hover',
-        destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+        // A quiet action in the danger color: its text on its tint with a rule, never white text on the Short fill
+        // (docs/brand/BRAND.md, section 4). Ink fills are the primary button's alone.
+        destructive: 'border border-danger bg-danger-bg text-danger hover:bg-background',
         outline: 'border bg-background hover:bg-accent hover:text-accent-foreground',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',

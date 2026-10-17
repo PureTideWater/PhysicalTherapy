@@ -5,6 +5,7 @@ import { assetPath, assets } from '@paidwhole/brand';
 import { badgeText, sealLabel, verifiedDefinition } from '@paidwhole/brand/tokens';
 import { entriesById, reportReconciliation } from '@tp/ledger';
 import { cents } from '@tp/money';
+import { Badge, Button, badgeVariants, buttonVariants } from '@tp/ui';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -127,6 +128,36 @@ describe('PaidWholeMark and PaidWholeLockup', () => {
     expect(stacked).toContain('Know what you&#x27;re owed. Verify what you&#x27;re paid.');
     for (const html of [header, stacked, renderToStaticMarkup(<VerifiedBadge {...reconciliation(3000n)} />), renderToStaticMarkup(<VerifiedSeal {...reconciliation(3000n)} />)]) {
       expect(html).not.toContain('style=');
+    }
+  });
+});
+
+describe('danger and status as text on a quiet tint, never white text on a saturated fill (BRAND.md, section 4)', () => {
+  /** The class tokens that would fill with a status color or set white text over it. */
+  const SATURATED = /(^|\s)(bg-destructive|bg-danger|bg-status-(short|whole|unpriced)|text-destructive-foreground|text-white|text-fg-inverse)(\s|$)/;
+
+  it('the destructive badge: danger text on its tint', () => {
+    const badge = renderToStaticMarkup(<Badge variant="destructive">Not balanced</Badge>);
+    expect(badge).toContain('bg-danger-bg');
+    expect(badge).toContain('text-danger');
+    expect(badgeVariants({ variant: 'destructive' })).not.toMatch(SATURATED);
+  });
+
+  it('the destructive button ("End membership", "Write off"): a quiet action in danger text on its tint with a rule', () => {
+    const button = renderToStaticMarkup(<Button variant="destructive">End membership</Button>);
+    expect(button).toContain('bg-danger-bg');
+    expect(button).toContain('text-danger');
+    expect(button).toContain('border-danger');
+    expect(buttonVariants({ variant: 'destructive' })).not.toMatch(SATURATED);
+  });
+
+  it('no badge or button variant fills with a status color under white text', () => {
+    for (const variant of ['default', 'secondary', 'destructive', 'outline'] as const) {
+      expect(badgeVariants({ variant }), `badge ${variant}`).not.toMatch(SATURATED);
+    }
+    // The primary button is Ink with inverse text: Ink is the brand's, not a status color.
+    for (const variant of ['default', 'destructive', 'outline', 'secondary', 'ghost', 'link'] as const) {
+      expect(buttonVariants({ variant }), `button ${variant}`).not.toMatch(SATURATED);
     }
   });
 });
