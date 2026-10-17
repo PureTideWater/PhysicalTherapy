@@ -11,7 +11,19 @@ file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty') || { 
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
 root=$(cd "${cwd:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || root="${cwd:-$PWD}"
 case "$file_path" in /*) abs="$file_path" ;; *) abs="$root/$file_path" ;; esac
-case "$abs" in
+# "." and ".." segments taken out, and the path compared in any case, so no spelling of either path slips past.
+parts=()
+clean=()
+IFS=/ read -r -a parts <<< "$abs"
+for part in ${parts[@]+"${parts[@]}"}; do
+  case "$part" in
+    ''|.) ;;
+    ..) [ "${#clean[@]}" -eq 0 ] || unset 'clean[${#clean[@]}-1]' ;;
+    *) clean+=("$part") ;;
+  esac
+done
+abs=$(printf '/%s' ${clean[@]+"${clean[@]}"})
+case "$(printf '%s' "$abs" | tr '[:upper:]' '[:lower:]')" in
   */docs/product/domain-model.md) rule=approval_line ;;
   */packages/db/domain-model/approvers.json) rule=whole_file ;;
   *) exit 0 ;;

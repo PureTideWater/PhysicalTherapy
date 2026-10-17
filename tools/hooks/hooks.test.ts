@@ -89,6 +89,12 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(write('packages/synth/scratch.tsv', 'Post Date\tPaid\n06/11/2026\t30.00\n').status).toBe(2);
     expect(write('apps/web/scratch.csv', 'Post Date,Paid\n06/11/2026,30.00\n').status).toBe(0);
     expect(write('fixtures/synthetic/LED-99/notes.md', 'Post Date,Paid\n').status).toBe(0);
+    // Another spelling of a path under fixtures/ is the same path: dot segments, a case, a link to the directory.
+    expect(write('packages/x/../../fixtures/synthetic/LED-99/a.csv', 'Post Date,Paid\n06/11/2026,30.00\n').status).toBe(2);
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: './Fixtures/./LED-99/A.CSV', content: 'Post Date,Paid\n06/11/2026,30.00\n' } }).status).toBe(2);
+    const linked = path.join(scratch('link'), 'fixtures');
+    symlinkSync(path.join(repositoryRoot, 'fixtures'), linked);
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: path.join(linked, 'synthetic/LED-99/a.csv'), content: 'Post Date,Paid\n06/11/2026,30.00\n' } }).status).toBe(2);
     // A spreadsheet there is refused whatever it holds; with no file path the hook has nothing to check.
     expect(write('fixtures/synthetic/LED-99/export.xlsx', 'PK').status).toBe(2);
     expect(run(script, { tool_name: 'Write', tool_input: { content: 'a,b\n' } }).status).toBe(0);
@@ -178,6 +184,9 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(call('Write', { file_path: list, content: approvers.replace('approvers', 'note": "", "approvers') }).status).toBe(2);
     expect(run(script, { tool_name: 'Write', cwd: empty, tool_input: { file_path: list, content: approvers } }).status).toBe(2);
     expect(call('Write', { file_path: list, content: approvers }).status).toBe(0);
+    // Another spelling of the same path is the same file.
+    expect(call('Edit', { file_path: 'docs/../docs/./product/domain-model.md', old_string: 'Approved by: ________', new_string: 'Approved by: X' }).status).toBe(2);
+    expect(call('Write', { file_path: path.join(root, 'packages/db/x/../domain-model/approvers.json'), content: '{}' }).status).toBe(2);
     // Other files, other tools and a call with no file pass; without jq, or with input it cannot read, it fails closed.
     expect(call('Write', { file_path: 'docs/product/other.md', content: 'Approved by: X\n' }).status).toBe(0);
     expect(call('Read', { file_path: model }).status).toBe(0);
