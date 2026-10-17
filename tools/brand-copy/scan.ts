@@ -263,7 +263,7 @@ function isInline(node: ts.Node): boolean {
  */
 type Segment = string | readonly string[];
 
-/** The most branches one unit is read with; past it, the remaining choices read as a value. */
+/** The most texts one unit is read as: one more for each branch past a choice's first, far more than any screen writes. */
 const MAX_VARIANTS = 64;
 
 /**
