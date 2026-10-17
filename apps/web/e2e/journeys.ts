@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+import { test } from '@playwright/test';
+
 import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, mapPlan, signOffVersion } from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
@@ -22,7 +24,18 @@ import { withDatabase } from './helpers';
  * billing manager through @tp/contracts, its plan mapped, and its months priced and triaged by the
  * worker's own jobs (the caller keeps the worker running), as PRD 5's J5 to J7 do on screen in their
  * own specs. The browser does the journey's own steps.
+ *
+ * CI retries a failed test once, and a retry finds its practice (kept by name) holding what the attempt before it did. So
+ * on a retry each step here, and each upload a journey makes (uploadedEarlier), first reads what that attempt already
+ * did and does only the rest, each step being one transaction or one job: the retry reaches the state a first attempt
+ * does, with nothing done twice (a remittance uploaded again would be held as a duplicate of itself, a schedule's plan
+ * cannot be mapped twice, and a second pricing run would price the period again). A first attempt does every step.
  */
+
+/** Whether the running test is a retry (test.info().retry > 0), whose practice holds the attempt before it. */
+function retrying(): boolean {
+  return test.info().retry > 0;
+}
 
 export async function userId(key: string): Promise<string> {
   return withDatabase(async (client) => (await client.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', [personaEmail(key)])).rows[0]?.id ?? '');
@@ -136,6 +149,48 @@ export async function chainPricedMonths(practiceId: string): Promise<string[]> {
   );
 }
 
+/** A file a journey uploads in the browser. */
+export interface JourneyFile {
+  readonly name: string;
+  readonly buffer: Buffer;
+}
+
+/**
+ * On a retry, the files an earlier attempt already uploaded to the practice as 835s, by name, each with its document:
+ * the first of its bytes (or, before intake has hashed it, of its size), neither held as a duplicate nor still waiting
+ * for its bytes. Uploaded again, each would be held as a duplicate of itself; the journey waits for it to load instead
+ * (untilLoaded). On a first attempt, none.
+ */
+export async function uploadedEarlier(practiceId: string, files: readonly JourneyFile[]): Promise<ReadonlyMap<string, string>> {
+  const found = new Map<string, string>();
+  if (!retrying()) {
+    return found;
+  }
+  await withDatabase(async (client) => {
+    for (const file of files) {
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM source_document
+          WHERE practice_id = $1 AND kind = 'x12_835' AND parent_document_id IS NULL AND status NOT IN ('awaiting_upload', 'duplicate')
+            AND (sha256 = $2 OR (sha256 IS NULL AND size_bytes = $3))
+          ORDER BY created_at, id LIMIT 1`,
+        [practiceId, createHash('sha256').update(file.buffer).digest('hex'), file.buffer.length],
+      );
+      if (rows[0] !== undefined) {
+        found.set(file.name, rows[0].id);
+      }
+    }
+  });
+  return found;
+}
+
+/** Waits for an uploaded document to be loaded (the receipt's "Loaded"). */
+export async function untilLoaded(documentId: string): Promise<void> {
+  await until(
+    () => withDatabase(async (client) => (await client.query<{ status: string }>('SELECT status FROM source_document WHERE id = $1', [documentId])).rows[0]?.status === 'loaded'),
+    'an upload of the attempt before to load',
+  );
+}
+
 /** The practice's newest document of a kind (the one the browser just uploaded). */
 export async function newestDocument(practiceId: string, kind: string): Promise<string> {
   return withDatabase(async (client) => (await client.query<{ id: string }>('SELECT id FROM source_document WHERE practice_id = $1 AND kind = $2 ORDER BY created_at DESC LIMIT 1', [practiceId, kind])).rows[0]?.id ?? '');
@@ -153,10 +208,37 @@ export interface ScheduleOptions {
 
 const QUOTE = '97110 is paid $50.00 per unit';
 
+/** The schedule's document for one plan of a practice: the same ID on every attempt, so a retry finds the attempt before it. */
+function scheduleDocumentId(practiceId: string, planKey: string): string {
+  const hex = createHash('sha256').update(`SYNTHETIC fixed schedule ${practiceId} ${planKey}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * On a retry, how far an earlier attempt took the plan's schedule: the version it drafted from the schedule's document,
+ * that version's status, and whether the plan is mapped to it. Null on a first attempt, or when no version was drafted.
+ */
+async function scheduleEarlier(practiceId: string, documentId: string, planId: string): Promise<{ readonly versionId: string; readonly status: string; readonly mapped: boolean } | null> {
+  if (!retrying()) {
+    return null;
+  }
+  return withDatabase(async (client) => {
+    const { rows } = await client.query<{ id: string; status: string; mapped: boolean }>(
+      `SELECT v.id, v.status,
+              EXISTS (SELECT 1 FROM payer_plan_mapping m WHERE m.practice_id = v.practice_id AND m.plan_id = $3 AND m.contract_version_id = v.id) AS mapped
+         FROM contract_version v
+        WHERE v.practice_id = $1 AND $2::uuid = ANY (v.source_document_ids)`,
+      [practiceId, documentId, planId],
+    );
+    const row = rows[0];
+    return row === undefined ? null : { versionId: row.id, status: row.status, mapped: row.mapped };
+  });
+}
+
 /**
  * The payer's SYNTHETIC fixed schedule (97110 at 50.00 a unit, timed units per code) abstracted by the
  * contract specialist and signed off by the billing manager, and the plan mapped to it. The payer is
- * the practice's first (its first 835's).
+ * the practice's first (its first 835's). On a retry, only the steps the attempt before left undone.
  */
 export async function signedOffSchedule(options: ScheduleOptions): Promise<void> {
   const { practiceId } = options;
@@ -164,12 +246,13 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
   try {
     const manager = await userId(options.managerKey);
     const specialist = await userId('contract-specialist');
-    const documentId = randomUUID();
+    const documentId = scheduleDocumentId(practiceId, options.planKey);
     const { payerId, planId } = await withDatabase(async (client) =>
       asOwner(client, [practiceId], async () => {
+        // An attempt before this one may have stored it already.
         await client.query(
           `INSERT INTO source_document (id, practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)
-           VALUES ($1, $2, 'contract', $3, 1000, 'application/pdf', $4, 'clean', now(), 'stored')`,
+           VALUES ($1, $2, 'contract', $3, 1000, 'application/pdf', $4, 'clean', now(), 'stored') ON CONFLICT DO NOTHING`,
           [documentId, practiceId, createHash('sha256').update(documentId).digest('hex'), manager],
         );
         const payer = (await client.query<{ id: string }>('SELECT id FROM payer WHERE practice_id = $1 ORDER BY created_at LIMIT 1', [practiceId])).rows[0]?.id ?? '';
@@ -185,57 +268,106 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
       withPracticeScope(pool, { actorId, practiceIds: [practiceId] }, (scope) =>
         run({ scope, requestId: `e2e-${randomUUID()}`, evidence: new EvidenceResolver({ pages: documentPages({ read: () => Promise.resolve({ bytes: pdf, contentType: 'application/pdf' }) }) }) }),
       );
-    const versionId = await as(manager, async (context) => {
-      const contract = await createContract(context, { practiceId, payerId, title: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
-      return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays: options.disputeWindowDays ?? 3650 }))
-        .versionId;
-    });
-    await as(specialist, async (context) => {
-      const { rateRecordId } = await addRateRecord(context, {
-        practiceId,
-        versionId,
-        terms: { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } },
-        citation: { documentId, page: 2, quote: QUOTE },
+    const earlier = await scheduleEarlier(practiceId, documentId, planId);
+    const versionId =
+      earlier?.versionId ??
+      (await as(manager, async (context) => {
+        const contract = await createContract(context, { practiceId, payerId, title: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
+        return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays: options.disputeWindowDays ?? 3650 }))
+          .versionId;
+      }));
+    // The specialist's abstraction ends approved; a draft is one the attempt before left before it.
+    if (earlier === null || earlier.status === 'draft') {
+      await as(specialist, async (context) => {
+        const { rateRecordId } = await addRateRecord(context, {
+          practiceId,
+          versionId,
+          terms: { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '5000' }, flags: { timed_units_rule: 'PER_CODE' } },
+          citation: { documentId, page: 2, quote: QUOTE },
+        });
+        for (const field of RATE_RECORD_FIELDS) {
+          await approveRateRecordField(context, { practiceId, rateRecordId, field });
+        }
+        await approveVersion(context, { practiceId, versionId });
       });
-      for (const field of RATE_RECORD_FIELDS) {
-        await approveRateRecordField(context, { practiceId, rateRecordId, field });
-      }
-      await approveVersion(context, { practiceId, versionId });
-    });
-    await as(manager, (context) => signOffVersion(context, { practiceId, versionId }));
-    await as(manager, (context) => mapPlan(context, { practiceId, planId, kind: 'contract', contractVersionId: versionId, effectiveFrom: '2026-01-01' }));
+    }
+    if (earlier?.status !== 'signed_off') {
+      await as(manager, (context) => signOffVersion(context, { practiceId, versionId }));
+    }
+    if (earlier?.mapped !== true) {
+      await as(manager, (context) => mapPlan(context, { practiceId, planId, kind: 'contract', contractVersionId: versionId, effectiveFrom: '2026-01-01' }));
+    }
   } finally {
     await pool.end();
   }
 }
 
+interface PeriodOptions {
+  readonly practiceId: string;
+  readonly managerKey: string;
+  readonly periodFrom: string;
+  readonly periodTo: string;
+}
+
+/**
+ * On a retry, the run an earlier attempt created for the period in the manager's name, whether it is priced, and
+ * whether it is triaged. Null on a first attempt, or when no run was created.
+ */
+async function runEarlier(options: PeriodOptions, manager: string): Promise<{ readonly id: string; readonly status: string; readonly triaged: boolean } | null> {
+  if (!retrying()) {
+    return null;
+  }
+  return withDatabase(async (client) => {
+    const { rows } = await client.query<{ id: string; status: string; triaged: boolean }>(
+      `SELECT r.id, r.status,
+              EXISTS (SELECT 1 FROM job_run j WHERE j.practice_id = r.practice_id AND j.job_type = 'triage' AND j.idempotency_key = r.id::text AND j.outcome = 'succeeded') AS triaged
+         FROM pricing_run r
+        WHERE r.practice_id = $1 AND r.created_by = $2 AND r.period_from = $3 AND r.period_to = $4 AND r.release_no = 900001 AND r.rerun_of_id IS NULL
+        ORDER BY r.created_at, r.id LIMIT 1`,
+      [options.practiceId, manager, options.periodFrom, options.periodTo],
+    );
+    const row = rows[0];
+    return row === undefined ? null : { id: row.id, status: row.status, triaged: row.triaged };
+  });
+}
+
 /**
  * A pricing run of the period in the billing manager's name under SYNTHETIC release 900001, priced by
  * the worker's price job and triaged by its triage job (the worker the caller keeps running). Returns
- * the run's ID once triage has finished.
+ * the run's ID once triage has finished. On a retry, the run the attempt before created, priced and
+ * triaged where it was not yet.
  */
-export async function pricedAndTriaged(options: { readonly practiceId: string; readonly managerKey: string; readonly periodFrom: string; readonly periodTo: string }): Promise<string> {
+export async function pricedAndTriaged(options: PeriodOptions): Promise<string> {
   const { practiceId } = options;
   const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 2);
   try {
     const manager = await userId(options.managerKey);
-    const { pricingRunId } = await withPracticeScope(pool, { actorId: manager, practiceIds: [practiceId] }, (scope) =>
-      createPricingRun(scope, { practiceId, periodFrom: options.periodFrom, periodTo: options.periodTo, releaseNo: 900001, requestId: `e2e-${randomUUID()}` }),
-    );
-    await queue('price', { practice_id: practiceId, pricing_run_id: pricingRunId });
-    await until(
-      () => withDatabase(async (client) => (await client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1', [pricingRunId])).rows[0]?.status === 'complete'),
-      'the price job',
-    );
-    await queue('triage', { practice_id: practiceId, pricing_run_id: pricingRunId });
-    await until(
-      () =>
-        withDatabase(
-          async (client) =>
-            ((await client.query("SELECT 1 FROM job_run WHERE practice_id = $1 AND job_type = 'triage' AND idempotency_key = $2 AND outcome = 'succeeded'", [practiceId, pricingRunId])).rowCount ?? 0) > 0,
-        ),
-      'the triage job',
-    );
+    const earlier = await runEarlier(options, manager);
+    const pricingRunId =
+      earlier?.id ??
+      (
+        await withPracticeScope(pool, { actorId: manager, practiceIds: [practiceId] }, (scope) =>
+          createPricingRun(scope, { practiceId, periodFrom: options.periodFrom, periodTo: options.periodTo, releaseNo: 900001, requestId: `e2e-${randomUUID()}` }),
+        )
+      ).pricingRunId;
+    if (earlier?.status !== 'complete') {
+      await queue('price', { practice_id: practiceId, pricing_run_id: pricingRunId });
+      await until(
+        () => withDatabase(async (client) => (await client.query<{ status: string }>('SELECT status FROM pricing_run WHERE id = $1', [pricingRunId])).rows[0]?.status === 'complete'),
+        'the price job',
+      );
+    }
+    if (earlier?.triaged !== true) {
+      await queue('triage', { practice_id: practiceId, pricing_run_id: pricingRunId });
+      await until(
+        () =>
+          withDatabase(
+            async (client) =>
+              ((await client.query("SELECT 1 FROM job_run WHERE practice_id = $1 AND job_type = 'triage' AND idempotency_key = $2 AND outcome = 'succeeded'", [practiceId, pricingRunId])).rowCount ?? 0) > 0,
+          ),
+        'the triage job',
+      );
+    }
     return pricingRunId;
   } finally {
     await pool.end();

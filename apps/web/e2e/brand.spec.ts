@@ -12,7 +12,7 @@ import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
 import { expectAccessible } from './a11y';
 import { signInWithTotp } from './helpers';
-import { journeyPractice, pricedAndTriaged, signedOffSchedule } from './journeys';
+import { journeyPractice, pricedAndTriaged, signedOffSchedule, untilLoaded, uploadedEarlier } from './journeys';
 import { startLocalWorker } from './worker';
 
 /**
@@ -296,14 +296,24 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
   const local = await startLocalWorker();
   try {
     await test.step('two SYNTHETIC remittances load and March to May is priced and triaged', async () => {
-      await page.goto(`/p/${practiceId}/uploads`);
-      await page.getByLabel('Choose files to upload').setInputFiles([
+      const files = [
         { name: 'april.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(FIXTURES, 'CAS-08/remit.835')) },
         { name: 'june.835', mimeType: 'application/octet-stream', buffer: readFileSync(path.join(FIXTURES, 'CAS-04/remit.835')) },
-      ]);
-      const batch = page.getByRole('region', { name: 'This batch' });
-      for (const file of ['april.835', 'june.835']) {
-        await expect(batch.getByRole('listitem').filter({ hasText: file })).toContainText('Loaded 1 remittance', { timeout: 90_000 });
+      ];
+      // A retry finds the practice holding what the attempt before uploaded (none on a first attempt): those files are
+      // not uploaded again, where each would be held as a duplicate of itself, and are waited for until they load.
+      const earlier = await uploadedEarlier(practiceId, files);
+      const upload = files.filter((file) => !earlier.has(file.name));
+      if (upload.length > 0) {
+        await page.goto(`/p/${practiceId}/uploads`);
+        await page.getByLabel('Choose files to upload').setInputFiles(upload);
+        const batch = page.getByRole('region', { name: 'This batch' });
+        for (const file of upload.map((each) => each.name)) {
+          await expect(batch.getByRole('listitem').filter({ hasText: file })).toContainText('Loaded 1 remittance', { timeout: 90_000 });
+        }
+      }
+      for (const documentId of earlier.values()) {
+        await untilLoaded(documentId);
       }
       await signedOffSchedule({ practiceId, managerKey: 'brand-manager', planKey: 'CE:SYNPLAN-FIX-ONE' });
       await pricedAndTriaged({ practiceId, managerKey: 'brand-manager', periodFrom: '2026-03-01', periodTo: '2026-05-31' });
