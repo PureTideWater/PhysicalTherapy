@@ -135,49 +135,46 @@ export default async function ClaimsPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Claims and lines">
               <thead className="text-muted-foreground">
                 <tr className="align-bottom">
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Patient reference</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-3 font-medium whitespace-nowrap">Service date</th> : null}
-                  <th className="py-1 pr-3 font-medium">Code and modifiers</th>
-                  <th className="py-1 pr-3 text-right font-medium">Units</th>
-                  <th className="py-1 pr-3 text-right font-medium">Charge</th>
-                  <th className="py-1 pr-3 text-right font-medium" data-figure="expected">
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Patient reference</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Claim control numbers</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium whitespace-nowrap">Service date</th> : null}
+                  <th className="py-1 pr-2 font-medium">Code and modifiers</th>
+                  <th className="py-1 pr-2 text-right font-medium">Units</th>
+                  <th className="py-1 pr-2 text-right font-medium">Charge</th>
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="expected">
                     Expected allowed
                   </th>
-                  <th className="py-1 pr-3 text-right font-medium" data-figure="paid">
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="paid">
                     Observed allowed
                   </th>
-                  <th className="py-1 pr-3 text-right font-medium" data-figure="short">
+                  <th className="py-1 pr-2 text-right font-medium" data-figure="short">
                     Short (variance)
                   </th>
-                  <th className="py-1 pr-3 text-right font-medium">Paid</th>
-                  <th className="py-1 pr-3 text-right font-medium">Patient share</th>
-                  <th className="py-1 pr-3 font-medium">Status</th>
-                  <th className="py-1 font-medium">
-                    <span className="sr-only">Open</span>
-                  </th>
+                  <th className="py-1 pr-2 text-right font-medium">Paid</th>
+                  <th className="py-1 pr-2 text-right font-medium">Patient share</th>
+                  <th className="py-1 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {list.rows.map((row) => (
                   <tr key={`${row.claimId}:${row.lineId ?? 'claim'}`} className="border-t align-top" data-claim={row.claimId} data-line={row.lineId ?? ''}>
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pr-2">
                         <Link className="underline" href={`${path}?view=${filters.view}&patient=${row.patientRefId}`}>
                           {row.identifiers.patient}
                         </Link>
                       </td>
                     )}
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3 font-mono text-xs">
+                      <td className="py-2 pr-2 font-mono text-xs">
                         <div>{row.identifiers.patientControlNumber}</div>
                         <div>{row.identifiers.payerClaimControlNumber}</div>
                       </td>
                     )}
                     {row.identifiers === null ? null : (
-                      <td className="py-2 pr-3 whitespace-nowrap">{row.lineId === null ? period(row.identifiers.serviceFrom, row.identifiers.serviceTo) : period(row.identifiers.serviceDate, row.identifiers.serviceDateTo)}</td>
+                      <td className="py-2 pr-2 whitespace-nowrap">{row.lineId === null ? period(row.identifiers.serviceFrom, row.identifiers.serviceTo) : period(row.identifiers.serviceDate, row.identifiers.serviceDateTo)}</td>
                     )}
-                    <td className="py-2 pr-3">
+                    <td className="py-2 pr-2">
                       {row.procedureCode === null ? (
                         <span className="text-muted-foreground">Claim without lines</span>
                       ) : (
@@ -192,40 +189,41 @@ export default async function ClaimsPage(props: Props) {
                         {row.superseded ? <Badge variant="outline">Superseded</Badge> : null}
                       </div>
                     </td>
-                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{row.units ?? '—'}</td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-2 text-right font-mono tabular-nums">{row.units ?? '—'}</td>
+                    <td className="py-2 pr-2 text-right">
                       <Money value={row.chargeCents} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-2 text-right">
                       <Money value={row.expectedAllowedCents} />
                     </td>
-                    <td className="py-2 pr-3 text-right" title={basisName(row.observedAllowedBasis, row.observedAllowedAllocated)}>
+                    <td className="py-2 pr-2 text-right" title={basisName(row.observedAllowedBasis, row.observedAllowedAllocated)}>
                       <Money value={row.observedAllowedCents} />
                       {row.observedAllowedAllocated ? <div className="text-xs text-muted-foreground">allocated</div> : null}
                     </td>
-                    <td className="py-2 pr-3 text-right" data-variance={row.pricing?.varianceCents ?? ''}>
+                    <td className="py-2 pr-2 text-right" data-variance={row.pricing?.varianceCents ?? ''}>
                       <Money value={row.pricing?.varianceCents ?? null} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-2 text-right">
                       <Money value={row.paidCents} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
+                    <td className="py-2 pr-2 text-right">
                       <Money value={row.patientShareCents} />
                     </td>
-                    <td className="py-2 pr-3">
+                    <td className="py-2">
                       <LineStatusChip status={row.status} priced={row.pricing !== null} shortfall={row.pricing !== null && BigInt(row.pricing.varianceCents ?? '0') > 0n} />
                       {row.pricing?.unpricedReason === null || row.pricing === null ? null : <div className="pt-1 font-mono text-xs text-muted-foreground">{row.pricing.unpricedReason}</div>}
-                    </td>
-                    <td className="py-2 whitespace-nowrap text-xs">
-                      {row.lineId === null ? (
-                        <Link className="underline" href={`/p/${practiceId}/remittances/${row.remittanceId}`}>
-                          Remittance
-                        </Link>
-                      ) : (
-                        <Link className="underline" href={`/p/${practiceId}/lines/${row.lineId}`}>
-                          Line trace
-                        </Link>
-                      )}
+                      {/* Where the status comes from, under it: the line's trace, or a claim without lines' remittance. */}
+                      <div className="pt-1 text-xs whitespace-nowrap">
+                        {row.lineId === null ? (
+                          <Link className="underline" href={`/p/${practiceId}/remittances/${row.remittanceId}`}>
+                            Remittance
+                          </Link>
+                        ) : (
+                          <Link className="underline" href={`/p/${practiceId}/lines/${row.lineId}`}>
+                            Line trace
+                          </Link>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

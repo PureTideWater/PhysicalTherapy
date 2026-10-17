@@ -175,7 +175,6 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
       'Paid',
       'Patient share',
       'Status',
-      'Open',
     ]);
     // Each short is the line's variance in the mono face.
     await expect(table.locator('td[data-variance] .font-mono').first()).toHaveCSS('font-family', /mono/i);
@@ -190,6 +189,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.mouse.move(0, 0);
     await table.screenshot({ path: shot('status-table.png') });
     await page.screenshot({ path: shot('claims-1280.png'), fullPage: true });
+    // At desktop width the whole table fits its card: nothing is cut off or left to scroll.
+    expect(await table.evaluate((element) => [element.scrollWidth <= (element.parentElement?.clientWidth ?? 0), element.getBoundingClientRect().right <= window.innerWidth])).toEqual([true, true]);
   });
 
   await test.step('the dashboard and the Reconciliation screen at desktop width, and the dashboard on a dark ground', async () => {
