@@ -52,15 +52,16 @@ pnpm synth --large         # the 10,000-claim PAR-29 file into fixtures/syntheti
   `_v1` entry and keep `_v0`), flip the ledger's matching posting template to `status: 'confirmed'`, and run
   `pnpm synth --all`.
 - `posting.ts` reads the case registry's own posting exports (LED-04, LED-08's later export, LED-09's line-level
-  row) back into canonical rows and writes them in each posting format; `era.ts` writes one row per service line
+  row, LED-06's take-back as a negative amount) back into canonical rows and writes them in each posting format; `era.ts` writes one row per service line
   of loaded, balanced 835s with line-level adjustments only and no PLB (PAR-01, PAR-08, PAR-09, PAR-12, PAR-13,
   PAR-22), so each payment's rows total its claims paid and its signed payment (BPR02, negated for a debit) to
   the cent.
 - `fixtures.ts` builds `fixtures/synthetic/emr/<format_id>/` (the export and a `manifest.json` with the canonical
   rows in cents); `pnpm synth --all` writes them through `writeCases` and removes a format directory the
   registry no longer has. The packages/ledger posting templates of the same IDs read the posting exports.
-- The marker rule: every CSV, TSV or .xlsx fixture carries `SYNTHSENDER` in an identifier column of every data row
-  (D14 option a), and the writer, the hook and CI refuse one that does not.
+- The marker rule: every CSV, TSV or .xlsx fixture (and a .txt, .dat or extensionless one whose lines split as a
+  table) carries `SYNTHSENDER` in an identifier column of every data row (D14 option a), and the writer, the hook
+  and CI refuse one that does not.
 
 ## The twin generator
 

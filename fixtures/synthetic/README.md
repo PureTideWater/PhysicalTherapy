@@ -35,7 +35,7 @@ only into scratch test databases, through the loader's test-only option, never t
   and the canonical rows with amounts in integer cents). Every format is `FORMAT_UNCONFIRMED`: its columns are
   a placeholder in the vendor's plausible vocabulary until the design-partner firm supplies a format
   description and redacted headers (never a file). The rows are the case registry's own: the posting rows of
-  LED-04, LED-08 and LED-09, and one ERA row per service line of PAR-01, PAR-08, PAR-09, PAR-12, PAR-13 and
+  LED-04, LED-08, LED-09 and LED-06's take-back (a negative amount), and one ERA row per service line of PAR-01, PAR-08, PAR-09, PAR-12, PAR-13 and
   PAR-22. `pnpm synth --all` writes them; they are named fixtures, not test-matrix cases.
 
 ## Rules
@@ -45,9 +45,10 @@ only into scratch test databases, through the loader's test-only option, never t
   change to a generator lands with its regenerated fixtures (the `/synth-fixture` skill).
 - Every X12 file carries the interchange sender `SYNTHSENDER` in ISA06 (padded to fifteen characters) and
   `SYNTH` in GS02; the writer refuses anything else, and so does the fixture hook.
-- Every CSV, TSV or .xlsx fixture has a header row and an identifier column (a payee or sender ID, the one a
-  vendor format names) holding exactly `SYNTHSENDER` in every data row, unless it is a reference table pinned
-  by path and hash in `packages/synth/src/guard/pinned-tables.json` (D14, docs/adr/0059).
+- Every CSV, TSV or .xlsx fixture (and a .txt, .dat or extensionless one whose lines split as a table) has a
+  header row and an identifier column (a payee or sender ID, the one a vendor format names) holding exactly
+  `SYNTHSENDER` in every data row, unless it is a reference table pinned by path and hash in
+  `packages/synth/src/guard/pinned-tables.json` (D14, docs/adr/0059).
 - Dates are invented and identifiers made up (NPIs start with 99, which no real NPI does). Synthetic numeric
   reference data (RVUs, GPCIs, conversion factors, rates) says SYNTHETIC in its source metadata and is never
   presented as CMS data.
