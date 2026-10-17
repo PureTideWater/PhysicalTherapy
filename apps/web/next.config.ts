@@ -2,13 +2,20 @@ import path from 'node:path';
 
 import type { NextConfig } from 'next';
 
-import { STATIC_SECURITY_HEADERS } from './src/lib/http/security-headers';
+import { STATIC_SECURITY_HEADERS, staticAssetOrigin } from './src/lib/http/security-headers';
 
 const monorepoRoot = path.resolve(import.meta.dirname, '../..');
+
+// The static host CloudFront serves /_next/static/ from (PRD 15, Compute: "CloudFront for static assets only";
+// docs/adr/0055). Next writes it into the build, so the image is built with that environment's StaticAssetsOrigin
+// (apps/web/Dockerfile, the STATIC_ASSET_ORIGIN build argument) and its task sets the same value for the CSP.
+// Unset, every asset loads from the application's own host.
+const assetOrigin = staticAssetOrigin(process.env);
 
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  ...(assetOrigin === null ? {} : { assetPrefix: assetOrigin }),
   // A server action's body may carry a signed agreement's PDF (at most 10 MB, MAX_AGREEMENT_BYTES; docs/adr/0053);
   // every other upload goes straight to storage through a pre-signed URL. The proxy (src/proxy.ts) buffers no more
   // of any body than that largest one (docs/adr/0055); route handlers read theirs with their own, smaller bounds.

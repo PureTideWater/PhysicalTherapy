@@ -205,6 +205,8 @@ export class Compute extends Construct {
         // Longer than the load balancer's idle timeout, so it never reuses a connection the server closed.
         KEEP_ALIVE_TIMEOUT: String(WEB_KEEP_ALIVE_MS),
         ...modelPath,
+        // The static host the image's assets load from (its assetPrefix, apps/web/Dockerfile), for the CSP.
+        STATIC_ASSET_ORIGIN: `https://${parameters.staticDomainName}`,
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),

@@ -3,9 +3,9 @@
  * set, with CSP nonces for any inline script)"; docs/adr/0053). Pure, so the unit tests read the policy as
  * the browser does.
  *
- * - Content-Security-Policy, per request: scripts only from this origin and those carrying the request's nonce
- *   (Next attaches it to its own scripts; 'strict-dynamic' lets them load the code they import); styles from
- *   this origin and the nonce; no plugins, no framing, no base-URI change, forms posting only here. Stripe's
+ * - Content-Security-Policy, per request: scripts only from this origin (and the static host the build's assets
+ *   load from, when there is one) and those carrying the request's nonce (Next attaches it to its own scripts;
+ *   'strict-dynamic' lets them load the code they import); styles, images and fonts from the same; no plugins, no framing, no base-URI change, forms posting only here. Stripe's
  *   own form (production billing) is the one third party: its script, frame and API. A presigned upload goes
  *   to the documents bucket, which connect-src names when it is configured.
  * - The rest are fixed: HSTS (two years, subdomains), no MIME sniffing, no framing, a referrer that never
@@ -21,6 +21,31 @@ export interface CspOptions {
   readonly uploadOrigins: readonly string[];
   /** Whether the application is served over https (upgrade-insecure-requests). */
   readonly https: boolean;
+  /** The static host the build's assets load from (STATIC_ASSET_ORIGIN, Next's assetPrefix), when there is one. */
+  readonly staticOrigin?: string | null;
+}
+
+/** An https origin with no path: the static host CloudFront serves /_next/static/ from (infra/lib/constructs/edge.ts). */
+export const STATIC_ORIGIN_PATTERN = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+export class StaticOriginError extends Error {
+  override readonly name = 'StaticOriginError';
+}
+
+/**
+ * The static host from STATIC_ASSET_ORIGIN (docs/adr/0055), or null when it is unset: the build's assetPrefix
+ * (next.config.ts) and the CSP's allowance for it. Anything but an https origin with no path is refused, at build
+ * and at start, so a page never loads its code from somewhere the policy does not name.
+ */
+export function staticAssetOrigin(env: Readonly<Record<string, string | undefined>>): string | null {
+  const value = env.STATIC_ASSET_ORIGIN;
+  if (value === undefined || value === '') {
+    return null;
+  }
+  if (!STATIC_ORIGIN_PATTERN.test(value)) {
+    throw new StaticOriginError('STATIC_ASSET_ORIGIN is an https origin with no path, such as https://static.example.com');
+  }
+  return value;
 }
 
 const STRIPE_SCRIPTS = 'https://js.stripe.com';
@@ -28,12 +53,13 @@ const STRIPE_FRAMES = ['https://js.stripe.com', 'https://hooks.stripe.com'];
 const STRIPE_API = 'https://api.stripe.com';
 
 export function contentSecurityPolicy(options: CspOptions): string {
+  const assets = options.staticOrigin === undefined || options.staticOrigin === null ? [] : [options.staticOrigin];
   const directives: [string, string[]][] = [
     ['default-src', ["'self'"]],
-    ['script-src', ["'self'", `'nonce-${options.nonce}'`, "'strict-dynamic'", STRIPE_SCRIPTS, ...(options.development ? ["'unsafe-eval'"] : [])]],
-    ['style-src', ["'self'", `'nonce-${options.nonce}'`]],
-    ['img-src', ["'self'", 'data:', 'blob:']],
-    ['font-src', ["'self'"]],
+    ['script-src', ["'self'", ...assets, `'nonce-${options.nonce}'`, "'strict-dynamic'", STRIPE_SCRIPTS, ...(options.development ? ["'unsafe-eval'"] : [])]],
+    ['style-src', ["'self'", ...assets, `'nonce-${options.nonce}'`]],
+    ['img-src', ["'self'", ...assets, 'data:', 'blob:']],
+    ['font-src', ["'self'", ...assets]],
     ['connect-src', ["'self'", STRIPE_API, ...options.uploadOrigins]],
     ['frame-src', STRIPE_FRAMES],
     ['worker-src', ["'self'", 'blob:']],

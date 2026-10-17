@@ -348,6 +348,12 @@ describe('the web configuration', () => {
     expect(readWebConfig({ ...e2e, BILLING_DATABASE_URL: base.BILLING_DATABASE_URL }).esignDatabaseUrl).toBeNull();
   });
 
+  it('refuses a static asset host that is not an https origin with no path (docs/adr/0055)', () => {
+    expect(() => readWebConfig({ ...base, STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' })).not.toThrow();
+    expect(() => readWebConfig({ ...base, STATIC_ASSET_ORIGIN: 'http://static.synthetic.test' })).toThrow(new ConfigError('invalid settings: STATIC_ASSET_ORIGIN'));
+    expect(() => readWebConfig({ ...base, STATIC_ASSET_ORIGIN: 'https://static.synthetic.test/assets' })).toThrow(ConfigError);
+  });
+
   it('requires every implementation choice explicitly in production', () => {
     const e2e = { ...base, NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e' };
     expect(() => readWebConfig({ ...base, NODE_ENV: 'production' })).toThrow(new ConfigError('TP_AUTH_PROVIDER is required in production'));

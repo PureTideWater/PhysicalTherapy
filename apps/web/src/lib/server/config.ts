@@ -6,6 +6,8 @@ import path from 'node:path';
 import { billingDevLoginUrl, developmentMasterKey, esignDevLoginUrl } from '@tp/db/runtime';
 import { z } from 'zod';
 
+import { STATIC_ORIGIN_PATTERN } from '../http/security-headers';
+
 /**
  * The web server's settings, from the environment. In production every setting that picks an
  * implementation is required and has no default (the identity provider, the key provider, the cookie
@@ -49,6 +51,8 @@ const schema = z.object({
   AGREEMENTS_DIR: z.string().min(1).optional(),
   COMPLIANCE_EXPORT_DIR: z.string().min(1).optional(),
   TP_ENVIRONMENT: z.enum(['dev', 'staging', 'production']).optional(),
+  // The static host the build's assets load from (next.config.ts and the CSP, src/proxy.ts): checked here at start.
+  STATIC_ASSET_ORIGIN: z.string().regex(STATIC_ORIGIN_PATTERN, 'an https origin with no path').optional(),
 });
 
 export type AuthProviderSettings =

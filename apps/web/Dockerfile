@@ -1,9 +1,13 @@
 # syntax=docker/dockerfile:1
-# The web image: Next.js standalone server. Build from the repository root:
-#   docker build -f apps/web/Dockerfile -t tp-web .
+# The web image: Next.js standalone server. Build from the repository root, once per environment, with that
+# environment's StaticAssetsOrigin stack output (Next writes it into the build as assetPrefix; docs/adr/0055):
+#   docker build -f apps/web/Dockerfile --build-arg STATIC_ASSET_ORIGIN=https://<StaticDomainName> -t tp-web .
+# Without it, pages load their assets from the application's own host.
 
 FROM node:24-slim AS build
-ENV NEXT_TELEMETRY_DISABLED=1
+ARG STATIC_ASSET_ORIGIN=""
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}
 RUN npm install --global pnpm@10.28.0
 WORKDIR /repo
 COPY . .

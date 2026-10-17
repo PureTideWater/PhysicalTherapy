@@ -86,7 +86,9 @@ export interface EdgeProps {
  *   requests are off, because a sampled request keeps its headers, session cookies among them. A
  *   block by the sign-in rate rule tells the operator (a failed sign-in burst from one address).
  * - CloudFront on the static host for STATIC_PATH_PATTERN only, cached, fetched from the
- *   application's own host over HTTPS with no cookie, header or query string passed on. Every other
+ *   application's own host over HTTPS with no cookie, header or query string passed on. The web image
+ *   is built with the host as Next's assetPrefix and its task names it for the CSP (STATIC_ASSET_ORIGIN;
+ *   docs/adr/0055), so pages load their scripts, styles and fonts from here. Every other
  *   path is answered 404 at the edge by a CloudFront function and never reaches the application, so
  *   no page, route or PHI is ever cached or served by CloudFront. TLS 1.2 or later, HTTPS only.
  */
@@ -247,6 +249,9 @@ export class Edge extends Construct {
         contentTypeOptions: { override: true },
         strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: true, override: true },
       },
+      // The application answers every response Cross-Origin-Resource-Policy: same-origin; the pages load these
+      // assets from the static host, another origin, so the browser would refuse them under that header.
+      customHeadersBehavior: { customHeaders: [{ header: 'Cross-Origin-Resource-Policy', value: 'cross-origin', override: true }] },
     });
     this.distribution = new cloudfront.Distribution(this, 'StaticAssets', {
       comment: `Therapy platform ${props.environmentName}: static assets only`,

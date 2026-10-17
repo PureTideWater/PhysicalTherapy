@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-import { contentSecurityPolicy, newNonce, uploadOrigins } from './lib/http/security-headers';
+import { contentSecurityPolicy, newNonce, staticAssetOrigin, uploadOrigins } from './lib/http/security-headers';
 
 /**
  * The per-request Content-Security-Policy with its nonce (docs/adr/0053; Next's guide: the nonce is read from
@@ -15,6 +15,8 @@ export function proxy(request: NextRequest): NextResponse {
     development: process.env.NODE_ENV === 'development',
     uploadOrigins: uploadOrigins(process.env),
     https: (process.env.APP_ORIGIN ?? '').startsWith('https://'),
+    // Checked at start (the server's configuration refuses anything but an https origin), and again here.
+    staticOrigin: staticAssetOrigin(process.env),
   });
   const headers = new Headers(request.headers);
   headers.set('content-security-policy', policy);

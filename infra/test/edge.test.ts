@@ -233,6 +233,10 @@ describe.each(ENVIRONMENTS)('%s: edge', (environment) => {
         ContentTypeOptions: { Override: true },
         StrictTransportSecurity: { AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true },
       });
+      // The application's own Cross-Origin-Resource-Policy (same-origin) would stop the pages loading them from here.
+      expect((propertiesOf(policy).ResponseHeadersPolicyConfig as Record<string, unknown>).CustomHeadersConfig).toEqual({
+        Items: [{ Header: 'Cross-Origin-Resource-Policy', Value: 'cross-origin', Override: true }],
+      });
     });
   });
 });

@@ -297,6 +297,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       ESIGN_PROVIDER: 'none',
       TP_ENVIRONMENT: environment,
       MODEL_PROVIDER: 'bedrock',
+      STATIC_ASSET_ORIGIN: { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.staticDomainName)]] },
     });
     expect(plain.BEDROCK_REGION).toEqual(plain.AWS_REGION);
     expect(plain.KMS_KEY_ID).toEqual(getAtt(logicalIdOf(stack, stack.key.key), 'Arn'));
@@ -526,5 +527,18 @@ describe('the compute contract with the applications', () => {
   it('serves the web app on the port the image listens on', () => {
     expect(source('apps/web/Dockerfile')).toContain(`PORT=${String(WEB_PORT)}`);
     expect(stack.compute.web.serviceName).toBeDefined();
+  });
+
+  it('builds the web image with the static host as its asset prefix, and names the same host to the task for the CSP', () => {
+    const dockerfile = source('apps/web/Dockerfile');
+    expect(dockerfile).toContain('ARG STATIC_ASSET_ORIGIN');
+    expect(dockerfile).toContain('STATIC_ASSET_ORIGIN=${STATIC_ASSET_ORIGIN}');
+    const nextConfig = source('apps/web/next.config.ts');
+    expect(nextConfig).toContain('const assetOrigin = staticAssetOrigin(process.env);');
+    expect(nextConfig).toContain('assetPrefix: assetOrigin');
+    expect(source('apps/web/src/proxy.ts')).toContain('staticOrigin: staticAssetOrigin(process.env)');
+    expect(environmentOf(definitionOf('tp-staging-web')).STATIC_ASSET_ORIGIN).toEqual({ 'Fn::Join': ['', ['https://', { Ref: 'StaticDomainName' }]] });
+    // The stack's output the build reads it from.
+    expect(JSON.stringify(template.toJSON().Outputs)).toContain('StaticAssetsOrigin');
   });
 });

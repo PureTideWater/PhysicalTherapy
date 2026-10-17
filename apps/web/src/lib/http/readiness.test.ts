@@ -7,7 +7,7 @@ import { newToken } from '../auth/tokens';
 import { csrfTokenFor, csrfTokenMatches, sameOrigin } from './csrf';
 import { formInput } from './form';
 import { type Limit, RATE_BUCKETS, RATE_LIMITS, clientAddress, rateSubjectHash, retryMinutes } from './rate-limit';
-import { STATIC_SECURITY_HEADERS, contentSecurityPolicy, newNonce, uploadOrigins } from './security-headers';
+import { STATIC_SECURITY_HEADERS, StaticOriginError, contentSecurityPolicy, newNonce, staticAssetOrigin, uploadOrigins } from './security-headers';
 import { overallStatus } from '../routes/support';
 
 /** The pure parts of production readiness (docs/adr/0053): CSRF tokens and origins, rate-limit subjects, and the security headers. */
@@ -123,6 +123,23 @@ describe('the security headers', () => {
     expect(directives.has('upgrade-insecure-requests')).toBe(true);
     expect(policy).not.toContain('unsafe-inline');
     expect(policy).not.toContain('unsafe-eval');
+  });
+
+  it('allow scripts, styles, images and fonts from the static host the build loads its assets from, and refuse any other kind of value for it', () => {
+    const policy = contentSecurityPolicy({ nonce: 'n', development: false, uploadOrigins: [], https: true, staticOrigin: 'https://static.synthetic.test' });
+    const directives = new Map(policy.split('; ').map((part) => [part.split(' ')[0], part.split(' ').slice(1)] as const));
+    expect(directives.get('script-src')).toEqual(["'self'", 'https://static.synthetic.test', "'nonce-n'", "'strict-dynamic'", 'https://js.stripe.com']);
+    expect(directives.get('style-src')).toEqual(["'self'", 'https://static.synthetic.test', "'nonce-n'"]);
+    expect(directives.get('img-src')).toEqual(["'self'", 'https://static.synthetic.test', 'data:', 'blob:']);
+    expect(directives.get('font-src')).toEqual(["'self'", 'https://static.synthetic.test']);
+    expect(directives.get('connect-src')).toEqual(["'self'", 'https://api.stripe.com']);
+    expect(contentSecurityPolicy({ nonce: 'n', development: false, uploadOrigins: [], https: true, staticOrigin: null })).toBe(contentSecurityPolicy({ nonce: 'n', development: false, uploadOrigins: [], https: true }));
+    expect(staticAssetOrigin({})).toBeNull();
+    expect(staticAssetOrigin({ STATIC_ASSET_ORIGIN: '' })).toBeNull();
+    expect(staticAssetOrigin({ STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' })).toBe('https://static.synthetic.test');
+    for (const value of ['http://static.synthetic.test', 'https://static.synthetic.test/', 'https://static.synthetic.test/assets', "https://static.synthetic.test 'unsafe-inline'", 'https://localhost', 'static.synthetic.test']) {
+      expect(() => staticAssetOrigin({ STATIC_ASSET_ORIGIN: value }), value).toThrow(StaticOriginError);
+    }
   });
 
   it('allow eval only for the development server, upgrade only over https, and name the documents bucket for uploads', () => {
