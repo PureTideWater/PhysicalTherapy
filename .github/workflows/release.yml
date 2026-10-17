@@ -44,7 +44,7 @@ jobs:
           tags: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
 
       - name: Scan the image (fails on HIGH or CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
           format: table
@@ -53,7 +53,7 @@ jobs:
           exit-code: "1"
 
       - name: Write the software bill of materials
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
           format: spdx-json
