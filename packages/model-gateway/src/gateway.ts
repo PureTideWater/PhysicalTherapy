@@ -24,7 +24,8 @@ import { type ModelCallRecord, type ModelCallStore, actorColumns } from './store
  * 2. The PHI boundary: outside production only the local provider, or a synthetic evaluation call with
  *    no practice, may run.
  * 3. The purpose's preparation, which refuses an input that breaks a minimization rule (more than one
- *    patient, an identifier in a narrative's inputs) and frames the input as data.
+ *    patient, an identifier in a narrative's inputs) and frames the input as data, and its screen
+ *    against records outside the input (a letter naming another patient of the practice).
  * 4. The idempotency key: the SHA-256 of the purpose, prompt version, practice, the caller's request key
  *    and the input hashes. A completed call under the key is never made again (a replay of a job).
  * 5. The practice's daily budget (test matrix MOD-05): a call is refused once the day's spend reaches
@@ -144,6 +145,7 @@ export class ModelGateway {
     }
 
     const prepared = spec.prepare(input);
+    await spec.screen?.(input, prepared);
     const { prompt } = spec;
     const modelId = modelFor(prompt, provider.kind, prepared.variant);
     const price = priceOf(provider.kind, modelId, this.prices);

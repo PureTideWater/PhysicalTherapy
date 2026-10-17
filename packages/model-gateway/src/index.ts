@@ -69,7 +69,15 @@ export {
   type ProposedRateRecord,
   verifyContractTerms,
 } from './functions/contract-terms';
-export { type DenialCategory, type DenialLetterInput, type DenialLetterOutput, type DenialLetterProposal, type LetterFieldReview, verifyDenialLetter } from './functions/denial-letter';
+export {
+  type DenialCategory,
+  type DenialLetterInput,
+  type DenialLetterOutput,
+  type DenialLetterProposal,
+  type LetterFieldReview,
+  type OtherPatientCheck,
+  verifyDenialLetter,
+} from './functions/denial-letter';
 export { type NarrativeInput, type NarrativeOutput, type NarrativeProposal, narrativeInputs } from './functions/narrative';
 export {
   type EvidenceGap,
@@ -80,4 +88,4 @@ export {
   KNOWN_REASON_CODES,
   verifyEvidenceRequests,
 } from './functions/evidence-requests';
-export { type LetterClaim, type PatientIdentifiers, redactLetter } from './redact';
+export { type LetterClaim, type PatientIdentifiers, compactIdentifier, identifierCandidates, redactLetter } from './redact';

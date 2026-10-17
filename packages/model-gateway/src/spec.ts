@@ -35,5 +35,11 @@ export interface PurposeSpec<I, O, P, C = undefined> {
   readonly prompt: PromptVersion;
   readonly output: z.ZodType<O>;
   prepare(input: I): PreparedCall<C>;
+  /**
+   * A check of the prepared call against records outside the input (the denial-letter reader asks the
+   * practice's records whether the letter names another patient); it refuses by throwing, and runs
+   * before the idempotency key, the budget and the call.
+   */
+  screen?(input: I, prepared: PreparedCall<C>): Promise<void>;
   verify(input: I, output: O, context: C): Verified<P>;
 }

@@ -6,7 +6,7 @@ import { InputRefusedError } from '../errors';
 import { figureInQuote, inQuote, normalized, readDate, wholeInQuote } from '../figures';
 import { isSha256, sha256Hex } from '../hash';
 import { PROMPTS } from '../prompts';
-import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetter } from '../redact';
+import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, identifierCandidates, redactLetter } from '../redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameText } from '../untrusted';
 
@@ -15,9 +15,16 @@ import { frameText } from '../untrusted';
  * reason category, deadline, requested documents). Built behind the kill switch and its own feature
  * flag, model.read_denial_letter, which is off unless a platform administrator turns it on.
  *
- * Before the call: one patient's material only (every claim is the patient's, or the call is refused),
- * and the patient's names, dates of birth and member IDs and the claims' numbers replaced by
- * placeholders (../redact.ts); the redacted text is checked to hold none of them.
+ * Before the call: one patient's material only, and the patient's names, dates of birth and member IDs
+ * and the claims' numbers replaced by placeholders (../redact.ts). The call is refused when:
+ * - the input names no patient identifier to strip (no name, no member ID) or no claim with a number:
+ *   with nothing to strip, the letter would go as it is;
+ * - a claim of the input is another patient's;
+ * - the redacted text still holds one of the identifiers, in any form redaction reads;
+ * - the redacted text holds a member ID or claim number the practice's records hold for another
+ *   patient: the caller's records check (OtherPatientCheck) answers yes or no, and the gateway asks it
+ *   before anything is sent, so a letter that lists a second patient is never sent (PRD 14: "never
+ *   sends more than one patient's material in one call").
  *
  * The verifier: every quote is in the letter as sent; every written value is in its own quote; the
  * deadline is a date code can read; a claim reference is a claim's placeholder (mapped back to the
@@ -37,6 +44,16 @@ export const denialLetterOutput = z.strictObject({
 });
 export type DenialLetterOutput = z.output<typeof denialLetterOutput>;
 
+/**
+ * The practice's records, asked one question: does any of these runs of the letter (compact: letters and
+ * digits, upper case) equal a member ID or claim number the practice holds for a patient other than the
+ * letter's? Yes or no; the records are never returned. The caller builds it in the practice's scope
+ * (an audited read of the claims and patients).
+ */
+export interface OtherPatientCheck {
+  holdsOtherPatient(candidates: readonly string[]): Promise<boolean>;
+}
+
 export interface DenialLetterInput {
   readonly documentId: string;
   /** The stored letter's SHA-256. */
@@ -47,6 +64,8 @@ export interface DenialLetterInput {
   readonly patient: PatientIdentifiers;
   /** The patient's claims the letter may name. */
   readonly claims: readonly LetterClaim[];
+  /** The practice's records check for another patient's identifiers in the letter. */
+  readonly otherPatients: OtherPatientCheck;
 }
 
 export const LETTER_PROBLEMS = ['quote_not_in_letter', 'not_in_quote', 'unreadable', 'unknown_claim', 'unknown_category'] as const;
@@ -189,6 +208,10 @@ export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput
     if (!UUID.test(input.documentId) || !isSha256(input.documentSha256)) {
       throw new InputRefusedError('input_invalid', 'a letter is read by its document ID and SHA-256');
     }
+    const named = (values: readonly string[]) => values.some((value) => value.trim() !== '');
+    if (!named(input.patient.names) || !input.patient.memberIds.some((value) => compactIdentifier(value).length >= 2) || input.claims.length === 0 || input.claims.some((claim) => !claim.claimNumbers.some((value) => compactIdentifier(value).length >= 2))) {
+      throw new InputRefusedError('identifiers_missing', 'a letter is read only with its patient’s name and member ID and every claim’s number to strip from it');
+    }
     if (input.claims.some((claim) => claim.patientPseudonym !== input.patient.pseudonym)) {
       throw new InputRefusedError('more_than_one_patient', 'a call reads one patient’s material; this letter’s claims name more than one patient');
     }
@@ -205,6 +228,12 @@ export const denialLetterSpec: PurposeSpec<DenialLetterInput, DenialLetterOutput
       variant: 'default',
       context: { text: redacted.text, claims: redacted.claims },
     };
+  },
+  async screen(input, prepared) {
+    const candidates = identifierCandidates(prepared.context.text);
+    if (candidates.length > 0 && (await input.otherPatients.holdsOtherPatient(candidates))) {
+      throw new InputRefusedError('more_than_one_patient', 'a call reads one patient’s material; this letter names another patient of the practice');
+    }
   },
   verify: verifyDenialLetter,
 };

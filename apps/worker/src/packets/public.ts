@@ -44,3 +44,4 @@ export {
 } from './services';
 export { MA_NONCONTRACTED_CITATION, PACKET_REFUSALS, type PacketRefusal, PacketRefusedError } from './records';
 export { PACKET_CSV_COLUMNS } from './csv';
+export { type LetterPatient, otherPatientRecords } from './letter-records';

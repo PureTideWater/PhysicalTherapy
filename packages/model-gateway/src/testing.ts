@@ -4,7 +4,7 @@ import { assemblyInput } from '@tp/packets/testing';
 
 import type { FlagRow } from './flags';
 import type { ContractPagesInput, ContractTermsOutput } from './functions/contract-terms';
-import type { DenialLetterInput, DenialLetterOutput } from './functions/denial-letter';
+import type { DenialLetterInput, DenialLetterOutput, OtherPatientCheck } from './functions/denial-letter';
 import type { EvidenceRequestsInput, EvidenceRequestsOutput } from './functions/evidence-requests';
 import type { NarrativeInput, NarrativeOutput } from './functions/narrative';
 import { ModelGateway } from './gateway';
@@ -12,6 +12,7 @@ import { sha256Hex } from './hash';
 import type { ModelProvider } from './provider';
 import { LocalDeterministicProvider } from './providers/local';
 import type { ModelPurpose } from './purposes';
+import { compactIdentifier } from './redact';
 import { type PurposeInputs, requestFor } from './specs';
 import { type CallActor, MemoryModelCallStore } from './store';
 
@@ -89,6 +90,23 @@ export const SYNTHETIC_LETTER = [
   'To appeal, submit a written request by May 30, 2026 with the authorization approval letter and the plan of care.',
 ].join('\n');
 
+/**
+ * A stand-in for the practice's records check (OtherPatientCheck): the SYNTHETIC member IDs and claim
+ * numbers of the practice's other patients, compared as the gateway compacts them. It keeps what it was
+ * asked, so a test can see the candidates.
+ */
+export function syntheticRecords(otherPatientsIdentifiers: readonly string[] = ['SYNMEMBER0099', 'SYNCLAIM0099']): OtherPatientCheck & { readonly asked: (readonly string[])[] } {
+  const others = new Set(otherPatientsIdentifiers.map(compactIdentifier));
+  const asked: (readonly string[])[] = [];
+  return {
+    asked,
+    holdsOtherPatient: (candidates) => {
+      asked.push(candidates);
+      return Promise.resolve(candidates.some((candidate) => others.has(compactIdentifier(candidate))));
+    },
+  };
+}
+
 export function syntheticLetterInput(overrides: Partial<DenialLetterInput> = {}): DenialLetterInput {
   return {
     documentId: SYNTHETIC_IDS.letter,
@@ -96,6 +114,7 @@ export function syntheticLetterInput(overrides: Partial<DenialLetterInput> = {})
     text: SYNTHETIC_LETTER,
     patient: { pseudonym: 'synthetic-patient-1', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] },
     claims: [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-1', claimNumbers: ['SYNCLAIM0001'] }],
+    otherPatients: syntheticRecords(),
     ...overrides,
   };
 }
