@@ -105,6 +105,55 @@ function lengthOf(header: string | null): number | null {
   return header !== null && /^\d{1,15}$/.test(header) ? Number.parseInt(header, 10) : null;
 }
 
+/** The most a JSON POST body may be (a form's fields or a script's input; files never come this way). */
+export const MAX_JSON_BODY_BYTES = 1_000_000;
+
+/** The body was larger than its route takes: refused as it streamed, at the limit, never read whole. */
+export class BodyTooLargeError extends Error {
+  override readonly name = 'BodyTooLargeError';
+}
+
+/**
+ * A request body as UTF-8 text, read as it streams with a running count of its bytes (docs/adr/0055): a body
+ * past `maxBytes` is refused the moment it passes the limit, whatever its Content-Length says or whether it
+ * has one (a chunked body has none), and the rest is never read.
+ */
+export async function boundedText(request: Request, maxBytes: number): Promise<string> {
+  const declared = lengthOf(request.headers.get('content-length'));
+  if (declared !== null && declared > maxBytes) {
+    throw new BodyTooLargeError(`the body declares ${String(declared)} bytes`);
+  }
+  if (request.body === null) {
+    return '';
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new BodyTooLargeError('the body is larger than its route takes');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(Buffer.concat(chunks));
+}
+
+/** 413 with the outcome's shape: the body is too large, so nothing in it was read. */
+function tooLarge(cookies: ResponseCookies, field: string): Response {
+  const response = outcomeResponse({ status: 'invalid', issues: [{ field, message: 'the body is too large' }] }, cookies);
+  return new Response(response.body, { status: 413, headers: response.headers });
+}
+
 /**
  * A handler whose body is read as sent, not as JSON: a signed webhook (docs/adr/0050), whose signature
  * covers the exact bytes. The route's input is { payload, signature } from the body and the header.
@@ -126,15 +175,28 @@ async function routeRequest(
   let input: unknown;
   let upload: UploadBody | undefined;
   if (request.method === 'POST' && options !== undefined) {
-    const declared = lengthOf(request.headers.get('content-length'));
-    const payload = declared !== null && declared > options.rawBody.maxBytes ? null : await request.text();
-    if (payload === null || payload.length > options.rawBody.maxBytes) {
-      return outcomeResponse({ status: 'invalid', issues: [{ field: 'payload', message: 'the body is too large' }] }, cookies);
+    let payload: string;
+    try {
+      payload = await boundedText(request, options.rawBody.maxBytes);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        return tooLarge(cookies, 'payload');
+      }
+      throw error;
     }
     input = { payload, signature: request.headers.get(options.rawBody.signatureHeader) };
   } else if (request.method === 'POST') {
+    let text: string;
     try {
-      input = await request.json();
+      text = await boundedText(request, MAX_JSON_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        return tooLarge(cookies, 'input');
+      }
+      throw error;
+    }
+    try {
+      input = JSON.parse(text) as unknown;
     } catch {
       return outcomeResponse({ status: 'invalid', issues: [{ field: 'input', message: 'a JSON body' }] }, cookies);
     }

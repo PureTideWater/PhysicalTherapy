@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
 import { type Services, devOutbox } from '../server/services';
-import { PRIVATE_NO_STORE, ResponseCookies, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
+import { MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
 import { platformRoute, practiceRoute, publicRoute, selfRoute } from './invoke';
 import { type Download, InputError, NotFoundError } from './route';
 
@@ -196,6 +196,57 @@ describe('the route-handler adapter', () => {
     expect(typeof seen[11]).toBe('string');
     const broken = await handler(new Request('http://localhost/x?a=1&b=2', { method: 'POST', body: '{' }));
     expect(broken.status).toBe(400);
+  });
+
+  it('refuses a body past its limit as it streams, chunked or declared, with 413 and without reading the rest (docs/adr/0055)', async () => {
+    let handled = 0;
+    const raw = publicRoute({
+      id: 'test.raw',
+      kind: 'handler',
+      method: 'POST',
+      path: '/api/x/webhook',
+      phi: false,
+      rateLimit: 'webhook',
+      signedBySender: true,
+      params: z.object({}),
+      input: z.unknown(),
+      handle: ({ input }) => {
+        handled += 1;
+        return Promise.resolve(input);
+      },
+    });
+    const handler = routeHandler(raw, () => services, { rawBody: { signatureHeader: 'x-signature', maxBytes: 16 } });
+    // A chunked body (no Content-Length) that never ends: refused once it passes 16 bytes, its stream cancelled.
+    let pulled = 0;
+    let cancelled = false;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(8).fill(97));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const chunked = await handler(new Request('http://localhost/api/x/webhook', { method: 'POST', body: endless, duplex: 'half' } as RequestInit));
+    expect(chunked.status).toBe(413);
+    expect(await chunked.json()).toEqual({ status: 'invalid', issues: [{ field: 'payload', message: 'the body is too large' }] });
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThan(6);
+    // A declared length past the limit is refused before anything is read; a body within it reaches the route as sent.
+    expect((await handler(new Request('http://localhost/api/x/webhook', { method: 'POST', body: 'x'.repeat(10), headers: { 'content-length': '99' } }))).status).toBe(413);
+    const within = await handler(new Request('http://localhost/api/x/webhook', { method: 'POST', body: '{"é":1}', headers: { 'x-signature': 's' } }));
+    expect(within.status).toBe(200);
+    expect(await within.json()).toEqual({ payload: '{"é":1}', signature: 's' });
+    expect(handled).toBe(1);
+    // Sixteen bytes exactly is within; seventeen (a two-byte character at the end) is not.
+    expect((await handler(new Request('http://localhost/api/x/webhook', { method: 'POST', body: 'a'.repeat(16) }))).status).toBe(200);
+    expect((await handler(new Request('http://localhost/api/x/webhook', { method: 'POST', body: `${'a'.repeat(15)}é` }))).status).toBe(413);
+    // A JSON POST is bounded the same way, at MAX_JSON_BODY_BYTES.
+    const json = routeHandler(raw, () => services);
+    expect((await json(new Request('http://localhost/api/x/webhook', { method: 'POST', body: JSON.stringify({ x: 'y'.repeat(MAX_JSON_BODY_BYTES) }) }))).status).toBe(413);
+    // An empty POST is an empty body.
+    expect(await boundedText(new Request('http://localhost/x', { method: 'POST' }), 1)).toBe('');
   });
 
   it('streams a PUT’s body to the route with its declared type and length, its input from the query string', async () => {

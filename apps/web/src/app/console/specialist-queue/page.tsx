@@ -14,8 +14,8 @@ type Props = { readonly searchParams: Promise<Record<string, string | string[] |
 
 /**
  * The specialist queue (PRD 7, Internal console): per practice, the documents awaiting abstraction,
- * the drafts, the proposals awaiting verification (none until the model gateway proposes, milestone
- * 10), the versions awaiting the practice's sign-off and the questions to the practice, as counts. A
+ * the drafts, the proposals awaiting verification (the model's or a specialist's), the versions
+ * awaiting the practice's sign-off and the questions to the practice, as counts. A
  * contract specialist opens a practice's records only under a support grant the platform
  * administrator opens from a ticket (docs/adr/0028); with one open, the practice's abstraction opens
  * from here.
@@ -46,7 +46,9 @@ export default async function SpecialistQueuePage(props: Props) {
             <CardDescription>Proposals awaiting verification</CardDescription>
             <CardTitle className="text-3xl tabular-nums">{totals.proposalsAwaiting}</CardTitle>
           </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Model proposals arrive with the model gateway; until then every abstraction is by hand.</CardContent>
+          <CardContent className="text-xs text-muted-foreground">
+            Versions whose proposed rate records, the model&apos;s or a specialist&apos;s, wait to be verified field by field against their cited pages.
+          </CardContent>
         </Card>
         <Card>
           <CardHeader>

@@ -184,3 +184,47 @@ export function assertNoPhi(carrier: PhiCarrier, value: unknown, options: PhiGua
     throw new PhiLeakError(carrier, findings);
   }
 }
+
+const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const ORDINAL = '(?:st|nd|rd|th)?';
+const YEAR = '(?:19|20)\\d{2}';
+
+/** Words that may follow "patient" or "member" in a support question without naming anyone. */
+const NOT_A_NAME = new Set([
+  'share', 'responsibility', 'reference', 'references', 'ref', 'refs', 'control', 'account', 'accounts', 'portion', 'balance', 'balances', 'information', 'info', 'data', 'record',
+  'records', 'list', 'lists', 'line', 'lines', 'column', 'columns', 'count', 'counts', 'name', 'names', 'id', 'ids', 'number', 'numbers', 'field', 'fields', 'screen', 'page',
+  'portal', 'services', 'service', 'statement', 'statements', 'copay', 'coinsurance', 'deductible', 'adjustment', 'adjustments', 'identifier', 'identifiers', 'details',
+]);
+
+const WRITTEN: readonly { readonly reason: string; readonly pattern: RegExp }[] = [
+  { reason: 'a date written in words (a date of birth shape)', pattern: new RegExp(`\\b${MONTH}\\.?\\s+\\d{1,2}${ORDINAL},?\\s+${YEAR}\\b|\\b\\d{1,2}${ORDINAL}\\s+(?:of\\s+)?${MONTH}\\.?,?\\s+${YEAR}\\b`, 'i') },
+  { reason: 'a birth date named', pattern: /\b(?:born|birth\s*date|date\s+of\s+birth|dob|d\.o\.b\.?)\b/i },
+  { reason: 'an identifier of letters and digits (a member ID or claim number shape)', pattern: /(?<![A-Za-z0-9-])(?=[A-Za-z0-9]*[A-Za-z])(?=(?:[A-Za-z]*\d){5})[A-Za-z0-9]{6,}(?![A-Za-z0-9-])/ },
+  { reason: 'an identifier named by its kind', pattern: /\b(?:member|subscriber|claim|account|acct|mrn|policy|chart)\s*(?:id|no\.?|number|#)?\s*[:#]?\s*\d{5,}\b/i },
+];
+
+/** A name after a word that introduces a person ("patient Jane Doe", "Mrs. Doe"), unless it is a product's word. */
+const NAMED = /\b(?:[Pp]atient|[Pp]t|[Mm]ember|[Ii]nsured|[Ss]ubscriber|[Bb]eneficiary|M[Rr][Ss]?|Ms|Miss|Mx)\.?\s+([A-Z][a-z'’-]+)/g;
+
+/**
+ * Findings for free text that should name no patient at all (a support ticket, the public status page; docs/adr/0053
+ * and 0055): the identifier shapes of textPhiFindings, and what a person writes about a patient in words: a date in
+ * words or a birth date named, an identifier of letters and digits, an identifier named by its kind, and a name after
+ * a word that introduces a person. It cannot know a name written with no such word; the forms say to name opaque IDs only.
+ */
+export function writtenPhiFindings(text: string, options: PhiGuardOptions = {}): string[] {
+  const findings = textPhiFindings(text, options);
+  const rest = text.replace(UUID, ' ');
+  for (const { reason, pattern } of WRITTEN) {
+    if (pattern.test(rest)) {
+      findings.push(`the text holds ${reason}`);
+    }
+  }
+  for (const match of rest.matchAll(NAMED)) {
+    if (!NOT_A_NAME.has((match[1] ?? '').toLowerCase())) {
+      findings.push('the text holds a name after a word that introduces a person');
+      break;
+    }
+  }
+  return findings;
+}

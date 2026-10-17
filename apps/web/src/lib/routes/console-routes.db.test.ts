@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -13,7 +13,22 @@ import { SESSION_COOKIE, openSession, resolveSession } from '../auth/sessions';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
-import { createOrganization as createOrganizationRoute, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, organizationPage, practiceSettingsPage, recordAgreement, setPracticeSettings, supportPage, unlockUser } from './console';
+import {
+  createOrganization as createOrganizationRoute,
+  createPractice,
+  createSupportGrant,
+  endMembership,
+  endSupportGrant,
+  inviteMember,
+  organizationPage,
+  practiceSettingsPage,
+  recordAgreement,
+  setOrganizationStatus,
+  setPracticeSettings,
+  supportPage,
+  unlockUser,
+} from './console';
+import { consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
 import { csrfTokenFor } from '../http/csrf';
 
@@ -460,5 +475,81 @@ describe('the database’s own refusals', () => {
     const token = await sessionFor(viewer, 'totp');
     const outcome = await run(supportAccessPage, token, undefined, { practiceId: world.practiceId, supportGrantId: randomUUID() });
     expect(outcome).toMatchObject({ status: 'forbidden', roles: ['viewer'], shell: { practices: [{ practiceId: world.practiceId }], currentPracticeId: world.practiceId } });
+  });
+});
+
+describe('the model features’ console (docs/adr/0055; test matrix MOD-05, MOD-06)', () => {
+  it('sets the kill switch, a budget and the letter reader through set_feature_flag, audited, and shows today’s spend against each budget', async () => {
+    const before = await run(consoleModelsPage, admin.token);
+    if (before.status !== 'ok') {
+      throw new Error(`expected the page, got ${before.status}`);
+    }
+    expect(before.data.keys.map((key) => key.value)).toEqual(['model.kill_switch', 'model.daily_budget_cents', 'model.read_denial_letter']);
+    expect(before.data.targets).toEqual(expect.arrayContaining([{ value: 'global', label: 'Everyone' }, { value: `practice:${world.practiceId}`, label: expect.stringMatching(/^Practice: /) }]));
+    // A day's spend: two synthetic calls logged for the practice.
+    await withPracticeScope(app, { actorId: world.adminUserId, practiceIds: [world.practiceId] }, async (scope) => {
+      for (const [cents, cost] of [
+        ['121', '120.250000'],
+        ['31', '30.000001'],
+      ]) {
+        await scope.client.query(
+          `INSERT INTO model_call (practice_id, actor_kind, actor_id, purpose, provider, model_id, prompt_version, idempotency_key, input_hashes, tokens_in, tokens_out, cost_cents, cost_unrounded, citations, outcome, error_code, attempts, latency_ms)
+           VALUES ($1, 'user', app_actor_id(), 'suggestEvidenceRequests', 'local', 'local-synthetic', 'suggest-evidence-requests/1', $2, ARRAY[repeat('a', 64)], 1, 1, $3, $4, '[]', 'failed', 'rejected', 1, 1)`,
+          [world.practiceId, randomBytes(32).toString('hex'), cents, cost],
+        );
+      }
+    });
+    expect((await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: `practice:${world.practiceId}`, value: '300' })).status).toBe('ok');
+    expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'on' })).status).toBe('ok');
+    const page = await run(consoleModelsPage, admin.token, undefined, { notice: 'set' });
+    if (page.status !== 'ok') {
+      throw new Error(`expected the page, got ${page.status}`);
+    }
+    expect(page.data.notice).toBe('set');
+    expect(page.data.flags).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'model.daily_budget_cents', scope: 'practice', scopeId: world.practiceId, value: '300' }),
+        expect.objectContaining({ key: 'model.kill_switch', scope: 'organization', scopeId: world.organizationId, value: 'On' }),
+      ]),
+    );
+    // 150.250001 cents spent: 151 shown, against 300, 50 per cent; switched off through the organization.
+    expect(page.data.spend.find((row) => row.practiceId === world.practiceId)).toMatchObject({ calls: 2, spentCents: '151', budgetCents: '300', percent: 50, killSwitch: true });
+    expect((await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: `organization:${world.organizationId}`, value: 'off' })).status).toBe('ok');
+    // Refused values name the field; nothing is set.
+    expect(await run(setModelFlag, admin.token, { key: 'model.daily_budget_cents', target: 'global', value: '4.50' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'a budget in whole cents, such as 500 for $5.00' }] });
+    expect(await run(setModelFlag, admin.token, { key: 'model.kill_switch', target: 'global', value: 'maybe' })).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'on or off' }] });
+    const audited = await owner.query<{ action: string; n: number }>(
+      "SELECT action, count(*)::int AS n FROM audit_event WHERE actor_id = $1 AND action IN ('model_flag_set', 'feature_flag_set') GROUP BY action ORDER BY action",
+      [admin.id],
+    );
+    expect(audited.rows).toEqual([
+      { action: 'feature_flag_set', n: 3 },
+      { action: 'model_flag_set', n: 3 },
+    ]);
+    // Nobody without feature_flag.manage reads the spend, even by calling the function.
+    await expect(withActor(app, world.adminUserId, (scope) => scope.client.query("SELECT * FROM console_model_spend('2026-10-17')"))).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('suspending and reinstating an organization (docs/adr/0055)', () => {
+  it('refuses new runs for the organization’s practices by the run refusal path, keeps them readable, and lifts it at once; setting the same status changes nothing', async () => {
+    const target = await createTenantWorld(owner, 'console suspension');
+    const refusal = () => withJobScope(app, { jobId: randomUUID(), practiceId: target.practiceId }, async (scope) => (await scope.client.query<{ reason: string | null }>('SELECT practice_run_refusal($1) AS reason', [target.practiceId])).rows[0]?.reason);
+    expect(await refusal()).toBeNull();
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'suspended' })).status).toBe('ok');
+    expect(await refusal()).toMatch(/^the organization is suspended: its data stays readable/);
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'suspended' })).status).toBe('ok');
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'active' })).status).toBe('ok');
+    expect(await refusal()).toBeNull();
+    const events = await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE action = 'organization_status_set' AND object_id = $1", [target.organizationId]);
+    expect(events.rows[0]?.n).toBe(3);
+    // The company's own organization, a closed one and one that does not exist are refused.
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: admin.internalId, status: 'suspended' })).status).toBe('not_found');
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: randomUUID(), status: 'suspended' })).status).toBe('not_found');
+    await owner.query("UPDATE organization SET status = 'closed' WHERE id = $1", [target.organizationId]);
+    expect((await run(setOrganizationStatus, admin.token, { organizationId: target.organizationId, status: 'active' })).status).toBe('invalid');
+    // A customer may not.
+    const customer = await sessionFor(target.adminUserId, 'totp');
+    expect((await run(setOrganizationStatus, customer, { organizationId: target.organizationId, status: 'active' })).status).not.toBe('ok');
   });
 });

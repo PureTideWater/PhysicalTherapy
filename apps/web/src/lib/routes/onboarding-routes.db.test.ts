@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { MemoryCompliancePlatform, complianceExportSchema } from '@tp/compliance';
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -26,7 +26,7 @@ import { compliancePage, exportEvidence, recordEvidence, sendEvidence } from './
 import { convertProspect, prospectsPage, publishTerms, resendInvitationFromConsole, uploadAgreement } from './console-onboarding';
 import { ESIGN_WEBHOOK_MAX_BYTES, acceptTerms, agreementWebhook, requestAudit, termsPage } from './onboarding';
 import { practiceHome } from './practice';
-import { accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
+import { EMAIL_IN_USE, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
 import { signInWithPassword } from './sign-in';
 import { consoleStatusPage, createTicket, maintenancePage, openIncident, setMaintenance, setTicketStatus, statusPage, supportRequestPage, ticketsPage, updateIncident } from './support';
 
@@ -236,6 +236,29 @@ describe('invitations (J2)', () => {
   });
 });
 
+describe('inviting an address already in use (docs/adr/0055)', () => {
+  it('answers the same for a member here and a person another organization knows, and asks the identity provider nothing', async () => {
+    const admin = world.adminUserId;
+    const other = await createTenantWorld(owner, 'another tenant');
+    const elsewhere = (await owner.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [other.adminUserId])).rows[0]?.email ?? '';
+    const here = (await owner.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [admin])).rows[0]?.email ?? '';
+    const sent = invitations.length;
+    const answers = [];
+    for (const email of [elsewhere, here, elsewhere.toUpperCase()]) {
+      answers.push(await call(inviteUserAction, admin, { organizationId: world.organizationId }, { email, role: 'viewer' }));
+    }
+    expect(answers).toEqual(answers.map(() => ({ status: 'invalid', issues: [{ field: 'email', message: EMAIL_IN_USE }] })));
+    expect(EMAIL_IN_USE).not.toMatch(/another organization/);
+    expect(invitations).toHaveLength(sent);
+    // The check is the organization's administrators' alone, and answers yes or no.
+    const viewer = await newCustomer('viewer');
+    await expect(withActor(app, viewer, (scope) => scope.client.query('SELECT invitation_email_in_use($1, $2)', [world.organizationId, elsewhere]))).rejects.toMatchObject({ code: '42501' });
+    await expect(withActor(app, admin, (scope) => scope.client.query('SELECT invitation_email_in_use($1, $2)', [other.organizationId, elsewhere]))).rejects.toMatchObject({ code: '42501' });
+    const unknown = await withActor(app, admin, async (scope) => (await scope.client.query<{ used: boolean }>('SELECT invitation_email_in_use($1, $2) AS used', [world.organizationId, `nobody-${randomUUID()}@synthetic.test`])).rows[0]);
+    expect(unknown).toEqual({ used: false });
+  });
+});
+
 describe('the terms of use', () => {
   it('sends a customer to the version in force first, records the acceptance with its version and time, and asks again for a new version', async () => {
     const customer = await newCustomer();
@@ -364,6 +387,14 @@ describe('support', () => {
     expect(
       (await call(createTicket, customer, {}, { screen: 'cases', category: 'problem', subject: 'Claim question', message: 'Member ID W123456789 was underpaid, DOB 1961-04-12.' })).status,
     ).toBe('invalid');
+    // A patient written in words is refused too: the desk reads tickets with no support grant (docs/adr/0055).
+    const inWords = await call(createTicket, customer, {}, {
+      screen: 'cases',
+      category: 'problem',
+      subject: 'Underpaid claim',
+      message: 'Patient Zephyra Quillon, born March 3 1961, member ZQ4455667 was underpaid on claim CLM55512.',
+    });
+    expect(inWords.status).toBe('invalid');
     const mine = ok(await call(supportRequestPage, customer, { from: 'cases' }));
     expect(mine).toMatchObject({ from: 'cases', supportEmail: 'help@synthetic.test' });
     expect(mine.tickets.map((ticket) => ticket.subject)).toEqual(['Export button']);

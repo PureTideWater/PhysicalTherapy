@@ -96,6 +96,7 @@ export type ShellSection =
   | 'tickets'
   | 'status_admin'
   | 'compliance'
+  | 'console_models'
   | 'home';
 
 export function AppShell({ shell, section, children }: { readonly shell: Shell | undefined; readonly section: ShellSection; readonly children: ReactNode }) {
@@ -195,6 +196,9 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
                 </RailLink>
                 <RailLink href="/console/compliance" active={section === 'compliance'}>
                   SOC 2 evidence
+                </RailLink>
+                <RailLink href="/console/models" active={section === 'console_models'}>
+                  Model features
                 </RailLink>
               </>
             ) : null}

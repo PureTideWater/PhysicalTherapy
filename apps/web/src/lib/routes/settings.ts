@@ -534,9 +534,12 @@ function isPgError(error: unknown, codes: readonly string[]): boolean {
 /**
  * Invites a person to the organization in a role it holds (J2: "invites a billing manager and a viewer"): the
  * identity provider's invitation (Cognito's email through SES; the local outbox in development), the invited user,
- * the membership, and the invitation the database writes with its seven days. A person another organization knows
- * joins through a platform administrator; the database refuses that here.
+ * the membership, and the invitation the database writes with its seven days. A person who already has an account,
+ * in this organization or any other, joins through a platform administrator (docs/adr/0055): the database answers
+ * whether the address is in use, yes or no, before the identity provider is called, and the screen says the same
+ * for every such address, so it never tells an organization that another one knows a person.
  */
+export const EMAIL_IN_USE = 'this address cannot be invited from here; if the person is a member already, change their role below, otherwise a platform administrator adds them';
 export const inviteUserAction = organizationRoute({
   id: 'settings.users.invite',
   kind: 'action',
@@ -551,9 +554,9 @@ export const inviteUserAction = organizationRoute({
     if (!ROLES_BY_KIND[kind].includes(input.role)) {
       throw new InputError([{ field: 'role', message: `a role a ${kind} organization holds` }]);
     }
-    const known = (await scope.client.query<{ id: string }>('SELECT id FROM "user" WHERE lower(email) = $1', [input.email])).rows[0];
-    if (known !== undefined) {
-      throw new InputError([{ field: 'email', message: 'this person is already a member here, or was; change their role instead' }]);
+    const inUse = (await scope.client.query<{ in_use: boolean }>('SELECT invitation_email_in_use($1, $2) AS in_use', [organizationId, input.email])).rows[0]?.in_use;
+    if (inUse !== false) {
+      throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
     }
     const { sub } = await services.provider.ensureUser(input.email);
     const userId = randomUUID();
@@ -565,8 +568,9 @@ export const inviteUserAction = organizationRoute({
       await scope.client.query('RELEASE SAVEPOINT invite');
     } catch (error) {
       if (isPgError(error, ['23505', '42501', '23514'])) {
+        // An account made for the address since the check above: the same answer as any address in use.
         await scope.client.query('ROLLBACK TO SAVEPOINT invite');
-        throw new InputError([{ field: 'email', message: 'this person already has an account with another organization; a platform administrator adds them' }]);
+        throw new InputError([{ field: 'email', message: EMAIL_IN_USE }]);
       }
       throw error;
     }

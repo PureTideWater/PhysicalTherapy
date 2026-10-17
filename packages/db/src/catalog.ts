@@ -157,6 +157,12 @@ export const REVIEWED_SCOPE_FUNCTIONS: readonly ReviewedScopeFunction[] = [
     reason:
       'PRD 7, Internal console, Rule releases: per release and active practice, counts of complete runs, runs in effect, re-runs, accepted re-runs and the lines re-runs priced differently, for platform administrators only; it names no run, line or claim (ADR 0037)',
   },
+  {
+    function: 'console_model_spend(date)',
+    scope: 'counts',
+    reason:
+      'PRD 19, Monitoring: model-call cost per practice against budget; per active practice, the day’s model calls counted and their cost in millionths of a cent, for platform administrators who manage feature flags only; it names no call, input or output (ADR 0055)',
+  },
 ];
 
 interface Queryable {

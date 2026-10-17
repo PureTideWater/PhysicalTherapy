@@ -23,5 +23,6 @@ export {
   jobPayloadPhiFindings,
   s3KeyPhiFindings,
   textPhiFindings,
+  writtenPhiFindings,
   urlPhiFindings,
 } from './phi-guard';

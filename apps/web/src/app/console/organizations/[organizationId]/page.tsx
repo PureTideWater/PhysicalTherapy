@@ -8,7 +8,16 @@ import { roleName, roleNames, utcDate } from '../../../../components/format';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import { organizationPage } from '../../../../lib/routes/console';
-import { createPracticeAction, endMembershipAction, inviteMemberAction, recordAgreementAction, resendInvitationAction, unlockUserAction, uploadAgreementAction } from '../../actions';
+import {
+  createPracticeAction,
+  endMembershipAction,
+  inviteMemberAction,
+  recordAgreementAction,
+  resendInvitationAction,
+  setOrganizationStatusAction,
+  unlockUserAction,
+  uploadAgreementAction,
+} from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
 
 export const metadata: Metadata = { title: 'Organization' };
@@ -41,6 +50,30 @@ export default async function OrganizationPage(props: { readonly params: Promise
           {organization.kind} · {organization.status} · created {utcDate(organization.createdAt)}
         </p>
       </div>
+
+      {organization.kind !== 'internal' && organization.status !== 'closed' ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{organization.status === 'suspended' ? 'Suspended' : 'Suspension'}</CardTitle>
+            <CardDescription>
+              {organization.status === 'suspended'
+                ? 'New runs are refused for every practice of the organization, with the reason; every record stays readable. Reinstating lifts it at once.'
+                : 'Suspending refuses new runs for every practice of the organization (pricing, monitoring, packet exports, reports and uploads) and leaves every record readable.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ActionForm
+              action={setOrganizationStatusAction}
+              submit={organization.status === 'suspended' ? 'Reinstate the organization' : 'Suspend the organization'}
+              variant={organization.status === 'suspended' ? 'default' : 'destructive'}
+            >
+              <FormKeys />
+              <input type="hidden" name="organizationId" value={organization.id} />
+              <input type="hidden" name="status" value={organization.status === 'suspended' ? 'active' : 'suspended'} />
+            </ActionForm>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {organization.kind === 'group' ? (
         <Card>

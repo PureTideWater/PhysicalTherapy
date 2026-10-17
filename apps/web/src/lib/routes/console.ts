@@ -76,6 +76,38 @@ export const createOrganization = platformRoute({
   sample: { params: () => ({}), input: () => ({ kind: 'firm', name: 'SYNTHETIC CONSOLE FIRM' }) },
 });
 
+/**
+ * A platform administrator suspends a customer organization, or reinstates it (PRD 7, Internal console,
+ * Organizations and practices: "Create, edit, hold, suspend"; PRD 5, J18; docs/adr/0055). A suspension refuses new
+ * runs for the organization's practices by the path a nonpayment suspension takes (organization_run_refusal: the
+ * routes, the job chain and the database), and leaves every record readable; reinstating lifts it at once. Setting
+ * the status it has changes nothing. A closed organization, and the company's own, are neither.
+ */
+export const setOrganizationStatus = platformRoute({
+  id: 'console.organization_status',
+  kind: 'action',
+  path: '/console/organizations/[organizationId]',
+  phi: false,
+  permission: 'organization.manage',
+  params: z.object({}),
+  input: z.object({ organizationId: opaqueId, status: z.enum(['suspended', 'active'], { message: 'suspend or reinstate' }) }),
+  audit: { action: 'organization_status_set', objectType: 'organization' },
+  handle: async ({ scope, input }): Promise<MutationResult> => {
+    const found = (await scope.client.query<{ status: string }>("SELECT status FROM organization WHERE id = $1 AND kind IN ('group', 'firm')", [input.organizationId])).rows[0];
+    if (found === undefined) {
+      throw new NotFoundError();
+    }
+    if (found.status === 'closed') {
+      throw new InputError([{ field: 'status', message: 'a closed organization is neither suspended nor reinstated' }]);
+    }
+    if (found.status !== input.status) {
+      await scope.client.query('UPDATE organization SET status = $2 WHERE id = $1', [input.organizationId, input.status]);
+    }
+    return { objectId: input.organizationId, redirect: `/console/organizations/${input.organizationId}` };
+  },
+  sample: { params: () => ({}), input: (refs) => ({ organizationId: refs.organizationId, status: 'active' }) },
+});
+
 export interface MemberSummary {
   readonly membershipId: string;
   readonly userId: string;
@@ -710,6 +742,7 @@ export const CONSOLE_ROUTES = [
   organizationsPage,
   createOrganization,
   organizationPage,
+  setOrganizationStatus,
   createPractice,
   practiceSettingsPage,
   setPracticeSettings,

@@ -406,7 +406,7 @@ async function buildWorld(name: string): Promise<World> {
   });
   const reportDocument = await seedReportDocument({ app, keys, documents, practiceId: tenant.practiceId, managerId: manager });
   const models = await seedModelProposals({ app, keys, documents, practiceId: tenant.practiceId, specialistId, managerId: manager, draftVersionId: contracts.draftVersionId, contractDocumentId: contracts.contractDocumentId });
-  const billing = await seedBilling({ owner, pool: app, provider: services.billing, organizationId: tenant.organizationId });
+  const billing = await seedBilling({ owner, pool: billingPool, provider: services.billing, organizationId: tenant.organizationId });
   const locked = await lockedUser(tenant.organizationId);
   const platformAdminId = actors.find((actor) => actor.persona.kind === 'internal' && actor.persona.role === 'platform_admin')?.userId ?? '';
   const onboarding = await seedOnboarding({ owner, organizationId: tenant.organizationId, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, platformAdminId });

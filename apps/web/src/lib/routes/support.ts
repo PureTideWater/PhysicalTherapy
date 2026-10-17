@@ -12,7 +12,7 @@ import {
   type SupportTicketCategory,
   type SupportTicketStatus,
 } from '@tp/db/runtime';
-import { textPhiFindings } from '@tp/observability';
+import { writtenPhiFindings } from '@tp/observability';
 import { z } from 'zod';
 
 import { forgetMaintenanceFlag, platformRoute, publicRoute, selfRoute } from '../http/invoke';
@@ -37,7 +37,7 @@ import { blankOptional, opaqueId, optionalText, requiredText } from './schemas';
  */
 
 /** The response target the plan publishes (PRD 19, Support). */
-export const RESPONSE_TARGET = 'one business day (four business hours from April to June)';
+export const RESPONSE_TARGET = 'one business day, four hours in April to June';
 
 export const STATUS_LABELS: Readonly<Record<StatusComponentStatus, string>> = {
   operational: 'Operational',
@@ -228,10 +228,20 @@ export const supportRequestPage = selfRoute({
   sample: { params: () => ({ from: 'cases' }) },
 });
 
+/**
+ * A ticket names no patient (PRD 19: "Support staff never see PHI without a break-glass grant"; docs/adr/0055): the
+ * desk reads it with no support grant, so its text is refused when it holds an identifier's shape, a date in words or
+ * a birth date, an identifier of letters and digits, or a name after a word that introduces a person. A name written
+ * with no such word cannot be told from other words; the form asks for screens and opaque IDs only.
+ */
 function screened(field: string, text: string): string {
-  if (textPhiFindings(text).length > 0) {
+  if (writtenPhiFindings(text).length > 0) {
     throw new InputError([
-      { field, message: 'a ticket takes no patient information: remove anything that looks like an identifier, a date or a phone number, and name the screen and the record’s opaque ID instead' },
+      {
+        field,
+        message:
+          'a ticket takes no patient information: remove names, dates of birth, member IDs, claim numbers, other identifiers and phone numbers, and name the screen and the record’s opaque ID instead',
+      },
     ]);
   }
   return text;
@@ -357,7 +367,7 @@ export const consoleStatusPage = platformRoute({
 
 /** What staff write on the public page is screened like a ticket: the page is public. */
 function publicText(field: string, text: string): string {
-  if (textPhiFindings(text).length > 0) {
+  if (writtenPhiFindings(text).length > 0) {
     throw new InputError([{ field, message: 'the status page is public: write no identifier, date of birth or phone number' }]);
   }
   return text;

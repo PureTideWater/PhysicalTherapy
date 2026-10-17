@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PhiLeakError, assertNoPhi, jobPayloadPhiFindings, s3KeyPhiFindings, textPhiFindings, urlPhiFindings } from './phi-guard';
+import { PhiLeakError, assertNoPhi, jobPayloadPhiFindings, s3KeyPhiFindings, textPhiFindings, urlPhiFindings, writtenPhiFindings } from './phi-guard';
 
 const PRACTICE = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
 const CLAIM = '9c8b7a65-4321-4fed-8cba-123456789012';
@@ -130,5 +130,36 @@ describe('textPhiFindings (docs/adr/0053)', () => {
     expect(textPhiFindings('call 919-555-0100')).toHaveLength(1);
     expect(textPhiFindings('write to someone@synthetic.test')).toHaveLength(1);
     expect(textPhiFindings('patient SYNTHLAST', { known: ['SYNTHLAST'] })).toHaveLength(1);
+  });
+});
+
+describe('writtenPhiFindings (docs/adr/0055)', () => {
+  it('finds what a person writes about a patient in words, as the reviewed ticket did', () => {
+    const ticket = 'Patient Zephyra Quillon, born March 3 1961, member ZQ4455667 was underpaid on claim CLM55512.';
+    expect(textPhiFindings(ticket)).toEqual([]);
+    expect(writtenPhiFindings(ticket)).toEqual([
+      'the text holds a date written in words (a date of birth shape)',
+      'the text holds a birth date named',
+      'the text holds an identifier of letters and digits (a member ID or claim number shape)',
+      'the text holds a name after a word that introduces a person',
+    ]);
+    expect(writtenPhiFindings('the 3rd of March, 1961')).toHaveLength(1);
+    expect(writtenPhiFindings('Mrs. Quillon called about it')).toHaveLength(1);
+    expect(writtenPhiFindings('member # 5551234 was underpaid')).toEqual(['the text holds an identifier named by its kind']);
+    expect(writtenPhiFindings('DOB on file')).toEqual(['the text holds a birth date named']);
+    expect(writtenPhiFindings('claim 123456789')).toEqual(expect.arrayContaining(['the text holds an identifier named by its kind']));
+  });
+
+  it('passes support questions that name screens, codes, opaque IDs and product words', () => {
+    for (const text of [
+      'How do I export a packet from the Packet builder?',
+      'The Patient Share column on Claims and lines looks wrong for code 97110-GP and G0283.',
+      'Pricing run 3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60 shows 12 lines unpriced since March.',
+      'Our invoice INV-0042 for May was charged twice.',
+      'The member ID column and the patient reference are blank after the upload of 2 files.',
+      'Fee schedule 2026 rates for 97140 look off by 3 percent.',
+    ]) {
+      expect(writtenPhiFindings(text), text).toEqual([]);
+    }
   });
 });

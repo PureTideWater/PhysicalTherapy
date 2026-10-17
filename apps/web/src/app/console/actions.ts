@@ -1,13 +1,28 @@
 'use server';
 
 import { type ActionState, runAction } from '../../lib/http/next';
-import { createOrganization, createPractice, createSupportGrant, endMembership, endSupportGrant, inviteMember, recordAgreement, setPracticeSettings, unlockUser } from '../../lib/routes/console';
+import {
+  createOrganization,
+  createPractice,
+  createSupportGrant,
+  endMembership,
+  endSupportGrant,
+  inviteMember,
+  recordAgreement,
+  setOrganizationStatus,
+  setPracticeSettings,
+  unlockUser,
+} from '../../lib/routes/console';
 import { resendInvitationFromConsole, uploadAgreement } from '../../lib/routes/console-onboarding';
 
 /** Server actions for the internal console; each runs its registered route (src/lib/routes/console.ts). */
 
 export async function createOrganizationAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(createOrganization, form);
+}
+
+export async function setOrganizationStatusAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(setOrganizationStatus, form);
 }
 
 export async function createPracticeAction(_state: ActionState, form: FormData): Promise<ActionState> {

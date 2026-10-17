@@ -36,4 +36,5 @@ export const HELP: Readonly<Record<ShellSection, string>> = {
   tickets: 'Tickets from every screen’s help, answered within the published target.',
   status_admin: 'The public status page’s components and incidents, and the maintenance switch.',
   compliance: 'The SOC 2 Type I evidence checklist: each control’s evidence, the policies, and what people must record.',
+  console_models: 'The model features’ switches: the kill switch, each practice’s daily budget and the letter reader, and today’s model spend against each budget.',
 };

@@ -10,6 +10,7 @@ import * as account from './account';
 import * as billing from './billing';
 import * as compliance from './compliance';
 import * as consoleRoutes from './console';
+import * as consoleModels from './console-models';
 import * as consoleOnboarding from './console-onboarding';
 import * as contracts from './contracts';
 import * as coverage from './coverage';
@@ -59,6 +60,7 @@ const EXPORTED = new Map<string, Route>(
     billing,
     compliance,
     consoleRoutes,
+    consoleModels,
     consoleOnboarding,
     contracts,
     coverage,
@@ -122,6 +124,24 @@ describe('the route registry', () => {
     }
     expect(registry.routeById('practice.home')).toBe(practice.practiceHome);
     expect(registry.routeById('nothing')).toBeUndefined();
+  });
+
+  it('gives every page a loading state, its own or its segment’s (PRD 7: every screen has a loading state)', () => {
+    for (const file of pages) {
+      let dir = path.dirname(file);
+      let found = false;
+      for (;;) {
+        if (files(dir).some((entry) => entry === path.join(dir, 'loading.tsx'))) {
+          found = true;
+          break;
+        }
+        if (dir === APP) {
+          break;
+        }
+        dir = path.dirname(dir);
+      }
+      expect(found, `${file} has no loading.tsx in its directory or above it`).toBe(true);
+    }
   });
 
   it('runs every page through a registered page route at its own path', () => {
