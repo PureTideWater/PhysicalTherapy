@@ -104,7 +104,7 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toContainText('PaidWhole');
     await expect(header.getByLabel('Practice switcher')).toContainText(PRACTICE);
-    await expect(header.getByLabel('Account')).toBeVisible();
+    await expect(header.getByLabel('Account menu')).toBeVisible();
     const active = page.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true });
     await expect(active).toHaveAttribute('aria-current', 'page');
     await expect(active).toHaveCSS('text-decoration-color', BRASS);
@@ -121,6 +121,7 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-family', /mono/i);
     await expect(tiles.locator('[data-figure="actionable"] .font-mono')).toHaveCSS('font-variant-numeric', 'tabular-nums');
     await expectAccessible(page, 'The dashboard on brand');
+    await page.mouse.move(0, 0);
     await tiles.screenshot({ path: shot('dashboard-tiles.png') });
   });
 
@@ -135,6 +136,7 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await expect(short).toHaveCSS('color', 'rgb(181, 69, 46)');
     await expect(short).toHaveCSS('background-color', 'rgb(248, 236, 232)');
     await expectAccessible(page, 'Claims and lines on brand');
+    await page.mouse.move(0, 0);
     await table.screenshot({ path: shot('status-table.png') });
   });
 
@@ -144,9 +146,11 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     const header = page.locator('[data-slot="app-header"]');
     await expect(header.locator('[data-slot="lockup"]')).toBeVisible();
     await expect(header.getByText('Menu')).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.waitForLoadState('networkidle');
+    await page.mouse.move(0, 0);
     await header.screenshot({ path: shot('header-390.png') });
+    // The header itself fits the phone's width: nothing in it overflows or scrolls sideways.
+    expect(await header.evaluate((element) => [element.scrollWidth, element.clientWidth, Math.round(element.getBoundingClientRect().width), window.innerWidth])).toEqual([390, 390, 390, 390]);
     await header.getByText('Menu').click();
     await expect(header.getByRole('navigation', { name: 'Practice' }).getByRole('link', { name: 'Practice home', exact: true })).toHaveCSS('text-decoration-color', BRASS);
   });

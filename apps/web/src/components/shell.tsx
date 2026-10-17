@@ -34,9 +34,9 @@ function reviewerOnly(shell: Shell): boolean {
   return shell.platformRoles.includes('reviewer') && !shell.platformRoles.includes('support');
 }
 
-function Chevron() {
+function Chevron({ className }: { readonly className?: string }) {
   return (
-    <svg aria-hidden="true" focusable="false" viewBox="0 0 12 12" width="12" height="12" className="shrink-0 text-fg-muted">
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 12 12" width="12" height="12" className={cn('shrink-0 text-fg-muted', className)}>
       <path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
     </svg>
   );
@@ -53,8 +53,8 @@ function PracticeSwitcher({ shell }: { readonly shell: Shell }) {
   }
   return (
     <details className="relative">
-      <summary className={cn(SUMMARY, 'border px-2.5 font-medium')} aria-label="Practice switcher">
-        <span className="max-w-[6.5rem] truncate sm:max-w-[14rem]">{current?.name ?? 'Choose a practice'}</span>
+      <summary className={cn(SUMMARY, 'border px-2 font-medium sm:px-2.5')} aria-label="Practice switcher">
+        <span className="max-w-[5rem] truncate sm:max-w-[14rem]">{current?.name ?? 'Choose a practice'}</span>
         <Chevron />
       </summary>
       <div className={cn(DROPDOWN, 'w-72 max-w-[calc(100vw-2rem)] py-1')}>
@@ -81,12 +81,12 @@ function AccountMenu({ shell }: { readonly shell: Shell }) {
   const initial = shell.email.slice(0, 1).toUpperCase();
   return (
     <details className="relative">
-      <summary className={cn(SUMMARY, 'px-1 sm:px-2')} aria-label="Account" title={shell.email}>
+      <summary className={cn(SUMMARY, 'px-1 sm:px-2')} aria-label="Account menu" title={shell.email}>
         <span aria-hidden="true" className="flex size-7 items-center justify-center rounded-pill bg-bg-inset text-xs font-semibold text-fg">
           {initial}
         </span>
         <span className="hidden max-w-[12rem] truncate md:inline">{shell.email}</span>
-        <Chevron />
+        <Chevron className="hidden sm:block" />
       </summary>
       <div className={cn(DROPDOWN, 'flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-2 p-3')}>
         <p className="truncate text-sm font-medium" title={shell.email}>
@@ -306,7 +306,7 @@ export function AppShell({ shell, section, children }: { readonly shell: Shell |
           <PracticeSwitcher shell={shell} />
           <AccountMenu shell={shell} />
           <details className="md:hidden">
-            <summary className={cn(SUMMARY, 'border px-2.5 font-medium')}>Menu</summary>
+            <summary className={cn(SUMMARY, 'border px-2 font-medium')}>Menu</summary>
             <div className="absolute inset-x-0 top-full z-40 flex max-h-[calc(100vh-3.5rem)] flex-col gap-4 overflow-y-auto border-b bg-sidebar p-4 text-sidebar-foreground">
               <ShellNav shell={shell} section={section} />
             </div>
