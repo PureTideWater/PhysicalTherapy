@@ -7,17 +7,18 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 /**
- * The provider SDKs only packages/model-gateway may import (PRD section 14; test matrix SEC-09).
- * Static imports and re-exports are caught by no-restricted-imports; dynamic import() and require()
- * by the syntax selectors below.
+ * The provider SDKs only packages/model-gateway may import (PRD section 14; test matrix SEC-09): every
+ * package of Anthropic's (@anthropic-ai/*: the API, Bedrock, Vertex and any other client) and every
+ * Bedrock client of the AWS SDK (@aws-sdk/client-bedrock*: the runtime, the agent runtime and the
+ * rest), each with its subpaths. Static imports and re-exports are caught by no-restricted-imports;
+ * dynamic import() and require() by the syntax selectors below.
  */
-export const MODEL_SDKS = ['@aws-sdk/client-bedrock-runtime', '@anthropic-ai/sdk', '@anthropic-ai/bedrock-sdk'];
+export const MODEL_SDK_PATTERNS = ['@anthropic-ai/*', '@aws-sdk/client-bedrock*'];
 const MODEL_SDK_MESSAGE = 'Only packages/model-gateway may call a model (PRD section 14). Use its purpose-typed functions.';
-const MODEL_SDK_SOURCE = String.raw`/^(@aws-sdk\/client-bedrock-runtime|@anthropic-ai\/(sdk|bedrock-sdk))(\/.*)?$/`;
+const MODEL_SDK_SOURCE = String.raw`/^(@aws-sdk\/client-bedrock[^/]*|@anthropic-ai\/[^/]+)(\/.*)?$/`;
 
 const modelSdkImports = {
-  paths: MODEL_SDKS.map((name) => ({ name, message: MODEL_SDK_MESSAGE })),
-  patterns: MODEL_SDKS.map((name) => ({ group: [`${name}/*`], message: MODEL_SDK_MESSAGE })),
+  patterns: [{ group: MODEL_SDK_PATTERNS.flatMap((pattern) => [pattern, `${pattern}/**`]), message: MODEL_SDK_MESSAGE }],
 };
 
 const modelSdkSyntax = [
@@ -34,7 +35,8 @@ const modelSdkSyntax = [
  * the engine, ledger and packets: packages/rules (rule records carry cents, rates and relative
  * values), packages/contracts (rate records; .claude/rules/money-and-contracts.md), packages/edi835
  * (it parses every remittance amount), packages/triage (materiality and pursuit-cost cents),
- * packages/synth (the amounts it generates) and packages/billing (plan prices and invoice cents).
+ * packages/synth (the amounts it generates), packages/billing (plan prices and invoice cents) and
+ * packages/model-gateway (each call's cost in cents and the daily budget).
  */
 export const MONEY_PACKAGES = [
   'packages/money',
@@ -47,6 +49,7 @@ export const MONEY_PACKAGES = [
   'packages/triage',
   'packages/synth',
   'packages/billing',
+  'packages/model-gateway',
 ];
 const MONEY_MESSAGE = 'Money is bigint cents and rates are Decimal (packages/money/README.md).';
 const moneySyntax = [
@@ -111,8 +114,9 @@ export default defineConfig(
     rules: { 'no-restricted-syntax': ['error', ...modelSdkSyntax, ...moneySyntax] },
   },
   {
+    // The only code that calls a model: the provider SDKs are allowed here, the money rules still hold.
     files: ['packages/model-gateway/**'],
-    rules: { '@typescript-eslint/no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
+    rules: { '@typescript-eslint/no-restricted-imports': 'off', 'no-restricted-syntax': ['error', ...moneySyntax] },
   },
   {
     files: ['apps/web/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}'],

@@ -40,10 +40,11 @@ describe('a test file that imports the provider directly', () => {
   ])('fails the lint as %s', async (file) => {
     const result = await lintAs(file);
     const model = result.messages.filter((message) => message.message.includes(MESSAGE));
-    // The three static imports and the dynamic import, each an error (pnpm lint runs with --max-warnings=0).
-    expect(model.map((message) => message.line)).toEqual([5, 6, 7, 15]);
+    // Every static import of an Anthropic package or a Bedrock client (with a subpath too), each dynamic
+    // import and the require, each an error (pnpm lint runs with --max-warnings=0).
+    expect(model.map((message) => message.line)).toEqual([5, 6, 7, 8, 9, 10, 20, 21, 22]);
     expect(model.every((message) => message.severity === 2)).toBe(true);
-    expect(result.errorCount).toBeGreaterThanOrEqual(4);
+    expect(result.errorCount).toBeGreaterThanOrEqual(9);
   });
 
   it('passes inside packages/model-gateway, the only code that calls a model', async () => {

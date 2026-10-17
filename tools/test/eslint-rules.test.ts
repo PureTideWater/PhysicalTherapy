@@ -32,6 +32,12 @@ describe('model SDKs outside packages/model-gateway (PRD section 14, SEC-09)', (
     "export { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';",
     "const sdk = await import('@anthropic-ai/sdk');",
     "const sdk = require('@aws-sdk/client-bedrock-runtime');",
+    // Every Anthropic package and every Bedrock client, not only the three the gateway uses.
+    "import { BedrockAgentRuntimeClient } from '@aws-sdk/client-bedrock-agent-runtime';",
+    "import { BedrockClient } from '@aws-sdk/client-bedrock';",
+    "import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';",
+    "const sdk = await import('@anthropic-ai/vertex-sdk');",
+    "const sdk = require('@aws-sdk/client-bedrock-agent-runtime');",
   ])('fails %s', async (code) => {
     for (const file of ['apps/web/src/lib/x.ts', 'apps/worker/src/x.ts', 'packages/pricing/src/x.ts', 'tools/x.ts']) {
       expect(await ruleHits(code, file), file).toEqual([expect.stringContaining('Only packages/model-gateway may call a model')]);
@@ -49,6 +55,7 @@ describe('model SDKs outside packages/model-gateway (PRD section 14, SEC-09)', (
 
   it('leaves other AWS SDK clients alone', async () => {
     expect(await ruleHits("import { S3Client } from '@aws-sdk/client-s3';", 'apps/worker/src/x.ts')).toEqual([]);
+    expect(await ruleHits("import { TextractClient } from '@aws-sdk/client-textract';", 'apps/worker/src/x.ts')).toEqual([]);
   });
 });
 
@@ -63,6 +70,7 @@ describe('floats on amounts in the money packages', () => {
     'packages/edi835/src/x.ts',
     'packages/triage/src/x.ts',
     'packages/synth/src/x.ts',
+    'packages/model-gateway/src/x.ts',
   ];
 
   it.each([

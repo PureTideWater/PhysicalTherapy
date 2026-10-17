@@ -1,6 +1,6 @@
 /**
  * @tp/model-gateway: the only code in the repository that calls a model (PRD 14; milestone 10). ESLint
- * forbids importing a provider SDK anywhere else (eslint.config.js, MODEL_SDKS). Models propose; code
+ * forbids importing a provider SDK anywhere else (eslint.config.js, MODEL_SDK_PATTERNS). Models propose; code
  * verifies; people approve. Four purpose-typed functions, each with a pinned prompt version under
  * prompts/, an output schema, a verifier and a model_call row; the model path (Bedrock by default,
  * Anthropic's HIPAA-ready API as the alternative, the local deterministic provider in development and

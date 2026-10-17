@@ -84,7 +84,7 @@ describe('preparing the call', () => {
     expect(() => evidenceRequestsSpec.prepare({ gaps: [] })).toThrow(expect.objectContaining({ code: 'no_gaps' }));
     for (const gap of [
       { reason: 'SOMETHING', count: 1, payer: null, codes: [] },
-      { reason: 'NO_MAPPING', count: 1.5, payer: null, codes: [] },
+      { reason: 'NO_MAPPING', count: 3 / 2, payer: null, codes: [] },
       { reason: 'NO_MAPPING', count: -1, payer: null, codes: [] },
       { reason: 'NO_MAPPING', count: 1, payer: null, codes: ['JANE DOE'] },
     ]) {

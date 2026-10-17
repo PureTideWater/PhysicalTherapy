@@ -5,6 +5,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AnthropicBedrock } from '@anthropic-ai/bedrock-sdk';
 import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import { BedrockAgentRuntimeClient } from '@aws-sdk/client-bedrock-agent-runtime';
+import { AnthropicVertex } from '@anthropic-ai/vertex-sdk';
+import type { Messages } from '@anthropic-ai/sdk/resources/messages';
 import { describe, expect, it } from 'vitest';
 
 describe('a narrative drafted outside the gateway', () => {
@@ -12,7 +15,12 @@ describe('a narrative drafted outside the gateway', () => {
     const client = new Anthropic();
     const bedrock = new BedrockRuntimeClient({ region: 'us-east-1' });
     const legacy = new AnthropicBedrock();
+    const agent = new BedrockAgentRuntimeClient({ region: 'us-east-1' });
+    const vertex = new AnthropicVertex();
     const sdk = await import('@anthropic-ai/sdk');
-    expect([client, bedrock, legacy, sdk, InvokeModelCommand]).toHaveLength(5);
+    const control = await import('@aws-sdk/client-bedrock');
+    const required = require('@anthropic-ai/foundry-sdk') as unknown;
+    const messages: Messages | null = null;
+    expect([client, bedrock, legacy, agent, vertex, sdk, control, required, messages, InvokeModelCommand]).toHaveLength(10);
   });
 });
