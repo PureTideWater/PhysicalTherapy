@@ -1,8 +1,10 @@
 /**
  * The catalog reads behind the domain model (CO-02). Every query reads the PostgreSQL catalog
- * (pg_class, pg_attribute, pg_constraint, pg_index, pg_policy, pg_trigger, pg_proc, privileges) or
- * the two tables that are themselves catalog data, phi_table_registry and schema_migrations; none
- * reads a row of any other table. The generator runs them in one READ ONLY transaction.
+ * (pg_class, pg_attribute, pg_constraint, pg_index, pg_policy, pg_trigger with each trigger's enabled
+ * state, pg_proc with each function's body, pg_rules, pg_default_acl, privileges) or the two tables
+ * that are themselves catalog data, phi_table_registry and schema_migrations (each applied file's name
+ * and SHA-256); none reads a row of any other table. The generator runs them in one READ ONLY
+ * transaction.
  *
  * Every ORDER BY on text names COLLATE "C", so the order (and so the document) does not depend on the
  * database's collation: a database created under en_US.UTF-8 sorts `app_actor_admin_practice_ids()`
@@ -77,6 +79,8 @@ export interface TriggerRow {
   readonly table_name: string;
   readonly name: string;
   readonly def: string;
+  /** pg_trigger.tgenabled: O fires (origin and local), A always, R only under replica, D never. */
+  readonly enabled: string;
   readonly function_name: string;
   readonly function_src: string | null;
 }
@@ -90,6 +94,7 @@ export interface FunctionRow {
   readonly returns: string;
   readonly execute_roles: string[];
   readonly execute_public: boolean;
+  /** The body: prosrc, or the SQL-standard body (BEGIN ATOMIC) as PostgreSQL prints it. */
   readonly src: string | null;
 }
 export interface PrivilegeRow {
@@ -123,6 +128,24 @@ export interface RegistryRow {
   readonly policy_name: string;
   readonly registered_by: string;
 }
+export interface MigrationRow {
+  readonly filename: string;
+  /** The SHA-256 of the file's bytes as applied (packages/db/src/migrate.ts). */
+  readonly checksum: string;
+}
+export interface RuleRow {
+  readonly table_name: string;
+  readonly name: string;
+  readonly def: string;
+}
+export interface DefaultPrivilegeRow {
+  readonly role: string;
+  /** The schema, or null for every schema. */
+  readonly schema: string | null;
+  /** pg_default_acl.defaclobjtype: r tables, S sequences, f functions, T types, n schemas, L large objects. */
+  readonly objtype: string;
+  readonly acl: string[];
+}
 export interface SchemaRow {
   readonly schema: string;
   readonly tables: number;
@@ -132,6 +155,8 @@ export interface SchemaRow {
 export interface Catalog {
   readonly meta: MetaRow;
   readonly appliedMigrations: readonly string[];
+  /** Each applied migration with the SHA-256 it was applied with, in name order. */
+  readonly migrationChecksums: readonly MigrationRow[];
   readonly roles: readonly RoleRow[];
   /** The group roles whose privileges are listed: the managed roles that cannot log in, the owner aside. */
   readonly groupRoles: readonly string[];
@@ -146,6 +171,10 @@ export interface Catalog {
   readonly columnPrivileges: readonly ColumnPrivilegeRow[];
   readonly enumTypes: readonly EnumTypeRow[];
   readonly viewDefs: readonly ViewRow[];
+  /** Rewrite rules on relations in public (pg_rules leaves out each view's _RETURN rule). */
+  readonly rules: readonly RuleRow[];
+  /** ALTER DEFAULT PRIVILEGES entries, in this database. */
+  readonly defaultPrivileges: readonly DefaultPrivilegeRow[];
   readonly registry: readonly RegistryRow[];
   readonly otherSchemas: readonly SchemaRow[];
 }
@@ -167,7 +196,8 @@ export async function readCatalog(client: Queryable, options: { readonly managed
             (SELECT max(filename COLLATE "C") FROM schema_migrations) AS head`,
   );
   if (meta === undefined) throw new Error('the catalog returned no server version');
-  const appliedMigrations = (await rows<{ filename: string }>(client, 'SELECT filename FROM schema_migrations ORDER BY filename COLLATE "C"')).map((r) => r.filename);
+  const migrationChecksums = await rows<MigrationRow>(client, 'SELECT filename, checksum FROM schema_migrations ORDER BY filename COLLATE "C"');
+  const appliedMigrations = migrationChecksums.map((r) => r.filename);
 
   const roles = await rows<RoleRow>(
     client,
@@ -244,7 +274,7 @@ export async function readCatalog(client: Queryable, options: { readonly managed
 
   const triggers = await rows<TriggerRow>(
     client,
-    `SELECT c.relname AS table_name, t.tgname AS name, pg_get_triggerdef(t.oid, true) AS def,
+    `SELECT c.relname AS table_name, t.tgname AS name, pg_get_triggerdef(t.oid, true) AS def, t.tgenabled::text AS enabled,
             p.proname AS function_name, p.prosrc AS function_src
        FROM pg_trigger t
        JOIN pg_class c ON c.oid = t.tgrelid
@@ -263,7 +293,7 @@ export async function readCatalog(client: Queryable, options: { readonly managed
                    WHERE g.privilege_type = 'EXECUTE' AND g.grantee <> 0 AND g.grantee <> p.proowner
                    ORDER BY pg_get_userbyid(g.grantee)::text COLLATE "C")::text[] AS execute_roles,
             EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) g WHERE g.privilege_type = 'EXECUTE' AND g.grantee = 0) AS execute_public,
-            p.prosrc AS src
+            CASE WHEN p.prosqlbody IS NULL THEN p.prosrc ELSE pg_get_function_sqlbody(p.oid) END AS src
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
       WHERE n.nspname = 'public'
       ORDER BY p.oid::regprocedure::text COLLATE "C"`,
@@ -312,6 +342,20 @@ export async function readCatalog(client: Queryable, options: { readonly managed
       WHERE n.nspname = 'public' AND c.relkind IN ('v','m') ORDER BY c.relname COLLATE "C"`,
   );
 
+  const rules = await rows<RuleRow>(
+    client,
+    `SELECT tablename::text AS table_name, rulename::text AS name, definition AS def
+       FROM pg_rules WHERE schemaname = 'public' ORDER BY tablename::text COLLATE "C", rulename::text COLLATE "C"`,
+  );
+
+  const defaultPrivileges = await rows<DefaultPrivilegeRow>(
+    client,
+    `SELECT pg_get_userbyid(d.defaclrole)::text AS role, n.nspname::text AS schema, d.defaclobjtype::text AS objtype,
+            ARRAY(SELECT a::text FROM unnest(d.defaclacl) a ORDER BY a::text COLLATE "C")::text[] AS acl
+       FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid = d.defaclnamespace
+      ORDER BY pg_get_userbyid(d.defaclrole)::text COLLATE "C", n.nspname::text COLLATE "C" NULLS FIRST, d.defaclobjtype::text COLLATE "C"`,
+  );
+
   const [registryPresent] = await rows<{ present: boolean }>(client, `SELECT to_regclass('public.phi_table_registry') IS NOT NULL AS present`);
   const registry =
     registryPresent?.present === true
@@ -329,6 +373,7 @@ export async function readCatalog(client: Queryable, options: { readonly managed
   return {
     meta,
     appliedMigrations,
+    migrationChecksums,
     roles,
     groupRoles,
     relations,
@@ -342,6 +387,8 @@ export async function readCatalog(client: Queryable, options: { readonly managed
     columnPrivileges,
     enumTypes,
     viewDefs,
+    rules,
+    defaultPrivileges,
     registry,
     otherSchemas,
   };

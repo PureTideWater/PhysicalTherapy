@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { tenantPolicyExpression } from '../catalog';
 import { type Catalog } from './catalog-reads';
 import { type MigrationText } from './migration-text';
@@ -15,7 +17,14 @@ export interface ColumnModel {
   readonly identity: string | null;
   readonly generated: string | null;
   readonly encrypted: boolean;
+  /**
+   * The closed list the column's own CHECK admits (a CHECK whose whole expression is
+   * `column = ANY (ARRAY[...])`), in that CHECK's order. When no such CHECK exists, the values its
+   * conditional CHECKs name, merged in constraint-name order, with `enumerationMerged` set: those are
+   * not a closed list.
+   */
   readonly enumeration: readonly string[] | null;
+  readonly enumerationMerged: boolean;
   readonly fk: readonly string[];
   readonly addedBy: string | null;
 }
@@ -42,6 +51,15 @@ export interface TriggerModel {
   readonly def: string;
   readonly function: string;
   readonly raises: readonly string[];
+  /** Whether it fires in an ordinary session (session_replication_role origin): enabled or enabled always. */
+  readonly enforced: boolean;
+  /** Its pg_trigger.tgenabled state in words. */
+  readonly state: string;
+}
+
+export interface RuleModel {
+  readonly name: string;
+  readonly def: string;
 }
 
 export interface TableModel {
@@ -74,6 +92,7 @@ export interface TableModel {
   readonly indexes: readonly IndexModel[];
   readonly policies: readonly PolicyModel[];
   readonly triggers: readonly TriggerModel[];
+  readonly rules: readonly RuleModel[];
   readonly privileges: Readonly<Record<string, readonly string[]>>;
   readonly columnGrants: readonly { readonly role: string; readonly priv: string; readonly cols: readonly string[] }[];
   readonly view: string | null;
@@ -90,6 +109,8 @@ export interface FunctionModel {
   readonly executeRoles: readonly string[];
   readonly executePublic: boolean;
   readonly setsScope: boolean;
+  /** The SHA-256 of the function's body, so a changed body changes the document. */
+  readonly bodySha256: string;
 }
 
 /** Groups `list` by `key`, keeping order. */
@@ -116,6 +137,17 @@ export function enumerationOf(def: string): { column: string; values: string[] }
   return out;
 }
 
+/**
+ * The closed list a CHECK admits when its whole expression is `column = ANY (ARRAY[...])`, in its
+ * order; null for any other CHECK (a conditional one names values without admitting only them).
+ */
+export function wholeEnumerationOf(def: string): { column: string; values: string[] } | null {
+  const m = /^CHECK \(\(?([a-z_][a-z0-9_]*)\)?(?:::text)?\s*=\s*ANY\s*\(\s*\(?\s*ARRAY\[((?:'(?:[^']|'')*'::[a-z][a-z ]*(?:,\s*)?)+)\](?:\)::text\[\])?\s*\)\)$/.exec(def.trim());
+  if (!m) return null;
+  const values = [...(m[2] ?? '').matchAll(/'((?:[^']|'')*)'/g)].map((v) => (v[1] ?? '').replace(/''/g, "'"));
+  return { column: m[1] ?? '', values };
+}
+
 /** The columns a CHECK definition holds to `enc:v1:` ciphertext. */
 export const encryptedColumnsOf = (def: string): string[] => [...def.matchAll(/([a-z_][a-z0-9_]*)\s*~\s*'\^enc:v1:/g)].map((m) => m[1] ?? '');
 
@@ -130,6 +162,12 @@ export function raisesOf(src: string | null): string[] {
 const ON_DELETE: Readonly<Record<string, string>> = { a: 'no action', r: 'restrict', c: 'cascade', n: 'set null', d: 'set default' };
 const CMD: Readonly<Record<string, string>> = { '*': 'ALL', r: 'SELECT', a: 'INSERT', w: 'UPDATE', d: 'DELETE' };
 const VOLATILITY: Readonly<Record<string, string>> = { i: 'immutable', s: 'stable', v: 'volatile' };
+const TRIGGER_STATE: Readonly<Record<string, string>> = {
+  O: 'enabled',
+  A: 'enabled always (also under session_replication_role replica)',
+  R: 'fires only under session_replication_role replica: not enforced',
+  D: 'disabled: not enforced',
+};
 
 export interface Model {
   readonly tables: readonly TableModel[];
@@ -145,6 +183,7 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
   const idxBy = groupBy(catalog.indexes, (c) => c.table_name);
   const polBy = groupBy(catalog.policies, (c) => c.table_name);
   const trgBy = groupBy(catalog.triggers, (c) => c.table_name);
+  const ruleBy = groupBy(catalog.rules, (c) => c.table_name);
   const privBy = groupBy(catalog.privileges, (c) => c.table_name);
   const colPrivBy = groupBy(catalog.columnPrivileges, (c) => c.table_name);
   const regBy = new Map(catalog.registry.map((r) => [r.table_name, r]));
@@ -160,8 +199,16 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
     const fks = cons.filter((c) => c.type === 'f');
     const pcol = cols.find((c) => c.name === 'practice_id');
     const enc = new Set(checks.flatMap((c) => encryptedColumnsOf(c.def)));
-    const enums = new Map<string, string[]>();
-    for (const c of checks) for (const e of enumerationOf(c.def)) enums.set(e.column, [...new Set([...(enums.get(e.column) ?? []), ...e.values])]);
+    const own = new Map<string, string[]>();
+    for (const c of checks) {
+      const e = wholeEnumerationOf(c.def);
+      if (e === null) continue;
+      const earlier = own.get(e.column);
+      // Two such CHECKs on one column admit only the values both list.
+      own.set(e.column, earlier === undefined ? e.values : earlier.filter((v) => e.values.includes(v)));
+    }
+    const merged = new Map<string, string[]>();
+    for (const c of checks) for (const e of enumerationOf(c.def)) merged.set(e.column, [...new Set([...(merged.get(e.column) ?? []), ...e.values])]);
     const pols = polBy.get(rel.name) ?? [];
     const reg = regBy.get(rel.name);
     const tenantCol = rel.name === 'practice' ? 'id' : 'practice_id';
@@ -216,7 +263,8 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
         identity: c.identity,
         generated: c.generated,
         encrypted: enc.has(c.name),
-        enumeration: enums.get(c.name) ?? null,
+        enumeration: own.get(c.name) ?? merged.get(c.name) ?? null,
+        enumerationMerged: !own.has(c.name) && merged.has(c.name),
         fk: fks.filter((f) => f.cols.length === 1 && f.cols[0] === c.name).map((f) => `${String(f.ref_table)}(${f.ref_cols.join(', ')})`),
         addedBy: migrations.columnAddedBy.get(`${rel.name}.${c.name}`) ?? null,
       })),
@@ -234,7 +282,15 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
       exclusions: cons.filter((c) => c.type === 'x').map((c) => ({ name: c.name, def: c.def })),
       indexes: (idxBy.get(rel.name) ?? []).map((i) => ({ name: i.name, def: i.def, primary: i.is_primary, unique: i.is_unique, backsConstraint: i.backs_constraint })),
       policies: pols.map((p) => ({ name: p.name, command: CMD[p.cmd] ?? p.cmd, permissive: p.permissive, roles: p.roles, using: p.using_expr, withCheck: p.check_expr })),
-      triggers: (trgBy.get(rel.name) ?? []).map((t) => ({ name: t.name, def: t.def, function: t.function_name, raises: raisesOf(t.function_src) })),
+      triggers: (trgBy.get(rel.name) ?? []).map((t) => ({
+        name: t.name,
+        def: t.def,
+        function: t.function_name,
+        raises: raisesOf(t.function_src),
+        enforced: t.enabled === 'O' || t.enabled === 'A',
+        state: TRIGGER_STATE[t.enabled] ?? `tgenabled ${t.enabled}`,
+      })),
+      rules: (ruleBy.get(rel.name) ?? []).map((r) => ({ name: r.name, def: r.def })),
       privileges: Object.fromEntries(catalog.groupRoles.map((r) => [r, privilegeList(r)])),
       columnGrants: (colPrivBy.get(rel.name) ?? [])
         .filter((cp) => {
@@ -258,6 +314,9 @@ export function buildModel(catalog: Catalog, migrations: MigrationText, areas: A
       executeRoles: f.execute_roles,
       executePublic: f.execute_public,
       setsScope: /set_config\s*\(\s*'app\.practice_ids'/i.test(f.src ?? '') || f.config.some((c) => c.startsWith('app.practice_ids=')),
+      bodySha256: createHash('sha256')
+        .update(f.src ?? '')
+        .digest('hex'),
     }),
   );
 

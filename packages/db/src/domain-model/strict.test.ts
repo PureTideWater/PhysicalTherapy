@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { compareWithDictionary, explain, parseDictionary } from './dictionary';
-import { type Model, type PolicyModel, type TableModel, areaProblems } from './model';
+import { type ColumnModel, type Model, type PolicyModel, type TableModel, areaProblems, buildModel, enumerationOf, wholeEnumerationOf } from './model';
 import { type Area, type Explanations } from './sources';
 
 /**
@@ -33,6 +33,7 @@ function tableModel(name: string, overrides: Partial<TableModel> = {}): TableMod
     indexes: [],
     policies: [],
     triggers: [],
+    rules: [],
     privileges: {},
     columnGrants: [],
     view: null,
@@ -47,6 +48,21 @@ function modelOf(tables: readonly TableModel[]): Model {
 const area = (id: string, tables: readonly string[]): Area => ({ id, title: id, dictionary: '-', about: '-', tables });
 
 const policy = (name: string): PolicyModel => ({ name, command: 'ALL', permissive: true, roles: ['tp_app'], using: 'true', withCheck: null });
+
+const column = (name: string, type: string, overrides: Partial<ColumnModel> = {}): ColumnModel => ({
+  name,
+  type,
+  notNull: true,
+  default: null,
+  identity: null,
+  generated: null,
+  encrypted: false,
+  enumeration: null,
+  enumerationMerged: false,
+  fk: [],
+  addedBy: null,
+  ...overrides,
+});
 
 describe('the area map', () => {
   const model = modelOf([tableModel('payer'), tableModel('remittance')]);
@@ -76,11 +92,11 @@ describe('the reviewed explanations (--strict)', () => {
   const model = modelOf([
     tableModel('remittance', {
       columns: [
-        { name: 'id', type: 'uuid', notNull: true, default: null, identity: null, generated: null, encrypted: false, enumeration: null, fk: [], addedBy: null },
-        { name: 'trn02', type: 'text', notNull: true, default: null, identity: null, generated: null, encrypted: false, enumeration: null, fk: [], addedBy: null },
-        { name: 'payee_npi', type: 'text', notNull: true, default: null, identity: null, generated: null, encrypted: false, enumeration: null, fk: [], addedBy: null },
-        { name: 'created_at', type: 'timestamp with time zone', notNull: true, default: 'now()', identity: null, generated: null, encrypted: false, enumeration: null, fk: [], addedBy: null },
-        { name: 'updated_at', type: 'timestamp with time zone', notNull: true, default: 'now()', identity: null, generated: null, encrypted: false, enumeration: null, fk: [], addedBy: null },
+        column('id', 'uuid'),
+        column('trn02', 'text'),
+        column('payee_npi', 'text'),
+        column('created_at', 'timestamp with time zone', { default: 'now()' }),
+        column('updated_at', 'timestamp with time zone', { default: 'now()' }),
       ],
       policies: [policy('remittance_tenant')],
     }),
@@ -117,6 +133,75 @@ describe('the reviewed explanations (--strict)', () => {
       'explanation for a divergence that no longer exists: remittance|bpr02_cents|retyped',
       'policy note for remittance names policy remittance_dropped, which does not exist',
       'policy note names table legal_hold, which does not exist',
+    ]);
+  });
+
+  it('refuses a policy note that leaves out a policy the table has, as one a migration added', () => {
+    const withProbe = modelOf([
+      tableModel('membership', { policies: [policy('membership_administrators_insert'), policy('membership_owner'), policy('membership_probe_all_read')] }),
+    ]);
+    const reviewed = { table: 'membership', policies: ['membership_administrators_insert', 'membership_owner'], by: 'ADR 0013', status: 'explained', text: '-' };
+    expect(explain([], { ...none, policies: [reviewed] }, withProbe).strictProblems).toEqual(['policy note for membership does not list its policy membership_probe_all_read']);
+    const complete = { ...reviewed, policies: ['membership_probe_all_read', 'membership_owner', 'membership_administrators_insert'] };
+    expect(explain([], { ...none, policies: [complete] }, withProbe).strictProblems).toEqual([]);
+  });
+});
+
+describe('enumerations', () => {
+  const statusCheck = "CHECK (status = ANY (ARRAY['draft'::text, 'proposed'::text, 'approved'::text, 'signed_off'::text, 'superseded'::text]))";
+  const conditional = "CHECK ((status = ANY (ARRAY['draft'::text, 'proposed'::text])) = (approved_by IS NULL))";
+  const signedOff = "CHECK (signed_off_by IS NULL OR (status = ANY (ARRAY['signed_off'::text, 'superseded'::text])))";
+
+  it("reads a closed list only from a CHECK whose whole expression is the column's list", () => {
+    expect(wholeEnumerationOf(statusCheck)).toEqual({ column: 'status', values: ['draft', 'proposed', 'approved', 'signed_off', 'superseded'] });
+    expect(wholeEnumerationOf("CHECK ((kind)::text = ANY ((ARRAY['a'::character varying, 'it''s'::character varying])::text[]))")).toEqual({ column: 'kind', values: ['a', "it's"] });
+    expect(wholeEnumerationOf(conditional)).toBeNull();
+    expect(wholeEnumerationOf(signedOff)).toBeNull();
+    expect(wholeEnumerationOf('CHECK (attempts = ANY (ARRAY[1, 2]))')).toBeNull();
+    expect(enumerationOf(conditional)).toEqual([{ column: 'status', values: ['draft', 'proposed'] }]);
+  });
+
+  /** A one-table catalog whose status column carries `checks` (constraint-name order). */
+  function statusColumn(checks: readonly string[]): ColumnModel | undefined {
+    const catalog = {
+      meta: { major: 18, migrations: 0, head: null },
+      appliedMigrations: [],
+      migrationChecksums: [],
+      roles: [],
+      groupRoles: [],
+      relations: [{ oid: 1, name: 'contract_version', kind: 'r', rls: false, forced: false, owner: 'tp_owner', options: null }],
+      columns: [{ table_name: 'contract_version', num: 1, name: 'status', type: 'text', not_null: true, default_expr: null, identity: null, generated: null }],
+      constraints: checks.map((def, i) => ({ table_name: 'contract_version', name: `c${String(i)}`, type: 'c', def, cols: [], ref_table: null, ref_cols: [], on_delete: 'a', deferrable: false })),
+      indexes: [],
+      policies: [],
+      triggers: [],
+      functions: [],
+      privileges: [],
+      columnPrivileges: [],
+      enumTypes: [],
+      viewDefs: [],
+      rules: [],
+      defaultPrivileges: [],
+      registry: [],
+      otherSchemas: [],
+    };
+    const migrations = { files: [], checksums: new Map(), adrs: new Map(), tableCreatedBy: new Map(), columnAddedBy: new Map(), tableTouchedBy: new Map(), functionDefinedBy: new Map() };
+    return buildModel(catalog, migrations, { createdOutsideMigrations: {}, areas: [] }).byName.get('contract_version')?.columns[0];
+  }
+
+  it("takes the column's values from its own CHECK, in that CHECK's order, whatever conditional CHECKs sort before it", () => {
+    expect(statusColumn([conditional, signedOff, statusCheck])).toMatchObject({ enumeration: ['draft', 'proposed', 'approved', 'signed_off', 'superseded'], enumerationMerged: false });
+  });
+
+  it('marks values named only by conditional CHECKs as merged, not a closed list, and the dictionary comparison as not enforced', () => {
+    const merged = statusColumn([conditional, signedOff]);
+    expect(merged).toMatchObject({ enumeration: ['draft', 'proposed', 'signed_off', 'superseded'], enumerationMerged: true });
+    const dictionary = parseDictionary(
+      ['## Contracts', '', '| Table | Purpose | Key fields | Policy |', '| --- | --- | --- | --- |', '| `contract_version` | A version | `status` (draft, proposed, signed_off, superseded) | tenant |', ''].join('\n'),
+    );
+    const model = modelOf([tableModel('contract_version', { columns: [column('id', 'uuid'), merged ?? column('status', 'text')] })]);
+    expect(compareWithDictionary(model, dictionary).divergences.filter((d) => d.field === 'status')).toEqual([
+      expect.objectContaining({ kind: 'enumeration not enforced', schema: 'text with no CHECK list (conditional CHECKs name draft, proposed, signed_off, superseded)' }),
     ]);
   });
 });

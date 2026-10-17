@@ -30,6 +30,8 @@ export interface GenerateOptions extends Partial<DomainModelSources> {
   /** The provenance line; 'unknown' when absent. */
   readonly commit?: string;
   readonly branch?: string;
+  /** The provenance line says the generator's inputs had uncommitted changes. */
+  readonly uncommitted?: boolean;
 }
 
 export interface GeneratedDomainModel {
@@ -75,7 +77,7 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
     matches: compared.matches,
     explanations,
     crossCheck: crossCheckReport,
-    provenance: { commit: options.commit ?? '', branch: options.branch ?? '' },
+    provenance: { commit: options.commit ?? '', branch: options.branch ?? '', uncommitted: options.uncommitted === true },
   });
   const tables = model.tables.filter((t) => !t.isView);
   const toApprove = divergences.filter((d) => !INFORMATIONAL.has(d.kind));
@@ -88,7 +90,7 @@ export async function generateDomainModel(options: GenerateOptions): Promise<Gen
     json:
       JSON.stringify(
         {
-          meta: { ...catalog.meta, commit: options.commit ?? null, branch: options.branch ?? null },
+          meta: { ...catalog.meta, commit: options.commit ?? null, branch: options.branch ?? null, uncommitted: options.uncommitted === true },
           registry: catalog.registry,
           roles: catalog.roles,
           tables: model.tables,

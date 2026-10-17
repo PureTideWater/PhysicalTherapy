@@ -1,10 +1,10 @@
 {
-  "_comment": "Reviewed explanations of each divergence the generator finds between docs/product/data-dictionary.md and the live schema. Keys are table|field|kind exactly as the generator computes them. With --strict, the generator fails on a divergence that is not informational and has no entry here, on an entry whose divergence no longer exists, and on a policy note naming a policy that does not exist. Status: 'explained' (an ADR records it), 'stricter than the dictionary' (the schema enforces more), 'not built (milestone N)', or 'founder ruling needed'.",
+  "_comment": "Reviewed explanations of each divergence the generator finds between docs/product/data-dictionary.md and the live schema. Keys are table|field|kind exactly as the generator computes them. With --strict, the generator fails on a divergence that is not informational and has no entry here, on an entry whose divergence no longer exists, and on a policy note whose list differs from the table's live policies in either direction (a policy it names that does not exist, or a live policy it does not name). Status: 'explained' (an ADR records it), 'stricter than the dictionary' (the schema enforces more), 'not built (milestone N)', or 'founder ruling needed'.",
   "rows": {
     "rule_record|record_type|enumeration differs": {
       "by": "ADR 0008 (decision and revisit condition)",
       "status": "founder ruling needed",
-      "text": "denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type and amends the dictionary."
+      "text": "denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2)."
     },
     "priced_line|expected_unrounded|retyped": {
       "by": "ADR 0029; ADR 0035",
@@ -115,49 +115,49 @@
   "policies": [
     {
       "table": "organization",
-      "policies": ["organization_members", "organization_platform_admin_insert", "organization_platform_admin_update", "organization_billing_read", "organization_billing_customer"],
+      "policies": ["organization_members", "organization_platform_admin_insert", "organization_platform_admin_update", "organization_billing_read", "organization_billing_customer", "organization_owner"],
       "by": "ADR 0013; ADR 0050",
       "status": "explained",
       "text": "Members read their own organizations. Platform administrators also read every one, create group and firm organizations and edit them (the console). The billing role tp_billing reads every row and sets billing_customer_ref only while it is null."
     },
     {
       "table": "practice",
-      "policies": ["practice_tenant", "practice_platform_admin_insert", "practice_administrators_update"],
+      "policies": ["practice_tenant", "practice_platform_admin_insert", "practice_administrators_update", "practice_resolver"],
       "by": "ADR 0013",
       "status": "explained",
       "text": "'By grant or ownership' is implemented as the registered tenant policy on app.practice_ids, which the handler sets from the person's memberships intersected with grants in force (effective_practice_access). Platform administrators create practices; only the practice's administrators update it (restrictive)."
     },
     {
       "table": "user",
-      "policies": ["user_self_and_administrators", "user_invited_by_administrators", "user_self_and_platform_admin_update"],
-      "by": "ADR 0016",
+      "policies": ["user_self_and_administrators", "user_invited_by_administrators", "user_self_and_platform_admin_update", "user_owner"],
+      "by": "ADR 0013; ADR 0016",
       "status": "conforms",
       "text": "Self and administrators, as the dictionary says; administrators may only create an invited user without MFA."
     },
     {
       "table": "membership",
-      "policies": ["membership_self_and_administrators", "membership_administrators_insert", "membership_administrators_update"],
+      "policies": ["membership_self_and_administrators", "membership_administrators_insert", "membership_administrators_update", "membership_owner"],
       "by": "ADR 0013",
       "status": "explained",
       "text": "Adds a person's read of their own memberships and platform administrators. An organization administrator may not add a person already known to another organization (user_known_elsewhere)."
     },
     {
       "table": "grant",
-      "policies": ["grant_tenant", "grant_approved_by_practice_administrator", "grant_revoked_by_practice_administrator", "grant_practice_administrators_and_grantee_read"],
+      "policies": ["grant_tenant", "grant_approved_by_practice_administrator", "grant_revoked_by_practice_administrator", "grant_practice_administrators_and_grantee_read", "grant_resolver"],
       "by": "ADR 0013",
       "status": "conforms",
       "text": "Practice administrators approve and revoke; the practice's administrators and the grantee read. No route or screen yet approves or revokes a grant (CO-08)."
     },
     {
       "table": "agreement",
-      "policies": ["agreement_parties", "agreement_read_by_parties", "agreement_recorded_by_signers"],
-      "by": "ADR 0013; ADR 0053",
+      "policies": ["agreement_parties", "agreement_read_by_parties", "agreement_recorded_by_signers", "agreement_owner"],
+      "by": "ADR 0013; ADR 0053; ADR 0055",
       "status": "explained",
       "text": "Parties to it read it, as the dictionary says; platform administrators also read and record agreements. An e-signed agreement is recorded only through record_esigned_agreement(), executable by tp_esign alone (migration 20261101100000)."
     },
     {
       "table": "support_grant",
-      "policies": ["support_grant_tenant", "support_grant_platform_administrators_insert", "support_grant_created_by_platform_administrator", "support_grant_platform_administrators_read", "support_grant_read_by_practice_and_platform", "support_grant_not_updated_by_the_application"],
+      "policies": ["support_grant_tenant", "support_grant_platform_administrators_insert", "support_grant_created_by_platform_administrator", "support_grant_platform_administrators_read", "support_grant_read_by_practice_and_platform", "support_grant_not_updated_by_the_application", "support_grant_resolver"],
       "by": "ADR 0013; ADR 0019; ADR 0028; ADR 0038",
       "status": "conforms",
       "text": "Platform administrators create one; members of the practice's own group and platform administrators read it; the application never updates one. ADR 0028 extends support grants to contract specialists and ADR 0038 to reimbursement reviewers (read-only); PRD 3 names support engineers only."
@@ -196,7 +196,7 @@
       "subject": "CO-12 screening tables 'outside the RLS catalog'",
       "where": "Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts",
       "says": "CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it.",
-      "schema": "Not built. prospect_request is the precedent: no practice_id, RLS forced, written only through a SECURITY DEFINER function.",
+      "schema": "Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed).",
       "status": "proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change"
     }
   ]

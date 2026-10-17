@@ -8,8 +8,7 @@ import {
   DOMAIN_MODEL_DOCUMENT,
   DomainModelError,
   REPO_ROOT,
-  approvalLineOf,
-  approvalProblems,
+  documentApprovalProblems,
   documentToWrite,
   firstDifference,
   generateDomainModel,
@@ -27,11 +26,16 @@ import {
  *   --check  regenerates and compares with the document, ignoring the "Approved by:" line and the
  *            provenance line (commit and branch), so a pull request that changes no schema passes
  *            whatever its commit; exits 1 and prints the first differing line when they differ.
- *   --require-approval  with --check: also exits 1 unless the approval line names a person, gives a
- *            date (YYYY-MM-DD) and carries the SHA-256 of exactly this text.
+ *   --require-approval  with --check: also exits 1 unless the document's last line, and no other, is
+ *            an approval that names a person, gives a date (YYYY-MM-DD, from 2026-10-16 to today, UTC)
+ *            and carries the SHA-256 of exactly this text.
  *   --strict exits 2 when a divergence that is not informational has no reviewed explanation, or an
  *            explanation names a divergence or policy that no longer exists. A table in no area of
  *            packages/db/domain-model/areas.json always exits 2.
+ *
+ * The provenance line names the commit and branch (git, unless --commit is given), and says "with
+ * uncommitted changes to its inputs" when git reports changes under packages/db or to the Data
+ * dictionary, so a document is only said to come from a commit that holds what generated it.
  */
 const USAGE =
   'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE] [--database-url URL] [--commit SHA] [--branch NAME]\n';
@@ -85,6 +89,9 @@ const base = process.env.INIT_CWD ?? process.cwd();
 const outPath = values.out === undefined ? undefined : path.resolve(base, values.out);
 const checkPath = values.check === undefined ? undefined : path.resolve(base, values.check);
 
+/** The generator's inputs: its code, the migrations, the Drizzle schema, its data files and the Data dictionary. */
+const INPUTS = ['packages/db', 'docs/product/data-dictionary.md'];
+
 let generated;
 try {
   generated = await generateDomainModel({
@@ -92,6 +99,7 @@ try {
     strict: values.strict,
     commit: values.commit ?? git(['rev-parse', 'HEAD']),
     branch: values.branch ?? git(['branch', '--show-current']),
+    uncommitted: values.commit === undefined && git(['status', '--porcelain', '--', ...INPUTS]) !== '',
   });
 } catch (error) {
   if (error instanceof DomainModelError) fail(error.message, 2);
@@ -109,7 +117,7 @@ if (checkPath !== undefined) {
   }
   process.stdout.write(`${checkPath} matches the schema at ${String(generated.head)}\n`);
   if (values['require-approval']) {
-    const problems = approvalProblems(approvalLineOf(existing), generated.sha256);
+    const problems = documentApprovalProblems(existing, generated.sha256);
     if (problems.length) fail(`${checkPath} is not approved: ${problems.join('; ')}`, 1);
     process.stdout.write(`${checkPath} carries an approval for this text\n`);
   }

@@ -287,7 +287,9 @@ function compareTable(e: DictionaryEntry, t: TableModel, matches: Matches, add: 
     }
     if (typeOk) matches.typed++;
     if (f.enumeration) {
-      if (!c.enumeration) add(e.table, f.name, 'enumeration not enforced', f.enumeration.join(', '), `${c.type} with no CHECK list`);
+      if (!c.enumeration || c.enumerationMerged) {
+        add(e.table, f.name, 'enumeration not enforced', f.enumeration.join(', '), `${c.type} with no CHECK list${c.enumeration ? ` (conditional CHECKs name ${c.enumeration.join(', ')})` : ''}`);
+      }
       else {
         const live = c.enumeration;
         const missing = f.enumeration.filter((v) => !live.includes(v));
@@ -321,7 +323,8 @@ function compareTable(e: DictionaryEntry, t: TableModel, matches: Matches, add: 
   }
   if (!t.isView && !t.columns.some((c) => c.name === 'updated_at')) add(e.table, 'updated_at', 'convention', 'updated_at timestamptz (dictionary convention)', 'absent');
   if (e.notes.some((n) => /triggers reject update and delete/.test(n))) {
-    const ok = t.triggers.some((x) => /UPDATE/.test(x.def)) && t.triggers.some((x) => /DELETE/.test(x.def));
+    const enforced = t.triggers.filter((x) => x.enforced);
+    const ok = enforced.some((x) => /UPDATE/.test(x.def)) && enforced.some((x) => /DELETE/.test(x.def));
     if (!ok) add(e.table, '', 'invariant missing', 'triggers reject update and delete', t.triggers.map((x) => x.name).join(', '));
     else matches.immutable.push(e.table);
   }
@@ -336,7 +339,9 @@ function compareTable(e: DictionaryEntry, t: TableModel, matches: Matches, add: 
 /**
  * Attaches the reviewed explanation to each divergence, and lists what --strict refuses: a divergence
  * that is not informational with no explanation, an explanation of a divergence that no longer exists,
- * and a policy note naming a table or policy that does not exist (explanations cannot go stale).
+ * a policy note naming a table or policy that does not exist, and a policy note that leaves out a policy
+ * the table has (explanations cannot go stale: a policy added to or dropped from a table with a note
+ * needs the note reviewed).
  */
 export function explain(divergences: readonly Unexplained[], explanations: Explanations, model: Model): { divergences: Divergence[]; strictProblems: string[] } {
   const strictProblems: string[] = [];
@@ -354,6 +359,7 @@ export function explain(divergences: readonly Unexplained[], explanations: Expla
       continue;
     }
     for (const name of p.policies) if (!t.policies.some((x) => x.name === name)) strictProblems.push(`policy note for ${p.table} names policy ${name}, which does not exist`);
+    for (const live of t.policies) if (!p.policies.includes(live.name)) strictProblems.push(`policy note for ${p.table} does not list its policy ${live.name}`);
   }
   return { divergences: out, strictProblems };
 }

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -9,6 +10,8 @@ import path from 'node:path';
 export interface MigrationText {
   /** Every *.sql file in the directory, in name order. */
   readonly files: readonly string[];
+  /** File -> the SHA-256 of its bytes on disk (as packages/db/src/migrate.ts records it when applied). */
+  readonly checksums: ReadonlyMap<string, string>;
   /** File -> the ADR numbers its header cites ('0013', ...), sorted. */
   readonly adrs: ReadonlyMap<string, readonly string[]>;
   /** Table or view -> the first file that creates it. */
@@ -137,6 +140,7 @@ export function readMigrationText(dir: string): MigrationText {
     .filter((f) => f.endsWith('.sql'))
     .sort();
   const adrs = new Map<string, readonly string[]>();
+  const checksums = new Map<string, string>();
   const tableCreatedBy = new Map<string, string>();
   const columnAddedBy = new Map<string, string>();
   const tableTouchedBy = new Map<string, Set<string>>();
@@ -151,7 +155,9 @@ export function readMigrationText(dir: string): MigrationText {
   };
 
   for (const file of files) {
-    const sql = readFileSync(path.join(dir, file), 'utf8');
+    const bytes = readFileSync(path.join(dir, file));
+    checksums.set(file, createHash('sha256').update(bytes).digest('hex'));
+    const sql = bytes.toString('utf8');
     adrs.set(file, headerAdrs(sql));
     for (const st of statementsOf(sql)) {
       let m: RegExpExecArray | null;
@@ -190,7 +196,7 @@ export function readMigrationText(dir: string): MigrationText {
       }
     }
   }
-  return { files, adrs, tableCreatedBy, columnAddedBy, tableTouchedBy, functionDefinedBy };
+  return { files, checksums, adrs, tableCreatedBy, columnAddedBy, tableTouchedBy, functionDefinedBy };
 }
 
 /** A migration's file name without `.sql`. */

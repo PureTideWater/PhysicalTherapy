@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readDatabaseUrl } from '../config';
 import { migrate } from '../migrate';
 import { type ScratchDatabase, createScratchDatabase } from '../testing';
-import { approvalLineOf, approvalProblems, firstDifference } from './approval';
+import { documentApprovalProblems, firstDifference } from './approval';
 import { type GeneratedDomainModel, generateDomainModel } from './generate';
 import { DOMAIN_MODEL_DOCUMENT, DomainModelError } from './sources';
 
@@ -58,6 +58,6 @@ describe('docs/product/domain-model.md (CO-02)', () => {
   });
 
   it("carries the founder's approval of exactly this text: a name, a date and its SHA-256", () => {
-    expect(approvalProblems(approvalLineOf(committed), regenerated().sha256)).toEqual([]);
+    expect(documentApprovalProblems(committed, regenerated().sha256)).toEqual([]);
   });
 });
