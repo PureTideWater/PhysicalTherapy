@@ -2,6 +2,7 @@ import { type DeadlineState, STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason }
 import { Badge } from '@tp/ui';
 
 import type { CaseState } from '../../lib/triage/queries';
+import { StatusChip, type StatusTone } from '../status';
 
 /**
  * Display pieces of the Anomalies and Cases screens (PRD 7; PRD 12): a case's state and deadline
@@ -27,11 +28,12 @@ export function CaseStateBadge({ state }: { readonly state: CaseState }) {
   );
 }
 
-const DEADLINE_CLASS: Readonly<Record<DeadlineState, string>> = {
-  passed: 'bg-destructive text-destructive-foreground',
-  soon: 'bg-amber-200 text-amber-950',
-  later: 'bg-emerald-100 text-emerald-950',
-  none: '',
+/** A deadline's tint (docs/adr/0056): within 14 days is short (act now), a passed window is unpriced gray (nothing left to pursue), later and none are neutral; always with its words. */
+const DEADLINE_TONE: Readonly<Record<DeadlineState, StatusTone>> = {
+  passed: 'unpriced',
+  soon: 'short',
+  later: 'neutral',
+  none: 'neutral',
 };
 
 const DEADLINE_TEXT: Readonly<Record<DeadlineState, string>> = {
@@ -45,10 +47,8 @@ const DEADLINE_TEXT: Readonly<Record<DeadlineState, string>> = {
 export function Deadline({ on, state }: { readonly on: string | null; readonly state: DeadlineState }) {
   return (
     <span className="inline-flex items-center gap-1.5" data-deadline={state}>
-      <span className="tabular-nums">{on ?? '—'}</span>
-      <Badge variant="outline" className={DEADLINE_CLASS[state]}>
-        {DEADLINE_TEXT[state]}
-      </Badge>
+      <span className="font-mono tabular-nums">{on ?? '—'}</span>
+      <StatusChip tone={DEADLINE_TONE[state]}>{DEADLINE_TEXT[state]}</StatusChip>
     </span>
   );
 }

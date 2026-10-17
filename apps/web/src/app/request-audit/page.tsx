@@ -4,22 +4,32 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../components/action-form';
 import { Field, SelectField, TextAreaField } from '../../components/field';
+import { BRAND_DESCRIPTOR, BRAND_INDEPENDENCE } from '../../lib/brand';
 import { loadPublicPage } from '../../lib/http/next';
 import { requestAuditPage } from '../../lib/routes/onboarding';
 import { requestAuditAction } from './actions';
+import { PublicHeader } from '../../components/public-header';
 
 export const metadata: Metadata = { title: 'Request an audit' };
 
 /**
  * The public audit request (PRD 5, J1: "a public form with no PHI: name, organization, locations, payers, billing
  * arrangement"). The founder follows up with a scoping call; nothing here is a patient's information, and the form
- * refuses anything that looks like one.
+ * refuses anything that looks like one. Its lede is the descriptor and the independence claim (Change Order 001,
+ * CO-11; decision D11), the brand's words from @paidwhole/brand.
  */
 export default async function RequestAuditPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { sent, arrangements } = await loadPublicPage(requestAuditPage, props);
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Request a contract-payment audit</h1>
+    <>
+      <PublicHeader />
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-8 md:p-10">
+      <div className="flex flex-col gap-1">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Request a PaidWhole contract-payment audit</h1>
+        <p className="text-base text-muted-foreground" data-copy="lede">
+          <span data-copy="descriptor">{BRAND_DESCRIPTOR}</span>. <span data-copy="independence">{BRAND_INDEPENDENCE}</span>
+        </p>
+      </div>
       {sent ? (
         <Alert>
           <AlertTitle>Request received</AlertTitle>
@@ -30,7 +40,7 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
           <CardHeader>
             <CardTitle>About your practice</CardTitle>
             <CardDescription>
-              No patient information: only who you are, your locations, the payers you bill and how you bill. An audit compares what your payers paid with what your contracts say.
+              No patient information: only who you are, your locations, the payers you bill and how you bill. A PaidWhole audit compares what your payers paid with what your contracts say.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -57,5 +67,6 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
         .
       </p>
     </main>
+    </>
   );
 }

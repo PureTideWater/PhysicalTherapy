@@ -21,6 +21,9 @@ jobs:
         with: { node-version: 24, cache: pnpm }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
+      # The database logs every deliberate refusal the tests provoke; its log is printed after the job and,
+      # unquieted, buries the failing test's own output. Only the database's log level changes.
+      - run: psql postgres://postgres:test@localhost:5432/postgres -qc "ALTER SYSTEM SET log_min_messages = 'panic'" -qc "ALTER SYSTEM SET log_min_error_statement = 'panic'" -qc "SELECT pg_reload_conf()"
       - run: pnpm install --frozen-lockfile
       - run: pip install pyx12
       - run: pnpm audit --prod
@@ -31,11 +34,32 @@ jobs:
       - run: pnpm verify-content
       - run: tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"
       - run: pnpm synth --all
+      # Playwright's own Chromium, the build the brand journey's pixel baselines were made with, and the one the
+      # worker's tests print reports with: installed before the unit tests, so none of them skips (docs/adr/0058).
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
       - run: pnpm test && pnpm test:golden && pnpm test:oracle
       - run: pnpm db:migrate && pnpm test:db
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
       - run: pnpm test:e2e
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+            brand-screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+      # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
+      # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
+      - if: failure()
+        run: |
+          [ -d apps/web/test-results ] || exit 0
+          find apps/web/test-results -type f \( -name '*-diff.png' -o -name '*-actual.png' \) -size -300k | sort | while IFS= read -r file; do
+            echo "$file $(base64 -w 0 "$file")"
+          done
       - run: pnpm build
       - run: pnpm cdk:diff
   mutation:

@@ -31,7 +31,7 @@ export default async function ProofLevelPage(props: { readonly params: Promise<{
   const other = level === 'posted' ? 'deposited' : 'posted';
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-semibold tracking-tight">Proof level</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Proof level</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="proof_level" />
       {notice === null ? null : (
         <Alert>
@@ -56,7 +56,7 @@ export default async function ProofLevelPage(props: { readonly params: Promise<{
               <input type="hidden" name="practiceId" value={practiceId} />
               <SelectField label="Proof level" name="proofLevel" options={levels.map((value) => ({ value, label: LABELS[value] ?? value }))} defaultValue={other} />
               <label className="flex items-center gap-2">
-                <input type="checkbox" name="confirm" required /> I have read what the change does to lines already recovered.
+                <input type="checkbox" name="confirm" required /> I have read what the change does to lines already recovered (posted or deposited).
               </label>
             </ActionForm>
           ) : (

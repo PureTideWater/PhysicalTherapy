@@ -4,11 +4,12 @@ import { Readable } from 'node:stream';
 import { type KeyProvider, auditReportKey, loadPracticeCipher } from '@tp/db/runtime';
 
 import type { JobHandler } from '../jobs/handlers';
+import { practiceLedgerSettings } from '../reconcile/ledger';
 import type { DocumentStore } from '../storage/documents';
 import { type TriageJobContext, todayUtc, triageInScope } from '../triage/execute';
 import { gatherReport } from './content';
 import { auditCsv } from './csv';
-import { auditHtml } from './html';
+import { auditHtml, auditReconciliation } from './html';
 import type { PdfRenderer } from './pdf';
 
 /**
@@ -67,7 +68,9 @@ export async function generateAuditReport(context: TriageJobContext, services: R
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const { content, lines } = await gatherReport(scope, { practiceId, auditReportId, pricingRunId: report.pricing_run_id, asOf, requestId: context.jobId, cipher });
-    const pdf = await services.pdf.render(auditHtml(content));
+    // The Verified gate (docs/adr/0057), under the practice's proof level: the seal prints only from the ledger's answer.
+    const reconciliation = auditReconciliation(content, (await practiceLedgerSettings(scope, practiceId)).proofLevel);
+    const pdf = await services.pdf.render(auditHtml(content, reconciliation));
     const csv = Buffer.from(auditCsv(lines), 'utf8');
     const pdfKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'pdf');
     const csvKey = auditReportKey(practiceId, auditReportId, randomUUID(), 'csv');

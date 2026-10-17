@@ -19,12 +19,12 @@ describe('the headline (PRD 12)', () => {
     expect(shown.figures.map((figure) => [figure.stage, figure.label, figure.cents])).toEqual([
       ['actionable', 'Actionable', 55200n],
       ['payer_approved', 'Payer approved', 0n],
-      ['recovered', 'Recovered', 0n],
+      ['recovered', 'Recovered (posted or deposited)', 0n],
     ]);
     expect(shown.flagged).toMatchObject({ label: 'Flagged (investigatory)', lines: 4, rangeLowCents: 4000n, rangeHighCents: 8000n });
     expect(shown.validated).toMatchObject({ label: 'Validated', lines: 19, cents: 61000n });
-    // "Recovered" names stage five only.
-    expect(Object.entries(STAGE_LABELS).filter(([, label]) => /recovered/i.test(label))).toEqual([['recovered', 'Recovered']]);
+    // "Recovered" names stage five only, and never without the cash that proves it (docs/brand/BRAND.md, section 7).
+    expect(Object.entries(STAGE_LABELS).filter(([, label]) => /recovered/i.test(label))).toEqual([['recovered', 'Recovered (posted or deposited)']]);
     expect(JSON.stringify([shown.flagged, shown.validated, shown.figures[0], shown.figures[1]], (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value))).not.toMatch(/recover/i);
   });
 });

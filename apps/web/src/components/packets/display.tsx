@@ -38,7 +38,7 @@ export function Citation({ content }: { readonly content: PacketContent }) {
     );
   }
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1 text-sm" data-citation="contract">
+    <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm" data-citation="contract">
       <dt className="text-muted-foreground">Contract</dt>
       <dd>
         {citation.contract_title}, version {citation.version_no} (in effect {citation.effective_from}
@@ -85,16 +85,16 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
         <tbody>
           {content.lines.map((line) => (
             <tr key={line.row} className="border-b last:border-0" data-row={line.row}>
-              <td className="px-2 py-1 tabular-nums">{line.row}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{line.row}</td>
               <td className="px-2 py-1 font-mono text-xs" data-placeholder="claim_control_number">
                 {line.claim_control_number}
               </td>
               <td className="px-2 py-1 font-mono text-xs" data-placeholder="patient_name">
                 {line.patient_name}
               </td>
-              <td className="px-2 py-1 tabular-nums">{line.service_date}</td>
-              <td className="px-2 py-1">{[line.procedure_code, ...line.modifiers].join(' ')}</td>
-              <td className="px-2 py-1 tabular-nums">{line.units}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{line.service_date}</td>
+              <td className="px-2 py-1 font-mono">{[line.procedure_code, ...line.modifiers].join(' ')}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{line.units}</td>
               <td className="px-2 py-1">
                 <Money value={line.expected_cents} />
               </td>
@@ -107,7 +107,7 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
               <td className="px-2 py-1">
                 <Money value={line.paid_cents} />, {line.paid_on}
               </td>
-              <td className="px-2 py-1 tabular-nums">{line.window_ends_on ?? '—'}</td>
+              <td className="px-2 py-1 font-mono tabular-nums">{line.window_ends_on ?? '—'}</td>
               <td className="px-2 py-1">
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.service_line_id}?run=${line.pricing_run_id}`}>
                   Line trace
@@ -160,7 +160,7 @@ export function EvidenceList({ content }: { readonly content: PacketContent }) {
         ))}
       </ol>
       {content.evidence_gaps.length === 0 ? null : (
-        <ul className="list-disc pl-5 text-amber-900" aria-label="Evidence gaps">
+        <ul className="list-disc pl-5 text-danger" aria-label="Evidence gaps">
           {content.evidence_gaps.map((gap) => (
             <li key={`${gap.code}:${String(gap.row)}`}>
               {gap.row === null ? '' : `Row ${String(gap.row)}: `}

@@ -28,7 +28,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
   const globalKill = flags.find((flag) => flag.key === 'model.kill_switch' && flag.scope === 'global')?.value === 'On';
   return (
     <AppShell shell={page.shell} section="console_models">
-      <h1 className="text-2xl font-semibold tracking-tight">Model features</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Model features</h1>
       {notice === 'set' ? (
         <Alert data-notice="flag_set">
           <AlertTitle>The flag is set</AlertTitle>
@@ -70,7 +70,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           <CardTitle>Set a flag</CardTitle>
           <CardDescription>
             For everyone, an organization or a practice. A kill switch in reach of a practice turns its features off; for the budget and the letter reader the most specific setting wins. With no
-            budget set, a practice may spend {usd(defaultBudgetCents)} a day.
+            budget set, a practice may spend <span className="font-mono tabular-nums">{usd(defaultBudgetCents)}</span> a day.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -103,7 +103,7 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
                   <tr key={`${flag.key}-${flag.scope}-${flag.scopeId ?? 'global'}`} className="border-t">
                     <td className="py-1">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
                     <td className="py-1">{flag.appliesTo}</td>
-                    <td className="py-1">{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
+                    <td className={flag.key === 'model.daily_budget_cents' ? 'py-1 font-mono tabular-nums' : 'py-1'}>{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
                   </tr>
                 ))}
               </tbody>
@@ -131,9 +131,9 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
               {spend.map((row) => (
                 <tr key={row.practiceId} className="border-t" data-practice-spend={row.practiceId}>
                   <td className="py-1">{row.name}</td>
-                  <td className="py-1 text-right tabular-nums">{row.calls}</td>
-                  <td className="py-1 text-right tabular-nums">{usd(row.spentCents)}</td>
-                  <td className="py-1 text-right tabular-nums">{usd(row.budgetCents)}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{row.calls}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{usd(row.spentCents)}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{usd(row.budgetCents)}</td>
                   <td className="py-1">
                     {row.killSwitch ? (
                       <Badge variant="destructive">Switched off</Badge>

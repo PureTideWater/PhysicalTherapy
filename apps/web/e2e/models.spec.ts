@@ -132,7 +132,7 @@ test('the specialist verifies and approves the model’s proposal, a second pers
       // The proposed record waits for the specialist: nothing is verified, and the version cannot be approved yet.
       const record = specialist.getByRole('region', { name: 'Rate record 1' });
       await expect(record).toContainText('Proposed by the model');
-      await expect(record).toContainText('Not verified');
+      await expect(record).toContainText('Not checked');
       await expectAccessible(specialist, 'Rate record review with a model proposal');
       await verifyAndApprove(specialist);
       await expect(specialist.locator('[data-page-text] mark')).toHaveText(Q97110);

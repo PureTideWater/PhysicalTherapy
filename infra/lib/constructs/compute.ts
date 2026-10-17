@@ -171,6 +171,9 @@ export class Compute extends Construct {
     // the VPC's interface endpoint, on the models the application role may invoke (docs/adr/0048).
     const modelPath = { MODEL_PROVIDER: 'bedrock', BEDROCK_REGION: stack.region };
 
+    // The CloudFront static host (infra/lib/constructs/edge.ts): the web image's assets and the brand art email embeds.
+    const staticAssetOrigin = `https://${parameters.staticDomainName}`;
+
     const webTask = this.taskDefinition('Web', `tp-${environmentName}-web`, compute.web, props.applicationRole);
     this.container(webTask, {
       name: 'web',
@@ -208,7 +211,7 @@ export class Compute extends Construct {
         KEEP_ALIVE_TIMEOUT: String(WEB_KEEP_ALIVE_MS),
         ...modelPath,
         // The static host the image's assets load from (its assetPrefix, apps/web/Dockerfile), for the CSP.
-        STATIC_ASSET_ORIGIN: `https://${parameters.staticDomainName}`,
+        STATIC_ASSET_ORIGIN: staticAssetOrigin,
       },
       secrets: {
         AUTH_COOKIE_SECRET: ecs.Secret.fromSecretsManager(this.cookieSecret),
@@ -238,6 +241,8 @@ export class Compute extends Construct {
         KMS_KEY_ID: keyArn,
         MAIL_FROM: parameters.mailFromAddress,
         APP_ORIGIN: appOrigin,
+        // The static host email embeds the brand's lockup from (/brand/*; infra/lib/constructs/edge.ts, reconciliation-001 D7).
+        STATIC_ASSET_ORIGIN: staticAssetOrigin,
         // The evaluate-permitted task runs from the worker's task definition (docs/adr/0054).
         ...modelPath,
       },
@@ -269,6 +274,8 @@ export class Compute extends Construct {
         SUPPORT_MAIL_BUCKET: props.supportMail.bucketName,
         MAIL_FROM: parameters.mailFromAddress,
         APP_ORIGIN: appOrigin,
+        // The support-grant notices embed the brand's lockup from the static host too.
+        STATIC_ASSET_ORIGIN: staticAssetOrigin,
       },
       stopTimeout: WORKER_STOP_TIMEOUT,
     });

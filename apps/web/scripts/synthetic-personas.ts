@@ -85,6 +85,8 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'models-admin', organization: 'internal', role: 'platform_admin' },
   // Onboarding (docs/adr/0053): the platform administrator who turns an audit request into a customer.
   { key: 'onboarding-admin', organization: 'internal', role: 'platform_admin' },
+  // The brand journey (docs/adr/0056): a billing manager of the other group, in a practice of its own.
+  { key: 'brand-manager', organization: 'other_group', role: 'billing_manager' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

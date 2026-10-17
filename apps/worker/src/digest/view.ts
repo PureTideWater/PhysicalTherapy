@@ -127,7 +127,7 @@ export function coverageSentence(figures: DigestFigures): string {
 
 /**
  * The digest's sentences, in order. Counts and dollar totals only, each with its stage's label where it
- * has one (validated, actionable, recovered); a payer is named only where `payerName` names it (the
+ * has one (validated, actionable, recovered with the cash that proves it); a payer is named only where `payerName` names it (the
  * application's page), and the email passes none, so it lists each payer's figures by rank.
  */
 export function digestSentences(period: string, figures: DigestFigures, payerName?: (payerId: string) => string | undefined): string[] {
@@ -142,7 +142,8 @@ export function digestSentences(period: string, figures: DigestFigures, payerNam
   });
   sentences.push(
     `Cases nearing their deadline (within ${String(DEADLINE_DAYS)} days): ${String(counts.cases_nearing_deadline)}, actionable ${usd(totals.cases_nearing_deadline_actionable)}.`,
-    `Recoveries posted: ${String(counts.recoveries_posted)}, recovered ${usd(totals.recovered)}.`,
+    // Recovered names its cash (CO-11): the figures count at the practice's proof level, posted or deposited.
+    `Recovered (posted or deposited), net of recoupments and reversals: ${usd(totals.recovered)} on ${plural(counts.recoveries_posted, 'line', 'lines')}.`,
     coverageSentence(figures),
     `Contracts expiring within ${String(CONTRACT_EXPIRY_DAYS)} days: ${String(counts.contracts_expiring)}.`,
   );

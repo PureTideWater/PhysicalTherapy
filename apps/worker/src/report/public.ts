@@ -29,3 +29,4 @@ export {
   shareText,
 } from './documents';
 export { reasonText } from './html';
+export { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from './recovered-words';

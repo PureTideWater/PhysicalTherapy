@@ -38,10 +38,10 @@ export default async function ReportDocumentPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
           Reports
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2 text-[2rem] font-bold leading-display tracking-display">
           {documentTitle(document.kind, document.period, content.generated_on)} <DocumentStatusBadge status={document.status} />
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-base text-muted-foreground">
           Figures fixed {utc(document.generatedAt)} by {document.requestedBy ?? 'a member of the practice'}; they never change. Counts and dollar totals by stage, with payer and plan names: no patient, claim or line.
         </p>
       </div>

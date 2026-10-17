@@ -76,6 +76,14 @@ export function isLedgerStage(value: unknown): value is LedgerStage {
   return typeof value === 'string' && (LEDGER_STAGES as readonly string[]).includes(value);
 }
 
+/**
+ * The label of a recovered dollar figure (docs/brand/BRAND.md, section 7; PRD 7): "Recovered" never stands
+ * without the proof level its cash is proved by, posted or deposited.
+ */
+export function recoveredLabel(level: ProofLevel): string {
+  return `Recovered (${level})`;
+}
+
 export function isProofLevel(value: unknown): value is ProofLevel {
   return typeof value === 'string' && (PROOF_LEVELS as readonly string[]).includes(value);
 }

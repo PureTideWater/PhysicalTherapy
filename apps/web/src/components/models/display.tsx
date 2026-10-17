@@ -125,7 +125,7 @@ export function ProposalList({ proposals, reject }: { readonly proposals: readon
   }
   return (
     <section aria-label="Model proposals" className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold">The model’s proposals</h2>
+      <h2 className="text-xl font-bold tracking-display">The model’s proposals</h2>
       <p className="text-sm text-muted-foreground">
         Code checked every field against its cited page. A candidate whose fields all checked is a rate record above, still to be approved field by field; a held candidate is entered by hand.
       </p>

@@ -30,6 +30,9 @@ RUN apt-get update \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
+# The public files (the brand art under /brand, the manifest's icons), which the standalone output leaves out. CloudFront
+# serves /_next/static/ and /brand/ from this image's answers (infra/lib/constructs/edge.ts), so a deploy publishes them.
+COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public
 # Amazon RDS's certificate bundle: every database connection verifies the server (sslmode=verify-full)
 # and the task definition points Node at this file (NODE_EXTRA_CA_CERTS; infra/lib/launch.ts).
 ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem

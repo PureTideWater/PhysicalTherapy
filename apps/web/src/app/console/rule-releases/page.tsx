@@ -34,8 +34,8 @@ export default async function RuleReleasesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="rule_releases">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Rule releases</h1>
-        <p className="text-sm text-muted-foreground">
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Rule releases</h1>
+        <p className="text-base text-muted-foreground">
           Prepare and check releases here; CI publishes a prepared release when its pull request merges, and <span className="font-mono text-xs">pnpm release:load</span> and{' '}
           <span className="font-mono text-xs">pnpm release:rollback</span> load and withdraw it. Runs pinned to a release never change.
         </p>
@@ -49,7 +49,7 @@ export default async function RuleReleasesPage(props: Props) {
         </Alert>
       )}
       <section aria-label="Published releases" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Published releases</h2>
+        <h2 className="text-xl font-bold tracking-display">Published releases</h2>
         {releases.length === 0 ? (
           <EmptyState title="No release is published" nextStep="Prepare release 1 from the verified drafts and open its pull request." />
         ) : (
@@ -77,15 +77,15 @@ export default async function RuleReleasesPage(props: Props) {
                       </Link>
                     </td>
                     <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{release.records}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{release.records}</td>
                     <td className="py-1 pr-3">
                       {release.withdrawal !== null ? <Badge variant="destructive">Withdrawn</Badge> : release.inForce ? <Badge>In force</Badge> : <span className="text-muted-foreground">Earlier</span>}
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{sum('runs')}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums">
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{sum('runs')}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">
                       {sum('reruns')} ({sum('rerunsAccepted')})
                     </td>
-                    <td className="py-1 text-right tabular-nums">{sum('changedLines')}</td>
+                    <td className="py-1 text-right font-mono tabular-nums">{sum('changedLines')}</td>
                   </tr>
                 );
               })}
@@ -126,14 +126,14 @@ export default async function RuleReleasesPage(props: Props) {
                       return (
                         <tr key={practiceId} className="border-t" data-practice={practiceId}>
                           <td className="py-1 pr-3">{here?.name ?? other?.name}</td>
-                          <td className="py-1 pr-3 text-right tabular-nums">
+                          <td className="py-1 pr-3 text-right font-mono tabular-nums">
                             {here?.runs ?? 0} ({here?.runsInEffect ?? 0})
                           </td>
-                          <td className="py-1 pr-3 text-right tabular-nums">
+                          <td className="py-1 pr-3 text-right font-mono tabular-nums">
                             {here?.reruns ?? 0} ({here?.rerunsAccepted ?? 0})
                           </td>
-                          <td className="py-1 pr-3 text-right tabular-nums">{here?.changedLines ?? 0}</td>
-                          <td className="py-1 text-right tabular-nums">{other?.runsInEffect ?? 0}</td>
+                          <td className="py-1 pr-3 text-right font-mono tabular-nums">{here?.changedLines ?? 0}</td>
+                          <td className="py-1 text-right font-mono tabular-nums">{other?.runsInEffect ?? 0}</td>
                         </tr>
                       );
                     })}
@@ -174,10 +174,10 @@ export default async function RuleReleasesPage(props: Props) {
                     <tr key={draft.file} className="border-t" data-draft={draft.file}>
                       <td className="py-1 pr-3 font-mono text-xs">{draft.file}</td>
                       <td className="py-1 pr-3 font-mono text-xs">{draft.recordTypes.join(', ')}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{draft.records}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{draft.levels.L1}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{draft.levels.L2}</td>
-                      <td className="py-1 text-right tabular-nums">{draft.levels.L3}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.records}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L1}</td>
+                      <td className="py-1 pr-3 text-right font-mono tabular-nums">{draft.levels.L2}</td>
+                      <td className="py-1 text-right font-mono tabular-nums">{draft.levels.L3}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -91,6 +91,71 @@ describe('workflows', () => {
     const steps = large.jobs['large-zip']?.steps ?? [];
     const test: (Step & { env?: Record<string, string> }) | undefined = steps.find((step) => step.run?.includes('apps/worker/src/intake/intake.large.db.test.ts') === true);
     expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
+  });
+
+  it('keep the e2e suite’s report, results and brand screenshots from every pull request, failed runs included', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const e2e = stepIndex(steps, (step) => step.run === 'pnpm test:e2e');
+    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload).toBe(e2e + 1);
+    const step = steps[upload] as Step & { if?: string };
+    expect(step.if).toBe('always()');
+    // Playwright's defaults beside apps/web/playwright.config.ts (it names no outputFolder or outputDir), and the
+    // brand journey's screenshots (BRAND_SCREENSHOTS_DIR's default, apps/web/e2e/brand.spec.ts).
+    expect(String(step.with?.path).trim().split('\n')).toEqual(['apps/web/playwright-report/', 'apps/web/test-results/', 'brand-screenshots/']);
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).not.toMatch(/outputDir|outputFolder/);
+    expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
+    // The release-immutability gate still runs, unchanged, on every pull request.
+    expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
+  });
+
+  it('print a failed run’s screenshot diffs and actuals into the job log, each under 300 KB as its path and its base64 on one line', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const print = stepIndex(steps, (step) => step.run?.includes('base64 -w 0') === true);
+    // After the e2e step and the artifact upload, which stays right after it.
+    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
+    expect(print).toBeGreaterThan(stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4'));
+    const step = steps[print] as Step & { if?: string };
+    expect(step.if).toBe('failure()');
+    expect(step.run).toContain("find apps/web/test-results -type f \\( -name '*-diff.png' -o -name '*-actual.png' \\) -size -300k");
+    expect(step.run).toContain('echo "$file $(base64 -w 0 "$file")"');
+  });
+
+  it('install Playwright’s own Chromium, with its system libraries, before the unit tests, so the worker’s print checks run and the brand baselines compare under the build that made them', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const install = stepIndex(steps, (step) => step.run === 'pnpm --filter @tp/web exec playwright install --with-deps chromium');
+    // Right before the unit tests, which print reports with it (apps/worker/src/report/print-layout.test.ts fails in
+    // CI without it), and so before the e2e suite.
+    expect(install).toBe(stepIndex(steps, (step) => step.run === 'pnpm test && pnpm test:golden && pnpm test:oracle') - 1);
+    expect(install).toBeLessThan(stepIndex(steps, (step) => step.run === 'pnpm test:e2e'));
+    expect(install).toBeGreaterThan(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile'));
+    // The config takes that Chromium wherever it is installed, and Google Chrome only where it is not (docs/adr/0058).
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
+    expect(config).toContain("...(bundledChromium ? {} : { channel: 'chrome' })");
+    // The baselines the brand journey compares are committed for that browser on Linux.
+    for (const name of ['header-1280', 'header-390', 'header-lockup-1280', 'header-lockup-390', 'report-cover-with-seal', 'report-cover-without-seal', 'report-cover-top']) {
+      expect(existsSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts-snapshots', `${name}-chromium-linux.png`)), name).toBe(true);
+    }
+  });
+
+  it('rasterize the e2e browser’s text with fixed parameters and its own fontconfig, so the brand baselines compare the same on any Linux host', () => {
+    // A runner with fontconfig's stock hinting drew the same Chromium's text in other pixels than the machine that made
+    // the baselines (docs/adr/0058): the switches set hinting and LCD text, and e2e/fonts.conf the rest, over the host's.
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).toContain("args: ['--font-render-hinting=none', '--disable-lcd-text']");
+    expect(config).toContain("FONTCONFIG_FILE: path.join(import.meta.dirname, 'e2e/fonts.conf')");
+    expect(config).toContain('launchOptions: textRendering');
+    const fonts = readFileSync(path.join(repositoryRoot, 'apps/web/e2e/fonts.conf'), 'utf8');
+    // The host's configuration first, for its fonts; then one set of rendering properties, assigned to every request and every match.
+    expect(fonts.indexOf('<include ignore_missing="yes">/etc/fonts/fonts.conf</include>')).toBeLessThan(fonts.indexOf('<match target="pattern">'));
+    const assigned = ['antialias">true', 'hinting">false', 'hintstyle">hintnone', 'autohint">false', 'rgba">none', 'lcdfilter">lcdnone'];
+    for (const target of ['pattern', 'font']) {
+      const block = /<match target="(\w+)">([\s\S]*?)<\/match>/g;
+      const edits = [...fonts.matchAll(block)].filter((match) => match[1] === target).map((match) => [...(match[2] ?? '').matchAll(/<edit name="(\w+)" mode="assign"><\w+>(\w+)<\/\w+><\/edit>/g)].map((edit) => `${edit[1] ?? ''}">${edit[2] ?? ''}`));
+      expect(edits, target).toEqual([assigned]);
+    }
   });
 
   it('run the content checker on each outgoing release before publishing it', () => {

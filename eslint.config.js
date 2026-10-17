@@ -17,9 +17,31 @@ export const MODEL_SDK_PATTERNS = ['@anthropic-ai/*', '@aws-sdk/client-bedrock*'
 const MODEL_SDK_MESSAGE = 'Only packages/model-gateway may call a model (PRD section 14). Use its purpose-typed functions.';
 const MODEL_SDK_SOURCE = String.raw`/^(@aws-sdk\/client-bedrock[^/]*|@anthropic-ai\/[^/]+)(\/.*)?$/`;
 
-const modelSdkImports = {
-  patterns: [{ group: MODEL_SDK_PATTERNS.flatMap((pattern) => [pattern, `${pattern}/**`]), message: MODEL_SDK_MESSAGE }],
+/**
+ * Google's font loader, everywhere (CO-01: no page requests Google's font hosts; docs/adr/0056): next/font/google
+ * (and the older @next/font/google), with its subpaths, fetches the faces from Google at build time and names
+ * them in the page. The brand's faces are self-hosted through next/font/local (apps/web/src/lib/fonts.ts).
+ * Static imports and re-exports are caught by no-restricted-imports, dynamic import() and require() by the
+ * syntax selectors below; tools/brand-fonts scans the source for the hosts themselves.
+ */
+export const GOOGLE_FONT_MODULES = ['next/font/google', '@next/font/google'];
+const GOOGLE_FONT_MESSAGE = 'Fonts load only through apps/web/src/lib/fonts.ts (next/font/local, self-hosted); never from Google (docs/adr/0056).';
+const GOOGLE_FONT_SOURCE = String.raw`/^(@next|next)\/font\/google(\/.*)?$/`;
+
+const googleFontImports = {
+  group: GOOGLE_FONT_MODULES.flatMap((module) => [module, `${module}/**`]),
+  message: GOOGLE_FONT_MESSAGE,
 };
+
+/** The imports refused everywhere but where an override says otherwise: the model SDKs and Google's font loader. */
+const restrictedImports = {
+  patterns: [{ group: MODEL_SDK_PATTERNS.flatMap((pattern) => [pattern, `${pattern}/**`]), message: MODEL_SDK_MESSAGE }, googleFontImports],
+};
+
+const googleFontSyntax = [
+  { selector: `ImportExpression[source.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
+  { selector: `CallExpression[callee.name='require'][arguments.0.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
+];
 
 const modelSdkSyntax = [
   { selector: `ImportExpression[source.value=${MODEL_SDK_SOURCE}]`, message: MODEL_SDK_MESSAGE },
@@ -28,6 +50,9 @@ const modelSdkSyntax = [
     message: MODEL_SDK_MESSAGE,
   },
 ];
+
+/** The same two, imported dynamically or required. */
+const restrictedSyntax = [...modelSdkSyntax, ...googleFontSyntax];
 
 /**
  * No floats on amounts in the money packages (CLAUDE.md rule 2): amounts are bigint cents and rates
@@ -97,8 +122,8 @@ export default defineConfig(
     },
     linterOptions: { reportUnusedDisableDirectives: 'error' },
     rules: {
-      '@typescript-eslint/no-restricted-imports': ['error', modelSdkImports],
-      'no-restricted-syntax': ['error', ...modelSdkSyntax],
+      '@typescript-eslint/no-restricted-imports': ['error', restrictedImports],
+      'no-restricted-syntax': ['error', ...restrictedSyntax],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
@@ -111,12 +136,15 @@ export default defineConfig(
   },
   {
     files: [`{${MONEY_PACKAGES.join(',')}}/**/*.{ts,tsx,js,mjs}`],
-    rules: { 'no-restricted-syntax': ['error', ...modelSdkSyntax, ...moneySyntax] },
+    rules: { 'no-restricted-syntax': ['error', ...restrictedSyntax, ...moneySyntax] },
   },
   {
-    // The only code that calls a model: the provider SDKs are allowed here, the money rules still hold.
+    // The only code that calls a model: the provider SDKs are allowed here, the money and font rules still hold.
     files: ['packages/model-gateway/**'],
-    rules: { '@typescript-eslint/no-restricted-imports': 'off', 'no-restricted-syntax': ['error', ...moneySyntax] },
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [googleFontImports] }],
+      'no-restricted-syntax': ['error', ...googleFontSyntax, ...moneySyntax],
+    },
   },
   {
     files: ['apps/web/**/*.{ts,tsx}', 'packages/ui/**/*.{ts,tsx}'],

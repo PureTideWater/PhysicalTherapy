@@ -1,6 +1,7 @@
 import { cents, formatUsd } from '@tp/money';
 import { monthName } from '@tp/worker/digests';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 
 import type { NotificationView } from '../../lib/monitoring/queries';
 
@@ -16,9 +17,10 @@ function count(figures: Readonly<Record<string, unknown>>, key: string): number 
   return typeof value === 'number' ? value : 0;
 }
 
-function usd(figures: Readonly<Record<string, unknown>>, key: string): string {
+/** A total in dollars, in the mono face with tabular numerals like every money figure. */
+function usd(figures: Readonly<Record<string, unknown>>, key: string): ReactNode {
   const value = figures[key];
-  return formatUsd(cents(BigInt(typeof value === 'string' ? value : '0')));
+  return <span className="font-mono tabular-nums">{formatUsd(cents(BigInt(typeof value === 'string' ? value : '0')))}</span>;
 }
 
 export function NotificationText({ practiceId, notification }: { readonly practiceId: string; readonly notification: NotificationView }) {
@@ -50,7 +52,7 @@ export function NotificationText({ practiceId, notification }: { readonly practi
         <Link className="font-medium underline" href={`/p/${practiceId}/cases/${notification.caseId ?? ''}`}>
           A payer took back {usd(totals, 'recouped')}
         </Link>{' '}
-        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered is reduced by that amount.{' '}
+        on {count(counts, 'recouped_lines')} lines of a case: the lines are reopened and recovered (posted or deposited) is reduced by that amount.{' '}
         <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${notification.caseId ?? ''}`}>
           The case’s ledger
         </Link>
@@ -62,7 +64,7 @@ export function NotificationText({ practiceId, notification }: { readonly practi
       <Link className="font-medium underline" href={`/p/${practiceId}/digests/${notification.subjectId}`}>
         Monitoring digest for {notification.period === null ? 'a month' : monthName(notification.period)}
       </Link>
-      : new validated variance {usd(totals, 'validated_variance')} on {count(counts, 'validated_lines')} lines; {count(counts, 'cases_nearing_deadline')} cases nearing their deadline; recovered {usd(totals, 'recovered')}.
+      : new validated variance {usd(totals, 'validated_variance')} on {count(counts, 'validated_lines')} lines; {count(counts, 'cases_nearing_deadline')} cases nearing their deadline; recovered (posted or deposited, net) {usd(totals, 'recovered')}.
     </span>
   );
 }

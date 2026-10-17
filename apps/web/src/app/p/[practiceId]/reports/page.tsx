@@ -1,3 +1,4 @@
+import { STAGE_LABELS } from '@tp/triage';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, Input, Label, PermissionState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -75,9 +76,9 @@ export default async function ReportsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Every report keeps its stages apart: actionable, payer approved and recovered are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Reports</h1>
+        <p className="text-base text-muted-foreground">
+          Every report keeps its stages apart: actionable, payer approved and recovered (posted or deposited) are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
           total links to the stage it came from.
         </p>
       </div>
@@ -89,7 +90,7 @@ export default async function ReportsPage(props: Props) {
         />
       )}
       <section aria-label="Audit reports" className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold">Audit reports</h2>
+        <h2 className="text-xl font-bold tracking-display">Audit reports</h2>
         <p className="text-sm text-muted-foreground">
           Coverage, anomalies (investigatory), validated discrepancies and actionable amounts kept apart, with the pursuit cost and the evidence gaps. A report is released only after a reimbursement reviewer signs its attestation.
         </p>
@@ -140,26 +141,27 @@ export default async function ReportsPage(props: Props) {
                       {report.generatedAt === null ? '' : `; generated ${utc(report.generatedAt)}, windows judged on ${report.asOf ?? '—'}`}
                     </span>
                   </div>
+                  {/* Today's stage labels, not the ones a report stored when it was written: an older report stored a bare "Recovered". */}
                   {report.headline === null ? null : (
                     <p className="pt-2 text-sm" data-headline={report.id}>
                       <Link className="underline" href={`${base}#stage-actionable`}>
-                        {report.headline.labels.actionable}
+                        {STAGE_LABELS.actionable}
                       </Link>{' '}
                       <Money value={report.headline.actionable_cents} />;{' '}
                       <Link className="underline" href={`${base}#stage-payer-approved`}>
-                        {report.headline.labels.payer_approved}
+                        {STAGE_LABELS.payer_approved}
                       </Link>{' '}
                       <Money value={report.headline.payer_approved_cents} />;{' '}
                       <Link className="underline" href={`${base}#stage-recovered`}>
-                        {report.headline.labels.recovered}
+                        {STAGE_LABELS.recovered}
                       </Link>{' '}
                       <Money value={report.headline.recovered_cents} />. Below them:{' '}
                       <Link className="underline" href={`${base}#stage-flagged`}>
-                        {report.headline.labels.flagged}
+                        {STAGE_LABELS.flagged}
                       </Link>{' '}
                       {report.headline.flagged_lines} lines;{' '}
                       <Link className="underline" href={`${base}#stage-validated`}>
-                        {report.headline.labels.validated}
+                        {STAGE_LABELS.validated}
                       </Link>{' '}
                       <Money value={report.headline.validated_cents} />.
                     </p>
@@ -216,7 +218,7 @@ export default async function ReportsPage(props: Props) {
         <Card role="region" aria-label="ROI statements">
           <CardHeader>
             <CardTitle>ROI statements</CardTitle>
-            <CardDescription>Recovered cash net of recoupments against the fees paid, quarterly and on demand, every figure with the ledger entries it sums.</CardDescription>
+            <CardDescription>Recovered cash, posted or deposited and net of recoupments, against the fees paid, quarterly and on demand, every figure with the ledger entries it sums.</CardDescription>
           </CardHeader>
           <CardContent>
             <Link className="text-sm underline" href={`${path}/roi`}>
@@ -244,7 +246,7 @@ export default async function ReportsPage(props: Props) {
         </Card>
       </div>
       <section aria-label="Generated reports" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Coverage reports and monthly summaries</h2>
+        <h2 className="text-xl font-bold tracking-display">Coverage reports and monthly summaries</h2>
         {documents.total === 0 ? (
           <p className="text-sm text-muted-foreground">None generated yet{canGenerate ? ': generate one above.' : '; a billing manager or analyst generates them.'}</p>
         ) : (
@@ -291,7 +293,7 @@ export default async function ReportsPage(props: Props) {
         <Pager path={path} query={{ page: pageQuery.page, history: pageQuery.history }} page={documents.page} pages={documents.pages} total={documents.total} noun="Generated reports" param="documents" />
       </section>
       <section aria-label="Export history" className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Export history</h2>
+        <h2 className="text-xl font-bold tracking-display">Export history</h2>
         <p className="text-sm text-muted-foreground">Every download of a report’s file and every line-level export, newest first, from the audit log.</p>
         {history.total === 0 ? (
           <p className="text-sm text-muted-foreground">No report file has been downloaded.</p>

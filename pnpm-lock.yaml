@@ -110,6 +110,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1152.0
         version: 3.1152.0
+      '@paidwhole/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@simplewebauthn/browser':
         specifier: ^14.0.0
         version: 14.0.0
@@ -231,6 +234,9 @@ importers:
       '@aws-sdk/client-sesv2':
         specifier: ^3.1152.0
         version: 3.1152.0
+      '@paidwhole/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@tp/billing':
         specifier: workspace:*
         version: link:../../packages/billing
@@ -295,6 +301,9 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 4.10.2
+      pdfjs-dist:
+        specifier: ^6.4.299
+        version: 6.4.299
       tsx:
         specifier: 'catalog:'
         version: 4.23.15
@@ -354,6 +363,21 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 4.10.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(@vitest/coverage-v8@5.0.4)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/brand:
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.2
+      tailwindcss:
+        specifier: ^4.3.3
+        version: 4.3.3
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
@@ -708,6 +732,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@paidwhole/brand':
+        specifier: workspace:*
+        version: link:../brand
       '@radix-ui/react-slot':
         specifier: ^1.5.0
         version: 1.5.0(@types/react@19.3.0)(react@19.3.1)

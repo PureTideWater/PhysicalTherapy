@@ -34,12 +34,17 @@ export interface Headline {
   readonly validated: { readonly stage: 'validated'; readonly label: string; readonly lines: number; readonly cents: Cents; readonly note: string };
 }
 
+/**
+ * The five stages' labels. Recovered names the cash that proves it (docs/brand/BRAND.md, section 7:
+ * "Recovered" is never shown without "posted" or "deposited"); where the practice's proof level is at hand a
+ * recovered dollar figure names that level alone (recoveredLabel in @tp/ledger).
+ */
 export const STAGE_LABELS = {
   flagged: 'Flagged (investigatory)',
   validated: 'Validated',
   actionable: 'Actionable',
   payer_approved: 'Payer approved',
-  recovered: 'Recovered',
+  recovered: 'Recovered (posted or deposited)',
 } as const;
 
 export function headline(input: HeadlineInput): Headline {

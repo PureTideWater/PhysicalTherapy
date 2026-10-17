@@ -1,7 +1,7 @@
 import { cents } from '@tp/money';
 import { describe, expect, it } from 'vitest';
 
-import { type LedgerEntry, LedgerError, correctedEntry, countedStage, entryProblems, isCorrecting, isLedgerStage, isProofLevel } from './stages';
+import { type LedgerEntry, LedgerError, correctedEntry, countedStage, entryProblems, isCorrecting, isLedgerStage, isProofLevel, recoveredLabel } from './stages';
 
 const entry = (overrides: Partial<LedgerEntry>): LedgerEntry => ({
   id: 'e1',
@@ -83,6 +83,11 @@ describe('entry rules (PRD 13, Entries)', () => {
     // An adjustment of an adjustment, or a reversal whose adjustment's target is gone, counts toward nothing.
     expect(() => countedStage(entry({ id: 'x', stage: 'adjusted', evidenceKind: 'ledger_entry', evidenceId: 'a', amountCents: cents(1n) }), ledger)).toThrow(LedgerError);
     expect(() => countedStage(undo, new Map([[adjustment.id, adjustment]]))).toThrow(LedgerError);
+  });
+
+  it('labels a recovered figure with its proof level, never "Recovered" alone', () => {
+    expect(recoveredLabel('posted')).toBe('Recovered (posted)');
+    expect(recoveredLabel('deposited')).toBe('Recovered (deposited)');
   });
 
   it('names its stages and proof levels', () => {

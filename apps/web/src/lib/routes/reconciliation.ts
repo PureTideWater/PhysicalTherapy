@@ -222,7 +222,7 @@ export const matchClaimAction = practiceRoute({
 
 /** What a reversal does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 export const REVERSAL_CONSEQUENCE =
-  'Reversing writes an entry that offsets each of this match’s entries, and each adjustment of them, exactly, in your name with your reason; the match stays in the ledger as reversed, its evidence is listed unmatched again, and the reconcile job never matches it the same way again. Recovered and the line’s stage move back with it.';
+  'Reversing writes an entry that offsets each of this match’s entries, and each adjustment of them, exactly, in your name with your reason; the match stays in the ledger as reversed, its evidence is listed unmatched again, and the reconcile job never matches it the same way again. Recovered (posted or deposited) and the line’s stage move back with it.';
 
 /** Reverses a standing match with the person's reason; a match already reversed is left as it is. */
 export const reverseMatchAction = practiceRoute({

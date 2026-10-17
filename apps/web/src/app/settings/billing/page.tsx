@@ -23,12 +23,12 @@ export default async function BillingSettingsPage() {
   const { organizations } = page.data;
   return (
     <AppShell shell={page.shell} section="billing">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Billing</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
         The subscription, payment method and invoices of each organization you administer. Billing holds the organization&apos;s name and its invoices only, never a patient&apos;s or a claim&apos;s details.
       </p>
       {organizations.length === 0 ? (
-        <EmptyState title="No organization's billing to manage" nextStep="Billing is managed by your organization's administrator (the practice administrator of a group, the firm principal of a firm)." />
+        <EmptyState mark title="No organization's billing to manage" nextStep="Billing is managed by your organization's administrator (the practice administrator of a group, the firm principal of a firm)." />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {organizations.map((organization) => (

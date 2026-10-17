@@ -3,13 +3,12 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { ZodError } from 'zod';
 
+import { chromiumInstalled } from './pdf';
+import { PINS, PLAN, RUN, coverage, monthly } from './test-support/document-content';
+import { amountsNotInMono } from './test-support/figures';
+
 import {
   COVERAGE_CSV_COLUMNS,
-  COVERAGE_REPORT_FORMAT,
-  type CoverageReportContent,
-  MONTHLY_SUMMARY_FORMAT,
-  type MonthlySummaryContent,
-  type MonthlySummaryRow,
   SUMMARY_BUCKET_CODES,
   coverageReportHtml,
   monthlySummaryHtml,
@@ -24,44 +23,6 @@ import {
  * from SYNTHETIC figures. The PDF, the CSV and the page read the same stored figures, so these tests
  * fix what each says; the print job's database test prints one.
  */
-
-const RUN = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
-const PLAN = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
-const PAYER = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
-const PINS = { documentId: '5a1f0e3e-6c9b-4d7a-9f3b-2e1d0c9b8a07', practiceName: 'SYNTHETIC PHYSICAL THERAPY', generatedBy: 'billing-manager@synthetic.test', generatedAt: '2026-10-16 09:00:00' };
-
-function coverage(overrides: Partial<CoverageReportContent> = {}): CoverageReportContent {
-  return {
-    format: COVERAGE_REPORT_FORMAT,
-    generated_on: '2026-10-16',
-    run: { id: RUN, period_from: '2026-03-01', period_to: '2026-03-31', release_no: 900001, completed_at: '2026-10-16T08:00:00.000Z' },
-    lines: { lines: 4, claims: 3, charge_cents: '40000', paid_cents: '21000' },
-    priced: { lines: 3, charge_cents: '30000' },
-    of: { lines: 4, charge_cents: '40000' },
-    reasons: UNPRICED_REASONS.map((reason) => ({ reason, lines: reason === 'NO_MAPPING' ? 1 : 0 })),
-    waiting: { lines: 1, claims: 1, charge_cents: '10000', paid_cents: '5000' },
-    waiting_plans: [{ plan_id: PLAN, payer_name: 'SYNTHETIC PAYER M', plan_key: 'CE:SYNPLAN-UNMAPPED-01', lines: 1, claims: 1, charge_cents: '10000', paid_cents: '5000' }],
-    readiness: { allowed: false, unmapped_plans: 1 },
-    pricing_runs: 1,
-    ...overrides,
-  };
-}
-
-const figure = (lines: number, billed: string, variance: string | null) => ({ lines, billed_cents: billed, variance_cents: variance });
-
-function row(payerId: string | null, payerName: string | null): MonthlySummaryRow {
-  const figures = Object.fromEntries(SUMMARY_BUCKET_CODES.map((bucket) => [bucket, figure(0, '0', bucket === 'validated' || bucket === 'actionable' ? '0' : null)])) as MonthlySummaryRow['figures'];
-  return {
-    payer_id: payerId,
-    payer_name: payerName,
-    figures: { ...figures, validated: figure(2, '20000', '4000'), actionable: figure(3, '30000', '9000'), recovered: figure(1, '10000', null) },
-    written_off: figure(1, '10000', '3000'),
-  };
-}
-
-function monthly(): MonthlySummaryContent {
-  return { format: MONTHLY_SUMMARY_FORMAT, generated_on: '2026-10-16', month: '2026-03', total: row(null, null), by_payer: [row(PAYER, '=SYNTHETIC PAYER Q')] };
-}
 
 describe('the report documents (docs/adr/0045)', () => {
   it('reads each kind in its own format, and refuses figures that are not', () => {
@@ -124,9 +85,10 @@ describe('the report documents (docs/adr/0045)', () => {
   it('prints the coverage report as self-contained HTML with its labels, every reason and its remedy, and nothing from outside', () => {
     const html = coverageReportHtml(coverage(), PINS);
     expect(html).toContain('Coverage report, 2026-10-16');
-    expect(html).toContain('Priced: 3 of 4 lines (75.0%); $300.00 of $400.00 billed (75.0%)');
+    // Its amounts, in headings and running text too, are in the mono face.
+    expect(html).toContain('Priced: 3 of 4 lines (75.0%); <span class="figure-amount">$300.00</span> of <span class="figure-amount">$400.00</span> billed (75.0%)');
     expect(html).toContain('1 plan had no mapping at all');
-    expect(html).toContain('Dollars waiting on mappings: $100.00 billed');
+    expect(html).toContain('Dollars waiting on mappings: <span class="figure-amount">$100.00</span> billed');
     for (const reason of UNPRICED_REASONS) {
       expect(html).toContain(`<td>${reason}</td>`);
     }
@@ -154,12 +116,22 @@ describe('the report documents (docs/adr/0045)', () => {
     expect(reportDocumentCsv(monthly())).not.toContain('packets_approved_alone');
   });
 
+  it.skipIf(!chromiumInstalled())('sets every dollar figure of both documents in IBM Plex Mono, headings and running text included (skipped without Chromium)', async () => {
+    expect(await amountsNotInMono(coverageReportHtml(coverage(), PINS))).toEqual([]);
+    expect(await amountsNotInMono(monthlySummaryHtml(monthly(), PINS))).toEqual([]);
+  }, 60_000);
+
   it('prints the monthly summary with every stage on its own, recovered a count whose dollars are the ledger’s, and escapes names', () => {
     const html = monthlySummaryHtml(monthly(), PINS);
     expect(html).toContain('Monthly variance summary, 2026-03');
     expect(html).toContain('a count, never a dollar claim');
-    expect(html).toContain('3 lines, $90.00');
-    expect(html).toContain('<td>1 line</td>');
+    // A payer's stage cells are figures, in the mono face: the count, and for a stage with dollars its variance.
+    expect(html).toContain('<td class="amount">3 lines, $90.00</td>');
+    expect(html).toContain('<td class="amount">1 line</td>');
+    // Recovered is a count here, and its label names the cash that proves it.
+    expect(html).toContain('<td>Recovered (posted or deposited)</td>');
+    expect(html).toContain('<th scope="col" class="amount">Recovered (posted or deposited)</th>');
+    expect(html).not.toMatch(/>Recovered</);
     expect(html).toContain('their dollars are the recovery ledger’s');
     expect(html).toContain('Written off from a case (not in the actionable total)');
     expect(reportDocumentHtml({ ...monthly(), by_payer: [] }, PINS)).toContain('No line has a service date in 2026-03.');

@@ -27,7 +27,7 @@ export default async function ConsoleStatusPage() {
   return (
     <AppShell shell={page.shell} section="status_admin">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Status and maintenance</h1>
+        <h1 className="text-[2rem] font-bold leading-display tracking-display">Status and maintenance</h1>
         <Link className="text-sm underline" href="/status">
           Public status page
         </Link>

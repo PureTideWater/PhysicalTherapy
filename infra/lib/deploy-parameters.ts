@@ -73,7 +73,7 @@ export class DeployParameters extends Construct {
     });
     this.staticDomainName = parameter(PARAMETER_NAMES.staticDomainName, {
       type: 'String',
-      description: 'The static-asset host name CloudFront serves (/_next/static/ only)',
+      description: 'The static-asset host name CloudFront serves (/_next/static/ and /brand/ only)',
       allowedPattern: HOST_NAME,
       maxLength: 253,
       constraintDescription: 'a lowercase host name',

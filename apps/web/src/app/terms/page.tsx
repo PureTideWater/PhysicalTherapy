@@ -25,9 +25,9 @@ export default async function TermsPage() {
   const { current, acceptedCurrentAt, history, internal } = page.data;
   return (
     <AppShell shell={page.shell} section="home">
-      <h1 className="text-2xl font-semibold tracking-tight">Terms of use</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">PaidWhole terms of use</h1>
       {current === null ? (
-        <EmptyState title="No terms are published yet" nextStep="Nothing to accept. Continue to your workspace." action={<Link className="text-sm underline" href="/">Continue</Link>} />
+        <EmptyState mark title="No terms are published yet" nextStep="Nothing to accept. Continue to your workspace." action={<Link className="text-sm underline" href="/">Continue</Link>} />
       ) : (
         <Card>
           <CardHeader>
@@ -43,8 +43,8 @@ export default async function TermsPage() {
           <CardContent className="flex flex-col gap-4">
             {internal ? (
               <Alert>
-                <AlertTitle>Company staff</AlertTitle>
-                <AlertDescription>You work under the company&apos;s workforce policies rather than the customer terms; nothing here is required of you.</AlertDescription>
+                <AlertTitle>PaidWhole staff</AlertTitle>
+                <AlertDescription>You work under PaidWhole&apos;s workforce policies rather than the customer terms; nothing here is required of you.</AlertDescription>
               </Alert>
             ) : null}
             {acceptedCurrentAt !== null ? (
@@ -72,7 +72,7 @@ export default async function TermsPage() {
       )}
       {history.length === 0 ? null : (
         <section aria-label="Your acceptances" className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Your acceptances</h2>
+          <h2 className="text-xl font-bold tracking-display">Your acceptances</h2>
           <ul className="text-sm">
             {history.map((entry) => (
               <li key={`${entry.version}-${entry.acceptedAt.toISOString()}`}>

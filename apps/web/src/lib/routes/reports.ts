@@ -34,7 +34,7 @@ export const CHECKLIST = [
   { id: 'anomalies', text: 'Every anomaly is labelled investigatory, shown as a count and a range, and in no total.' },
   { id: 'validated', text: 'Each validated discrepancy was checked against the cited contract term and the rule release it was priced under.' },
   { id: 'actionable', text: 'Each case total is the sum of its actionable lines; a line past its window is struck through and excluded.' },
-  { id: 'gaps', text: 'The pursuit cost and the evidence gaps are shown, and nothing is presented as payer approved or recovered.' },
+  { id: 'gaps', text: 'The pursuit cost and the evidence gaps are shown, and nothing is presented as payer approved or recovered (posted or deposited).' },
   { id: 'independent', text: 'I had no part in preparing these findings, and I reviewed them against the practice’s contracts myself.' },
 ] as const;
 

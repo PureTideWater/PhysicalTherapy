@@ -25,7 +25,7 @@ export default async function DefaultsSettingsPage(props: { readonly params: Pro
   const { practiceId, materiality, pursuit, canEdit, notice } = page.data;
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-semibold tracking-tight">Materiality and pursuit</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Materiality and pursuit</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="defaults" />
       {notice === null ? null : (
         <Alert>

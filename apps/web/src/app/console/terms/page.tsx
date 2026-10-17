@@ -24,9 +24,9 @@ export default async function ConsoleTermsPage() {
   const { versions } = page.data;
   return (
     <AppShell shell={page.shell} section="terms_versions">
-      <h1 className="text-2xl font-semibold tracking-tight">Terms of use</h1>
+      <h1 className="text-[2rem] font-bold leading-display tracking-display">Terms of use</h1>
       {versions.length === 0 ? (
-        <EmptyState title="No version published" nextStep="Publish the first version below; customers accept it at their next request." />
+        <EmptyState mark title="No version published" nextStep="Publish the first version below; customers accept it at their next request." />
       ) : (
         <table className="w-full text-left text-sm" aria-label="Terms versions">
           <thead className="text-muted-foreground">
@@ -49,7 +49,7 @@ export default async function ConsoleTermsPage() {
                 <td className="py-1 font-mono text-xs" title={version.sha256}>
                   {version.sha256.slice(0, 12)}…
                 </td>
-                <td className="py-1 tabular-nums">{version.acceptances}</td>
+                <td className="py-1 font-mono tabular-nums">{version.acceptances}</td>
               </tr>
             ))}
           </tbody>
