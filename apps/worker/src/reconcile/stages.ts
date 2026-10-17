@@ -21,10 +21,10 @@ type Stage = keyof typeof RANK;
 
 /** The notes a move back carries: fixed sentences, never a person's words. */
 export const REOPEN_NOTES = {
-  recoupment: 'Reopened by the recovery ledger: the payer took money back (a recoupment) after this line was approved or recovered.',
+  recoupment: 'Reopened by the recovery ledger: the payer took money back (a recoupment) after this line was approved or recovered (posted or deposited).',
   reversal: 'Moved back by the recovery ledger: a match that proved this line was reversed.',
   // docs/adr/0053: the practice now proves recovery by deposit, and this line's deposit has not matched yet.
-  proofLevel: 'Moved back by the recovery ledger: the practice now counts recovered at deposit, and this line’s deposit has not matched yet; it returns to recovered when it does.',
+  proofLevel: 'Moved back by the recovery ledger: the practice now counts a line as recovered (deposited) only once its deposit matches, and this line’s has not matched yet; it returns to recovered (deposited) when it does.',
 } as const;
 
 /**

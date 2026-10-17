@@ -78,7 +78,7 @@ export default async function ReportsPage(props: Props) {
       <div className="flex flex-col gap-1">
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Reports</h1>
         <p className="text-base text-muted-foreground">
-          Every report keeps its stages apart: actionable, payer approved and recovered are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
+          Every report keeps its stages apart: actionable, payer approved and recovered (posted or deposited) are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
           total links to the stage it came from.
         </p>
       </div>

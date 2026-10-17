@@ -40,7 +40,7 @@ describe('the digest’s sentences (counts and dollar totals only)', () => {
       'Payer 1: $1,000.00 validated on 2 lines.',
       'Payer 2: $234.56 validated on 3 lines.',
       'Cases nearing their deadline (within 14 days): 1, actionable $280.00.',
-      'Recoveries posted: 0, recovered $0.00.',
+      'Recovered (posted or deposited), net of recoupments and reversals: $0.00 on 0 lines.',
       'Coverage: 6 of 8 lines priced (75.0%); $600.00 of $900.00 billed (66.7%). At the previous digest: 25.0% of lines and 33.3% of billed dollars.',
       'Contracts expiring within 90 days: 2.',
     ]);

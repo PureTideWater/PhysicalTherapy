@@ -56,7 +56,7 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
   const figures = [
     { label: STAGE_LABELS.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in open cases`, href: `${base}#stage-actionable` },
     { label: STAGE_LABELS.payer_approved, amount: headline.payer_approved_cents, note: 'no payer response is recorded yet', href: `${base}#stage-payer-approved` },
-    { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted and reconciled, net of recoupments', href: `${base}#stage-recovered` },
+    { label: STAGE_LABELS.recovered, amount: headline.recovered_cents, note: 'cash posted or deposited at the practice’s proof level, net of recoupments and reversals', href: `${base}#stage-recovered` },
   ];
   return (
     <section aria-label="Headline" className="flex flex-col gap-3">
@@ -256,7 +256,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             {STAGE_LABELS.payer_approved} and {STAGE_LABELS.recovered.toLowerCase()}
           </CardTitle>
           <CardDescription id="stage-recovered">
-            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once cash is posted and reconciled. Neither has an entry yet.
+            Both come from the recovery ledger: payer approved once a payer accepts a submitted case, recovered only once its cash is posted or deposited at the practice’s proof level. Neither has an entry yet.
           </CardDescription>
         </CardHeader>
       </Card>

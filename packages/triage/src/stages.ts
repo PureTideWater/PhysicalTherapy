@@ -52,7 +52,7 @@ export interface StageEvent {
  */
 export function checkStageEvent(current: LineStage | null, event: StageEvent): void {
   if (LEDGER_STAGES.includes(event.stage)) {
-    throw new StageTransitionError('a line is payer approved or recovered only from the recovery ledger (milestone 9)');
+    throw new StageTransitionError('a line reaches payer approved or recovered (posted or deposited) only from the recovery ledger (milestone 9)');
   }
   if (event.reopenedFrom === null) {
     if (current !== null && stageRank(event.stage) <= stageRank(current)) {

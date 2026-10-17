@@ -55,8 +55,8 @@ const STAGE_WORDS: Readonly<Record<string, string>> = {
 /** The words for the proof level (PRD 13, Matching step 3: "practices that cannot supply deposit data set their proof level to posted and the ROI statement says so"). */
 export function proofLevelText(proofLevel: StoredStatement['proofLevel']): string {
   return proofLevel === 'deposited'
-    ? 'Recovered is proved by deposit: cash the bank export shows deposited against the remittance, net of recoupments and reversals.'
-    : 'Recovered is proved by posting: this practice supplies no deposit data, so recovered is cash its posting export shows posted against the remittance, net of recoupments and reversals.';
+    ? 'Recovered (deposited) is proved by deposit: cash the bank export shows deposited against the remittance, net of recoupments and reversals.'
+    : 'Recovered (posted) is proved by posting: this practice supplies no deposit data, so recovered is cash its posting export shows posted against the remittance, net of recoupments and reversals.';
 }
 
 function entryTable(caption: string, entries: readonly LedgerEntry[], empty: string): string {
@@ -107,7 +107,7 @@ export function statementHtml(document: StatementDocument): string {
   )}</p>
   ${figure(recovered, 'Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it.', check.recovered, NO_RECOVERED_CASH[statement.proofLevel])}
   ${figure('Interest, net', 'Interest the payer paid in the period, shown apart from principal.', check.interest, 'No interest was paid in the period.')}
-  ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered.', check.approvedUnposted, 'Nothing approved is waiting to be posted.')}
+  ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered (posted or deposited).', check.approvedUnposted, 'Nothing approved is waiting to be posted.')}
   <h2>Actionable in open cases: <span class="figure-amount">${escapeHtml(usd(statement.actionableOpenCents))}</span></h2>
   <p>${escapeHtml(cases.length === 0 ? 'No case was open when the statement was generated.' : `The actionable totals of ${String(cases.length)} open ${cases.length === 1 ? 'case' : 'cases'} when the statement was generated: ${cases.join(', ')}.`)}</p>
   <h2>Pursuit hours logged: <span class="figure-amount">${escapeHtml(statement.pursuitHours)}</span></h2>
