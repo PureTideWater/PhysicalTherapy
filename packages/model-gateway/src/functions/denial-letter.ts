@@ -3,7 +3,7 @@ import { DENIAL_CATEGORIES } from '@tp/rules';
 import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
-import { inQuote, normalized, readDate } from '../figures';
+import { figureInQuote, inQuote, normalized, readDate, wholeInQuote } from '../figures';
 import { isSha256, sha256Hex } from '../hash';
 import { PROMPTS } from '../prompts';
 import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetter } from '../redact';
@@ -80,12 +80,21 @@ function review(field: string, problems: LetterProblem[]): LetterFieldReview {
   return { field, verified: problems.length === 0, problems };
 }
 
-function quotedProblems(entry: { readonly written: string; readonly quote: string }, letter: string): LetterProblem[] {
+/** How a written value must appear in its quote: as text (a payer's name, a document), as a whole reference, or as a whole date figure. */
+type Presence = 'text' | 'reference' | 'date';
+
+const PRESENT: Readonly<Record<Presence, (written: string, quote: string) => boolean>> = {
+  text: inQuote,
+  reference: wholeInQuote,
+  date: (written, quote) => figureInQuote('date', written, quote),
+};
+
+function quotedProblems(entry: { readonly written: string; readonly quote: string }, letter: string, presence: Presence = 'text'): LetterProblem[] {
   const problems: LetterProblem[] = [];
   if (!inQuote(entry.quote, letter)) {
     problems.push('quote_not_in_letter');
   }
-  if (!inQuote(entry.written, entry.quote)) {
+  if (!PRESENT[presence](entry.written, entry.quote)) {
     problems.push('not_in_quote');
   }
   return problems;
@@ -109,7 +118,7 @@ export function verifyDenialLetter(input: DenialLetterInput, output: DenialLette
   const claims: DenialLetterProposal['claims'][number][] = [];
   output.claim_references.forEach((reference, index) => {
     const field = `claim_references[${String(index)}]`;
-    const problems = quotedProblems(reference, context.text);
+    const problems = quotedProblems(reference, context.text, 'reference');
     const written = normalized(reference.written);
     const claimId = context.claims.get(written.toUpperCase());
     if (/^\[[A-Z_]+(_\d+)?\]$/.test(written) && claimId === undefined) {
@@ -133,7 +142,7 @@ export function verifyDenialLetter(input: DenialLetterInput, output: DenialLette
 
   let deadlineOn: string | null = null;
   if (output.deadline !== null) {
-    const problems = quotedProblems(output.deadline, context.text);
+    const problems = quotedProblems(output.deadline, context.text, 'date');
     const date = readDate(output.deadline.written);
     if (date === null) {
       problems.push('unreadable');

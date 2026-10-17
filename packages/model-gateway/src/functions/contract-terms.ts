@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { InputRefusedError } from '../errors';
 import { isSha256, sha256Hex } from '../hash';
-import { inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote } from '../figures';
+import { type WrittenFigure, figureInQuote, inQuote, normalized, readAmount, readDate, readPercent, readYear, tokenInQuote } from '../figures';
 import { PROMPTS } from '../prompts';
 import type { PurposeSpec, Verified } from '../spec';
 import { framePages } from '../untrusted';
@@ -22,7 +22,11 @@ import { framePages } from '../untrusted';
  * - every quote is on its page (the page exists, and the quote is a substring of its text, compared as
  *   evidence compares it);
  * - every written value (an amount, a percentage, a year, a date, each code, modifier and place of
- *   service) appears in its own field's quote, and code can read it; a field that fails is rejected,
+ *   service) appears in its own field's quote as a whole figure, and code can read it: the quote, read
+ *   by the packets verifier's scanner, holds a figure of the field's kind whose value is the one code
+ *   reads from the written text ("$3" is not in "$32.50", "1/1/2026" not in "11/1/2026"), and a code,
+ *   modifier or place is a token no digit, slash or decimal point joins to a figure beside it ("11"
+ *   is not a place of "11/1/2026", "59" not a modifier of "$59.00"); a field that fails is rejected,
  *   and the rest of its candidate stands for the specialist;
  * - candidates whose scopes overlap (codes, modifiers, places of service and dates) are flagged as
  *   conflicting with each other, never merged or chosen between.
@@ -173,6 +177,16 @@ function readable(field: CitedField, written: string | readonly string[] | null)
   return (readers[field] ?? readDate)(written) !== null;
 }
 
+/** The kind of figure a field that copies one text holds: its amount, percentage or year, else a date. */
+function figureOf(field: CitedField): WrittenFigure {
+  return field === 'amount' ? 'amount' : field === 'percentage' ? 'percentage' : field === 'fee_schedule_year' ? 'year' : 'date';
+}
+
+/** The field a list of written tokens is (codes, modifiers, places of service). */
+function listField(field: CitedField): 'codes' | 'modifiers' | 'places_of_service' {
+  return field === 'modifiers' ? 'modifiers' : field === 'places_of_service' ? 'places_of_service' : 'codes';
+}
+
 function reviewField(entry: ReturnType<typeof citedFields>[number], pages: readonly string[]): FieldReview {
   const problems: FieldProblem[] = [];
   const text = pages[entry.page - 1];
@@ -183,11 +197,18 @@ function reviewField(entry: ReturnType<typeof citedFields>[number], pages: reado
   }
   const { written } = entry;
   if (written !== null) {
-    const present = typeof written === 'string' ? inQuote(written, entry.quote) : written.every((item) => tokenInQuote(normalized(item), entry.quote));
+    const legible = readable(entry.field, written);
+    // A value code cannot read is only looked for as text; one it reads must be a whole figure of the quote.
+    const present =
+      typeof written === 'string'
+        ? legible
+          ? figureInQuote(figureOf(entry.field), written, entry.quote)
+          : inQuote(written, entry.quote)
+        : written.every((item) => (legible ? tokenInQuote(normalized(item), entry.quote, listField(entry.field)) : inQuote(item, entry.quote)));
     if (!present) {
       problems.push('not_in_quote');
     }
-    if (!readable(entry.field, written)) {
+    if (!legible) {
       problems.push('unreadable');
     }
   }

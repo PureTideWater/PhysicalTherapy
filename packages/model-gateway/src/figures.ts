@@ -1,5 +1,6 @@
 import { isIsoDate, normalizePageText } from '@tp/contracts';
 import { type Cents, parseAmount } from '@tp/money';
+import { type FigureKind, canonicalNumber, readableText, scanText } from '@tp/packets';
 
 /**
  * Reading what a model copied from a document. A model never produces an amount, a date or a code
@@ -14,7 +15,7 @@ export function normalized(text: string): string {
   return normalizePageText(text);
 }
 
-/** Whether the written value appears, as written, in the quote. An empty value never does. */
+/** Whether the written text appears, as written, in the quote (a plain substring). An empty value never does. */
 export function inQuote(written: string, quote: string): boolean {
   const wanted = normalized(written);
   return wanted !== '' && normalized(quote).includes(wanted);
@@ -22,9 +23,125 @@ export function inQuote(written: string, quote: string): boolean {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Whether a code, modifier or place of service appears in the quote as a whole token, without regard to case. */
-export function tokenInQuote(token: string, quote: string): boolean {
-  return token !== '' && new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(token)}(?![A-Za-z0-9])`, 'i').test(normalized(quote));
+const WORD = /[\p{L}\p{N}]/u;
+const DIGIT = /\d/;
+
+/**
+ * Whether the text at [start, end) stands alone as a whole figure: no letter or digit touches it, no
+ * dollar sign, slash or percent sign joins it to a figure beside it, and no decimal point, thousands
+ * comma or hyphen joins it to digits on the other side ("10" is not a whole figure of "110", "1.10",
+ * "$10", "10/1/2026" or "1,010"). `hyphenated` lets a modifier hang from its code ("97110-59").
+ */
+export function standsAlone(text: string, start: number, end: number, options: { readonly hyphenated?: 'modifier' | 'code' } = {}): boolean {
+  const before = text.charAt(start - 1);
+  const after = text.charAt(end);
+  const beforeBefore = text.charAt(start - 2);
+  const afterAfter = text.slice(end + 1);
+  if ((before !== '' && WORD.test(before)) || (after !== '' && WORD.test(after))) {
+    return false;
+  }
+  if (before === '$' || before === '/' || after === '/' || after === '%') {
+    return false;
+  }
+  if (before === '.' && DIGIT.test(beforeBefore)) {
+    return false;
+  }
+  if (after === '.' && /^\d/.test(afterAfter)) {
+    return false;
+  }
+  // A thousands comma joins exactly three digits to the digits before it.
+  if (before === ',' && DIGIT.test(beforeBefore) && /^\d{3}$/.test(text.slice(start, end))) {
+    return false;
+  }
+  if (after === ',' && /^\d{3}(?!\d)/.test(afterAfter) && DIGIT.test(text.charAt(end - 1))) {
+    return false;
+  }
+  if (before === '-' && beforeBefore !== '' && WORD.test(beforeBefore)) {
+    // A modifier may hang from its code or from the modifier before it (97110-GP-59); nothing else joins.
+    const chain = /(?:^|[^\p{L}\p{N}-])[0-9A-Za-z]{5}(?:-[0-9A-Za-z]{2})*$/u.test(text.slice(0, start - 1));
+    if (options.hyphenated !== 'modifier' || !chain) {
+      return false;
+    }
+  }
+  if (after === '-' && /^[\p{L}\p{N}]/u.test(afterAfter)) {
+    // A code may carry its modifiers (97110-GP); a range or a longer identifier joins it to another figure.
+    const modifiers = /^[0-9A-Za-z]{2}(?:-[0-9A-Za-z]{2})*(?![\p{L}\p{N}-])/u.test(afterAfter);
+    if (options.hyphenated === undefined || !modifiers) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a code, modifier or place of service appears in the quote as a whole token, without regard
+ * to case: "11" is not a place of service of "11/1/2026", "59" not a modifier of "$59.00", "9711" not a
+ * code of "97110".
+ */
+export function tokenInQuote(token: string, quote: string, field: 'codes' | 'modifiers' | 'places_of_service' = 'codes'): boolean {
+  if (token === '') {
+    return false;
+  }
+  const text = normalized(quote);
+  const hyphenated = field === 'codes' ? 'code' : field === 'modifiers' ? 'modifier' : undefined;
+  for (const match of text.matchAll(new RegExp(escapeRegExp(token), 'gi'))) {
+    if (standsAlone(text, match.index, match.index + match[0].length, hyphenated === undefined ? {} : { hyphenated })) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Whether a written reference (a claim's or the payer's) appears in the quote as a whole word, not as part of a longer figure. */
+export function wholeInQuote(written: string, quote: string): boolean {
+  const wanted = normalized(written);
+  if (wanted === '') {
+    return false;
+  }
+  const text = normalized(quote);
+  const pattern = new RegExp(escapeRegExp(wanted), 'giu');
+  return [...text.matchAll(pattern)].some((match) => standsAlone(text, match.index, match.index + match[0].length));
+}
+
+/** The kinds of figure a model copies for code to read. */
+export type WrittenFigure = 'amount' | 'percentage' | 'year' | 'date';
+
+const SCANNED: Readonly<Record<WrittenFigure, FigureKind>> = { amount: 'amount', percentage: 'percent', year: 'number', date: 'date' };
+
+/** What code reads from the written text, as the packets scanner writes a figure's value; null when it reads nothing. */
+function readValue(kind: WrittenFigure, written: string): string | null {
+  switch (kind) {
+    case 'amount': {
+      const cents = readAmount(written);
+      return cents === null ? null : cents.toString();
+    }
+    case 'percentage': {
+      const percent = readPercent(written);
+      return percent === null ? null : canonicalNumber(percent);
+    }
+    case 'year': {
+      const year = readYear(written);
+      return year === null ? null : String(year);
+    }
+    case 'date':
+      return readDate(written);
+  }
+}
+
+/**
+ * Whether the quote holds the written value as a whole figure (CLAUDE.md rule 1; PRD 14: "every amount
+ * and date must appear in its quote"): the written text is in the quote, and the quote, read by the
+ * packets verifier's own scanner, holds a figure of the field's kind whose value is what code reads
+ * from the written text. "$3" is not in "$32.50" (an amount of 3250 cents), "10%" not in "110%",
+ * "1/1/2026" not in "11/1/2026", and a fee-schedule year written inside a date is not a year.
+ */
+export function figureInQuote(kind: WrittenFigure, written: string, quote: string): boolean {
+  const value = readValue(kind, written);
+  if (value === null || !inQuote(written, quote)) {
+    return false;
+  }
+  const wanted = SCANNED[kind];
+  return scanText(readableText(normalized(quote)).text).figures.some((figure) => figure.kind === wanted && figure.value === value);
 }
 
 const AMOUNT = /^\$?\s?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{2})?)$/;

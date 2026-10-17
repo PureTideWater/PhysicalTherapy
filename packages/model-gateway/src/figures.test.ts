@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { inQuote, readAmount, readDate, readPercent, readYear, tokenInQuote } from './figures';
+import { figureInQuote, inQuote, readAmount, readDate, readPercent, readYear, standsAlone, tokenInQuote, wholeInQuote } from './figures';
 import { dateForms } from './redact';
 
 /** Code reads what a model copied; a model never produces an amount or a date (CLAUDE.md, rule 1). */
@@ -88,8 +88,76 @@ describe('inQuote and tokenInQuote', () => {
 
   it('find a code, modifier or place as a whole token', () => {
     expect(tokenInQuote('97110', 'CPT 97110 Therapeutic exercise')).toBe(true);
-    expect(tokenInQuote('gp', 'modifier GP applies')).toBe(true);
+    expect(tokenInQuote('gp', 'modifier GP applies', 'modifiers')).toBe(true);
     expect(tokenInQuote('9711', 'CPT 97110')).toBe(false);
     expect(tokenInQuote('', 'CPT 97110')).toBe(false);
+  });
+
+  it('never find a token that a slash, a dollar sign, a decimal point, a thousands comma or a hyphen joins to a longer figure (MOD-02)', () => {
+    expect(tokenInQuote('11', 'effective 11/1/2026', 'places_of_service')).toBe(false);
+    expect(tokenInQuote('59', 'pays $59.00 per visit', 'modifiers')).toBe(false);
+    expect(tokenInQuote('11', 'rate 1.11 per unit', 'places_of_service')).toBe(false);
+    expect(tokenInQuote('11', 'rate 11.5 per unit', 'places_of_service')).toBe(false);
+    expect(tokenInQuote('22', 'at 22% of charges', 'places_of_service')).toBe(false);
+    expect(tokenInQuote('97110', 'reference 971105', 'codes')).toBe(false);
+    expect(tokenInQuote('97112', 'codes 97110-97112 at $40.00', 'codes')).toBe(false);
+    expect(tokenInQuote('97110', 'codes 97110-97112 at $40.00', 'codes')).toBe(false);
+    expect(tokenInQuote('59', 'section 58-59', 'modifiers')).toBe(false);
+    expect(tokenInQuote('59', 'POS-59', 'places_of_service')).toBe(false);
+    // A list, a sentence's end and a code with its modifiers attached are whole tokens.
+    expect(tokenInQuote('97140', '97110, 97140, 97530 at $40.00', 'codes')).toBe(true);
+    expect(tokenInQuote('97140', '97110,97140 at $40.00', 'codes')).toBe(true);
+    expect(tokenInQuote('11', 'places 11, 12 and 19.', 'places_of_service')).toBe(true);
+    expect(tokenInQuote('19', 'places 11, 12 and 19.', 'places_of_service')).toBe(true);
+    expect(tokenInQuote('97110', '97110-GP-59 at $32.50', 'codes')).toBe(true);
+    expect(tokenInQuote('GP', '97110-GP-59 at $32.50', 'modifiers')).toBe(true);
+    expect(tokenInQuote('59', '97110-GP-59 at $32.50', 'modifiers')).toBe(true);
+    expect(tokenInQuote('GP', '97110-GP-59 at $32.50', 'places_of_service')).toBe(false);
+  });
+
+  it('stand a token alone only where nothing joins it to the text beside it', () => {
+    expect(standsAlone('a 123 b', 2, 5)).toBe(true);
+    expect(standsAlone('1,234', 2, 5)).toBe(false);
+    expect(standsAlone('1,234', 0, 1)).toBe(false);
+    expect(standsAlone('12,3456', 0, 2)).toBe(true);
+    expect(standsAlone('97110-GP', 0, 5)).toBe(false);
+    expect(standsAlone('97110-GP', 0, 5, { hyphenated: 'code' })).toBe(true);
+    expect(standsAlone('97110-GP', 6, 8, { hyphenated: 'modifier' })).toBe(true);
+    expect(standsAlone('9711-GP', 5, 7, { hyphenated: 'modifier' })).toBe(false);
+  });
+
+  it('find a written reference as a whole word', () => {
+    expect(wholeInQuote('REF-SYN-77', 'Reference REF-SYN-77 applies.')).toBe(true);
+    expect(wholeInQuote('REF-SYN-7', 'Reference REF-SYN-77 applies.')).toBe(false);
+    expect(wholeInQuote('[CLAIM_1]', 'Claim [CLAIM_1] was denied.')).toBe(true);
+    expect(wholeInQuote('  ', 'anything')).toBe(false);
+  });
+});
+
+describe('figureInQuote (MOD-02)', () => {
+  const quote = 'CPT 97110 is paid $32.50 per unit, effective 11/1/2026 through 12/1/2026, at 110% of the 2025 Medicare fee schedule; renewal January 1, 2027.';
+
+  it('finds a whole figure whose value is what code reads from the written text', () => {
+    expect(figureInQuote('amount', '$32.50', quote)).toBe(true);
+    expect(figureInQuote('amount', '32.50', quote)).toBe(true);
+    expect(figureInQuote('date', '11/1/2026', quote)).toBe(true);
+    expect(figureInQuote('date', 'January 1, 2027', quote)).toBe(true);
+    expect(figureInQuote('percentage', '110%', quote)).toBe(true);
+    expect(figureInQuote('percentage', '110', quote)).toBe(true);
+    expect(figureInQuote('year', '2025', quote)).toBe(true);
+  });
+
+  it.each([
+    ['amount', '$3'],
+    ['amount', '$32'],
+    ['amount', '2.50'],
+    ['percentage', '10%'],
+    ['date', '1/1/2026'],
+    ['date', '2/1/2026'],
+    ['year', '2026'],
+    ['year', '2027'],
+    ['amount', 'about $32.50'],
+  ] as const)('refuses %s %s, a fragment of a longer figure or not one at all', (kind, written) => {
+    expect(figureInQuote(kind, written, quote)).toBe(false);
   });
 });

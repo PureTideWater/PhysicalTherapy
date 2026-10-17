@@ -97,6 +97,72 @@ describe('MOD-02: a field whose date is not in its quote', () => {
   });
 });
 
+describe('MOD-02: a value that is only a fragment of a figure in its quote', () => {
+  // A SYNTHETIC page whose figures hold shorter figures inside them.
+  const page = 'SYNTHETIC EXHIBIT. CPT 97110 billed with modifier GP is paid $32.50 per unit, effective 11/1/2026 through 12/1/2026, or 110% of Medicare; CPT 97140 is $59.00 per visit.';
+  const pages = [page];
+  const quote = page;
+  const base: ContractTermsCandidate = {
+    label: 'SYNTHETIC 97110',
+    method: { value: 'FIXED_SCHEDULE', page: 1, quote },
+    codes: { written: ['97110'], page: 1, quote },
+    modifiers: null,
+    places_of_service: null,
+    amount: { written: '$32.50', page: 1, quote },
+    percentage: null,
+    fee_schedule_year: null,
+    lesser_of_schedule: null,
+    flags: null,
+    rounding: null,
+    effective_from: { written: '11/1/2026', page: 1, quote },
+    effective_to: { written: '12/1/2026', page: 1, quote },
+  };
+  const reviewOn = (candidate: ContractTermsCandidate) => verifyContractTerms({ ...input, pages }, { candidates: [candidate] }).proposal.candidates[0];
+  const problemsOf = (candidate: ContractTermsCandidate, field: string) => reviewOn(candidate)?.fields.find((entry) => entry.field === field)?.problems;
+
+  it('verifies the whole figures the page writes', () => {
+    const reviewed = reviewOn(base);
+    expect(reviewed?.fields.every((field) => field.verified)).toBe(true);
+    expect(reviewed?.rateRecord).toMatchObject({ parameters: { amount_cents: '3250' }, scope: { effective_from: '2026-11-01' } });
+    expect(problemsOf({ ...base, method: { value: 'PERCENT_OF_MEDICARE', page: 1, quote }, amount: null, percentage: { written: '110%', page: 1, quote } }, 'percentage')).toEqual([]);
+    expect(problemsOf({ ...base, modifiers: { written: ['GP'], page: 1, quote } }, 'modifiers')).toEqual([]);
+  });
+
+  it.each([
+    ['amount', { amount: { written: '$3', page: 1, quote } }],
+    ['amount', { amount: { written: '$32', page: 1, quote } }],
+    ['amount', { amount: { written: '2.50', page: 1, quote } }],
+    ['percentage', { method: { value: 'PERCENT_OF_MEDICARE' as const, page: 1, quote }, amount: null, percentage: { written: '10%', page: 1, quote } }],
+    ['effective_from', { effective_from: { written: '1/1/2026', page: 1, quote } }],
+    ['effective_to', { effective_to: { written: '2/1/2026', page: 1, quote } }],
+    ['places_of_service', { places_of_service: { written: ['11'], page: 1, quote } }],
+    ['places_of_service', { places_of_service: { written: ['12'], page: 1, quote } }],
+    ['modifiers', { modifiers: { written: ['59'], page: 1, quote } }],
+    ['fee_schedule_year', { fee_schedule_year: { written: '2026', page: 1, quote } }],
+  ] as const)('rejects %s written as a fragment of a longer figure (%j)', (field, change) => {
+    const reviewed = reviewOn({ ...base, ...change } as ContractTermsCandidate);
+    expect(reviewed?.fields.find((entry) => entry.field === field)?.problems).toEqual(['not_in_quote']);
+    expect(reviewed?.rateRecord).toBeNull();
+    expect(reviewed?.problems).toContain('fields_rejected');
+  });
+
+  it('reads a code with its modifiers attached, and refuses a code range or a slash joining a place to a date', () => {
+    const attached = 'SYNTHETIC: 97110-GP-59 is paid $32.50 per unit; 97112-97116 at $40.00; POS 11/22 excluded.';
+    const on = (candidate: Partial<ContractTermsCandidate>) =>
+      verifyContractTerms({ ...input, pages: [attached] }, { candidates: [{ ...base, ...candidate, effective_from: null, effective_to: null }] }).proposal.candidates[0];
+    const cite = (written: string[]) => ({ written, page: 1, quote: attached });
+    expect(on({ method: { value: 'FIXED_SCHEDULE', page: 1, quote: attached }, codes: cite(['97110']), modifiers: cite(['GP', '59']), amount: { written: '$32.50', page: 1, quote: attached } })?.fields.every((field) => field.verified)).toBe(true);
+    for (const [field, written] of [
+      ['codes', ['97112']],
+      ['codes', ['97116']],
+      ['places_of_service', ['11']],
+      ['places_of_service', ['22']],
+    ] as const) {
+      expect(on({ method: { value: 'FIXED_SCHEDULE', page: 1, quote: attached }, amount: { written: '$32.50', page: 1, quote: attached }, [field]: cite([...written]) })?.fields.find((entry) => entry.field === field)?.problems, `${field} ${written.join()}`).toEqual(['not_in_quote']);
+    }
+  });
+});
+
 describe('conflicting candidates', () => {
   it('are flagged against each other and never merged: two rates for the same code and dates both stay', () => {
     const second = { ...first(), label: 'Exhibit A, 97110 again', amount: { written: '$30.25', page: 2, quote: 'CPT 97140 Manual therapy, each 15 minutes $30.25 per unit' } };
