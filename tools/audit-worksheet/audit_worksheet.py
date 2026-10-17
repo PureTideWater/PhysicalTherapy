@@ -361,10 +361,17 @@ def main(argv):
                 with open(target, "w", encoding="utf-8", newline="") as handle:
                     handle.write(content)
                 print(f"wrote {target.relative_to(REPOSITORY)}")
-            elif not target.exists() or target.read_text(encoding="utf-8", newline="") != content:
+            elif not target.exists() or read_exact(target) != content:
                 differs += 1
                 print(f"differs: {target.relative_to(REPOSITORY)}")
     return 1 if differs else 0
+
+
+def read_exact(path: Path) -> str:
+    """The file's text with its line endings as written. Path.read_text takes newline= only from Python
+    3.13, and CI runs 3.12."""
+    with open(path, encoding="utf-8", newline="") as handle:
+        return handle.read()
 
 
 if __name__ == "__main__":
