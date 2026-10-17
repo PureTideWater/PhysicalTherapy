@@ -481,8 +481,10 @@ own response headers stay as ADRs 0053 and 0055 set them. The Verified seal and 
 ProofPack, AI and intelligence in product copy, "recovered" without posted or deposited, and the brand's words typed out
 instead of imported, with a reviewed exception only as a `brand-copy-exempt: <reason>` comment; stage values and other
 codes are not copy and keep their names. The brand journey (`apps/web/e2e/brand.spec.ts`) compares the header at 1280
-and 390 px and the report cover with and without the seal against baselines in `apps/web/e2e/brand.spec.ts-snapshots/`,
-made with Playwright's Chromium on Linux, which CI installs before the e2e step. After a deliberate change to either, or
+and 390 px and the report cover with and without the seal, and at a strict tolerance the header's lockup band and the
+cover's top band, against baselines in `apps/web/e2e/brand.spec.ts-snapshots/`, beside computed checks of the lockup's
+colors, face and place and the cover's ground; the baselines are made with Playwright's Chromium on Linux, which CI
+installs before the unit tests. After a deliberate change to either, or
 an upgrade of `@playwright/test`, regenerate them on Linux with
 `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at them and commit them.
 

@@ -23,7 +23,9 @@ import { startLocalWorker } from './worker';
  * tints and the sign-in page are on brand; and a printed statement's cover carries the Verified seal only
  * when the ledger says its recovered total reconciles to cash. Screenshots of each go to brand-screenshots/
  * (gitignored; BRAND_SCREENSHOTS_DIR moves them) for a person to look at, and the header at 1280 and 390 px
- * and the cover with and without the seal are also compared with committed baselines (CO-01; see VISUAL).
+ * and the cover with and without the seal are also compared with committed baselines (CO-01; see VISUAL and
+ * STRICT), beside computed checks of what a picture's tolerance cannot see (the lockup's colors, face and place,
+ * the cover's ground, the brass underline).
  * In a practice of its own, with SYNTHETIC remittances (CAS-08, CAS-04) priced under a signed-off schedule.
  * Synthetic data only.
  */
@@ -35,8 +37,12 @@ const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'fac
 const FONT_SERVICES = /fonts\.googleapis\.com|fonts\.gstatic\.com/;
 /** The path CloudFront serves the brand art under (infra/lib/constructs/edge.ts, BRAND_PATH_PATTERN, without its *). */
 const BRAND_PATH = '/brand/';
-/** Brass, rgb() as the browser computes it: the active rail item's underline. */
+/** Brass, rgb() as the browser computes it: the active rail item's underline, and the mark's keystone. */
 const BRASS = 'rgb(201, 154, 59)';
+/** Ink, rgb() as the browser computes it: the mark's ring and the wordmark. */
+const INK = 'rgb(13, 30, 58)';
+/** Paper, rgb() as the browser computes it: the report cover's ground. */
+const PAPER = 'rgb(246, 244, 238)';
 /** Paper (the cover's ground) and Brass (the seal's keystone) as a screenshot's pixels hold them. */
 const PAPER_RGB: Rgb = [246, 244, 238];
 const BRASS_RGB: Rgb = [201, 154, 59];
@@ -49,11 +55,34 @@ const BRASS_RGB: Rgb = [201, 154, 59];
  * shows the clock: the header's words are the persona's address and the journey's practice, and the cover prints the
  * statement's fixed generatedAt. A pixel counts as changed past Playwright's default color threshold (0.2), and up
  * to 1% of them may change: that absorbs antialiasing at glyph edges, the one thing a machine's font configuration
- * can move with the same browser and the same self-hosted faces, while a moved, missing or recolored element (the
- * lockup, the brass underline, the switcher, a line of the cover) changes more. The seal's absence is not left to that
- * tolerance: the cover's foot, where the seal prints, must hold Paper and nothing else (pixelsUnlike).
+ * can move with the same browser and the same self-hosted faces, and catches a region's layout changing (the switcher,
+ * the account, a line of the cover moved or gone). It cannot see a small element change inside a mostly empty
+ * picture: a recolored keystone or wordmark, the wordmark in another face, a lockup moved a few pixels, or the cover's
+ * whole ground changed all stay under 1% of a 1280 x 56 header or an 816 x 1056 cover. Those are held by STRICT
+ * comparisons of the regions that hold the brand (the header's lockup band, the cover's top band) and by computed
+ * checks (expectLockupOnBrand, expectCoverOnBrand), each shown to fail by mutation (docs/adr/0058). The brass
+ * underline is on the rail, outside the header's picture, and is held by its computed color. The seal's absence is
+ * not left to a tolerance either: the cover's foot, where the seal prints, must hold Paper and nothing else
+ * (pixelsUnlike).
  */
 const VISUAL = { animations: 'disabled', caret: 'hide', scale: 'css', maxDiffPixelRatio: 0.01 } as const;
+
+/**
+ * The comparison of a region that holds the brand and little else: a pixel counts as changed past a color threshold of
+ * 0.05, and a handful may change. The same browser build and the same self-hosted faces draw these regions identically
+ * from run to run; the allowance is for a stray antialiased edge, under the 15 or so pixels a 17 px mark's keystone
+ * covers.
+ */
+const STRICT = { animations: 'disabled', caret: 'hide', scale: 'css', threshold: 0.05, maxDiffPixels: 6 } as const;
+
+/** The header's left band, from its left edge to just short of the switcher at 390 px: the lockup and the ground around it. */
+const LOCKUP_BAND_WIDTH = 152;
+/** The cover's top band, above its kicker: the outlined lockup on Paper and the ground around it. */
+const COVER_TOP_BAND = { x: 0, y: 0, width: 816, height: 200 } as const;
+/** Where the lockup sits in the header (at 1280 and 390 px) and on the cover (0.85 in and 0.9 in in, 28 px tall), in CSS px. */
+const HEADER_LOCKUP_PLACE = { left: 24, top: 15 } as const;
+const HEADER_LOCKUP_PLACE_390 = { left: 16, top: 15 } as const;
+const COVER_LOCKUP_PLACE = { left: 82, top: 86, height: 28 } as const;
 
 type Rgb = readonly [number, number, number];
 interface Box {
@@ -94,6 +123,57 @@ async function pixelsUnlike(page: Page, png: Buffer, box: Box, rgb: Rgb): Promis
     },
     { data: png.toString('base64'), area: box, color: rgb },
   );
+}
+
+/**
+ * The header's lockup as the brand draws it (BRAND.md, sections 2 and 3; .claude/rules/brand.md): the ring Ink and
+ * the keystone Brass, the wordmark one word in the display face at 700 and -0.03em, Ink, and where the header puts it.
+ */
+async function expectLockupOnBrand(page: Page, place: { readonly left: number; readonly top: number }): Promise<void> {
+  const header = page.locator('[data-slot="app-header"]');
+  const lockup = header.locator('[data-slot="lockup"]');
+  const [ring, keystone] = [lockup.locator('svg path').nth(0), lockup.locator('svg path').nth(1)];
+  await expect(ring).toHaveCSS('fill', INK);
+  await expect(keystone).toHaveCSS('fill', BRASS);
+  const wordmark = lockup.locator('span').first();
+  await expect(wordmark).toHaveText('PaidWhole');
+  await expect(wordmark).toHaveCSS('color', INK);
+  // next/font/local names the family after its export (apps/web/src/lib/fonts.ts): the display face, first.
+  await expect(wordmark).toHaveCSS('font-family', /^display\b/);
+  await expect(wordmark).toHaveCSS('font-weight', '700');
+  await expect(wordmark).toHaveCSS('letter-spacing', '-0.6px');
+  const [outer, inner] = await Promise.all([header.boundingBox(), lockup.boundingBox()]);
+  expect(outer !== null && inner !== null ? { left: Math.round(inner.x - outer.x), top: Math.round(inner.y - outer.y) } : null).toEqual(place);
+}
+
+/** The header's lockup band as a clip of the page: fixed to the header, so a lockup that moves changes the picture. */
+async function lockupBand(page: Page): Promise<Box> {
+  const header = await page.locator('[data-slot="app-header"]').boundingBox();
+  expect(header, 'the header is on the page').not.toBeNull();
+  const box = header as Box;
+  return { x: box.x, y: box.y, width: LOCKUP_BAND_WIDTH, height: box.height };
+}
+
+/**
+ * A printed cover as the brand draws it (BRAND.md, section 7): Paper ground; the outlined lockup top left, in its
+ * place, its ring and wordmark Ink and its keystone Brass; the practice's name in the display face.
+ */
+async function expectCoverOnBrand(printed: Page): Promise<void> {
+  const section = printed.locator('section.cover');
+  await expect(section).toHaveCSS('background-color', PAPER);
+  const lockup = section.locator('.cover-top .lockup svg[role="img"][aria-label="PaidWhole"]');
+  await expect(lockup).toHaveCount(1);
+  // The outlined lockup: the ring, the keystone, then the wordmark's letters (packages/brand/assets).
+  const fills = await lockup.locator('path').evaluateAll((paths) => paths.map((path) => getComputedStyle(path).fill));
+  expect(fills.length).toBeGreaterThan(2);
+  expect(fills[1]).toBe(BRASS);
+  expect(fills.filter((fill, index) => index !== 1 && fill !== INK)).toEqual([]);
+  const [outer, inner] = await Promise.all([section.boundingBox(), lockup.boundingBox()]);
+  expect(outer !== null && inner !== null ? { left: Math.round(inner.x - outer.x), top: Math.round(inner.y - outer.y), height: Math.round(inner.height) } : null).toEqual(COVER_LOCKUP_PLACE);
+  const practice = section.locator('.practice');
+  await expect(practice).toHaveCSS('font-family', /^"?Schibsted Grotesk"?,/);
+  await expect(practice).toHaveCSS('font-weight', '600');
+  await expect(practice).toHaveCSS('color', INK);
 }
 
 function shot(name: string): string {
@@ -249,6 +329,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.mouse.move(1279, 899);
     await header.screenshot({ path: shot('header-1280.png') });
     await expect(header).toHaveScreenshot('header-1280.png', { ...VISUAL, mask: [header.locator('time')] });
+    await expectLockupOnBrand(page, HEADER_LOCKUP_PLACE);
+    await expect(page).toHaveScreenshot('header-lockup-1280.png', { ...STRICT, clip: await lockupBand(page) });
   });
 
   await test.step('the dashboard tiles: label in Slate, the figure in Plex Mono, recovered named with its proof level', async () => {
@@ -331,6 +413,8 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
     await page.mouse.move(389, 843);
     await header.screenshot({ path: shot('header-390.png') });
     await expect(header).toHaveScreenshot('header-390.png', { ...VISUAL, mask: [header.locator('time')] });
+    await expectLockupOnBrand(page, HEADER_LOCKUP_PLACE_390);
+    await expect(page).toHaveScreenshot('header-lockup-390.png', { ...STRICT, clip: await lockupBand(page) });
     // The header itself fits the phone's width: nothing in it overflows or scrolls sideways.
     expect(await header.evaluate((element) => [element.scrollWidth, element.clientWidth, Math.round(element.getBoundingClientRect().width), window.innerWidth])).toEqual([390, 390, 390, 390]);
     // And so does the whole page: a wide table scrolls inside its own card, never the page.
@@ -383,6 +467,17 @@ test('the workspace wears the brand: header, brass underline, tiles in mono, sta
         await printed.evaluate(() => document.fonts.ready);
         const picture = await section.screenshot({ path: shot(name) });
         await expect(section).toHaveScreenshot(name, { ...VISUAL, mask: [section.locator('time')] });
+        await expectCoverOnBrand(printed);
+        // The top band, the same with the seal or without it: the lockup in its place on Paper.
+        await expect(printed).toHaveScreenshot('report-cover-top.png', { ...STRICT, clip: COVER_TOP_BAND });
+        // The ground where nothing prints, above the lockup and across the cover's lower left, is Paper to the pixel.
+        const scratch = await browser.newPage();
+        try {
+          expect(await pixelsUnlike(scratch, picture, { x: 0, y: 0, width: 816, height: 60 }, PAPER_RGB)).toBe(0);
+          expect(await pixelsUnlike(scratch, picture, { x: 0, y: 700, width: 400, height: 356 }, PAPER_RGB)).toBe(0);
+        } finally {
+          await scratch.close();
+        }
         // The cover's foot, where the seal prints (bottom right; it keeps its height with no seal in it), as a box
         // inside the cover's picture.
         const foot = await section.evaluate((element): Box | null => {

@@ -123,7 +123,7 @@ describe('workflows', () => {
     expect(config).toContain('const bundledChromium = existsSync(chromium.executablePath());');
     expect(config).toContain("...(bundledChromium ? {} : { channel: 'chrome' })");
     // The baselines the brand journey compares are committed for that browser on Linux.
-    for (const name of ['header-1280', 'header-390', 'report-cover-with-seal', 'report-cover-without-seal']) {
+    for (const name of ['header-1280', 'header-390', 'header-lockup-1280', 'header-lockup-390', 'report-cover-with-seal', 'report-cover-without-seal', 'report-cover-top']) {
       expect(existsSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts-snapshots', `${name}-chromium-linux.png`)), name).toBe(true);
     }
   });

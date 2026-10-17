@@ -111,19 +111,36 @@ covers a finding, is itself a finding, and the tree passes with none (a test pin
 are not read.
 
 **Visual baselines, and CI on the same Chromium.** The brand journey (`apps/web/e2e/brand.spec.ts`) compares four
-regions with `toHaveScreenshot` against baselines committed in `apps/web/e2e/brand.spec.ts-snapshots/`: the app header at
+regions, and three bands inside them (below), with `toHaveScreenshot` against baselines committed in `apps/web/e2e/brand.spec.ts-snapshots/`: the app header at
 1280 px and at 390 px, and the ROI statement's printed cover with the seal (the ledger's `reconciledToCash` true) and
 without it (false). The data is synthetic and fixed (the journey's practice and persona, the statement's
 `generatedAt`); animations are off, the caret hidden, pixels are CSS pixels and any `<time>` is masked. A pixel counts
 as changed past Playwright's default color threshold (0.2), and at most 1% of pixels may change (`maxDiffPixelRatio:
 0.01`): enough for antialiasing at glyph edges, the one thing a machine's font configuration moves under the same browser
-and the same self-hosted faces, and less than a moved or recolored lockup, underline, switcher or line of the cover
-changes. The seal and its definition line are about 0.5% of the cover, under that tolerance, so the seal's absence is
-not left to it: the cover's foot, where the seal prints, must be Paper and nothing else in the run's picture and in the
-committed baseline, and with the seal earned the same box holds thousands of ink and brass pixels. Checked by mutation:
-the frame printing the seal with its definition for `false` fails the comparison (2% of pixels); the seal art alone,
-without its `data-verified` marker or caption, passes the comparison and the DOM check and fails the foot check. The
-baselines are Playwright's Chromium (141.0.7390.37 for `@playwright/test` 1.56.1) on Ubuntu 24.04. CI ran Google Chrome
+and the same self-hosted faces. That catches a region's layout changing (the switcher, the account, the cover's lockup
+removed), but not a small element changing inside a mostly empty picture, as a review showed by mutation: the keystone
+or the wordmark recolored, the wordmark set in IBM Plex Sans, the lockup moved 6 px (12 px on the cover), the practice
+name in Plex Sans 400 and the cover's whole ground turned White all stayed under 1% of the 1280 x 56 header or the
+816 x 1056 cover, and the brass underline is on the rail, outside the header's picture. So the journey also compares
+the regions that hold the brand at a strict tolerance (`STRICT`: a pixel counts as changed past a color threshold of
+0.05, and at most 6 may change): the header's lockup band (its first 152 px, at 1280 and at 390 px) and the cover's top
+band (the lockup on Paper, the same with the seal and without it), in three more committed baselines. And it checks in
+computed values what a picture's threshold cannot see: the lockup's ring Ink and keystone Brass, the wordmark Ink, in
+the display face at 700 and -0.03em, and its place in the header (`expectLockupOnBrand`); the cover's ground Paper, the
+outlined lockup present with its keystone Brass and every other path Ink, in its place 0.85 in and 0.9 in from the
+corner, and the practice's name in Schibsted Grotesk 600 (`expectCoverOnBrand`); the cover's ground Paper to the pixel
+above the lockup and across its lower left; and, as before, the active rail item's underline Brass. Checked by mutation,
+each in a run against the committed baselines: the keystone recolored Ink, the wordmark recolored Slate or set in Plex
+Sans, and the lockup moved 6 px each fail the header's lockup band and the computed check at both widths; the underline
+recolored Ink fails its computed check; on the cover, the lockup removed, its keystone recolored Ink and the lockup moved
+12 px each fail the top band and the computed check, the practice's name in Plex Sans 400 fails the computed check, and
+the ground turned White fails the computed check and the ground's pixels (White is within the strict threshold of Paper,
+so the band's comparison alone would pass it). Unmutated, every check passes. The seal and its definition line are about
+0.5% of the cover, under the whole cover's tolerance, so the seal's absence is not left to it: the cover's foot, where
+the seal prints, must be Paper and nothing else in the run's picture and in the committed baseline, and with the seal
+earned the same box holds thousands of ink and brass pixels. Checked by mutation: the frame printing the seal with its
+definition for `false` fails the comparison (2% of pixels); the seal art alone, without its `data-verified` marker or
+caption, passes the comparison and the DOM check and fails the foot check. The baselines are Playwright's Chromium (141.0.7390.37 for `@playwright/test` 1.56.1) on Ubuntu 24.04. CI ran Google Chrome
 where Playwright's Chromium was not installed, so `ci.yml` now runs `pnpm --filter @tp/web exec playwright install
 --with-deps chromium` right before the unit tests (so the worker's print checks below run there too, and a test fails in
 CI if Chromium is missing rather than skipping) and the config takes that build. The screenshots for people stay in
@@ -167,10 +184,10 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   refuses Google's font loader; `pnpm test:e2e` runs the font-host journey, the copy journey (`e2e/copy.spec.ts`, the D11
   placements and the undecorated sign-in) and the brand journey with its baselines. `tools/test/workflows.test.ts` pins
   the Chromium install step right before the unit tests (and so before the e2e step), the artifact upload right after
-  the e2e step, and the four baselines.
+  the e2e step, and the seven baselines.
 - A deliberate change to the header or the cover, or an upgrade of `@playwright/test` (which moves Chromium; Dependabot
   proposes one weekly), may need new baselines: on Linux with Playwright's Chromium, run
-  `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the four images (the
+  `pnpm --filter @tp/web exec playwright test e2e/brand.spec.ts --update-snapshots`, look at the seven images (the
   journey itself refuses a without-seal baseline whose foot is not blank Paper) and commit them in the same pull request.
   On macOS, on Windows or under Google Chrome the comparisons do not apply: Playwright names baselines by platform, so a
   missing one fails the journey there; run it on Linux or in CI.
