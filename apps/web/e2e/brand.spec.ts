@@ -6,6 +6,7 @@ import { type LedgerEntry, type ReportReconciliation, entriesById, reportReconci
 import { cents } from '@tp/money';
 
 import { mailBodyHtml } from '../../worker/src/mail/mail';
+import { EMAIL_LOCKUP_PATH } from '../../worker/src/mail/template';
 import { statementHtml } from '../../worker/src/reconcile/statement-html';
 import { expectAccessible } from './a11y';
 import { signInWithTotp } from './helpers';
@@ -28,6 +29,11 @@ const SHOTS = process.env.BRAND_SCREENSHOTS_DIR ?? path.resolve(import.meta.dirn
 const PRACTICE = 'SYNTHETIC OTHER PRACTICE BRAND';
 const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22': 'facility' }, default_rounding: 'HALF_UP_CENT', case_materiality_cents: '1000' };
 const FONT_SERVICES = /fonts\.googleapis\.com|fonts\.gstatic\.com/;
+/** A static host and a web mail client of their own, which page.route answers (synthetic names; nothing leaves the machine). */
+const STATIC_HOST = 'https://static.synthetic.test';
+const MAIL_CLIENT = 'https://mail.synthetic.test';
+/** The path CloudFront serves the brand art under (infra/lib/constructs/edge.ts, BRAND_PATH_PATTERN, without its *). */
+const BRAND_PATH = '/brand/';
 /** Brass, rgb() as the browser computes it: the active rail item's underline. */
 const BRASS = 'rgb(201, 154, 59)';
 
@@ -70,33 +76,56 @@ test('no page asks a font service or another origin for anything; the brand face
   expect(requests.some((url) => url.startsWith(`${baseURL ?? ''}/_next/static/media/`) && url.endsWith('.woff2'))).toBe(true);
 });
 
-test('the email header is the outlined lockup with its tagline at 160 px on White, and the application serves its art same-origin like every response', async ({ page, baseURL }) => {
-  const origin = baseURL ?? 'http://localhost:3100';
-  // The application's own headers stay as ADR 0053 and 0055 set them, the brand art included: a mail client is
-  // given the art by the CloudFront static host (reconciliation-001, D7), so here the email opens on this origin.
-  const art = await page.request.get('/brand/paidwhole-lockup-horizontal-tagline-1200w.png');
+test('the email header is the outlined lockup with its tagline at 160 px on White, embedded from the static host, which alone answers cross-origin', async ({ page, baseURL }) => {
+  // The application's own headers stay as ADR 0053 and 0055 set them, the brand art included (reconciliation-001, D7).
+  const art = await page.request.get(EMAIL_LOCKUP_PATH);
   expect(art.status()).toBe(200);
   expect(art.headers()['content-type']).toBe('image/png');
   expect(art.headers()['cross-origin-resource-policy']).toBe('same-origin');
   expect((await page.request.get('/sign-in')).headers()['cross-origin-resource-policy']).toBe('same-origin');
-  const html = mailBodyHtml(
-    {
-      to: ['admin@synthetic.test'],
-      subject: 'Monitoring digest for October 2026',
-      lines: ['SYNTHETIC: 3 new lines were flagged and 1 case reached its materiality this month.'],
-      links: [`${origin}/p/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01/notifications`],
+  const body = await art.body();
+  // The CloudFront static host (STATIC_ASSET_ORIGIN) as infra/lib/constructs/edge.ts builds it: /brand/* fetched from the
+  // application and answered under the static response headers policy, whose Cross-Origin-Resource-Policy is cross-origin.
+  // Here a route stands in for it, giving the application's own bytes; `policy` is what it answers.
+  let policy = 'cross-origin';
+  const served: string[] = [];
+  await page.route(
+    (url) => url.origin === STATIC_HOST && url.pathname.startsWith(BRAND_PATH),
+    async (route) => {
+      served.push(new URL(route.request().url()).pathname);
+      await route.fulfill({ status: 200, contentType: 'image/png', body, headers: { 'cross-origin-resource-policy': policy, 'x-content-type-options': 'nosniff' } });
     },
-    origin,
   );
+  const message = {
+    to: ['admin@synthetic.test'],
+    subject: 'Monitoring digest for October 2026',
+    lines: ['SYNTHETIC: 3 new lines were flagged and 1 case reached its materiality this month.'],
+    links: [`${baseURL ?? 'http://localhost:3100'}/p/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01/notifications`],
+  };
+  const html = mailBodyHtml(message, STATIC_HOST);
+  expect(html).toContain(`src="${STATIC_HOST}${EMAIL_LOCKUP_PATH}"`);
+  // A web mail client opens the message on an origin of its own, neither the application's nor the static host's.
+  let opened = html;
+  await page.route((url) => url.origin === MAIL_CLIENT, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: opened }));
   await page.setViewportSize({ width: 640, height: 520 });
-  // The message as a mail client renders it, at an address of this origin the test answers itself (no page's CSP).
-  await page.route(`${origin}/e2e-email-preview`, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: html }));
-  await page.goto('/e2e-email-preview', { waitUntil: 'load' });
+  await page.goto(`${MAIL_CLIENT}/message`, { waitUntil: 'load' });
   const lockup = page.getByRole('img', { name: 'PaidWhole' });
   await expect(lockup).toHaveJSProperty('complete', true);
   expect(await lockup.evaluate((image: HTMLImageElement) => [image.naturalWidth, Math.round(image.getBoundingClientRect().width)])).toEqual([1200, 160]);
   await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
   await page.screenshot({ path: shot('email.png'), fullPage: true });
+  // Answered as the application answers (same-origin), the mail client could not embed the art at all: the
+  // exception lives on the static host alone. (Another address for the art, so no cache answers for it.)
+  policy = 'same-origin';
+  opened = html.replace(`${EMAIL_LOCKUP_PATH}"`, `${EMAIL_LOCKUP_PATH}?as-the-application-answers"`);
+  await page.goto(`${MAIL_CLIENT}/message-again`, { waitUntil: 'load' });
+  await expect(lockup).toHaveJSProperty('complete', true);
+  expect(await lockup.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
+  expect(served).toEqual([EMAIL_LOCKUP_PATH, EMAIL_LOCKUP_PATH]);
+  // With no static host configured (a local build) the message goes without the art, never with the name typed instead.
+  const bare = mailBodyHtml(message, null);
+  expect(bare).not.toMatch(/<img\b/);
+  expect(bare).not.toMatch(/>\s*PaidWhole\s*</);
 });
 
 test('the sign-in page is the stacked lockup on Paper, and nothing else decorative', async ({ page }) => {

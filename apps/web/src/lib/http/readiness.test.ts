@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import { describe, expect, it } from 'vitest';
 
+import nextConfig from '../../../next.config';
 import { Sealer } from '../auth/seal';
 import { newToken } from '../auth/tokens';
 import { csrfTokenFor, csrfTokenMatches, sameOrigin } from './csrf';
@@ -173,6 +174,12 @@ describe('the security headers', () => {
 
   it('keep a same-origin resource policy on every response the application sends, its brand art included (email art comes from the static host)', () => {
     expect(STATIC_SECURITY_HEADERS.find((header) => header.key === 'Cross-Origin-Resource-Policy')?.value).toBe('same-origin');
+  });
+
+  it('are the one header rule the application has: the fixed set on every path, with no exception for /brand (reconciliation-001, D7)', async () => {
+    // A mail client is given the brand art by the CloudFront static host (infra/lib/constructs/edge.ts), whose own
+    // response headers policy answers cross-origin; the application's headers stay as ADR 0053 and 0055 set them.
+    expect(await nextConfig.headers?.()).toEqual([{ source: '/:path*', headers: [...STATIC_SECURITY_HEADERS] }]);
   });
 
   it('draw a fresh nonce each time', () => {

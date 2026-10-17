@@ -143,9 +143,10 @@ export interface PlatformConfig {
   readonly auditStore: AuditStoreConfig;
   readonly restoreDrill: RestoreDrillConfig;
   readonly supportInbox: SupportInboxConfig;
-  /** The support-grant notices: where they are sent from, and the application they link to. */
+  /** The support-grant notices: where they are sent from, the application they link to, and the static host of their art. */
   readonly mail: MailConfig;
   readonly appOrigin: string;
+  readonly staticAssetOrigin: string | null;
 }
 
 const IN_PRODUCTION = 'when NODE_ENV is production';
@@ -234,13 +235,23 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
 export interface NotificationConfig {
   readonly mail: MailConfig;
   readonly appOrigin: string;
+  /**
+   * The CloudFront static host that serves the brand art the email header embeds (STATIC_ASSET_ORIGIN, the web
+   * image's own; infra/lib/constructs/edge.ts), or null, when the message goes without the art (reconciliation-001, D7).
+   */
+  readonly staticAssetOrigin: string | null;
 }
+
+/** An https origin with no path, as the web app reads the same setting (apps/web/src/lib/http/security-headers.ts). */
+export const STATIC_ORIGIN_PATTERN = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
 
 /**
  * Email through SES from MAIL_FROM or, in development, to a local outbox directory (MAIL_OUTBOX_DIR,
  * by default under the system's temporary directory), linking to APP_ORIGIN. With NODE_ENV=production
- * SES and an https APP_ORIGIN are required and the outbox refused. The support-grant notices (platform
- * jobs) and the monthly digests (practice jobs, docs/adr/0039) both send this way.
+ * SES and an https APP_ORIGIN are required and the outbox refused. The HTML's header embeds the brand's
+ * lockup from STATIC_ASSET_ORIGIN, the CloudFront static host (an https origin with no path, which the
+ * deployed tasks name); unset, as in a local build, each message goes without the art. The support-grant
+ * notices (platform jobs) and the monthly digests (practice jobs, docs/adr/0039) both send this way.
  */
 export function readNotificationConfig(env: Env = process.env): NotificationConfig {
   const production = isProduction(env);
@@ -266,7 +277,11 @@ export function readNotificationConfig(env: Env = process.env): NotificationConf
   if (production && appOrigin.protocol !== 'https:') {
     throw new WorkerConfigError(`APP_ORIGIN is an https URL ${IN_PRODUCTION}`);
   }
-  return { mail, appOrigin: appOrigin.origin };
+  const staticAssetOrigin = value(env, 'STATIC_ASSET_ORIGIN') ?? null;
+  if (staticAssetOrigin !== null && !STATIC_ORIGIN_PATTERN.test(staticAssetOrigin)) {
+    throw new WorkerConfigError('STATIC_ASSET_ORIGIN is an https origin with no path, such as https://static.example.com');
+  }
+  return { mail, appOrigin: appOrigin.origin, staticAssetOrigin };
 }
 
 export type DocumentStoreConfig = { readonly kind: 's3'; readonly bucket: string } | { readonly kind: 'local'; readonly dir: string };

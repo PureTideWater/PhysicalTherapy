@@ -99,6 +99,7 @@ describe('readPlatformConfig', () => {
     AUDIT_COPY_LOCK_MODE: 'COMPLIANCE',
     MAIL_FROM: 'notices@synthetic.test',
     APP_ORIGIN: 'https://app.synthetic.test',
+    STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
     SUPPORT_MAIL_BUCKET: 'tp-production-support-mail',
     ...RDS,
   };
@@ -116,6 +117,7 @@ describe('readPlatformConfig', () => {
       supportInbox: { kind: 'local', dir: expect.stringContaining('tp-support-inbox') },
       mail: { kind: 'local', dir: expect.stringContaining('tp-mail-outbox') },
       appOrigin: 'http://localhost:3000',
+      staticAssetOrigin: null,
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', RESTORE_DRILL_ADMIN_URL: 'postgres://admin@localhost/d' })?.restoreDrill).toEqual({
       kind: 'local',
@@ -139,6 +141,7 @@ describe('readPlatformConfig', () => {
       supportInbox: { kind: 's3', bucket: 'tp-production-support-mail' },
       mail: { kind: 'ses', from: 'notices@synthetic.test' },
       appOrigin: 'https://app.synthetic.test',
+      staticAssetOrigin: 'https://static.synthetic.test',
     });
     expect(readPlatformConfig({ ...PRODUCTION, AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'tp-production-audit-copies', lockMode: 'GOVERNANCE' });
   });
@@ -193,10 +196,27 @@ describe('readPlatformConfig', () => {
 
 describe('readNotificationConfig', () => {
   it('sends the practices’ digests the way the platform sends its notices, with or without an operator connection', () => {
-    expect(readNotificationConfig({})).toEqual({ mail: { kind: 'local', dir: expect.stringMatching(/tp-mail-outbox$/) as unknown }, appOrigin: 'http://localhost:3000' });
-    expect(readNotificationConfig({ MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/p' })).toEqual({ mail: { kind: 'ses', from: 'digests@synthetic.test' }, appOrigin: 'https://app.synthetic.test' });
+    expect(readNotificationConfig({})).toEqual({ mail: { kind: 'local', dir: expect.stringMatching(/tp-mail-outbox$/) as unknown }, appOrigin: 'http://localhost:3000', staticAssetOrigin: null });
+    expect(readNotificationConfig({ MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test/p' })).toEqual({ mail: { kind: 'ses', from: 'digests@synthetic.test' }, appOrigin: 'https://app.synthetic.test', staticAssetOrigin: null });
     expect(readNotificationConfig({ NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test' }).mail).toEqual({ kind: 'ses', from: 'digests@synthetic.test' });
   });
+
+  it('embeds the email art from the static host the deployed tasks name (STATIC_ASSET_ORIGIN), and goes without it when there is none', () => {
+    const deployed = { NODE_ENV: 'production', MAIL_FROM: 'digests@synthetic.test', APP_ORIGIN: 'https://app.synthetic.test', STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' };
+    expect(readNotificationConfig(deployed).staticAssetOrigin).toBe('https://static.synthetic.test');
+    expect(readNotificationConfig({ STATIC_ASSET_ORIGIN: 'https://static.synthetic.test' }).staticAssetOrigin).toBe('https://static.synthetic.test');
+    // A local build: no static host, so no art (reconciliation-001, D7), in production too.
+    expect(readNotificationConfig({ STATIC_ASSET_ORIGIN: ' ' }).staticAssetOrigin).toBeNull();
+    expect(readNotificationConfig({ ...deployed, STATIC_ASSET_ORIGIN: undefined }).staticAssetOrigin).toBeNull();
+  });
+
+  it.each(['http://static.synthetic.test', 'https://static.synthetic.test/brand', 'https://static.synthetic.test/', 'https://localhost', 'static.synthetic.test', 'https://STATIC.synthetic.test'])(
+    'refuses STATIC_ASSET_ORIGIN %s, which is not an https origin with no path, without echoing it',
+    (origin) => {
+      expect(() => readNotificationConfig({ STATIC_ASSET_ORIGIN: origin })).toThrow(new WorkerConfigError('STATIC_ASSET_ORIGIN is an https origin with no path, such as https://static.example.com'));
+      expect(() => readPlatformConfig({ OPERATOR_DATABASE_URL: 'postgres://operator@localhost:5432/d', AUDIT_COPY_DIR: 'a', STATIC_ASSET_ORIGIN: origin })).toThrow(WorkerConfigError);
+    },
+  );
 
   it.each([
     [{ NODE_ENV: 'production', APP_ORIGIN: 'https://app.synthetic.test' }, /MAIL_FROM is required when NODE_ENV is production/],

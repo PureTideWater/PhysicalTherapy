@@ -81,6 +81,23 @@ describe('workflows', () => {
     expect(test?.env).toMatchObject({ TP_LARGE_ZIP_MB: '2048' });
   });
 
+  it('keep the e2e suite’s report, results and brand screenshots from every pull request, failed runs included', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const e2e = stepIndex(steps, (step) => step.run === 'pnpm test:e2e');
+    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload).toBe(e2e + 1);
+    const step = steps[upload] as Step & { if?: string };
+    expect(step.if).toBe('always()');
+    // Playwright's defaults beside apps/web/playwright.config.ts (it names no outputFolder or outputDir), and the
+    // brand journey's screenshots (BRAND_SCREENSHOTS_DIR's default, apps/web/e2e/brand.spec.ts).
+    expect(String(step.with?.path).trim().split('\n')).toEqual(['apps/web/playwright-report/', 'apps/web/test-results/', 'brand-screenshots/']);
+    const config = readFileSync(path.join(repositoryRoot, 'apps/web/playwright.config.ts'), 'utf8');
+    expect(config).not.toMatch(/outputDir|outputFolder/);
+    expect(readFileSync(path.join(repositoryRoot, 'apps/web/e2e/brand.spec.ts'), 'utf8')).toContain("path.resolve(import.meta.dirname, '../../../brand-screenshots')");
+    // The release-immutability gate still runs, unchanged, on every pull request.
+    expect(steps.some((step) => step.run === 'tools/check-releases-immutable.sh "origin/${{ github.base_ref }}"')).toBe(true);
+  });
+
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);

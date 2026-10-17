@@ -320,6 +320,18 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
     expect(environmentOf(definitions.worker).AUDIT_COPY_BUCKET).toBeUndefined();
   });
 
+  it('names the static host to every task that sends email, the same host the web image loads its assets from', () => {
+    // Email embeds the brand's lockup from CloudFront's /brand/*, never from the application (reconciliation-001, D7).
+    const staticHost = { 'Fn::Join': ['', ['https://', ref(PARAMETER_NAMES.staticDomainName)]] };
+    for (const name of ['web', 'worker', 'platform'] as const) {
+      expect(environmentOf(definitions[name]).STATIC_ASSET_ORIGIN, name).toEqual(staticHost);
+    }
+    for (const name of ['worker', 'platform'] as const) {
+      expect(environmentOf(definitions[name]).MAIL_FROM, name).toBeDefined();
+    }
+    expect(environmentOf(definitions.migration).STATIC_ASSET_ORIGIN).toBeUndefined();
+  });
+
   it('calls models on Bedrock in the task\'s own region from the web app and the worker, and from no other task', () => {
     for (const name of ['web', 'worker'] as const) {
       expect(environmentOf(definitions[name]), name).toMatchObject({ MODEL_PROVIDER: 'bedrock' });
@@ -540,5 +552,12 @@ describe('the compute contract with the applications', () => {
     expect(environmentOf(definitionOf('tp-staging-web')).STATIC_ASSET_ORIGIN).toEqual({ 'Fn::Join': ['', ['https://', { Ref: 'StaticDomainName' }]] });
     // The stack's output the build reads it from.
     expect(JSON.stringify(template.toJSON().Outputs)).toContain('StaticAssetsOrigin');
+  });
+
+  it('has the worker read the static host as the web app does: an https origin with no path', () => {
+    const pattern = (file: string) => /export const STATIC_ORIGIN_PATTERN = (\/.+\/);/.exec(source(file))?.[1];
+    expect(pattern('apps/worker/src/config.ts')).toBeDefined();
+    expect(pattern('apps/worker/src/config.ts')).toBe(pattern('apps/web/src/lib/http/security-headers.ts'));
+    expect(source('apps/worker/src/platform/wiring.ts')).toContain('sesMailSender(config.mail.from, config.staticAssetOrigin)');
   });
 });

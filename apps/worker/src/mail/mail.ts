@@ -12,8 +12,9 @@ import { brandedSubject, mailHtml, senderAddress } from './template';
  * email body). A message is fixed text, counts and links to the application; the links are checked
  * by the PHI guard before anything is sent. SES in deployed environments; a local outbox directory
  * in development and tests. Each message goes as plain text and as the PaidWhole HTML template
- * (template.ts: the same lines and links under the branded header), from "PaidWhole" at the configured
- * address, its subject followed by the product's name.
+ * (template.ts: the same lines and links under the branded header, whose lockup the CloudFront static host
+ * serves, STATIC_ASSET_ORIGIN; without one, a local build, the HTML goes without the art), from "PaidWhole"
+ * at the configured address, its subject followed by the product's name.
  */
 
 export interface MailMessage {
@@ -46,16 +47,16 @@ export function mailBody(message: MailMessage): string {
 
 /**
  * The HTML alternative as sent: checked exactly as the text body is, then set in the brand's template, whose
- * header image is served by the application at `origin` (APP_ORIGIN).
+ * header image the static host at `staticOrigin` serves (STATIC_ASSET_ORIGIN), or which goes without it (null).
  */
-export function mailBodyHtml(message: MailMessage, origin: string): string {
+export function mailBodyHtml(message: MailMessage, staticOrigin: string | null): string {
   mailBody(message);
-  return mailHtml(message.subject, message.lines, message.links, origin);
+  return mailHtml(message.subject, message.lines, message.links, staticOrigin);
 }
 
 /** SES (the account's verified sender; the configuration set and identity arrive with milestone 11). */
 export class SesMailSender implements MailSender {
-  constructor(private readonly options: { readonly client: Pick<SESv2Client, 'send'>; readonly from: string; readonly origin: string }) {}
+  constructor(private readonly options: { readonly client: Pick<SESv2Client, 'send'>; readonly from: string; readonly staticOrigin: string | null }) {}
 
   async send(message: MailMessage): Promise<void> {
     await this.options.client.send(
@@ -65,7 +66,7 @@ export class SesMailSender implements MailSender {
         Content: {
           Simple: {
             Subject: { Data: brandedSubject(message.subject), Charset: 'UTF-8' },
-            Body: { Text: { Data: mailBody(message), Charset: 'UTF-8' }, Html: { Data: mailBodyHtml(message, this.options.origin), Charset: 'UTF-8' } },
+            Body: { Text: { Data: mailBody(message), Charset: 'UTF-8' }, Html: { Data: mailBodyHtml(message, this.options.staticOrigin), Charset: 'UTF-8' } },
           },
         },
       }),
@@ -73,33 +74,33 @@ export class SesMailSender implements MailSender {
   }
 }
 
-export function sesMailSender(from: string, origin: string): SesMailSender {
-  return new SesMailSender({ client: new SESv2Client({}), from, origin });
+export function sesMailSender(from: string, staticOrigin: string | null): SesMailSender {
+  return new SesMailSender({ client: new SESv2Client({}), from, staticOrigin });
 }
 
 /** Development: each message is a JSON file in a directory, named by opaque IDs. */
 export class LocalMailSender implements MailSender {
   constructor(
     private readonly dir: string,
-    private readonly origin: string,
+    private readonly staticOrigin: string | null,
   ) {}
 
   async send(message: MailMessage): Promise<void> {
     const body = mailBody(message);
-    const html = mailBodyHtml(message, this.origin);
+    const html = mailBodyHtml(message, this.staticOrigin);
     await mkdir(this.dir, { recursive: true });
     await writeFile(path.join(this.dir, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ to: message.to, subject: brandedSubject(message.subject), body, html })}\n`, { mode: 0o600 });
   }
 }
 
-/** Tests: messages kept in memory (their HTML set for the local application unless an origin is given). */
+/** Tests: messages kept in memory (their HTML without the art, as a local build sends it, unless a static host is given). */
 export class MemoryMailSender implements MailSender {
   readonly sent: (MailMessage & { readonly body: string; readonly html: string })[] = [];
 
-  constructor(private readonly origin = 'http://localhost:3000') {}
+  constructor(private readonly staticOrigin: string | null = null) {}
 
   send(message: MailMessage): Promise<void> {
-    this.sent.push({ ...message, body: mailBody(message), html: mailBodyHtml(message, this.origin) });
+    this.sent.push({ ...message, body: mailBody(message), html: mailBodyHtml(message, this.staticOrigin) });
     return Promise.resolve();
   }
 }

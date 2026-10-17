@@ -38,8 +38,19 @@ export const WEB_KEEP_ALIVE_MS = (LOAD_BALANCER_IDLE_TIMEOUT_SECONDS + 5) * 1000
 /** TLS 1.2 and 1.3 only, with forward-secret AEAD ciphers (ELBSecurityPolicy-TLS13-1-2-Res-2021-06). */
 export const LOAD_BALANCER_TLS_POLICY = elbv2.SslPolicy.TLS13_RES;
 
-/** The only paths CloudFront serves: Next.js's content-hashed build output (no page, route or PHI). */
+/** Next.js's content-hashed build output (no page, route or PHI). */
 export const STATIC_PATH_PATTERN = '/_next/static/*';
+
+/**
+ * The brand's published art (apps/web/public/brand: the lockups, the mark, the seal and the badge as outlined files),
+ * which the email header embeds from here (apps/worker/src/mail/template.ts, STATIC_ASSET_ORIGIN): a web mail client
+ * on its own origin may embed it only under Cross-Origin-Resource-Policy: cross-origin, which this host answers and the
+ * application never does (reconciliation-001, D7). Files with no data in them, served as the build output is.
+ */
+export const BRAND_PATH_PATTERN = '/brand/*';
+
+/** The only paths CloudFront serves, each cached under the same response headers policy; every other path is a 404 at the edge. */
+export const STATIC_PATH_PATTERNS = [STATIC_PATH_PATTERN, BRAND_PATH_PATTERN] as const;
 
 /**
  * The web ACL's rate limits, per client address over five minutes (WAF's window). Every request
@@ -85,12 +96,14 @@ export interface EdgeProps {
  *   managed IP reputation, common and known-bad-input rule groups. Metrics go to CloudWatch; sampled
  *   requests are off, because a sampled request keeps its headers, session cookies among them. A
  *   block by the sign-in rate rule tells the operator (a failed sign-in burst from one address).
- * - CloudFront on the static host for STATIC_PATH_PATTERN only, cached, fetched from the
- *   application's own host over HTTPS with no cookie, header or query string passed on. The web image
- *   is built with the host as Next's assetPrefix and its task names it for the CSP (STATIC_ASSET_ORIGIN;
- *   docs/adr/0055), so pages load their scripts, styles and fonts from here. Every other
- *   path is answered 404 at the edge by a CloudFront function and never reaches the application, so
- *   no page, route or PHI is ever cached or served by CloudFront. TLS 1.2 or later, HTTPS only.
+ * - CloudFront on the static host for STATIC_PATH_PATTERNS only (the build output and the brand art), cached,
+ *   fetched from the application's own host over HTTPS with no cookie, header or query string passed on: the
+ *   web image carries both (apps/web/Dockerfile copies .next/static and public), so a deploy publishes them.
+ *   The web image is built with the host as Next's assetPrefix and its task names it for the CSP
+ *   (STATIC_ASSET_ORIGIN; docs/adr/0055), so pages load their scripts, styles and fonts from here; the worker
+ *   and platform tasks name it too, and email embeds the brand's lockup from here (reconciliation-001, D7).
+ *   Every other path is answered 404 at the edge by a CloudFront function and never reaches the application,
+ *   so no page, route or PHI is ever cached or served by CloudFront. TLS 1.2 or later, HTTPS only.
  */
 export class Edge extends Construct {
   readonly loadBalancer: elbv2.ApplicationLoadBalancer;
@@ -232,7 +245,7 @@ export class Edge extends Construct {
       originSslProtocols: [cloudfront.OriginSslPolicy.TLS_V1_2],
     });
     const staticOnly = new cloudfront.Function(this, 'StaticOnly', {
-      comment: 'Refuses every path outside /_next/static/ at the edge',
+      comment: 'Refuses every path outside /_next/static/ and /brand/ at the edge',
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline('function handler(event) { return { statusCode: 404, statusDescription: "Not Found" }; }'),
     });
@@ -250,7 +263,8 @@ export class Edge extends Construct {
         strictTransportSecurity: { accessControlMaxAge: Duration.days(365), includeSubdomains: true, override: true },
       },
       // The application answers every response Cross-Origin-Resource-Policy: same-origin; the pages load these
-      // assets from the static host, another origin, so the browser would refuse them under that header.
+      // assets from the static host, another origin, and a web mail client embeds the brand art from its own, so
+      // the browser would refuse them under that header.
       customHeadersBehavior: { customHeaders: [{ header: 'Cross-Origin-Resource-Policy', value: 'cross-origin', override: true }] },
     });
     this.distribution = new cloudfront.Distribution(this, 'StaticAssets', {
@@ -269,17 +283,20 @@ export class Edge extends Construct {
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
         functionAssociations: [{ function: staticOnly, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
       },
-      additionalBehaviors: {
-        [STATIC_PATH_PATTERN]: {
-          origin: application,
-          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
-          cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
-          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          compress: true,
-          responseHeadersPolicy: headers,
-        },
-      },
+      additionalBehaviors: Object.fromEntries(
+        STATIC_PATH_PATTERNS.map((pattern): [string, cloudfront.BehaviorOptions] => [
+          pattern,
+          {
+            origin: application,
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+            allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+            cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+            compress: true,
+            responseHeadersPolicy: headers,
+          },
+        ]),
+      ),
     });
   }
 }
