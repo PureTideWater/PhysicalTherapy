@@ -177,6 +177,7 @@ describe('the baseline', () => {
   const entry = (overrides: Partial<ContractBaseline>): ContractBaseline => ({
     purpose: 'proposeContractTerms',
     prompt_version: 'propose-contract-terms/1',
+    prompt_sha256: 'd'.repeat(64),
     provider: 'bedrock',
     model_id: 'model-a',
     set_sha256: 'b'.repeat(64),
@@ -190,11 +191,17 @@ describe('the baseline', () => {
     format: BASELINE_FORMAT,
     synthetic: true,
     note: 'SYNTHETIC',
-    entries: [entry({}), entry({ prompt_version: 'propose-contract-terms/2', model_id: 'model-b' }), { purpose: 'draftPacketNarrative', prompt_version: 'draft-packet-narrative/1', provider: 'bedrock', model_id: 'model-a', set_sha256: 'c'.repeat(64), cases: 300, failures: 0, recorded_on: '2026-10-16' }],
+    entries: [
+      entry({}),
+      entry({ prompt_version: 'propose-contract-terms/2', prompt_sha256: 'e'.repeat(64), model_id: 'model-b' }),
+      { purpose: 'draftPacketNarrative', prompt_version: 'draft-packet-narrative/1', prompt_sha256: 'f'.repeat(64), provider: 'bedrock', model_id: 'model-a', set_sha256: 'c'.repeat(64), cases: 300, failures: 0, recorded_on: '2026-10-16' },
+    ],
   });
   const contracts = (tp: number, overrides: Partial<ContractReport> = {}): ContractReport => ({
     purpose: 'proposeContractTerms',
     promptVersion: 'propose-contract-terms/1',
+    promptSha256: 'd'.repeat(64),
+    variant: 'default',
     modelId: 'model-a',
     setSha256: 'b'.repeat(64),
     cases: 40,
@@ -210,7 +217,7 @@ describe('the baseline', () => {
     synthetic: true,
     provider: 'bedrock',
     contracts: part,
-    narratives: { purpose: 'draftPacketNarrative', promptVersion: 'draft-packet-narrative/1', modelId: 'model-a', setSha256: 'c'.repeat(64), cases: 300, passed: 300 - failures, failures: Array.from({ length: failures }, (_, index) => ({ id: `N00${String(index)}`, problems: ['verifier_failed' as const], mismatches: [], missing: [], detail: null })) },
+    narratives: { purpose: 'draftPacketNarrative', promptVersion: 'draft-packet-narrative/1', promptSha256: 'f'.repeat(64), modelId: 'model-a', setSha256: 'c'.repeat(64), cases: 300, passed: 300 - failures, failures: Array.from({ length: failures }, (_, index) => ({ id: `N00${String(index)}`, problems: ['verifier_failed' as const], mismatches: [], missing: [], detail: null })) },
   });
 
   it('holds a report to its own prompt and model, a new prompt to the same model’s, and a new model to the provider’s latest', () => {
@@ -229,6 +236,15 @@ describe('the baseline', () => {
     ]);
     expect(gate(report(contracts(8, { quotesOffPage: 2 })), baseline).problems).toEqual([{ code: 'quotes_off_page', count: 2 }]);
     expect(gate(report(null, 1), baseline).problems).toEqual([{ code: 'narrative_failures', count: 1, cases: ['N000'] }]);
+  });
+
+  it('fails a report on a prompt version whose content no longer has the hash the baseline recorded for it: a released version edited in place', () => {
+    expect(gate(report(contracts(8, { promptSha256: '0'.repeat(64) })), baseline).problems).toEqual([{ code: 'prompt_changed', purpose: 'proposeContractTerms', promptVersion: 'propose-contract-terms/1' }]);
+    const narrativeEdited: EvaluationReport = { ...report(null), narratives: { ...(report(null).narratives as NonNullable<EvaluationReport['narratives']>), promptSha256: '0'.repeat(64) } };
+    expect(gate(narrativeEdited, baseline).problems).toEqual([{ code: 'prompt_changed', purpose: 'draftPacketNarrative', promptVersion: 'draft-packet-narrative/1' }]);
+    expect(() => recordBaseline(baseline, report(contracts(9, { promptSha256: '0'.repeat(64) })), '2026-10-17')).toThrow('prompt_changed');
+    // Another provider's entries say nothing about this one's.
+    expect(gate({ ...report(contracts(8, { promptSha256: '0'.repeat(64) })), provider: 'anthropic' }, baseline).problems.map((problem) => problem.code)).toEqual(['no_baseline']);
   });
 
   it('records a passing run (replacing the entry it supersedes) and refuses one that regresses', () => {

@@ -8,14 +8,14 @@ import { createProvider, readGatewayConfig } from '../src/config';
 import { OperatorEvaluationStore } from '../src/postgres-store';
 import { LocalDeterministicProvider } from '../src/providers/local';
 import { BASELINE_PATH, gate, readBaseline, recordBaseline } from './baseline';
-import { type EvaluationReport, runEvaluation } from './harness';
+import { CONTRACT_VARIANTS, type ContractVariant, type EvaluationReport, runEvaluation } from './harness';
 import { registerReferences } from './reference';
 import { precision, ratioText, recall } from './score';
 import { loadContractSet, loadNarrativeSet } from './sets';
 
 /**
  * `pnpm --filter @tp/model-gateway eval [--provider local|configured] [--only contracts|narratives]
- * [--report <file>] [--record]` (docs/adr/0051).
+ * [--variant default|ambiguous] [--report <file>] [--record]` (docs/adr/0051 and 0054).
  *
  * - local (the default, and what CI's golden test runs): the local deterministic provider answering
  *   with the sets' reference answers. It proves the path, not a model.
@@ -25,15 +25,21 @@ import { loadContractSet, loadNarrativeSet } from './sets';
  *   practice's is read. With OPERATOR_DATABASE_URL set, each call is logged in model_call as an
  *   evaluation call (the operator role, no practice).
  *
+ * - --variant ambiguous: the contracts are read by the larger model the contract prompt pins for
+ *   contracts a specialist marks ambiguous; that model has its own baseline entry, and production
+ *   serves a provider only once each model the prompts pin has one (src/evaluated.ts).
+ *
  * Prints the scores and the gate's answer against eval/baseline.json, writes the full report (counts,
  * codes and case IDs only) with --report, and exits 1 when the gate fails. --record writes this run's
- * results into the baseline for a person to review and commit; it refuses a run that regresses.
+ * results into the baseline (with each prompt version's content hash) for a person to review and
+ * commit; it refuses a run that regresses or a prompt version edited in place.
  */
 
 const { values } = parseArgs({
   options: {
     provider: { type: 'string', default: 'local' },
     only: { type: 'string' },
+    variant: { type: 'string', default: 'default' },
     report: { type: 'string' },
     record: { type: 'boolean', default: false },
   },
@@ -44,7 +50,7 @@ function summary(report: EvaluationReport): string {
   if (report.contracts !== null) {
     const { contracts } = report;
     lines.push(
-      `contracts ${contracts.promptVersion} on ${contracts.modelId}: ${String(contracts.cases)} documents, precision ${ratioText(precision(contracts.total))}, recall ${ratioText(recall(contracts.total))}, quotes off their page ${String(contracts.quotesOffPage)}`,
+      `contracts ${contracts.promptVersion} (${contracts.variant}) on ${contracts.modelId}: ${String(contracts.cases)} documents, precision ${ratioText(precision(contracts.total))}, recall ${ratioText(recall(contracts.total))}, quotes off their page ${String(contracts.quotesOffPage)}`,
     );
     for (const [layout, counts] of Object.entries(contracts.byLayout)) {
       lines.push(`  ${layout}: precision ${ratioText(precision(counts))}, recall ${ratioText(recall(counts))}`);
@@ -57,6 +63,10 @@ function summary(report: EvaluationReport): string {
   return lines.join('\n');
 }
 
+if (!(CONTRACT_VARIANTS as readonly string[]).includes(values.variant)) {
+  throw new Error('--variant is default or ambiguous');
+}
+const variant = values.variant as ContractVariant;
 const contracts = values.only === 'narratives' ? null : await loadContractSet();
 const narratives = values.only === 'contracts' ? null : loadNarrativeSet();
 let provider;
@@ -74,7 +84,7 @@ if (values.provider === 'local') {
 const operatorUrl = process.env.OPERATOR_DATABASE_URL;
 const pool = operatorUrl === undefined || operatorUrl === '' ? null : openPool(operatorUrl, 2);
 try {
-  const report = await runEvaluation({ provider, contracts, narratives, ...(pool === null ? {} : { store: new OperatorEvaluationStore(pool) }) });
+  const report = await runEvaluation({ provider, contracts, narratives, variant, ...(pool === null ? {} : { store: new OperatorEvaluationStore(pool) }) });
   process.stdout.write(`${summary(report)}\n`);
   if (values.report !== undefined) {
     writeFileSync(path.resolve(values.report), `${JSON.stringify(report, null, 2)}\n`);

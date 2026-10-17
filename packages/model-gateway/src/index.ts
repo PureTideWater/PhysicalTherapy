@@ -20,6 +20,7 @@ export {
   PhiBoundaryError,
 } from './errors';
 export { CALL_TIMEOUT_MS, type GatewayConfig, assertPricesConfirmed, createProvider, pinnedModels, readGatewayConfig } from './config';
+export { EVALUATED_PURPOSES, type MissingEvaluation, RECORDED_EVALUATIONS, type RecordedEvaluation, assertEvaluated, unevaluatedModels } from './evaluated';
 export {
   type CompleteOptions,
   EFFORTS,

@@ -132,6 +132,42 @@ describe('check-releases-immutable.sh', () => {
     expect(check()).toMatchObject({ status: 1, output: expect.stringContaining('content/releases/1/untracked.json') as string });
   });
 
+  describe('released prompt versions (PRD 14; a change is a new version directory)', () => {
+    function releasePromptOne(): void {
+      write('packages/model-gateway/prompts/draft-packet-narrative/CHANGELOG.md', '# draft-packet-narrative\n');
+      write('packages/model-gateway/prompts/draft-packet-narrative/v1/prompt.json', '{"id":"draft-packet-narrative/1"}\n');
+      write('packages/model-gateway/prompts/draft-packet-narrative/v1/schema.json', '{}\n');
+      commitAll('prompt version 1');
+      git('checkout', '-q', '-b', 'feature');
+    }
+
+    it('passes when every released version is unchanged and a new version is added beside them', () => {
+      releasePromptOne();
+      write('packages/model-gateway/prompts/draft-packet-narrative/v2/prompt.json', '{"id":"draft-packet-narrative/2"}\n');
+      write('packages/model-gateway/prompts/draft-packet-narrative/CHANGELOG.md', '# draft-packet-narrative\n\n## draft-packet-narrative/2\n');
+      commitAll('prompt version 2');
+      expect(check()).toMatchObject({ status: 0, output: expect.stringContaining('1 released prompt version(s) unchanged') as string });
+    });
+
+    it('fails when a released version is edited in place, its hash and changelog changed with it', () => {
+      releasePromptOne();
+      write('packages/model-gateway/prompts/draft-packet-narrative/v1/prompt.json', '{"id":"draft-packet-narrative/1","system":["Round figures where it reads better."]}\n');
+      commitAll('edit a released prompt');
+      const result = check();
+      expect(result.status).toBe(1);
+      expect(result.output).toContain('the released prompt version packages/model-gateway/prompts/draft-packet-narrative/v1 differs from main');
+      expect(result.output).toContain('M\tpackages/model-gateway/prompts/draft-packet-narrative/v1/prompt.json');
+    });
+
+    it('fails when a released version is removed, or gains a file', () => {
+      releasePromptOne();
+      write('packages/model-gateway/prompts/draft-packet-narrative/v1/extra.json', '{}\n');
+      expect(check().status).toBe(1);
+      rmSync(path.join(repo, 'packages/model-gateway/prompts/draft-packet-narrative/v1'), { recursive: true, force: true });
+      expect(check()).toMatchObject({ status: 1, output: expect.stringContaining('D\tpackages/model-gateway/prompts/draft-packet-narrative/v1/prompt.json') as string });
+    });
+  });
+
   it('refuses a missing or unknown base ref', () => {
     expect(spawnSync('bash', [script], { cwd: repo, env: gitEnv }).status).toBe(2);
     expect(check('no-such-ref').status).toBe(2);

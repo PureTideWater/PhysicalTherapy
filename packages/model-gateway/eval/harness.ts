@@ -36,6 +36,10 @@ export interface ContractCaseResult {
 export interface ContractReport {
   readonly purpose: 'proposeContractTerms';
   readonly promptVersion: string;
+  /** The SHA-256 the prompt version records for its content. */
+  readonly promptSha256: string;
+  /** The prompt's model variant the run called: the default, or the larger model for contracts marked ambiguous. */
+  readonly variant: ContractVariant;
   readonly modelId: string;
   readonly setSha256: string;
   readonly cases: number;
@@ -58,6 +62,7 @@ export interface NarrativeCaseResult {
 export interface NarrativeReport {
   readonly purpose: 'draftPacketNarrative';
   readonly promptVersion: string;
+  readonly promptSha256: string;
   readonly modelId: string;
   readonly setSha256: string;
   readonly cases: number;
@@ -74,8 +79,14 @@ export interface EvaluationReport {
   readonly narratives: NarrativeReport | null;
 }
 
+/** The contract prompt's model variants: every contract read by the default model, or each as marked ambiguous. */
+export const CONTRACT_VARIANTS = ['default', 'ambiguous'] as const;
+export type ContractVariant = (typeof CONTRACT_VARIANTS)[number];
+
 export interface EvaluationOptions {
   readonly provider: ModelProvider;
+  /** Which of the contract prompt's models to evaluate (each pinned model has its own baseline entry). */
+  readonly variant?: ContractVariant;
   readonly contracts?: LoadedContractSet | null;
   readonly narratives?: LoadedNarrativeSet | null;
   /** Where the evaluation calls are logged: memory by default, or the operator's store (model_call rows with no practice). */
@@ -129,13 +140,13 @@ function parsedOutput(text: string | null): ContractTermsOutput | null {
   }
 }
 
-async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set: LoadedContractSet, runId: string): Promise<ContractReport> {
+async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set: LoadedContractSet, runId: string, variant: ContractVariant): Promise<ContractReport> {
   const results: ContractCaseResult[] = [];
   for (const item of set.cases) {
     let score: ContractScore;
     let problem: string | null = null;
     try {
-      const result = await gateway.proposeContractTerms({ practiceId: null, requestKey: `eval:${runId}:${item.id}` }, item.input);
+      const result = await gateway.proposeContractTerms({ practiceId: null, requestKey: `eval:${runId}:${variant}:${item.id}` }, { ...item.input, ambiguous: variant === 'ambiguous' });
       const output = parsedOutput(recorder.last);
       if (result.proposal === null || output === null) {
         problem = 'invalid_output';
@@ -162,7 +173,9 @@ async function evaluateContracts(gateway: ModelGateway, recorder: Recorder, set:
   return {
     purpose: 'proposeContractTerms',
     promptVersion: PROMPTS.proposeContractTerms.id,
-    modelId: modelFor(PROMPTS.proposeContractTerms, recorder.kind),
+    promptSha256: PROMPTS.proposeContractTerms.sha256,
+    variant,
+    modelId: modelFor(PROMPTS.proposeContractTerms, recorder.kind, variant),
     setSha256: set.sha256,
     cases: results.length,
     fields,
@@ -192,6 +205,7 @@ async function evaluateNarratives(gateway: ModelGateway, recorder: Recorder, set
   return {
     purpose: 'draftPacketNarrative',
     promptVersion: PROMPTS.draftPacketNarrative.id,
+    promptSha256: PROMPTS.draftPacketNarrative.sha256,
     modelId: modelFor(PROMPTS.draftPacketNarrative, recorder.kind),
     setSha256: set.sha256,
     cases: set.cases.length,
@@ -215,7 +229,7 @@ export async function runEvaluation(options: EvaluationOptions): Promise<Evaluat
     format: REPORT_FORMAT,
     synthetic: true,
     provider: options.provider.kind,
-    contracts: options.contracts === undefined || options.contracts === null ? null : await evaluateContracts(gateway, recorder, options.contracts, runId),
+    contracts: options.contracts === undefined || options.contracts === null ? null : await evaluateContracts(gateway, recorder, options.contracts, runId, options.variant ?? 'default'),
     narratives: options.narratives === undefined || options.narratives === null ? null : await evaluateNarratives(gateway, recorder, options.narratives, runId),
   };
 }

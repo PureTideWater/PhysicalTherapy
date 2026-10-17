@@ -4,6 +4,8 @@ import { TRUTH_FIELDS } from '@tp/synth';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import type { ModelProvider } from '../src/provider';
+import { RECORDED_EVALUATIONS, assertEvaluated, unevaluatedModels } from '../src/evaluated';
+import { PROMPTS } from '../src/prompts';
 import { LocalDeterministicProvider } from '../src/providers/local';
 import { MemoryModelCallStore } from '../src/store';
 import { BASELINE_PATH, type Baseline, gate, readBaseline } from './baseline';
@@ -127,14 +129,20 @@ describe('the gate on the local deterministic provider', () => {
     expect(local.map((entry) => entry.purpose).sort()).toEqual(['draftPacketNarrative', 'proposeContractTerms']);
     for (const entry of local) {
       if (entry.purpose === 'proposeContractTerms') {
-        expect({ set: entry.set_sha256, fields: entry.fields, total: entry.total, prompt: entry.prompt_version }, BASELINE_PATH).toEqual({
+        expect({ set: entry.set_sha256, fields: entry.fields, total: entry.total, prompt: entry.prompt_version, sha: entry.prompt_sha256 }, BASELINE_PATH).toEqual({
           set: report.contracts?.setSha256,
           fields: report.contracts?.fields,
           total: report.contracts?.total,
           prompt: report.contracts?.promptVersion,
+          sha: PROMPTS.proposeContractTerms.sha256,
         });
       } else {
-        expect({ set: entry.set_sha256, cases: entry.cases, prompt: entry.prompt_version }).toEqual({ set: report.narratives?.setSha256, cases: 300, prompt: report.narratives?.promptVersion });
+        expect({ set: entry.set_sha256, cases: entry.cases, prompt: entry.prompt_version, sha: entry.prompt_sha256 }).toEqual({
+          set: report.narratives?.setSha256,
+          cases: 300,
+          prompt: report.narratives?.promptVersion,
+          sha: PROMPTS.draftPacketNarrative.sha256,
+        });
       }
     }
   });
@@ -145,6 +153,32 @@ describe('the gate on the local deterministic provider', () => {
       expect(call).toMatchObject({ practiceId: null, actorKind: 'evaluation', actorId: null, provider: 'local', outcome: 'completed', verifierPassed: true });
       expect(call.inputHashes.every((hash) => /^[0-9a-f]{64}$/.test(hash))).toBe(true);
     }
+  });
+});
+
+describe('a prompt or model change and the real providers (PRD 14: "no regression"; docs/adr/0054)', () => {
+  it('serves a real provider only once every current prompt version and pinned model has a recorded evaluation', () => {
+    for (const provider of ['bedrock', 'anthropic'] as const) {
+      const recorded = baseline.entries.filter((entry) => entry.provider === provider);
+      if (recorded.length === 0) {
+        // No run against this provider has been recorded (this build has no model access): production refuses it,
+        // and every model feature stays off there, the screens offering hand entry.
+        expect(() => assertEvaluated(provider, RECORDED_EVALUATIONS), provider).toThrow(/records the evaluation gate/);
+      } else {
+        // Once the provider has been evaluated, a new prompt version or pinned model fails here until a person runs the gate
+        // against that model and commits what --record wrote.
+        expect(unevaluatedModels(provider), provider).toEqual([]);
+      }
+    }
+    // The runtime reads the same baseline file the gate does.
+    expect(RECORDED_EVALUATIONS.map((entry) => `${entry.purpose}:${entry.provider}:${entry.prompt_version}:${entry.prompt_sha256}:${entry.model_id}`)).toEqual(
+      baseline.entries.map((entry) => `${entry.purpose}:${entry.provider}:${entry.prompt_version}:${entry.prompt_sha256}:${entry.model_id}`),
+    );
+  });
+
+  it('fails a prompt version edited in place, however its answers score', () => {
+    const edited: EvaluationReport = { ...report, contracts: report.contracts === null ? null : { ...report.contracts, promptSha256: '0'.repeat(64) } };
+    expect(gate(edited, baseline).problems).toEqual([{ code: 'prompt_changed', purpose: 'proposeContractTerms', promptVersion: PROMPTS.proposeContractTerms.id }]);
   });
 });
 

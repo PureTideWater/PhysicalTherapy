@@ -1,6 +1,7 @@
 import { BedrockRuntimeClient } from '@aws-sdk/client-bedrock-runtime';
 
 import { GatewayConfigError } from './errors';
+import { RECORDED_EVALUATIONS, type RecordedEvaluation, assertEvaluated } from './evaluated';
 import { PRICES, type ModelPrice } from './prices';
 import { PROMPTS } from './prompts';
 import { PROVIDER_KINDS, type ModelProvider, type ProviderKind } from './provider';
@@ -21,7 +22,9 @@ import { LocalDeterministicProvider } from './providers/local';
  *
  * With NODE_ENV=production the local provider is refused (except for the e2e suite's production build,
  * TP_ALLOW_LOCAL_PROVIDERS=e2e, as for the other local implementations), and so is a real provider
- * whose pinned models' prices are not confirmed in config/models.json. Outside production a real
+ * whose pinned models' prices are not confirmed in config/models.json, or for which the evaluation
+ * gate has not recorded every current prompt version and pinned model (./evaluated.ts: a prompt or
+ * model change is served only once it has been evaluated against that model). Outside production a real
  * provider may be configured for synthetic evaluation calls only: the gateway refuses to send any
  * practice's material to it (PhiBoundaryError; PRD 14: "No PHI is ever sent to a model from a
  * development environment, a test, or a CI job").
@@ -62,7 +65,7 @@ export function assertPricesConfirmed(provider: ProviderKind, prices: readonly M
   }
 }
 
-export function readGatewayConfig(env: Env = process.env, prices: readonly ModelPrice[] = PRICES): GatewayConfig {
+export function readGatewayConfig(env: Env = process.env, prices: readonly ModelPrice[] = PRICES, evaluations: readonly RecordedEvaluation[] = RECORDED_EVALUATIONS): GatewayConfig {
   const production = value(env, 'NODE_ENV') === 'production';
   const provider = value(env, 'MODEL_PROVIDER') ?? (production ? 'bedrock' : 'local');
   if (!(PROVIDER_KINDS as readonly string[]).includes(provider)) {
@@ -76,6 +79,7 @@ export function readGatewayConfig(env: Env = process.env, prices: readonly Model
   }
   if (production) {
     assertPricesConfirmed(provider as ProviderKind, prices);
+    assertEvaluated(provider as ProviderKind, evaluations);
   }
   if (provider === 'anthropic') {
     return { production, provider, apiKey: required(env, 'ANTHROPIC_API_KEY', 'when MODEL_PROVIDER is anthropic') };

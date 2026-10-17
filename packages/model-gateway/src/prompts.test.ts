@@ -56,6 +56,19 @@ describe('each prompt version', () => {
       expect(changelog).toContain(`## ${prompt.id} (`);
       expect(changelog).toContain(prompt.sha256);
     }
+  });
+
+  it('records, for every released version, the one hash its changelog first gave it: a version is never edited in place', () => {
+    for (const file of PROMPT_FILES) {
+      const prompt = file.prompt as { id: string; sha256: string };
+      const name = prompt.id.split('/')[0] ?? '';
+      const changelog = readFileSync(path.join(PROMPTS_DIR, name, 'CHANGELOG.md'), 'utf8');
+      // The version's own section: from its heading to the next version's.
+      const section = changelog.split(/^## /m).find((part) => part.startsWith(`${prompt.id} (`)) ?? '';
+      const hashes = [...section.matchAll(/SHA-256: `([0-9a-f]{64})`/g)].map((match) => match[1]);
+      expect(hashes, prompt.id).toEqual([prompt.sha256]);
+      expect(promptContentSha256(file.prompt as Parameters<typeof promptContentSha256>[0], file.schema), prompt.id).toBe(hashes[0]);
+    }
     expect(readdirSync(PROMPTS_DIR).sort()).toEqual(Object.values(PROMPTS).map((prompt) => prompt.id.split('/')[0]).sort());
   });
 

@@ -24,17 +24,24 @@ import { type Counts, below, precision, recall } from './score';
  * - narratives: no case has a critical error (zero tolerance, whatever the baseline says).
  *
  * A provider with no entry fails ("no_baseline"): its first baseline is recorded on purpose, by a
- * person, with ./cli.ts --record, from a run where that provider can be called.
+ * person, with ./cli.ts --record, from a run where that provider can be called. Each entry records the
+ * SHA-256 of the prompt version's content; a report on a version whose content no longer has the
+ * recorded hash fails ("prompt_changed"): a released version was edited in place. Production serves a
+ * real provider only when every current prompt version and pinned model has its entry (src/evaluated.ts).
  */
 
-export const BASELINE_FORMAT = 'tp-model-eval-baseline/1';
+export const BASELINE_FORMAT = 'tp-model-eval-baseline/2';
 export const BASELINE_PATH = path.resolve(import.meta.dirname, 'baseline.json');
 
 const counts = z.strictObject({ tp: z.number().int().min(0), fp: z.number().int().min(0), fn: z.number().int().min(0) });
 
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
+
 const contractEntry = z.strictObject({
   purpose: z.literal('proposeContractTerms'),
   prompt_version: z.string(),
+  /** The SHA-256 the prompt version records for its content: a version edited in place is not the one recorded. */
+  prompt_sha256: sha256,
   provider: z.enum(PROVIDER_KINDS),
   model_id: z.string(),
   set_sha256: z.string().regex(/^[0-9a-f]{64}$/),
@@ -47,6 +54,7 @@ const contractEntry = z.strictObject({
 const narrativeEntry = z.strictObject({
   purpose: z.literal('draftPacketNarrative'),
   prompt_version: z.string(),
+  prompt_sha256: sha256,
   provider: z.enum(PROVIDER_KINDS),
   model_id: z.string(),
   set_sha256: z.string().regex(/^[0-9a-f]{64}$/),
@@ -77,6 +85,7 @@ export function readBaseline(file: string = BASELINE_PATH): Baseline {
 export type GateProblem =
   | { readonly code: 'no_baseline'; readonly purpose: string; readonly provider: ProviderKind }
   | { readonly code: 'set_changed'; readonly purpose: string }
+  | { readonly code: 'prompt_changed'; readonly purpose: string; readonly promptVersion: string }
   | { readonly code: 'precision_regressed' | 'recall_regressed'; readonly field: TruthField | 'all' }
   | { readonly code: 'quotes_off_page'; readonly count: number }
   | { readonly code: 'narrative_failures'; readonly count: number; readonly cases: readonly string[] };
@@ -110,10 +119,25 @@ function regressions(current: Counts, held: Counts, field: TruthField | 'all'): 
   return problems;
 }
 
+/**
+ * A prompt version recorded under another content hash than the one it records now: released versions never
+ * change (prompts/<name>/CHANGELOG.md), so one edited in place is held as a changed prompt, never as the one
+ * the baseline scored.
+ */
+function promptChanged(baseline: Baseline, provider: ProviderKind, result: { readonly purpose: string; readonly promptVersion: string; readonly promptSha256: string }): GateProblem[] {
+  const changed = baseline.entries.some((entry) => entry.purpose === result.purpose && entry.provider === provider && entry.prompt_version === result.promptVersion && entry.prompt_sha256 !== result.promptSha256);
+  return changed ? [{ code: 'prompt_changed', purpose: result.purpose, promptVersion: result.promptVersion }] : [];
+}
+
 export function gate(report: EvaluationReport, baseline: Baseline): GateResult {
   const problems: GateProblem[] = [];
   let heldTo: ContractBaseline | null = null;
   const { contracts, narratives } = report;
+  for (const result of [contracts, narratives]) {
+    if (result !== null) {
+      problems.push(...promptChanged(baseline, report.provider, result));
+    }
+  }
   if (contracts !== null) {
     heldTo = contractBaselineFor(baseline, { provider: report.provider, promptVersion: contracts.promptVersion, modelId: contracts.modelId });
     if (heldTo === null) {
@@ -144,6 +168,7 @@ export function gate(report: EvaluationReport, baseline: Baseline): GateResult {
  */
 export function recordBaseline(baseline: Baseline, report: EvaluationReport, recordedOn: string): Baseline {
   const result = gate(report, baseline);
+  // A prompt changed in place is never recorded: it is a new version's to record.
   const blocking = result.problems.filter((problem) => problem.code !== 'no_baseline' && problem.code !== 'set_changed');
   if (blocking.length > 0) {
     throw new Error(`the report regresses or fails the narrative gate; nothing is recorded (${blocking.map((problem) => problem.code).join(', ')})`);
@@ -154,6 +179,7 @@ export function recordBaseline(baseline: Baseline, report: EvaluationReport, rec
     entries.push({
       purpose: 'proposeContractTerms',
       prompt_version: contracts.promptVersion,
+      prompt_sha256: contracts.promptSha256,
       provider: report.provider,
       model_id: contracts.modelId,
       set_sha256: contracts.setSha256,
@@ -164,7 +190,17 @@ export function recordBaseline(baseline: Baseline, report: EvaluationReport, rec
     });
   }
   if (narratives !== null) {
-    entries.push({ purpose: 'draftPacketNarrative', prompt_version: narratives.promptVersion, provider: report.provider, model_id: narratives.modelId, set_sha256: narratives.setSha256, cases: narratives.cases, failures: 0, recorded_on: recordedOn });
+    entries.push({
+      purpose: 'draftPacketNarrative',
+      prompt_version: narratives.promptVersion,
+      prompt_sha256: narratives.promptSha256,
+      provider: report.provider,
+      model_id: narratives.modelId,
+      set_sha256: narratives.setSha256,
+      cases: narratives.cases,
+      failures: 0,
+      recorded_on: recordedOn,
+    });
   }
   const same = (a: Baseline['entries'][number], b: Baseline['entries'][number]) => a.purpose === b.purpose && a.prompt_version === b.prompt_version && a.provider === b.provider && a.model_id === b.model_id;
   return { ...baseline, entries: [...baseline.entries.filter((entry) => !entries.some((added) => same(entry, added))), ...entries] };
