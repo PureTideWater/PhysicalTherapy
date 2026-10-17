@@ -110,7 +110,7 @@ export default async function LedgerReviewPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Ledger corrections</h1>
+        <h1 className="text-2xl font-bold tracking-display">Ledger corrections</h1>
         <p className="text-sm text-muted-foreground">
           Correct an entry&apos;s amount after review, with your reason. The entry never changes; the correction is an entry of its own, which the ledger keeps between zero and what the
           entry&apos;s evidence shows.

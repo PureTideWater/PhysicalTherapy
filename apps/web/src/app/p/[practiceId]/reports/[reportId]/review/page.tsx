@@ -35,7 +35,7 @@ export default async function ReviewChecklistPage(props: Props) {
         <Link className="text-sm underline" href={path}>
           Audit report
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Reviewer checklist</h1>
+        <h1 className="text-2xl font-bold tracking-display">Reviewer checklist</h1>
         <p className="text-sm text-muted-foreground">
           Service {report.periodFrom} to {report.periodTo}; windows judged on {report.asOf ?? '—'}. Read the report, its{' '}
           <a className="underline" href={`${path}/pdf`}>

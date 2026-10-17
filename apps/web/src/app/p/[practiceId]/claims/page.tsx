@@ -40,7 +40,7 @@ export default async function ClaimsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="claims">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Claims and lines</h1>
+        <h1 className="text-2xl font-bold tracking-display">Claims and lines</h1>
         <p className="text-sm text-muted-foreground">
           {filters.view === 'net'
             ? 'Net view: each adjudicated claim once. A reversed claim and the claims a correction replaced are left out.'
@@ -181,7 +181,7 @@ export default async function ClaimsPage(props: Props) {
                         {row.superseded ? <Badge variant="outline">Superseded</Badge> : null}
                       </div>
                     </td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{row.units ?? '—'}</td>
+                    <td className="py-2 pr-3 text-right font-mono tabular-nums">{row.units ?? '—'}</td>
                     <td className="py-2 pr-3 text-right">
                       <Money value={row.chargeCents} />
                     </td>

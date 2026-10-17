@@ -69,7 +69,7 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
               return (
                 <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
                   <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{entry.lines}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
                   <td className="py-1">
                     {text.remedy}
                     {text.screen === null ? null : (
@@ -117,7 +117,7 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
                       {plan.plan_key}
                     </Link>
                   </td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{plan.lines}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.lines}</td>
                   <td className="py-1 text-right">
                     <Money value={plan.charge_cents} />
                   </td>
@@ -173,7 +173,7 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               {STAGES.map((stage) => (
                 <tr key={stage} className="border-t" data-stage={stage}>
                   <td className="py-1">{SUMMARY_BUCKET_LABELS[stage]}</td>
-                  <td className="py-1 tabular-nums">
+                  <td className="py-1 font-mono tabular-nums">
                     <Link className="underline" href={stageLinesHref(practiceId, stage, content.month)}>
                       {content.total.figures[stage].lines}
                     </Link>
@@ -188,7 +188,7 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               ))}
               <tr className="border-t text-muted-foreground" data-stage="actionable_written_off">
                 <td className="py-1">Written off from a case (not in the actionable total)</td>
-                <td className="py-1 tabular-nums">{content.total.written_off.lines}</td>
+                <td className="py-1 font-mono tabular-nums">{content.total.written_off.lines}</td>
                 <td className="py-1">
                   <Money value={content.total.written_off.billed_cents} />
                 </td>
@@ -199,7 +199,7 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               {OTHERS.map((bucket) => (
                 <tr key={bucket} className="border-t text-muted-foreground" data-stage={bucket}>
                   <td className="py-1">{SUMMARY_BUCKET_LABELS[bucket]}</td>
-                  <td className="py-1 tabular-nums">
+                  <td className="py-1 font-mono tabular-nums">
                     <Link className="underline" href={monthLinesHref(practiceId, content.month)}>
                       {content.total.figures[bucket].lines}
                     </Link>
@@ -286,7 +286,7 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
                       </td>
                       <td className="py-1 font-mono text-xs">{row.packet_version_id}</td>
                       <td className="py-1">{row.approved_on}</td>
-                      <td className="py-1 tabular-nums">{row.hours_waited}</td>
+                      <td className="py-1 font-mono tabular-nums">{row.hours_waited}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -45,7 +45,7 @@ export default async function PricingRunPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/pricing-runs`}>
           Pricing runs
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           Pricing run, {run.periodFrom} to {run.periodTo}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
@@ -200,7 +200,7 @@ export default async function PricingRunPage(props: Props) {
                       <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
                         <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
                         <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
-                        <td className="py-1 pr-3 text-right tabular-nums">{entry.lines}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
                         <td className="py-1 text-right">
                           <Money value={entry.charge_cents} />
                         </td>
@@ -281,7 +281,7 @@ export default async function PricingRunPage(props: Props) {
                     {line.procedureCode}
                     {line.modifiers.length === 0 ? '' : ` ${line.modifiers.join(' ')}`}
                   </td>
-                  <td className="py-1 pr-3 text-right tabular-nums">{line.units ?? '—'}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{line.units ?? '—'}</td>
                   <td className="py-1 pr-3 text-right">
                     <Money value={line.expectedAllowedCents} />
                   </td>

@@ -13,13 +13,13 @@ export const metadata: Metadata = { title: 'Choose a password' };
 export default async function NewPasswordPage() {
   const { email } = await loadPublicPage(newPasswordPage, {});
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Choose a password</h1>
+    <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
+      <h1 className="text-2xl font-bold tracking-display">Choose a password</h1>
       <Card>
         <CardHeader>
           <CardTitle>{email}</CardTitle>
           <CardDescription>
-            Your invitation came with a temporary password. Choose your own: at least {PASSWORD_MIN_LENGTH} characters, with a lowercase letter, an uppercase letter, a digit and a
+            Your invitation to PaidWhole came with a temporary password. Choose your own: at least {PASSWORD_MIN_LENGTH} characters, with a lowercase letter, an uppercase letter, a digit and a
             symbol.
           </CardDescription>
         </CardHeader>

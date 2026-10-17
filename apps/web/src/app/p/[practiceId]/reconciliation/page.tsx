@@ -218,7 +218,7 @@ export default async function ReconciliationPage(props: Props) {
             Reconciliation
           </Link>
         )}
-        <h1 className="text-2xl font-semibold tracking-tight">{caseId === null ? 'Reconciliation' : 'Case ledger'}</h1>
+        <h1 className="text-2xl font-bold tracking-display">{caseId === null ? 'Reconciliation' : 'Case ledger'}</h1>
         <p className="text-sm text-muted-foreground">
           The recovery ledger: every amount is an entry with its evidence, never typed; recovered is the proof level’s cash net of recoupments and reversals. Nothing unmatched counts.
         </p>

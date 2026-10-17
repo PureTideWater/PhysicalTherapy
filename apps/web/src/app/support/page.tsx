@@ -29,7 +29,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
   const { from, sent, supportEmail, responseTarget, categories, tickets } = page.data;
   return (
     <AppShell shell={page.shell} section="home">
-      <h1 className="text-2xl font-semibold tracking-tight">Support</h1>
+      <h1 className="text-2xl font-bold tracking-display">Support</h1>
       {sent === null ? null : (
         <Alert>
           <AlertTitle>Ticket {sent} opened</AlertTitle>
@@ -71,7 +71,7 @@ export default async function SupportPage(props: { readonly searchParams: Promis
             <tbody>
               {tickets.map((ticket) => (
                 <tr key={ticket.id} className="border-t">
-                  <td className="py-1 tabular-nums">{ticket.number}</td>
+                  <td className="py-1 font-mono tabular-nums">{ticket.number}</td>
                   <td className="py-1">{ticket.subject}</td>
                   <td className="py-1">{utc(ticket.createdAt)}</td>
                   <td className="py-1">

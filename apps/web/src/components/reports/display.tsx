@@ -92,7 +92,8 @@ export function Headline({ headline, practiceId, base }: { readonly headline: Au
   );
 }
 
-function Table({ caption, headers, rows, empty }: { readonly caption: string; readonly headers: readonly string[]; readonly rows: readonly (readonly ReactNode[])[]; readonly empty: string }) {
+/** A stored report's table; `figures` names its columns (0-based) of codes, counts and amounts, set in the mono face with tabular numerals. */
+function Table({ caption, headers, rows, empty, figures = [] }: { readonly caption: string; readonly headers: readonly string[]; readonly rows: readonly (readonly ReactNode[])[]; readonly empty: string; readonly figures?: readonly number[] }) {
   if (rows.length === 0) {
     return <p className="text-sm text-muted-foreground">{empty}</p>;
   }
@@ -114,7 +115,7 @@ function Table({ caption, headers, rows, empty }: { readonly caption: string; re
             // The rows are a stored report's, in its order; nothing reorders them, so the index is their key.
             <tr key={index} className="border-b last:border-0">
               {row.map((cell, column) => (
-                <td key={column} className="px-2 py-1 align-top">
+                <td key={column} className={figures.includes(column) ? 'px-2 py-1 align-top font-mono tabular-nums' : 'px-2 py-1 align-top'}>
                   {cell}
                 </td>
               ))}
@@ -143,6 +144,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Unpriced lines by reason"
             headers={['Reason', 'Lines', 'Billed', 'Remedy']}
+            figures={[0, 1]}
             rows={content.coverage.reasons.map((reason) => [reason.reason, String(reason.lines), <Money key="billed" value={reason.charge_cents} />, reason.remedy])}
             empty="Every line priced."
           />
@@ -162,6 +164,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Anomaly cohorts"
             headers={['Label', 'Payer', 'Plan', 'Code', 'Quarter', 'Cohort', 'Mode per unit', 'Flagged', 'Range']}
+            figures={[3, 4, 5, 7]}
             rows={content.anomalies.map((anomaly) => [
               anomaly.label,
               anomaly.payer,
@@ -191,12 +194,14 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Validated discrepancies by payer pattern"
             headers={['Payer', 'Plan', 'Pattern', 'Lines', 'Variance']}
+            figures={[3]}
             rows={content.validated.patterns.map((pattern) => [pattern.payer, pattern.plan, pattern.behavior_text, String(pattern.lines), <Money key="variance" value={pattern.variance_cents} />])}
             empty="No line was paid below its contract."
           />
           <Table
             caption="Validated but not actionable"
             headers={['Why not actionable', 'Lines', 'Variance']}
+            figures={[1]}
             rows={content.validated.not_actionable.map((item) => [reasonText(item.reason), String(item.lines), <Money key="variance" value={item.variance_cents} />])}
             empty="Every validated line is actionable."
           />
@@ -224,6 +229,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Cases"
             headers={['Payer', 'Plan', 'Pattern', 'State', 'Lines (this run)', 'Actionable (this run)', 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected']}
+            figures={[4, 6]}
             rows={content.cases.map((item) => [
               item.payer,
               item.plan,
@@ -259,6 +265,7 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
           <Table
             caption="Evidence gaps"
             headers={['Gap', 'Lines', 'Billed', 'Detail', 'Remedy']}
+            figures={[1]}
             rows={content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind, String(gap.lines), gap.charge_cents === null ? '—' : <Money key="billed" value={gap.charge_cents} />, gap.detail, gap.remedy])}
             empty="No evidence gap."
           />

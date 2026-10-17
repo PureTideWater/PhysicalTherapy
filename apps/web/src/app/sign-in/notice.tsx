@@ -34,7 +34,7 @@ export function SignInNotice({ reason }: { readonly reason: SignInReason | null 
 export function HardwareKeyRequirement() {
   return (
     <Alert role="note" data-slot="hardware-key-requirement">
-      <AlertTitle>Company staff sign in with a hardware key</AlertTitle>
+      <AlertTitle>PaidWhole staff sign in with a hardware key</AlertTitle>
       <AlertDescription>
         Platform administrators, contract specialists, reimbursement reviewers and support engineers must use a hardware key. A password and an authenticator code are not enough
         for these roles.

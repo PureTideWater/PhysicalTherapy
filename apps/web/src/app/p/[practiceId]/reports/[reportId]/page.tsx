@@ -36,7 +36,7 @@ export default async function ReportPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
           Reports
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-display">
           Audit report, service {report.periodFrom} to {report.periodTo} <ReportStatusBadge status={report.status} /> <ReleaseState report={report} />
         </h1>
         <p className="text-sm text-muted-foreground">

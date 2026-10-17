@@ -39,8 +39,8 @@ export default async function CoveragePage(props: Props) {
   return (
     <AppShell shell={page.shell} section="coverage">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Coverage</h1>
-        <p className="text-sm text-muted-foreground">How much of the practice’s billing the platform can price under its agreements, why the rest is unpriced, and what raises it.</p>
+        <h1 className="text-2xl font-bold tracking-display">Coverage</h1>
+        <p className="text-sm text-muted-foreground">How much of the practice’s billing PaidWhole can price under its agreements, why the rest is unpriced, and what raises it.</p>
       </div>
       <ModelNoticeAlert notice={modelNotice} />
       <Card role="region" aria-label="Priced share">
@@ -125,8 +125,8 @@ export default async function CoveragePage(props: Props) {
                         {plan.planKey}
                       </Link>
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{plan.waiting.lines}</td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{plan.waiting.claims}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.lines}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{plan.waiting.claims}</td>
                     <td className="py-1 pr-3 text-right">
                       <Money value={plan.waiting.chargeCents} />
                     </td>
@@ -158,7 +158,7 @@ export default async function CoveragePage(props: Props) {
               <tr key={reason.reason} className="border-t align-top" data-reason={reason.reason}>
                 <td className="py-1 pr-3 font-mono text-xs">{reason.reason}</td>
                 <td className="py-1 pr-3">{reason.meaning}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{reason.lines}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{reason.lines}</td>
                 <td className="py-1">
                   {reason.remedy}
                   {reason.screen === null ? null : (

@@ -25,7 +25,7 @@ export default async function Home() {
   }
   return (
     <AppShell shell={page.shell} section="home">
-      <h1 className="text-2xl font-semibold tracking-tight">Therapy contract-payment platform</h1>
+      <h1 className="text-2xl font-bold tracking-display">PaidWhole</h1>
       <EmptyState
         title="No practice to open"
         nextStep="You have no current access to a practice. A practice administrator approves access for your organization; support access comes from a ticket. Ask your administrator."

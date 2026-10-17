@@ -43,7 +43,7 @@ export default async function RegulationsPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Regulations to confirm</h1>
+        <h1 className="text-2xl font-bold tracking-display">Regulations to confirm</h1>
         <p className="text-sm text-muted-foreground">
           A Medicare Advantage plan the practice has no contract with owes what Original Medicare would pay. Each packet that says so waits for you to confirm the regulation applies to its case
           before anyone can approve it.

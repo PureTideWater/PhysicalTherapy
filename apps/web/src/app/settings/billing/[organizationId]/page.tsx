@@ -36,7 +36,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
   const open = billing.invoices.filter((invoice) => invoice.status === 'open' || invoice.status === 'uncollectible');
   return (
     <AppShell shell={page.shell} section="billing">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing: {billing.name}</h1>
+      <h1 className="text-2xl font-bold tracking-display">Billing: {billing.name}</h1>
       <p className="text-sm text-muted-foreground">
         Standing: <Badge variant={billing.standing === 'good' ? 'outline' : 'destructive'}>{STANDING[billing.standing] ?? billing.standing}</Badge>
         {billing.pastDueSince === null ? null : <span> since {utcDate(billing.pastDueSince)}</span>}
@@ -83,7 +83,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
               {billing.subscription.cancelAtPeriodEnd ? <> (ends then)</> : null}
             </p>
           )}
-          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until the company confirms its prices.</p>}
+          {catalog.confirmed ? null : <p className="text-xs text-muted-foreground">The plan amounts shown are placeholders until PaidWhole confirms its prices.</p>}
         </CardContent>
       </Card>
 
@@ -160,7 +160,7 @@ export default async function OrganizationBillingPage(props: { readonly params: 
                     </td>
                     <td className="py-1">{KIND[invoice.kind] ?? invoice.kind}</td>
                     <td className="py-1">{utcDate(invoice.createdAt)}</td>
-                    <td className="py-1 tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
+                    <td className="py-1 font-mono tabular-nums">{formatUsd(parseCents(invoice.amountDueCents))}</td>
                     <td className="py-1">
                       <Badge variant={invoice.status === 'paid' ? 'outline' : invoice.firstFailedAt === null ? 'secondary' : 'destructive'}>{INVOICE_STATUS[invoice.status] ?? invoice.status}</Badge>
                       {invoice.firstFailedAt === null || invoice.status === 'paid' ? null : <span className="ml-2 text-xs">payment failed {utcDate(invoice.firstFailedAt)}</span>}

@@ -6,7 +6,7 @@ import type { ShellSection } from './shell';
  * which opens a ticket naming the screen. No help text names a record or a person.
  */
 export const HELP: Readonly<Record<ShellSection, string>> = {
-  home: 'Your starting point: pick a practice in the switcher, or open the console if you work for the company.',
+  home: 'Your starting point: pick a practice in the switcher, or open the console if you work for PaidWhole.',
   practice: 'The dashboard: what the latest runs found, by stage, and the queues waiting on you. Dollar figures carry their stage; only stage-five amounts are recovered.',
   uploads: 'Upload 835 remittances, contracts, posting exports and bank exports. Each file is scanned before it is read; a held file says why.',
   remittances: 'Every remittance loaded, by payer and payment, with what was held and why.',

@@ -39,7 +39,7 @@ export default async function ReleasesPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/pricing-runs`}>
           Pricing runs
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Rule release notes</h1>
+        <h1 className="text-2xl font-bold tracking-display">Rule release notes</h1>
         <p className="text-sm text-muted-foreground">
           Every expected amount is priced under one numbered release of the Medicare rules. A new release never changes a run; a re-run under it shows exactly which lines it would change before anyone accepts it.
         </p>
@@ -133,7 +133,7 @@ export default async function ReleasesPage(props: Props) {
                   </td>
                   <td className="py-1 pr-3">{utc(release.publishedAt)}</td>
                   <td className="py-1 pr-3">{release.withdrawal !== null ? `Withdrawn ${utc(release.withdrawal.withdrawnAt)}` : release.inForce ? 'In force' : 'Earlier'}</td>
-                  <td className="py-1 text-right tabular-nums">{runsByRelease[String(release.releaseNo)] ?? 0}</td>
+                  <td className="py-1 text-right font-mono tabular-nums">{runsByRelease[String(release.releaseNo)] ?? 0}</td>
                 </tr>
               ))}
             </tbody>

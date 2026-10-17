@@ -94,7 +94,7 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
   return (
     <AppShell shell={page.shell} section="compliance">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">SOC 2 Type I evidence</h1>
+        <h1 className="text-2xl font-bold tracking-display">SOC 2 Type I evidence</h1>
         <p className="text-sm text-muted-foreground" data-counts={`${String(checklist.counts.ready)}/${String(checklist.counts.action_needed)}/${String(checklist.counts.partial)}`}>
           As of {checklist.today}: {checklist.counts.ready} controls ready, {checklist.counts.action_needed} needing action, {checklist.counts.partial} partly built. The criteria are a proposed mapping for the
           security official and the auditor to confirm.

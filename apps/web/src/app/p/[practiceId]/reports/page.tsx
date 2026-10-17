@@ -75,7 +75,7 @@ export default async function ReportsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="reports">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
+        <h1 className="text-2xl font-bold tracking-display">Reports</h1>
         <p className="text-sm text-muted-foreground">
           Every report keeps its stages apart: actionable, payer approved and recovered are three numbers, never one, with flagged and validated below them; recovered is only ever the recovery ledger’s posted or deposited cash. Every
           total links to the stage it came from.

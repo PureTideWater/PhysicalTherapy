@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { utc } from '../../components/format';
 import { loadPublicPage } from '../../lib/http/next';
 import { INCIDENT_STATUS_LABELS, STATUS_LABELS, statusPage } from '../../lib/routes/support';
+import { PublicHeader } from '../../components/public-header';
 
 export const metadata: Metadata = { title: 'Service status' };
 
@@ -16,9 +17,11 @@ export const metadata: Metadata = { title: 'Service status' };
 export default async function StatusPage() {
   const { components, incidents, overall, maintenance, supportEmail } = await loadPublicPage(statusPage, {});
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-6 p-10">
+    <>
+      <PublicHeader />
+      <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 md:p-10">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Service status</h1>
+        <h1 className="text-2xl font-bold tracking-display">PaidWhole service status</h1>
         <p className="text-sm" data-overall={overall}>
           {maintenance ? 'Scheduled maintenance is in progress.' : overall === 'operational' ? 'All systems operational.' : STATUS_LABELS[overall]}
         </p>
@@ -79,5 +82,6 @@ export default async function StatusPage() {
         </Link>
       </p>
     </main>
+    </>
   );
 }

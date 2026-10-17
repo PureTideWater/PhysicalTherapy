@@ -33,7 +33,7 @@ export default async function AnomaliesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="anomalies">
       <div className="flex flex-col gap-1">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-display">
           Anomalies <Investigatory />
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -77,8 +77,8 @@ export default async function AnomaliesPage(props: Props) {
                           {line.serviceDate}
                         </Link>
                       </td>
-                      <td className="px-2 py-1">{[line.procedureCode, ...line.modifiers].join(' ')}</td>
-                      <td className="px-2 py-1 tabular-nums">{line.units}</td>
+                      <td className="px-2 py-1 font-mono">{[line.procedureCode, ...line.modifiers].join(' ')}</td>
+                      <td className="px-2 py-1 font-mono tabular-nums">{line.units}</td>
                       <td className="px-2 py-1">
                         <Money value={line.observedAllowedCents} />
                       </td>
@@ -183,13 +183,13 @@ export default async function AnomaliesPage(props: Props) {
                         {anomaly.payer}, {anomaly.plan}
                       </Link>
                     </td>
-                    <td className="px-2 py-1">{[anomaly.procedureCode, ...anomaly.modifiers].join(' ')}</td>
+                    <td className="px-2 py-1 font-mono">{[anomaly.procedureCode, ...anomaly.modifiers].join(' ')}</td>
                     <td className="px-2 py-1">{anomaly.quarter}</td>
-                    <td className="px-2 py-1 tabular-nums">{anomaly.cohortSize}</td>
+                    <td className="px-2 py-1 font-mono tabular-nums">{anomaly.cohortSize}</td>
                     <td className="px-2 py-1">
                       <Money value={anomaly.modalAllowedCents} />
                     </td>
-                    <td className="px-2 py-1 tabular-nums">{anomaly.stats.flagged_lines}</td>
+                    <td className="px-2 py-1 font-mono tabular-nums">{anomaly.stats.flagged_lines}</td>
                     <td className="px-2 py-1">
                       <Money value={anomaly.stats.range_low_cents} /> to <Money value={anomaly.stats.range_high_cents} />
                     </td>

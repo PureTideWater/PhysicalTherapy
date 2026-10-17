@@ -1,9 +1,9 @@
 import { cents, formatUsd } from '@tp/money';
-import { Badge } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import type { LineStatus } from '../../lib/remittances/queries';
+import { StatusChip, type StatusTone } from '../status';
 
 /**
  * Display pieces of the Remittances and Claims and lines screens (PRD 7): money from integer cents in
@@ -12,9 +12,9 @@ import type { LineStatus } from '../../lib/remittances/queries';
  * the URL.
  */
 
-/** Integer cents as text, as US dollars; a dash when there is none. */
+/** Integer cents as text, as US dollars, in the mono face with tabular numerals; a dash when there is none. */
 export function Money({ value }: { readonly value: string | null }) {
-  return <span className="tabular-nums">{value === null ? '—' : formatUsd(cents(BigInt(value)))}</span>;
+  return <span className="font-mono tabular-nums">{value === null ? '—' : formatUsd(cents(BigInt(value)))}</span>;
 }
 
 /** CLP02 in words, for the statuses the plan names (PRD 10; the parser's types); any other shows its code. */
@@ -40,6 +40,20 @@ const STATUS_LABELS: Readonly<Record<LineStatus, string>> = {
 };
 
 /**
+ * Each status's tint (docs/adr/0054): recovered is whole (cash at the proof level); validated and actionable
+ * are short (paid below the contract); flagged and unpriced are unpriced (no contract price yet; flagged is
+ * investigatory); payer approved is neutral (accepted, not yet cash). Always with its label.
+ */
+export const STATUS_TONES: Readonly<Record<LineStatus, StatusTone>> = {
+  flagged: 'unpriced',
+  validated: 'short',
+  actionable: 'short',
+  payer_approved: 'neutral',
+  recovered: 'whole',
+  unpriced: 'unpriced',
+};
+
+/**
  * A line's status chip: one of the five stages (from the line's stage events), unpriced (its pricing in
  * effect left it so), priced with a shortfall triage has not judged yet, priced without a shortfall (at
  * or under what was paid: no stage), or not priced yet (no run in effect has priced it).
@@ -48,25 +62,25 @@ export function LineStatusChip({ status, priced = false, shortfall = false }: { 
   if (status === null) {
     if (priced && shortfall) {
       return (
-        <Badge variant="outline" data-status="priced_untriaged" title="Priced below what it expects; triage of its run decides its stage.">
+        <StatusChip tone="short" data-status="priced_untriaged" title="Priced below what it expects; triage of its run decides its stage.">
           Priced, not triaged yet
-        </Badge>
+        </StatusChip>
       );
     }
     return priced ? (
-      <Badge variant="outline" data-status="priced" title="The pricing run in effect priced this line at or under what was paid.">
+      <StatusChip tone="whole" data-status="priced" title="The pricing run in effect priced this line at or under what was paid.">
         Priced, no shortfall
-      </Badge>
+      </StatusChip>
     ) : (
-      <Badge variant="outline" title="Expected allowed and the line's stage come from a pricing run.">
+      <StatusChip tone="neutral" title="Expected allowed and the line's stage come from a pricing run.">
         Not priced yet
-      </Badge>
+      </StatusChip>
     );
   }
   return (
-    <Badge variant={status === 'unpriced' ? 'secondary' : 'default'} data-status={status}>
+    <StatusChip tone={STATUS_TONES[status]} data-status={status}>
       {STATUS_LABELS[status]}
-    </Badge>
+    </StatusChip>
   );
 }
 

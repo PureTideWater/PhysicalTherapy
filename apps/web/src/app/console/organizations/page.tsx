@@ -24,7 +24,7 @@ export default async function OrganizationsPage() {
   const { organizations } = page.data;
   return (
     <AppShell shell={page.shell} section="organizations">
-      <h1 className="text-2xl font-semibold tracking-tight">Organizations and practices</h1>
+      <h1 className="text-2xl font-bold tracking-display">Organizations and practices</h1>
       <Card>
         <CardHeader>
           <CardTitle>New organization</CardTitle>

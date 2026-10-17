@@ -41,7 +41,7 @@ export default async function VersionPage(props: Props) {
           </Link>{' '}
           <span className="text-muted-foreground">with {version.payerName}</span>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Version {version.versionNo}: rate record review</h1>
+        <h1 className="text-2xl font-bold tracking-display">Version {version.versionNo}: rate record review</h1>
       </div>
       {notice === 'signed_off' ? (
         <Alert data-notice="signed_off">

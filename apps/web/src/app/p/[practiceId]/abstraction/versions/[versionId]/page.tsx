@@ -89,7 +89,7 @@ export default async function AbstractionVersionPage(props: Props) {
             Contract abstraction
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           {version.contractTitle}, version {version.versionNo}
         </h1>
         <p className="text-sm text-muted-foreground">With {version.payerName}.</p>

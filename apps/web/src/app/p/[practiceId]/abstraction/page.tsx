@@ -54,7 +54,7 @@ export default async function AbstractionPage(props: Props) {
             Ledger corrections
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Contract abstraction</h1>
+        <h1 className="text-2xl font-bold tracking-display">Contract abstraction</h1>
         <p className="text-sm text-muted-foreground">
           Enter each term by hand with the document, page and quote it comes from, approve it field by field against that page, then approve the version for the practice to sign
           off.
@@ -122,7 +122,7 @@ export default async function AbstractionPage(props: Props) {
                     <VersionStatusBadge status={version.status} />
                   </td>
                   <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
-                  <td className="py-1 text-right tabular-nums">
+                  <td className="py-1 text-right font-mono tabular-nums">
                     {version.verified} of {version.records} verified
                   </td>
                 </tr>

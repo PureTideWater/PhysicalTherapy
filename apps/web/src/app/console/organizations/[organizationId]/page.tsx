@@ -36,7 +36,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
   return (
     <AppShell shell={page.shell} section="organizations">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{organization.name}</h1>
+        <h1 className="text-2xl font-bold tracking-display">{organization.name}</h1>
         <p className="text-sm text-muted-foreground">
           {organization.kind} · {organization.status} · created {utcDate(organization.createdAt)}
         </p>

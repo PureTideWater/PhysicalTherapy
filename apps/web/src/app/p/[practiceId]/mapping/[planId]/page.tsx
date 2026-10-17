@@ -70,7 +70,7 @@ export default async function PlanPage(props: Props) {
             Payer and plan mapping
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           {plan.payerName}: {plan.planName ?? plan.planKey}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -123,7 +123,7 @@ export default async function PlanPage(props: Props) {
                         </>
                       )}
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{bucket.lines}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{bucket.lines}</td>
                     <td className="py-1 text-right">
                       <Money value={bucket.chargeCents} />
                     </td>

@@ -32,7 +32,7 @@ export default async function SettingsPage(props: { readonly params: Promise<{ p
   return (
     <AppShell shell={page.shell} section="settings">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-display">Settings</h1>
         <p className="text-sm text-muted-foreground">
           {practice.name}. Your role: {roleNames(roles)}
           {via === 'ownership' ? '' : ' (through a grant)'}.

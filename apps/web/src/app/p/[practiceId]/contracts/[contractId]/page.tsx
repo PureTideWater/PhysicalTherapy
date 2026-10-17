@@ -39,7 +39,7 @@ export default async function ContractPage(props: Props) {
             Contracts
           </Link>
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">{contract.title}</h1>
+        <h1 className="text-2xl font-bold tracking-display">{contract.title}</h1>
         <p className="text-sm text-muted-foreground">
           With {contract.payerName}
           {contract.billingEntity === null ? '' : `; billing entity ${contract.billingEntity}`}.
@@ -74,7 +74,7 @@ export default async function ContractPage(props: Props) {
                     <VersionStatusBadge status={version.status} />
                   </td>
                   <td className="py-1 pr-3">{windowText(version.effectiveFrom, version.effectiveTo)}</td>
-                  <td className="py-1 pr-3 text-right tabular-nums">
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">
                     {version.verified} of {version.records} verified
                   </td>
                   <td className="py-1 pr-3">{version.approvedAt === null ? '—' : `${version.approvedBy ?? ''}, ${utc(version.approvedAt)}`}</td>

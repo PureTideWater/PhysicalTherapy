@@ -31,7 +31,7 @@ export default async function ConsoleBillingPage() {
   const { organizations, catalog } = page.data;
   return (
     <AppShell shell={page.shell} section="console_billing">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing status</h1>
+      <h1 className="text-2xl font-bold tracking-display">Billing status</h1>
       {organizations.length === 0 ? (
         <EmptyState title="No customer organizations yet" nextStep="Create a practice group or a billing firm under Organizations and practices." />
       ) : (
@@ -62,7 +62,7 @@ export default async function ConsoleBillingPage() {
                     {row.suspendedSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span> : row.pastDueSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span> : null}
                   </td>
                   <td className="py-1">{row.plan === null ? 'None' : `${row.plan === 'monthly' ? 'Monthly' : 'Annual'} (${row.subscriptionStatus ?? ''})`}</td>
-                  <td className="py-1 tabular-nums">{formatUsd(parseCents(row.openCents))}</td>
+                  <td className="py-1 font-mono tabular-nums">{formatUsd(parseCents(row.openCents))}</td>
                   <td className="py-1">{row.snapshotOn === null ? '—' : `${String(row.grantedPractices)}, ${String(row.activePractices)} on ${row.snapshotOn}`}</td>
                 </tr>
               ))}

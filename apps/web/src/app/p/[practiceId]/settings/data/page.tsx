@@ -23,7 +23,7 @@ export default async function DataSettingsPage(props: { readonly params: Promise
   const { practiceId, canRequestExport, canRequestDeletion } = page.data;
   return (
     <AppShell shell={page.shell} section="settings">
-      <h1 className="text-2xl font-semibold tracking-tight">Export and deletion</h1>
+      <h1 className="text-2xl font-bold tracking-display">Export and deletion</h1>
       <SettingsNav practiceId={practiceId} organizationId={currentOrganization(page.shell)} current="data" />
       <Card data-placeholder="milestone-12">
         <CardHeader>

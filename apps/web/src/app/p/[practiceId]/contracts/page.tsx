@@ -39,7 +39,7 @@ export default async function ContractsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="contracts">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Contracts</h1>
+        <h1 className="text-2xl font-bold tracking-display">Contracts</h1>
         <p className="text-sm text-muted-foreground">
           The practice’s agreements with its payers. A version prices lines only once the contract specialist has verified every term against its page and the practice has signed it
           off.

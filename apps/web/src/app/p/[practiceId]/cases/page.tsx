@@ -45,7 +45,7 @@ export default async function CasesPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="cases">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Cases</h1>
+        <h1 className="text-2xl font-bold tracking-display">Cases</h1>
         <p className="text-sm text-muted-foreground">
           {stageLabel('actionable')}: <Money value={actionableCents} /> across {openCases} {openCases === 1 ? 'case' : 'cases'} still being worked{filtered ? ' the filters admit' : ''}, as of {asOf}. A case’s total is the sum of its lines not written off;
           a line past its window is struck through and out of it. Payer approved and recovered amounts come from the recovery ledger, on each case’s page.
@@ -258,7 +258,7 @@ export default async function CasesPage(props: Props) {
                     <td className="px-2 py-1">
                       <CaseStateBadge state={item.state} />
                     </td>
-                    <td className="px-2 py-1 tabular-nums">
+                    <td className="px-2 py-1 font-mono tabular-nums">
                       {item.openLines} of {item.lines}
                     </td>
                     <td className="px-2 py-1">

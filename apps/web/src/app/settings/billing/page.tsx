@@ -23,7 +23,7 @@ export default async function BillingSettingsPage() {
   const { organizations } = page.data;
   return (
     <AppShell shell={page.shell} section="billing">
-      <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
+      <h1 className="text-2xl font-bold tracking-display">Billing</h1>
       <p className="max-w-prose text-sm text-muted-foreground">
         The subscription, payment method and invoices of each organization you administer. Billing holds the organization&apos;s name and its invoices only, never a patient&apos;s or a claim&apos;s details.
       </p>

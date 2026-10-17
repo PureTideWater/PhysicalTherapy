@@ -11,8 +11,8 @@ export const metadata: Metadata = { title: 'Register a hardware key' };
 export default async function RegisterKeyPage() {
   const { email } = await loadPublicPage(registerKeyPage, {});
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Register a hardware key</h1>
+    <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
+      <h1 className="text-2xl font-bold tracking-display">Register a hardware key</h1>
       <Card>
         <CardHeader>
           <CardTitle>{email}</CardTitle>

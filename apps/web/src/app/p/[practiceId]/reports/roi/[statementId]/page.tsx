@@ -2,6 +2,7 @@ import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { VerifiedSeal } from '../../../../../../components/brand';
 import { utc } from '../../../../../../components/format';
 import { entryStage, proofLevelWords } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
@@ -15,12 +16,30 @@ export const metadata: Metadata = { title: 'ROI statement' };
 
 type Props = { readonly params: Promise<{ practiceId: string; statementId: string }> };
 
-function Figure({ id, title, note, figure, practiceId, empty }: { readonly id: string; readonly title: string; readonly note: string; readonly figure: FigureView; readonly practiceId: string; readonly empty: string }) {
+function Figure({
+  id,
+  title,
+  qualifier,
+  note,
+  figure,
+  practiceId,
+  empty,
+}: {
+  readonly id: string;
+  readonly title: string;
+  /** Words shown after the title, such as the proof level a recovered figure is proved by. */
+  readonly qualifier?: string;
+  readonly note: string;
+  readonly figure: FigureView;
+  readonly practiceId: string;
+  readonly empty: string;
+}) {
   return (
     <Card role="region" aria-label={title} id={id}>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-baseline gap-2">
-          {title}: <Money value={figure.storedCents} />
+          {title}
+          {qualifier === undefined ? '' : ` ${qualifier}`}: <Money value={figure.storedCents} />
         </CardTitle>
         <CardDescription>
           {note}{' '}
@@ -91,7 +110,7 @@ export default async function RoiStatementPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports/roi`}>
           ROI statements
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           ROI statement, {detail.periodFrom} to {detail.periodTo}
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -99,6 +118,8 @@ export default async function RoiStatementPage(props: Props) {
           <span data-proof-level={detail.proofLevel}>{proofLevelWords(detail.proofLevel)}</span>.
         </p>
       </div>
+      {/* The seal and its definition, only when the ledger says the recovered total reconciles to cash. */}
+      <VerifiedSeal reconciledToCash={detail.verified.reconciledToCash} source={detail.verified.source} className="self-end" />
       {detail.matches ? (
         <Alert data-state="recomputed">
           <AlertTitle>Recomputed from its entries</AlertTitle>
@@ -141,7 +162,7 @@ export default async function RoiStatementPage(props: Props) {
       <Card role="region" aria-label="Fees paid">
         <CardHeader>
           <CardTitle className="flex flex-wrap items-baseline gap-2">
-            Fees paid to the product: <Money value={detail.feesCents} />
+            Fees paid to PaidWhole: <Money value={detail.feesCents} />
           </CardTitle>
           <CardDescription data-ratio={detail.recoveredToFees ?? 'none'}>
             {detail.recoveredToFees === null ? 'Billing records no fees paid in the period, so no ratio of recovered to fees is given.' : `Net recovered is ${detail.recoveredToFees} times the fees paid.`}
@@ -151,6 +172,7 @@ export default async function RoiStatementPage(props: Props) {
       <Figure
         id="recovered"
         title="Recovered principal, net"
+        qualifier={`(${detail.proofLevel})`}
         note="Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it."
         figure={detail.recovered}
         practiceId={practiceId}

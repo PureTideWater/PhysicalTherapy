@@ -39,7 +39,7 @@ export default async function LinePage(props: {
         <Link className="text-sm underline" href={`/p/${practiceId}/claims?view=all&claim=${line.claimId}`}>
           Claims and lines
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           Line {line.lineNo}: {line.procedureCode}
           {modifiers.length === 0 ? '' : ` ${modifiers.join(' ')}`}
         </h1>
@@ -180,7 +180,7 @@ export default async function LinePage(props: {
               <Money value={line.patientShareCents} />
             </Fact>
             <Fact label="Units">
-              {line.units ?? '—'}
+              <span className="font-mono tabular-nums">{line.units ?? '—'}</span>
               {line.originalUnits === null ? '' : ` (billed ${line.originalUnits})`}
             </Fact>
             <Fact label="Code">
@@ -243,7 +243,7 @@ export default async function LinePage(props: {
                     <td className="py-1 pr-3 font-mono text-xs">
                       {item.reasonCode} {item.unknownCode ? <Badge variant="destructive">Unknown code</Badge> : null}
                     </td>
-                    <td className="py-1 pr-3 text-right tabular-nums">{item.quantity ?? '—'}</td>
+                    <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.quantity ?? '—'}</td>
                     <td className="py-1 text-right">
                       <Money value={item.amountCents} />
                     </td>

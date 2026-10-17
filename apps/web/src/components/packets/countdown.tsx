@@ -21,7 +21,7 @@ export function Countdown({ until, initialRemainingMs }: { readonly until: strin
     };
   }, [until]);
   return (
-    <span className="tabular-nums" data-countdown={until}>
+    <span className="font-mono tabular-nums" data-countdown={until}>
       {remaining > 0 ? waitText(remaining) : 'now (reload the page)'}
     </span>
   );

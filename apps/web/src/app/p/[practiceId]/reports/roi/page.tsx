@@ -35,7 +35,7 @@ export default async function RoiStatementsPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/reports`}>
           Reports
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">ROI statements</h1>
+        <h1 className="text-2xl font-bold tracking-display">ROI statements</h1>
         <p className="text-sm text-muted-foreground">
           Recovered cash net of recoupments against the fees paid, from the recovery ledger’s entries alone: each figure lists the entries it sums. The quarter before is written on the first day of each quarter.
         </p>
@@ -65,7 +65,7 @@ export default async function RoiStatementsPage(props: Props) {
               <tr className="border-b text-left">
                 <th className="py-1 pr-3">Period</th>
                 <th className="py-1 pr-3">Kind</th>
-                <th className="py-1 pr-3 text-right">Recovered</th>
+                <th className="py-1 pr-3 text-right">Recovered (posted or deposited)</th>
                 <th className="py-1 pr-3 text-right">Interest</th>
                 <th className="py-1 pr-3">Proof level</th>
                 <th className="py-1 pr-3">Generated</th>

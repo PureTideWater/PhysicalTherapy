@@ -54,7 +54,7 @@ export default async function SubmissionsPage(props: Props) {
         <Link className="text-sm underline" href={casePath}>
           The case
         </Link>
-        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+        <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-display">
           Submissions and responses: {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
         <p className="text-sm text-muted-foreground">

@@ -10,7 +10,7 @@ export function CaseTimeline({ events }: { readonly events: readonly TimelineEve
     <ol className="flex flex-col gap-1 text-sm" aria-label="Case timeline">
       {events.map((event, index) => (
         <li key={`${event.at}:${event.kind}:${String(index)}`} data-event={event.kind}>
-          <span className="tabular-nums text-muted-foreground">{utc(event.at)}</span>: {eventText(event)} <span className="text-muted-foreground">({eventActor(event)})</span>
+          <span className="font-mono tabular-nums text-muted-foreground">{utc(event.at)}</span>: {eventText(event)} <span className="text-muted-foreground">({eventActor(event)})</span>
         </li>
       ))}
     </ol>

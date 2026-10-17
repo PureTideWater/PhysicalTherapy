@@ -29,7 +29,7 @@ export default async function SpecialistQueuePage(props: Props) {
   return (
     <AppShell shell={page.shell} section="specialist_queue">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Specialist queue</h1>
+        <h1 className="text-2xl font-bold tracking-display">Specialist queue</h1>
         <p className="text-sm text-muted-foreground">
           Counts only: a practice’s documents and contracts open only under its support grant, which a platform administrator opens from a ticket for four hours.
         </p>
@@ -38,26 +38,26 @@ export default async function SpecialistQueuePage(props: Props) {
         <Card>
           <CardHeader>
             <CardDescription>Documents awaiting abstraction</CardDescription>
-            <CardTitle className="text-3xl tabular-nums">{totals.documentsAwaiting}</CardTitle>
+            <CardTitle className="text-3xl font-mono tabular-nums">{totals.documentsAwaiting}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Proposals awaiting verification</CardDescription>
-            <CardTitle className="text-3xl tabular-nums">{totals.proposalsAwaiting}</CardTitle>
+            <CardTitle className="text-3xl font-mono tabular-nums">{totals.proposalsAwaiting}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">Model proposals arrive with the model gateway; until then every abstraction is by hand.</CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Questions to customers</CardDescription>
-            <CardTitle className="text-3xl tabular-nums">{totals.openQuestions}</CardTitle>
+            <CardTitle className="text-3xl font-mono tabular-nums">{totals.openQuestions}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader>
             <CardDescription>Regulations to confirm</CardDescription>
-            <CardTitle className="text-3xl tabular-nums">{totals.regulationsAwaiting}</CardTitle>
+            <CardTitle className="text-3xl font-mono tabular-nums">{totals.regulationsAwaiting}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">Medicare Advantage packets wait for your confirmation before anyone can approve them.</CardContent>
         </Card>
@@ -93,12 +93,12 @@ export default async function SpecialistQueuePage(props: Props) {
             {practices.map((practice) => (
               <tr key={practice.practiceId} className="border-t" data-practice={practice.practiceId}>
                 <td className="py-1 pr-3">{practice.name}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.documentsAwaiting}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.drafts}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.proposalsAwaiting}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.awaitingSignOff}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.openQuestions}</td>
-                <td className="py-1 pr-3 text-right tabular-nums">{practice.regulationsAwaiting}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.documentsAwaiting}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.drafts}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.proposalsAwaiting}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.awaitingSignOff}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.openQuestions}</td>
+                <td className="py-1 pr-3 text-right font-mono tabular-nums">{practice.regulationsAwaiting}</td>
                 <td className="py-1">
                   {practice.grantEndsAt === null ? (
                     <span className="text-muted-foreground">No support grant: ask a platform administrator for one from the ticket</span>

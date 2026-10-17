@@ -37,7 +37,7 @@ export default async function PricingRunsPage(props: Props) {
   return (
     <AppShell shell={page.shell} section="pricing_runs">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Pricing runs</h1>
+        <h1 className="text-2xl font-bold tracking-display">Pricing runs</h1>
         <p className="text-sm text-muted-foreground">
           Each run prices every line of a period under the signed-off contract version in force on its service date and one numbered rule release, and keeps the result as it was priced.
         </p>

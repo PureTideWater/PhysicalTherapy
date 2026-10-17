@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { type DocumentStatus, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
-import { type FigureCheck, type LedgerEntry, type ProofLevel, type StoredStatement, entriesById, ratioText, recomputeStatement, roiStatementCsv } from '@tp/ledger';
+import { type FigureCheck, type LedgerEntry, type ProofLevel, type ReportReconciliation, type StoredStatement, entriesById, ratioText, recomputeStatement, reportReconciliation, roiStatementCsv } from '@tp/ledger';
 import { centsToString, parseCents } from '@tp/money';
 import { STATEMENT_COLUMNS, approvalShortfalls, practiceLedgerSettings, practiceLedgerTotals, storedStatement, unmatchedItems } from '@tp/worker/ledger';
 
@@ -581,6 +581,11 @@ export interface StatementDetail extends StatementSummary {
   readonly actionableCases: readonly string[];
   /** Every entry-backed figure equals what its entries give (test matrix LED-11). */
   readonly matches: boolean;
+  /**
+   * The Verified gate's answer for this statement (docs/adr/0055): whether its recovered total reconciles to
+   * posted or deposited cash under its proof level, from the ledger. The seal renders only from this.
+   */
+  readonly verified: ReportReconciliation;
 }
 
 function figureView(check: FigureCheck): FigureView {
@@ -674,7 +679,9 @@ export async function statementOf(scope: Scope, practiceId: string, statementId:
     return undefined;
   }
   const statement = storedStatement(row);
-  const check = recomputeStatement(statement, await ledgerById(scope, practiceId));
+  const ledger = await ledgerById(scope, practiceId);
+  const check = recomputeStatement(statement, ledger);
+  const verified = reportReconciliation({ report: { kind: 'roi_statement', id: row.id }, proofLevel: statement.proofLevel, statedRecoveredCents: statement.recoveredCents, recoveredEntryIds: statement.links.recovered, ledger });
   return {
     ...summaryOf(row),
     feesCents: row.fees_cents,
@@ -687,6 +694,7 @@ export async function statementOf(scope: Scope, practiceId: string, statementId:
     approvedUnposted: figureView(check.approvedUnposted),
     actionableCases: statement.links.actionableOpen,
     matches: check.matches,
+    verified,
   };
 }
 

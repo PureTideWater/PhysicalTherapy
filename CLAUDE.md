@@ -1,4 +1,4 @@
-# Therapy contract-payment platform
+# PaidWhole: therapy contract-payment platform
 
 One TypeScript monorepo (pnpm). Next.js web app in apps/web, pg-boss worker in apps/worker, PostgreSQL with
 forced row-level security, S3 with per-practice keys, Cognito, Claude on Bedrock through packages/model-gateway.

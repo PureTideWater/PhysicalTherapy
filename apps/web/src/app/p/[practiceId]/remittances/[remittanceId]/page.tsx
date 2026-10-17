@@ -37,7 +37,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
         <Link className="text-sm underline" href={`/p/${practiceId}/remittances`}>
           Remittances
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-display">
           {remittance.payerName}, paid {remittance.paymentDate}
         </h1>
       </div>
@@ -143,7 +143,7 @@ export default async function RemittancePage(props: { readonly params: Promise<{
               <tbody>
                 {claims.map((claim) => (
                   <tr key={claim.id} className="border-t align-top" data-claim={claim.id}>
-                    <td className="py-2 pr-3 tabular-nums">{claim.claimNo}</td>
+                    <td className="py-2 pr-3 font-mono tabular-nums">{claim.claimNo}</td>
                     {claim.identifiers === null ? null : <td className="py-2 pr-3">{claim.identifiers.patient}</td>}
                     {claim.identifiers === null ? null : (
                       <td className="py-2 pr-3 font-mono text-xs">

@@ -28,7 +28,7 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
   const { tickets, status, responseTarget, supportEmail } = page.data;
   return (
     <AppShell shell={page.shell} section="tickets">
-      <h1 className="text-2xl font-semibold tracking-tight">Support tickets</h1>
+      <h1 className="text-2xl font-bold tracking-display">Support tickets</h1>
       <p className="text-sm text-muted-foreground">
         Answer within {responseTarget}. Mail to {supportEmail} is answered from that mailbox; it does not open a ticket here yet.
       </p>
@@ -56,7 +56,7 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
           <tbody>
             {tickets.map((ticket) => (
               <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
-                <td className="py-1 tabular-nums">{ticket.number}</td>
+                <td className="py-1 font-mono tabular-nums">{ticket.number}</td>
                 <td className="py-1">
                   {ticket.requesterEmail}
                   <br />

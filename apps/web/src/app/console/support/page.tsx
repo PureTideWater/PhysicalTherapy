@@ -29,7 +29,7 @@ export default async function SupportPage() {
   const { grants, practices, engineers } = page.data;
   return (
     <AppShell shell={page.shell} section="support">
-      <h1 className="text-2xl font-semibold tracking-tight">Support</h1>
+      <h1 className="text-2xl font-bold tracking-display">Support</h1>
       <Card>
         <CardHeader>
           <CardTitle>New support grant from a ticket</CardTitle>

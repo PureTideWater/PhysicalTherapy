@@ -7,6 +7,7 @@ import { Field, SelectField, TextAreaField } from '../../components/field';
 import { loadPublicPage } from '../../lib/http/next';
 import { requestAuditPage } from '../../lib/routes/onboarding';
 import { requestAuditAction } from './actions';
+import { PublicHeader } from '../../components/public-header';
 
 export const metadata: Metadata = { title: 'Request an audit' };
 
@@ -18,8 +19,10 @@ export const metadata: Metadata = { title: 'Request an audit' };
 export default async function RequestAuditPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { sent, arrangements } = await loadPublicPage(requestAuditPage, props);
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Request a contract-payment audit</h1>
+    <>
+      <PublicHeader />
+      <main className="mx-auto flex w-full max-w-xl flex-col gap-6 px-4 py-8 md:p-10">
+      <h1 className="text-2xl font-bold tracking-display">Request a PaidWhole contract-payment audit</h1>
       {sent ? (
         <Alert>
           <AlertTitle>Request received</AlertTitle>
@@ -30,7 +33,7 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
           <CardHeader>
             <CardTitle>About your practice</CardTitle>
             <CardDescription>
-              No patient information: only who you are, your locations, the payers you bill and how you bill. An audit compares what your payers paid with what your contracts say.
+              No patient information: only who you are, your locations, the payers you bill and how you bill. A PaidWhole audit compares what your payers paid with what your contracts say.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -57,5 +60,6 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
         .
       </p>
     </main>
+    </>
   );
 }

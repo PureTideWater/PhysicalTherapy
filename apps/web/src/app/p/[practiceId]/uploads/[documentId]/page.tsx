@@ -35,7 +35,7 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
         <Link className="text-sm underline" href={`/p/${practiceId}/uploads`}>
           Uploads
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Receipt {receipt.documentId.slice(0, 8)}</h1>
+        <h1 className="text-2xl font-bold tracking-display">Receipt {receipt.documentId.slice(0, 8)}</h1>
       </div>
       <Card>
         <CardHeader>
@@ -105,8 +105,8 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
                           {OUTCOME_NAMES[item.outcome]}
                           {item.reasons.length === 0 ? '' : ` (${item.reasons.join(', ')})`}
                         </td>
-                        <td className="py-1 pr-3 text-right tabular-nums">{item.claims}</td>
-                        <td className="py-1 pr-3 text-right tabular-nums">{item.lines}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.claims}</td>
+                        <td className="py-1 pr-3 text-right font-mono tabular-nums">{item.lines}</td>
                         <td className="py-1 font-mono text-xs">
                           {remittance === null ? (
                             '—'

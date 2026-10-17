@@ -14,8 +14,8 @@ export default async function EnrollPage() {
   const { email, secret, uri } = await loadPublicPage(enrollPage, {});
   const grouped = secret.match(/.{1,4}/g)?.join(' ') ?? secret;
   return (
-    <main className="mx-auto flex max-w-md flex-col gap-6 p-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Set up two-step verification</h1>
+    <main className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 pt-6 pb-10 sm:px-6">
+      <h1 className="text-2xl font-bold tracking-display">Set up two-step verification</h1>
       <Card>
         <CardHeader>
           <CardTitle>Add this account to your authenticator app</CardTitle>

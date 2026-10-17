@@ -1,11 +1,11 @@
-import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, cn } from '@tp/ui';
 import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { roleNames, utc, utcDate } from '../../../components/format';
 import { NotificationText } from '../../../components/monitoring/display';
-import { proofLevelWords } from '../../../components/reconciliation/display';
+import { proofLevelWords, recoveredLabel } from '../../../components/reconciliation/display';
 import { Money } from '../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
@@ -13,6 +13,15 @@ import { shareOf } from '../../../lib/pricing/view';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
 import { stageLinesHref } from '../../../lib/reports/links';
 import { practiceHome } from '../../../lib/routes/practice';
+
+/**
+ * The dashboard's tiles (docs/brand/BRAND.md, section 7): label in Slate at 12 px, value in Plex Mono 500,
+ * note in Slate; a tile is a link to the screen its figure comes from, in the foreground color.
+ */
+const TILE = 'flex flex-col gap-1 rounded-lg border bg-card p-4 text-fg no-underline hover:bg-accent hover:text-fg';
+const TILE_LABEL = 'block text-xs font-medium text-fg-muted';
+const TILE_VALUE = 'block text-2xl font-medium';
+const TILE_NOTE = 'block text-xs text-fg-muted';
 
 export const metadata: Metadata = { title: 'Practice' };
 
@@ -147,7 +156,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
   return (
     <AppShell shell={page.shell} section="practice">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{practice.name}</h1>
+        <h1 className="text-2xl font-bold tracking-display">{practice.name}</h1>
         <p className="text-sm text-muted-foreground">
           You reach this practice through {VIA[access.via] ?? access.via}, as {roleNames(access.roles)}.
         </p>
@@ -185,29 +194,29 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
           <section aria-label="Headline" className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold">The headline</h2>
             <p className="text-sm text-muted-foreground">Three numbers, never one: each is its own stage, and none is added to another. Each opens the screen it comes from.</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Link href={`/p/${practice.id}/cases`} className="rounded-lg border p-4 hover:bg-accent" data-figure="actionable">
-                <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{STAGE_LABELS.actionable}</span>
-                <span className="block text-2xl font-semibold">
+            <div className="grid gap-3 sm:grid-cols-3" data-slot="tile-row">
+              <Link href={`/p/${practice.id}/cases`} className={TILE} data-figure="actionable">
+                <span className={TILE_LABEL}>{STAGE_LABELS.actionable}</span>
+                <span className={TILE_VALUE}>
                   <Money value={dashboard.headline.actionable.cents} />
                 </span>
-                <span className="block text-xs text-muted-foreground">
+                <span className={TILE_NOTE}>
                   what the packets ask for: {dashboard.headline.actionable.lines} {dashboard.headline.actionable.lines === 1 ? 'line' : 'lines'} in cases still being worked
                 </span>
               </Link>
-              <Link href={`/p/${practice.id}/reconciliation`} className="rounded-lg border p-4 hover:bg-accent" data-figure="payer-approved">
-                <span className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground">{STAGE_LABELS.payer_approved}</span>
-                <span className="block text-2xl font-semibold">
+              <Link href={`/p/${practice.id}/reconciliation`} className={TILE} data-figure="payer-approved">
+                <span className={TILE_LABEL}>{STAGE_LABELS.payer_approved}</span>
+                <span className={TILE_VALUE}>
                   <Money value={dashboard.headline.payerApprovedCents} />
                 </span>
-                <span className="block text-xs text-muted-foreground">what payers accepted, from the recovery ledger; not cash until it posts</span>
+                <span className={TILE_NOTE}>what payers accepted, from the recovery ledger; not cash until it posts</span>
               </Link>
-              <Link href={`/p/${practice.id}/reconciliation`} className="rounded-lg border-2 border-foreground p-4 hover:bg-accent" data-figure="recovered-total">
-                <span className="block text-xs font-semibold uppercase tracking-wide">{STAGE_LABELS.recovered}</span>
-                <span className="block text-2xl font-semibold">
+              <Link href={`/p/${practice.id}/reconciliation`} className={cn(TILE, 'border-border-strong')} data-figure="recovered-total">
+                <span className={TILE_LABEL}>{recoveredLabel(dashboard.headline.proofLevel)}</span>
+                <span className={TILE_VALUE}>
                   <Money value={dashboard.headline.recoveredCents} />
                 </span>
-                <span className="block text-xs text-muted-foreground">stage five: cash {proofLevelWords(dashboard.headline.proofLevel)}, net of recoupments and reversals</span>
+                <span className={TILE_NOTE}>stage five: cash {proofLevelWords(dashboard.headline.proofLevel)}, net of recoupments and reversals</span>
               </Link>
             </div>
             <ul className="flex flex-col gap-1 text-sm" aria-label="Below the headline">
@@ -339,7 +348,7 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                     </>
                   )}
                 </dd>
-                <dt className="text-muted-foreground">Recovered this quarter</dt>
+                <dt className="text-muted-foreground">{recoveredLabel(dashboard.headline.proofLevel)} this quarter</dt>
                 <dd data-figure="recovered">
                   <Link className="underline" href={`/p/${practice.id}/reconciliation`}>
                     <Money value={dashboard.recoveredQuarter.cents} />

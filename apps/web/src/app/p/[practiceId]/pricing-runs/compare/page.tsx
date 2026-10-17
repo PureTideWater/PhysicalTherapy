@@ -64,7 +64,7 @@ export default async function ComparePricingRunsPage(props: Props) {
         <Link className="text-sm underline" href={`/p/${practiceId}/pricing-runs`}>
           Pricing runs
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">Compare two runs</h1>
+        <h1 className="text-2xl font-bold tracking-display">Compare two runs</h1>
         <p className="text-sm text-muted-foreground">Lines are matched by service line. Complete runs never change, so this comparison reads the same tomorrow.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">

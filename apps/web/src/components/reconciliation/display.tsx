@@ -36,6 +36,14 @@ export const EVIDENCE_WORDS: Readonly<Record<string, string>> = {
 };
 
 /** The proof level, in the words the ROI statement uses (PRD 13: a practice that cannot supply deposit data says "posted"). */
+/**
+ * The label of a recovered dollar figure: "Recovered" never stands without posted or deposited
+ * (docs/brand/BRAND.md, section 7), so it names the proof level the cash is proved by.
+ */
+export function recoveredLabel(level: string): string {
+  return `Recovered (${level === 'deposited' ? 'deposited' : 'posted'})`;
+}
+
 export function proofLevelWords(level: 'posted' | 'deposited'): string {
   return level === 'deposited' ? 'proved by deposit (the bank export)' : 'proved by posting (no deposit data is supplied)';
 }
@@ -75,16 +83,16 @@ export function LedgerTotals({ totals, title, description }: { readonly totals: 
         <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           {figures.map((figure) => (
             <div key={figure.key} className="rounded-md border p-3" data-figure={figure.key}>
-              <dt className="text-xs uppercase text-muted-foreground">{figure.label}</dt>
-              <dd className="text-lg font-semibold">
+              <dt className="text-xs font-medium text-fg-muted">{figure.label}</dt>
+              <dd className="text-lg font-medium">
                 <Money value={figure.cents} />
               </dd>
               <dd className="text-xs text-muted-foreground">{figure.note}</dd>
             </div>
           ))}
-          <div className="rounded-md border-2 border-foreground p-3" data-figure="recovered">
-            <dt className="text-xs uppercase">Recovered</dt>
-            <dd className="text-lg font-semibold">
+          <div className="rounded-md border border-border-strong p-3" data-figure="recovered">
+            <dt className="text-xs font-medium text-fg-muted">{recoveredLabel(totals.proofLevel)}</dt>
+            <dd className="text-lg font-medium">
               <Money value={totals.recoveredCents} />
             </dd>
             <dd className="text-xs text-muted-foreground">stage five: {proofLevelWords(totals.proofLevel)}, net of recoupments and reversals</dd>

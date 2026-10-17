@@ -28,7 +28,7 @@ export default async function NotificationsPage(props: { readonly params: Promis
   return (
     <AppShell shell={page.shell} section="notifications">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
+        <h1 className="text-2xl font-bold tracking-display">Notifications</h1>
         <p className="text-sm text-muted-foreground">
           What monitoring did for this practice, as counts and dollar totals. Choose what reaches you, in the app or by email, in your{' '}
           <Link className="underline" href="/account/notifications">
