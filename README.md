@@ -405,10 +405,11 @@ pnpm release:rollback <n> --reason <text>  # withdraw release n, the one in forc
 Production compute (ADR 0049; `infra/`): each environment's stack runs the web app, the worker's practice jobs and its
 platform jobs as three Fargate services (`WORKER_JOBS=practice` and `platform`; unset, one worker runs both) in private
 subnets, behind an HTTPS-only load balancer with a WAF web ACL (rate limits and AWS managed rules), with CloudFront for
-`/_next/static/` only (the web image built with `--build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin>` loads its assets
-from there; ADR 0055). A migration task (the worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the
-application, operator, queue and billing logins from their secrets) runs before any service moves to a new release; pg-boss
-connects as its own login in the role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
+`/_next/static/` and `/brand/` only (the web image built with `--build-arg STATIC_ASSET_ORIGIN=<StaticAssetsOrigin>`
+loads its assets from there, ADR 0055; email embeds the brand's lockup from there, ADR 0056). A migration task (the
+worker image's `dist/migrate.js`, then `dist/logins.js`, which creates the application, operator, queue and billing
+logins from their secrets) runs before any service moves to a new release; pg-boss connects as its own login in the
+role `tp_queue`, which owns the `pgboss` schema. Deploy-time values (host names,
 certificates, the sender, the image tag) are CloudFormation parameters; `-c tp:skipMigrations=true` redeploys a previous
 image. Uptime, certificate-expiry and failed sign-in alarms go to the operator. Nothing has been deployed.
 
