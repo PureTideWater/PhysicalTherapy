@@ -60,9 +60,14 @@ document differs from the schema. The commit and branch sit on a provenance line
 when the generator's inputs had uncommitted changes. `pnpm test:db` makes the same comparison on its own scratch
 database (`domain-model.db.test.ts`), so a migration merged without regenerating the document fails. Its second case
 is the approval: the founder's name, a `YYYY-MM-DD` date (from 2026-10-16, when the change order was issued, to today)
-and the document's SHA-256 on the "Approved by" line (`--require-approval`). The hash covers every line but that one (the last
-line) and the provenance line, so any schema change leaves the regenerated document awaiting a new approval, and no
-migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
+and the document's SHA-256 on the "Approved by" line (`--require-approval`, which prints the hash to sign when it refuses).
+The name must be exactly an entry of the reviewed approver list, `packages/db/domain-model/approvers.json` (apart from
+spaces at either end, in the same case), and never a placeholder (TBD, N/A, name, founder, approver, VERIFY ONLY, Claude,
+text in angle brackets) or a name with no letters. The list starts empty, so every approval is refused until the
+founder's name is added to it, with the founder's approval, in the same pull request as the document the founder signs. The
+hash covers every line but that one (the last line) and the provenance line, and must be the hash of both the
+regenerated text and the committed one, so any schema change, or an edit to the document alone, leaves it awaiting a new
+approval, and no migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
 function body's, and shows a disabled or replica-only trigger as not enforced, rewrite rules and default privileges, so
 an edit to a migration after it was signed fails the gate too (`domain-model-drift.db.test.ts`). Milestone 1 does not
 start until the founder approves the document; until then that case fails. The document records PostgreSQL's major

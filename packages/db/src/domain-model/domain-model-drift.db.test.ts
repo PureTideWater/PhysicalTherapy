@@ -38,10 +38,11 @@ async function migratedWithProbe(body: string): Promise<{ readonly database: Scr
   return { database, migrationsDir, document: await generateDomainModel({ databaseUrl: database.url, migrationsDir, strict: true, commit: 'probe', branch: 'probe' }) };
 }
 
-/** The document signed by a person on a valid date, as the founder would sign it. */
+/** A synthetic approver list, and the document signed by its one name on a valid date, as the founder would sign it. */
+const check = { approvers: ['A. Signer'] };
 const signed = (document: GeneratedDomainModel): string => {
   const line = approvalLineOf(document.text) ?? '';
-  return document.text.replace(line, () => `${APPROVAL_PREFIX} A. Founder  Date: 2026-10-17  Document SHA-256: \`${document.sha256}\``);
+  return document.text.replace(line, () => `${APPROVAL_PREFIX} A. Signer  Date: 2026-10-17  Document SHA-256: \`${document.sha256}\``);
 };
 
 const lineWith = (text: string, needle: string): string | undefined => text.split('\n').find((line) => line.includes(needle));
@@ -68,11 +69,13 @@ describe('the domain model and an edited migration', () => {
   it("a migration's function body edited after the document was signed fails the drift case and the approval", () => {
     const { before, after } = both();
     const approved = signed(before);
-    expect(documentApprovalProblems(approved, before.sha256)).toEqual([]);
+    expect(documentApprovalProblems(approved, before.sha256, check)).toEqual([]);
     const difference = firstDifference(approved, after.text);
     expect(difference).not.toBeNull();
     expect(after.sha256).not.toBe(before.sha256);
-    expect(documentApprovalProblems(approved, after.sha256)).toEqual([expect.stringMatching(/the document changed after it was approved$/)]);
+    expect(documentApprovalProblems(approved, after.sha256, check)).toEqual([
+      `the approval line's hash does not match the regenerated text: the line carries ${before.sha256}; the regenerated text's SHA-256 is ${after.sha256}`,
+    ]);
     // Two lines show it: the probe's row in Appendix D (its file's SHA-256) and the function's body hash in Appendix C.
     const appendixRow = `| \`${PROBE}\` |`;
     expect(lineWith(before.text, appendixRow)).toBeDefined();

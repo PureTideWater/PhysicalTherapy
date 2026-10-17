@@ -1,0 +1,5 @@
+{
+  "format": "tp-domain-model-approvers/1",
+  "note": "Who may sign the approval line of docs/product/domain-model.md (CO-02; reconciliation-001, D1). pnpm db:domain-model --check --require-approval refuses a name that is not exactly an entry here (apart from spaces at either end, in the same case), and an empty list refuses every approval. This list changes only with the founder's approval, in the same pull request as a document the founder signs.",
+  "approvers": []
+}

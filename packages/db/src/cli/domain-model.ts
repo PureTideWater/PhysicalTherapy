@@ -5,6 +5,7 @@ import { parseArgs } from 'node:util';
 
 import { readDatabaseUrl } from '../config';
 import {
+  APPROVERS_LIST,
   DOMAIN_MODEL_DOCUMENT,
   DomainModelError,
   REPO_ROOT,
@@ -12,6 +13,7 @@ import {
   documentToWrite,
   firstDifference,
   generateDomainModel,
+  readApprovers,
 } from '../domain-model';
 
 /**
@@ -27,8 +29,10 @@ import {
  *            provenance line (commit and branch), so a pull request that changes no schema passes
  *            whatever its commit; exits 1 and prints the first differing line when they differ.
  *   --require-approval  with --check: also exits 1 unless the document's last line, and no other, is
- *            an approval that names a person, gives a date (YYYY-MM-DD, from 2026-10-16 to today, UTC)
- *            and carries the SHA-256 of exactly this text.
+ *            an approval that names a person on packages/db/domain-model/approvers.json (exactly, apart
+ *            from spaces at either end; an empty list refuses every approval), gives a date (YYYY-MM-DD,
+ *            from 2026-10-16 to today, UTC) and carries the SHA-256 of exactly this text, which it prints
+ *            when it refuses, so the founder signs the hash it names.
  *   --strict exits 2 when a divergence that is not informational has no reviewed explanation, or an
  *            explanation names a divergence or policy that no longer exists. A table in no area of
  *            packages/db/domain-model/areas.json always exits 2.
@@ -93,7 +97,9 @@ const checkPath = values.check === undefined ? undefined : path.resolve(base, va
 const INPUTS = ['packages/db', 'docs/product/data-dictionary.md'];
 
 let generated;
+let approvers;
 try {
+  approvers = readApprovers();
   generated = await generateDomainModel({
     databaseUrl: values['database-url'] ?? readDatabaseUrl(),
     strict: values.strict,
@@ -117,13 +123,18 @@ if (checkPath !== undefined) {
   }
   process.stdout.write(`${checkPath} matches the schema at ${String(generated.head)}\n`);
   if (values['require-approval']) {
-    const problems = documentApprovalProblems(existing, generated.sha256);
-    if (problems.length) fail(`${checkPath} is not approved: ${problems.join('; ')}`, 1);
+    const problems = documentApprovalProblems(existing, generated.sha256, { approvers });
+    if (problems.length) {
+      fail(
+        `${checkPath} is not approved: ${problems.join('; ')}\nThe text compared with the schema has SHA-256 ${generated.sha256}: the approval line must carry that hash, a name on ${APPROVERS_LIST} and a date.`,
+        1,
+      );
+    }
     process.stdout.write(`${checkPath} carries an approval for this text\n`);
   }
 }
 if (outPath !== undefined) {
-  writeFileSync(outPath, documentToWrite(existsSync(outPath) ? readFileSync(outPath, 'utf8') : null, generated.text));
+  writeFileSync(outPath, documentToWrite(existsSync(outPath) ? readFileSync(outPath, 'utf8') : null, generated.text, { approvers }));
 }
 if (values.json !== undefined) writeFileSync(path.resolve(base, values.json), generated.json);
 process.stdout.write(`${outPath === undefined ? '' : `wrote ${outPath}: `}${generated.summary}\n`);

@@ -2,11 +2,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { MIGRATIONS_DIR } from '../migrate';
+import { APPROVERS_LIST, notAName } from './approval';
 
 /** The repository root (this file is packages/db/src/domain-model/sources.ts). */
 export const REPO_ROOT = path.resolve(import.meta.dirname, '../../../..');
 /** The document CO-02 asks for, and what `--out` and `--check` default to. */
 export const DOMAIN_MODEL_DOCUMENT = path.join(REPO_ROOT, 'docs/product/domain-model.md');
+
+/** Who may sign the approval line (approvers.json); `--require-approval` reads it. */
+export const APPROVERS_FILE = path.join(REPO_ROOT, APPROVERS_LIST);
+export const APPROVERS_FORMAT = 'tp-domain-model-approvers/1';
 
 /** What the generator reads besides the database: all text in the repository. */
 export interface DomainModelSources {
@@ -153,4 +158,19 @@ export function readExplanations(file: string): Explanations {
       status: text(file, `plan[${String(i)}].status`, p.status),
     })),
   };
+}
+
+/**
+ * The approver list: `format`, a `note` and `approvers`, each a person's name as it is signed, with no
+ * spaces at either end and none that notAName refuses, so a placeholder cannot be listed to pass.
+ */
+export function readApprovers(file: string = APPROVERS_FILE): string[] {
+  const json = readJson(file);
+  if (json.format !== APPROVERS_FORMAT) throw new DomainModelError(`${file}: format must be "${APPROVERS_FORMAT}"`);
+  text(file, 'note', json.note);
+  return texts(file, 'approvers', json.approvers).map((name, i) => {
+    const reason = notAName(name) ?? (name === name.trim() ? null : 'has spaces at either end');
+    if (reason !== null) throw new DomainModelError(`${file}: approvers[${String(i)}] ${reason}`);
+    return name;
+  });
 }
