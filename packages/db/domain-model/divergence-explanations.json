@@ -1,6 +1,11 @@
 {
   "_comment": "Reviewed explanations of each divergence the generator finds between docs/product/data-dictionary.md and the live schema. Keys are table|field|kind exactly as the generator computes them. With --strict, the generator fails on a divergence that is not informational and has no entry here, on an entry whose divergence no longer exists, and on a policy note whose list differs from the table's live policies in either direction (a policy it names that does not exist, or a live policy it does not name). Status: 'explained' (an ADR records it), 'stricter than the dictionary' (the schema enforces more), 'not built (milestone N)', or 'founder ruling needed'.",
   "rows": {
+    "source_document|kind|enumeration differs": {
+      "by": "ADR 0060; reconciliation-001 D12 (a), approved 2026-10-17",
+      "status": "explained",
+      "text": "era_export is a ninth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence."
+    },
     "rule_record|record_type|enumeration differs": {
       "by": "ADR 0008 (decision and revisit condition)",
       "status": "founder ruling needed",
@@ -168,7 +173,7 @@
       "subject": "Remittance duplicate key",
       "where": "PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary",
       "says": "PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents).",
-      "schema": "remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate.",
+      "schema": "remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. An ERA export (provenance era_export, ADR 0060, D12 a) is keyed by remittance_export_once (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) over export rows, and the 835 is authoritative between the two (D13 a).",
       "status": "founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule"
     },
     {
