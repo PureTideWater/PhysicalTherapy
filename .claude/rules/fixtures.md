@@ -24,7 +24,7 @@ paths:
   packages/synth/src/guard/pinned-tables.json. Add one only with that reason; never to let a table skip the marker.
 - One implementation enforces the rule three times: `assertSyntheticFixture` (packages/synth/src/write.ts) on
   every file writeCases and the audit writer write, `.claude/hooks/fixture-guard.sh` on Claude's Write, Edit and
-  MultiEdit (through packages/synth/src/guard/cli.ts), and `pnpm check:fixtures` in `pnpm test` and CI (before
+  MultiEdit (through packages/synth/src/guard/cli.ts; a NotebookEdit there is refused), and `pnpm check:fixtures` in `pnpm test` and CI (before
   `pnpm synth --all`, which must then leave fixtures/synthetic unchanged). The hook refuses an Edit or MultiEdit
   whose old_string is not in the file exactly as written (its line endings and quotes): regenerate the file or
   Write it whole.

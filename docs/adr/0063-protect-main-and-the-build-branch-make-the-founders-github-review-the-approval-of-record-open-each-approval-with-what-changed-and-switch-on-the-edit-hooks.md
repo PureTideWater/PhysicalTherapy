@@ -1,6 +1,6 @@
 # 0063. Protect main and the build branch, make the founder's GitHub review the approval of record, open each approval with what changed, and switch on the edit hooks
 
-- **Status:** accepted
+- **Status:** accepted; amends [0059](0059-twin-the-four-vendors-exports-as-unconfirmed-registry-data-carry-the-synthetic-marker-in-an-identifier-column-and-refuse-spreadsheet-exports-at-intake.md) (the hooks are wired now, the push deny and sandbox still in the final pass)
 - **Date:** 2026-10-18
 - **Deciders:** the founder, Tyler Williams (GitHub `PureTideWater`), who approved on 2026-10-18 audit item #12 ("Make your approval and the CI gate real") and the standing rule of the same day; the build (the governance pull request)
 - **PRD sections:** 16 (Security and compliance engineering), 17 (How to work: "CLAUDE.md is context, hooks are enforcement"; "merge by hand"), 18 (Testing and release); Change Order 001, CO-02; ADR 0059 (the hooks and the guarded approval)
@@ -155,9 +155,12 @@ the hooks as `settings.json` wires them.
 - The approval line is still checked as before; a pull request that regenerates the document still fails `test:db`
   until the line is signed, and now also needs the founder's review once enforced.
 - The hooks run in every Claude Code session in a checkout of this branch. A NotebookEdit cannot reach a release, a
-  migration, a fixture or the approval. `typecheck.sh`, measured with this branch's packages on this machine (the
-  hook's end-to-end time): see the pull request description; the first run of a package in a checkout builds its
-  cache and takes as long as `tsc` does.
+  migration, a fixture or the approval. `typecheck.sh`, measured end to end on the build's machine (4 CPUs, shared
+  with other builds, load 6 to 9) after a real edit: `packages/money` 1.7 s, `packages/db` 5.5 s, `apps/web` 8 to
+  11 s (the same edit through the old hook: a full 45 s `tsc` of `apps/web`). The first edit of a package in a fresh
+  checkout builds its cache and takes a full `tsc` (56 s for `apps/web` under that load). What remains is TypeScript
+  parsing every file of the program, about 3,500 for `apps/web`; it is correct, and slow for `apps/web`. A faster
+  check needs TypeScript 7's compiler or a resident checker process, not decided here.
 - Checks: `packages/db/src/domain-model/summary.test.ts`, `summary.db.test.ts`, `approval.test.ts` (the second
   format), `tools/approval-of-record/approval-of-record.test.ts`, `tools/test/workflows.test.ts` (approval-of-record's
   triggers, permissions and run; the summary step), `tools/test/codeowners.test.ts`, `tools/hooks/hooks.test.ts`,

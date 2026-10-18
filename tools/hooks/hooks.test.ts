@@ -11,10 +11,12 @@ import { repositoryRoot } from '../content-files';
 
 /**
  * Every Claude Code hook in .claude/hooks, run as Claude Code runs it: the hook input as JSON on stdin, exit 2
- * to refuse with the reason on stderr (docs/adr/0059). The hooks are wired by .claude/settings.json, which lands
- * in the final pass; until then these tests and CI's own checks hold their rules. A hook script with no cases
- * here fails the suite. Nothing here writes into the worktree: the scratch repositories and workspaces live in
- * the system's temporary directory, and .claude/.allow-protected-edit is only ever made there.
+ * to refuse with the reason on stderr (docs/adr/0059). .claude/settings.json wires them (docs/adr/0063): the
+ * three guards before every edit tool (Edit, Write, MultiEdit, NotebookEdit), the typecheck after each that
+ * writes text, and the last describe block runs them as it wires them, each edit tool allowed and refused. A hook
+ * script with no cases here, or not wired, fails the suite. Nothing here writes into the worktree: the scratch
+ * repositories and workspaces live in the system's temporary directory, and .claude/.allow-protected-edit is only
+ * ever made there.
  */
 const HOOKS = path.join(repositoryRoot, '.claude/hooks');
 const scratchDirs: string[] = [];
@@ -123,12 +125,25 @@ const CASES: Readonly<Record<string, () => void>> = {
     const noTsx = run(path.join(bare, '.claude/hooks/fixture-guard.sh'), { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: path.join(repositoryRoot, 'fixtures/a.csv'), content: 'Payee ID\nSYNTHSENDER\n' } });
     expect(noTsx.status).toBe(2);
     expect(noTsx.stderr).toContain('tsx is required');
+    // A NotebookEdit (its file is notebook_path, its text new_source): no notebook under fixtures/ or packages/synth/,
+    // and the X12 rule for its source anywhere (docs/adr/0063).
+    const notebook = (file: string, source: string) => run(script, { tool_name: 'NotebookEdit', cwd: repositoryRoot, tool_input: { notebook_path: path.join(repositoryRoot, file), new_source: source, edit_mode: 'replace' } });
+    const inFixtures = notebook('fixtures/synthetic/LED-99/explore.ipynb', 'print(1)');
+    expect(inFixtures.status).toBe(2);
+    expect(inFixtures.stderr).toContain('where no notebook belongs');
+    expect(notebook('packages/synth/src/explore.ipynb', 'print(1)').status).toBe(2);
+    expect(notebook('docs/explore.ipynb', 'print(1)').status).toBe(0);
+    const notebookX12 = notebook('docs/explore.ipynb', synthetic.replace('SYNTHSENDER    ', 'OTHERSENDER    '));
+    expect(notebookX12.status).toBe(2);
+    expect(notebookX12.stderr).toContain('contains an X12 interchange whose sender is not SYNTHSENDER');
+    expect(notebook('docs/explore.ipynb', synthetic).status).toBe(0);
   },
 
   'protect-content.sh': () => {
     const script = hook('protect-content.sh');
     const root = gitRepository('content', { 'content/releases/2026-01/manifest.json': '{}\n', 'packages/db/migrations/0001.sql': 'select 1;\n' });
-    const edit = (file: string) => run(script, { tool_name: 'Edit', cwd: root, tool_input: { file_path: file } });
+    const call = (toolName: string, toolInput: Record<string, unknown>, cwd = root) => run(script, { tool_name: toolName, cwd, tool_input: toolInput });
+    const edit = (file: string) => call('Edit', { file_path: file, old_string: '{}', new_string: '{ }' });
     const release = edit('content/releases/2026-01/manifest.json');
     expect(release.status).toBe(2);
     expect(release.stderr).toContain('is a published release');
@@ -137,33 +152,108 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(migration.status).toBe(2);
     expect(migration.stderr).toContain('Use /new-migration');
     expect(edit('content/drafts/a.json').status).toBe(0);
-    expect(run(script, { tool_name: 'Edit', cwd: root, tool_input: {} }).status).toBe(0);
+    expect(call('Edit', {}).status).toBe(0);
+    // Every edit tool: Write, Edit and MultiEdit name the file file_path; a NotebookEdit names it notebook_path.
+    const each = (file: string): Record<string, Record<string, unknown>> => ({
+      Write: { file_path: file, content: '{}\n' },
+      Edit: { file_path: file, old_string: '{}', new_string: '{ }' },
+      MultiEdit: { file_path: file, edits: [{ old_string: '{}', new_string: '{ }' }] },
+      NotebookEdit: { notebook_path: file.replace(/\.json$/, '.ipynb'), new_source: 'x', edit_mode: 'replace' },
+    });
+    for (const [toolName, toolInput] of Object.entries(each('content/releases/2026-01/manifest.json'))) expect(call(toolName, toolInput).status, toolName).toBe(2);
+    for (const [toolName, toolInput] of Object.entries(each('packages/db/migrations/0002.json'))) expect(call(toolName, toolInput).status, toolName).toBe(2);
+    for (const [toolName, toolInput] of Object.entries(each('content/drafts/a.json'))) expect(call(toolName, toolInput).status, toolName).toBe(0);
+    // Another spelling of a release is the release: dot segments, a case, a link to the directory, a link to the file.
+    expect(edit('packages/x/../../content/releases/2026-01/manifest.json').status).toBe(2);
+    expect(call('Write', { file_path: './Content/./Releases/2026-02/new.json', content: '{}' }).status).toBe(2);
+    const linked = path.join(scratch('content-link'), 'released');
+    symlinkSync(path.join(root, 'content/releases'), linked);
+    expect(call('Write', { file_path: path.join(linked, '2026-01/manifest.json'), content: '{}' }).status).toBe(2);
+    const fileLink = path.join(scratch('content-file-link'), 'manifest.json');
+    symlinkSync(path.join(root, 'content/releases/2026-01/manifest.json'), fileLink);
+    expect(call('Write', { file_path: fileLink, content: '{}' }).status).toBe(2);
+    expect(call('Write', { file_path: path.join(root, 'packages/db/x/../migrations/0003.sql'), content: 'select 1;' }).status).toBe(2);
+    // A worktree is its own repository: a file in another repository is a release there.
+    const other = gitRepository('content-other', { 'content/releases/2026-03/manifest.json': '{}\n' });
+    expect(call('Write', { file_path: path.join(other, 'content/releases/2026-03/manifest.json'), content: '{}' }).status).toBe(2);
     // The new-migration skill's marker, made in the scratch repository only, lets a migration through.
     mkdirSync(path.join(root, '.claude'), { recursive: true });
     writeFileSync(path.join(root, '.claude/.allow-protected-edit'), '');
     expect(edit('packages/db/migrations/0001.sql').status).toBe(0);
     expect(edit('content/releases/2026-01/manifest.json').status).toBe(2);
+    // It fails closed: without jq, on input that is not JSON.
     expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
+    const garbled = run(script, `{"tool_name":"Edit","tool_input":{"file_path":"content/releases/2026-01/manifest.json"`);
+    expect(garbled.status).toBe(2);
+    expect(garbled.stderr).toContain('the hook input is not JSON');
   },
 
   'typecheck.sh': () => {
     const script = hook('typecheck.sh');
-    const edit = (cwd: string, file: string) => run(script, { tool_name: 'Edit', cwd, tool_input: { file_path: path.join(cwd, file) } });
-    // The fast paths: a file that is not TypeScript, and TypeScript outside apps/ and packages/.
+    const call = (toolName: string, cwd: string, file: string) => run(script, { tool_name: toolName, cwd, tool_input: { file_path: path.join(cwd, file) } });
+    const edit = (cwd: string, file: string) => call('Edit', cwd, file);
+    // The fast paths: a file that is not TypeScript, a notebook, and a call with no file.
     expect(edit(repositoryRoot, 'README.md').status).toBe(0);
-    expect(edit(repositoryRoot, 'tools/hooks/hooks.test.ts').status).toBe(0);
+    expect(run(script, { tool_name: 'NotebookEdit', cwd: repositoryRoot, tool_input: { notebook_path: path.join(repositoryRoot, 'docs/x.ipynb'), new_source: 'x' } }).status).toBe(0);
     expect(run(script, { tool_name: 'Edit', tool_input: {} }).status).toBe(0);
-    // A workspace whose package fails its typecheck: exit 2 with the errors; one that passes, exit 0.
+    // A workspace whose package's script is another command runs it through pnpm: exit 2 with the errors, or exit 0.
     const workspace = gitRepository('workspace', {
       'pnpm-workspace.yaml': 'packages:\n  - "packages/*"\n',
       'package.json': JSON.stringify({ name: 'scratch', private: true }),
       'packages/bad/package.json': JSON.stringify({ name: 'bad', private: true, scripts: { typecheck: "node -e \"console.error('error TS2322: not assignable'); process.exit(1)\"" } }),
       'packages/good/package.json': JSON.stringify({ name: 'good', private: true, scripts: { typecheck: 'node -e "process.exit(0)"' } }),
+      'packages/none/package.json': JSON.stringify({ name: 'none', private: true }),
     });
     const bad = edit(workspace, 'packages/bad/src/a.ts');
     expect(bad.status).toBe(2);
+    expect(bad.stderr).toContain('typecheck: packages/bad does not type-check after this edit:');
     expect(bad.stderr).toContain('error TS2322: not assignable');
-    expect(edit(workspace, 'packages/good/src/a.tsx').status).toBe(0);
+    expect(call('MultiEdit', workspace, 'packages/bad/src/a.ts').status).toBe(2);
+    expect(call('Write', workspace, 'packages/good/src/a.tsx').status).toBe(0);
+    expect(edit(workspace, 'packages/none/src/a.ts').status).toBe(0);
+    // A package whose script is "tsc --noEmit" runs that tsc itself, incrementally: the same errors, kept until fixed.
+    const compilerOptions = { strict: true, noEmit: true, target: 'ES2022', lib: ['ES2022'], module: 'ESNext', moduleResolution: 'Bundler', types: [] };
+    const typed = gitRepository('typed', {
+      'package.json': JSON.stringify({ name: 'typed', private: true, scripts: { typecheck: 'tsc --noEmit -p tsconfig.json && pnpm -r typecheck' } }),
+      'tsconfig.json': JSON.stringify({ compilerOptions, include: ['*.ts'] }),
+      'root.ts': 'export const root: number = 1;\n',
+      'packages/real/package.json': JSON.stringify({ name: 'real', private: true, scripts: { typecheck: 'tsc --noEmit' } }),
+      'packages/real/tsconfig.json': JSON.stringify({ compilerOptions, include: ['src'] }),
+      'packages/real/src/a.ts': 'export const n: number = 1;\n',
+      'packages/real/node_modules/dep/index.ts': "export const broken: number = 'x';\n",
+    });
+    mkdirSync(path.join(typed, 'node_modules/.bin'), { recursive: true });
+    symlinkSync(path.join(repositoryRoot, 'node_modules/typescript/bin/tsc'), path.join(typed, 'node_modules/.bin/tsc'));
+    const source = path.join(typed, 'packages/real/src/a.ts');
+    expect(edit(typed, 'packages/real/src/a.ts').status).toBe(0);
+    expect(statSync(path.join(typed, 'node_modules/.cache/tp-typecheck/packages_real.tsbuildinfo')).isFile()).toBe(true);
+    writeFileSync(source, "export const n: number = 'one';\n");
+    const wrong = call('Write', typed, 'packages/real/src/a.ts');
+    expect(wrong.status).toBe(2);
+    expect(wrong.stderr).toContain('typecheck: packages/real does not type-check after this edit:');
+    expect(wrong.stderr).toContain("src/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.");
+    expect(call('MultiEdit', typed, 'packages/real/src/a.ts').status).toBe(2);
+    writeFileSync(source, 'export const n: number = 1;\n');
+    expect(edit(typed, 'packages/real/src/a.ts').status).toBe(0);
+    // The root's own files are the root project's; a file in installed dependencies or outside a repository is no package's.
+    writeFileSync(path.join(typed, 'root.ts'), "export const root: number = 'one';\n");
+    expect(edit(typed, 'root.ts').status).toBe(2);
+    writeFileSync(path.join(typed, 'root.ts'), 'export const root: number = 1;\n');
+    expect(edit(typed, 'root.ts').status).toBe(0);
+    expect(edit(typed, 'packages/real/node_modules/dep/index.ts').status).toBe(0);
+    const loose = scratch('no-repository');
+    writeFileSync(path.join(loose, 'a.ts'), "export const n: number = 'one';\n");
+    expect(edit(loose, 'a.ts').status).toBe(0);
+    // It fails closed: without jq, on input that is not JSON, without node, and without tsc.
+    expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
+    expect(run(script, '{"tool_name":"Edit","tool_input":{"file_path":"a.ts"').status).toBe(2);
+    const noNode = run(script, { tool_name: 'Edit', cwd: typed, tool_input: { file_path: source } }, { PATH: pathWith([...COREUTILS, 'mkdir', 'tail']) });
+    expect(noNode.status).toBe(2);
+    expect(noNode.stderr).toContain('node is required');
+    rmSync(path.join(typed, 'node_modules/.bin/tsc'));
+    const noTsc = edit(typed, 'packages/real/src/a.ts');
+    expect(noTsc.status).toBe(2);
+    expect(noTsc.stderr).toContain('tsc is not installed');
   },
 
   'protect-approval.sh': () => {
@@ -227,6 +317,12 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(call('Edit', {}).status).toBe(0);
     expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
     expect(run(script, `{"tool_name":"Edit","cwd":"${root}","tool_input":{"file_path":"${model}","edits":7`).status).toBe(2);
+    // A NotebookEdit of either file is a call it cannot rebuild (docs/adr/0063); of any other file, it passes.
+    const notebookCall = call('NotebookEdit', { notebook_path: model, new_source: 'Approved by: X', edit_mode: 'replace' });
+    expect(notebookCall.status).toBe(2);
+    expect(notebookCall.stderr).toContain('cannot rebuild what a NotebookEdit leaves');
+    expect(call('NotebookEdit', { notebook_path: path.join(root, list), new_source: '{}' }).status).toBe(2);
+    expect(call('NotebookEdit', { notebook_path: 'docs/explore.ipynb', new_source: 'Approved by: X' }).status).toBe(0);
     expect(readFileSync(path.join(root, model), 'utf8')).toBe(document);
   },
 };
@@ -246,4 +342,98 @@ describe('the Claude Code hooks', () => {
   for (const [name, cases] of Object.entries(CASES)) {
     it(`${name} allows and refuses as its rules say`, cases, 120_000);
   }
+});
+
+/** The tools Claude Code edits files with (docs/adr/0063). */
+const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] as const;
+
+interface HookCommand {
+  readonly type: string;
+  readonly command: string;
+  readonly timeout?: number;
+}
+interface Settings {
+  readonly hooks: Readonly<Record<string, readonly { readonly matcher: string; readonly hooks: readonly HookCommand[] }[]>>;
+}
+
+describe('.claude/settings.json', () => {
+  const raw = JSON.parse(readFileSync(path.join(repositoryRoot, '.claude/settings.json'), 'utf8')) as Settings & Record<string, unknown>;
+  const PREFIX = '"$CLAUDE_PROJECT_DIR"/.claude/hooks/';
+  const script = (command: string): string => {
+    expect(command.startsWith(PREFIX), command).toBe(true);
+    return command.slice(PREFIX.length);
+  };
+  /** The hooks an event runs for a tool, by script name, the matcher read as Claude Code may read it: whole, or anywhere in the name. */
+  const wired = (event: string, toolName: string, anchored: boolean): string[] =>
+    (raw.hooks[event] ?? []).filter((m) => new RegExp(anchored ? `^(?:${m.matcher})$` : m.matcher).test(toolName)).flatMap((m) => m.hooks.map((h) => script(h.command)));
+
+  it('holds the hooks only: no permission rules and no sandbox until the final pass', () => {
+    expect(Object.keys(raw).sort()).toEqual(['$schema', 'hooks']);
+    expect(Object.keys(raw.hooks).sort()).toEqual(['PostToolUse', 'PreToolUse']);
+  });
+
+  it('wires every hook script, each by the project directory, as a command', () => {
+    const all = Object.values(raw.hooks).flatMap((matchers) => matchers.flatMap((m) => m.hooks));
+    expect(all.every((h) => h.type === 'command')).toBe(true);
+    expect([...new Set(all.map((h) => script(h.command)))].sort()).toEqual(readdirSync(HOOKS).filter((name) => name.endsWith('.sh')).sort());
+    // The typecheck may take a cold tsc of apps/web; the guards are fast.
+    expect(raw.hooks.PostToolUse?.[0]?.hooks[0]?.timeout).toBe(300);
+  });
+
+  it('runs the three guards before every edit tool, and the typecheck after each that writes text', () => {
+    for (const anchored of [true, false]) {
+      for (const toolName of EDIT_TOOLS) {
+        expect(wired('PreToolUse', toolName, anchored), toolName).toEqual(['protect-content.sh', 'fixture-guard.sh', 'protect-approval.sh']);
+      }
+      for (const toolName of ['Edit', 'Write', 'MultiEdit']) expect(wired('PostToolUse', toolName, anchored), toolName).toEqual(['typecheck.sh']);
+      for (const toolName of ['Read', 'Bash', 'Glob', 'Grep']) expect(wired('PreToolUse', toolName, anchored), toolName).toEqual([]);
+    }
+    // A notebook is not TypeScript: whether the matcher is read whole (no typecheck) or anywhere ("Edit" in "NotebookEdit"), nothing runs.
+    expect(wired('PostToolUse', 'NotebookEdit', true)).toEqual([]);
+  });
+
+  it('allows and refuses a call of each edit tool, its hooks run as settings.json runs them', () => {
+    const document = 'Generated.\n\nApproved by: ________  Date: ________  Document SHA-256: `00`\n';
+    const root = gitRepository('wired', {
+      'content/releases/2026-01/manifest.json': '{}\n',
+      'docs/product/domain-model.md': document,
+      'docs/notes.md': 'Notes.\n',
+    });
+    /** Every PreToolUse hook the call's tool matches, each through bash as Claude Code runs the command; the status of each. */
+    const dispatch = (toolName: string, toolInput: Record<string, unknown>): Record<string, number | null> =>
+      Object.fromEntries(
+        (raw.hooks.PreToolUse ?? [])
+          .filter((m) => new RegExp(`^(?:${m.matcher})$`).test(toolName))
+          .flatMap((m) => m.hooks)
+          .map((h) => {
+            const result = spawnSync('/bin/bash', ['-c', h.command], {
+              input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: toolName, cwd: root, tool_input: toolInput }),
+              encoding: 'utf8',
+              env: { ...process.env, CLAUDE_PROJECT_DIR: repositoryRoot },
+              timeout: 120_000,
+            });
+            return [script(h.command), result.status];
+          }),
+      );
+    const refusedBy = (name: string) => ({ 'protect-content.sh': 0, 'fixture-guard.sh': 0, 'protect-approval.sh': 0, [name]: 2 });
+    const allowed = { 'protect-content.sh': 0, 'fixture-guard.sh': 0, 'protect-approval.sh': 0 };
+    const model = path.join(root, 'docs/product/domain-model.md');
+    // Write
+    expect(dispatch('Write', { file_path: path.join(root, 'content/releases/2026-01/manifest.json'), content: '{"changed":true}\n' })).toEqual(refusedBy('protect-content.sh'));
+    expect(dispatch('Write', { file_path: path.join(root, 'docs/notes.md'), content: 'More notes.\n' })).toEqual(allowed);
+    // Edit
+    expect(dispatch('Edit', { file_path: model, old_string: 'Approved by: ________', new_string: 'Approved by: A. Founder' })).toEqual(refusedBy('protect-approval.sh'));
+    expect(dispatch('Edit', { file_path: model, old_string: 'Generated.', new_string: 'Regenerated.' })).toEqual(allowed);
+    // MultiEdit
+    expect(dispatch('MultiEdit', { file_path: path.join(root, 'fixtures/synthetic/LED-99/posting-export.csv'), edits: [{ old_string: '', new_string: 'Post Date,Paid Amount\n06/11/2026,30.00\n' }] })).toEqual(
+      refusedBy('fixture-guard.sh'),
+    );
+    expect(dispatch('MultiEdit', { file_path: path.join(root, 'docs/notes.md'), edits: [{ old_string: 'Notes.', new_string: 'Notes, edited.' }] })).toEqual(allowed);
+    // NotebookEdit
+    expect(dispatch('NotebookEdit', { notebook_path: path.join(root, 'content/releases/2026-01/explore.ipynb'), new_source: 'x' })).toEqual(refusedBy('protect-content.sh'));
+    expect(dispatch('NotebookEdit', { notebook_path: path.join(root, 'fixtures/synthetic/explore.ipynb'), new_source: 'x' })).toEqual(refusedBy('fixture-guard.sh'));
+    expect(dispatch('NotebookEdit', { notebook_path: model, new_source: 'x' })).toEqual(refusedBy('protect-approval.sh'));
+    expect(dispatch('NotebookEdit', { notebook_path: path.join(root, 'docs/explore.ipynb'), new_source: 'print(1)' })).toEqual(allowed);
+    expect(readFileSync(model, 'utf8')).toBe(document);
+  }, 120_000);
 });
