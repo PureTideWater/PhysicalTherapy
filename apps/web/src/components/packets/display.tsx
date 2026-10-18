@@ -6,6 +6,8 @@ import { Fragment } from 'react';
 
 import { Money } from '../remittances/display';
 import { StatusChip, type StatusTone } from '../status';
+import { METHOD_NAMES, ROUNDING_NAMES } from '../../lib/contracts/display';
+import { labelOf } from '../../lib/copy/words';
 import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
 
 /**
@@ -18,7 +20,28 @@ import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_
  * when it is not verified, why in words and what to do; and each line's calculation summary.
  */
 
-const DEADLINE_TONE: Readonly<Record<DeadlineStatus, StatusTone>> = { verified: 'whole', unverified: 'short', not_applicable: 'neutral' };
+/**
+ * A deadline's status is not a payment status (docs/adr/0056): verified and no window are neutral system states;
+ * unverified is an evidence gap that blocks the export, danger text on the danger tint. Never Whole or Short, which
+ * say how a line was paid.
+ */
+const DEADLINE_TONE: Readonly<Record<DeadlineStatus, StatusTone>> = { verified: 'neutral', unverified: 'danger', not_applicable: 'neutral' };
+
+/** A code a trace or a cause names (FIXED_SCHEDULE, contract_adjustment, CONTRACT_WINDOW_UNCITED) as a label, never the code itself. */
+const codeLabel = (code: string): string => labelOf(code.toLowerCase());
+
+/** A calculation's method in words: the contract's method, or Medicare Advantage non-contracted. */
+function methodName(method: string): string {
+  if (method === 'MA_NONCONTRACTED') {
+    return 'Medicare Advantage, non-contracted';
+  }
+  return method in METHOD_NAMES ? METHOD_NAMES[method as keyof typeof METHOD_NAMES] : codeLabel(method);
+}
+
+/** A rounding rule in words. */
+function roundingName(rule: string): string {
+  return rule in ROUNDING_NAMES ? ROUNDING_NAMES[rule as keyof typeof ROUNDING_NAMES] : codeLabel(rule);
+}
 
 /** A deadline's status as a labelled chip (the label says it; the tint only repeats it). */
 export function DeadlineChip({ status }: { readonly status: DeadlineStatus }) {
@@ -38,8 +61,8 @@ function LineDeadlineCell({ deadline, windowEndsOn }: { readonly deadline: LineD
       <span className="font-mono tabular-nums whitespace-nowrap">{deadline.ends_on ?? '—'}</span>
       <DeadlineChip status={deadline.status} />
       {deadline.cause === null ? null : (
-        <span className="font-mono text-xs" data-deadline-cause={deadline.cause}>
-          {deadline.cause}
+        <span className="text-xs" data-deadline-cause={deadline.cause}>
+          {codeLabel(deadline.cause)}
         </span>
       )}
     </span>
@@ -215,7 +238,7 @@ export function DeadlineSummary({ content, now }: { readonly content: PacketCont
         <ul className="list-disc pl-5" aria-label="Why the deadline is not verified">
           {deadline.causes.map((cause) => (
             <li key={cause} data-cause={cause}>
-              <span className="font-mono text-xs">{cause}</span>: {DEADLINE_CAUSE_TEXT[cause]}
+              <span className="font-medium">{codeLabel(cause)}</span>: {DEADLINE_CAUSE_TEXT[cause]}
             </li>
           ))}
         </ul>
@@ -227,13 +250,13 @@ export function DeadlineSummary({ content, now }: { readonly content: PacketCont
           {deadline.sources.map((source) =>
             source.kind === 'contract_window' ? (
               <li key={`contract:${source.contract_version_id}`} data-source="contract_window">
-                Contract window of <span className="font-mono tabular-nums">{source.days ?? '—'}</span> days, document <span className="font-mono text-xs">{source.document_id}</span>, page{' '}
-                <span className="font-mono tabular-nums">{source.page}</span>, {source.verified_at === null ? 'citation not verified' : `citation verified ${source.verified_at.slice(0, 10)}`}:{' '}
+                Contract window of <span className="font-mono tabular-nums">{source.days ?? '—'}</span> {source.days === 1 ? 'day' : 'days'}, document <span className="font-mono text-xs">{source.document_id}</span>, page{' '}
+                <span className="font-mono tabular-nums">{source.page}</span>, {source.verified_at === null ? 'citation not checked against its page' : `citation checked against its page ${source.verified_at.slice(0, 10)}`}:{' '}
                 <q className="italic">{source.quote}</q> Page SHA-256 <Hash value={source.hash} />
               </li>
             ) : (
               <li key={`release:${source.sha256}`} data-source="release_record">
-                Rule release <span className="font-mono tabular-nums">{source.release_no}</span>, dispute-window record{source.program === null ? '' : ` (${source.program})`} at level{' '}
+                Rule release <span className="font-mono tabular-nums">{source.release_no}</span>, dispute-window record{source.program === null ? '' : ` (${source.program === 'commercial_default' ? 'the commercial default' : codeLabel(source.program)})`} at level{' '}
                 <span className="font-mono">{source.level ?? 'unknown'}</span>, SHA-256 <Hash value={source.sha256} />
               </li>
             ),
@@ -253,43 +276,43 @@ export function CalculationTable({ content }: { readonly content: PacketContent 
     <div className="overflow-x-auto">
       <table className="w-full text-sm" aria-label="Calculations">
         <thead>
-          <tr className="border-b text-left">
-            <th className="px-2 py-1 font-medium">Row</th>
-            <th className="px-2 py-1 font-medium">Method, release</th>
-            <th className="px-2 py-1 font-medium">Steps</th>
-            <th className="px-2 py-1 font-medium">Rounding</th>
-            <th className="px-2 py-1 font-medium">Patient share (shown, never counted)</th>
-            <th className="px-2 py-1 font-medium">Trace SHA-256</th>
+          <tr className="border-b text-left align-bottom">
+            <th className="py-1 pr-3 font-medium">Row</th>
+            <th className="py-1 pr-3 font-medium">Method, release</th>
+            <th className="py-1 pr-3 font-medium">Steps</th>
+            <th className="py-1 pr-3 font-medium">Rounding</th>
+            <th className="py-1 pr-3 text-right font-medium">Patient share (shown, never counted)</th>
+            <th className="py-1 font-medium">Trace SHA-256</th>
           </tr>
         </thead>
         <tbody>
           {content.lines.map((line) => (
             <tr key={line.row} className="border-b align-top last:border-0" data-calculation-row={line.row}>
-              <td className="px-2 py-1 font-mono tabular-nums">{line.row}</td>
-              <td className="px-2 py-1">
-                <span className="font-mono">{line.calculation.method}</span>, release <span className="font-mono tabular-nums">{line.calculation.release_no}</span>
+              <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
+              <td className="py-1 pr-3">
+                {methodName(line.calculation.method)}, release <span className="font-mono tabular-nums">{line.calculation.release_no}</span>
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3">
                 <ul aria-label={`Steps of row ${String(line.row)}`}>
                   {line.calculation.steps.map((step, index) => (
                     <li key={`${step.step}:${String(index)}`}>
-                      <span className="font-mono">{step.step}</span> <span className="font-mono tabular-nums">{step.amount_cents}</span> cents
+                      {codeLabel(step.step)} <span className="font-mono tabular-nums">{step.amount_cents}</span> cents
                     </li>
                   ))}
                 </ul>
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3">
                 {line.calculation.rounding === null ? (
                   '—'
                 ) : (
                   <>
-                    <span className="font-mono">{line.calculation.rounding.rule}</span>: <span className="font-mono tabular-nums">{line.calculation.rounding.unrounded_cents}</span> cents to{' '}
+                    {roundingName(line.calculation.rounding.rule)}: <span className="font-mono tabular-nums">{line.calculation.rounding.unrounded_cents}</span> cents to{' '}
                     <Money value={line.calculation.rounding.rounded_cents} />
                   </>
                 )}
               </td>
-              <td className="px-2 py-1">{line.calculation.patient_share_cents === null ? '—' : <Money value={line.calculation.patient_share_cents} />}</td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3 text-right">{line.calculation.patient_share_cents === null ? '—' : <Money value={line.calculation.patient_share_cents} />}</td>
+              <td className="py-1">
                 <Hash value={line.calculation.trace_sha256} />
               </td>
             </tr>

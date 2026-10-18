@@ -252,6 +252,10 @@ describe('generating an audit report (PRD 4, Audit v0)', () => {
     expect(content.cases.map((item) => item.plan)).toEqual(['CE:SYNPLAN-FIX-ONE']);
     expect(content.validated.not_actionable).toEqual([{ reason: 'DEADLINE_UNVERIFIED', lines: 8, variance_cents: '27200' }]);
     expect(content.evidence_gaps).toContainEqual(expect.objectContaining({ kind: 'deadline_unverified', reason: 'DEADLINE_UNVERIFIED', lines: 8 }));
+    // The uncited contract window's remedy alone: the Medicare and silent-contract remedies do not apply to these lines.
+    const gap = content.evidence_gaps.find((item) => item.kind === 'deadline_unverified');
+    expect(gap?.remedy).toMatch(/^For a contract window, have the contract specialist cite the contract’s dispute window on its page and check it on a corrected version/);
+    expect(gap?.remedy).not.toMatch(/Medicare|silent/);
     const [, ...lines] = csvRows(await w.stored(practice, row.csv_key ?? ''));
     const column = (name: (typeof CSV_COLUMNS)[number]) => CSV_COLUMNS.indexOf(name);
     expect(new Set(lines.filter((line) => line[column('plan')] === 'CE:SYNPLAN-FIX-TWO').map((line) => `${String(line[column('counted_as')])} ${String(line[column('reasons')])}`))).toEqual(

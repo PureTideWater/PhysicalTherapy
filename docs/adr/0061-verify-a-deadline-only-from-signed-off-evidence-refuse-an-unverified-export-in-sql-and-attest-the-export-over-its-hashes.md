@@ -46,18 +46,22 @@ its release number and SHA-256) and the contract version as it stands now. It re
 `not_applicable` (no window; triage still says NO_WINDOW), `verified` (cause null) or `unverified` with one of
 `DEADLINE_UNVERIFIED_CAUSES`:
 
-- a release window is verified when its record is Medicare's and at the minimum level or higher: L2 for
-  actionability and the export, L3 for the E3 gate (PR 9), the SQL's `minimum_level`. A `commercial_default`
-  record is never verified, whatever its level (COMMERCIAL_DEFAULT);
+- a release window is verified when its record is Medicare's, of a release not withdrawn, and at the minimum level
+  or higher: L2 for actionability and the export, L3 for the E3 gate (PR 9), the SQL's `minimum_level`. A
+  `commercial_default` record is never verified, whatever its level (COMMERCIAL_DEFAULT); a record of a release
+  with a `rule_release_withdrawal` row verifies nothing (RELEASE_WITHDRAWN), since a withdrawal records that its
+  content was wrong, though runs pinned to it stay in effect until PR 11 invalidates them;
 - a contract window is verified when the version is signed off, its window cited with complete evidence and
   verified by a contract specialist, and its days the trace's length in days (otherwise
   CONTRACT_WINDOW_UNCITED, CONTRACT_WINDOW_UNVERIFIED, CONTRACT_VERSION_NOT_SIGNED_OFF or
   CONTRACT_WINDOW_DIFFERS, in that order);
 - after a reopened denial (dispute level 2 and above) the deadline is the next window's
   (`nextLevelDeadlineVerification()`, the loader's `nextLevelDeadline()`): a contract's appeal levels carry no
-  evidence (NEXT_LEVEL_UNCITED); the Medicare reconsideration record `case_next_dispute_window()` reads is
-  verified as a release record is. A packet's deadline is `packetDeadlineStatus()`: not applicable with no
-  line, verified when every line's is.
+  evidence (NEXT_LEVEL_UNCITED); the Medicare reconsideration record in force is verified as a release record is,
+  and only when it gives exactly the end stored when the denial was recorded (`case_next_dispute_window()` read
+  now): `payer_response.next_window_ends_on` is computed once, from the release in force then, so a record that
+  gives another end is not the record the date came from (NEXT_LEVEL_DIFFERS). A packet's deadline is
+  `packetDeadlineStatus()`: not applicable with no line, verified when every line's is.
 
 `DEADLINE_UNVERIFIED` joins `NOT_ACTIONABLE_REASONS` right after NO_WINDOW; `TriageFacts.deadlineStatus` is
 required and `judgeLine()` pushes the reason for `unverified`. It is not an unpriced reason: the line keeps its
@@ -108,20 +112,36 @@ a /1 version can never be exported or attested, and the builder says to write it
 `packet_content_valid()` accepts /1 as before and asks /2 for its deadline and calculation shapes;
 `packet_version.deadline_verification_status` is text generated from the content (tp-packet/2's
 `content.deadline.status`, `unverified` for every /1 version) with its CHECK, so no role writes it; and
-`packet_version_deadline_stated` (AFTER INSERT) holds each line's stated status, end and source, the basis by
-dispute level and the version's status to the database's own derivation when the version is written. The
-column is what the version stated; nothing trusts it at export.
+`packet_version_deadline_stated` (AFTER INSERT) holds what a /2 version states to its inputs when it is written:
+each line's status, end and source, and its calculation (`priced_line_calculation()` reads the stored trace as
+`lineCalculation()` does: method, release, steps, rounding, observed basis, patient share); the version's basis by
+dispute level and its status as the database derives them; its end (the earliest of the lines' windows at the
+first level, the reopening denial's next window above it), its line counts and the shape of its causes; and
+exactly the sources its lines' windows name, each as it stands (the contract window's document, page, quote,
+hash, days and verifier; the release record's SHA-256, level and program). The trace's SHA-256 is over its
+canonical JSON, which SQL does not compute, so the export job checks it. The column is what the version stated;
+nothing trusts it at export.
 
-**The export, refused twice.** The worker's export job derives the deadline again (the database's
-`packet_version_deadline_status()` in its query, and `lineDeadlines()`/`nextLevelDeadline()` with
+**The export, refused twice.** The worker's export job refuses a version not of the case's dispute level now
+(`PACKET_VERSION_NOT_CASE_LEVEL`: one written before a denial reopened the case states the earlier level's
+deadline, verified though the deadline that applies is the next window's); derives the deadline again (the
+database's `packet_version_deadline_status()` in its query, and `lineDeadlines()`/`nextLevelDeadline()` with
 `packetDeadlineStatus()`), and either saying unverified refuses the export (`PACKET_DEADLINE_UNVERIFIED`, no file
-written); it then runs `verifyNarrative()` over exactly the narrative and content it renders into the PDF and the
-CSV (`PACKET_VERIFIER_FAILED`), computes each file's SHA-256 over the exact bytes it writes, requires the store's
-plaintext hash to equal it, and records both with the verifier's report. In SQL, `packet_version_export_guard`
-(BEFORE UPDATE) refuses the export transition while the deadline, derived again then from the content and the rows
-it names, is unverified ("a packet version whose deadline is not verified is not exported"), and unless
-`export_verifier_report` is the verifier's passing tp-packet-verifier/2 report over the version's own narrative; the
-report never changes otherwise. `tp_app` cannot bypass it: `tp_owner` owns the tables, triggers and functions,
+written); states the version's deadlines and calculations again from its inputs (`restatedDeadlines()`: each line's
+calculation copied again from its trace with the trace's SHA-256, the deadlines and their sources derived again)
+and refuses any difference (`PACKET_CONTENT_NOT_ITS_INPUTS`), so no figure, date or count is printed that its
+inputs do not give now; then runs `verifyNarrative()` over exactly the narrative and content it renders into the
+PDF and the CSV (`PACKET_VERIFIER_FAILED`), computes each file's SHA-256 over the exact bytes it writes, requires
+the store's plaintext hash to equal it, and records both with the verifier's report. The handler
+(`requestPacketExport()`, the web's `requestExportOnce()`) refuses the first two as well. In SQL,
+`packet_version_export_guard` (BEFORE UPDATE) refuses the export transition for a version not of the case's
+dispute level ("only a version of the case's dispute level is exported"), and while the deadline, derived again
+then from the content and the rows it names, is unverified ("a packet version whose deadline is not verified is
+not exported"). SQL cannot run the verifier, which is TypeScript: it holds the report the job writes
+(`export_verifier_report`) to the verifier's format, a pass and the version's own narrative SHA-256, and the report
+never changes otherwise. So SQL enforces the deadline and the level; the verifier is enforced by the job, and a
+job-scope write of a forged report and hashes would not be stopped by SQL. Such an export has no files of those
+hashes, so its download fails `exportFile()`'s hash check, but its attestation compares only the stored hashes. `tp_app` cannot bypass it: `tp_owner` owns the tables, triggers and functions,
 `tp_app` owns nothing and has no BYPASSRLS, cannot ALTER the table or DISABLE a trigger, and cannot set
 `session_replication_role`; its column grants are all it writes (`exported_at` only through
 `packet_version_rules()` for a job actor; `deadline_verification_status` never); and the guard reads rows that
@@ -130,13 +150,15 @@ approval, and the version's status is read at export).
 
 **The attestation (D16 a and c), audit_report's pattern.** Once exported, a reimbursement reviewer (the founder in
 v0) attests once, in their own name, under a four-hour support grant: `audit_finding.validate`, which only the
-reviewer role holds; the attester is neither of the packet's drafters nor its approver; the version is current,
-still asks for its case's lines, and its deadline is not unverified; the attestation (`tp-attestation/1`) holds a
+reviewer role holds; the attester drafted, wrote and approved no version of the packet (every version's writer and
+approver, as the review's `viewerTookPart` reads them too); the version is current, still asks for its case's
+lines, is of the case's dispute level, and its deadline is not unverified; the attestation (`tp-attestation/1`) holds a
 checklist of codes and the export's two SHA-256, no words, and its time is the database's
 (`packet_version_attestation_rules`). A submission is logged only of an attested export
 (`submission_needs_attested_export`), which is the "release" of the report's pattern. Where the practice has
 users, a practice `packet.approve` holder who is not the drafter approves as before and the founder attests; the
-drafter never approves (CLAUDE.md), and internal users still approve nothing else: `packet.approve`,
+drafter approves only on milestone 8's single-user path (`approved_alone`, CAS-10), which this PR leaves as it was
+for the owner's ruling on D27 (see Consequences), and internal users still approve nothing else: `packet.approve`,
 `practice_has_other_packet_approver()` and the permission matrix are unchanged. The service is
 `attestPacketExport()` (audit event `packet_export_attested`), its route `practice.cases.packet.attest` (Zod,
 `audit_finding.validate`), with the reviewer's pages to review and download the exported files.
@@ -168,7 +190,8 @@ order: migrate first (ADR 0049).
 | D17 (b): a person confirms each case's deadline | It verifies nothing a person signed off once for every line it governs; revisit if a payer's window cannot be cited at all. |
 | D17 (c): any known source counts | A release's commercial_default and an L1 record would then "verify" a deadline nobody read; only (a) makes verified mean a signed-off source. |
 | Regenerate release 900001 at L2 | Its manifest hash, which 110 golden claims pin, would change; a new release number keeps them. |
-| Store the deadline status and trust it at export | A version's statement can go stale (a version superseded since, a record withdrawn); the guard derives it again from rows that cannot change underneath it. |
+| Store the deadline status and trust it at export | A version's statement can go stale (a version superseded since, a release withdrawn, a denial that reopened the case); the guard derives it again from rows that cannot change underneath it, and the job states the version again from its inputs. |
+| Verify the next level from the record of the release in force, whatever date it gives | The stored date was computed once, from the release in force when the denial was recorded; a later release at L2 would then "verify" a date an L1 record gave. Comparing the date the record gives with the stored one needs no new column. |
 | A trigger that also checks the narrative's verifier report in SQL by re-running the verifier | The verifier is TypeScript (@tp/packets); SQL checks the report's shape, result and narrative hash, and the worker runs the verifier itself. |
 
 ## Consequences
@@ -179,8 +202,25 @@ order: migrate first (ADR 0049).
   contract's window, and a corrected version is how an existing contract gains it.
 - The Medicare Advantage lines priced under 900001 to 900004 stay DEADLINE_UNVERIFIED; a real release raises its
   Medicare windows to L2 through `/load-release`, and PR 9's E3 gate asks L3 of the same function.
-- An export is refused in the worker and in SQL for an unverified deadline or a failed verifier, and every
-  submission names an attested export; the export hashes are the stored files' bytes.
+- An export is refused in the worker and in SQL for an unverified deadline or a version of an earlier dispute
+  level, and in the worker for a failed verifier or content its inputs do not give; SQL holds the verifier's
+  report only to its shape, pass and narrative hash. Every submission names an attested export; the export hashes
+  are the stored files' bytes.
+- Contract disputes at level 2 and above cannot be exported. `contract_version.appeal_levels` carries no page, quote
+  or hash, so the next level's deadline of every contract case a denial reopens is unverified (NEXT_LEVEL_UNCITED)
+  and its packet is refused in the worker, the handler and SQL. Unlike a first-level window, a corrected version
+  does not help: no version can carry appeal-level evidence. Milestone 8's contract second-level dispute flow is
+  therefore off until appeal-level evidence is added (a per-level document, page, quote and hash with a
+  specialist's check, frozen by `contract_version_rules`) or the owner rules otherwise; this is an open question
+  for the owner, not built here. A Medicare Advantage case's second level is exported once the reconsideration
+  record in force is at L2 and gives the stored end.
+- D16 (a) without a practice approver is not built: the export still needs a practice approval (milestone 8's
+  `packet_version_rules`). Where the drafter is the practice's only packet approver, the drafter still approves
+  alone after 24 hours (`approved_alone`, CAS-10) and the reviewer's attestation is the only independent check of
+  the export; a practice whose drafter is an analyst and that has no billing manager or firm principal cannot
+  approve, so nothing is exported or attested. Both wait for the owner's ruling on D27, which owns the single-user
+  path; until then an `approved_alone` version is exported and attested, and the review page says it was approved
+  alone.
 - The checks that hold this: `packages/triage/src/deadline.test.ts` (properties over every source and level),
   `apps/worker/src/triage/deadline.db.test.ts` (SQL and TypeScript on the same lines),
   `packages/contracts/src/contracts.db.test.ts` (the window's evidence and its rules), the packet and export
@@ -193,4 +233,6 @@ order: migrate first (ADR 0049).
 
 A real release's Medicare dispute windows are read at L2 or L3 (the synthetic 900005 then stays a fixture only); a
 payer's contract states its window in a form the specialist cannot cite on one page; PR 8 adds the packet's export
-parts (`packet_export`) and PR 9 the E3 gates; or a practice's own reviewer, rather than the founder, attests.
+parts (`packet_export`) and PR 9 the E3 gates; a practice's own reviewer, rather than the founder, attests; the
+owner rules on D27 (the single-user path) or on how a contract's appeal levels gain their evidence; or PR 11
+invalidates the runs of a withdrawn release.

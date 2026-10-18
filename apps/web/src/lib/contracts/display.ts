@@ -112,7 +112,7 @@ const TIMED_UNITS: Readonly<Record<RateRecordTerms['flags']['timed_units_rule'],
   UNKNOWN: 'unknown until the contract says or minutes are imported',
 };
 
-const ROUNDING: Readonly<Record<NonNullable<RateRecordTerms['rounding']>, string>> = {
+export const ROUNDING_NAMES: Readonly<Record<NonNullable<RateRecordTerms['rounding']>, string>> = {
   HALF_UP_CENT: 'Half up to the cent',
   HALF_EVEN_CENT: 'Half even to the cent',
   TRUNCATE: 'Truncated to the cent',
@@ -136,6 +136,6 @@ export function describeTerms(terms: RateRecordTerms): Readonly<Record<RateRecor
     method: METHOD_NAMES[terms.method],
     parameters: parametersText(terms),
     flags: `MPPR ${onOff(flags.apply_mppr)}, assistant reduction ${onOff(flags.apply_assistant_reduction)}, sequestration ${onOff(flags.apply_sequestration)}, NCCI ${onOff(flags.apply_ncci)}; timed units ${TIMED_UNITS[flags.timed_units_rule]}`,
-    rounding: terms.rounding === null ? 'The contract is silent: the practice’s default rounding applies' : ROUNDING[terms.rounding],
+    rounding: terms.rounding === null ? 'The contract is silent: the practice’s default rounding applies' : ROUNDING_NAMES[terms.rounding],
   };
 }

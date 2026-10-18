@@ -45,6 +45,37 @@ function exactUsd(value: string): string {
   return /^-?\d+$/.test(value) ? usd(value) : `$${decimal(value).dividedBy(decimal(100n)).toString()}`;
 }
 
+/** A count and its noun, singular for one (the screen tour's C1, as the web's counted()). */
+const counted = (count: number, one: string, many = `${one}s`): string => `${String(count)} ${count === 1 ? one : many}`;
+
+/** The calculation's methods, steps and rounding rules in words (a trace's codes are never printed as codes). */
+const METHOD_TEXT: Readonly<Record<string, string>> = {
+  FIXED_SCHEDULE: 'Fixed schedule',
+  PERCENT_OF_MEDICARE: 'Percent of Medicare',
+  LESSER_OF: 'Lesser of',
+  PER_VISIT: 'Per visit',
+  MA_NONCONTRACTED: 'Medicare Advantage, non-contracted',
+};
+const STEP_TEXT: Readonly<Record<string, string>> = {
+  unit: 'per unit',
+  visit: 'per visit',
+  schedule: 'schedule',
+  charge: 'charge',
+  base: 'base',
+  mppr: 'MPPR',
+  assistant_reduction: 'assistant reduction',
+  sequestration: 'sequestration',
+  contract_adjustment: 'contract adjustment',
+};
+const ROUNDING_TEXT: Readonly<Record<string, string>> = {
+  HALF_UP_CENT: 'half up to the cent',
+  HALF_EVEN_CENT: 'half even to the cent',
+  TRUNCATE: 'truncated to the cent',
+};
+const PROGRAM_TEXT: Readonly<Record<string, string>> = { medicare: 'Medicare', commercial_default: 'the commercial default' };
+/** A code not in its table, in words: lower case, its underscores as spaces. */
+const wordsOf = (table: Readonly<Record<string, string>>, code: string): string => table[code] ?? code.toLowerCase().replace(/_/g, ' ');
+
 const DEADLINE_STATUS_TEXT: Readonly<Record<DeadlineStatus, string>> = {
   verified: 'verified',
   unverified: 'not verified',
@@ -75,18 +106,18 @@ function deadlineSection(content: PacketContentV2): string {
   const basis = deadline.basis === 'next_level_window' ? 'the window of the next dispute level, after the payer’s denial' : 'the earliest of the listed lines’ dispute windows';
   const sources = deadline.sources.map((source) =>
     source.kind === 'contract_window'
-      ? `<li>Contract version ${escapeHtml(source.contract_version_id)}: a dispute window of ${source.days === null ? 'unstated' : String(source.days)} days, document ${escapeHtml(source.document_id)}, page ${String(source.page)} (page text SHA-256 ${escapeHtml(source.hash)})${source.verified_at === null ? ', citation not verified' : `, citation verified ${escapeHtml(source.verified_at.slice(0, 10))}`}:<blockquote>${escapeHtml(source.quote)}</blockquote></li>`
-      : `<li>Rule release ${String(source.release_no)}, dispute-window record${source.program === null ? '' : ` (${escapeHtml(source.program)})`} SHA-256 ${escapeHtml(source.sha256)}, verification level ${escapeHtml(source.level ?? 'unknown')}</li>`,
+      ? `<li>Contract version ${escapeHtml(source.contract_version_id)}: a dispute window of ${source.days === null ? 'unstated days' : counted(source.days, 'day')}, document ${escapeHtml(source.document_id)}, page ${String(source.page)} (page text SHA-256 ${escapeHtml(source.hash)})${source.verified_at === null ? ', citation not checked against its page' : `, citation checked against its page ${escapeHtml(source.verified_at.slice(0, 10))}`}:<blockquote>${escapeHtml(source.quote)}</blockquote></li>`
+      : `<li>Rule release ${String(source.release_no)}, dispute-window record${source.program === null ? '' : ` (${escapeHtml(wordsOf(PROGRAM_TEXT, source.program))})`} SHA-256 ${escapeHtml(source.sha256)}, verification level ${escapeHtml(source.level ?? 'unknown')}</li>`,
   );
   const rows = content.lines.map((line) => {
     const { calculation } = line;
-    const steps = calculation.steps.map((step) => `${step.step} ${exactUsd(step.amount_cents)}`).join('; ');
-    const rounding = calculation.rounding === null ? '' : `${calculation.rounding.rule}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
+    const steps = calculation.steps.map((step) => `${wordsOf(STEP_TEXT, step.step)} ${exactUsd(step.amount_cents)}`).join('; ');
+    const rounding = calculation.rounding === null ? '' : `${wordsOf(ROUNDING_TEXT, calculation.rounding.rule)}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
     return [
       String(line.row),
       line.deadline.ends_on ?? 'none',
       deadlineText(line.deadline),
-      calculation.method,
+      wordsOf(METHOD_TEXT, calculation.method),
       steps,
       rounding,
       calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents),
@@ -95,7 +126,7 @@ function deadlineSection(content: PacketContentV2): string {
   });
   return [
     `<h2>Deadline</h2>`,
-    `<p data-deadline="${deadline.status}"><strong>The dispute is filed by ${escapeHtml(deadline.ends_on ?? 'no date stated')}</strong>, ${escapeHtml(basis)}; deadline ${escapeHtml(DEADLINE_STATUS_TEXT[deadline.status])} (${String(deadline.lines_verified)} of ${String(deadline.lines)} lines’ windows verified).</p>`,
+    `<p data-deadline="${deadline.status}"><strong>The dispute is filed by ${escapeHtml(deadline.ends_on ?? 'no date stated')}</strong>, ${escapeHtml(basis)}; deadline ${escapeHtml(DEADLINE_STATUS_TEXT[deadline.status])} (${String(deadline.lines_verified)} of ${counted(deadline.lines, 'line’s window', 'lines’ windows')} verified).</p>`,
     sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
     table(
       'Each line’s window and calculation, as its trace recorded it',

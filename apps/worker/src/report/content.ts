@@ -5,6 +5,7 @@ import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   type AdjustmentBehavior,
   BEHAVIOR_TEXT,
+  type DeadlineUnverifiedCause,
   INVESTIGATORY,
   NOT_ACTIONABLE_REASONS,
   STAGE_LABELS,
@@ -121,6 +122,24 @@ export interface ReportAnomaly {
   readonly range_high_cents: string;
   readonly reviewed: boolean;
   readonly validation_requested: boolean;
+}
+
+/**
+ * What makes the deadlines of a report's DEADLINE_UNVERIFIED lines verified, by what holds them back (D17 a): a contract
+ * window is cited and checked on a corrected version; a contract silent on its window has its window entered and
+ * cited there too, since the release's commercial default is never verified; a Medicare window needs a rule release
+ * whose record is verified to L2. Each remedy that applies, in that order, once.
+ */
+export function deadlineRemedy(causes: readonly (DeadlineUnverifiedCause | null)[]): string {
+  const contract = causes.some((cause) => cause === null || cause.startsWith('CONTRACT_') || cause === 'NEXT_LEVEL_UNCITED');
+  const silent = causes.includes('COMMERCIAL_DEFAULT');
+  const release = causes.some((cause) => cause === 'RECORD_NOT_IN_RELEASE' || cause === 'RECORD_BELOW_LEVEL' || cause === 'RELEASE_WITHDRAWN' || cause === 'NEXT_LEVEL_DIFFERS');
+  const remedies = [
+    ...(contract ? ['For a contract window, have the contract specialist cite the contract’s dispute window on its page and check it on a corrected version, then sign the version off and price the lines again'] : []),
+    ...(silent ? ['For a contract silent on its window, the release’s default is never verified: have the contract specialist enter the window the contract states, cite it and check it on a corrected version'] : []),
+    ...(release ? ['For a Medicare window, the lines are priced again under a rule release whose Medicare dispute windows a second reader verified to level L2'] : []),
+  ];
+  return remedies.join('. ');
 }
 
 export interface EvidenceGap {
@@ -664,7 +683,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       charge_cents: text(sum(unverified.map((line) => line.charge_cents))),
       detail:
         'The dispute deadline of these validated lines is not verified (D17 a): their contract’s window is not cited and verified on its page, or the release’s window is its commercial default or below L2, so they are not actionable',
-      remedy: 'Have the contract specialist cite the contract’s dispute window on its page and verify it, then sign off the version',
+      remedy: deadlineRemedy(unverified.map((line) => deadlines.get(line.priced_line_id)?.cause ?? null)),
     });
   }
   const maCases = openCases.filter((item) => item.mapping_kind === 'ma_noncontracted');

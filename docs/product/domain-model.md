@@ -2,12 +2,12 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `1cd672100f324a3c284c02b937983828afadeceb` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `b52b40f1e9f2909a566f0d1a325b9d894edce9ad` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 247 (110 SECURITY DEFINER); triggers: 216, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 248 (110 SECURITY DEFINER); triggers: 216, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 23 to approve, 31 tables and 143 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
@@ -3086,6 +3086,7 @@ Invariants enforced by triggers:
   - "a packet's export is attested by a reimbursement reviewer, in their own name"
   - "the person who drafted, wrote or approved a packet does not attest its export"
   - "only a packet's current version, still asking for its case's lines, is attested"
+  - "only a version of the case's dispute level is attested"
   - "a packet version whose deadline is not verified is not attested"
   - "an attestation's time is the time it was made"
 - `packet_version_becomes_current`: `AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_becomes_current()`
@@ -3100,8 +3101,13 @@ Invariants enforced by triggers:
   - "a packet version is approved only once the current verifier has passed it; write the version again"
 - `packet_version_deadline_stated`: `AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_deadline_stated()`
   - "a packet version states each line's deadline from the line's own window: its status, the day it ends and its source"
+  - "a packet version states each line's calculation as its stored trace has it: the method, the release, the steps, the rounding, the observed basis and the patient share"
   - "a packet version states its deadline as the database derives it: the lines' windows at the first level, the next level's window after a reopened denial"
+  - "a packet version states the day its deadline ends and its lines as its inputs give them"
+  - "a packet version names the evidence its deadline rests on as it stands"
+  - "a packet version names exactly the evidence its lines' windows rest on, each once"
 - `packet_version_export_guard`: `BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_export_guard()`
+  - "only a version of the case's dispute level is exported; write the packet again at this level"
   - "a packet version whose deadline is not verified is not exported"
   - "a packet version is exported with the verifier's passing report over the narrative it rendered"
   - "an export's verifier report is written with the export, once"
@@ -5289,7 +5295,7 @@ Invariants enforced by constraints:
 
 ## Divergences from the Data dictionary
 
-The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1, are what the founder approves. C2, C3, C4 and C5 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
+The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1, are what the founder approves. C2, C3, C4 and C5 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. Where a status says a part is built, that part is schema like any other, described above and approved with it. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
 
 Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 15 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
 
@@ -5365,8 +5371,8 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | # | Subject | Where | What each says | Live schema | Status |
 | --- | --- | --- | --- | --- | --- |
 | C1 | Remittance duplicate key | PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary | PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents). | remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. An ERA export (provenance era_export, ADR 0060, D12 a) is keyed by remittance_export_once (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) over export rows, and the 835 is authoritative between the two (D13 a). | founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule |
-| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
-| C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable). | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is; deadline_verification_status built so in PR 5 (reconciliation-001, D17 a), readiness_grade and the two roles still to come (PR 8, PR 14) |
+| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts. Built in part: the export's verifier report and the attestation on packet_version (20261103090000, ADR 0061, D16) are approved as the packet_version section describes them, and only the rest is a proposal |
+| C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable). | proposed (CO-12; the schema's rule that every enumeration is text with a CHECK, reconciliation-001 D2 on C3): readiness_grade and the two roles, still to come (PR 8, PR 14). Built in part: packet_version.deadline_verification_status, text generated from the content with its CHECK (20261103090000, ADR 0061; what verified means is D17 a), is approved as the packet_version section describes it, and only the rest is a proposal |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
 | C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed). | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
 
@@ -5421,12 +5427,12 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | [`adjustment`](#table-adjustment) | `unknown_code` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`provider_adjustment`](#table-provider-adjustment) | `position`, `provider_id`, `category`, `counted` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`parse_report`](#table-parse-report) | `outcome`, `plb_total_cents`, `loaded_transactions`, `loaded_claims`, `loaded_lines`, `duplicate_transactions`, `unknown_codes`, `transaction_outcomes`, `code_list_release` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
-| [`contract_version`](#table-contract-version) | `notice_days` (`20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028))<br>`dispute_window_evidence`, `dispute_window_verified_by`, `dispute_window_verified_at` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0049, ADR 0061)) |
+| [`contract_version`](#table-contract-version) | `notice_days` (`20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028))<br>`dispute_window_evidence`, `dispute_window_verified_by`, `dispute_window_verified_at` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0038, ADR 0041, ADR 0049, ADR 0061)) |
 | [`pricing_run`](#table-pricing-run) | `failure_code` (`20261018090000_pricing_runs` (ADR 0029, ADR 0035))<br>`rerun_of_id`, `lines_loaded_by`, `accepted_by`, `accepted_at` (`20261019150000_reruns_and_release_withdrawal` (ADR 0037))<br>`created_by_job_id` (`20261020090000_monitoring_digests_notifications` (ADR 0039)) |
 | [`anomaly`](#table-anomaly) | `validation_requested_by`, `validation_requested_at` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`line_status`](#table-line-status) | `seq`, `priced_line_id` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`case_line`](#table-case-line) | `written_off_text`, `written_off_at`, `reopen_reason`, `reopened_by`, `reopened_at` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
-| [`packet_version`](#table-packet-version) | `content`, `dispute_level`, `content_sha256`, `regulation_confirmed_by`, `regulation_confirmed_at`, `approved_sha256`, `approved_alone`, `export_csv_sha256` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`deadline_verification_status`, `export_verifier_report`, `attested_by`, `attested_at`, `attestation` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0049, ADR 0061)) |
+| [`packet_version`](#table-packet-version) | `content`, `dispute_level`, `content_sha256`, `regulation_confirmed_by`, `regulation_confirmed_at`, `approved_sha256`, `approved_alone`, `export_csv_sha256` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`deadline_verification_status`, `export_verifier_report`, `attested_by`, `attested_at`, `attestation` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0038, ADR 0041, ADR 0049, ADR 0061)) |
 | [`submission`](#table-submission) | `export_sha256`, `export_csv_sha256`, `dispute_level` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
 | [`payer_response`](#table-payer-response) | `remittance_id`, `denial_category`, `reopens_case`, `next_window_ends_on`, `recorded_by` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
 | [`posting_row`](#table-posting-row) | `row_no`, `procedure_code`, `service_date`, `payer_name`, `batch`, `template`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
@@ -5603,7 +5609,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `case_line_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `bcffaf3b76e2a516` |
 | `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8390200e0d5563a1` |
 | `case_next_dispute_window(uuid,integer,date)` | `date` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a6d8aaca2860bcf5` |
-| `case_next_window_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ce11fe240bc4c1e7` |
+| `case_next_window_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ceefb9bb0b88d84d` |
 | `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b8dacedadc46c5e7` |
 | `case_reopened_levels(uuid)` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9e04003e8f9e60cf` |
 | `case_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0292837d38e4bad` |
@@ -5691,13 +5697,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `619ece8c25a26b04` |
 | `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
 | `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
-| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `488e1656629cd223` |
+| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `27b0a8b91e37c9b1` |
 | `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
 | `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
 | `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
-| `packet_version_deadline_stated()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a6e1fe71e82c331f` |
+| `packet_version_deadline_stated()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6c614d04965a83e4` |
 | `packet_version_deadline_status(uuid,jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1341aa1b7f092b15` |
-| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `abc5d2af3850ae36` |
+| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f6437f6fdc52ac7f` |
 | `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b119012e56d45e9c` |
 | `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
 | `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d6f5841a2aadbeea` |
@@ -5733,7 +5739,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `practice_set_materiality(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bd92f0a44717170b` |
 | `practice_set_pursuit(uuid,text,integer,integer)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ba449fb1c3926ee` |
 | `practice_setting_keys()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `43b5d4392b24804a` |
-| `priced_line_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93de6efbc600f046` |
+| `priced_line_calculation(jsonb)` | `jsonb` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c6d660b35b41b796` |
+| `priced_line_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `948191aec9e8353a` |
 | `priced_line_immutable()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4d2d626ed295e33c` |
 | `priced_line_rows_belong()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0c2beafb3c63d2f3` |
 | `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1980a29c53080675` |
@@ -5860,7 +5867,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0049, ADR 0061 | `fdd78ccea7f0e103d144d480f2f8fd9fac2c1826b5c8ed0bd21acb1350eb4921` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `15e5777be2db427e9f95d4a8f4a725788c11e373dc59fbde506a96ab93e9cc61` |
 
 ## Cross-checks
 
@@ -5876,6 +5883,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `3d920c3faf518c71e6e9b0045c3676d0aa1872743324a62dff884512208a5d0b`
+Approved by: ________  Date: ________  Document SHA-256: `6435faddc07eb3626848cccc64aff3cd2d7647281256b68a724561334da02673`

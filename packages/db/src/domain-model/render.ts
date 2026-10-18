@@ -326,7 +326,7 @@ export function renderDocument(input: RenderInput): string {
   out(
     `The Data dictionary tab (\`docs/product/data-dictionary.md\`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B${liveC.length ? `, and ${listIds(liveC)},` : ''} are what the founder approves.${
       proposedC.length
-        ? ` ${listIds(proposedC)} (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent.`
+        ? ` ${listIds(proposedC)} (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. Where a status says a part is built, that part is schema like any other, described above and approved with it.`
         : ''
     } D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.`,
   );
@@ -498,7 +498,7 @@ export function renderDocument(input: RenderInput): string {
   out('## Approval');
   out();
   out(
-    `This document describes the schema at migration head \`${String(meta.head)}\` (${String(meta.migrations)} migrations). Approving it approves the schema as described, every divergence in sections A and B${liveC.length ? `, and the ruling asked for in ${listIds(liveC)}` : ''}.${proposedC.length ? ` It does not decide ${listIds(proposedC)}, which are proposals for schema that does not exist yet (reconciliation-001).` : ''} Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; \`--check --require-approval\` refuses a line whose hash is not this text's.`,
+    `This document describes the schema at migration head \`${String(meta.head)}\` (${String(meta.migrations)} migrations). Approving it approves the schema as described, every divergence in sections A and B${liveC.length ? `, and the ruling asked for in ${listIds(liveC)}` : ''}.${proposedC.length ? ` It does not decide ${listIds(proposedC)}, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes.` : ''} Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; \`--check --require-approval\` refuses a line whose hash is not this text's.`,
   );
   out();
   const PLACEHOLDER = `${APPROVAL_PREFIX} PLACEHOLDER`;

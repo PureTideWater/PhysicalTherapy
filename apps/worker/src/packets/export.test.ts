@@ -57,11 +57,26 @@ describe('packetHtml', () => {
     expect(html).toContain('deadline verified (2 of 2 lines’ windows verified)');
     expect(html).toContain('a dispute window of 3650 days');
     expect(html).toContain('<blockquote>Disputes are raised within 3650 days of the remittance.</blockquote>');
-    expect(html).toContain('citation verified 2026-01-02');
+    expect(html).toContain('citation checked against its page 2026-01-02');
     expect(html).toContain('Each line’s window and calculation, as its trace recorded it');
+    // The trace's codes in words: the method, each step and the rounding rule.
     expect(html).toContain('base $100.00');
-    expect(html).toContain('HALF_UP_CENT: $100.00 to $100.00');
+    expect(html).toContain('half up to the cent: $100.00 to $100.00');
+    expect(html).toContain('<td>Fixed schedule</td>');
+    expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT/);
     expect(html).toContain('<td>$14.00</td>');
+  });
+
+  it('counts one line’s window and one day in the singular', () => {
+    const [first] = content.lines;
+    const [window] = content.deadline.sources;
+    if (first === undefined || window?.kind !== 'contract_window') {
+      throw new Error('a line and its contract window expected');
+    }
+    const one = { ...content, lines: [first], deadline: { ...content.deadline, lines: 1, lines_verified: 1, sources: [{ ...window, days: 1 }] } };
+    const printed = packetHtml(insertIdentifiers(one, exported.narrative, identifiers), approval);
+    expect(printed).toContain('(1 of 1 line’s window verified)');
+    expect(printed).toContain('a dispute window of 1 day,');
   });
 
   it('prints an earlier tp-packet/1 version without a deadline section, and says why a deadline is not verified', () => {

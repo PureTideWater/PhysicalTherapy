@@ -4,10 +4,10 @@ import path from 'node:path';
 import { independenceClaim } from '@paidwhole/brand';
 import { readDocumentPages } from '@tp/contracts/pages';
 import { UNPRICED_REASONS } from '@tp/pricing';
-import { NOT_ACTIONABLE_REASONS, STAGE_LABELS } from '@tp/triage';
+import { DEADLINE_UNVERIFIED_CAUSES, NOT_ACTIONABLE_REASONS, STAGE_LABELS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
-import type { ReportLine } from './content';
+import { type ReportLine, deadlineRemedy } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
 import { auditHtml, auditReconciliation, escapeHtml, reasonText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
@@ -219,4 +219,29 @@ describe('printing to PDF with Chromium', () => {
     expect(text).toMatch(/Flagged \(investigatory\)/);
     expect(text).toContain('investigatory');
   }, 60_000);
+});
+
+describe('the deadline gap’s remedy (D17 a)', () => {
+  const CONTRACT = /For a contract window, have the contract specialist cite/;
+  const SILENT = /For a contract silent on its window/;
+  const MEDICARE = /For a Medicare window, the lines are priced again under a rule release/;
+  it('names the remedy of each cause its lines have, once, and no other', () => {
+    expect(deadlineRemedy(['CONTRACT_WINDOW_UNCITED', 'CONTRACT_WINDOW_UNVERIFIED'])).toMatch(CONTRACT);
+    expect(deadlineRemedy(['CONTRACT_WINDOW_UNCITED'])).not.toMatch(MEDICARE);
+    expect(deadlineRemedy(['COMMERCIAL_DEFAULT'])).toMatch(SILENT);
+    expect(deadlineRemedy(['COMMERCIAL_DEFAULT'])).not.toMatch(CONTRACT);
+    for (const cause of ['RECORD_BELOW_LEVEL', 'RECORD_NOT_IN_RELEASE', 'RELEASE_WITHDRAWN'] as const) {
+      expect(deadlineRemedy([cause])).toMatch(MEDICARE);
+      expect(deadlineRemedy([cause])).not.toMatch(CONTRACT);
+    }
+    const all = deadlineRemedy(['RECORD_BELOW_LEVEL', 'CONTRACT_WINDOW_UNCITED', 'COMMERCIAL_DEFAULT', 'RECORD_BELOW_LEVEL']);
+    expect([CONTRACT, SILENT, MEDICARE].map((pattern) => pattern.test(all))).toEqual([true, true, true]);
+    expect(all.split('For a ')).toHaveLength(4);
+  });
+
+  it('has a remedy for every cause', () => {
+    for (const cause of DEADLINE_UNVERIFIED_CAUSES) {
+      expect(deadlineRemedy([cause]), cause).not.toBe('');
+    }
+  });
 });

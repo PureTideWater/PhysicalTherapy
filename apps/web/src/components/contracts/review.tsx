@@ -80,8 +80,10 @@ export function VersionStateNotice({ review }: { readonly review: VersionReview 
 }
 
 /**
- * Whether the version's dispute window is cited and verified (D17 a): only a verified window of a signed-off version
- * verifies its lines' deadlines; an uncited or unverified window leaves them unverified, and its lines not actionable.
+ * Whether the version's dispute window is cited and checked against its page (D17 a): only a checked window of a
+ * signed-off version verifies its lines' deadlines; an uncited or unchecked window leaves them unverified, and its
+ * lines not actionable. The check reads as a rate record's does, "Checked against", never "Verified", which the
+ * brand keeps for the ledger-gated seal (docs/adr/0056; the data's status stays verified in code, CO-12).
  */
 export function DisputeWindowText({ review }: { readonly review: VersionReview }) {
   const { version } = review;
@@ -96,11 +98,11 @@ export function DisputeWindowText({ review }: { readonly review: VersionReview }
   const where = `page ${String(window.page)}${document === undefined ? '' : ` of ${documentLabel(document)}`}`;
   return window.verifiedAt === null ? (
     <span data-window="unverified">
-      Cited on {where}, not verified yet: <q className="italic">{window.quote}</q>
+      Cited on {where}, not checked yet: <q className="italic">{window.quote}</q>
     </span>
   ) : (
     <span data-window="verified">
-      Verified on {where} by {window.verifiedBy ?? 'the contract specialist'}, {utc(window.verifiedAt)}: <q className="italic">{window.quote}</q>
+      Checked against {where} by {window.verifiedBy ?? 'the contract specialist'}, {utc(window.verifiedAt)}: <q className="italic">{window.quote}</q>
     </span>
   );
 }
