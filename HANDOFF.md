@@ -1,6 +1,6 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 16:41 UTC.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 16:52 UTC.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
@@ -68,7 +68,7 @@ When asking the founder a question, recommend the best option first. Never let t
 - **main:** repaired by #18 (`8d7acce`), the plan documents only, until launch.
 - **First audit done:** 64 upgrades (11 critical, 37 high, 16 medium), in `scratchpad/best-option-audit/report.md` and `report.json`. The second audit (`wf_8e577203-afb`) merges into `combined-report.md`.
 - **PR 6 rulings:** done and verified at `dfd48f8`. The PR 6 audit-fix workflow `wf_fb7ce904-a6f` is running: the 11-line floor (#6), the denied-lines template wording (#1) and the ZIP+4 amendment.
-- **Queued after the current PR 5 workflow:** the PR 5 audit-fix workflow (#4, #5, #26, #61).
+- **PR 5 download rule:** done and verified at `6f9829a` (22 checks). The worker now has its own database login, a sixth login and secret in the infra. The PR 5 audit-fix workflow `wf_4eae97e6-03a` is running (#4, #5, #26, #61). After it, rewrite the approval summary and ask the founder to confirm the new SHA-256.
 - **Audit items to put to the founder with the combined report:** #21 (deadline alerts PR after PR 5), #25 (reviewer queue after PR 5 and PR 6b) and #34 (figures explained in words), plus all the other critical and high items.
 - **PR 5:** `co-001/pr-05-packet-deadline`, worktree `/home/user/pr5`. Workflow `wf_e3d92d32-ee0` (download rule) is in review. Next steps:
   1. The founder confirms the new hash.
