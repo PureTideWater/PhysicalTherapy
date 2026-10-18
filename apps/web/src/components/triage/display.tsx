@@ -53,6 +53,17 @@ export function Deadline({ on, state }: { readonly on: string | null; readonly s
   );
 }
 
+/**
+ * A line of a case's schedule or a cohort's flagged lines by its place in the list, which is unique on
+ * the page and not PHI ("Line 2 of 3"; a line's number inside its own claim is not unique: CAS-08's
+ * three claims each have a line 1), then its service date where the handler returned one (the roles
+ * that read PHI only, as on Claims and lines).
+ */
+export function lineName(position: number, total: number, serviceDate: string | null = null): string {
+  const place = `Line ${String(position)} of ${String(total)}`;
+  return serviceDate === null ? place : `${place}, ${serviceDate}`;
+}
+
 export function stageLabel(stage: keyof typeof STAGE_LABELS): string {
   return STAGE_LABELS[stage];
 }

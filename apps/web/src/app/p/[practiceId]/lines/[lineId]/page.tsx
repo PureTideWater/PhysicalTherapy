@@ -228,10 +228,10 @@ export default async function LinePage(props: {
             <table className="w-full text-left text-sm" aria-label="Adjustments">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Level</th>
-                  <th className="py-1 font-medium">Group</th>
-                  <th className="py-1 font-medium">Reason</th>
-                  <th className="py-1 text-right font-medium">Quantity</th>
+                  <th className="py-1 pr-3 font-medium">Level</th>
+                  <th className="py-1 pr-3 font-medium">Group</th>
+                  <th className="py-1 pr-3 font-medium">Reason</th>
+                  <th className="py-1 pr-3 text-right font-medium">Quantity</th>
                   <th className="py-1 text-right font-medium">Amount</th>
                 </tr>
               </thead>

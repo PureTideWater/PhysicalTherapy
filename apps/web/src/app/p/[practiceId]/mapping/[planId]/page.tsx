@@ -101,9 +101,9 @@ export default async function PlanPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Agreement resolution">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Outcome</th>
-                  <th className="py-1 font-medium">Contract version</th>
-                  <th className="py-1 text-right font-medium">Lines</th>
+                  <th className="py-1 pr-3 font-medium">Outcome</th>
+                  <th className="py-1 pr-3 font-medium">Contract version</th>
+                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
                   <th className="py-1 text-right font-medium">Billed</th>
                 </tr>
               </thead>
@@ -202,8 +202,8 @@ export default async function PlanPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Mappings">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Mapping</th>
-                <th className="py-1 font-medium">State</th>
+                <th className="py-1 pr-3 font-medium">Mapping</th>
+                <th className="py-1 pr-3 font-medium">State</th>
                 <th className="py-1 font-medium">Mapped by</th>
               </tr>
             </thead>

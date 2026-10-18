@@ -18,6 +18,7 @@ import {
   listQuestions,
 } from '../contracts/contract-queries';
 import { type VersionReview, versionReview } from '../contracts/review';
+import { type ContractCoverage, contractCoverage, runsInEffect } from '../coverage/in-effect';
 import { tagDocument, tagInput } from '../contracts/tagging';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
@@ -62,12 +63,21 @@ export interface ContractFilters {
   readonly status?: VersionStatus;
 }
 
+/**
+ * A contract as the Contracts screen lists it, with its coverage share: the lines whose pricing in effect
+ * names one of its versions (or whose mapping does), and those it priced; null when no line in effect names it
+ * (lib/coverage/in-effect.ts).
+ */
+export type ContractListItem = ContractSummary & { readonly coverage: ContractCoverage | null };
+
 export interface ContractsPageData {
   readonly practiceId: string;
   readonly today: string;
   readonly filters: ContractFilters;
   readonly payers: readonly PayerOption[];
-  readonly list: Paged<ContractSummary>;
+  readonly list: Paged<ContractListItem>;
+  /** The runs in effect the coverage shares read (0 before any run takes effect). */
+  readonly runsInEffect: number;
   readonly calendar: readonly CalendarEntry[];
   readonly untagged: Paged<DocumentSummary>;
   readonly contracts: readonly ContractOption[];
@@ -89,12 +99,19 @@ export const contractsPage = practiceRoute({
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const open = await baaOnFile(scope, practiceId);
     const filters: ContractFilters = { ...(params.payer === undefined ? {} : { payer: params.payer }), ...(params.status === undefined ? {} : { status: params.status }) };
+    const list = await listContracts(scope, { practiceId, today, page: params.page, requestId: request.requestId, ...(params.payer === undefined ? {} : { payerId: params.payer }), ...(params.status === undefined ? {} : { status: params.status }) });
+    const shares = await contractCoverage(
+      scope,
+      practiceId,
+      list.items.map((item) => item.id),
+    );
     return {
       practiceId,
       today,
       filters,
       payers: await payerOptions(scope, practiceId),
-      list: await listContracts(scope, { practiceId, today, page: params.page, requestId: request.requestId, ...(params.payer === undefined ? {} : { payerId: params.payer }), ...(params.status === undefined ? {} : { status: params.status }) }),
+      list: { ...list, items: list.items.map((item) => ({ ...item, coverage: shares.get(item.id) ?? null })) },
+      runsInEffect: await runsInEffect(scope, practiceId),
       calendar: await listCalendar(scope, practiceId, today, request.requestId),
       untagged: await listContractDocuments(scope, practiceId, 'untagged', params.documents, request.requestId),
       contracts: await contractOptions(scope, practiceId, request.requestId),

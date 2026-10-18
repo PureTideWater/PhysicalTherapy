@@ -76,11 +76,11 @@ export function DiffTable({ practiceId, lines, beforeRunId, afterRunId }: { read
     <table className="w-full text-left text-sm" aria-label="Changed lines">
       <thead className="text-muted-foreground">
         <tr>
-          <th className="py-1 font-medium">Code and modifiers</th>
-          <th className="py-1 font-medium">Change</th>
-          <th className="py-1 font-medium">First run</th>
-          <th className="py-1 font-medium">Second run</th>
-          <th className="py-1 font-medium">Cause</th>
+          <th className="py-1 pr-3 font-medium">Code and modifiers</th>
+          <th className="py-1 pr-3 font-medium">Change</th>
+          <th className="py-1 pr-3 font-medium">First run</th>
+          <th className="py-1 pr-3 font-medium">Second run</th>
+          <th className="py-1 pr-3 font-medium">Cause</th>
           <th className="py-1 font-medium">
             <span className="sr-only">Traces</span>
           </th>

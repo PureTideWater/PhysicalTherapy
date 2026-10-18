@@ -8,7 +8,7 @@ import { CaseTimeline } from '../../../../../components/cases/timeline';
 import { utc } from '../../../../../components/format';
 import { Fact, Money, Pager } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
-import { CaseStateBadge, Deadline, stageLabel, writeOffText } from '../../../../../components/triage/display';
+import { CaseStateBadge, Deadline, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
@@ -155,9 +155,9 @@ export default async function CasePage(props: Props) {
           {detail.lines.map((line) => (
             <li key={line.id} className="rounded-md border p-4" data-case-line={line.id} data-actionable={line.actionable ? 'yes' : 'no'}>
               <div className={line.actionable ? 'flex flex-wrap items-center gap-3 text-sm' : 'flex flex-wrap items-center gap-3 text-sm text-muted-foreground line-through'}>
-                {canReadPhi ? <span>{line.payerClaimControlNumber}</span> : null}
+                {canReadPhi && line.payerClaimControlNumber !== null ? <span>{line.payerClaimControlNumber}</span> : null}
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.serviceLineId}?run=${line.pricingRunId}`}>
-                  Line {line.lineNo}, {line.serviceDate}
+                  {lineName(line.position, detail.totalLines, line.serviceDate)}
                 </Link>
                 <span className="font-mono tabular-nums">
                   {[line.procedureCode, ...line.modifiers].join(' ')} x {line.units}

@@ -124,7 +124,9 @@ test('a billing manager creates a pricing run; the worker prices it, and its lin
   await test.step('Coverage shows the run’s priced shares', async () => {
     await page.goto(`/p/${other}/coverage`);
     const priced = page.getByRole('region', { name: 'Priced share' });
-    await expect(priced).toContainText('From the latest complete pricing run, 2026-02-01 to 2026-02-28 under rule release 900001');
+    // Each line at its pricing in effect, across the runs in effect; the latest to take effect is named beside them.
+    await expect(priced).toContainText('Each line at its pricing in effect, across 1 pricing run in effect (service 2026-02-01 to 2026-02-28)');
+    await expect(priced).toContainText('The latest to take effect is 2026-02-01 to 2026-02-28 under rule release 900001');
     await expect(priced).toContainText('Priced: 3 of 3 lines (100.0%); $326.00 of $326.00 billed (100.0%)');
     for (const value of KNOWN) {
       await expect(page.locator('main')).not.toContainText(value);

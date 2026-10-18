@@ -7,6 +7,7 @@ import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contr
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
+import { coverageInEffect } from '../coverage/in-effect';
 import { practiceRoute } from '../http/invoke';
 import { type ChecklistView, latestChecklist } from '../models/evidence-checklist';
 import { modelFeatures } from '../models/path';
@@ -21,9 +22,10 @@ import { opaqueId, optionalText } from './schemas';
  * The Coverage screen (PRD 7: "share of lines and dollars priced; the unpriced reasons by count; what
  * to obtain to raise coverage ... create a request-to-payer letter for a missing schedule ... links
  * each reason to its remedy screen"; PRD 5, J5 and J6; test matrix MAP-01). The priced shares and the
- * unpriced reasons by count are those of the pricing run that took effect last (a complete first run or an
- * accepted re-run: its stored coverage summary); before
- * the first, they are zero and the screen says why. Beside them: the dollars waiting on mappings (per
+ * unpriced reasons by count are each line's result in its pricing in effect, across every run in effect
+ * (lib/coverage/in-effect.ts, the digest's coverage), so a month priced under a "no agreement" mapping
+ * never hides the months priced under contracts; the run that took effect last is named beside them.
+ * Before the first run takes effect, they are zero and the screen says why. Beside them: the dollars waiting on mappings (per
  * plan), whether a pricing run over every line would be refused for an unmapped plan (the run's own
  * guard), and the specialist's open questions that ask the practice to obtain a document. The letter is
  * plain text from a fixed template (no model), downloaded as a file. Lines read from an ERA export whose
@@ -36,7 +38,7 @@ export interface ReasonCount extends UnpricedReasonText {
   readonly lines: number;
 }
 
-/** The latest complete run the shares and counts come from. */
+/** The run in effect that took effect last (named beside the shares; its own lines are on its page). */
 export interface CoverageRun {
   readonly id: string;
   readonly periodFrom: string;
@@ -51,9 +53,11 @@ export interface CoverageRun {
 export interface CoveragePageData {
   readonly practiceId: string;
   readonly lines: Totals;
-  /** Lines and billed dollars the latest complete pricing run priced; zero while none has completed. */
+  /** Lines and billed dollars priced, each line at its pricing in effect; zero while no run is in effect. */
   readonly priced: { readonly lines: number; readonly chargeCents: string };
-  /** The run they come from; null before the first completes. */
+  /** What the priced share is of: every line a run in effect priced, the runs, and the service dates they cover. */
+  readonly share: { readonly runs: number; readonly periodFrom: string | null; readonly periodTo: string | null; readonly of: { readonly lines: number; readonly chargeCents: string } };
+  /** The run in effect that took effect last; null before the first completes. */
   readonly run: CoverageRun | null;
   /** Pricing runs of the practice, in any state. */
   readonly pricingRuns: number;
@@ -87,11 +91,13 @@ export const coveragePage = practiceRoute({
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const latest = await latestRunInEffect(scope, practiceId, request.requestId);
     const coverage = latest?.coverage ?? null;
-    const counts = new Map((coverage?.reasons ?? []).map((entry) => [entry.reason, entry.lines]));
+    const inEffect = await coverageInEffect(scope, practiceId);
+    const counts = new Map(inEffect.reasons.map((entry) => [entry.reason, entry.lines]));
     return {
       practiceId,
       lines: await lineTotals(scope, practiceId),
-      priced: coverage === null ? { lines: 0, chargeCents: '0' } : { lines: coverage.priced.lines, chargeCents: coverage.priced.charge_cents },
+      priced: inEffect.priced,
+      share: { runs: inEffect.runs, periodFrom: inEffect.periodFrom, periodTo: inEffect.periodTo, of: inEffect.of },
       run:
         latest === undefined || coverage === null || latest.completedAt === null
           ? null

@@ -5,87 +5,17 @@ import Link from 'next/link';
 
 import { VerifiedSeal } from '../../../../../../components/brand';
 import { utc } from '../../../../../../components/format';
-import { entryStage, proofLevelWords, recoveredLabel } from '../../../../../../components/reconciliation/display';
+import { proofLevelWords, recoveredLabel } from '../../../../../../components/reconciliation/display';
 import { Money } from '../../../../../../components/remittances/display';
+import { RoiFigure } from '../../../../../../components/reports/roi';
 import { ShareLink } from '../../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { loadPage } from '../../../../../../lib/http/next';
-import type { FigureView } from '../../../../../../lib/reconciliation/queries';
 import { roiStatementPage } from '../../../../../../lib/routes/roi';
 
 export const metadata: Metadata = { title: 'ROI statement' };
 
 type Props = { readonly params: Promise<{ practiceId: string; statementId: string }> };
-
-function Figure({
-  id,
-  label,
-  note,
-  figure,
-  practiceId,
-  empty,
-}: {
-  readonly id: string;
-  /** The figure's whole label, also the region's name: a recovered figure's names its proof level, heard as well as seen. */
-  readonly label: string;
-  readonly note: string;
-  readonly figure: FigureView;
-  readonly practiceId: string;
-  readonly empty: string;
-}) {
-  return (
-    <Card role="region" aria-label={label} id={id}>
-      <CardHeader>
-        <CardTitle className="flex flex-wrap items-baseline gap-2">
-          {label}: <Money value={figure.storedCents} />
-        </CardTitle>
-        <CardDescription>
-          {note}{' '}
-          <span data-recomputed={id} data-matches={figure.matches ? 'yes' : 'no'}>
-            {figure.matches ? `Recomputed from its ${String(figure.entries.length)} linked entries: ` : 'Its linked entries give '}
-            <Money value={figure.recomputedCents} />
-            {figure.matches ? ', the figure stored.' : ', not the figure stored.'}
-          </span>
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {figure.entries.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{empty}</p>
-        ) : (
-          <table aria-label={`Entries of ${label.toLowerCase()}`} className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left">
-                <th className="py-1 pr-3">Money moved</th>
-                <th className="py-1 pr-3">Stage</th>
-                <th className="py-1 pr-3 text-right">Amount</th>
-                <th className="py-1">Entry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {figure.entries.map((entry) => (
-                <tr key={entry.id} className="border-b" data-entry={entry.id}>
-                  <td className="py-1 pr-3">{entry.effectiveOn}</td>
-                  <td className="py-1 pr-3">
-                    {entryStage(entry.stage)}
-                    {entry.allocated ? ' (allocated pro rata)' : ''}
-                  </td>
-                  <td className="py-1 pr-3 text-right">
-                    <Money value={entry.amountCents} />
-                  </td>
-                  <td className="py-1">
-                    <Link className="underline" href={`/p/${practiceId}/reconciliation?case=${entry.caseId}#entry-${entry.id}`}>
-                      In its case’s ledger
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 /**
  * An ROI statement (PRD 13, ROI statement: "fees paid to the product in the period; recovered
@@ -167,7 +97,7 @@ export default async function RoiStatementPage(props: Props) {
           </CardDescription>
         </CardHeader>
       </Card>
-      <Figure
+      <RoiFigure
         id="recovered"
         label={RECOVERED_PRINCIPAL_LABELS[detail.proofLevel]}
         note="Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it."
@@ -175,8 +105,8 @@ export default async function RoiStatementPage(props: Props) {
         practiceId={practiceId}
         empty={NO_RECOVERED_CASH[detail.proofLevel]}
       />
-      <Figure id="interest" label="Interest, net" note="Interest the payer paid in the period, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
-      <Figure
+      <RoiFigure id="interest" label="Interest, net" note="Interest the payer paid in the period, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
+      <RoiFigure
         id="approved-unposted"
         label="Payer approved, not yet at the proof level"
         note="Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage."

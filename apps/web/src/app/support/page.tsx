@@ -63,18 +63,18 @@ export default async function SupportPage(props: { readonly searchParams: Promis
           <table className="w-full text-left text-sm" aria-label="Tickets">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Number</th>
-                <th className="py-1 font-medium">Subject</th>
-                <th className="py-1 font-medium">Opened</th>
+                <th className="py-1 pr-3 font-medium">Number</th>
+                <th className="py-1 pr-3 font-medium">Subject</th>
+                <th className="py-1 pr-3 font-medium">Opened</th>
                 <th className="py-1 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
               {tickets.map((ticket) => (
                 <tr key={ticket.id} className="border-t">
-                  <td className="py-1 font-mono tabular-nums">{ticket.number}</td>
-                  <td className="py-1">{ticket.subject}</td>
-                  <td className="py-1">{utc(ticket.createdAt)}</td>
+                  <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
+                  <td className="py-1 pr-3">{ticket.subject}</td>
+                  <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
                   <td className="py-1">
                     <Badge variant="outline">{STATUS[ticket.status] ?? ticket.status}</Badge>
                   </td>

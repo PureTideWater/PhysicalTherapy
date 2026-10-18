@@ -22,6 +22,16 @@ export { escapeHtml };
 const usd = (value: string | null) => (value === null ? 'not estimated' : formatUsd(parseCents(value)));
 const count = (value: number, noun: string) => `${String(value)} ${noun}${value === 1 ? '' : 's'}`;
 
+/** A case's state in words, as the Cases screen says it. */
+const CASE_STATE_WORDS: Readonly<Record<string, string>> = {
+  open: 'open',
+  submitted: 'submitted',
+  awaiting_response: 'awaiting response',
+  partially_resolved: 'partially resolved',
+  resolved: 'resolved',
+  closed_written_off: 'closed (written off)',
+};
+
 const REASON_TEXT: Readonly<Record<string, string>> = {
   BELOW_LINE_MATERIALITY: 'Below the per-line materiality',
   WINDOW_PASSED: 'Dispute window passed on the triage date',
@@ -72,8 +82,8 @@ const STYLE = `
 
 /**
  * The Verified gate for an audit report, from the ledger (docs/adr/0057): the report states its recovered
- * total and links no ledger entries, so it earns the seal only if that ever changes; today its recovered is
- * zero (the recovery ledger starts after the audit), and the seal never prints.
+ * total (the recovery ledger's, for its cases' lines) and links no ledger entries, so the seal never prints
+ * on it: a recovered total above zero with no linked entries is refused as differing from them.
  */
 export function auditReconciliation(content: AuditReportContent, proofLevel: ProofLevel = DEFAULT_PROOF_LEVEL): ReportReconciliation {
   return reportReconciliation({
@@ -92,10 +102,16 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
   // Recovered names the practice's proof level, the one the gate judged it under: never "Recovered" alone.
   const level = reconciliation.proofLevel;
   const recovered = recoveredLabel(level);
+  const approvedNone = parseCents(headline.payer_approved_cents) === 0n;
+  const recoveredNone = parseCents(headline.recovered_cents) === 0n;
   const figures = [
-    { label: labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases, inside their dispute windows and above materiality` },
-    { label: labels.payer_approved, amount: headline.payer_approved_cents, note: 'accepted by the payer; no payer response is recorded yet' },
-    { label: recovered, amount: headline.recovered_cents, note: `${level}, net of recoupments and reversals; nothing has ${level === 'deposited' ? 'been deposited' : 'posted'} yet` },
+    { label: labels.actionable, amount: headline.actionable_cents, note: `${count(headline.actionable_lines, 'line')} in cases still actionable, inside their dispute windows and above materiality` },
+    { label: labels.payer_approved, amount: headline.payer_approved_cents, note: approvedNone ? 'accepted by the payer; no payer approval is recorded yet' : 'accepted by the payer, from the ledger’s entries; not cash until it posts' },
+    {
+      label: recovered,
+      amount: headline.recovered_cents,
+      note: recoveredNone ? `${level}, net of recoupments and reversals; nothing has ${level === 'deposited' ? 'been deposited' : 'posted'} yet` : `cash ${level}, from the ledger’s entries, net of recoupments and reversals`,
+    },
   ];
   const sections: string[] = [];
   sections.push(`<section aria-label="Headline"><div class="headline">${figures
@@ -134,16 +150,27 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
     item.payer,
     item.plan,
     item.behavior_text,
-    item.state === 'open' ? 'open' : 'closed (written off)',
-    `${String(item.actionable_lines)} of ${String(item.lines)}`,
-    usd(item.actionable_cents),
+    // Its lines still actionable and their variance, the lines the headline sums (a report stored before the stages were read shows its share).
+    `${String(item.actionable_now_lines ?? item.actionable_lines)} of ${String(item.lines)}`,
+    usd(item.actionable_now_cents ?? item.actionable_cents),
     item.deadline_on ?? 'none open',
     `${count(item.case_lines, 'line')}, ${usd(item.case_actionable_cents)}`,
     usd(item.pursuit_cost_cents),
     usd(item.net_expected_cents),
   ]);
   sections.push(
-    `<section aria-label="Actionable cases"><h2>${escapeWithFigures(labels.actionable)}: cases by payer pattern</h2><p>${escapeWithFigures(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them. A pattern accumulates across runs, so a case may hold lines other runs priced: this report counts the lines this run priced, and the whole case is shown beside them.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'State', 'Lines counted (this run)', `${labels.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.', { id: [2], date: [7], amount: [5, 6, 8, 9, 10] })}<p>${escapeWithFigures(content.pursuit.estimated ? `Pursuit cost of the open cases: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
+    `<section aria-label="Actionable cases"><h2>${escapeWithFigures(labels.actionable)}: cases by payer pattern</h2><p>${escapeWithFigures(`A case groups the lines of one payer pattern (payer and plan, rate record, adjustment behavior) once they reach ${usd(content.settings.case_materiality_cents)}; a line counts at ${usd(content.settings.line_materiality_cents)} of variance or more, inside its dispute window. A case's total is the sum of its lines not written off; its deadline is the earliest open window among them. A pattern accumulates across runs, so a case may hold lines other runs priced: this report counts the lines this run priced, and the whole case is shown beside them. A line counts here while it is still actionable; once its payer approves it, it counts in the next section, beside its case's state.`)}</p>${table('Cases', ['Payer', 'Plan', 'Adjustment behavior', 'Lines counted (this run)', `${labels.actionable} (this run)`, 'Deadline (this run)', 'Whole case', 'Pursuit cost', 'Net expected'], caseRows, 'No pattern reaches the case materiality yet.', { id: [2], date: [6], amount: [4, 5, 7, 8, 9] })}<p>${escapeWithFigures(content.pursuit.estimated ? `Pursuit cost of the cases still actionable: ${usd(content.pursuit.cost_cents)}; net expected value ${usd(content.pursuit.net_expected_cents)}.` : 'Pursuit cost is not estimated: the practice has not set its staff rate and times.')}</p></section>`,
+  );
+
+  // Payer approved and recovered by case: the headline's two figures from the same cases' lines, the ledger's entries for them.
+  const ledgerRows = content.cases.map((item) => [item.payer, item.plan, CASE_STATE_WORDS[item.state] ?? item.state, usd(item.payer_approved_cents ?? '0'), usd(item.recovered_cents ?? '0')]);
+  const ledgerNone = approvedNone && recoveredNone;
+  sections.push(
+    `<section aria-label="${escapeHtml(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}"><h2>${escapeWithFigures(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}</h2><p>${escapeWithFigures(
+      ledgerNone
+        ? `Both come from the ledger's entries for these cases' lines: payer approved once a payer accepts a case's lines, ${recovered.toLowerCase()} only once their cash is ${level}. Neither had an entry when the report was generated.`
+        : `Both come from the ledger's entries for these cases' lines this run priced: payer approved once a payer accepts them, ${recovered.toLowerCase()} only once their cash is ${level}, net of recoupments and reversals. The headline is the sum of each column.`,
+    )}</p>${table('By case', ['Payer', 'Plan', 'State', `${labels.payer_approved} (this run)`, `${recovered} (this run)`], ledgerRows, 'No pattern reaches the case materiality yet.', { id: [2], amount: [4, 5] })}</section>`,
   );
 
   const gapRows = content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind.replaceAll('_', ' '), gap.lines === 0 ? '' : String(gap.lines), gap.charge_cents === null ? '' : usd(gap.charge_cents), gap.detail, gap.remedy]);

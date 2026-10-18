@@ -13,8 +13,10 @@ import { type ListPage, pageWindow } from '../http/paging';
  * integer cents as text; nothing here computes an expected amount: a case's total and deadline are
  * the database's (derived from its lines), a line's variance its pricing run's.
  *
- * Claim control numbers and the words people wrote (a write-off's "other", a reopen's reason) are
- * decrypted only for the roles that read PHI; the others see the line by date, code and amounts.
+ * Service dates, claim control numbers and the words people wrote (a write-off's "other", a reopen's
+ * reason) are read and decrypted only for the roles that read PHI, as Claims and lines reads them: for
+ * the others the query returns null in their place, so they never leave the database, and those roles
+ * see a line by its number, code and amounts.
  * People are named by email through the database's people functions (src/lib/cases/people.ts), since
  * nobody reads another person's user row.
  */
@@ -91,8 +93,14 @@ export interface AnomalyView {
   };
   readonly lineIds: readonly string[];
   readonly reviewedAt: string | null;
+  /**
+   * Who marked it reviewed, once reviewed: their email where the user directory lets the reader see it
+   * (themselves, or a person they administer), else "a member of the practice", never a dash (the screen
+   * tour's N3, as the audit report names its signer). Null until reviewed.
+   */
   readonly reviewedBy: string | null;
   readonly validationRequestedAt: string | null;
+  /** Who converted it to a validation request, named as reviewedBy is. Null until converted. */
   readonly validationRequestedBy: string | null;
 }
 
@@ -143,9 +151,9 @@ function anomalyView(row: AnomalyRow): AnomalyView {
     stats: row.stats,
     lineIds: row.line_ids,
     reviewedAt: row.reviewed_at?.toISOString() ?? null,
-    reviewedBy: row.reviewed_by,
+    reviewedBy: row.reviewed_at === null ? null : (row.reviewed_by ?? 'a member of the practice'),
     validationRequestedAt: row.validation_requested_at?.toISOString() ?? null,
-    validationRequestedBy: row.validation_requested_by,
+    validationRequestedBy: row.validation_requested_at === null ? null : (row.validation_requested_by ?? 'a member of the practice'),
   };
 }
 
@@ -208,7 +216,8 @@ export async function anomalyOf(scope: Scope, practiceId: string, anomalyId: str
 /** One flagged line of a cohort: what it was paid against the cohort's mode for its units. */
 export interface FlaggedLine {
   readonly serviceLineId: string;
-  readonly serviceDate: string;
+  /** For the roles that read PHI; null otherwise. */
+  readonly serviceDate: string | null;
   readonly procedureCode: string;
   readonly modifiers: readonly string[];
   readonly units: string;
@@ -229,35 +238,35 @@ export async function flaggedLines(scope: Scope, practiceId: string, anomaly: An
         await client.query<{
           id: string;
           practice_id: string;
-          service_date: string;
+          service_date: string | null;
           procedure_code: string;
           modifiers: readonly string[] | null;
           units: string;
           observed_allowed_cents: string;
           modal_cents: string;
-          payer_claim_control_number: string;
+          payer_claim_control_number: string | null;
         }>(
-          `SELECT l.id, l.practice_id, coalesce(l.service_date, c.service_from)::text AS service_date, l.procedure_code, l.modifiers,
+          `SELECT l.id, l.practice_id, CASE WHEN $4 THEN coalesce(l.service_date, c.service_from)::text END AS service_date, l.procedure_code, l.modifiers,
                   trim_scale(coalesce(l.units, 1))::text AS units, l.observed_allowed_cents::text,
-                  round($3::numeric * coalesce(l.units, 1))::bigint::text AS modal_cents, c.payer_claim_control_number
+                  round($3::numeric * coalesce(l.units, 1))::bigint::text AS modal_cents, CASE WHEN $4 THEN c.payer_claim_control_number END AS payer_claim_control_number
              FROM service_line l JOIN claim c ON c.id = l.claim_id
             WHERE l.id = ANY ($1::uuid[]) AND l.practice_id = $2
             ORDER BY coalesce(l.service_date, c.service_from), l.id`,
-          [anomaly.lineIds, practiceId, anomaly.modalAllowedCents],
+          [anomaly.lineIds, practiceId, anomaly.modalAllowedCents, cipher !== null],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
   );
   return rows.map((row) => ({
     serviceLineId: row.id,
-    serviceDate: row.service_date,
+    serviceDate: cipher === null ? null : row.service_date,
     procedureCode: row.procedure_code,
     modifiers: (row.modifiers ?? []).filter((modifier) => modifier !== ''),
     units: row.units,
     observedAllowedCents: row.observed_allowed_cents,
     modalForUnitsCents: row.modal_cents,
     shortCents: (parseCents(row.modal_cents) - parseCents(row.observed_allowed_cents)).toString(),
-    payerClaimControlNumber: cipher === null ? null : cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
+    payerClaimControlNumber: cipher === null || row.payer_claim_control_number === null ? null : cipher.decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
   }));
 }
 
@@ -424,8 +433,12 @@ export interface CaseLineView {
   readonly id: string;
   readonly serviceLineId: string;
   readonly pricingRunId: string;
+  /** The line's number inside its own claim (CAS-08's three claims each have a line 1). */
   readonly lineNo: number;
-  readonly serviceDate: string;
+  /** The line's place in the case's schedule, 1 to the case's line count: what names it on the page for every role, since it is unique there and not PHI. */
+  readonly position: number;
+  /** For the roles that read PHI; null otherwise. */
+  readonly serviceDate: string | null;
   readonly procedureCode: string;
   readonly modifiers: readonly string[];
   readonly units: string;
@@ -444,16 +457,19 @@ export interface CaseLineView {
   /** Who wrote it off; null when triage did because its window passed. */
   readonly writtenOffBy: string | null;
   readonly writtenOffAt: string | null;
+  /** The reopener's words, for the roles that read PHI. */
   readonly reopenReason: string | null;
   readonly reopenedBy: string | null;
   readonly reopenedAt: string | null;
+  /** For the roles that read PHI; null otherwise. */
   readonly payerClaimControlNumber: string | null;
 }
 
 export interface CaseEvent {
   readonly at: string;
   readonly serviceLineId: string;
-  readonly lineNo: number;
+  /** The line's place in the case's schedule (CaseLineView.position), as the page names it. */
+  readonly position: number;
   readonly kind: 'stage' | 'reopened_stage' | 'written_off' | 'reopened';
   readonly stage: LineStage | null;
   readonly reopenedFrom: LineStage | null;
@@ -480,7 +496,7 @@ interface CaseLineRow {
   readonly service_line_id: string;
   readonly pricing_run_id: string;
   readonly line_no: number;
-  readonly service_date: string;
+  readonly service_date: string | null;
   readonly procedure_code: string;
   readonly modifiers: readonly string[] | null;
   readonly units: string;
@@ -498,10 +514,14 @@ interface CaseLineRow {
   readonly reopen_reason: string | null;
   readonly reopened_by: string | null;
   readonly reopened_at: Date | null;
-  readonly payer_claim_control_number: string;
+  readonly payer_claim_control_number: string | null;
 }
 
-/** A page of a case's lines (each with its priced line and its write-off or reopen) and their timeline. */
+/**
+ * A page of a case's lines (each with its priced line and its write-off or reopen) and their timeline.
+ * Without the practice's cipher (a role that does not read PHI), the query itself leaves out each line's
+ * service date, claim control number and people's words.
+ */
 export async function caseDetail(scope: Scope, practiceId: string, caseId: string, cipher: PracticeCipher | null, requestId: string, page = 1): Promise<CaseDetail> {
   const { rows: counted } = await scope.client.query<{ n: number }>('SELECT count(*)::int AS n FROM case_line WHERE case_id = $1 AND practice_id = $2', [caseId, practiceId]);
   const totalLines = counted[0]?.n ?? 0;
@@ -512,13 +532,13 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     async (client) =>
       (
         await client.query<CaseLineRow>(
-          `SELECT cl.id, cl.practice_id, cl.service_line_id, p.pricing_run_id, l.line_no, coalesce(l.service_date, c.service_from)::text AS service_date,
+          `SELECT cl.id, cl.practice_id, cl.service_line_id, p.pricing_run_id, l.line_no, CASE WHEN $3 THEN coalesce(l.service_date, c.service_from)::text END AS service_date,
                   l.procedure_code, l.modifiers, trim_scale(coalesce(l.units, 1))::text AS units,
                   p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text, p.window_ends_on::text,
                   (p.window_ends_on IS NOT NULL AND p.window_ends_on < (now() AT TIME ZONE 'UTC')::date) AS window_passed,
                   cl.actionable, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage,
-                  cl.written_off_reason, cl.written_off_text, cl.written_off_by, cl.written_off_at,
-                  cl.reopen_reason, cl.reopened_by, cl.reopened_at, c.payer_claim_control_number
+                  cl.written_off_reason, CASE WHEN $3 THEN cl.written_off_text END AS written_off_text, cl.written_off_by, cl.written_off_at,
+                  CASE WHEN $3 THEN cl.reopen_reason END AS reopen_reason, cl.reopened_by, cl.reopened_at, CASE WHEN $3 THEN c.payer_claim_control_number END AS payer_claim_control_number
              FROM case_line cl
              JOIN priced_line p ON p.id = cl.priced_line_id
              JOIN service_line l ON l.id = cl.service_line_id
@@ -526,7 +546,7 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
             WHERE cl.case_id = $1 AND cl.practice_id = $2
             ORDER BY coalesce(l.service_date, c.service_from), l.line_no, cl.id
             LIMIT ${String(CASE_LINES_PER_PAGE)} OFFSET ${String(at.offset)}`,
-          [caseId, practiceId],
+          [caseId, practiceId, cipher !== null],
         )
       ).rows,
     (row) => ({ objectId: row.id, practiceId: row.practice_id }),
@@ -540,12 +560,13 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
   );
   const emails = await peopleEmails(scope, practiceId, [...rows.flatMap((row) => [row.written_off_by, row.reopened_by]), ...stages.map((row) => row.set_by)]);
   const person = (id: string | null) => (id === null ? null : (emails.get(id) ?? 'a former member of the practice'));
-  const lines: CaseLineView[] = rows.map((row) => ({
+  const lines: CaseLineView[] = rows.map((row, index) => ({
     id: row.id,
     serviceLineId: row.service_line_id,
     pricingRunId: row.pricing_run_id,
     lineNo: row.line_no,
-    serviceDate: row.service_date,
+    position: at.offset + index + 1,
+    serviceDate: cipher === null ? null : row.service_date,
     procedureCode: row.procedure_code,
     modifiers: (row.modifiers ?? []).filter((modifier) => modifier !== ''),
     units: row.units,
@@ -565,11 +586,11 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     reopenedAt: row.reopened_at?.toISOString() ?? null,
     payerClaimControlNumber: decrypt('claim.payer_claim_control_number', row.payer_claim_control_number),
   }));
-  const lineNo = new Map(lines.map((line) => [line.serviceLineId, line.lineNo]));
+  const position = new Map(lines.map((line) => [line.serviceLineId, line.position]));
   const events: CaseEvent[] = stages.map((row) => ({
     at: row.set_at.toISOString(),
     serviceLineId: row.service_line_id,
-    lineNo: lineNo.get(row.service_line_id) ?? 0,
+    position: position.get(row.service_line_id) ?? 0,
     kind: row.reopened_from === null ? 'stage' : 'reopened_stage',
     stage: row.stage,
     reopenedFrom: row.reopened_from,
@@ -578,13 +599,13 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
   }));
   for (const line of lines) {
     if (line.writtenOffAt !== null) {
-      events.push({ at: line.writtenOffAt, serviceLineId: line.serviceLineId, lineNo: line.lineNo, kind: 'written_off', stage: null, reopenedFrom: null, writeOffReason: line.writtenOffReason, by: line.writtenOffBy });
+      events.push({ at: line.writtenOffAt, serviceLineId: line.serviceLineId, position: line.position, kind: 'written_off', stage: null, reopenedFrom: null, writeOffReason: line.writtenOffReason, by: line.writtenOffBy });
     }
     if (line.reopenedAt !== null) {
-      events.push({ at: line.reopenedAt, serviceLineId: line.serviceLineId, lineNo: line.lineNo, kind: 'reopened', stage: null, reopenedFrom: null, writeOffReason: null, by: line.reopenedBy });
+      events.push({ at: line.reopenedAt, serviceLineId: line.serviceLineId, position: line.position, kind: 'reopened', stage: null, reopenedFrom: null, writeOffReason: null, by: line.reopenedBy });
     }
   }
-  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.lineNo - b.lineNo));
+  events.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.position - b.position));
   return { lines, events, page: at.page, pages: at.pages, totalLines };
 }
 

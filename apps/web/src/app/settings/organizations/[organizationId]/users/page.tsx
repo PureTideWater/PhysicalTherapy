@@ -51,21 +51,21 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
           <table className="w-full text-left text-sm" aria-label="Members">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Email</th>
-                <th className="py-1 font-medium">Role</th>
-                <th className="py-1 font-medium">State</th>
+                <th className="py-1 pr-3 font-medium">Email</th>
+                <th className="py-1 pr-3 font-medium">Role</th>
+                <th className="py-1 pr-3 font-medium">State</th>
                 <th className="py-1 font-medium" />
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
                 <tr key={member.membershipId} className="border-t align-top" data-member-role={member.role}>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     {member.email}
                     {member.self ? <span className="text-xs text-muted-foreground"> (you)</span> : null}
                   </td>
-                  <td className="py-1">{roleName(member.role)}</td>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">{roleName(member.role)}</td>
+                  <td className="py-1 pr-3">
                     <Badge variant="outline">{member.status === 'invited' ? 'invited' : member.mfaEnrolled ? member.status : `${member.status}, no MFA`}</Badge>
                   </td>
                   <td className="py-1">
@@ -119,18 +119,18 @@ export default async function UsersSettingsPage(props: { readonly params: Promis
             <table className="w-full text-left text-sm" aria-label="Invitations">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Email</th>
-                  <th className="py-1 font-medium">Role</th>
-                  <th className="py-1 font-medium">State</th>
+                  <th className="py-1 pr-3 font-medium">Email</th>
+                  <th className="py-1 pr-3 font-medium">Role</th>
+                  <th className="py-1 pr-3 font-medium">State</th>
                   <th className="py-1 font-medium" />
                 </tr>
               </thead>
               <tbody>
                 {invitations.map((invitation) => (
                   <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
-                    <td className="py-1">{invitation.email}</td>
-                    <td className="py-1">{roleName(invitation.role)}</td>
-                    <td className="py-1">
+                    <td className="py-1 pr-3">{invitation.email}</td>
+                    <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+                    <td className="py-1 pr-3">
                       {invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}
                     </td>
                     <td className="py-1">
