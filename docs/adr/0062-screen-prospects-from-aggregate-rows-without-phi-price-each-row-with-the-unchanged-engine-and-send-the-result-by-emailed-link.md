@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-18
-- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17); the build (PR 6 of Change Order 001)
+- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams); the build (PR 6 of Change Order 001)
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
 
 ## Context
@@ -59,13 +59,18 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   no foreign key so no DDL touches `rule_release`) and its manifest hash, and to the split in force; queued,
   pricing (re-claimed when stale, at most three attempts), complete or failed (`screening_run_rules`). Only the
   SHA-256 of the result link's token is stored; the conversion is set once.
-- `screening_result`: one row per uploaded row, its facts as decoded and, once priced, the engine's line amount
-  (rounded once by the engine, its unrounded value beside it), that amount times the claim count, the difference
+- `screening_result`: one row per uploaded row, its facts as decoded and, once priced, the engine's amount for the
+  line priced alone before sequestration (read from its trace, rounded once under the trace's rule, its unrounded
+  value beside it: the figure before the reduction across codes), that amount times the claim count, the difference
   from the allowed total in the file, and whether the engine's trace ranked the code in the reduction across a
-  visit's codes (`in_reduction_pool`, the mppr adjustment's `in_pool`), with the engine's unpriced reason and
-  detail and the trace's SHA-256. Its CHECKs make MA contracted and commercial rows exactly `contract_required` and
-  medicaid and other rows exactly `not_screened`, hold a priced row to `expected_cents = expected_line_cents *
-  claim_count` and `difference_cents = expected_cents - observed_allowed_cents`, take only a real code's shape
+  visit's codes (`in_reduction_pool`, the mppr adjustment's `in_pool`); for such a code, the same four figures for
+  the row priced again as a later code of a visit (`reduced_line_cents`, `reduced_line_unrounded`, `reduced_cents`,
+  `reduced_difference_cents`: the fully reduced figure) and that pricing's trace SHA-256; with the engine's unpriced
+  reason and detail and the trace's SHA-256. Its CHECKs make MA contracted and commercial rows exactly
+  `contract_required` and medicaid and other rows exactly `not_screened`, hold a priced row to `expected_cents =
+  expected_line_cents * claim_count` and `difference_cents = expected_cents - observed_allowed_cents`, give the
+  fully reduced figure to a priced pooled row and to no other (`screening_result_reduced`), hold it to the same two
+  equations and to at most the figure before the reduction (`screening_result_reduced_figures`), take only a real code's shape
   (CPT Category I, II, III, PLA or MAAA, or HCPCS Level II: never five letters, which may be a name), at most
   100,000 claim lines, and at most $25,000.00 of allowed amount a claim line (so an identifier typed under the
   allowed total is refused, never kept as dollars).
@@ -80,11 +85,15 @@ The application role calls `screening_status()`, `screening_zip_status()` (an in
 closed), the four reads by token hash (`screening_result_summary`, which also says whether the run's release has
 since been withdrawn, `_groups`, `_coverage`, `_rows`, every figure a bigint sum in SQL), `convert_screening()` (a
 `prospect_request` in the screening's name and address, and `screening_converted`, which outlives the expiry) and
-the console's two split functions. A group is below by the threshold when its difference is positive and at least
-$5 a claim line (ADR 0038's default); it is an anomaly only when no row of it is in the reduction across a
-visit's codes, and otherwise is reported as below the Medicare figure before that reduction: a row priced alone
-is before the reduction, which for a typical therapy visit is itself more than $5 a line (PRD 11's worked example,
-golden claim G01, paid exactly as one visit, would otherwise show two of its three codes as anomalies). The operator
+the console's two split functions. Where an allowed total stands is `screening_standing()`'s, in SQL, from the
+stored figures (the owner's ruling 1 of 2026-10-18): `anomaly` when it is more than $5 a claim line (ADR 0038's
+default threshold, exceeded) below the row's lowest figure, the fully reduced one for a code in the reduction across
+codes and the one figure otherwise; `within_reduction_range` from the fully reduced figure up to below the figure
+before the reduction; `below_by_threshold_or_less`; or `at_or_above` the figure before the reduction. The rows read
+gives each row's standing; a group (a code under a payer product) is an anomaly when one of its rows is, with how many
+(`anomaly_rows`), and otherwise stands as its sums do; both read the largest difference from the lowest figure first.
+PRD 11's worked example, golden claim G01, allowed exactly as one visit, is within each pooled row's range and is
+never an anomaly. The operator
 role calls `operator_screening_*()`: due, claim (which also says whether the pinned release is still there as
 pinned: published, its manifest unchanged and not withdrawn), release (the pinned release's records with their
 stored hashes, `locality_map` limited to the run's ZIP, only while the manifest is the one pinned and the release
@@ -106,20 +115,36 @@ recorded by hash, count and coded reasons, and its messages name a column by pos
 member IDs; remove it and upload again"), never a header or a cell, and tell a person to remove a column that is not
 one of the eight, never to rename it.
 
-**Each row priced alone by the unchanged engine, multiplied outside it (D19 a, D20 a).**
+**Each row priced by the unchanged engine, alone and as a later code of a visit, its figure before sequestration
+read from the engine's trace, multiplied outside it (D19 a, D20 a; the owner's rulings 1 and 2 of 2026-10-18).**
 `apps/worker/src/screening/adapter.ts` makes each `medicare_ffs` or `ma_noncontracted` row a one-line claim under
 `MA_NONCONTRACTED` with `MA_NONCONTRACTED_TERMS` and a fixed in-code mapping, dated its band's first day, charge
 and observed zero (the row's allowed total is compared outside the engine), at the prospect's ZIP with the run's
-split, and calls `price()`. The engine's rounded amount is multiplied by the claim count in bigint. Unpriced reasons
-pass through as the engine gives them. A row shows no figure (`rates_change_in_band`) when its trace names a record
-that does not cover its whole quarter, or when the engine prices the line differently (another outcome, amount or
-set of records) on any day inside the quarter where a record of the pinned release starts or the day after one ends:
-those are engine calls too, so a record absent on the quarter's first day and in force later (a medically unlikely
-edit, say) is not missed. Lines are memoized by code, modifiers, units, place of service and band. The Medicare
-figure is labelled "Expected under Medicare, before the reduction across codes" wherever it appears, and so is every
-figure worked out from it: the one claim line's ("One claim line, expected under Medicare, before the reduction
-across codes") and the difference ("Difference, before the reduction across codes"). MA contracted and commercial rows are never priced: their allowed totals are "the dollars that cannot be
-priced without a contract".
+split, and calls `price()`. The figure compared is the engine's own amount before sequestration: the trace's
+sequestration step's `before_cents` (no step follows it under these terms), rounded once under the rule the trace's
+rounding step names, its unrounded value kept beside it; a priced trace without that step, or with an adjustment
+after it, stops the run rather than yield a figure, and sequestration is never worked out here. When the trace ranks
+the code in the reduction across codes (the mppr adjustment's `in_pool`), the engine prices the row a second time,
+unchanged, as a later code of a visit: a two-line claim whose first line is the row's own line with one unit and
+whose second line is the row (`screeningVisitClaim`). Both lines' units have the same practice-expense part, so the
+engine ranks the first line's unit first (a tie goes to the lower line number) and reduces every unit of the second;
+the adapter checks that in the second line's trace (its ranking starts on line 1 and every one of its units is
+reduced) and refuses anything else. That line's amount before sequestration is the fully reduced figure; the row
+priced alone is the figure before the reduction across codes. For G01's 97110 GP x2 at SYNTHETIC locality 00011 the
+two are 3,684 and 3,145 cents a line, and for 97140 GP 2,458 and 1,820: exactly what the engine gives those codes
+inside G01's visit, ranked after 97530. Each figure is multiplied by the claim count in bigint. A code outside the
+reduction keeps one figure. Unpriced reasons pass through as the engine gives them. A row shows no figure
+(`rates_change_in_band`) when a trace names a record that does not cover its whole quarter, or when the engine prices
+either of its lines differently (another outcome, amount or set of records) on any day inside the quarter where a
+record of the pinned release starts or the day after one ends: those are engine calls too, so a record absent on the
+quarter's first day and in force later (a medically unlikely edit, say) is not missed. Lines are memoized by code,
+modifiers, units, place of service and band. The figure priced alone is labelled "Expected under Medicare, before
+the reduction across codes" wherever it appears, and so is every figure worked out from it ("One claim line,
+expected under Medicare, before the reduction across codes"; "Difference, before the reduction across codes"); the
+second is "Expected under Medicare, fully reduced across codes", with its line ("One claim line, expected under
+Medicare, fully reduced across codes") and its difference ("Difference, fully reduced across codes"). The page says
+that every figure is before sequestration, as payers report allowed amounts. MA contracted and commercial rows are
+never priced: their allowed totals are "the dollars that cannot be priced without a contract".
 
 **A platform job prices and emails (D21 a).** The web app sends `screening_price` with the run's ID (singleton key
 `screening_price:<id>`); every minute the same job sweeps runs queued over 30 seconds and runs whose pricing is ten
@@ -132,7 +157,8 @@ to start again; a notice the mail service refuses is logged by the run's ID and 
 each due run on its own: one that throws (its contact's address refused by the mail service, say) is logged
 (`SCREENING_RUN_FAILED`, by its ID) and the sweep goes on, so no one run holds up the others. Every worker creates
 the platform queues, so the web app's send never meets a missing queue; a send that fails anyway leaves the run to
-the sweep. 50,000 rows run from the server action to the emailed link in about 4 seconds here.
+the sweep. 50,000 rows run from the server action to the emailed link in about 8 seconds here with each pooled
+code priced twice (8.3 s on 2026-10-18; about 4 seconds before the rulings), against CO-04's 60.
 
 **An unguessable link, emailed only.** The token is 32 letters a to z drawn by rejection sampling from the
 operating system's random bytes (about 150 bits), letters only so the URL guard admits it, at
@@ -152,7 +178,7 @@ The conversion counts against the public form's limit.
 
 **Words (D11 a).** Screening outputs carry the lockup without the tagline (the prospect email variant and the
 public header), and never say owed, underpaid or recovered: "below the Medicare figure", "allowed in your file",
-"difference", "cannot be priced without a contract". The copy lint reads the screening paths, the worker's
+"difference", "within the range of the reduction across codes", "cannot be priced without a contract". The copy lint reads the screening paths, the worker's
 screening module included.
 
 ## Alternatives considered
@@ -161,7 +187,10 @@ screening module included.
 | --- | --- |
 | A separate schema and role for screening (D18 b) | A second tenancy model to secure and test; the catalog test already proves the public-schema pattern. |
 | Upload bytes to S3 under a platform key (D18 c) | A mistaken upload holding PHI would reach storage; a file with no practice has no practice key. |
-| Price a row's visit composition (D19 c), or show a range computed outside the engine (D19 b) | Asks the prospect for what an aggregate has not got, or computes a number outside the engine. Revisit if prospects send visit-level aggregates. |
+| Price a row's visit composition (D19 c), or show a range computed outside the engine (D19 b) | Asks the prospect for what an aggregate has not got, or computes a number outside the engine. The owner's ruling 1 gets the range from the engine itself: both ends are `price()` outputs. Revisit if prospects send visit-level aggregates. |
+| A fully reduced figure from a higher-valued pool code ahead of the row | Depends on which codes the release carries and their practice-expense parts at the place of service; the row's own code with one unit always ranks first by the engine's tie rule, and the second line's cut is its own whatever ranks first. |
+| Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
+| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`); the owner's ruling 3 keeps the refusal until release 1's real locality map loads. |
 | Infer the product from payer names (D20 b), or price everything as MA non-contracted (D20 c) | A guess about a contract; MA contracted rows must never price as non-contracted. |
 | Rate-limit by domain and IP only (D21 b) | Every gmail.com prospect would share one count. |
 | Show the result in the browser only (D21 c) | Nothing verifies the contact, and the result could not be reopened. |
@@ -172,32 +201,66 @@ screening module included.
 - Real prospects wait for release 1: `current_rule_release()` is null in production, so `screening_status()` is
   closed, and nothing about a prospect is recorded while it is, not even a refused upload. Tests price under
   SYNTHETIC release 900001 only (and 900004, withdrawn in a test).
-- A row is priced as one line, so the reduction across a visit's codes is not applied and the Medicare figure
-  can overstate a multi-code visit (PRD 11's example, golden claim G01, by 15.3%); every figure built from it (the
-  line's, the row's and the difference) carries the label, and a code in the reduction is never called an anomaly
-  on that figure alone. D19 (a) accepted a labelled overstatement; that it is about $5 to $6 a line for typical
-  therapy codes, on top of ADR 0038's $5 threshold, is put to the owner with this pull request.
-- The engine's sequestration applies to the payer's share, the amount less the patient share, and a screening row
-  carries no patient share, so the figure is after sequestration taken from the whole amount, while the allowed
-  amount in a payer's remittance is normally before sequestration (fixtures/golden/QUESTIONS.md, Q21): a row paid in
-  full shows its allowed amount about 2% above the figure, which can hide a shortfall of up to about 2% and offsets
-  part of the reduction's overstatement. The page says so (`MEDICARE_FIGURE_NOTE`); Q21's effect on screening is
-  for the specialist. Neither touches the engine.
-- A ZIP whose `locality_map` record needs its ZIP+4 is refused, and no ZIP+4 is asked for or kept: the engine takes
-  a five-digit ZIP alone (`PracticeSettings.zip`) and stops with `ENGINE_ERROR locality_needs_zip_plus_four` for such
-  a locality, so D20's "ZIP+4 asked only where `locality_map` requires it" cannot be met without an engine change,
-  which this pull request may not make. Put to the owner: a separately approved engine change that takes a ZIP+4
-  locality, or a ruling that screening refuses such ZIPs until then (what it does now).
-- A result priced under a rule release since withdrawn says so above its figures; it can still be converted to an
-  audit request, which prices nothing from the screening.
+- A row of totals cannot say which code led its visits, so a code in the reduction across codes gets two figures, both
+  the engine's: priced alone (before the reduction; PRD 11's example, golden claim G01, by 15.3% above the visit) and
+  priced as a later code of a visit (fully reduced). A visit priced with the reduction puts the code between them, so
+  a row there is within the range of the reduction across codes and never an anomaly; one is an anomaly only more than
+  $5 a claim line below the fully reduced figure (the owner's ruling 1). The threshold is ADR 0038's, exceeded
+  ("more than"), where PR 6 first used "at least".
+- Every figure is the engine's before sequestration, read from its trace (the owner's ruling 2), because a payer's
+  allowed amount is normally reported before it: a row allowed in full at the figure shows no difference. Whether
+  that holds for every payer's allowed amount is for the reimbursement specialist to confirm with
+  fixtures/golden/QUESTIONS.md, Q21 (which asks it of the engine's own lines; the golden lines and QUESTIONS.md are
+  unchanged by this pull request, so the note is here). The engine is not touched.
+- A ZIP whose `locality_map` record needs its ZIP+4 is refused, with the message that a free screening cannot price
+  one yet, and no ZIP+4 is asked for or kept: the engine takes a five-digit ZIP alone (`PracticeSettings.zip`) and
+  stops with `ENGINE_ERROR locality_needs_zip_plus_four` for such a locality, so D20's "ZIP+4 asked only where
+  `locality_map` requires it" is not met. The owner's ruling 3 keeps the refusal; an engine change, separately
+  approved, is revisited when release 1's real locality map loads.
+- A result priced under a rule release since withdrawn says so above its figures and may still be converted to an
+  audit request, which prices nothing from the screening (the owner's ruling 4).
 - The platform split is a fifth table the domain model shows as a divergence from CO-12; approving the document
   approves it.
 - What proves it: SEC-17 (`packages/db/src/screening.db.test.ts`, from the catalog), SCR-01 to SCR-06
   (`apps/worker/src/screening/*.test.ts`, `apps/web/src/lib/screening/routes.db.test.ts`,
-  `screening.large.db.test.ts`, the copy lint and the screening journey).
+  `screening.large.db.test.ts`, `apps/web/src/components/screening/result.test.tsx`, the copy lint and the screening
+  journey). The rulings in particular: G01's 97110 and 97140 as SYNTHETIC rows, between their two figures (within
+  the range) and more than $5 a line below the fully reduced one (an anomaly), 97161 with one figure, a row allowed in
+  full at the figure before sequestration with no difference (`adapter.test.ts`, `screening.db.test.ts`); a ZIP
+  needing its ZIP+4 refused (`routes.db.test.ts`, `screening.db.test.ts`); a result under a withdrawn release
+  converted with its notice (`routes.db.test.ts`, `screening.db.test.ts`).
+
+## Owner rulings (2026-10-18)
+
+The questions this pull request put to the owner, ruled by the founder, Tyler Williams, on 2026-10-18:
+
+1. **The reduction across codes (D19).** For a row whose code is in the multiple procedure reduction pool, the
+   unchanged engine prices the row twice: alone (the figure before the reduction across codes) and as a subsequent
+   procedure of a visit, so that the reduction applies to it (the fully reduced figure). The second pricing is an
+   ordinary input to `price()`, and the reduction is never reimplemented outside the engine. Both figures are engine
+   outputs times the count, in bigint. A row is an anomaly only when its observed amount is more than the anomaly
+   threshold (ADR 0038's $5 a line) below the fully reduced figure; a row between the two figures is labelled
+   "within the range of the reduction across codes", never an anomaly. Both figures are shown, labelled. Rows outside
+   the pool keep one figure. *Built:* the two-line claim above; `screening_standing()`; the labels and the standing
+   chips.
+2. **Sequestration.** The comparison is against the engine's own figure before sequestration, read from the engine's
+   trace (the step before sequestration in the calculation the engine already returns), because payer allowed amounts
+   are normally reported before sequestration; sequestration is never recomputed outside the engine. The
+   reimbursement specialist confirms this later (fixtures/golden/QUESTIONS.md, Q21). *Built:* `beforeSequestration()`
+   reads the trace's step and rounds it once under the trace's rule; the trace carries the amount, so nothing had to be
+   computed in its place.
+3. **ZIP+4.** Screening keeps refusing a ZIP whose locality needs its ZIP+4, with the clear message; an engine change is
+   revisited when release 1's real locality map loads. *Built:* unchanged (`screening_zip_plus_four`).
+4. **A withdrawn release.** A result priced under a release later withdrawn keeps its notice and may still be converted
+   to an audit request (the audit prices nothing from the screening). *Built:* unchanged, now tested.
+
+What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
+sequestration, the comparison moves to the engine's final amount, which the trace also carries); the engine change for ZIP+4 localities,
+when release 1's locality map loads; and visit-level aggregates (see Revisit when).
 
 ## Revisit when
 
-Release 1 is published (screening opens); prospects ask for visit-level aggregates (the reduction across codes);
-the engine and the rule records carry ZIP+4 localities; or the permission matrix gains a dedicated permission for
-platform pricing defaults (PR 14).
+Release 1 is published (screening opens), and its real locality map loads (the owner's ruling 3: ZIP+4 localities
+and the engine); the reimbursement specialist answers Q21 (the owner's ruling 2: which figure a payer's allowed
+amount is compared with); prospects ask for visit-level aggregates (the reduction across codes); or the permission
+matrix gains a dedicated permission for platform pricing defaults (PR 14).

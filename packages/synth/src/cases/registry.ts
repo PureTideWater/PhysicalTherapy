@@ -206,6 +206,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'SCR-02': none(6, 'Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.', [
     'apps/worker/src/screening/adapter.test.ts',
     'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/src/lib/screening/screening.large.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
@@ -226,6 +227,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   'SCR-06': none(6, 'The conversion is a route and an audit event; no file.', [
     'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
   ]),

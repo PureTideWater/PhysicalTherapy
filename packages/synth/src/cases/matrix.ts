@@ -125,7 +125,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-02',
     title: 'Screening pricing of a clean upload',
     assertion:
-      "Each Medicare row is the engine's one-line amount times its claim count in bigint; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds",
+      "Each Medicare row is the engine's one-line amount before sequestration times its claim count in bigint, and a code in the reduction across codes also its amount as a later code of a visit; a row is an anomaly only more than $5 a claim line below its lowest figure; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds",
   },
   { id: 'SCR-03', title: 'Screening 30 days after its upload', assertion: 'Link refuses it; the expiry job deletes the run and its results; the conversion stays' },
   {

@@ -464,4 +464,11 @@ Approved by the owner on October 17, 2026, in the build session. Every recommend
 - **Email art (D7):** option (b). `/brand/*` is served from the CloudFront static host, and the application's own response headers stay as ADR 0053 and ADR 0055 set them.
 - **Gates (D23):** option (b). `docs/product/gates.md` is reconstructed from the plan and CO-10, marked as reconstructed, and replaced by the owner's text when it arrives.
 
+Ruled by the founder, Tyler Williams, on October 18, 2026, on the questions PR 6 put to the owner (recorded in ADR 0062, Owner rulings):
+
+- **Reduction across codes (D19):** a row whose code is in the multiple procedure reduction pool is priced twice by the unchanged engine, alone (the figure before the reduction across codes) and as a subsequent procedure of a visit (the fully reduced figure), the second pricing an ordinary input to `price()` and the reduction never reimplemented outside the engine; both figures are engine outputs times the count, in bigint, and both are shown, labelled. A row is an anomaly only when its observed amount is more than the anomaly threshold (ADR 0038's $5 per line) below the fully reduced figure; a row between the two figures is "within the range of the reduction across codes", never an anomaly. Rows outside the pool keep one figure.
+- **Sequestration:** the comparison is against the engine's own figure before sequestration, read from the engine's trace, because payer allowed amounts are normally reported before sequestration; sequestration is never recomputed outside the engine. The reimbursement specialist confirms this later (`fixtures/golden/QUESTIONS.md`, Q21).
+- **ZIP+4 (D20):** screening keeps refusing a ZIP whose locality needs its ZIP+4, with the clear message; an engine change is revisited when release 1's real locality map loads.
+- **Withdrawn release:** a result priced under a release later withdrawn keeps its notice and may still be converted to an audit request, which prices nothing from the screening.
+
 The domain model (CO-02) is approved separately: PR 2 regenerates `docs/product/domain-model.md` and stops for the founder's name, date and the hash of the text approved.
