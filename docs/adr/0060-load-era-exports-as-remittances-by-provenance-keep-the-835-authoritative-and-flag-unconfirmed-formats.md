@@ -59,6 +59,12 @@ What the repository held, and what constrains the design:
   payment the practice already holds from either source and an 835 of a payment first loaded from an export.
 - `claim.filing_indicator` is nullable; `claim_references_in_practice()` still refuses a claim of an 835
   without it.
+- `source_document_first_of_its_bytes`, the one document of a practice per bytes, is per bytes and format
+  (`coalesce(format_id, '')`, which is `''` for every kind but `era_export`): the same bytes uploaded again as an
+  export of another format (after a wrong choice, held whole) or as another kind are read, not held as a
+  duplicate; the payment keys still load each payment once. Every other kind keeps its rule.
+- `remittance_by_trace_form` indexes a remittance by its trace's form (`ltrim(upper(trn02 COLLATE "C"), '0')`),
+  which the loader compares across sources (below).
 - No held reason or status is added to any CHECK: `source_document.status`, `parse_report.outcome`,
   `remittance.status`, `review_reason` and `job_run.job_type` reuse their values. An export's holds live in
   `parse_report.errors` and `transaction_outcomes`, jsonb arrays.
@@ -73,14 +79,21 @@ code knows a vendor.
 
 - The file is CSV in strict UTF-8 (`@tp/ledger` `parseCsv`); row 1 is the header, each format column found by
   its header trimmed and in any case, other columns ignored. Money is `@tp/money` `parseAmount` (integer cents,
-  at most two places, never a float); dates are the format's date format and real calendar dates.
+  at most two places, never a float, at most `MAX_AMOUNT_CENTS`, ten billion dollars, so no cell can reach the
+  database as a value out of `bigint`'s range); dates are the format's date format and real calendar dates.
 - A payment is the rows sharing (payee, trace, payment date, signed amount), placed by its first row; a claim is
   consecutive rows of a payment with one patient control number, payer claim number and status. Reversals are
   status 22 and a corrected claim directly follows a reversal with the same patient control number (the
   parser's own rule), linked by the loader's existing lookup.
 - A line is a HCPCS procedure (`HC`, five letters or digits), at most four modifiers, positive units that
-  `numeric(9,3)` holds exactly, one service date, and its charge, paid, patient responsibility, contractual and
-  other adjustments, balanced (charge = paid + CO + PR + other). Observed allowed is always paid plus PR on the
+  `numeric(9,3)` holds exactly, one service date, its place of service, and its charge, paid, patient
+  responsibility, contractual and other adjustments, balanced (charge = paid + CO + PR + other). The place of
+  service is two digits, as CLP08 gives a professional line's (`plan.ts` `placeOfService`): a percent-of-Medicare
+  term, and the fee-schedule side of a lesser-of term, price by it, and the engine stops a line without one
+  (`place_of_service_unmapped`, which pages the operator). So every format has a place-of-service column and an
+  export without it is held whole (`export_column_missing`); a blank cell is a line with none, as an 835 claim
+  without CLP08 is, and a cell that is not two digits holds its payment (`export_value_unreadable`), never a
+  guessed code. Observed allowed is always paid plus PR on the
   existing `paid_plus_pr` basis, the export's Allowed figure kept beside it in `line_allowed_cents`, so the
   engine does not change and AMT B6 is never claimed for a file that does not carry it.
 - Adjustment codes are `GROUP-REASON` items. The group is from `@tp/edi835`'s `X12_835_CODE_SETS` (CO, OA, PI,
@@ -93,30 +106,55 @@ code knows a vendor.
   an export carries no name or member ID. No envelope value is invented.
 
 **A closed list of held reasons.** `ERA_EXPORT_HELD_REASONS`: the whole document is held when it is
-unreadable, empty, over 64 MiB (`ERA_EXPORT_MAX_BYTES`), lacks a column a line needs or repeats one, or a
+unreadable, empty, over 4 MiB (`ERA_EXPORT_MAX_BYTES`), lacks a column a line needs or repeats one, or a
 payment-key cell (trace, payment date, payment amount, payee) is blank or unreadable on any row; one payment
 is held, the others loading (`partially_held`), for a value missing or unreadable, a payer name, sender or
 method that changes inside it, a plan that changes inside a claim, a line or the payment unbalanced, or an
-adjustment total with no code of its group (or other codes of two groups). Every hold names the column by the
-format's header, the data row by number (the header not counted) and the payment by its place, never a cell's
-value.
+adjustment total with no code of its group (or other codes of two groups); and, as it loads, when the payment
+it matches by amount names another payer and shares no claim with it (`export_payment_other_payer`, below).
+Every hold names the column by the format's header, the data row by number (the header not counted) and the
+payment by its place, never a cell's value.
+
+The size bound is the normalizer's memory: it reads the whole file, every row, claim and plan with it, and at
+one line per payment, its worst case, an export of 4 MiB fits a 128 MiB heap where one of 8 MiB needed more
+than 160 MiB (`era-export.large.db.test.ts` runs it in a child process with its heap limited). The worker runs
+four parse jobs at once in one 1 GiB task, so four exports at the bound leave room for the rest; a longer
+period goes up as several exports, or a zip of them, each its own document. A streaming normalizer would lift
+the bound.
 
 **The 835 is authoritative (D13 a), inside the load transaction.** The parse_835 job dispatches on the kind
 with the same payload and singleton key. An export is read once, hashed against intake's SHA-256, normalized,
 and its payments are loaded, its report written and its status set in one transaction (the job's
-`context.transaction`), each payment under the 835 loader's own advisory lock on (practice, trace), so an
-835 and an export of one trace serialize:
+`context.transaction`), under the 835 loader's advisory locks, so an 835 and an export of one trace serialize.
+The locks are per practice and bucket of trace forms (`TRACE_LOCK_BUCKETS`, 64, `lockTraces`), and a document
+takes the buckets of all its traces first, in ascending order: an export before its first payment, an 835
+before its first transaction set (from pass one's report). So two loads sharing traces, an 835's sets in any
+order and an export's payments in any order, never wait on each other in a cycle, and no transaction holds more
+than 64 advisory locks however many payments it loads (they share the cluster's lock table with every other
+practice's transactions).
 
-- An export payment with the payee, TRN02, credit or debit, BPR02 and BPR16 of any remittance the practice
-  holds is `duplicate_remittance`: zero rows, linked to that remittance, its document and its provenance. The
-  same payee and trace with another amount or date loads for review (`trace_reused_same_date` or
+Across sources, and between two exports, a trace is compared in its form (`traceForm`: ASCII letters in upper
+case, leading zeros removed), since a spreadsheet re-save drops a trace's zeros; two 835s keep ADR 0031's exact
+rules. An export's payment and an 835's of one trace form are one payment (`exportIsPaymentOf`) when every claim
+of the export is a claim of the 835 (by the payer claim control number's keyed hash, whatever form the payee is
+named in or whichever date the export gives, such as the deposit's), or when the payee and date are the same and
+the export's amount is the 835's BPR02 or its BPR02 plus its PLB total (an export carries no PLB, so its amount
+is the claims paid, as an 835 balances):
+
+- An export payment that is one payment with an 835 the practice holds, or has the export key (payee, trace
+  form, credit or debit, BPR02, BPR16) of another export, is `duplicate_remittance`: zero rows, linked to that
+  remittance, its document and its provenance. When it matches by amount alone and the other names another
+  payer (by name, normalized) and shares no claim with it, it is held instead (`export_payment_other_payer`),
+  linked to it: nothing loads, and nothing is called a repeat that may be another payer's payment. The same
+  payee and trace form with another payment loads for review (`trace_reused_same_date` or
   `trace_reused_another_date`).
-- An 835 transaction set runs the existing X12 decision first, over 835 rows only (the key, then ADR 0031's
-  same payment); then an export remittance with the export key holds it as `held_for_review`, reason
-  `payment_loaded_from_export`, linked to the export's remittance and document, and nothing is written. It
-  counts as held, so the document is `held` or `partially_held` and a person reviews it. An 835 sharing an
-  export's payee and trace with another amount or date loads for review against it, as an export would.
-- `remittance_export_once` and the trigger back both rules.
+- An 835 transaction set runs the existing X12 decision first, over 835 rows of its exact trace only (the key,
+  then ADR 0031's same payment); then an export of the same payment by the same rule holds it as
+  `held_for_review`, reason `payment_loaded_from_export`, linked to the export's remittance and document, and
+  nothing is written. It counts as held, so the document is `held` or `partially_held` and a person reviews it.
+  An 835 sharing an export's payee and trace form that is not the same payment by that rule (a claim of the
+  export is not the 835's, and the amounts or the dates differ) loads for review against it, as an export would.
+- `remittance_export_once` and the trigger back the exact keys.
 
 **The Coverage flag.** For each unconfirmed format the practice has loaded lines from, the Coverage screen
 shows "Format unconfirmed" as text with an icon, the format's name ("<vendor> ERA export"), its remittance,
@@ -124,7 +162,9 @@ line, payer and billed-dollar counts and payer names, and a plain explanation; n
 `unconfirmedFormatSources()` over `remittance`, `source_document.format_id`, `claim` and `service_line`, for the
 registry's `FORMAT_UNCONFIRMED` IDs; no view. Confirming a format (registry data) clears it.
 
-**Intake and upload.** An ERA export is CSV only, like a posting export (ADR 0059): a workbook is held as
+**Intake and upload.** The same bytes are a duplicate of an earlier document only of the same format (above),
+so a person who chose the wrong system, or uploaded the export as a posting export, uploads it again with the
+right one and it is read. An ERA export is CSV only, like a posting export (ADR 0059): a workbook is held as
 `wrong_type` and the request does not accept the `.xlsx` type. The upload request requires `formatId` exactly
 for an `era_export` ("File N is an ERA export: choose which system's export it is." / "File N has an export
 format but is not an ERA export.") and records it; the Uploads page lists the formats with whether each is
@@ -148,27 +188,66 @@ unconfirmed.
 | New CHECK values for held reasons or statuses, or a new job type | The existing statuses, outcomes and `parse_835` job express every case; the reasons are a closed list in the report's jsonb, so a new reason needs no migration. |
 | Import `packages/synth`'s registry in the worker | `packages/synth` generates fixtures and is not part of the worker's image; the runtime registry is held equal to the manifests the generator writes. |
 | Read `.xlsx` exports | No sheet reader is in the repository (ADR 0059); the same reasons hold. |
+| Compare an export with an 835 by the export key alone | Misses the routine payment with a PLB (an export's amount is its claims paid, never BPR02) and an export dated by its deposit, both of which would load beside the 835; the claims and the PLB-adjusted amount find them. |
+| Compare traces exactly across sources | A spreadsheet re-save drops a trace's leading zeros, and the payment would load twice with no review flag; the trace's form is compared instead, and indexed. Two 835s keep ADR 0031's exact rules. |
+| Call a payment that matches another payer's by amount a duplicate | Drops a payment without notice when two payers' checks coincide in payee, number, amount and date; it is held for a person instead. Adding the payer to the export key (D12 a names the key without it) is the owner's call. |
+| One advisory lock per trace, as the 835 path had | A backfill export of thousands of payments would hold thousands of entries in the cluster's shared lock table, where other practices' transactions need room; 64 buckets bound it, and taking them in order up front removes the lock cycles. One lock per practice would serialize a practice's loads entirely. |
+| Place of service optional, with a note on the receipt and the Coverage flag when a format has none | Every placeholder layout can carry the column, and requiring it keeps every loaded line priceable like its 835 twin; we switch when a confirmed format turns out to have no place of service. |
+| A larger size bound | Measured: one line per payment at 8 MiB needs more than a 160 MiB heap, and four parse jobs share a 1 GiB task. A streaming normalizer would lift the bound. |
 
 ## Consequences
 
 - An ERA export of any of the four formats loads into the same remittance, claim, service_line and adjustment
-  rows an 835 makes, with `provenance` `era_export`; pricing, triage and the ledger read them unchanged, and
-  their lines price on the `paid_plus_pr` basis. Nothing under `packages/pricing/src` or `packages/ledger/src`
-  changes.
-- A payment sent as an 835 and as an export loads once in either order; a resent export loads nothing.
+  rows an 835 makes, with `provenance` `era_export`, and pricing, triage and the ledger read them with no change
+  to their code. Nothing under `packages/pricing/src` or `packages/ledger/src` changes. Observed allowed is on
+  the `paid_plus_pr` basis, and a line carries the place of service of its export's column, so under a
+  percent-of-Medicare term it prices exactly as its 835 twin (`apps/worker/src/price/export-pricing.db.test.ts`,
+  under a signed 110%-of-Medicare contract); a line whose cell is blank stops as `place_of_service_unmapped`, as
+  an 835 line without CLP08 does.
+- Where an export's rows differ from its 835 twin's, and what follows:
+  - The payer is `NAME:<payer name>` where the 835's is its N1 or REF 2U identifier (`2U:SYNPAYERA`), and a plan
+    is `PLAN:<plan>` where the 835's is `CE:<plan>`. A practice whose 835 payers and plans are all mapped gets a
+    new payer and new plans in the mapping queue from its first export, and a pricing run over them fails as
+    `unmapped_plan` (MAP-01) until someone maps them. Triage keys a pattern on the payer and the plan
+    (`packages/triage/src/patterns.ts`), so one payer's shortfalls from 835 months and export months fall in
+    separate patterns and packets until the plans are mapped to one contract, and even then by payer. A rule
+    that aliases an export's payer to the 835 payer of the same name is the owner's call, not made here.
+  - An export carries no claim frequency code (CLP09). The ledger's adjusted-payments queue finds a replacement
+    claim by frequency code 7 or by a superseded link (`apps/worker/src/reconcile/unmatched.ts`), so an export's
+    corrected claim surfaces there only when it directly follows its reversal in the export (the link the
+    loader makes); one that does not is not listed. Ledger semantics do not change.
+  - Also not carried, with no current consumer affected: SVC07 original units, CLP05 patient responsibility,
+    AMT AU, the rendering NPI and DTM 405.
+- A payment sent as an 835 and as an export loads once in either order, with or without a PLB, whichever date
+  the export gives, whatever form of the payee or of the trace each uses; a resent or re-saved export loads
+  nothing. What the rules cannot see is the same payment under an entirely different trace: it loads twice, the
+  second for no review (see Revisit when).
 - Every consumer that showed the X12 envelope must handle NULLs on an export's remittance (the Remittances
   screen shows the provenance and the format instead), and every report reader must decode an export's report
   by the document's kind (the receipts do).
 - The row factory's FIXED_VALUES give its 835 an envelope and CLP06; the catalog and cross-tenant tests'
   rules are unchanged.
-- Mixed fleet: an `era_export` document taken by a previous worker image is retried, then failed, and can be
-  retried from Uploads once the new worker runs; none exists until the new web image accepts the kind.
+- Mixed fleet, so the deploy order: the new worker is fully rolled out before the new web image takes
+  `era_export` uploads. Before that order holds there are two cases, neither loading anything beside an export:
+  an `era_export` document taken by a previous worker image is retried, then failed; and once a new worker has
+  loaded an export, a previous worker's 835 of the same payment has no export check before its insert, so the
+  trigger refuses it and it is retried, then failed, rather than held for review. Either can be retried from
+  Uploads once only new workers run. The trace locks also change keys (bucket, not trace), so an old and a new
+  worker loading the same trace at the deploy's moment do not serialize; the unique keys still hold. The
+  migration's header states the two cases and the order.
+- Bounds: an export over 4 MiB is held as `export_too_large`; a load holds at most 64 advisory locks
+  (`apps/worker/src/parse/era/era-export.large.db.test.ts`).
 - Checks: `packages/db/src/documents.db.test.ts` and `remittance-provenance.db.test.ts` (the CHECKs, the keys,
   the unique index under a race, both D13 refusals, CLP06), `apps/worker/src/parse/era/normalize.test.ts` (the
   four fixtures to the cent, every held reason, no cell value in a hold), `formats.test.ts` (the registry
   against the manifests), `era/report.test.ts`, `apps/worker/src/parse/era/era-intake.db.test.ts` (each format
   uploads, is classified `era_export` with its format and loads to the manifest to the cent; 835 then export
-  loads zero rows for the payment; export then 835 is held for review; a resend loads nothing; held exports),
+  loads zero rows for the payment; export then 835 is held for review; a resend loads nothing; held exports; a
+  wrong format then the right one; a PLB, a deposit date and a trace without its zeros, both ways; a payee by
+  its TIN; another payer's payment under the same key; an 835 and an export parsed at once, and an 835 whose sets
+  come in the opposite lock order to an export's, with no deadlock), `era-export.large.db.test.ts` (the heap at
+  the size bound, the lock count), `apps/worker/src/price/export-pricing.db.test.ts` (an export line priced as
+  its 835 twin),
   `apps/worker/src/intake/intake.db.test.ts`, `apps/web/src/lib/routes/uploads.db.test.ts` and
   `coverage-formats.db.test.ts`, and the `era-exports` end-to-end journeys.
 - The domain model is regenerated with the new kind explained; it awaits the founder's approval.
@@ -176,6 +255,9 @@ unconfirmed.
 ## Revisit when
 
 A format description arrives (confirm the format, or add its `_v1` and a migration widening `format_id`); a
-vendor's export is found to carry a claim filing indicator, a place of service or a per-reason adjustment
-split; a design partner needs spreadsheet exports read; or a payer is found to send an 835 whose payment an
-export already holds under another trace.
+vendor's export is found to carry a claim filing indicator, a frequency code or a per-reason adjustment split,
+or to have no place of service (then the column becomes optional, with a note on the receipt and the Coverage
+flag that its lines cannot price under percent-of-Medicare terms); a design partner needs spreadsheet exports
+read, or exports past 4 MiB in one file (a streaming normalizer); the owner wants an export's payer aliased to
+the 835 payer of the same name, or the payer added to the export key; or a payer is found to send an 835 whose
+payment an export already holds under another trace, or names its payee in a form the export does not.

@@ -4,7 +4,7 @@
     "source_document|kind|enumeration differs": {
       "by": "ADR 0060; reconciliation-001 D12 (a), approved 2026-10-17",
       "status": "explained",
-      "text": "era_export is a ninth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence."
+      "text": "era_export is an eighth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence."
     },
     "rule_record|record_type|enumeration differs": {
       "by": "ADR 0008 (decision and revisit condition)",
