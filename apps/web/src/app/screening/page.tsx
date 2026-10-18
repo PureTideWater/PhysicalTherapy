@@ -92,7 +92,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             <CardTitle>What each payer product gets</CardTitle>
             <CardDescription>
               Each row is priced on its own, labelled “{MEDICARE_FIGURE_LABEL}”. A code Medicare reduces when it follows another in a visit is priced again as a later code of a visit, labelled “{REDUCED_FIGURE_LABEL}”, and a row
-              between the two is not an anomaly. Every figure is before sequestration, as payers report allowed amounts.
+              between the two is not an anomaly. Every figure is before Medicare’s sequestration, because payers normally report allowed amounts before it.
             </CardDescription>
           </CardHeader>
           <CardContent>

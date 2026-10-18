@@ -41,6 +41,15 @@ export const DIFFERENCE_LABEL = `Difference, ${BEFORE_REDUCTION}`;
 /** The difference between the fully reduced figure and the allowed amount in the file. */
 export const REDUCED_DIFFERENCE_LABEL = `Difference, ${FULLY_REDUCED}`;
 
+/** The figure before the reduction, as a sentence names it: the words under its difference say which figure they mean. */
+export const BEFORE_REDUCTION_FIGURE = `the figure ${BEFORE_REDUCTION}`;
+
+/** The fully reduced figure, as a sentence names it. */
+export const REDUCED_FIGURE = 'the fully reduced figure';
+
+/** A code outside the reduction across codes has one figure, which a sentence names so. */
+export const ONE_FIGURE = 'the Medicare figure';
+
 /** What a row of a code in the reduction across codes allowed between its two figures is (the owner's ruling of 2026-10-18): never an anomaly. */
 export const WITHIN_REDUCTION_RANGE = 'Within the range of the reduction across codes';
 

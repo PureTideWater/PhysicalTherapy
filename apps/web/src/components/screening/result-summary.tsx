@@ -4,10 +4,12 @@ import type { ReactNode } from 'react';
 
 import { counted } from '../../lib/copy/words';
 import {
+  BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   REDUCED_DIFFERENCE_LABEL,
+  REDUCED_FIGURE,
   REDUCED_FIGURE_LABEL,
   SCREENING_INVESTIGATORY_NOTE,
 } from '../../lib/screening/labels';
@@ -33,7 +35,7 @@ export interface ScreeningGroupTotals {
 
 export interface ScreeningPricedTotals extends ScreeningGroupTotals {
   readonly expectedCents: Cents;
-  /** Expected less allowed: above zero, the file's allowed total is below the Medicare figure. */
+  /** Expected less allowed: above zero, the file's allowed total is below the figure before the reduction across codes. */
   readonly differenceCents: Cents;
   /** Rows of a code in the reduction across codes. */
   readonly pooledRows: number;
@@ -72,15 +74,18 @@ export function ScreeningCount({ value }: { readonly value: number }) {
   return <span className="font-mono tabular-nums">{value.toLocaleString('en-US')}</span>;
 }
 
-/** Which side of the Medicare figure the file's allowed total sits, in words, never by color alone. */
-export function differenceWords(difference: Cents): string {
+/**
+ * Which side of a figure an allowed total sits, in words, never by color alone. The figure is named, since a code in
+ * the reduction across codes has two: the figure before the reduction across codes, or the fully reduced figure.
+ */
+export function differenceWords(difference: Cents, figure: string): string {
   if (difference > 0n) {
-    return 'below the Medicare figure';
+    return `below ${figure}`;
   }
   if (difference < 0n) {
-    return 'above the Medicare figure';
+    return `above ${figure}`;
   }
-  return 'equal to the Medicare figure';
+  return `equal to ${figure}`;
 }
 
 function Stat({ label, children, slot }: { readonly label: string; readonly children: ReactNode; readonly slot: string }) {
@@ -167,7 +172,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
             </Stat>
             <Stat label={DIFFERENCE_LABEL} slot="priced-difference">
               <ScreeningMoney cents={priced.differenceCents} />
-              <span className="block text-xs font-normal text-muted-foreground">Allowed in your file is {differenceWords(priced.differenceCents)} in total.</span>
+              <span className="block text-xs font-normal text-muted-foreground">Allowed in your file is {differenceWords(priced.differenceCents, BEFORE_REDUCTION_FIGURE)} in total.</span>
             </Stat>
           </dl>
           {priced.pooledRows === 0 ? null : (
@@ -183,6 +188,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
               </Stat>
               <Stat label={REDUCED_DIFFERENCE_LABEL} slot="priced-reduced-difference">
                 <ScreeningMoney cents={priced.reducedDifferenceCents} />
+                <span className="block text-xs font-normal text-muted-foreground">Allowed in your file is {differenceWords(priced.reducedDifferenceCents, REDUCED_FIGURE)} in total.</span>
               </Stat>
             </dl>
           )}

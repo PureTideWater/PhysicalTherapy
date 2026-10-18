@@ -7,7 +7,9 @@ import {
   DIFFERENCE_LABEL,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_LINE_LABEL,
+  ONE_FIGURE,
   REDUCED_DIFFERENCE_LABEL,
+  REDUCED_FIGURE,
   REDUCED_FIGURE_LABEL,
   REDUCED_LINE_LABEL,
   type ScreeningStanding,
@@ -90,17 +92,20 @@ function Reduced({ cents }: { readonly cents: Cents | null }) {
   return <ScreeningMoney cents={cents} />;
 }
 
-/** What a standing says, for a row or a group whose anomalies are all its rows. */
+/**
+ * What a standing says, for a row or a group whose anomalies are all its rows. At or above, a pooled row or group is
+ * at or above its figure before the reduction (screening_standing()), so above or at its fully reduced one too: both.
+ */
 function standingWords(standing: ScreeningStanding, pooled: boolean, difference: Cents): string {
   switch (standing) {
     case 'anomaly':
-      return `Anomaly: more than $5 a claim line below ${pooled ? 'the fully reduced figure' : 'the Medicare figure'}`;
+      return `Anomaly: more than $5 a claim line below ${pooled ? REDUCED_FIGURE : ONE_FIGURE}`;
     case 'within_reduction_range':
       return WITHIN_REDUCTION_RANGE;
     case 'below_by_threshold_or_less':
       return pooled ? 'Below the fully reduced figure by $5 a claim line or less' : 'Below by $5 a claim line or less';
     case 'at_or_above':
-      return `Allowed is ${differenceWords(difference)}`;
+      return pooled ? 'Allowed is at or above both Medicare figures' : `Allowed is ${differenceWords(difference, ONE_FIGURE)}`;
   }
 }
 

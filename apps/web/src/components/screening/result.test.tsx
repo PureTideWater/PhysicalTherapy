@@ -6,12 +6,15 @@ import { describe, expect, it } from 'vitest';
 import {
   ANOMALY_RULE,
   BEFORE_REDUCTION,
+  BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
   FULLY_REDUCED,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   MEDICARE_LINE_LABEL,
+  ONE_FIGURE,
   REDUCED_DIFFERENCE_LABEL,
+  REDUCED_FIGURE,
   REDUCED_FIGURE_LABEL,
   REDUCED_LINE_LABEL,
   WITHIN_REDUCTION_RANGE,
@@ -225,8 +228,38 @@ describe('the screening summary', () => {
     expect(html).toMatch(/data-figure="priced-difference"[\s\S]*?\$880\.00/);
     expect(html).toMatch(/data-section="contract-required"[\s\S]*?Cannot be priced without a contract[\s\S]*?\$6,543\.21/);
     expect(html).toMatch(/data-section="not-screened"[\s\S]*?\$681\.79/);
-    expect(text(html)).toContain('below the Medicare figure in total');
     expect(text(html)).toContain('A screening is investigatory');
+  });
+
+  it('says under each difference, in words, which figure the file’s allowed total is below, above or equal to', () => {
+    const words = (markup: string, slot: string) => text(new RegExp(`data-figure="${slot}"[^>]*>([\\s\\S]*?)</dd>`).exec(markup)?.[1] ?? '').trim();
+    expect(words(html, 'priced-difference')).toBe(`${DIFFERENCE_LABEL} $880.00 Allowed in your file is below the figure before the reduction across codes in total.`);
+    expect(words(html, 'priced-reduced-difference')).toBe(`${REDUCED_DIFFERENCE_LABEL} $80.00 Allowed in your file is below the fully reduced figure in total.`);
+    expect(text(html)).not.toContain('the Medicare figure in total');
+    // SYNTHETIC: G01's codes, 97110 GP x2 and 97140 GP, 10 claims each, allowed between their two figures, where a
+    // visit priced with the reduction puts them: $614.20 before the reduction across codes ($368.40 and $245.80),
+    // $496.50 fully reduced ($314.50 and $182.00), $560.30 allowed. Below the first figure, above the second.
+    const visit = renderToStaticMarkup(
+      <ScreeningSummary
+        summary={{
+          ...SUMMARY,
+          priced: {
+            rows: 2,
+            claimLines: 20,
+            expectedCents: c(61_420n),
+            observedCents: c(56_030n),
+            differenceCents: c(5_390n),
+            pooledRows: 2,
+            reducedCents: c(49_650n),
+            reducedDifferenceCents: c(-6_380n),
+          },
+        }}
+      />,
+    );
+    expect(words(visit, 'priced-difference')).toBe(`${DIFFERENCE_LABEL} $53.90 Allowed in your file is below the figure before the reduction across codes in total.`);
+    expect(words(visit, 'priced-reduced-difference')).toBe(`${REDUCED_DIFFERENCE_LABEL} -$63.80 Allowed in your file is above the fully reduced figure in total.`);
+    const even = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, priced: { ...SUMMARY.priced, reducedCents: c(512_000n), reducedDifferenceCents: c(0n) } }} />);
+    expect(words(even, 'priced-reduced-difference')).toContain('Allowed in your file is equal to the fully reduced figure in total.');
   });
 
   it('shows the total with the codes in the reduction across codes fully reduced beside it, labelled, when there are any', () => {
@@ -259,10 +292,11 @@ describe('the screening summary', () => {
     }
   });
 
-  it('says where the file’s total sits in words', () => {
-    expect(differenceWords(c(1n))).toBe('below the Medicare figure');
-    expect(differenceWords(c(-1n))).toBe('above the Medicare figure');
-    expect(differenceWords(c(0n))).toBe('equal to the Medicare figure');
+  it('says where the file’s total sits in words, against the figure it names', () => {
+    expect(BEFORE_REDUCTION_FIGURE).toBe('the figure before the reduction across codes');
+    expect(differenceWords(c(1n), BEFORE_REDUCTION_FIGURE)).toBe('below the figure before the reduction across codes');
+    expect(differenceWords(c(-1n), REDUCED_FIGURE)).toBe('above the fully reduced figure');
+    expect(differenceWords(c(0n), ONE_FIGURE)).toBe('equal to the Medicare figure');
   });
 });
 
@@ -273,7 +307,12 @@ describe('the anomalies by code and payer product', () => {
     const headers = [...html.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((match) => match[1]);
     expect(headers).toEqual(['Code', 'Payer product', 'Rows', 'Claim lines', MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, 'Allowed in your file', DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL, 'Status']);
     expect(html).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$368\.40[\s\S]*?\$314\.50[\s\S]*?\$340\.00[\s\S]*?\$28\.40[\s\S]*?-\$25\.50/);
-    expect(html).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is above the Medicare figure/);
+    expect(html).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is at or above both Medicare figures</);
+    // A code outside the reduction across codes has one figure, and its chip names it.
+    const outside = (differenceCents: Cents) =>
+      renderToStaticMarkup(<ScreeningAnomalies groups={[{ ...(GROUPS[3] as ScreeningGroup), observedCents: c(10_000n - differenceCents), differenceCents, standing: 'at_or_above' }]} />);
+    expect(outside(c(-100n))).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="at_or_above">Allowed is above the Medicare figure</);
+    expect(outside(c(0n))).toMatch(/data-standing="at_or_above">Allowed is equal to the Medicare figure</);
     expect(text(html)).toContain('2 groups of 5 are anomalies.');
     expect(text(html)).toContain('Medicare Advantage, no contract');
   });
