@@ -128,6 +128,10 @@ describe('the rules an export’s payment is matched by (loader.ts; D13 a)', () 
     expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']), signedCents: 21129n }), x12)).toBeNull();
     // A claim of the export that the 835 lacks: not by its claims.
     expect(exportIsPaymentOf(facts({ claimHashes: new Set(['a', 'z']), signedCents: 1n }), x12)).toBeNull();
+    // The 835's claims, but another day and another amount: the payer's trace reused for another payment.
+    expect(exportIsPaymentOf(facts({ date: '2026-07-14', signedCents: -6452n }), x12)).toBeNull();
+    expect(exportIsPaymentOf(facts({ date: '2026-07-14' }), x12)).toBe('claims');
+    expect(exportIsPaymentOf(facts({ signedCents: 1n }), x12)).toBe('claims');
     expect(exportIsPaymentOf(facts({ claimHashes: new Set() }), facts({ claimHashes: new Set() }))).toBe('amount');
   });
 

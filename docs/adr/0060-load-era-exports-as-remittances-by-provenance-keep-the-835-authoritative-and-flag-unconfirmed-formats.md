@@ -137,9 +137,10 @@ Across sources, and between two exports, a trace is compared in its form (`trace
 case, leading zeros removed), since a spreadsheet re-save drops a trace's zeros; two 835s keep ADR 0031's exact
 rules. An export's payment and an 835's of one trace form are one payment (`exportIsPaymentOf`) when every claim
 of the export is a claim of the 835 (by the payer claim control number's keyed hash, whatever form the payee is
-named in or whichever date the export gives, such as the deposit's), or when the payee and date are the same and
-the export's amount is the 835's BPR02 or its BPR02 plus its PLB total (an export carries no PLB, so its amount
-is the claims paid, as an 835 balances):
+named in) and the date or the amount agrees (an export may be dated by its deposit; a trace the payer reused on
+another day for another amount stays two payments), or when the payee and date are the same and the amount
+agrees. The amount agrees when the export's is the 835's BPR02 or its BPR02 plus its PLB total (an export carries
+no PLB, so its amount is the claims paid, as an 835 balances):
 
 - An export payment that is one payment with an 835 the practice holds, or has the export key (payee, trace
   form, credit or debit, BPR02, BPR16) of another export, is `duplicate_remittance`: zero rows, linked to that

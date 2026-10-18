@@ -35,8 +35,8 @@ import { type LoadPlan, type PersonIdentity, type PlanRefusal, type PlannedClaim
  * with provenance era_export, under the same advisory locks, so an 835 and an export of one trace serialize. The
  * 835 is authoritative (reconciliation-001 D13 a). An export of a payment the practice holds loads nothing and is
  * linked to it: another export's with the export key (payee, trace, credit or debit, BPR02 and BPR16), or an 835's
- * (exportIsPaymentOf: every claim of the export is the 835's, or the payee and date are the same and the export's
- * amount is BPR02 plus the PLB total, since an export carries no PLB). A later 835 of a payment first loaded from
+ * (exportIsPaymentOf: every claim of the export is the 835's and the date or the amount agrees, or the payee, date
+ * and amount agree, the amount BPR02 or BPR02 plus the PLB total, since an export carries no PLB). A later 835 of a payment first loaded from
  * an export is held for review (payment_loaded_from_export) by the same rule, never loaded beside it and never
  * replacing it, since priced lines are immutable (CLAUDE.md rule 3). Across sources and between exports the trace
  * is compared in its form (traceForm: upper case, leading zeros removed), as a spreadsheet re-save writes it; two
@@ -163,17 +163,20 @@ export interface PaymentFacts {
 
 /**
  * Whether an export's payment and an 835's, their traces of one form, are one payment (D13 a), and by what: 'claims'
- * when every claim of the export is a claim of the 835 (the payee may be named in another form, the export dated by
- * its deposit); 'amount' when the payee and the date are the same and the export's amount is the 835's BPR02 (the
- * export key, which the remittance trigger also refuses) or BPR02 plus its PLB total (an export carries no PLB, so
- * its amount is the claims paid, as an 835 balances); null when neither.
+ * when every claim of the export is a claim of the 835 and either the date or the amount agrees (the payee may be
+ * named in another form, the export dated by its deposit; a payer's trace reused on another day for another amount
+ * stays two payments, whatever claims it reverses); 'amount' when the payee and the date are the same and the
+ * amount agrees; null when neither. The amount agrees when the export's is the 835's BPR02 (the export key, which the
+ * remittance trigger also refuses) or BPR02 plus its PLB total (an export carries no PLB, so its amount is the
+ * claims paid, as an 835 balances).
  */
 export function exportIsPaymentOf(exported: PaymentFacts, x12: PaymentFacts): 'claims' | 'amount' | null {
-  if (exported.claimHashes.size > 0 && [...exported.claimHashes].every((hash) => x12.claimHashes.has(hash))) {
+  const amount = exported.signedCents === x12.signedCents || exported.signedCents === x12.signedCents + x12.plbCents;
+  const date = exported.date === x12.date;
+  if ((amount || date) && exported.claimHashes.size > 0 && [...exported.claimHashes].every((hash) => x12.claimHashes.has(hash))) {
     return 'claims';
   }
-  const amount = exported.signedCents === x12.signedCents || exported.signedCents === x12.signedCents + x12.plbCents;
-  return exported.payeeId === x12.payeeId && exported.date === x12.date && amount ? 'amount' : null;
+  return exported.payeeId === x12.payeeId && date && amount ? 'amount' : null;
 }
 
 /** The export duplicate key (D12 a) between two exports, their traces of one form: payee, the signed payment and its date. */
