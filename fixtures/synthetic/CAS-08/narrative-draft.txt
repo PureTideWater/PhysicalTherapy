@@ -1,4 +1,0 @@
-SYNTHETIC packet narrative draft (no real patient, payer or claim).
-The contract pays 97110 at 50.00 per unit. Three claims billed 97110 x 2 and were allowed 210.00 in total,
-against an expected 300.00 under the fee schedule, a shortfall of 90.00.
-The payer also withheld 1234.56 on these claims.
