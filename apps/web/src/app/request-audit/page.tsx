@@ -56,7 +56,11 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
         </Card>
       )}
       <p className="text-sm text-muted-foreground">
-        Already a customer?{' '}
+        Not ready for an audit?{' '}
+        <Link className="underline" href="/screening">
+          Try a free screening
+        </Link>{' '}
+        of your allowed amounts against Medicare, with no patient information. Already a customer?{' '}
         <Link className="underline" href="/sign-in">
           Sign in
         </Link>

@@ -1,0 +1,102 @@
+import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, type ScreeningColumn, type ScreeningRejection } from '@tp/worker/screening-format';
+
+/**
+ * What the screening page says about an upload it refuses (Change Order 001, CO-04: "reject any upload containing
+ * them", naming the column). One sentence per reason, at most 20, each naming a column by its position and, in the
+ * browser alone, by the header text the person typed; a row by its number under the header. A message never holds a
+ * cell's value, and the header text never leaves the browser: the server's own messages name the position and the
+ * kind only. Plain data, safe to import in the browser.
+ */
+
+/** The most messages a refusal shows: the format keeps at most 20 reasons. */
+export const MAX_MESSAGES = SCREENING_MAX_REASONS;
+
+/** Each column as a sentence names it. */
+export const FIELD_LABELS: Readonly<Record<ScreeningColumn, string>> = {
+  procedure_code: 'procedure code',
+  modifiers: 'modifiers',
+  units: 'units',
+  place_of_service: 'place of service',
+  payer_product: 'payer product',
+  service_band: 'service band',
+  allowed_total: 'allowed total',
+  claim_count: 'claim count',
+};
+
+/** What each column holds, for a value it refuses. */
+export const FIELD_RULES: Readonly<Record<ScreeningColumn, string>> = {
+  procedure_code: 'a five-character CPT or HCPCS code, such as 97110',
+  modifiers: 'up to four different two-character modifiers, such as GP or GP 59, or nothing',
+  units: 'a whole number of units from 1 to 999',
+  place_of_service: 'a place-of-service code from 01 to 99',
+  payer_product: 'one of medicare_ffs, ma_noncontracted, ma_contracted, commercial, medicaid or other',
+  service_band: 'a calendar quarter, such as 2026-Q1; a month is not taken, so use its quarter',
+  allowed_total: 'dollars with at most two decimals, from 0 to 999,999,999.99, such as 1234.56',
+  claim_count: 'a whole number of claims from 1 to 1,000,000',
+};
+
+/** A column as a message names it: its position, and in the browser the header text typed there. */
+function columnName(column: number | undefined, header: string | undefined): string {
+  const position = column === undefined ? 'A column' : `Column ${String(column)}`;
+  const typed = header?.trim() ?? '';
+  return typed === '' ? position : `${position} (“${typed.slice(0, 60)}”)`;
+}
+
+function rowName(row: number | undefined): string {
+  return row === undefined ? 'A row' : `Row ${row.toLocaleString('en-US')}`;
+}
+
+function fieldName(field: ScreeningColumn | undefined): string {
+  return field === undefined ? 'a column' : FIELD_LABELS[field];
+}
+
+/**
+ * One reason as a sentence. `headers` are the file's header cells, given in the browser only, so a message there
+ * names the column the person sees; the server passes none.
+ */
+export function reasonMessage(reason: ScreeningRejection, headers?: readonly string[]): string {
+  const header = reason.column === undefined ? undefined : headers?.[reason.column - 1];
+  switch (reason.code) {
+    case 'phi_column':
+      return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again. A screening takes totals only, never patient information.`;
+    case 'unknown_column':
+      return `${columnName(reason.column, header)} is not one of the eight screening columns; remove it, or rename it to the column it is.`;
+    case 'duplicate_column':
+      return `${columnName(reason.column, header)} is a second ${fieldName(reason.field)} column; keep one.`;
+    case 'missing_column':
+      return `The file has no ${fieldName(reason.field)} column; add it.`;
+    case 'row_shape':
+      return `${rowName(reason.row)} does not have one cell for each column of the header.`;
+    case 'invalid_value':
+      return `${rowName(reason.row)}, ${fieldName(reason.field)}: it must be ${reason.field === undefined ? 'in the column’s format' : FIELD_RULES[reason.field]}.`;
+    case 'band_holds_date':
+      return `${rowName(reason.row)}: ${reason.column === undefined ? 'the service band column' : columnName(reason.column, header).replace(/^Column/, 'column')} holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.`;
+    case 'band_in_future':
+      return `${rowName(reason.row)}, service band: that quarter has not started yet.`;
+    case 'duplicate_row':
+      return `${rowName(reason.row)} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}: the same code, modifiers, units, place of service, payer product and quarter. Add the two into one row.`;
+    case 'no_rows':
+      return 'The file has no rows under its header.';
+    case 'too_many_rows':
+      return `The file has more than ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows. Combine rows that share a code, modifiers, units, place of service, payer product and quarter, or screen the rest separately.`;
+    case 'row_count_mismatch':
+      return 'The rows sent do not add up to the file’s row count. Choose the file again.';
+  }
+}
+
+/** The messages a refusal shows: at most 20, then how many more there were. */
+export function reasonMessages(reasons: readonly ScreeningRejection[], headers?: readonly string[]): string[] {
+  const shown = reasons.slice(0, MAX_MESSAGES).map((reason) => reasonMessage(reason, headers));
+  return reasons.length > MAX_MESSAGES ? [...shown.slice(0, MAX_MESSAGES - 1), `And ${(reasons.length - (MAX_MESSAGES - 1)).toLocaleString('en-US')} more problems like these.`] : shown;
+}
+
+/** The browser's refusals of the file itself, before any row is read. */
+export const FILE_MESSAGES = {
+  empty: 'The file is empty. Choose the CSV you saved.',
+  tooLarge: 'The file is larger than 25 MiB. A screening takes at most 50,000 rows of totals; combine rows and choose it again.',
+  spreadsheet: 'The file is a spreadsheet. Save it as CSV (comma-separated) or tab-separated text and choose it again.',
+  notText: 'The file is not UTF-8 text. Save it as CSV (comma-separated, UTF-8) and choose it again.',
+  unclosedQuote: 'The file ends inside a quoted cell: a quote is never closed. Save it again as CSV and choose it again.',
+  textAfterQuote: 'A cell has text after its closing quote. Save it again as CSV and choose it again.',
+  noFile: 'Choose the file to screen.',
+} as const;

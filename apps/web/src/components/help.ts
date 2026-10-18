@@ -37,4 +37,5 @@ export const HELP: Readonly<Record<ShellSection, string>> = {
   status_admin: 'The public status page’s components and incidents, and the maintenance switch.',
   compliance: 'The SOC 2 Type I evidence checklist: each control’s evidence, the policies, and what people must record.',
   console_models: 'The model features’ switches: the kill switch, each practice’s daily budget and the letter reader, and today’s model spend against each budget.',
+  screening_split: 'The free screening’s place-of-service split: which places price at the facility rate and which at the non-facility rate. A contract specialist approves it; each approval is kept, and the latest is in force.',
 };
