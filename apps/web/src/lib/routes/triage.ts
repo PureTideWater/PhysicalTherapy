@@ -1,5 +1,5 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, rolesPermit } from '@tp/db/runtime';
-import { centsToString } from '@tp/money';
+import { type Cents, centsToString } from '@tp/money';
 import { CASE_STATES, WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
 import { practiceLedgerTotals } from '@tp/worker/ledger';
 import { packetOfCase } from '@tp/worker/packets';
@@ -215,6 +215,8 @@ export interface CasesPageData {
   readonly runs: readonly RunChoice[];
   /** The payer patterns waiting for a case (for the roles that work cases). */
   readonly waiting: readonly WaitingPatternView[];
+  /** The validated lines in no pattern because their deadline is not verified (D17 a), and their shortfall in cents. */
+  readonly deadlineUnverified: { readonly lines: number; readonly validatedCents: string };
   /** The practice's materiality thresholds in force, in cents (PRD 12 defaults $5 and $250). */
   readonly materiality: { readonly lineCents: string; readonly caseCents: string };
   readonly notice: 'materiality' | null;
@@ -286,6 +288,7 @@ export const casesPage = practiceRoute({
         earliestWindow: pattern.earliestWindow,
         openCaseId: pattern.openCaseId,
       })),
+      deadlineUnverified: { lines: waiting?.deadlineUnverified.lines ?? 0, validatedCents: centsToString(waiting?.deadlineUnverified.validatedCents ?? (0n as Cents)) },
       materiality: { lineCents: centsToString(settings.lineMaterialityCents), caseCents: centsToString(settings.caseMaterialityCents) },
       notice: params.notice ?? null,
       canTriage,

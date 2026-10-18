@@ -14,7 +14,8 @@ import { startLocalWorker } from './worker';
  * of its payer (fixtures CON-07 and CON-01) and tags the agreement to the payer; a platform
  * administrator opens a support grant for a contract specialist; the specialist abstracts the
  * agreement by hand (a quote not on the page is refused, the right one is marked on the cited page),
- * approves it field by field and approves the version; the billing manager signs it off and maps the
+ * approves it field by field, cites the agreement's dispute window on its page and verifies it (D17 a),
+ * and approves the version; the billing manager signs it off and maps the
  * payer's plan to it, whose lines then resolve to the contract's rate record; and a second version
  * whose window overlaps the first is refused with the rule shown. In the other group's practice, whose
  * rows no other spec counts. Synthetic data only.
@@ -119,6 +120,24 @@ test('a contract abstracted by hand, approved and signed off becomes the version
         await expect(button).toHaveCount(0);
       }
       await expect(specialist.locator('[data-state="blocked"]')).toHaveCount(0);
+      // The agreement's dispute window, as page 1 states it: entered, cited in its own words and verified against
+      // the page, so the lines it prices have a verified deadline (D17 a).
+      const dates = specialist.getByRole('region', { name: "The version's window" });
+      await dates.getByLabel('Last day (optional)').fill('2026-12-31');
+      await dates.getByLabel('Dispute window (days)').fill('120');
+      await dates.getByRole('button', { name: "Save the version's dates" }).click();
+      await expect(specialist.locator('[data-window="uncited"]')).toBeVisible();
+      const window = specialist.getByRole('region', { name: "The contract's dispute window" });
+      await window.getByLabel('Page').fill('1');
+      await window.getByLabel('Quote').fill('Provider may dispute a payment within 365 days of the remittance date.');
+      await window.getByRole('button', { name: 'Cite the window' }).click();
+      await expect(refusal(specialist).filter({ hasText: 'Not done' })).toContainText('The quote is not on the cited page');
+      await window.getByLabel('Quote').fill('Provider may dispute a payment within 120 days of the remittance date.');
+      await window.getByRole('button', { name: 'Cite the window' }).click();
+      await expect(specialist.locator('[data-window="unverified"]')).toBeVisible();
+      await expect(specialist.getByRole('region', { name: 'Approve the version' })).toContainText('the dispute window is cited but not verified');
+      await specialist.getByRole('button', { name: 'Verify the window against its page' }).click();
+      await expect(specialist.locator('[data-window="verified"]')).toBeVisible();
       await specialist.getByRole('button', { name: 'Approve the version' }).click();
       await expect(specialist.locator('[data-state="approved"]')).toBeVisible();
     } finally {
@@ -131,6 +150,7 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await page.getByRole('button', { name: 'Sign off this version' }).click();
     await expect(page.locator('[data-notice="signed_off"]')).toBeVisible();
     await expect(page.locator('[data-state="pricing"]')).toContainText('2026-01-01 through 2026-12-31');
+    await expect(page.locator('[data-window="verified"]')).toContainText('Provider may dispute a payment within 120 days of the remittance date.');
     await page.goto(`/p/${other}/mapping`);
     const plan = page.getByRole('table', { name: 'Payers and plans' }).getByRole('row').filter({ hasText: 'SYNPLAN-COMM-C' });
     await plan.getByRole('link', { name: 'CE:SYNPLAN-COMM-C' }).click();

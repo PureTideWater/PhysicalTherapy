@@ -13,8 +13,20 @@ import { z } from 'zod';
 import { type DerivedCalendarEvent, deriveCalendarEvents } from './calendar';
 import { isIsoDate } from './dates';
 import type { EvidenceProblem, EvidenceResolution, EvidenceResolver } from './evidence/resolve';
-import { RATE_RECORD_COLUMNS, type RateRecordRow, VERSION_COLUMNS, type VersionRow, loadRateRecords, loadVersions, rateRecord, versionRecord } from './load';
-import type { ContractVersionRecord, RateRecord } from './records';
+import {
+  DISPUTE_WINDOW_COLUMNS,
+  type DisputeWindowRow,
+  RATE_RECORD_COLUMNS,
+  type RateRecordRow,
+  VERSION_COLUMNS,
+  type VersionRow,
+  disputeWindowRecord,
+  loadRateRecords,
+  loadVersions,
+  rateRecord,
+  versionRecord,
+} from './load';
+import type { ContractVersionRecord, DisputeWindowRecord, RateRecord } from './records';
 import { type Citation, RATE_RECORD_FIELDS, type RateRecordField, type RateRecordTerms, appealLevelsSchema, citationSchema, parseRateTerms, rateTermsToJson } from './terms';
 
 /**
@@ -35,6 +47,10 @@ import { type Citation, RATE_RECORD_FIELDS, type RateRecordField, type RateRecor
  *   practice reached through a support grant (docs/adr/0028).
  * - Approving field by field and approving the version (approveRateRecordField, approveVersion): the
  *   contract specialist (the platform permission rate_record.approve), once the evidence resolves.
+ * - Citing the contract's own dispute window (citeDisputeWindow): the specialist (rate_record.edit), as a rate
+ *   record is cited; verifying it against its page (verifyDisputeWindow): the specialist (rate_record.approve).
+ *   A model never cites or verifies a window: only a verified window of a signed-off version verifies its
+ *   lines' deadlines (D17 a, docs/adr/0061).
  * - Signing off (signOffVersion): the practice administrator or billing manager (contract.sign_off).
  * - Mapping plans (mapPlan, correctMapping): the billing manager (mapping.edit).
  */
@@ -154,6 +170,20 @@ async function recordById(context: WorkflowContext, practiceId: string, rateReco
   return rateRecord(row);
 }
 
+async function windowById(context: WorkflowContext, practiceId: string, versionId: string): Promise<DisputeWindowRecord> {
+  const rows = await readWithAudit(
+    context.scope,
+    { objectType: 'contract_version', purpose: 'contract_workflow', requestId: context.requestId },
+    async (client) => (await client.query<DisputeWindowRow>(`SELECT ${DISPUTE_WINDOW_COLUMNS} FROM contract_version v WHERE v.id = $1 AND v.practice_id = $2`, [versionId, practiceId])).rows,
+    (row) => ({ objectId: row.id, practiceId: row.practice_id }),
+  );
+  const [row] = rows;
+  if (row === undefined) {
+    throw new ContractWorkflowError('not_found', 'no such contract version in this practice');
+  }
+  return disputeWindowRecord(row);
+}
+
 function requireEditable(version: ContractVersionRecord): void {
   if (version.status !== 'draft' && version.status !== 'proposed') {
     throw new ContractWorkflowError('invalid', 'an approved or signed-off version never changes; supersede it with a new version');
@@ -225,14 +255,19 @@ type DraftFields = z.output<typeof createDraftInput>;
 
 const OVERLAP = 'versions of one contract never overlap: amend the version in force, or supersede it';
 
-async function insertVersion(context: WorkflowContext, fields: DraftFields, supersedesId: string | null): Promise<{ versionId: string; versionNo: number }> {
+async function insertVersion(
+  context: WorkflowContext,
+  fields: DraftFields,
+  supersedesId: string | null,
+  windowCitation: Citation | null = null,
+): Promise<{ versionId: string; versionNo: number }> {
   // One new version per contract at a time, so two drafts never take the same number.
   await context.scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('contract_version:' || $1, 0))", [fields.contractId]);
   const { rows } = await overlapRefused(OVERLAP, () =>
     context.scope.client.query<{ id: string; version_no: number }>(
       `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, effective_to, supersedes_id,
-                                     timely_filing_days, dispute_window_days, appeal_levels, notice_days)
-       SELECT $1, $2, coalesce(max(v.version_no), 0) + 1, $3::uuid[], $4, $5, $6, $7, $8, $9::jsonb, $10
+                                     timely_filing_days, dispute_window_days, appeal_levels, notice_days, dispute_window_evidence)
+       SELECT $1, $2, coalesce(max(v.version_no), 0) + 1, $3::uuid[], $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb
          FROM contract_version v WHERE v.contract_id = $2
        RETURNING id, version_no`,
       [
@@ -246,6 +281,7 @@ async function insertVersion(context: WorkflowContext, fields: DraftFields, supe
         fields.disputeWindowDays,
         JSON.stringify(fields.appealLevels),
         fields.noticeDays,
+        windowCitation === null ? null : JSON.stringify(citationJson(windowCitation)),
       ],
     ),
   );
@@ -287,7 +323,11 @@ const updateDraftInput = z.strictObject({
   noticeDays: versionFields.noticeDays.optional(),
 });
 
-/** Edits a draft or proposed version's window, documents and windows (the specialist). */
+/**
+ * Edits a draft or proposed version's window, documents and windows (the specialist). Any change of the dispute
+ * window's days or of the documents clears the window's verification (the database does it); a window made
+ * silent loses its citation too, since a citation is of a window the version states.
+ */
 export async function updateDraftVersion(context: WorkflowContext, input: z.input<typeof updateDraftInput>): Promise<void> {
   const request = parse(updateDraftInput, input);
   requirePracticePermission(context.scope, request.practiceId, 'rate_record.edit');
@@ -296,7 +336,8 @@ export async function updateDraftVersion(context: WorkflowContext, input: z.inpu
   await overlapRefused(OVERLAP, () =>
     context.scope.client.query(
       `UPDATE contract_version SET effective_from = $3, effective_to = $4, source_document_ids = $5::uuid[], timely_filing_days = $6,
-              dispute_window_days = $7, appeal_levels = $8::jsonb, notice_days = $9
+              dispute_window_days = $7, appeal_levels = $8::jsonb, notice_days = $9,
+              dispute_window_evidence = CASE WHEN $7::integer IS NULL THEN NULL ELSE dispute_window_evidence END
         WHERE id = $1 AND practice_id = $2`,
       [
         request.versionId,
@@ -540,7 +581,9 @@ const versionInput = z.strictObject({ practiceId: uuid, versionId: uuid });
 
 /**
  * The specialist approves a version once every rate record is verified and every citation still
- * resolves to its page ("every rate record resolves to a page in its source document").
+ * resolves to its page ("every rate record resolves to a page in its source document"), the dispute
+ * window's too: a version whose window is cited is approved only with the window verified (an uncited
+ * window is approved as the contract's days, and its lines' deadlines stay unverified, D17 a).
  */
 export async function approveVersion(context: WorkflowContext, input: z.input<typeof versionInput>): Promise<void> {
   const request = parse(versionInput, input);
@@ -551,11 +594,23 @@ export async function approveVersion(context: WorkflowContext, input: z.input<ty
   if (records.length === 0 || records.some((record) => record.verifiedBy === null)) {
     throw new ContractWorkflowError('invalid', 'a version is approved once each of its rate records is verified, and it has at least one');
   }
+  const window = await windowById(context, request.practiceId, version.id);
+  if (window.citation !== null && window.verifiedBy === null) {
+    throw new ContractWorkflowError('invalid', 'a version whose dispute window is cited is approved once its window is verified', [
+      { field: 'disputeWindow', message: 'the dispute window is cited but not verified against its page yet: verify it, then approve the version' },
+    ]);
+  }
   const evidence = requireEvidence(context);
   for (const record of records) {
     const resolution = await evidence.resolve(record.citation, version.sourceDocumentIds);
     if (!resolution.resolved) {
       throw new ContractWorkflowError('invalid', `a rate record's citation no longer resolves to its page (${resolution.problem.replaceAll('_', ' ')})`, [{ field: 'citation', message: resolution.problem }], resolution.problem);
+    }
+  }
+  if (window.citation !== null) {
+    const resolution = await evidence.resolve(window.citation, version.sourceDocumentIds);
+    if (!resolution.resolved) {
+      throw new ContractWorkflowError('invalid', `the dispute window's citation no longer resolves to its page (${resolution.problem.replaceAll('_', ' ')})`, [{ field: 'disputeWindow', message: resolution.problem }], resolution.problem);
     }
   }
   await context.scope.client.query("UPDATE contract_version SET status = 'approved', approved_by = app_actor_id(), approved_at = now() WHERE id = $1 AND practice_id = $2", [version.id, request.practiceId]);
@@ -619,6 +674,73 @@ export async function signOffVersion(context: WorkflowContext, input: z.input<ty
 }
 
 // ---------------------------------------------------------------------------------------------------
+// The contract's own dispute window: cited and verified as a rate record is (D17 a)
+
+const citeWindowInput = z.strictObject({ practiceId: uuid, versionId: uuid, citation: citationInput.nullable() });
+
+/**
+ * Cites the page where the contract states its dispute window (the specialist, as a rate record is cited): the
+ * quote is checked against the page and stored with the page's hash. A new citation, or none (null removes it),
+ * clears the window's verification. A window is cited once the version states its days; a silent contract's
+ * window is the release's commercial_default, which is never verified.
+ */
+export async function citeDisputeWindow(context: WorkflowContext, input: z.input<typeof citeWindowInput>): Promise<{ readonly cited: boolean }> {
+  const request = parse(citeWindowInput, input);
+  requirePracticePermission(context.scope, request.practiceId, 'rate_record.edit');
+  const version = await versionById(context, request.practiceId, request.versionId);
+  requireEditable(version);
+  if (request.citation !== null && version.windows.dispute_window_days === null) {
+    throw new ContractWorkflowError('invalid', 'a dispute window is cited once the version states its days', [{ field: 'disputeWindowDays', message: 'enter the window’s days first' }]);
+  }
+  const citation = request.citation === null ? null : await citeOrRefuse(context, version, request.citation);
+  await context.scope.client.query('UPDATE contract_version SET dispute_window_evidence = $3::jsonb WHERE id = $1 AND practice_id = $2', [
+    version.id,
+    request.practiceId,
+    citation === null ? null : JSON.stringify(citationJson(citation)),
+  ]);
+  await recordAuditEvent(context.scope, {
+    action: citation === null ? 'contract_window_uncited' : 'contract_window_cited',
+    objectType: 'contract_version',
+    objectId: version.id,
+    practiceId: request.practiceId,
+    requestId: context.requestId,
+  });
+  return { cited: citation !== null };
+}
+
+export interface WindowVerificationResult {
+  readonly verified: boolean;
+  /** The evidence check: why the window stays unverified when its citation does not resolve. */
+  readonly evidence: EvidenceResolution;
+}
+
+/**
+ * The specialist verifies the cited window against its page (PRD 7: the specialist verifies each field against
+ * the cited page): verified only when the citation still resolves to its page, in the specialist's own name, now.
+ * A window already verified stays as it was verified; an edit of the window clears the verification.
+ */
+export async function verifyDisputeWindow(context: WorkflowContext, input: z.input<typeof versionInput>): Promise<WindowVerificationResult> {
+  const request = parse(versionInput, input);
+  await requireSpecialist(context.scope, request.practiceId);
+  const version = await versionById(context, request.practiceId, request.versionId);
+  requireEditable(version);
+  const window = await windowById(context, request.practiceId, version.id);
+  if (window.citation === null) {
+    throw new ContractWorkflowError('invalid', 'a dispute window is verified once it is cited', [{ field: 'disputeWindow', message: 'cite the page that states the dispute window first' }]);
+  }
+  const evidence = await requireEvidence(context).resolve(window.citation, version.sourceDocumentIds);
+  if (!evidence.resolved || window.verifiedBy !== null) {
+    return { verified: window.verifiedBy !== null, evidence };
+  }
+  await context.scope.client.query('UPDATE contract_version SET dispute_window_verified_by = app_actor_id(), dispute_window_verified_at = now() WHERE id = $1 AND practice_id = $2', [
+    version.id,
+    request.practiceId,
+  ]);
+  await recordAuditEvent(context.scope, { action: 'contract_window_verified', objectType: 'contract_version', objectId: version.id, practiceId: request.practiceId, requestId: context.requestId });
+  return { verified: true, evidence };
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Amendments and supersession: a new version, never an edit (CON-02, CON-03)
 
 const successorInput = z.strictObject({
@@ -635,8 +757,14 @@ const successorInput = z.strictObject({
 });
 type SuccessorRequest = z.output<typeof successorInput>;
 
-/** A draft that names `prior`, with its documents and windows, and copies of its rate records to verify again. */
+/**
+ * A draft that names `prior`, with its documents and windows, and copies of its rate records to verify again.
+ * The dispute window's citation is copied while the window's days stay the prior version's, never its
+ * verification: the specialist verifies the copy against the successor's documents before it is approved.
+ */
 async function draftSuccessor(context: WorkflowContext, request: SuccessorRequest, prior: ContractVersionRecord, effectiveFrom: string, effectiveTo: string | null): Promise<{ versionId: string; versionNo: number; copied: number }> {
+  const disputeWindowDays = request.disputeWindowDays === undefined ? prior.windows.dispute_window_days : request.disputeWindowDays;
+  const priorWindow = await windowById(context, request.practiceId, prior.id);
   const created = await insertVersion(
     context,
     {
@@ -646,11 +774,12 @@ async function draftSuccessor(context: WorkflowContext, request: SuccessorReques
       effectiveTo,
       sourceDocumentIds: [...new Set([...prior.sourceDocumentIds, ...request.sourceDocumentIds])],
       timelyFilingDays: request.timelyFilingDays === undefined ? prior.windows.timely_filing_days : request.timelyFilingDays,
-      disputeWindowDays: request.disputeWindowDays === undefined ? prior.windows.dispute_window_days : request.disputeWindowDays,
+      disputeWindowDays,
       appealLevels: request.appealLevels ?? [...prior.windows.appeal_levels],
       noticeDays: request.noticeDays === undefined ? prior.noticeDays : request.noticeDays,
     },
     prior.id,
+    disputeWindowDays !== null && disputeWindowDays === priorWindow.days ? priorWindow.citation : null,
   );
   const records = await loadRateRecords(context.scope, read(context, request.practiceId), [prior.id]);
   for (const record of records) {

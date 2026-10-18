@@ -2,7 +2,20 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { test } from '@playwright/test';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, mapPlan, signOffVersion } from '@tp/contracts';
+import {
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  mapPlan,
+  signOffVersion,
+  verifyDisputeWindow,
+} from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, openPool, provisionPracticeKey, withPracticeScope } from '@tp/db';
@@ -236,8 +249,9 @@ async function scheduleEarlier(practiceId: string, documentId: string, planId: s
 }
 
 /**
- * The payer's SYNTHETIC fixed schedule (97110 at 50.00 a unit, timed units per code) abstracted by the
- * contract specialist and signed off by the billing manager, and the plan mapped to it. The payer is
+ * The payer's SYNTHETIC fixed schedule (97110 at 50.00 a unit, timed units per code, its dispute window cited on
+ * page 1 and verified) abstracted by the contract specialist and signed off by the billing manager, and the plan
+ * mapped to it. The payer is
  * the practice's first (its first 835's). On a retry, only the steps the attempt before left undone.
  */
 export async function signedOffSchedule(options: ScheduleOptions): Promise<void> {
@@ -260,8 +274,10 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
         return { payerId: payer, planId: plan };
       }),
     );
+    const disputeWindowDays = options.disputeWindowDays ?? 3650;
+    const windowQuote = `Disputes are raised within ${String(disputeWindowDays)} days of the remittance.`;
     const pdf = syntheticPdf([
-      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
+      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote],
       ['SYNTHETIC EXHIBIT A FEE SCHEDULE', QUOTE],
     ]);
     const as = <T>(actorId: string, run: (context: WorkflowContext) => Promise<T>) =>
@@ -273,8 +289,7 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
       earlier?.versionId ??
       (await as(manager, async (context) => {
         const contract = await createContract(context, { practiceId, payerId, title: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
-        return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays: options.disputeWindowDays ?? 3650 }))
-          .versionId;
+        return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays })).versionId;
       }));
     // The specialist's abstraction ends approved; a draft is one the attempt before left before it.
     if (earlier === null || earlier.status === 'draft') {
@@ -288,6 +303,9 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
         for (const field of RATE_RECORD_FIELDS) {
           await approveRateRecordField(context, { practiceId, rateRecordId, field });
         }
+        // The window as the contract states it, cited on page 1 and verified, so the lines' deadlines are (D17 a).
+        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote } });
+        await verifyDisputeWindow(context, { practiceId, versionId });
         await approveVersion(context, { practiceId, versionId });
       });
     }

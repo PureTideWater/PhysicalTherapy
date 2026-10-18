@@ -79,6 +79,32 @@ export function VersionStateNotice({ review }: { readonly review: VersionReview 
   }
 }
 
+/**
+ * Whether the version's dispute window is cited and verified (D17 a): only a verified window of a signed-off version
+ * verifies its lines' deadlines; an uncited or unverified window leaves them unverified, and its lines not actionable.
+ */
+export function DisputeWindowText({ review }: { readonly review: VersionReview }) {
+  const { version } = review;
+  if (version.disputeWindowDays === null) {
+    return <>The contract is silent: the release’s default window applies, and it is never verified.</>;
+  }
+  const window = version.disputeWindow;
+  if (window === null) {
+    return <span data-window="uncited">Not cited: its lines’ deadlines are not verified.</span>;
+  }
+  const document = review.documents.find((candidate) => candidate.id === window.documentId);
+  const where = `page ${String(window.page)}${document === undefined ? '' : ` of ${documentLabel(document)}`}`;
+  return window.verifiedAt === null ? (
+    <span data-window="unverified">
+      Cited on {where}, not verified yet: <q className="italic">{window.quote}</q>
+    </span>
+  ) : (
+    <span data-window="verified">
+      Verified on {where} by {window.verifiedBy ?? 'the contract specialist'}, {utc(window.verifiedAt)}: <q className="italic">{window.quote}</q>
+    </span>
+  );
+}
+
 export function VersionFacts({ review, versionHref }: { readonly review: VersionReview; readonly versionHref: (versionId: string) => string }) {
   const { version } = review;
   return (
@@ -88,6 +114,9 @@ export function VersionFacts({ review, versionHref }: { readonly review: Version
       </Fact>
       <Fact label="Effective">{windowText(version.effectiveFrom, version.effectiveTo)}</Fact>
       <Fact label="Windows">{windowsText(review)}</Fact>
+      <Fact label="Dispute window">
+        <DisputeWindowText review={review} />
+      </Fact>
       <Fact label="Approved">{version.approvedAt === null ? 'Not yet' : `${version.approvedBy ?? ''}, ${utc(version.approvedAt)}`}</Fact>
       <Fact label="Signed off">{version.signedOffAt === null ? 'Not yet' : `${version.signedOffBy ?? ''}, ${utc(version.signedOffAt)}`}</Fact>
       {version.supersedesId === null ? null : (

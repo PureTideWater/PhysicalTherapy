@@ -19,6 +19,7 @@ import {
   approveVersion,
   attachDocument,
   checkEvidence,
+  citeDisputeWindow,
   correctMapping,
   createContract,
   createDraftVersion,
@@ -29,6 +30,7 @@ import {
   supersedeVersion,
   updateDraftVersion,
   updateRateRecord,
+  verifyDisputeWindow,
 } from './services';
 import { RATE_RECORD_FIELDS } from './terms';
 import { syntheticPdf } from './testing/synthetic-pdf';
@@ -58,10 +60,16 @@ let exhibitDoc: string;
 let serviceLines = false;
 
 const CONTRACT_PAGES = [
-  ['SYNTHETIC PROVIDER AGREEMENT', 'Effective January 1, 2026. Compensation is set out in Exhibit A.', 'Either party gives 90 days notice before an anniversary.'],
+  [
+    'SYNTHETIC PROVIDER AGREEMENT',
+    'Effective January 1, 2026. Compensation is set out in Exhibit A.',
+    'Either party gives 90 days notice before an anniversary.',
+    'Disputes are raised within 30 days of the remittance.',
+  ],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', '97110 Therapeutic exercise $32.00 per unit', '97140 Manual therapy $30.50 per unit', '97530 Therapeutic activities at 110% of the Medicare fee schedule'],
 ];
 const QUOTE_97110 = '97110 Therapeutic exercise $32.00 per unit';
+const WINDOW_QUOTE = 'Disputes are raised within 30 days of the remittance.';
 const QUOTE_97140 = '97140 Manual therapy $30.50 per unit';
 const FIXED_97110 = { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' } };
 const FIXED_97140 = { scope: { codes: ['97140'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3050' } };
@@ -349,6 +357,187 @@ describe('the workflow from a tagged document to a signed-off version', () => {
     await as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: created.versionId }));
     expect(await errorOf(attach(manager, created.versionId, amendmentDoc))).toMatchObject({ reason: 'invalid' });
     expect(await errorOf(attach(manager, randomUUID(), amendmentDoc))).toMatchObject({ reason: 'not_found' });
+  });
+});
+
+describe('the contract’s own dispute window: cited, verified by a contract specialist, frozen from approval (D17 a)', () => {
+  /** A draft whose window is 30 days, with one rate record verified, ready to approve but for its window. */
+  async function windowDraft(effectiveFrom: string, days: number | null = 30): Promise<Draft & { recordIds: string[] }> {
+    const created = await as(manager, async (context) => {
+      const { contractId } = await createContract(context, { practiceId: north.practiceId, payerId: payer, title: 'SYNTHETIC WINDOW AGREEMENT' });
+      const { versionId } = await createDraftVersion(context, { practiceId: north.practiceId, contractId, effectiveFrom, sourceDocumentIds: [contractDoc], disputeWindowDays: days });
+      return { contractId, versionId };
+    });
+    const recordIds = await addRecords(created.versionId, [{ terms: FIXED_97110, quote: QUOTE_97110 }]);
+    expect(await approveAll(recordIds)).toEqual([true]);
+    return { ...created, recordIds };
+  }
+  const cite = (versionId: string, citation: { documentId: string; page: number; quote: string } | null = { documentId: contractDoc, page: 1, quote: WINDOW_QUOTE }, actor = specialist) =>
+    as(actor, (context) => citeDisputeWindow(context, { practiceId: north.practiceId, versionId, citation }));
+  const verify = (versionId: string, actor = specialist) => as(actor, (context) => verifyDisputeWindow(context, { practiceId: north.practiceId, versionId }));
+
+  it('cites the window on its page with the page’s hash, refuses approval until a specialist verifies it, and keeps both through sign-off', async () => {
+    const created = await windowDraft('2060-01-01');
+    expect(await cite(created.versionId)).toEqual({ cited: true });
+    const cited = await versionRow(created.versionId);
+    expect(cited).toMatchObject({ dispute_window_days: 30, dispute_window_verified_by: null, dispute_window_verified_at: null });
+    expect(cited.dispute_window_evidence).toEqual({ document_id: contractDoc, page: 1, quote: WINDOW_QUOTE, hash: expect.stringMatching(/^[0-9a-f]{64}$/) as string });
+    // Cited, not verified: the service and the database refuse approval.
+    expect(await errorOf(as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: created.versionId })))).toMatchObject({ reason: 'invalid', message: expect.stringMatching(/window is verified/) });
+    await expect(asApp(specialist, "UPDATE contract_version SET status = 'approved', approved_by = $2, approved_at = now() WHERE id = $1", [created.versionId, specialist])).rejects.toThrow(/cited is approved once a contract specialist has verified/);
+    // Only a contract specialist verifies, and a manager's attempt changes nothing.
+    expect(await errorOf(verify(created.versionId, manager))).toBeInstanceOf(PermissionDeniedError);
+    expect(await verify(created.versionId)).toMatchObject({ verified: true, evidence: { resolved: true } });
+    const verified = await versionRow(created.versionId);
+    expect(verified.dispute_window_verified_by).toBe(specialist);
+    expect(verified.dispute_window_verified_at).toBeInstanceOf(Date);
+    // Verifying again leaves the verification as it was.
+    expect(await verify(created.versionId)).toMatchObject({ verified: true });
+    expect((await versionRow(created.versionId)).dispute_window_verified_at).toEqual(verified.dispute_window_verified_at);
+    await approveAndSignOff(created.versionId);
+    const signed = await versionRow(created.versionId);
+    expect(signed).toMatchObject({ status: 'signed_off', dispute_window_evidence: cited.dispute_window_evidence, dispute_window_verified_by: specialist, dispute_window_verified_at: verified.dispute_window_verified_at });
+    // Frozen: neither the evidence nor its verification changes once signed off, for anyone.
+    for (const sql of [
+      'UPDATE contract_version SET dispute_window_evidence = NULL, dispute_window_verified_by = NULL, dispute_window_verified_at = NULL WHERE id = $1',
+      `UPDATE contract_version SET dispute_window_evidence = jsonb_set(dispute_window_evidence, '{page}', '2') WHERE id = $1`,
+      'UPDATE contract_version SET dispute_window_verified_at = now() WHERE id = $1',
+    ]) {
+      await expect(asApp(specialist, sql, [created.versionId]), sql).rejects.toMatchObject({ code: '23514' });
+      await expect(asApp(manager, sql, [created.versionId]), sql).rejects.toMatchObject({ code: '23514' });
+    }
+    expect(await errorOf(cite(created.versionId))).toMatchObject({ reason: 'invalid', message: expect.stringMatching(/supersede/) });
+    const { rows } = await asOwner(owner, [north.practiceId], () =>
+      owner.query<{ action: string; actor_id: string }>("SELECT action, actor_id FROM audit_event WHERE object_id = $1 AND action LIKE 'contract_window_%' ORDER BY at", [created.versionId]),
+    );
+    expect(rows).toEqual([
+      { action: 'contract_window_cited', actor_id: specialist },
+      { action: 'contract_window_verified', actor_id: specialist },
+    ]);
+  });
+
+  it('approves an uncited window as the contract’s days (its lines’ deadlines stay unverified), and freezes an approved version’s window too', async () => {
+    const uncited = await windowDraft('2061-01-01');
+    await as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: uncited.versionId }));
+    expect(await versionRow(uncited.versionId)).toMatchObject({ status: 'approved', dispute_window_days: 30, dispute_window_evidence: null, dispute_window_verified_by: null });
+    // Approved: citing it now is an edit, refused in the service and in the database.
+    expect(await errorOf(cite(uncited.versionId))).toMatchObject({ reason: 'invalid' });
+    await expect(
+      asApp(specialist, `UPDATE contract_version SET dispute_window_evidence = jsonb_build_object('document_id', $2::text, 'page', 1, 'quote', 'Q', 'hash', repeat('a', 64)) WHERE id = $1`, [uncited.versionId, contractDoc]),
+    ).rejects.toThrow(/never changes/);
+  });
+
+  it('clears the verification on any edit of the window, its evidence or the documents, and a silent window loses its citation', async () => {
+    const created = await windowDraft('2062-01-01');
+    await cite(created.versionId);
+    await verify(created.versionId);
+    await as(specialist, (context) => updateDraftVersion(context, { practiceId: north.practiceId, versionId: created.versionId, disputeWindowDays: 31 }));
+    expect(await versionRow(created.versionId)).toMatchObject({ dispute_window_days: 31, dispute_window_verified_by: null, dispute_window_verified_at: null, dispute_window_evidence: expect.objectContaining({ quote: WINDOW_QUOTE }) as object });
+    await as(specialist, (context) => updateDraftVersion(context, { practiceId: north.practiceId, versionId: created.versionId, disputeWindowDays: 30 }));
+    await verify(created.versionId);
+    // A document attached is an edit of the documents the evidence is read from.
+    await as(manager, (context) => attachDocument(context, { practiceId: north.practiceId, versionId: created.versionId, documentId: exhibitDoc }));
+    expect((await versionRow(created.versionId)).dispute_window_verified_by).toBeNull();
+    await verify(created.versionId);
+    // A new citation clears it; so does removing the citation.
+    await cite(created.versionId, { documentId: contractDoc, page: 1, quote: 'Disputes are raised within 30 days' });
+    expect((await versionRow(created.versionId)).dispute_window_verified_by).toBeNull();
+    await verify(created.versionId);
+    expect(await cite(created.versionId, null)).toEqual({ cited: false });
+    expect(await versionRow(created.versionId)).toMatchObject({ dispute_window_evidence: null, dispute_window_verified_by: null });
+    // A window made silent takes its citation with it (a citation is of a window the version states).
+    await cite(created.versionId);
+    await as(specialist, (context) => updateDraftVersion(context, { practiceId: north.practiceId, versionId: created.versionId, disputeWindowDays: null }));
+    expect(await versionRow(created.versionId)).toMatchObject({ dispute_window_days: null, dispute_window_evidence: null, dispute_window_verified_by: null });
+    // A silent window is not cited at all, and an unverified one is not verified without a citation.
+    expect(await errorOf(cite(created.versionId))).toMatchObject({ reason: 'invalid', message: expect.stringMatching(/states its days/) });
+    expect(await errorOf(verify(created.versionId))).toMatchObject({ reason: 'invalid', message: expect.stringMatching(/once it is cited/) });
+  });
+
+  it('refuses a citation that does not resolve to its page, and verifies none whose evidence is not on one of the version’s documents', async () => {
+    const created = await windowDraft('2063-01-01');
+    expect(await errorOf(cite(created.versionId, { documentId: contractDoc, page: 1, quote: 'Disputes are raised within 3650 days of the remittance.' }))).toMatchObject({ reason: 'invalid', evidenceProblem: expect.any(String) as string });
+    expect(await errorOf(cite(created.versionId, { documentId: amendmentDoc, page: 1, quote: WINDOW_QUOTE }))).toMatchObject({ reason: 'invalid' });
+    expect(await errorOf(cite(created.versionId, undefined, viewer))).toBeInstanceOf(PermissionDeniedError);
+    expect((await versionRow(created.versionId)).dispute_window_evidence).toBeNull();
+    // Written directly, evidence on another document of the practice stays unverifiable, in the service and the database.
+    const stray = { document_id: amendmentDoc, page: 1, quote: WINDOW_QUOTE, hash: 'b'.repeat(64) };
+    await asOwner(owner, [north.practiceId], () => owner.query('UPDATE contract_version SET dispute_window_evidence = $2 WHERE id = $1', [created.versionId, JSON.stringify(stray)]), specialist);
+    expect(await verify(created.versionId)).toMatchObject({ verified: false, evidence: { resolved: false } });
+    await expect(asApp(specialist, 'UPDATE contract_version SET dispute_window_verified_by = $2, dispute_window_verified_at = now() WHERE id = $1', [created.versionId, specialist])).rejects.toThrow(/evidence is a document of its version/);
+  });
+
+  it('holds the verification in the database: a specialist’s, in their own name, now, once, over complete evidence, the window and status as they stand', async () => {
+    const created = await windowDraft('2064-01-01');
+    await cite(created.versionId);
+    const set = (actor: string, by: string, at = 'now()') => asApp(actor, `UPDATE contract_version SET dispute_window_verified_by = $2, dispute_window_verified_at = ${at} WHERE id = $1`, [created.versionId, by]);
+    await expect(set(manager, manager)).rejects.toMatchObject({ code: '42501' });
+    await expect(set(specialist, outsideSpecialist)).rejects.toThrow(/records the verifying specialist and the time/);
+    await expect(set(specialist, specialist, "now() - interval '1 day'")).rejects.toThrow(/records the verifying specialist and the time/);
+    await expect(asApp(specialist, 'UPDATE contract_version SET dispute_window_verified_by = $2, dispute_window_verified_at = now(), dispute_window_days = 31 WHERE id = $1', [created.versionId, specialist])).rejects.toThrow(/verified as it stands/);
+    await expect(asApp(specialist, "UPDATE contract_version SET dispute_window_verified_by = $2, dispute_window_verified_at = now(), status = 'proposed' WHERE id = $1", [created.versionId, specialist])).rejects.toThrow(/verified as it stands/);
+    // Shapes the CHECKs hold: complete evidence of exactly four keys, only with the window's days, verified only with evidence.
+    for (const [sql, constraint] of [
+      [`UPDATE contract_version SET dispute_window_evidence = dispute_window_evidence - 'hash' WHERE id = $1`, 'contract_version_window_evidence_complete'],
+      [`UPDATE contract_version SET dispute_window_evidence = dispute_window_evidence || '{"note": "x"}' WHERE id = $1`, 'contract_version_window_evidence_complete'],
+      [`UPDATE contract_version SET dispute_window_evidence = jsonb_set(dispute_window_evidence, '{quote}', '"  "') WHERE id = $1`, 'contract_version_window_evidence_complete'],
+      ['UPDATE contract_version SET dispute_window_days = NULL WHERE id = $1', 'contract_version_window_evidence_needs_window'],
+    ] as const) {
+      await expect(asApp(specialist, sql, [created.versionId]), sql).rejects.toMatchObject({ code: '23514', constraint });
+    }
+    await set(specialist, specialist);
+    // Recorded once: never another specialist's or another time over it.
+    const verifiedOnce = async () => {
+      const client = await app.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', $2, true)", [specialist, `{${north.practiceId}}`]);
+        await client.query('UPDATE contract_version SET dispute_window_verified_by = $2, dispute_window_verified_at = now() WHERE id = $1', [created.versionId, specialist]);
+        await client.query('SAVEPOINT again');
+        await expect(client.query('UPDATE contract_version SET dispute_window_verified_by = $2 WHERE id = $1', [created.versionId, outsideSpecialist])).rejects.toThrow(/recorded once/);
+      } finally {
+        await client.query('ROLLBACK');
+        client.release();
+      }
+    };
+    await verifiedOnce();
+    // Written with the version: never verified, and never citing a document the version does not name.
+    await expect(
+      asApp(
+        specialist,
+        `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, dispute_window_days, dispute_window_evidence)
+         VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb)`,
+        [north.practiceId, created.contractId, [contractDoc], JSON.stringify({ document_id: amendmentDoc, page: 1, quote: WINDOW_QUOTE, hash: 'c'.repeat(64) })],
+      ),
+    ).rejects.toThrow(/evidence is a document of its version/);
+    // The application role cannot write a verification with the version at all (its column grants); the database
+    // refuses one from any role, the owner's included.
+    const verifiedInsert = `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, dispute_window_days, dispute_window_evidence,
+                                                          dispute_window_verified_by, dispute_window_verified_at)
+                            VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb, $5, now())`;
+    const values = [north.practiceId, created.contractId, [contractDoc], JSON.stringify({ document_id: contractDoc, page: 1, quote: WINDOW_QUOTE, hash: 'c'.repeat(64) }), specialist];
+    await expect(asApp(specialist, verifiedInsert, values)).rejects.toMatchObject({ code: '42501' });
+    await expect(asOwner(owner, [north.practiceId], () => owner.query(verifiedInsert, values), specialist)).rejects.toThrow(/written with its dispute window unverified/);
+  });
+
+  it('copies the citation into a correction and an amendment while the days stay, never the verification', async () => {
+    const created = await windowDraft('2065-01-01');
+    await cite(created.versionId);
+    await verify(created.versionId);
+    await approveAndSignOff(created.versionId);
+    const evidence = (await versionRow(created.versionId)).dispute_window_evidence;
+    const correction = await as(specialist, (context) => supersedeVersion(context, { practiceId: north.practiceId, versionId: created.versionId }));
+    expect(await versionRow(correction.versionId)).toMatchObject({ dispute_window_days: 30, dispute_window_evidence: evidence, dispute_window_verified_by: null, dispute_window_verified_at: null });
+    const amendment = await as(specialist, (context) => amendVersion(context, { practiceId: north.practiceId, versionId: created.versionId, effectiveFrom: '2065-07-01', disputeWindowDays: 45 }));
+    // A window of other days is not the cited one: the amendment's is uncited until the specialist cites it.
+    expect(await versionRow(amendment.versionId)).toMatchObject({ dispute_window_days: 45, dispute_window_evidence: null, dispute_window_verified_by: null });
+    // The copy is verified against the successor's documents before the successor is approved.
+    await approveAll((await recordRows(correction.versionId)).map((row) => String(row.id)));
+    expect(await errorOf(as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: correction.versionId })))).toMatchObject({ reason: 'invalid' });
+    await verify(correction.versionId);
+    expect((await approveAndSignOff(correction.versionId)).retired).toEqual({ versionId: created.versionId, as: 'superseded' });
+    // The superseded version keeps its verified window as it was.
+    expect(await versionRow(created.versionId)).toMatchObject({ status: 'superseded', dispute_window_evidence: evidence, dispute_window_verified_by: specialist });
   });
 });
 

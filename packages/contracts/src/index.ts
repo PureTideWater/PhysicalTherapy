@@ -57,7 +57,7 @@ export {
   roundingSchema,
 } from './terms';
 export { type IsoDate, addDays, addYears, isIsoDate, windowCovers, windowsOverlap } from './dates';
-export type { AgreementRecords, ContractVersionRecord, PlanMappingRecord, RateRecord } from './records';
+export type { AgreementRecords, ContractVersionRecord, DisputeWindowRecord, PlanMappingRecord, RateRecord } from './records';
 export {
   AGREEMENT_UNPRICED_REASONS,
   AgreementInvariantError,
@@ -94,6 +94,7 @@ export {
   assertPracticePricingAllowed,
   dollarsWaitingOnMapping,
   loadAgreementRecords,
+  loadDisputeWindows,
   loadMappings,
   loadRateRecords,
   loadVersions,
@@ -103,6 +104,7 @@ export {
   type FieldApprovalResult,
   type ProposedRecordCheck,
   type SignOffResult,
+  type WindowVerificationResult,
   type WorkflowContext,
   addRateRecord,
   amendVersion,
@@ -110,6 +112,7 @@ export {
   approveVersion,
   attachDocument,
   checkEvidence,
+  citeDisputeWindow,
   correctMapping,
   createContract,
   createDraftVersion,
@@ -120,4 +123,5 @@ export {
   supersedeVersion,
   updateDraftVersion,
   updateRateRecord,
+  verifyDisputeWindow,
 } from './services';

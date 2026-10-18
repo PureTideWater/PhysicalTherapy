@@ -28,10 +28,12 @@ import {
   approveFieldAction,
   approveVersionAction,
   askQuestionAction,
+  citeWindowAction,
   removeRateRecordAction,
   startAbstraction,
   supersedeVersionAction,
   updateVersionAction,
+  verifyWindowAction,
   withdrawQuestionAction,
 } from './abstraction';
 import { createSupportGrant, specialistQueuePage, supportPage } from './console';
@@ -394,6 +396,17 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
     expect(review.records[0]?.verifiedBy).toBe('the contract specialist');
     // The specialist reads the window from the contract: it continues until amended.
     ok(await call(updateVersionAction, specialist, P(), { versionId, effectiveFrom: '2026-01-01', lastDay: '', timelyFilingDays: '180', disputeWindowDays: '120', noticeDays: '90' }));
+    // The dispute window as the contract states it (D17 a): cited from its page in the contract's own words, then
+    // verified by the specialist; a quote that is not on the page is refused, and approval waits for the verification.
+    const window = { versionId, documentId: contractDoc, page: '1', quote: 'Provider may dispute a payment within 120 days of the remittance date.' };
+    expect(refusedWith(await call(citeWindowAction, specialist, P(), { ...window, quote: 'Provider may dispute a payment within 365 days of the remittance date.' }))).toMatch(/The quote is not on the cited page/);
+    expect((await call(citeWindowAction, manager, P(), window)).status).toBe('forbidden');
+    ok(await call(citeWindowAction, specialist, P(), window));
+    expect(ok(await call(versionPage, viewer, { ...P(), versionId })).review.version.disputeWindow).toEqual({ documentId: contractDoc, page: 1, quote: window.quote, verifiedBy: null, verifiedAt: null });
+    expect(refusedWith(await call(approveVersionAction, specialist, P(), { versionId }))).toMatch(/cited but not verified against its page/);
+    expect((await call(verifyWindowAction, manager, P(), { versionId })).status).toBe('forbidden');
+    ok(await call(verifyWindowAction, specialist, P(), { versionId }));
+    expect(ok(await call(versionPage, viewer, { ...P(), versionId })).review.version.disputeWindow).toMatchObject({ page: 1, verifiedBy: 'the contract specialist', verifiedAt: expect.any(String) as string });
     ok(await call(approveVersionAction, specialist, P(), { versionId }));
     // CON-03: an approved version never changes.
     expect(refusedWith(await call(updateVersionAction, specialist, P(), { versionId, effectiveFrom: '2026-02-01' }))).toMatch(/never changes/);

@@ -37,6 +37,22 @@ export interface ContractVersionRecord {
   readonly noticeDays: number | null;
 }
 
+/**
+ * A version's dispute window as the contract states it (migration 20261103090000; reconciliation-001 D17 a): the
+ * citation of the page that says it (contract_version.dispute_window_evidence, in a rate record's form) and the
+ * contract specialist who verified it, and when. Only a verified window of a signed-off version verifies its
+ * lines' deadlines; the days themselves are the version's windows.dispute_window_days, as before.
+ */
+export interface DisputeWindowRecord {
+  readonly versionId: string;
+  readonly days: number | null;
+  /** Null while the window is uncited. */
+  readonly citation: Citation | null;
+  /** Null until a contract specialist verifies the citation against its page; an edit of the window clears both. */
+  readonly verifiedBy: string | null;
+  readonly verifiedAt: string | null;
+}
+
 /** A rate record (Data dictionary, rate_record) with its typed terms. */
 export interface RateRecord {
   readonly id: string;

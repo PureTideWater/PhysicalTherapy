@@ -39,7 +39,7 @@ export default async function CasesPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, workers, total, waiting, materiality, notice } = page.data;
+  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, workers, total, waiting, deadlineUnverified, materiality, notice } = page.data;
   const path = `/p/${practiceId}/cases`;
   const filtered = filters.state !== undefined || filters.payer !== undefined || filters.owner !== undefined || filters.deadline !== undefined;
   return (
@@ -96,6 +96,12 @@ export default async function CasesPage(props: Props) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {deadlineUnverified.lines === 0 ? null : (
+              <p className="pb-3 text-sm" data-waiting="deadline_unverified">
+                {deadlineUnverified.lines} validated {deadlineUnverified.lines === 1 ? 'line waits' : 'lines wait'} for a verified deadline (<Money value={deadlineUnverified.validatedCents} />, DEADLINE_UNVERIFIED): their contract’s dispute window is not
+                cited and verified on its page yet, or the release’s window is not verified. They join no case until the contract specialist cites and verifies the window.
+              </p>
+            )}
             {waiting.length === 0 ? (
               <p className="text-sm text-muted-foreground">No validated line is waiting for a case. Triage a run to judge its lines.</p>
             ) : (

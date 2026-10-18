@@ -19,11 +19,13 @@ import {
   approveFieldFormAction,
   approveVersionFormAction,
   askQuestionFormAction,
+  citeWindowFormAction,
   proposeTermsFormAction,
   rejectProposalFormAction,
   removeRateRecordFormAction,
   supersedeVersionFormAction,
   updateVersionFormAction,
+  verifyWindowFormAction,
   withdrawQuestionFormAction,
 } from '../../actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -54,7 +56,9 @@ function Checkbox({ name, label }: { readonly name: string; readonly label: stri
  * by hand into rate records with page references"): the cited page beside the abstracted fields, the
  * approval of each field, the form that enters a record with its document, page and quote (checked
  * against the page before it is stored), the version's window and windows while it is a draft, the
- * approval of the version once every record is verified and resolves, the amendment or correction of a
+ * citation of the contract's dispute window and its verification against the page (D17 a: only a verified
+ * window verifies its lines' deadlines), the approval of the version once every record is verified and
+ * resolves and a cited window is verified, the amendment or correction of a
  * signed-off version (never an edit, CON-03), and questions to the practice.
  */
 export default async function AbstractionVersionPage(props: Props) {
@@ -281,16 +285,55 @@ export default async function AbstractionVersionPage(props: Props) {
               </ActionForm>
             </CardContent>
           </Card>
+          <Card role="region" aria-label="The contract's dispute window">
+            <CardHeader>
+              <CardTitle>The contract’s dispute window</CardTitle>
+              <CardDescription>
+                Cite the page where the contract states its dispute window, in its exact words, then verify it against the page yourself. A line’s deadline is verified only from a
+                verified window of a signed-off version; until then its lines are not actionable. Editing the days or the documents clears the verification.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              {version.disputeWindowDays === null ? (
+                <p className="text-sm text-muted-foreground">The version states no dispute window: enter its days above first. A contract silent on disputes is never verified.</p>
+              ) : documents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">The version names no document to cite yet.</p>
+              ) : (
+                <ActionForm action={citeWindowFormAction} submit={version.disputeWindow === null ? 'Cite the window' : 'Cite the window again'} className="grid gap-3 md:grid-cols-2">
+                  {hidden()}
+                  <input type="hidden" name="versionId" value={version.id} />
+                  <SelectField label="Cited document" name="documentId" id="window-document" options={documents.map((document) => ({ value: document.id, label: documentLabel(document) }))} />
+                  <Field label="Page" name="page" id="window-page" type="number" min={1} required defaultValue={version.disputeWindow?.page} />
+                  <div className="flex flex-col gap-1.5 md:col-span-2">
+                    <label htmlFor="window-quote" className="text-sm font-medium">
+                      Quote
+                    </label>
+                    <textarea id="window-quote" name="quote" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" defaultValue={version.disputeWindow?.quote} />
+                    <p className="text-xs text-muted-foreground">The exact words on the page that state the {String(version.disputeWindowDays)}-day window.</p>
+                  </div>
+                </ActionForm>
+              )}
+              {version.disputeWindow !== null && version.disputeWindow.verifiedAt === null ? (
+                <ActionForm action={verifyWindowFormAction} submit="Verify the window against its page">
+                  {hidden()}
+                  <input type="hidden" name="versionId" value={version.id} />
+                </ActionForm>
+              ) : null}
+            </CardContent>
+          </Card>
           <Card role="region" aria-label="Approve the version">
             <CardHeader>
               <CardTitle>Approve version {version.versionNo}</CardTitle>
               <CardDescription>
-                Once every rate record is verified and every citation still resolves to its page, approve the version; the practice then signs it off.
+                Once every rate record is verified, a cited dispute window is verified, and every citation still resolves to its page, approve the version; the practice then signs it
+                off.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {review.records.length === 0 || review.unresolved > 0 ? (
                 <p className="text-sm text-destructive">Blocked: {review.records.length === 0 ? 'the version has no rate record yet.' : `${String(review.unresolved)} record(s) are not checked against the cited page yet or no longer resolve.`}</p>
+              ) : version.disputeWindow !== null && version.disputeWindow.verifiedAt === null ? (
+                <p className="text-sm text-destructive">Blocked: the dispute window is cited but not verified against its page yet.</p>
               ) : (
                 <ActionForm action={approveVersionFormAction} submit="Approve the version">
                   {hidden()}
