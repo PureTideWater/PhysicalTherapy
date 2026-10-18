@@ -175,7 +175,7 @@ MANUAL = {
   "You decided the four urgent items": ("Done", "2026-10-18T16:10:00Z", "2026-10-18T16:20:00Z"),
   "Repair main (revert #7, Dependabot to the build branch)": ("Done", "2026-10-18T16:24:00Z", "2026-10-18T16:30:00Z"),
   "PR 6: the audit's privacy fix (#6, 11-line floor)": ("Running", "2026-10-18T16:40:00Z", None),
-  "PR 5: the audit's critical fixes (#4, #5, #26, #61)": ("Running", "2026-10-18T16:50:00Z", None),
+  "PR 5: the audit's critical fixes (#4, #5, #26, #61)": ("Running", "2026-10-18T17:20:00Z", None),
   "Fixes on GitHub: CI green, then merge": ("Done", "2026-10-18T00:15:00Z", "2026-10-18T01:13:00Z"),
   "You approve the domain model (PR 4)": ("Done", "2026-10-18T01:58:00Z", "2026-10-18T02:08:00Z"),
   "PR 4 on GitHub: CI green, then merge": ("Done", "2026-10-18T02:28:00Z", "2026-10-18T03:21:00Z"),
