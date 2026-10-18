@@ -128,7 +128,11 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "Each Medicare row is the engine's one-line amount times its claim count in bigint; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds",
   },
   { id: 'SCR-03', title: 'Screening 30 days after its upload', assertion: 'Link refuses it; the expiry job deletes the run and its results; the conversion stays' },
-  { id: 'SCR-04', title: 'Screening uploads past the limit', assertion: 'Refused per business domain, per free-mail address and per IP; subjects stored as keyed hashes' },
+  {
+    id: 'SCR-04',
+    title: 'Screening uploads past the limit',
+    assertion: 'Refused per business domain, per free-mail mailbox however its address is spelled, and per IP; subjects stored as keyed hashes',
+  },
   { id: 'SCR-05', title: 'Screening output wording', assertion: 'No page, message or email says owed, underpaid or recovered; no tagline' },
   { id: 'SCR-06', title: 'Screening converted to an audit request', assertion: 'Audit request recorded and logged as an audit event' },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },

@@ -216,7 +216,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
   ]),
-  'SCR-04': none(6, 'Rate limits are counted in the database per request; no file.', ['apps/web/src/lib/screening/routes.db.test.ts']),
+  'SCR-04': none(6, 'Rate limits are counted in the database per request; no file.', ['apps/web/src/lib/screening/rate.test.ts', 'apps/web/src/lib/screening/routes.db.test.ts']),
   'SCR-05': none(6, 'Wording is held by the copy lint and by tests of what the routes, components and emails return; no file.', [
     'tools/brand-copy/scan.test.ts',
     'apps/worker/src/screening/message.test.ts',

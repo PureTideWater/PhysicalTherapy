@@ -152,7 +152,7 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; docs/adr/0062.
 | SCR-01 | Screening upload with a date-of-service or member-ID column | Rejected with the column named by position and kind; only the file hash, row count and reasons stored |
 | SCR-02 | Screening pricing of a clean upload | Each Medicare row is the engine's one-line amount times its claim count in bigint; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds |
 | SCR-03 | Screening 30 days after its upload | Link refuses it; the expiry job deletes the run and its results; the conversion stays |
-| SCR-04 | Screening uploads past the limit | Refused per business domain, per free-mail address and per IP; subjects stored as keyed hashes |
+| SCR-04 | Screening uploads past the limit | Refused per business domain, per free-mail mailbox however its address is spelled, and per IP; subjects stored as keyed hashes |
 | SCR-05 | Screening output wording | No page, message or email says owed, underpaid or recovered; no tagline |
 | SCR-06 | Screening converted to an audit request | Audit request recorded and logged as an audit event |
 
