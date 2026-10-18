@@ -8,10 +8,12 @@ import type { MailSender } from '../mail/mail';
 import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
 import { sendSupportGrantNotices } from '../platform/support-notices';
+import { expireScreenings } from '../screening/expiry';
+import { SWEEP_MIN_QUEUED_AGE_SECONDS, priceScreeningRun, sweepScreeningRuns } from '../screening/job';
 import type { ObjectStore } from '../storage/object-store';
 import type { SupportInbox } from '../support/inbox';
 import { readSupportMail } from '../support/support-mail';
-import type { JobSender } from './enqueue';
+import { type JobSender, SCREENING_PRICE_PAYLOAD } from './enqueue';
 
 /**
  * Platform jobs: work on the platform itself rather than on one practice's data, so they carry no
@@ -23,13 +25,25 @@ import type { JobSender } from './enqueue';
  * Billing's two (docs/adr/0050) run as tp_billing, which the operator login switches to: the dunning
  * notices read invoices and the organization administrators' addresses, and the nightly usage snapshot
  * counts each organization's practices through one function that returns counts only. Support mail
- * (docs/adr/0055) reads the support inbox and opens tickets through one function that names no sender.
- * They run on the operator connection, every
+ * (docs/adr/0055) reads the support inbox and opens tickets through one function that names no sender. The free
+ * screening's two (docs/adr/0062) price a prospect's aggregate rows and email the result's link, and delete
+ * screenings 30 days after their upload, through the operator_screening_*() functions; a screening holds no PHI and
+ * names no practice. They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
  * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
  */
-export const PLATFORM_JOB_TYPES = ['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot', 'support_mail'] as const;
+export const PLATFORM_JOB_TYPES = [
+  'audit_copy',
+  'restore_drill',
+  'support_grant_notices',
+  'monitoring_schedule',
+  'billing_dunning',
+  'usage_snapshot',
+  'support_mail',
+  'screening_price',
+  'screening_expiry',
+] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
 const day = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, 'a calendar day, YYYY-MM-DD');
@@ -45,6 +59,9 @@ export const PLATFORM_JOB_PAYLOADS = {
   /** The day to count; the scheduled run omits it and takes today (UTC). */
   usage_snapshot: z.strictObject({ day: day.optional() }),
   support_mail: z.strictObject({}),
+  /** The run to price now (the web app sends it); the scheduled run omits it and sweeps. */
+  screening_price: SCREENING_PRICE_PAYLOAD,
+  screening_expiry: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -59,7 +76,8 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * support-grant notices every minute, so a notice goes out within a minute of a grant opening or
  * ending; the monitoring schedule daily at 05:10, so the month's digest goes out on its first morning;
  * the dunning notices daily at 14:10 (a morning in the United States); the usage snapshot nightly at 00:40;
- * support mail every five minutes, well inside the published response target (docs/adr/0055).
+ * support mail every five minutes, well inside the published response target (docs/adr/0055); the screening sweep
+ * every minute, and the screening expiry nightly at 03:35 (docs/adr/0062).
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -69,6 +87,8 @@ export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   billing_dunning: '10 14 * * *',
   usage_snapshot: '40 0 * * *',
   support_mail: '*/5 * * * *',
+  screening_price: '* * * * *',
+  screening_expiry: '35 3 * * *',
 };
 
 export interface PlatformContext {
@@ -188,6 +208,23 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
       }
       if (result.outcomes.unverified_sender + result.outcomes.unknown_sender + result.outcomes.unreadable > 0) {
         context.logger.info('support mail opened no ticket for some messages: unverified or unknown senders, or unreadable', { job_id: context.jobId, error_code: 'SUPPORT_MAIL_REFUSED' });
+      }
+    },
+    screening_price: async (payload, context) => {
+      const screening = { operator: dependencies.operator, mail: dependencies.mail, appOrigin: dependencies.appOrigin, logger: context.logger, jobId: context.jobId };
+      if (payload.screening_run_id !== undefined) {
+        await priceScreeningRun(screening, payload.screening_run_id);
+        return;
+      }
+      const result = await sweepScreeningRuns(screening, { minQueuedAgeSeconds: SWEEP_MIN_QUEUED_AGE_SECONDS });
+      if (result.complete + result.failed > 0) {
+        context.logger.info('screening sweep priced or failed runs', { job_id: context.jobId });
+      }
+    },
+    screening_expiry: async (_payload, context) => {
+      const result = await expireScreenings({ operator: dependencies.operator, jobId: context.jobId });
+      if (result.prospects > 0) {
+        context.logger.info('screening expiry deleted expired screenings', { job_id: context.jobId });
       }
     },
     support_grant_notices: async (_payload, context) => {

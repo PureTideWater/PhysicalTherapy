@@ -17,7 +17,17 @@ const JOB = '5e4d3c2b-1a09-4f8e-8d7c-6b5a49382701';
 
 describe('platform job registry', () => {
   it('names the platform jobs and validates their payloads', () => {
-    expect(PLATFORM_JOB_TYPES).toEqual(['audit_copy', 'restore_drill', 'support_grant_notices', 'monitoring_schedule', 'billing_dunning', 'usage_snapshot', 'support_mail']);
+    expect(PLATFORM_JOB_TYPES).toEqual([
+      'audit_copy',
+      'restore_drill',
+      'support_grant_notices',
+      'monitoring_schedule',
+      'billing_dunning',
+      'usage_snapshot',
+      'support_mail',
+      'screening_price',
+      'screening_expiry',
+    ]);
     expect(parsePlatformPayload('billing_dunning', {})).toEqual({});
     expect(parsePlatformPayload('usage_snapshot', { day: '2026-11-01' })).toEqual({ day: '2026-11-01' });
     expect(() => parsePlatformPayload('billing_dunning', { organization_id: JOB })).toThrow(ZodError);
@@ -41,6 +51,22 @@ describe('platform job registry', () => {
     assertNoPhi('job_payload', parsePlatformPayload('support_grant_notices', {}));
     assertNoPhi('job_payload', parsePlatformPayload('support_mail', {}));
     expect(() => parsePlatformPayload('support_mail', { sender: 'someone@synthetic.test' })).toThrow(ZodError);
+    // A screening's job names its run by opaque ID and nothing else: never the link's token, an address or a row.
+    assertNoPhi('job_payload', parsePlatformPayload('screening_price', { screening_run_id: JOB }));
+    assertNoPhi('job_payload', parsePlatformPayload('screening_expiry', {}));
+    expect(parsePlatformPayload('screening_price', {})).toEqual({});
+    expect(parsePlatformPayload('screening_price', null)).toEqual({});
+    expect(() => parsePlatformPayload('screening_price', { screening_run_id: 'abcdefghijklmnopqrstuvwxyzabcdef' })).toThrow(ZodError);
+    expect(() => parsePlatformPayload('screening_price', { screening_run_id: JOB, token: 'abcdefghijklmnopqrstuvwxyzabcdef' })).toThrow(ZodError);
+    expect(() => parsePlatformPayload('screening_price', { screening_run_id: JOB, contact_email: 'someone@synthetic.test' })).toThrow(ZodError);
+    expect(() => parsePlatformPayload('screening_expiry', { screening_run_id: JOB })).toThrow(ZodError);
+  });
+
+  it('sweeps the screening runs every minute and deletes expired screenings nightly at 03:35 UTC', () => {
+    const boss = new PgBoss('postgres://nobody@localhost:1/none');
+    const from = new Date('2026-10-15T00:00:30Z');
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.screening_price, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:01:00Z'), new Date('2026-10-15T00:02:00Z')]);
+    expect(boss.previewSchedule(PLATFORM_SCHEDULES.screening_expiry, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T03:35:00Z'), new Date('2026-10-16T03:35:00Z')]);
   });
 
   it('reads support mail every five minutes', () => {
@@ -208,5 +234,49 @@ describe('platform handlers', () => {
     await expect(createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, queue, ...notices }).monitoring_schedule({}, { jobId: JOB, logger: capture().logger })).rejects.toThrow('permission denied');
     expect(statements.at(-1)).toBe('ROLLBACK');
     expect(released).toEqual([true]);
+  });
+
+  it('sweeps the screening runs as the operator, and logs nothing when none is due', async () => {
+    const statements: string[] = [];
+    const { pool, released } = operator((text) => {
+      statements.push(text);
+      return [];
+    });
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices });
+    const { lines, logger } = capture();
+    await handlers.screening_price({}, { jobId: JOB, logger });
+    expect(statements).toEqual(['BEGIN', 'SET LOCAL ROLE tp_operator', "SELECT set_config('app.practice_ids', '{}', true)", 'SELECT run_id, status, attempts FROM operator_screening_due($1, $2)', 'COMMIT']);
+    expect(lines).toEqual([]);
+    expect(released).toEqual([false]);
+    // A run another job is pricing is not claimed, and says so by IDs only.
+    await handlers.screening_price({ screening_run_id: JOB }, { jobId: JOB, logger });
+    expect(lines.at(-1)).toMatchObject({ job_id: JOB, screening_run_id: JOB });
+  });
+
+  it('expires screenings 1,000 at a time until a batch takes fewer', async () => {
+    const batches = [1000, 1000, 7];
+    const calls: unknown[][] = [];
+    const pool = {
+      connect: () =>
+        Promise.resolve({
+          query: (text: string, values?: unknown[]) => {
+            if (text.includes('operator_screening_expire')) {
+              calls.push(values ?? []);
+              return Promise.resolve({ rows: [{ prospects: batches.shift() ?? 0, runs: 1 }] });
+            }
+            return Promise.resolve({ rows: [] });
+          },
+          release: () => undefined,
+        }),
+    };
+    const handlers = createPlatformHandlers({ operator: pool, store: memoryStore(), restorer: neverRestored, now, ...notices });
+    const { lines, logger } = capture();
+    await handlers.screening_expiry({}, { jobId: JOB, logger });
+    expect(calls).toEqual([
+      [1000, JOB],
+      [1000, JOB],
+      [1000, JOB],
+    ]);
+    expect(lines.at(-1)).toMatchObject({ msg: 'screening expiry deleted expired screenings', job_id: JOB });
   });
 });
