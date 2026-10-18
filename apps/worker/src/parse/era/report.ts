@@ -12,7 +12,8 @@ import type { EraExportHeldReason, EraExportHold, EraExportNormalized } from './
  *   the payment; never a cell's value.
  * - transaction_outcomes: one entry per payment, in file order: its first row and row count, what it became
  *   (loaded, loaded for review against a remittance of the same payee and trace, a duplicate of a payment the
- *   practice holds from an 835 or an export, or held with its reasons) and the remittance it loaded or is linked to.
+ *   practice holds from an 835 or an export, or held with its reasons, among them export_payment_other_payer as it
+ *   loads, linked to the payment of another payer it matches) and the remittance it loaded or is linked to.
  * - Counts: transactions are the payments; claims, lines and reversals as the rows group; the PLB total zero.
  *   A document held whole reports zeros and its reasons.
  */
@@ -99,6 +100,23 @@ export function exportReportRow(normalized: EraExportNormalized, results: Readon
     const result = results.get(payment.position);
     if (result === undefined) {
       throw new Error('a loadable payment has no result');
+    }
+    if (result.kind === 'held') {
+      // Held as it loads: the payment it matches names another payer; the hold names its place, never a value.
+      errors.push({ code: 'EXPORT_HELD', reason: result.reason, column: null, row: payment.firstRow, payment: payment.position });
+      outcomes.push({
+        ...place,
+        outcome: 'held',
+        remittanceId: null,
+        linkedRemittanceId: result.remittanceId,
+        linkedDocumentId: result.documentId,
+        linkedProvenance: result.provenance,
+        reviewReason: null,
+        claims: 0,
+        lines: 0,
+        reasons: [result.reason],
+      });
+      continue;
     }
     outcomes.push(
       result.kind === 'loaded'

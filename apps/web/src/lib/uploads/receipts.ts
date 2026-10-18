@@ -65,7 +65,7 @@ const COLUMNS = `d.id, d.practice_id, d.parent_document_id, d.kind, d.format_id,
 
 const FIRST_OF_BYTES = `LEFT JOIN LATERAL (
     SELECT f.id, f.created_at FROM source_document f
-     WHERE d.status = 'duplicate' AND f.practice_id = d.practice_id AND f.sha256 = d.sha256 AND f.status <> 'duplicate'
+     WHERE d.status = 'duplicate' AND f.practice_id = d.practice_id AND f.sha256 = d.sha256 AND coalesce(f.format_id, '') = coalesce(d.format_id, '') AND f.status <> 'duplicate'
      ORDER BY f.created_at, f.id LIMIT 1
   ) first ON true
   LEFT JOIN parse_report pr ON pr.source_document_id = d.id`;

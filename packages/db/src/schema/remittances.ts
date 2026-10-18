@@ -116,6 +116,8 @@ export const remittance = pgTable(
       .on(table.practiceId, table.payeeNpi, table.trn02, table.bprCreditDebit, table.bpr02Cents, table.bpr16Date)
       .where(sql`provenance = 'era_export'`),
     index('remittance_by_trace').on(table.practiceId, table.trn02),
+    // The trace's form (upper case, leading zeros removed), which the loader compares across sources (docs/adr/0060).
+    index('remittance_by_trace_form').on(table.practiceId, sql`ltrim(upper(${table.trn02} COLLATE "C"), '0')`),
     index('remittance_by_payment_date').on(table.practiceId, table.bpr16Date.desc(), table.id),
     index('remittance_by_payer').on(table.practiceId, table.payerId, table.bpr16Date.desc()),
     index('remittance_by_document').on(table.sourceDocumentId),

@@ -11,7 +11,7 @@ import { publishedCodeLists } from './code-lists';
 import { TOO_LARGE, loadEraExport, readEraExport } from './era/load';
 import { normalizeEraExport } from './era/normalize';
 import { exportReportRow } from './era/report';
-import { loadTransaction } from './loader';
+import { loadTransaction, lockTraces } from './loader';
 import { type ParseReportRow, type TransactionResult, documentStatus, parseReportRow, positionKey, resultOf } from './report';
 
 /**
@@ -162,13 +162,23 @@ class DocumentParse {
     throw new Error('the parser ended without its report');
   }
 
-  /** Pass two, inside the document's transaction: each loadable transaction set as the stream reaches it. */
+  /**
+   * Pass two, inside the document's transaction: each loadable transaction set as the stream reaches it. The locks of
+   * all the loadable sets' trace buckets are taken first, in ascending order, as an ERA export's are (loader.ts
+   * lockTraces), so this document and another sharing traces never wait on each other in a cycle whatever order
+   * their sets or payments come in, and it holds at most TRACE_LOCK_BUCKETS advisory locks however many sets it has.
+   */
   private async load(scope: Scope, report: ParseReport): Promise<Map<string, TransactionResult>> {
     const results = new Map<string, TransactionResult>();
     const loadable = new Set(report.transactions.filter((outcome) => outcome.loadable).map((outcome) => positionKey(outcome.position)));
     if (loadable.size === 0) {
       return results;
     }
+    await lockTraces(
+      scope.client,
+      this.practiceId,
+      report.transactions.flatMap((outcome) => (outcome.loadable && outcome.dedupKey !== null ? [outcome.dedupKey.trn02] : [])),
+    );
     for await (const item of parse835Stream(this.chunks(), { codeLists: this.opened.codeLists })) {
       if (item.type !== 'transaction') {
         continue;

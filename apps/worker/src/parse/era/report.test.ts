@@ -60,7 +60,7 @@ describe('the parse report of an ERA export', () => {
   });
 
   it('holds a payment with its reasons, the others loading (partially held), and a document held whole with zeros', () => {
-    const edited = new TextDecoder().decode(bytes).replace('SYNPLAN-COMM-01,03/15/2026,97110,GP,2,', 'SYNPLAN-COMM-01,03/15/2026,97110,GP,,');
+    const edited = new TextDecoder().decode(bytes).replace('SYNPLAN-COMM-01,03/15/2026,11,97110,GP,2,', 'SYNPLAN-COMM-01,03/15/2026,11,97110,GP,,');
     const partly = normalizeEraExport({ bytes: new TextEncoder().encode(edited), formatId: 'webpt_billing_era_v0', codeLists: UNKNOWN_CARCS });
     const results = new Map<number, ExportPaymentLoad>([2, 3, 4, 5, 6, 7].map((position) => [position, loaded(1, 1)]));
     const row = exportReportRow(partly, results, null);
@@ -87,6 +87,29 @@ describe('the parse report of an ERA export', () => {
       codeListRelease: null,
     });
     expect(ERA_EXPORT_HELD_REASONS).toContain(whole.errors[0]?.reason);
+  });
+
+  it('holds a payment whose match names another payer as it loads, linked to that payment, its place and never a value', () => {
+    const results = new Map<number, ExportPaymentLoad>(positions.map((position) => [position, loaded(1, 2)]));
+    results.set(1, { kind: 'held', reason: 'export_payment_other_payer', remittanceId: EARLIER, documentId: DOCUMENT, provenance: 'x12_835' });
+    const row = exportReportRow(normalized, results, null);
+    expect(row).toMatchObject({ outcome: 'partially_held', transactions: 7, held: 1, loadedTransactions: 6, duplicateTransactions: 0 });
+    expect(row.errors).toEqual([{ code: 'EXPORT_HELD', reason: 'export_payment_other_payer', column: null, row: 1, payment: 1 }]);
+    expect(row.transactionOutcomes[0]).toEqual({
+      payment: 1,
+      firstRow: 1,
+      rows: 1,
+      outcome: 'held',
+      remittanceId: null,
+      linkedRemittanceId: EARLIER,
+      linkedDocumentId: DOCUMENT,
+      linkedProvenance: 'x12_835',
+      reviewReason: null,
+      claims: 0,
+      lines: 0,
+      reasons: ['export_payment_other_payer'],
+    });
+    expect(ERA_EXPORT_HELD_REASONS).toContain('export_payment_other_payer');
   });
 
   it('refuses a loadable payment without a result rather than report it as anything', () => {

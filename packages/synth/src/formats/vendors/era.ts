@@ -43,6 +43,11 @@ export interface CanonicalEraRow {
   /** REF CE, when sent. */
   readonly plan: string | null;
   readonly serviceDate: string;
+  /**
+   * CLP08 on a professional line (a HCPCS procedure, no revenue code) when it is a two-digit place of service, as
+   * the 835 loader reads it (apps/worker/src/parse/plan.ts placeOfService); else null, written blank.
+   */
+  readonly placeOfService: string | null;
   readonly procedureCode: string;
   readonly modifiers: readonly string[];
   /** SVC05 as sent. */
@@ -90,6 +95,13 @@ export interface EraCheck {
   readonly paidCents: string;
 }
 
+const PLACE_OF_SERVICE = /^\d{2}$/;
+
+/** A professional line's place of service: CLP08 when it is a two-digit code (the 835 loader's own rule). */
+function placeOfService(facilityCode: string | null, line: { readonly procedureQualifier: string; readonly revenueCode: string | null }): string | null {
+  return line.procedureQualifier === 'HC' && line.revenueCode === null && facilityCode !== null && PLACE_OF_SERVICE.test(facilityCode) ? facilityCode : null;
+}
+
 const total = (adjustments: readonly AdjustmentExpectation[], groups: readonly string[]): Cents => sumCents(adjustments.filter((item) => groups.includes(item.group)).map((item) => parseCents(item.amountCents)));
 
 /** The rows of one 835 expectation, and its payments; refuses what a line row cannot carry. */
@@ -135,6 +147,7 @@ export function eraRowsOf(parse: ParseExpectation, label: string): { readonly ro
           claimStatus: claim.status,
           plan: claim.planRef,
           serviceDate: line.serviceFrom,
+          placeOfService: placeOfService(claim.facilityCode, line),
           procedureCode: line.procedureCode,
           modifiers: line.modifiers,
           units: line.units,
@@ -210,6 +223,8 @@ function eraCell(format: EraFormat, field: VendorEraField, row: CanonicalEraRow)
       return row.plan ?? '';
     case 'service_date':
       return writeDate(row.serviceDate, format.dateFormat);
+    case 'place_of_service':
+      return row.placeOfService ?? '';
     case 'procedure_code':
       return row.procedureCode;
     case 'modifiers':

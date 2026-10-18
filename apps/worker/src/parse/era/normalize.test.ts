@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { LoadPlan, PlannedExportRemittance } from '../plan';
 import { findEraExportFormat } from './formats';
-import { ERA_EXPORT_HELD_REASONS, ERA_EXPORT_MAX_BYTES, type EraExportHold, type EraExportNormalized, type LoadableEraPayment, normalizeEraExport, readDate } from './normalize';
+import { ERA_EXPORT_HELD_REASONS, ERA_EXPORT_MAX_BYTES, type EraExportHold, type EraExportNormalized, type LoadableEraPayment, MAX_AMOUNT_CENTS, normalizeEraExport, readDate } from './normalize';
 
 /**
  * The ERA export normalizer against packages/synth's four vendor fixtures (fixtures/synthetic/emr/<id>/; docs/adr/0059
@@ -33,6 +33,7 @@ interface ManifestRow {
   readonly claimStatus: string;
   readonly plan: string | null;
   readonly serviceDate: string;
+  readonly placeOfService: string | null;
   readonly procedureCode: string;
   readonly modifiers: readonly string[];
   readonly units: string | null;
@@ -87,6 +88,7 @@ function canonicalRows(plan: LoadPlan<PlannedExportRemittance>): ManifestRow[] {
         claimStatus: claim.statusCode,
         plan: claim.planKey.replace(/^PLAN:/, ''),
         serviceDate: line.serviceDate ?? '',
+        placeOfService: line.placeOfService,
         procedureCode: line.procedureCode,
         modifiers: line.modifiers,
         units: line.units,
@@ -170,12 +172,13 @@ describe('normalizeEraExport: the four vendor formats', () => {
         // No name and no member ID: the patient is keyed by the patient control number alone.
         expect(claim.patient).toEqual({ key: `pcn|${claim.patientControlNumber}`, lastName: null, firstName: null, memberId: null, groupNumber: null });
         for (const line of claim.lines) {
+          // The place of service the 835 twin's CLP08 gives (the manifest's), so a percent-of-Medicare term prices it.
           expect({ basis: line.observedAllowedBasis, observed: line.observedAllowedCents, allocated: line.observedAllowedAllocated, qualifier: line.procedureQualifier, pos: line.placeOfService, revenue: line.revenueCode, rendering: line.renderingNpi }).toEqual({
             basis: 'paid_plus_pr',
             observed: line.paidCents + line.patientShareCents,
             allocated: false,
             qualifier: 'HC',
-            pos: null,
+            pos: '11',
             revenue: null,
             rendering: null,
           });
@@ -271,6 +274,9 @@ describe('normalizeEraExport: what it holds, by the closed list', () => {
     expect(held(normalize(WEBPT, new Uint8Array(ERA_EXPORT_MAX_BYTES + 1)))).toEqual([{ reason: 'export_too_large', column: null, row: null, payment: null }]);
     const noCpt = edited(WEBPT, (table) => table.map((cells) => cells.filter((_, at) => at !== col('CPT Code'))));
     expect(held(normalize(WEBPT, noCpt))).toEqual([{ reason: 'export_column_missing', column: 'CPT Code', row: null, payment: null }]);
+    // A percent-of-Medicare term prices by the place of service, so an export without its column is held, never guessed.
+    const noPlace = edited(WEBPT, (table) => table.map((cells) => cells.filter((_, at) => at !== col('Place of Service'))));
+    expect(held(normalize(WEBPT, noPlace))).toEqual([{ reason: 'export_column_missing', column: 'Place of Service', row: null, payment: null }]);
     const twice = edited(WEBPT, (table) => table.map((cells, index) => [...cells, index === 0 ? 'units' : '1']));
     expect(held(normalize(WEBPT, twice))).toEqual([{ reason: 'export_column_repeated', column: 'Units', row: null, payment: null }]);
   });
@@ -282,11 +288,36 @@ describe('normalizeEraExport: what it holds, by the closed list', () => {
     expect(plan?.claims[0]?.lines[0]).toMatchObject({ modifiers: [], lineAllowedCents: null });
   });
 
+  it('reads a blank place of service as none, as an 835 claim without CLP08, and keeps the others', () => {
+    const plans = payments(normalize(WEBPT, edited(WEBPT, setCell(1, 'Place of Service', '')))).map((payment) => payment.plan);
+    expect(plans[0]?.claims[0]?.lines[0]?.placeOfService).toBeNull();
+    expect(plans.slice(1).flatMap((plan) => plan.claims.flatMap((claim) => claim.lines.map((line) => line.placeOfService)))).toEqual(Array(16).fill('11'));
+  });
+
   it('holds the whole document when a payment’s key cannot be read on a row, naming the column and the row', () => {
     expect(held(normalize(WEBPT, edited(WEBPT, setCell(3, 'Check/EFT Number', ''))))).toEqual([{ reason: 'export_value_missing', column: 'Check/EFT Number', row: 3, payment: null }]);
     expect(held(normalize(WEBPT, edited(WEBPT, setCell(5, 'Check Date', '13/40/2026'))))).toEqual([{ reason: 'export_value_unreadable', column: 'Check Date', row: 5, payment: null }]);
     expect(held(normalize(WEBPT, edited(WEBPT, setCell(2, 'Check Amount', '$108.00'))))).toEqual([{ reason: 'export_value_unreadable', column: 'Check Amount', row: 2, payment: null }]);
     expect(held(normalize(WEBPT, edited(WEBPT, setCell(1, 'Payee ID', ''))))).toEqual([{ reason: 'export_value_missing', column: 'Payee ID', row: 1, payment: null }]);
+    // An amount past MAX_AMOUNT_CENTS is unreadable, never passed on to fail in the database with its value.
+    expect(held(normalize(WEBPT, edited(WEBPT, setCell(1, 'Check Amount', '10000000000.01'))))).toEqual([{ reason: 'export_value_unreadable', column: 'Check Amount', row: 1, payment: null }]);
+    expect(held(normalize(WEBPT, edited(WEBPT, setCell(1, 'Check Amount', '-123456789012345678901.00'))))).toEqual([{ reason: 'export_value_unreadable', column: 'Check Amount', row: 1, payment: null }]);
+  });
+
+  it('reads an amount up to MAX_AMOUNT_CENTS and holds each amount column past it, naming the column', () => {
+    expect(MAX_AMOUNT_CENTS).toBe(1_000_000_000_000n);
+    // The largest amount it reads: PAR-01's one line billed ten billion dollars (paid that less its 50.00 CO and 22.00 PR).
+    const largest = edited(WEBPT, (table) =>
+      table.map((cells, index) => (index === 1 ? cells.map((cell, at) => (at === col('Check Amount') || at === col('Paid Amount') ? '9999999928.00' : at === col('Billed Amount') ? '10000000000.00' : cell)) : cells)),
+    );
+    const plan = payments(normalize(WEBPT, largest))[0]?.plan;
+    expect(plan?.claims[0]?.lines[0]?.chargeCents).toBe(MAX_AMOUNT_CENTS);
+    expect(plan?.remittance.bpr02Cents).toBe(999_999_992_800n);
+    for (const header of ['Billed Amount', 'Allowed Amount', 'Paid Amount', 'Patient Responsibility', 'Contractual Adjustment', 'Other Adjustment']) {
+      const { holds, loadable } = paymentHolds(normalize(WEBPT, edited(WEBPT, setCell(1, header, '123456789012345678901.00'))));
+      expect(holds, header).toEqual([{ reason: 'export_value_unreadable', column: header, row: 1, payment: 1 }]);
+      expect(loadable, header).toBe(6);
+    }
   });
 
   /** Row 1 is PAR-01's payment (payment 1); rows 2 and 3 are PAR-08's original (payment 2). */
@@ -306,6 +337,8 @@ describe('normalizeEraExport: what it holds, by the closed list', () => {
     ['an adjustment group outside CAS01’s set', setCell(1, 'Adjustment Codes', 'XX-45,PR-2'), { reason: 'export_value_unreadable', column: 'Adjustment Codes', row: 1, payment: 1 }],
     ['an amount with three places', setCell(1, 'Paid Amount', '88.001'), { reason: 'export_value_unreadable', column: 'Paid Amount', row: 1, payment: 1 }],
     ['an unreadable Allowed figure', setCell(1, 'Allowed Amount', 'n/a'), { reason: 'export_value_unreadable', column: 'Allowed Amount', row: 1, payment: 1 }],
+    ['a place of service that is not two digits', setCell(1, 'Place of Service', '1'), { reason: 'export_value_unreadable', column: 'Place of Service', row: 1, payment: 1 }],
+    ['a place of service in words', setCell(1, 'Place of Service', 'Office'), { reason: 'export_value_unreadable', column: 'Place of Service', row: 1, payment: 1 }],
     ['a payer name that changes inside a payment', setCell(3, 'Payer Name', 'SYNTHETIC PAYER B'), { reason: 'export_payment_inconsistent', column: 'Payer Name', row: 3, payment: 2 }],
     ['a sender that changes inside a payment', setCell(3, 'ERA Sender ID', 'SYNTHOTHER'), { reason: 'export_payment_inconsistent', column: 'ERA Sender ID', row: 3, payment: 2 }],
     ['a plan that changes inside a claim', setCell(3, 'Plan', 'SYNPLAN-COMM-02'), { reason: 'export_claim_inconsistent', column: 'Plan', row: 3, payment: 2 }],

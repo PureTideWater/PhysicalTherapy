@@ -1,6 +1,6 @@
 -- ERA exports as first-class intake (Change Order 001, CO-03, second part; reconciliation-001 decisions D12 (a)
--- and D13 (a), approved 2026-10-17; PRD 6, Intake and documents; PRD 10, Pipeline steps 8 and 9; docs/adr/0031,
--- 0059 and 0060).
+-- and D13 (a), approved 2026-10-17; PRD 6, Intake and documents; PRD 10, Pipeline steps 8 and 9).
+-- Decisions: docs/adr/0060, 0059 and 0031.
 --
 -- A practice-management system's ERA export (one CSV row per service line, its claim's and its payment's fields
 -- repeated) loads into the same remittance, claim, service_line and adjustment rows an 835 makes, so pricing,
@@ -10,6 +10,8 @@
 --   (packages/synth's registry, the worker's runtime registry): required exactly for an era_export, one of the
 --   four ERA format IDs, inserted with the document and never changed. A zip entry carries its zip's format.
 --   A future _v1 needs a migration (a test holds this list to the registries); confirming a format is data.
+--   source_document_first_of_its_bytes is one document per bytes and format: an export's bytes uploaded again as
+--   another format (after a wrong choice, held whole) or as another kind are read, not held as its duplicate.
 -- - remittance.provenance: x12_835 (the default, so every existing row is an 835) or era_export. The X12
 --   envelope (ISA06, ISA08, ISA13, GS06, ST02, TRN03, BPR04 and N103) is required only of an 835; an export
 --   carries no receiver, ISA13, GS06, ST02, TRN03 or payee qualifier, and its sender and payment method only when
@@ -17,6 +19,8 @@
 --   bpr_credit_debit D when the payment is negative, bpr16_date its payment date.
 -- - remittance_export_once: the export duplicate key (practice, payee, TRN02, credit or debit, BPR02, BPR16) over
 --   export rows. remittance_once is unchanged; an export row's NULL isa13 never meets it.
+-- - remittance_by_trace_form: the practice's remittances by the form of their trace (upper case, leading zeros
+--   removed), which the loader compares across sources and between exports (a spreadsheet re-save drops zeros).
 -- - remittance_references_in_practice(): a remittance comes from a document of its own provenance, and, as a
 --   backstop to the loader's rule (D13 a, the 835 is authoritative), an export of a payment already loaded from
 --   either source and an 835 of a payment first loaded from an export are refused. The loader holds both before
@@ -25,14 +29,19 @@
 --
 -- No held reason or status is added to any CHECK: an export's holds live in its parse report's jsonb.
 --
--- Runs as tp_owner. Safe with the previous image running: yes. Added: a defaulted column, a nullable column,
+-- Runs as tp_owner. Safe with the previous image running: yes, with the new worker fully rolled out before the new
+-- web image takes era_export uploads (docs/adr/0060, Consequences). Added: a defaulted column, a nullable column,
 -- two widened CHECKs and three new ones every existing row meets (each an 835 with its envelope, of an x12_835
--- document, with no format), a partial unique index over rows only this image writes, and trigger functions
--- that accept every row the previous image writes (an 835 from an x12_835 document, a claim with CLP06, a zip
--- entry with no format). Backfilled: provenance, through its default (metadata only). Removed: nothing. One
--- mixed-fleet case: an era_export document taken by a previous worker image is retried and then marked failed
--- (its intake throws on the unknown kind; its parse job skips a document that is not an 835) and can be retried
--- from Uploads once the new worker runs; none exists until the new web image accepts the kind.
+-- document, with no format), a partial unique index over rows only this image writes, an index, a unique index
+-- rebuilt with the format beside the bytes (equal to the old one for every row the previous image writes), and trigger
+-- functions that accept every row the previous image writes while no export has loaded (an 835 from an x12_835
+-- document, a claim with CLP06, a zip entry with no format). Backfilled: provenance, through its default (metadata
+-- only). Removed: nothing. Two mixed-fleet cases, both avoided by that order: an era_export document taken by a
+-- previous worker image is retried and then marked failed (its intake throws on the unknown kind; its parse job
+-- skips a document that is not an 835); and once a new worker has loaded an export, a previous worker's 835 of the
+-- same payment is refused by the trigger below (it has no export check before its insert), so it is retried and
+-- marked failed rather than held for review. Nothing loads beside the export either way, and either document can
+-- be retried from Uploads once only new workers run.
 
 -- ---------------------------------------------------------------------------------------------------
 -- source_document: the era_export kind and its format
@@ -96,6 +105,14 @@ $$;
 -- Inserted with the document; no UPDATE grant, so a document's format never changes.
 GRANT INSERT (format_id) ON source_document TO tp_app;
 
+-- The first document of its bytes, per format: an ERA export is read with the format the person chose, so the same
+-- bytes as an export of another format (a wrong choice, held whole) or as another kind (a posting export) are not its
+-- duplicate, and intake reads the corrected upload; the payment keys below still load each payment once (D13 a).
+-- coalesce(format_id, '') is '' for every kind but era_export (source_document_format_of_era_export), so every
+-- other kind keeps the rule of 20261016090000.
+DROP INDEX source_document_first_of_its_bytes;
+CREATE UNIQUE INDEX source_document_first_of_its_bytes ON source_document (practice_id, sha256, (coalesce(format_id, ''))) WHERE sha256 IS NOT NULL AND status <> 'duplicate';
+
 -- ---------------------------------------------------------------------------------------------------
 -- remittance: provenance, the envelope only for an 835, and the export duplicate key
 -- ---------------------------------------------------------------------------------------------------
@@ -128,6 +145,11 @@ ALTER TABLE remittance
 -- remittance_once; an 835 and an export of one payment meet in the loader and the trigger below, not in a unique
 -- index, because two 835s may share payee, trace, amount and date under different TRN03 values (ADR 0031).
 CREATE UNIQUE INDEX remittance_export_once ON remittance (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) WHERE provenance = 'era_export';
+
+-- The loader reads the remittances of a trace by its form (apps/worker/src/parse/loader.ts traceForm: ASCII letters
+-- in upper case, leading zeros removed), so an 835 and an export, or two exports, of one payment meet whatever form a
+-- spreadsheet re-save left the trace in; two 835s keep the exact trace rules of ADR 0031.
+CREATE INDEX remittance_by_trace_form ON remittance (practice_id, (ltrim(upper(trn02 COLLATE "C"), '0')));
 
 -- A remittance comes from a document of its own provenance (an 835 from an x12_835 document, an export from
 -- an era_export document) of the same practice; the payer and review checks are unchanged. Then the backstop

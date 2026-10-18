@@ -21,7 +21,9 @@ import { type EraExportField, type EraExportFormat, OPTIONAL_ERA_FIELDS, REQUIRE
  *   payment amount, placed by its first row. A claim is consecutive rows of a payment with the same patient
  *   control number, payer claim number and claim status; claims and lines are numbered in row order.
  * - A line is a HCPCS procedure (qualifier HC, five letters or digits), up to four modifiers, positive units
- *   that numeric(9,3) holds exactly, one service date, its charge, paid, patient responsibility (PR),
+ *   that numeric(9,3) holds exactly, one service date, its place of service (two digits, as CLP08 gives a
+ *   professional line's; a blank cell is none, as for an 835 claim without CLP08, never a guessed code), its
+ *   charge, paid, patient responsibility (PR),
  *   contractual (CO) and other (OA or PI) adjustments, balanced (charge = paid + CO + PR + other), and the
  *   export's Allowed figure when it has one. Observed allowed is always paid plus PR (basis paid_plus_pr), the
  *   basis the engine already reads, so pricing does not change.
@@ -57,11 +59,21 @@ export const ERA_EXPORT_HELD_REASONS = [
   'export_line_unbalanced',
   'export_payment_unbalanced',
   'export_adjustment_unattributed',
+  // One payment, decided as it loads (loader.ts loadExportPayment): a payment the practice holds has its payee,
+  // trace, amount and date but names another payer and shares no claim with it.
+  'export_payment_other_payer',
 ] as const;
 export type EraExportHeldReason = (typeof ERA_EXPORT_HELD_REASONS)[number];
 
-/** The largest export the normalizer reads (it holds the whole file in memory, as the ledger reads a posting export). */
-export const ERA_EXPORT_MAX_BYTES = 64 * 1024 * 1024;
+/**
+ * The largest export the normalizer reads; a larger one is held whole (export_too_large). It reads the whole file
+ * at once, and every row, claim and plan with it: at one line per payment, its worst case, an export of this size
+ * fits a 128 MiB heap (era-export.large.db.test.ts), where 8 MiB needed more than 160 MiB. The worker runs four parse
+ * jobs at once in one 1 GiB task (apps/worker/src/jobs/registry.ts PARSE_CONCURRENCY; infra/lib/environments.ts),
+ * so four exports at the bound leave the rest of it to the other jobs. A longer period goes up as several exports,
+ * or a zip of them, each its own document.
+ */
+export const ERA_EXPORT_MAX_BYTES = 4 * 1024 * 1024;
 
 /** One hold: its reason, and where: the column by the format's header, the data row from 1, the payment from 1. */
 export interface EraExportHold {
@@ -119,6 +131,14 @@ const MODIFIER = /^[A-Za-z0-9]{2}$/;
 const MAX_MODIFIERS = 4;
 const ADJUSTMENT_CODE = /^([A-Za-z]{2})-([A-Za-z0-9]{1,8})$/;
 const UNITS = /^(?:\d+(?:\.\d*)?|\.\d+)$/;
+/** A place of service as CLP08 carries a professional line's (apps/worker/src/parse/plan.ts placeOfService). */
+const PLACE_OF_SERVICE = /^\d{2}$/;
+/**
+ * The largest amount one cell may hold, in cents: ten billion dollars. Larger is read as unreadable (and held,
+ * naming its column), never passed on to fail in the database with the value in its error; with the file's size
+ * bound, any sum of a file's amounts then stays far inside bigint.
+ */
+export const MAX_AMOUNT_CENTS = 10n ** 12n;
 const REVERSAL = '22';
 
 /** Thrown inside the reader to hold the whole document. */
@@ -156,13 +176,15 @@ export function readDate(text: string, format: EraExportFormat['dateFormat']): s
   return `${year}-${month}-${day}`;
 }
 
-/** An amount as integer cents, or null when it is not a plain decimal with at most two places. */
+/** An amount as integer cents, or null when it is not a plain decimal with at most two places within MAX_AMOUNT_CENTS. */
 function readAmount(text: string): Cents | null {
+  let amount: Cents;
   try {
-    return parseAmount(text);
+    amount = parseAmount(text);
   } catch {
     return null;
   }
+  return amount > MAX_AMOUNT_CENTS || amount < -MAX_AMOUNT_CENTS ? null : amount;
 }
 
 /** The items of a list cell (modifiers, adjustment codes), split on the format's separator, blanks dropped. */
@@ -371,6 +393,10 @@ function readLine(row: Row, lineNo: number, holds: Holds, unknown: (reason: stri
   if (serviceText !== null && serviceDate === null) {
     unreadable('service_date');
   }
+  const place = row.text('place_of_service');
+  if (place !== '' && !PLACE_OF_SERVICE.test(place)) {
+    unreadable('place_of_service');
+  }
   const procedure = required('procedure_code');
   if (procedure !== null && !PROCEDURE.test(procedure)) {
     unreadable('procedure_code');
@@ -419,7 +445,7 @@ function readLine(row: Row, lineNo: number, holds: Holds, unknown: (reason: stri
       originalUnits: null,
       serviceDate,
       serviceDateTo: null,
-      placeOfService: null,
+      placeOfService: place === '' ? null : place,
       lineAllowedCents: allowed,
       // Paid plus the patient's share (PR), the basis the engine already reads; AMT B6 is never claimed for an export.
       observedAllowedCents: addCents(paid, pr),

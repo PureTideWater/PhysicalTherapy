@@ -7,6 +7,7 @@ import { LocalKeyProvider, type PracticeScope, type ScopeClient, provisionPracti
 import { type CodeListProvider, inCodeSet } from '@tp/edi835';
 import { describe, expect, it } from 'vitest';
 
+import { type PaymentFacts, TRACE_LOCK_BUCKETS, exportIsPaymentOf, onePayer, sameExportKey, traceBucket, traceForm } from '../loader';
 import { TOO_LARGE, loadEraExport, readEraExport } from './load';
 import { type LoadableEraPayment, normalizeEraExport } from './normalize';
 
@@ -32,7 +33,7 @@ describe('reading an export for the normalizer', () => {
 });
 
 describe('loading an export’s payments', () => {
-  it('takes every trace’s lock first, in sorted order, then loads each payment in file order', async () => {
+  it('takes the locks of every trace’s bucket first, in ascending order, then loads each payment in file order', async () => {
     // Raintree's rows, the payments reversed so that file order is not trace order.
     const lines = readFileSync(path.join(EMR, 'raintree_era_v0', 'era-export.csv'), 'utf8').trimEnd().split('\n');
     const bytes = new TextEncoder().encode(`${[lines[0], ...lines.slice(1).reverse()].join('\n')}\n`);
@@ -44,10 +45,21 @@ describe('loading an export’s payments', () => {
     const client = {
       query: (text: string, values: readonly unknown[] = []) => {
         queries.push({ text, values });
-        const payment = payments.find((item) => item.plan.remittance.trn02 === values[1]);
-        if (text.includes('FROM remittance WHERE practice_id = $1 AND trn02 = $2') && payment !== undefined) {
+        const payment = payments.find((item) => traceForm(item.plan.remittance.trn02) === values[1]);
+        if (text.includes('FROM remittance WHERE practice_id = $1 AND ltrim(upper(trn02') && payment !== undefined) {
           const r = payment.plan.remittance;
-          const row = { id: EARLIER, source_document_id: DOCUMENT, provenance: 'x12_835', payee_npi: r.payeeId, trn02: r.trn02, bpr_credit_debit: r.creditDebit, bpr02_cents: r.bpr02Cents.toString(), bpr16_date: r.bpr16Date };
+          const row = {
+            id: EARLIER,
+            source_document_id: DOCUMENT,
+            provenance: 'x12_835',
+            payee_npi: r.payeeId,
+            trn02: r.trn02,
+            bpr_credit_debit: r.creditDebit,
+            bpr02_cents: r.bpr02Cents.toString(),
+            bpr16_date: r.bpr16Date,
+            payer_name: r.payerName,
+            plb_total_cents: '0',
+          };
           return Promise.resolve({ rows: [row], rowCount: 1 });
         }
         return Promise.resolve({ rows: [], rowCount: 0 });
@@ -58,11 +70,13 @@ describe('loading an export’s payments', () => {
     const { cipher } = await provisionPracticeKey(LocalKeyProvider.random(), PRACTICE);
     const results = await loadEraExport({ scope, cipher, practiceId: PRACTICE, documentId: DOCUMENT }, normalized);
     const traces = payments.map((payment) => payment.plan.remittance.trn02);
+    const buckets = traces.map((trace) => String(traceBucket(trace)));
+    const ascending = [...new Set(buckets)].sort((a, b) => Number(a) - Number(b));
     const locks = queries.filter((query) => query.text.includes('pg_advisory_xact_lock')).map((query) => query.values[1]);
-    // The sorted locks first, then each payment's own, in file order.
-    expect(locks).toEqual([...[...traces].sort(), ...traces]);
-    expect(traces).not.toEqual([...traces].sort());
-    expect(queries.slice(0, 7).every((query) => query.text.includes('pg_advisory_xact_lock'))).toBe(true);
+    // Every bucket's lock first, once each and in ascending order; then each payment's own again, in file order.
+    expect(locks).toEqual([...ascending, ...buckets]);
+    expect(buckets).not.toEqual([...buckets].sort((a, b) => Number(a) - Number(b)));
+    expect(queries.slice(0, ascending.length).every((query) => query.text.includes('pg_advisory_xact_lock'))).toBe(true);
     expect([...results.keys()]).toEqual(payments.map((payment) => payment.position));
     expect(new Set([...results.values()].map((result) => JSON.stringify(result)))).toEqual(
       new Set([JSON.stringify({ kind: 'duplicate', remittanceId: EARLIER, documentId: DOCUMENT, provenance: 'x12_835' })]),
@@ -77,5 +91,53 @@ describe('loading an export’s payments', () => {
     const { cipher } = await provisionPracticeKey(LocalKeyProvider.random(), PRACTICE);
     expect((await loadEraExport({ scope, cipher, practiceId: PRACTICE, documentId: DOCUMENT }, TOO_LARGE)).size).toBe(0);
     expect(queries).toEqual([]);
+  });
+});
+
+describe('the rules an export’s payment is matched by (loader.ts; D13 a)', () => {
+  const facts = (overrides: Partial<PaymentFacts> = {}): PaymentFacts => ({
+    payeeId: '9971376881',
+    date: '2026-06-14',
+    signedCents: 21128n,
+    plbCents: 0n,
+    payerName: 'SYNTHETIC PAYER A',
+    claimHashes: new Set(['a', 'b']),
+    ...overrides,
+  });
+
+  it('compares a trace in its form: ASCII letters in upper case, leading zeros removed, and one bucket for every form', () => {
+    expect(traceForm('00880010')).toBe('880010');
+    expect(traceForm('syneftpar01001')).toBe('SYNEFTPAR01001');
+    expect(traceForm('0a0B')).toBe('A0B');
+    expect(traceBucket('00880010')).toBe(traceBucket('880010'));
+    expect(traceBucket('syneftpar01001')).toBe(traceBucket('SYNEFTPAR01001'));
+    const spread = new Set(Array.from({ length: 2000 }, (_, index) => traceBucket(`SYNEFT${String(index)}`)));
+    expect(Math.min(...spread)).toBe(0);
+    expect(Math.max(...spread)).toBe(TRACE_LOCK_BUCKETS - 1);
+  });
+
+  it('finds an export’s payment in an 835 by its claims, whatever the payee’s form or the date, or by the payee, date and amount', () => {
+    // An 835 of BPR02 136.28 with a PLB of 75.00 (PAR-16): the export's amount is its claims paid, 211.28.
+    const x12 = facts({ signedCents: 13628n, plbCents: 7500n, claimHashes: new Set(['a', 'b', 'c']) });
+    expect(exportIsPaymentOf(facts(), x12)).toBe('claims');
+    expect(exportIsPaymentOf(facts({ payeeId: '998367070', date: '2026-06-16' }), x12)).toBe('claims');
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']) }), x12)).toBe('amount');
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']), signedCents: 13628n }), x12)).toBe('amount');
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']), date: '2026-06-15' }), x12)).toBeNull();
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']), payeeId: '998367070' }), x12)).toBeNull();
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['z']), signedCents: 21129n }), x12)).toBeNull();
+    // A claim of the export that the 835 lacks: not by its claims.
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set(['a', 'z']), signedCents: 1n }), x12)).toBeNull();
+    expect(exportIsPaymentOf(facts({ claimHashes: new Set() }), facts({ claimHashes: new Set() }))).toBe('amount');
+  });
+
+  it('keeps the export key between exports, and tells a payer by its name or a shared claim', () => {
+    expect(sameExportKey(facts(), facts({ payerName: 'other', claimHashes: new Set() }))).toBe(true);
+    expect(sameExportKey(facts(), facts({ signedCents: -21128n }))).toBe(false);
+    expect(sameExportKey(facts(), facts({ date: '2026-06-15' }))).toBe(false);
+    expect(sameExportKey(facts(), facts({ payeeId: 'x' }))).toBe(false);
+    expect(onePayer(facts(), facts({ payerName: ' synthetic  payer a ' }))).toBe(true);
+    expect(onePayer(facts(), facts({ payerName: 'SYNTHETIC PAYER B', claimHashes: new Set(['b']) }))).toBe(true);
+    expect(onePayer(facts(), facts({ payerName: 'SYNTHETIC PAYER B', claimHashes: new Set(['z']) }))).toBe(false);
   });
 });

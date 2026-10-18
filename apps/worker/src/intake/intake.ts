@@ -33,7 +33,8 @@ import { type ZipEntry, type ZipInventory, ZIP_LIMITS, ZipEntryError, type ZipLi
  * 3. The original is left sealed under the document's own key, and its SHA-256 and size are computed
  *    from the bytes themselves; a size other than the one the upload declared is unreadable.
  * 4. Same bytes as an earlier document of the practice: this one is its duplicate, recorded and held,
- *    and nothing loads (PAR-06; concurrent uploads of the same bytes serialize on the hash, PAR-30).
+ *    and nothing loads (PAR-06; concurrent uploads of the same bytes serialize on the hash, PAR-30). For an
+ *    ERA export, only an earlier ERA export of the same format is its original (claimBytes).
  * 5. Content sniffing decides: a clean 835, or a clean ERA export (CSV text; docs/adr/0060), is scanned and
  *    its parse_835 job queued (the document's ID is the job's idempotency subject); a clean document of
  *    another kind is stored; an executable or a script is quarantined (PAR-28); anything else is held with
@@ -112,12 +113,23 @@ async function recordVerdict(scope: Scope, documentId: string, scanStatus: strin
  * Records the document's SHA-256, or makes it the duplicate of the practice's first document with the
  * same bytes. Serialized per practice and hash, so two uploads of the same bytes at once give one first
  * and one duplicate (PAR-30).
+ *
+ * An ERA export is read with the vendor format the person chose (docs/adr/0060), so the same bytes repeat an
+ * ERA export only as an ERA export of the same format (source_document_first_of_its_bytes is per bytes and
+ * format): an earlier copy chosen as another format (held whole, its columns not found) or as another kind (a
+ * posting export, say) is not its original, and an ERA export is no other kind's. The corrected upload is then
+ * read, and the payment keys still stop a second load of any payment (D13); a third copy of the same format is
+ * a duplicate as before.
  */
-async function claimBytes(scope: Scope, practiceId: string, documentId: string, sha256: string): Promise<'first' | 'duplicate'> {
+async function claimBytes(scope: Scope, practiceId: string, documentId: string, sha256: string, of: Pick<DocumentRow, 'format_id'>): Promise<'first' | 'duplicate'> {
   await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2, 0))", [practiceId, sha256]);
+  // coalesce(format_id, '') is '' for every kind but era_export (source_document_format_of_era_export), as
+  // source_document_first_of_its_bytes keys it.
   const { rows } = await scope.client.query<{ id: string }>(
-    "SELECT id FROM source_document WHERE practice_id = $1 AND sha256 = $2 AND status <> 'duplicate' AND id <> $3 ORDER BY created_at, id LIMIT 1",
-    [practiceId, sha256, documentId],
+    `SELECT id FROM source_document
+      WHERE practice_id = $1 AND sha256 = $2 AND status <> 'duplicate' AND id <> $3 AND coalesce(format_id, '') = coalesce($4::text, '')
+      ORDER BY created_at, id LIMIT 1`,
+    [practiceId, sha256, documentId, of.format_id],
   );
   if (rows.length > 0) {
     await scope.client.query("UPDATE source_document SET sha256 = $2, status = 'duplicate' WHERE id = $1", [documentId, sha256]);
@@ -237,7 +249,7 @@ class Intake {
       await this.transaction((scope) => recordVerdict(scope, row.id, 'clean'));
     }
     const written = await landing.settle(this.cipher, landed);
-    const claim = await this.transaction((scope) => claimBytes(scope, this.practiceId, row.id, written.sha256));
+    const claim = await this.transaction((scope) => claimBytes(scope, this.practiceId, row.id, written.sha256, row));
     if (claim === 'duplicate') {
       this.context.logger.info('upload is a duplicate of an earlier document', { document_id: row.id });
       return;
@@ -340,7 +352,8 @@ class Intake {
       const written = sealed;
       // The archive was scanned whole; each entry is then checked for its own signatures below.
       await this.transaction((scope) => recordVerdict(scope, id, 'clean'));
-      if ((await this.transaction((scope) => claimBytes(scope, this.practiceId, id, written.sha256))) === 'duplicate') {
+      // An entry is of its zip's kind and carries its zip's format.
+      if ((await this.transaction((scope) => claimBytes(scope, this.practiceId, id, written.sha256, zip))) === 'duplicate') {
         continue;
       }
       const decided = await disposition(zip.kind, await documents.open(this.cipher, key), true, this.limits);

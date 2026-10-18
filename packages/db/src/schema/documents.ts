@@ -150,8 +150,9 @@ export const sourceDocument = pgTable(
     index('source_document_by_parent')
       .on(table.parentDocumentId, table.status)
       .where(sql`parent_document_id IS NOT NULL`),
+    // One document per bytes and format (migration 20261102090000): an ERA export of another format is read.
     uniqueIndex('source_document_first_of_its_bytes')
-      .on(table.practiceId, table.sha256)
+      .on(table.practiceId, table.sha256, sql`coalesce(${table.formatId}, '')`)
       .where(sql`sha256 IS NOT NULL AND status <> 'duplicate'`),
   ],
 );

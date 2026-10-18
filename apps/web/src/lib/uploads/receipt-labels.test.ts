@@ -1,9 +1,10 @@
 import { DOCUMENT_KINDS, DOCUMENT_STATUSES, HELD_AT_INTAKE } from '@tp/db';
-import { ZIP_LIMITS } from '@tp/worker/runtime';
+import { ERA_EXPORT_HELD_REASONS, ERA_EXPORT_MAX_BYTES, ZIP_LIMITS } from '@tp/worker/runtime';
 import { describe, expect, it } from 'vitest';
 
 import {
   EXPORT_HELD_REASONS,
+  EXPORT_MAX_MIB,
   EXPORT_REMEDIES,
   type ExportError,
   type ExportParseSummary,
@@ -298,6 +299,9 @@ describe('receipts of ERA exports (CO-03; docs/adr/0060)', () => {
   });
 
   it('word every held reason with its place and a remedy, and never more than the header and the numbers it is given', () => {
+    // The worker's closed list and size bound, as the receipt words them.
+    expect(EXPORT_HELD_REASONS).toEqual(ERA_EXPORT_HELD_REASONS);
+    expect(EXPORT_MAX_MIB * 1024 * 1024).toBe(ERA_EXPORT_MAX_BYTES);
     expect(Object.keys(EXPORT_REMEDIES).sort()).toEqual([...EXPORT_HELD_REASONS].sort());
     const whole = new Set(['export_unreadable', 'export_empty', 'export_too_large', 'export_column_missing', 'export_column_repeated']);
     for (const reason of EXPORT_HELD_REASONS) {
@@ -307,9 +311,9 @@ describe('receipts of ERA exports (CO-03; docs/adr/0060)', () => {
       expect(text.endsWith('.'), reason).toBe(true);
       expect(EXPORT_REMEDIES[reason].length, reason).toBeGreaterThan(20);
       // Nothing but the header and the row's and payment's numbers: no other digit and no figure in dollars.
-      expect(text.replace('Row 12', '').replace('payment 2', '').replace('64 MiB', '').replace('UTF-8', ''), reason).not.toMatch(/\d|\$/);
+      expect(text.replace('Row 12', '').replace('payment 2', '').replace('4 MiB', '').replace('UTF-8', ''), reason).not.toMatch(/\d|\$/);
     }
-    expect(exportErrorText(hold('export_too_large'))).toBe('The file is larger than 64 MiB, the most one ERA export may be.');
+    expect(exportErrorText(hold('export_too_large'))).toBe('The file is larger than 4 MiB, the most one ERA export may be.');
     expect(exportErrorText(hold('export_value_missing', { column: 'Check Date', row: 3 }))).toBe('Row 3 below the header: “Check Date” is blank.');
     expect(exportErrorText(hold('export_payment_unbalanced', { payment: 5 }))).toBe('Payment 5: the claims’ paid amounts do not add up to the payment amount, so the payment does not balance.');
     expect(exportErrorPosition(hold('export_payment_unbalanced', { payment: 5 }))).toBe('payment 5');

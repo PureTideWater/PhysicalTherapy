@@ -28,6 +28,7 @@ export type EraExportField =
   | 'claim_status'
   | 'plan'
   | 'service_date'
+  | 'place_of_service'
   | 'procedure_code'
   | 'modifiers'
   | 'units'
@@ -42,8 +43,11 @@ export type EraExportField =
 /**
  * The columns a line needs, so an export without one is held whole (export_column_missing): the payment's key
  * (payee, trace, date and signed amount) and its payer, the claim (patient control number, payer claim number,
- * status, plan), the line (date, procedure, units, charge, paid) and its adjustments (patient responsibility,
- * contractual, other and their codes), from which pricing's paid-plus-PR observed allowed comes.
+ * status, plan), the line (date, place of service, procedure, units, charge, paid) and its adjustments (patient
+ * responsibility, contractual, other and their codes), from which pricing's paid-plus-PR observed allowed comes.
+ * The place of service is what a percent-of-Medicare term prices by (the engine stops a line without one as
+ * place_of_service_unmapped), so its column is required; a blank cell is a line with none, as an 835 claim
+ * without CLP08 is.
  */
 export const REQUIRED_ERA_FIELDS: readonly EraExportField[] = [
   'trace',
@@ -56,6 +60,7 @@ export const REQUIRED_ERA_FIELDS: readonly EraExportField[] = [
   'claim_status',
   'plan',
   'service_date',
+  'place_of_service',
   'procedure_code',
   'units',
   'charge',
@@ -138,6 +143,7 @@ export const ERA_EXPORT_FORMATS: readonly EraExportFormat[] = [
     ['Claim Status', 'claim_status'],
     ['Plan', 'plan'],
     ['Date of Service', 'service_date'],
+    ['Place of Service', 'place_of_service'],
     ['CPT Code', 'procedure_code'],
     ['Modifiers', 'modifiers'],
     ['Units', 'units'],
@@ -162,6 +168,7 @@ export const ERA_EXPORT_FORMATS: readonly EraExportFormat[] = [
     ['Claim Status Code', 'claim_status'],
     ['Insurance Plan', 'plan'],
     ['Service Date', 'service_date'],
+    ['POS', 'place_of_service'],
     ['Procedure', 'procedure_code'],
     ['Modifier', 'modifiers'],
     ['Units', 'units'],
@@ -185,6 +192,7 @@ export const ERA_EXPORT_FORMATS: readonly EraExportFormat[] = [
     ['Status', 'claim_status'],
     ['Plan', 'plan'],
     ['DOS', 'service_date'],
+    ['POS', 'place_of_service'],
     ['CPT', 'procedure_code'],
     ['Mods', 'modifiers'],
     ['Units', 'units'],
@@ -210,6 +218,7 @@ export const ERA_EXPORT_FORMATS: readonly EraExportFormat[] = [
     ['Claim Status', 'claim_status'],
     ['Benefit Plan', 'plan'],
     ['From Date', 'service_date'],
+    ['Place of Service Code', 'place_of_service'],
     ['Service Code', 'procedure_code'],
     ['Modifiers', 'modifiers'],
     ['Quantity', 'units'],

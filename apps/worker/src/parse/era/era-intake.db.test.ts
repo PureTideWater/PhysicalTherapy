@@ -5,6 +5,7 @@ import { Readable } from 'node:stream';
 
 import { type DatabaseClient, type DatabasePool, ERA_FORMAT_IDS, type EraFormatId, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { syntheticXlsx } from '@tp/contracts/testing';
+import { parseCsv } from '@tp/ledger';
 import { type MigratedDatabase, createMigratedDatabase, createTenantWorld, endPool } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -17,7 +18,9 @@ import type { JobContext } from '../../jobs/handlers';
 import type { JobPayload, JobType } from '../../jobs/registry';
 import { DocumentStore } from '../../storage/documents';
 import { parseHandler } from '../job';
+import { traceBucket } from '../loader';
 import type { ReportedTransaction } from '../report';
+import { type EraExportField, findEraExportFormat } from './formats';
 import type { ReportedExportError, ReportedExportPayment } from './report';
 
 /**
@@ -47,6 +50,7 @@ interface ManifestRow {
   readonly claimStatus: string;
   readonly plan: string | null;
   readonly serviceDate: string;
+  readonly placeOfService: string | null;
   readonly procedureCode: string;
   readonly modifiers: readonly string[];
   readonly units: string | null;
@@ -116,7 +120,12 @@ function context(practiceId: string, run: Run): JobContext {
  * Uploads `bytes` as the uploads route records a file (its kind, and an ERA export's format), lands them sealed as
  * the browser's PUT leaves them, takes them in, and runs every parse job intake queues. Returns the document.
  */
-async function send(where: { readonly practiceId: string; readonly uploader: string }, bytes: Buffer, kind: 'x12_835' | 'era_export', formatId: EraFormatId | null = null): Promise<{ readonly id: string; readonly run: Run }> {
+async function send(
+  where: { readonly practiceId: string; readonly uploader: string },
+  bytes: Buffer,
+  kind: 'x12_835' | 'era_export' | 'posting_export',
+  formatId: EraFormatId | null = null,
+): Promise<{ readonly id: string; readonly run: Run }> {
   const id = randomUUID();
   await withPracticeScope(app, { actorId: where.uploader, practiceIds: [where.practiceId] }, (scope) =>
     scope.client.query('INSERT INTO source_document (id, practice_id, kind, format_id, size_bytes, content_type, uploaded_by) VALUES ($1, $2, $3, $4, $5, $6, $7)', [
@@ -125,7 +134,7 @@ async function send(where: { readonly practiceId: string; readonly uploader: str
       kind,
       formatId,
       bytes.length,
-      kind === 'era_export' ? 'text/csv' : 'application/octet-stream',
+      kind === 'x12_835' ? 'application/octet-stream' : 'text/csv',
       where.uploader,
     ]),
   );
@@ -190,6 +199,7 @@ interface LineRow {
   readonly claim_status_code: string;
   readonly plan_key: string;
   readonly service_date: string;
+  readonly place_of_service: string | null;
   readonly procedure_code: string;
   readonly modifiers: string[];
   readonly units: string | null;
@@ -205,7 +215,7 @@ async function canonicalLines(practiceId: string, documentId: string): Promise<M
   const cipher = ciphers.get(practiceId) as PracticeCipher;
   const { rows } = await owner.query<LineRow>(
     `SELECT r.sender_id, r.payer_name, r.payee_npi, r.trn02, r.bpr16_date::text AS bpr16_date, r.bpr02_cents::text AS bpr02_cents, r.bpr_credit_debit, r.bpr_method,
-            c.patient_control_number, c.payer_claim_control_number, c.claim_status_code, p.plan_key, l.service_date::text AS service_date, l.procedure_code, l.modifiers,
+            c.patient_control_number, c.payer_claim_control_number, c.claim_status_code, p.plan_key, l.service_date::text AS service_date, l.place_of_service, l.procedure_code, l.modifiers,
             l.units::text AS units, l.charge_cents::text AS charge_cents, l.line_allowed_cents::text AS line_allowed_cents, l.paid_cents::text AS paid_cents,
             l.patient_share_cents::text AS patient_share_cents,
             coalesce((SELECT jsonb_agg(jsonb_build_object('group_code', a.group_code, 'reason_code', a.reason_code, 'amount_cents', a.amount_cents::text, 'position', a.position) ORDER BY a.position)
@@ -230,6 +240,7 @@ async function canonicalLines(practiceId: string, documentId: string): Promise<M
       claimStatus: row.claim_status_code,
       plan: row.plan_key.replace(/^PLAN:/, ''),
       serviceDate: row.service_date,
+      placeOfService: row.place_of_service,
       procedureCode: row.procedure_code,
       modifiers: row.modifiers,
       units: units(row.units),
@@ -381,9 +392,9 @@ describe('ERA exports as first-class intake', () => {
   it('holds the payment of a row without its units, naming the column and row, and loads the others (partially held)', async () => {
     const where = await practice('era partly held');
     const lines = exportOf('webpt_billing_era_v0').toString('utf8').split('\r\n');
-    // Data row 2 is the first line of PAR-08's original payment (payment 2); its Units cell (the fifteenth) is emptied.
+    // Data row 2 is the first line of PAR-08's original payment (payment 2); its Units cell (the sixteenth) is emptied.
     const cells = (lines[2] as string).split(',');
-    cells[14] = '';
+    cells[15] = '';
     lines[2] = cells.join(',');
     const { id } = await send(where, Buffer.from(lines.join('\r\n'), 'utf8'), 'era_export', 'webpt_billing_era_v0');
     expect((await documentOf(id)).status).toBe('held');
@@ -409,4 +420,196 @@ describe('ERA exports as first-class intake', () => {
       expect(run.queued).toEqual([]);
     }
   });
+});
+
+const WEBPT: EraFormatId = 'webpt_billing_era_v0';
+const WEBPT_COLUMNS = findEraExportFormat(WEBPT)?.columns ?? [];
+/** PAR-01's one line as the WebPT Billing fixture writes it, by field. */
+const PAR01_LINE: Readonly<Partial<Record<EraExportField, string>>> = (() => {
+  const [header = [], first = []] = parseCsv(exportOf(WEBPT).toString('utf8'));
+  return Object.fromEntries(WEBPT_COLUMNS.map((column) => [column.field, first[header.indexOf(column.header)] ?? '']));
+})();
+
+/** A SYNTHETIC WebPT Billing export of the given lines, each PAR-01's line with the fields given changed. */
+function webptExport(lines: readonly Partial<Record<EraExportField, string>>[]): Buffer {
+  const cell = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+  const rows = lines.map((line) => WEBPT_COLUMNS.map((column) => cell(line[column.field] ?? PAR01_LINE[column.field] ?? '')).join(','));
+  return Buffer.from(`${[WEBPT_COLUMNS.map((column) => column.header).join(','), ...rows].join('\r\n')}\r\n`, 'utf8');
+}
+
+/** PAR-16's payment (BPR02 136.28 with a PLB of 75.00 against claims paid of 211.28) as an export, at `amount`. */
+function par16Export(amount: string): Buffer {
+  const payment = { trace: 'SYNEFTPAR16001', payment_date: '06/14/2026', payment_amount: amount, payee_id: '9971376881', service_date: '05/17/2026', modifiers: '' };
+  const claim1 = { ...payment, patient_control_number: 'SYNPCNPAR16001', payer_claim_number: 'SYNCCNPAR160001' };
+  const claim2 = { ...payment, patient_control_number: 'SYNPCNPAR16002', payer_claim_number: 'SYNCCNPAR160002' };
+  return webptExport([
+    { ...claim1, procedure_code: '97110', units: '2', charge: '126.00', paid: '64.52', patient_responsibility: '16.12', contractual_adjustment: '45.36' },
+    { ...claim1, procedure_code: '97530', units: '1', charge: '59.00', paid: '35.88', patient_responsibility: '8.96', contractual_adjustment: '14.16' },
+    { ...claim2, procedure_code: '97110', units: '2', charge: '144.00', paid: '80.64', patient_responsibility: '20.16', contractual_adjustment: '43.20' },
+    { ...claim2, procedure_code: '97530', units: '1', charge: '60.00', paid: '30.24', patient_responsibility: '7.56', contractual_adjustment: '22.20' },
+  ]);
+}
+
+const countOf = async (sql: string, values: unknown[]): Promise<number> => (await owner.query<{ n: number }>(sql, values)).rows[0]?.n ?? -1;
+const claimsOfTrace = (practiceId: string, trace: string) => countOf('SELECT count(*)::int AS n FROM claim c JOIN remittance r ON r.id = c.remittance_id WHERE r.practice_id = $1 AND r.trn02 = $2', [practiceId, trace]);
+const linesOfTrace = (practiceId: string, trace: string) =>
+  countOf('SELECT count(*)::int AS n FROM service_line l JOIN claim c ON c.id = l.claim_id JOIN remittance r ON r.id = c.remittance_id WHERE r.practice_id = $1 AND r.trn02 = $2', [practiceId, trace]);
+const remittancesOf = (practiceId: string) => countOf('SELECT count(*)::int AS n FROM remittance WHERE practice_id = $1', [practiceId]);
+const exportOutcomes = async (documentId: string) => (await reportOf(documentId)).transaction_outcomes as ReportedExportPayment[];
+const x12Outcomes = async (documentId: string) => (await reportOf(documentId)).transaction_outcomes as ReportedTransaction[];
+
+describe('one payment from an 835 and from an export, whatever form each gives it (D13 a)', () => {
+  it('reads the same bytes again with the right format after a wrong one, or after a posting export, and a third copy is a duplicate', async () => {
+    const where = await practice('era wrong format first');
+    const wrong = await send(where, exportOf(WEBPT), 'era_export', 'prompt_era_v0');
+    expect(await documentOf(wrong.id)).toEqual({ kind: 'era_export', format_id: 'prompt_era_v0', status: 'held' });
+    expect((await reportOf(wrong.id)).errors).toContainEqual(expect.objectContaining({ reason: 'export_column_missing' }));
+    const right = await send(where, exportOf(WEBPT), 'era_export', WEBPT);
+    expect(await documentOf(right.id)).toEqual({ kind: 'era_export', format_id: WEBPT, status: 'loaded' });
+    expect(await remittancesOf(where.practiceId)).toBe(7);
+    const third = await send(where, exportOf(WEBPT), 'era_export', WEBPT);
+    expect(await documentOf(third.id)).toMatchObject({ status: 'duplicate' });
+    expect(third.run.queued).toEqual([]);
+    expect(await remittancesOf(where.practiceId)).toBe(7);
+
+    const other = await practice('era posting first');
+    const posting = await send(other, exportOf(WEBPT), 'posting_export');
+    expect((await documentOf(posting.id)).status).not.toBe('duplicate');
+    const era = await send(other, exportOf(WEBPT), 'era_export', WEBPT);
+    expect((await documentOf(era.id)).status).toBe('loaded');
+    expect(await remittancesOf(other.practiceId)).toBe(7);
+  });
+
+  it('loads a payment with a PLB once in either order: the export’s amount is its claims paid, the 835’s BPR02 plus its PLB', async () => {
+    const first835 = await practice('era plb 835 first');
+    const x12 = await send(first835, fixture('PAR-16/remit.835'), 'x12_835');
+    expect((await documentOf(x12.id)).status).toBe('loaded');
+    // At BPR02, the export does not balance (it carries no PLB) and is held as before.
+    const net = await send(first835, par16Export('136.28'), 'era_export', WEBPT);
+    expect((await reportOf(net.id)).errors).toEqual([{ code: 'EXPORT_HELD', reason: 'export_payment_unbalanced', column: 'Check Amount', row: 1, payment: 1 }]);
+    const gross = await send(first835, par16Export('211.28'), 'era_export', WEBPT);
+    expect((await documentOf(gross.id)).status).toBe('duplicate');
+    expect(await exportOutcomes(gross.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: x12.id, linkedProvenance: 'x12_835' })]);
+    expect([await claimsOfTrace(first835.practiceId, 'SYNEFTPAR16001'), await linesOfTrace(first835.practiceId, 'SYNEFTPAR16001')]).toEqual([2, 4]);
+
+    const firstExport = await practice('era plb export first');
+    const exported = await send(firstExport, par16Export('211.28'), 'era_export', WEBPT);
+    expect((await documentOf(exported.id)).status).toBe('loaded');
+    const later = await send(firstExport, fixture('PAR-16/remit.835'), 'x12_835');
+    expect((await documentOf(later.id)).status).toBe('held');
+    expect(await x12Outcomes(later.id)).toEqual([expect.objectContaining({ outcome: 'held_for_review', reviewReason: 'payment_loaded_from_export', linkedDocumentId: exported.id })]);
+    expect([await claimsOfTrace(firstExport.practiceId, 'SYNEFTPAR16001'), await linesOfTrace(firstExport.practiceId, 'SYNEFTPAR16001')]).toEqual([2, 4]);
+  });
+
+  it('knows the payment by its claims when the export is dated by its deposit, or names the payee in another form', async () => {
+    const deposit = await practice('era deposit date');
+    const x12 = await send(deposit, fixture('PAR-01/remit.835'), 'x12_835');
+    const late = await send(deposit, webptExport([{ payment_date: '04/08/2026' }]), 'era_export', WEBPT);
+    expect(await exportOutcomes(late.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: x12.id })]);
+    expect(await claimsOfTrace(deposit.practiceId, 'SYNEFTPAR01001')).toBe(1);
+
+    // The 835 names the payee by its TIN (N103 FI), the export by its NPI.
+    const tin = await practice('era payee tin');
+    const byTin = fixture('PAR-01/remit.835').toString('utf8').replace('N1*PE*SYNTHETIC THERAPY GROUP 01*XX*9900639797', 'N1*PE*SYNTHETIC THERAPY GROUP 01*FI*998367070');
+    expect(byTin).toContain('*FI*998367070');
+    const tinDocument = await send(tin, Buffer.from(byTin, 'utf8'), 'x12_835');
+    expect((await documentOf(tinDocument.id)).status).toBe('loaded');
+    const byNpi = await send(tin, webptExport([{}]), 'era_export', WEBPT);
+    expect(await exportOutcomes(byNpi.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: tinDocument.id })]);
+    expect(await claimsOfTrace(tin.practiceId, 'SYNEFTPAR01001')).toBe(1);
+
+    // And the other way: the deposit-dated export first, then the 835, held for review.
+    const reverse = await practice('era deposit date first');
+    const early = await send(reverse, webptExport([{ payment_date: '04/08/2026' }]), 'era_export', WEBPT);
+    const after = await send(reverse, fixture('PAR-01/remit.835'), 'x12_835');
+    expect(await x12Outcomes(after.id)).toEqual([expect.objectContaining({ outcome: 'held_for_review', linkedDocumentId: early.id })]);
+    expect(await claimsOfTrace(reverse.practiceId, 'SYNEFTPAR01001')).toBe(1);
+  });
+
+  it('compares a trace in its form across sources and between exports: leading zeros dropped by a re-save, or another case', async () => {
+    const zeros = await practice('era trace zeros');
+    const padded = fixture('PAR-01/remit.835').toString('utf8').replace('TRN*1*SYNEFTPAR01001*', 'TRN*1*00880010*');
+    const x12 = await send(zeros, Buffer.from(padded, 'utf8'), 'x12_835');
+    expect((await documentOf(x12.id)).status).toBe('loaded');
+    const stripped = await send(zeros, webptExport([{ trace: '880010' }]), 'era_export', WEBPT);
+    expect(await exportOutcomes(stripped.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: x12.id })]);
+    expect(await remittancesOf(zeros.practiceId)).toBe(1);
+    const cased = await practice('era trace case');
+    const standard = await send(cased, fixture('PAR-01/remit.835'), 'x12_835');
+    const lower = await send(cased, webptExport([{ trace: 'syneftpar01001' }]), 'era_export', WEBPT);
+    expect(await exportOutcomes(lower.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: standard.id })]);
+    expect(await remittancesOf(cased.practiceId)).toBe(1);
+    // A re-saved export of an export already loaded: its trace without the zeros is the same payment.
+    const exports = await practice('era trace zeros exports');
+    const kept = await send(exports, webptExport([{ trace: '00990011' }]), 'era_export', WEBPT);
+    const resaved = await send(exports, webptExport([{ trace: '990011' }]), 'era_export', WEBPT);
+    expect(await exportOutcomes(resaved.id)).toEqual([expect.objectContaining({ outcome: 'duplicate_remittance', linkedDocumentId: kept.id, linkedProvenance: 'era_export' })]);
+    expect(await remittancesOf(exports.practiceId)).toBe(1);
+    // The export first, then the 835 with the zeros: held for review.
+    const reverse = await practice('era trace zeros export first');
+    const early = await send(reverse, webptExport([{ trace: '880010' }]), 'era_export', WEBPT);
+    const after = await send(reverse, Buffer.from(padded, 'utf8'), 'x12_835');
+    expect(await x12Outcomes(after.id)).toEqual([expect.objectContaining({ outcome: 'held_for_review', linkedDocumentId: early.id })]);
+    expect(await remittancesOf(reverse.practiceId)).toBe(1);
+  });
+
+  it('holds an export whose payment key matches another payer’s payment that shares no claim with it, rather than call it a repeat', async () => {
+    const other = { payer_name: 'SYNTHETIC PAYER B', patient_control_number: 'SYNPCNOTHERB01', payer_claim_number: 'SYNCCNOTHERB01', plan: 'SYNPLAN-B-01' };
+    for (const first of ['export', '835'] as const) {
+      const where = await practice(`era other payer after ${first}`);
+      const earlier = first === 'export' ? await send(where, webptExport([{}]), 'era_export', WEBPT) : await send(where, fixture('PAR-01/remit.835'), 'x12_835');
+      const theirs = await send(where, webptExport([other]), 'era_export', WEBPT);
+      expect(await documentOf(theirs.id)).toMatchObject({ status: 'held' });
+      const report = await reportOf(theirs.id);
+      expect(report.errors).toEqual([{ code: 'EXPORT_HELD', reason: 'export_payment_other_payer', column: null, row: 1, payment: 1 }]);
+      expect(report.transaction_outcomes).toEqual([expect.objectContaining({ outcome: 'held', reasons: ['export_payment_other_payer'], linkedDocumentId: earlier.id })]);
+      expect(await claimsOfTrace(where.practiceId, 'SYNEFTPAR01001')).toBe(1);
+      expect(JSON.stringify(report)).not.toMatch(/SYNTHETIC PAYER|SYNPCN|SYNCCN|SYNEFT/);
+    }
+  });
+
+  it('loads a payment once when its 835 and its export are parsed at the same time, whichever starts first (PAR-30)', async () => {
+    for (let run = 0; run < 6; run += 1) {
+      const where = await practice(`era race ${String(run)}`);
+      const x12 = () => send(where, fixture('PAR-01/remit.835'), 'x12_835');
+      const era = () => send(where, exportOf(WEBPT), 'era_export', WEBPT);
+      const [first, second] = run % 2 === 0 ? [x12(), era()] : [era(), x12()];
+      const [a, b] = await Promise.all([first, second]);
+      const [x12Document, eraDocument] = run % 2 === 0 ? [a, b] : [b, a];
+      const rows = await remittancesOfTrace(where.practiceId, 'SYNEFTPAR01001');
+      expect(rows, String(run)).toHaveLength(1);
+      if (rows[0]?.provenance === 'x12_835') {
+        expect((await exportOutcomes(eraDocument.id))[0], String(run)).toMatchObject({ outcome: 'duplicate_remittance', linkedDocumentId: x12Document.id });
+      } else {
+        expect(await x12Outcomes(x12Document.id), String(run)).toEqual([expect.objectContaining({ outcome: 'held_for_review', linkedDocumentId: eraDocument.id })]);
+      }
+      expect(await remittancesOf(where.practiceId), String(run)).toBe(7);
+    }
+  }, 120_000);
+
+  it('never deadlocks an 835 whose sets come in one lock order against an export of the same traces in another', async () => {
+    const segments = (bytes: Buffer) => bytes.toString('utf8').split('~').map((segment) => segment.trim()).filter((segment) => segment !== '');
+    const par22 = segments(fixture('PAR-22/remit.835'));
+    const par01 = segments(fixture('PAR-01/remit.835'));
+    const set = (all: readonly string[], st02: string) => {
+      const body = all.slice(all.findIndex((segment) => segment.startsWith('ST*')), all.findIndex((segment) => segment.startsWith('SE*')) + 1);
+      return [`ST*835*${st02}`, ...body.slice(1, -1), `SE*${String(body.length)}*${st02}`];
+    };
+    const gs06 = (par22[1] ?? '').split('*')[6] ?? '';
+    const isa13 = (par22[0] ?? '').split('*')[13] ?? '';
+    // The set whose trace has the higher lock bucket first, so a load that locked as it went would take the two
+    // buckets in the opposite order to the export's ascending one.
+    expect(traceBucket('SYNEFTPAR01001')).not.toBe(traceBucket('SYNEFTPAR22001'));
+    const [high, low] = traceBucket('SYNEFTPAR01001') > traceBucket('SYNEFTPAR22001') ? [par01, par22] : [par22, par01];
+    const twoSets = Buffer.from(`${[par22[0], par22[1], ...set(high, '0001'), ...set(low, '0002'), `GE*2*${gs06}`, `IEA*1*${isa13}`].join('~')}~`, 'utf8');
+    for (let run = 0; run < 6; run += 1) {
+      const where = await practice(`era lock order ${String(run)}`);
+      const settled = await Promise.allSettled([send(where, twoSets, 'x12_835'), send(where, exportOf(WEBPT), 'era_export', WEBPT)]);
+      expect(settled.map((outcome) => (outcome.status === 'rejected' ? String((outcome.reason as { code?: string }).code ?? outcome.reason) : 'fulfilled')), String(run)).toEqual(['fulfilled', 'fulfilled']);
+      expect(await remittancesOfTrace(where.practiceId, 'SYNEFTPAR01001'), String(run)).toHaveLength(1);
+      expect(await remittancesOfTrace(where.practiceId, 'SYNEFTPAR22001'), String(run)).toHaveLength(1);
+      const x12 = settled[0].status === 'fulfilled' ? settled[0].value.id : '';
+      expect((await reportOf(x12)).transactions, String(run)).toBe(2);
+    }
+  }, 120_000);
 });

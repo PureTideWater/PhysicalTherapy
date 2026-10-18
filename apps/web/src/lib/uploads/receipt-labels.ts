@@ -78,6 +78,7 @@ export const EXPORT_HELD_REASONS = [
   'export_line_unbalanced',
   'export_payment_unbalanced',
   'export_adjustment_unattributed',
+  'export_payment_other_payer',
 ] as const;
 export type ExportHeldReason = (typeof EXPORT_HELD_REASONS)[number];
 
@@ -262,7 +263,7 @@ export function errorText(error: ParsedError): string {
 // ---------------------------------------------------------------------------------------------------
 
 /** The most one ERA export may be (ERA_EXPORT_MAX_BYTES in the worker's normalizer), in MiB. */
-export const EXPORT_MAX_MIB = 64;
+export const EXPORT_MAX_MIB = 4;
 
 /** The column, by the format's header, in quotes. */
 function quoted(column: string | null): string {
@@ -307,6 +308,7 @@ export const EXPORT_REMEDIES: Readonly<Record<ExportHeldReason, string>> = {
   export_line_unbalanced: CHECK('line'),
   export_payment_unbalanced: CHECK('payment'),
   export_adjustment_unattributed: CHECK('line’s adjustment codes'),
+  export_payment_other_payer: CHECK('payment and its payer'),
 };
 
 /** One hold of an ERA export as a sentence: what, and where (the file, a column, or a row and its payment). */
@@ -338,6 +340,8 @@ export function exportErrorText(error: ExportError): string {
       return `${at}: the claims’ paid amounts do not add up to the payment amount, so the payment does not balance.`;
     case 'export_adjustment_unattributed':
       return `${at}: an adjustment total has no adjustment code of its group in ${column}, or the other adjustment codes mix groups.`;
+    case 'export_payment_other_payer':
+      return `${at}: a payment already loaded has the same payee, check or EFT number, amount and date but names another payer and none of the same claims, so this one is held rather than taken as a repeat of it.`;
   }
 }
 

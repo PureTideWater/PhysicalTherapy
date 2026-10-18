@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import type { PracticeCipher, PracticeScope, ScopeClient } from '@tp/db/runtime';
 
-import { type ExportPaymentLoad, loadExportPayment, lockTrace } from '../loader';
+import { type ExportPaymentLoad, loadExportPayment, lockTraces } from '../loader';
 import { ERA_EXPORT_MAX_BYTES, type EraExportNormalized } from './normalize';
 
 /**
@@ -47,8 +47,10 @@ export interface ExportLoadContext {
 
 /**
  * Loads each loadable payment, in file order, inside the caller's transaction; what each became, by its position.
- * The traces' locks are taken first, in sorted order, so two exports sharing traces never wait on each other in a
- * cycle; each payment's load then takes its own lock again, which its transaction already holds.
+ * The locks of all its traces' buckets are taken first, in ascending order (loader.ts lockTraces), as an 835's are,
+ * so an export and an 835 or another export sharing traces never wait on each other in a cycle, and the export holds
+ * at most TRACE_LOCK_BUCKETS advisory locks however many payments it has; each payment's load then takes its bucket
+ * again, which its transaction already holds.
  */
 export async function loadEraExport(context: ExportLoadContext, normalized: EraExportNormalized): Promise<Map<number, ExportPaymentLoad>> {
   const results = new Map<number, ExportPaymentLoad>();
@@ -56,9 +58,11 @@ export async function loadEraExport(context: ExportLoadContext, normalized: EraE
     return results;
   }
   const loadable = normalized.payments.filter((payment) => payment.kind === 'loadable');
-  for (const trace of [...new Set(loadable.map((payment) => payment.plan.remittance.trn02))].sort()) {
-    await lockTrace(context.scope.client, context.practiceId, trace);
-  }
+  await lockTraces(
+    context.scope.client,
+    context.practiceId,
+    loadable.map((payment) => payment.plan.remittance.trn02),
+  );
   for (const payment of loadable) {
     results.set(payment.position, await loadExportPayment(context, payment.plan));
   }
