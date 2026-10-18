@@ -1,6 +1,6 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 17:22 UTC.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 18:45 UTC.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
@@ -92,6 +92,14 @@ When asking the founder a question, recommend the best option first. Never let t
   - Final pass: runbooks, whole-plan audit, phone-width (390 px) screens and mono figures, retry-safe uploads in the models, monitoring, reports and triage e2e journeys, the Dependabot PRs, `settings.json` as the last commit, final verification, and a final report listing the human-blocked items and a day-one launch checklist.
 - **Schema PRs needing the founder's approval:** PR 5, PR 6, possibly PR 6b, PR 8, PR 14 and PR 17.
 - **Re-pricing breaks packets** (screen tour) belongs to PR 11.
+
+## Restart of 2026-10-18 18:40 UTC (spend limit, then a container restart)
+The org's spend limit stopped several agents mid-run. The founder raised it; extra usage credits now cost more, so work economically: replay from cache, merge reviews, run mechanical checks with Bash instead of agents, and let GitHub CI do final verification where possible.
+- **PR 5 audit fixes** (`wf_4eae97e6-03a`): resumed. The setup is cached; the builders continue the window builder's uncommitted work (saved at `salvage/pr5-audit-fixes-wip`). Two reviews instead of three; the verify agent runs at medium effort.
+- **PR 6 audit fixes:** all committed at `1bc9426`. The checks are run by Bash (`scratchpad/pr6a-checks/run.sh`; results in `results.txt`). After that, one review agent.
+- **Governance** (`wf_6a5ccaf0-c47`): resumed with the build cached, one combined review and a fix. The verify agent is dropped: GitHub CI verifies when the PR opens.
+- **Second audit:** 91 of 111 proposals were checked; 20 checks were lost. One merge agent (`wf_e44d6fd2-6d3`) writes `combined-report.md` and `.json`, marking the unchecked items.
+- **Saving unfinished edits** (the founder asked for this): `tools/salvage.sh` snapshots every worktree's uncommitted edits to `salvage/<branch>-wip` on GitHub. Every check-in runs it.
 
 ## Environment recipe (cloud container)
 - Postgres 16 on 5432: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /root/pgdata -o '-p 5432 -k /tmp' -l /tmp/pg16.log start"`.
