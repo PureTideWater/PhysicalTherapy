@@ -14,9 +14,11 @@ import { Field, SelectField } from '../field';
  * in the browser, and never sent: the file input has no name, so no form submission carries it. The browser hashes
  * its bytes, checks the header and every row against the screening's format, and refuses a file that holds patient
  * information (names, dates of birth, member IDs, dates of service or claim numbers), naming the column by its
- * position and header, before anything is sent. A clean file goes to the server as its hash, its header cells, its
- * row count and its rows of totals in their canonical form; the server checks them all again. ZIP+4 is asked for only
- * when the server says the ZIP needs it (decision D20 a). The result is emailed: the page only says to check the email.
+ * position and header, before anything is sent. A clean file goes to the server as its hash, its header's canonical
+ * column names, its row count and its rows of totals in their canonical form; the server checks them all again. No
+ * ZIP+4 is asked for: the pricing takes a five-digit ZIP alone, so a ZIP that spans two Medicare localities cannot be
+ * screened yet, and the form says so before the upload (decision D20 a, held for the owner). The result is emailed:
+ * the page only says to check the email.
  */
 
 export interface ScreeningUploadFormProps {
@@ -30,7 +32,6 @@ const FIELD_NAMES: Readonly<Record<string, string>> = {
   practiceName: 'Practice name',
   state: 'State',
   zip: 'ZIP code',
-  zipPlusFour: 'ZIP+4',
   contactEmail: 'Work email',
   upload: 'File',
   input: 'Form',
@@ -46,9 +47,6 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
   const [reading, setReading] = useState(false);
   const [local, setLocal] = useState<readonly string[]>([]);
   const chosen = useRef<File | null>(null);
-  const asksPlusFour = state.issues?.some((issue) => issue.field === 'zipPlusFour') === true;
-  const [plusFour, setPlusFour] = useState(false);
-  const showPlusFour = plusFour || asksPlusFour;
 
   const read = async (file: File | null): Promise<ScreeningParse | null> => {
     chosen.current = file;
@@ -83,9 +81,6 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
         // Nothing is sent: the problems are this browser's to show.
         return;
       }
-      if (asksPlusFour) {
-        setPlusFour(true);
-      }
       const body = new FormData(form);
       body.set('fileSha256', result.fileSha256);
       body.set('headers', JSON.stringify(result.headers));
@@ -112,24 +107,14 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
       <Card>
         <CardHeader>
           <CardTitle>About your practice</CardTitle>
-          <CardDescription>Who the screening is for, and where its result is emailed. Your ZIP code names the Medicare locality the rows are priced at.</CardDescription>
+          <CardDescription>
+            Who the screening is for, and where its result is emailed. Your ZIP code names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet.
+          </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Field label="Practice name" name="practiceName" required maxLength={200} autoComplete="organization" />
           <SelectField label="State" name="state" options={[{ value: '', label: 'Choose a state' }, ...states]} required />
           <Field label="ZIP code" name="zip" required inputMode="numeric" pattern="[0-9]{5}" maxLength={5} autoComplete="postal-code" hint="The five-digit ZIP of the practice's location." />
-          {showPlusFour ? (
-            <Field
-              label="ZIP+4"
-              name="zipPlusFour"
-              required
-              inputMode="numeric"
-              pattern="[0-9]{4}"
-              maxLength={4}
-              autoComplete="off"
-              hint="This ZIP spans two Medicare localities; the four digits after the dash say which one the practice is in."
-            />
-          ) : null}
           <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint="The result is emailed here as a link that opens it for 30 days." />
         </CardContent>
       </Card>

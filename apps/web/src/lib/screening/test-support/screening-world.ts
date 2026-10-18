@@ -77,7 +77,6 @@ export interface SubmitOverrides {
   readonly practiceName?: string;
   readonly state?: string;
   readonly zip?: string;
-  readonly zipPlusFour?: string;
   readonly contactEmail?: string;
   readonly headers?: readonly string[];
   readonly rows?: readonly ScreeningRow[] | string;
@@ -94,7 +93,6 @@ export function submitInput(overrides: SubmitOverrides = {}): Record<string, str
     practiceName: overrides.practiceName ?? 'Synthetic Therapy Group',
     state: overrides.state ?? 'MN',
     zip: overrides.zip ?? '00011',
-    zipPlusFour: overrides.zipPlusFour ?? '',
     contactEmail: overrides.contactEmail ?? `prospect.${randomUUID().slice(0, 8)}@clinic-${randomUUID().slice(0, 6)}.synthetic.test`,
     fileSha256: overrides.fileSha256 ?? createHash('sha256').update(text).digest('hex'),
     headers: JSON.stringify(overrides.headers ?? SCREENING_HEADERS),

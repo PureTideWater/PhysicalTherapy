@@ -69,7 +69,6 @@ describe('a screening of 50,000 rows', () => {
         practiceName: 'Synthetic Large Therapy Group',
         state: 'MN',
         zip: '00011',
-        zipPlusFour: '',
         contactEmail: email,
         fileSha256: 'f'.repeat(64),
         headers: JSON.stringify(SCREENING_HEADERS),

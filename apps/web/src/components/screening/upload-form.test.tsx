@@ -6,8 +6,8 @@ import { ScreeningUploadForm } from './upload-form';
 
 /**
  * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
- * the browser, so its input has no name and no submission can carry it; ZIP+4 waits until the server asks for it;
- * the contact's email is where the link goes. SYNTHETIC values.
+ * the browser, so its input has no name and no submission can carry it; no ZIP+4 is asked for (the pricing cannot use
+ * one); the contact's email is where the link goes. SYNTHETIC values.
  */
 
 const action = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
@@ -26,11 +26,12 @@ describe('the screening upload form', () => {
     expect(html).not.toContain('enctype="multipart/form-data"');
   });
 
-  it('asks who the screening is for, and where its link is emailed, and not for ZIP+4 until the server asks', () => {
+  it('asks who the screening is for, and where its link is emailed, never for a ZIP+4 it could not use, and says so', () => {
     for (const name of ['practiceName', 'state', 'zip', 'contactEmail']) {
       expect(html).toContain(`name="${name}"`);
     }
     expect(html).not.toContain('name="zipPlusFour"');
+    expect(html).toContain('a ZIP code that spans two Medicare localities cannot be screened yet');
     expect(html).toContain('<option value="">Choose a state</option>');
     expect(html).toContain('<option value="MN">MN</option>');
     expect(html).toContain('50,000 rows');

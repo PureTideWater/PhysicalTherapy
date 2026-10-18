@@ -19,6 +19,7 @@ import {
   checkHeaders,
   decodeScreeningRows,
   screeningTokenHash,
+  storableRejections,
 } from '@tp/worker/screening';
 import { z } from 'zod';
 
@@ -34,12 +35,14 @@ import { screeningRateAccount } from './rate';
  * - The screening page (/screening, public): whether screening is open (a rule release in force and a place-of-service
  *   split approved; production stays closed until release 1), the columns, products, states and limits.
  * - The upload (/screening, public action, the screening rate limit: per client address, and per email domain or
- *   free-mail address). The browser parsed the file and sends no byte of it: the hash, the header cells, the row count
- *   and the rows' totals in their canonical form. The server checks the form's fields, the header names and every
- *   row again; a refused upload is recorded by hash, count and reasons alone (reject_screening_upload()), and its
- *   messages name a column by position and kind, never a header's text or a cell's value. A clean one is stored and
- *   queued for pricing in one call (submit_screening()), and the browser says to check the email: the result's link
- *   goes to the contact address only.
+ *   free-mail mailbox). Nothing is recorded while screening is closed. The browser parsed the file and sends no byte
+ *   of it: the hash, the header's canonical column names, the row count and the rows' totals in their canonical form.
+ *   The server checks the form's fields (an address it can mail: plain ASCII, a dotted domain), the header names and
+ *   every row again; a refused upload is recorded by hash, count and reasons alone (reject_screening_upload()), and
+ *   its messages name a column by position and kind, never a header's text or a cell's value. A clean one is stored
+ *   and queued for pricing in one call (submit_screening()), and the browser says to check the email: the result's
+ *   link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
+ *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept.
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
  *   engine's per-row results.
@@ -53,7 +56,12 @@ import { screeningRateAccount } from './rate';
  */
 
 const HEX64 = /^[0-9a-f]{64}$/;
-const EMAIL = /^[^@ ]+@[^@ ]+$/;
+/**
+ * An address the mail service can send to, lower-cased: an RFC 5322 dot-atom before the @ (no leading, trailing or
+ * doubled dot), and a domain of at least two dotted labels with no trailing dot; plain ASCII only. The
+ * screening_prospect_contact_email CHECK holds the same.
+ */
+export const SCREENING_EMAIL = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** A form field as the wrapper receives it: bounded text, blank when missing, so the rate limit counts first. */
 const field = (max: number) => z.string().max(max, `at most ${String(max)} characters`).default('');
@@ -109,16 +117,11 @@ export const screeningPage = publicRoute({
   phi: false,
   params: z.object({ sent: optionalText(z.literal('1')) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
-    const status = await withClient(services.pool, async (client) => {
-      const { rows } = await client.query<{ release_no: number | null; place_of_service_split_id: string | null }>('SELECT release_no, place_of_service_split_id FROM screening_status()');
-      return rows[0];
-    });
-    const releaseNo = status?.release_no ?? null;
-    const open = releaseNo !== null && (status?.place_of_service_split_id ?? null) !== null;
+    const { open, releaseNo } = await screeningOpen(services.pool);
     return {
       sent: params.sent !== undefined,
       open,
-      releaseNo: open ? releaseNo : null,
+      releaseNo,
       columns: SCREENING_COLUMNS,
       products: SCREENING_PAYER_PRODUCTS,
       states: SCREENING_STATES,
@@ -151,7 +154,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'phi_column':
       return `${columnName(reason)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again`;
     case 'unknown_column':
-      return `${columnName(reason)} is not one of the eight screening columns; remove it or rename it`;
+      return `${columnName(reason)} is not one of the eight screening columns; remove it`;
     case 'duplicate_column':
       return `${columnName(reason)} is a second ${fieldName} column; keep one`;
     case 'missing_column':
@@ -179,12 +182,11 @@ interface ProspectFields {
   readonly practiceName: string;
   readonly state: string;
   readonly zip: string;
-  readonly zipPlusFour: string | null;
   readonly contactEmail: string;
 }
 
 /** The form's own fields, checked: what the prospect row needs, or the issues (no record is made for them). */
-function prospectFields(input: { readonly practiceName: string; readonly state: string; readonly zip: string; readonly zipPlusFour: string; readonly contactEmail: string }): ProspectFields {
+function prospectFields(input: { readonly practiceName: string; readonly state: string; readonly zip: string; readonly contactEmail: string }): ProspectFields {
   const issues: Issue[] = [];
   const practiceName = input.practiceName.trim();
   if (practiceName === '' || practiceName.length > 200) {
@@ -200,18 +202,38 @@ function prospectFields(input: { readonly practiceName: string; readonly state: 
   if (!/^[0-9]{5}$/.test(zip)) {
     issues.push({ field: 'zip', message: 'the practice’s five-digit ZIP code' });
   }
-  const plusFour = input.zipPlusFour.trim();
-  if (plusFour !== '' && !/^[0-9]{4}$/.test(plusFour)) {
-    issues.push({ field: 'zipPlusFour', message: 'the four digits after the ZIP code' });
-  }
   const contactEmail = input.contactEmail.trim().toLowerCase();
-  if (!EMAIL.test(contactEmail) || contactEmail.length > 254) {
+  if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {
     issues.push({ field: 'contactEmail', message: 'an email address: the result’s link is sent there' });
   }
   if (issues.length > 0) {
     throw new InputError(issues);
   }
-  return { practiceName, state, zip, zipPlusFour: plusFour === '' ? null : plusFour, contactEmail };
+  return { practiceName, state, zip, contactEmail };
+}
+
+/** A refusal's issues: one per reason kept (at most 20), the last saying how many more there were. */
+function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Issue[] {
+  const issues = reasons.map((reason) => ({ field: 'upload', message: screeningReasonMessage(reason) }));
+  if (total <= issues.length) {
+    return issues;
+  }
+  const kept = issues.slice(0, SCREENING_MAX_REASONS - 1);
+  const more = total - kept.length;
+  return [...kept, { field: 'upload', message: `And ${more.toLocaleString('en-US')} more ${more === 1 ? 'problem' : 'problems'} like these` }];
+}
+
+const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
+
+/** Whether screening is open: a rule release in force and a place-of-service split approved. */
+async function screeningOpen(pool: ScopePool<ScopeClient>): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
+  const status = await withClient(pool, async (client) => {
+    const { rows } = await client.query<{ release_no: number | null; place_of_service_split_id: string | null }>('SELECT release_no, place_of_service_split_id FROM screening_status()');
+    return rows[0];
+  });
+  const releaseNo = status?.release_no ?? null;
+  const open = releaseNo !== null && (status?.place_of_service_split_id ?? null) !== null;
+  return { open, releaseNo: open ? releaseNo : null };
 }
 
 /** The header cells the browser sent, or null when they are not a JSON array of at most 64 bounded strings. */
@@ -226,18 +248,23 @@ function headerCells(text: string): string[] | null {
   return cells.success ? cells.data : null;
 }
 
-/** The upload checked again: the rows, or the reasons it is refused. */
-function checkUpload(headers: readonly string[], rowsText: string, rowCount: number, now: Date): { readonly rows: readonly ScreeningRow[] } | { readonly reasons: readonly ScreeningRejection[] } {
+/** The upload checked again: the rows, or the reasons it is refused (at most 20 kept) and how many there were. */
+function checkUpload(
+  headers: readonly string[],
+  rowsText: string,
+  rowCount: number,
+  now: Date,
+): { readonly rows: readonly ScreeningRow[] } | { readonly reasons: readonly ScreeningRejection[]; readonly total: number } {
   const header = checkHeaders(headers);
   if (!header.ok) {
-    return { reasons: header.reasons };
+    return { reasons: header.reasons, total: header.total };
   }
   const decoded = decodeScreeningRows(rowsText, now);
   if (!decoded.ok) {
-    return { reasons: decoded.reasons };
+    return { reasons: decoded.reasons, total: decoded.total };
   }
   if (decoded.rows.length !== rowCount) {
-    return { reasons: [{ code: 'row_count_mismatch' }] };
+    return { reasons: [{ code: 'row_count_mismatch' }], total: 1 };
   }
   return { rows: decoded.rows };
 }
@@ -256,15 +283,19 @@ export const screeningSubmit = publicRoute({
     practiceName: field(400),
     state: field(8),
     zip: field(16),
-    zipPlusFour: field(16),
     contactEmail: field(320),
     fileSha256: field(64),
-    // The header cells as JSON: at most 64 of 200 characters, each escaped at worst to six.
+    // The header cells as JSON (the browser sends the columns' canonical names): at most 64 of 200 characters, each
+    // escaped at worst to six.
     headers: field(SCREENING_MAX_HEADER_CELLS * (SCREENING_MAX_HEADER_LENGTH * 6 + 3) + 2),
     rowCount: field(12),
     rows: field(SCREENING_MAX_ROWS_TEXT),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
+    // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
+    if (!(await screeningOpen(services.pool)).open) {
+      throw new InputError([SCREENING_CLOSED]);
+    }
     const prospect = prospectFields(input);
     const fileSha256 = input.fileSha256.trim().toLowerCase();
     const headers = headerCells(input.headers);
@@ -273,25 +304,26 @@ export const screeningSubmit = publicRoute({
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
     const checked = checkUpload(headers, input.rows, rowCount, services.now());
-    const prospectValues = [prospect.practiceName, prospect.state, prospect.zip, prospect.zipPlusFour, prospect.contactEmail];
+    const prospectValues = [prospect.practiceName, prospect.state, prospect.zip, prospect.contactEmail];
     if ('reasons' in checked) {
-      const reasons = checked.reasons.slice(0, SCREENING_MAX_REASONS);
-      await withClient(services.pool, (client) =>
-        client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9)', [
-          ...prospectValues,
-          fileSha256,
-          Math.min(rowCount, 10_000_000),
-          JSON.stringify(reasons),
-          request.requestId,
-        ]),
-      );
-      throw new InputError(reasons.map((reason) => ({ field: 'upload', message: screeningReasonMessage(reason) })));
+      const reasons = storableRejections(checked.reasons);
+      try {
+        await withClient(services.pool, (client) =>
+          client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', [...prospectValues, fileSha256, Math.min(rowCount, 10_000_000), JSON.stringify(reasons), request.requestId]),
+        );
+      } catch (error) {
+        if (pgError(error)?.constraint === 'screening_closed') {
+          throw new InputError([SCREENING_CLOSED]);
+        }
+        throw error;
+      }
+      throw new InputError(reasonIssues(reasons, checked.total));
     }
     const { rows } = checked;
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
-        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) AS run_id', [
+        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS run_id', [
           ...prospectValues,
           fileSha256,
           rows.map((row) => row.procedureCode),
@@ -327,11 +359,14 @@ export const screeningSubmit = publicRoute({
 function submitIssue(constraint: string | undefined): Issue {
   switch (constraint) {
     case 'screening_closed':
-      return { field: 'input', message: 'screening is not open yet; try again later' };
+      return SCREENING_CLOSED;
     case 'screening_zip_unknown':
       return { field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' };
     case 'screening_zip_plus_four':
-      return { field: 'zipPlusFour', message: 'this ZIP code needs its ZIP+4 to name its Medicare locality: add the four digits after it' };
+      return {
+        field: 'zip',
+        message: 'this ZIP code spans two Medicare localities, and a free screening cannot price one yet: its rows would need the ZIP+4, which the pricing does not take',
+      };
     case 'screening_rows':
     case 'screening_result_once':
       return { field: 'upload', message: 'the rows could not be stored as sent; choose the file again' };
@@ -366,6 +401,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly engineVersion: string;
   readonly createdAt: Date;
   readonly expiresAt: Date;
+  /** The rule release the screening was priced under has since been withdrawn: its figures are under content known to be wrong. */
+  readonly releaseWithdrawn: boolean;
   readonly priced: ScreeningPricedTotals;
   /** MA contracted and commercial rows: the dollars that cannot be priced without a contract. */
   readonly contractRequired: ScreeningGroupTotals;
@@ -383,7 +420,12 @@ export interface ScreeningResultGroup {
   readonly expectedCents: Cents;
   readonly observedCents: Cents;
   readonly differenceCents: Cents;
+  /** Below the Medicare figure by at least $5 a claim line, and no row of it in the reduction across a visit's codes. */
   readonly anomaly: boolean;
+  /** A row of it is in the reduction across a visit's codes, which a row priced alone is before. */
+  readonly inReductionPool: boolean;
+  /** Below by at least $5 a claim line, but before the reduction across codes: not called an anomaly. */
+  readonly belowBeforeReduction: boolean;
 }
 
 export interface ScreeningResultCoverage {
@@ -460,6 +502,7 @@ type SummaryRow = Record<
   readonly created_at: Date;
   readonly expires_at: Date;
   readonly converted: boolean;
+  readonly release_withdrawn: boolean;
 };
 
 export const screeningResult = publicRoute({
@@ -484,6 +527,8 @@ export const screeningResult = publicRoute({
         observed_cents: string;
         difference_cents: string;
         anomaly: boolean;
+        in_reduction_pool: boolean;
+        below_before_reduction: boolean;
       }>('SELECT * FROM screening_result_groups($1)', [hash]);
       const coverage = await client.query<{
         payer_product: string;
@@ -525,6 +570,7 @@ export const screeningResult = publicRoute({
           engineVersion: summary.engine_version,
           createdAt: summary.created_at,
           expiresAt: summary.expires_at,
+          releaseWithdrawn: summary.release_withdrawn,
           ...totals('rows', 'claim_lines', 'observed_cents'),
           priced: {
             ...totals('priced_rows', 'priced_claim_lines', 'priced_observed_cents'),
@@ -544,6 +590,8 @@ export const screeningResult = publicRoute({
           observedCents: money(group.observed_cents),
           differenceCents: money(group.difference_cents),
           anomaly: group.anomaly,
+          inReductionPool: group.in_reduction_pool,
+          belowBeforeReduction: group.below_before_reduction,
         })),
         coverage: coverage.rows.map((item) => ({
           payerProduct: item.payer_product,

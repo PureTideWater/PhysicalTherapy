@@ -14,13 +14,15 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInp
  *
  * - SCR-01, the rejection: an upload whose header holds a member-ID or date-of-service column is refused with the
  *   column named by position and kind, and nothing of it is stored but its hash, its row count and the reasons.
- * - SCR-04, the rate limit: per business email domain, per free-mail address and per client address.
+ * - SCR-04, the rate limit: per business email domain, per free-mail mailbox however its address is spelled, and per
+ *   client address.
  * - SCR-06, the conversion event: converting a screening to an audit request is an audit event.
  * - SCR-05, the wording, on the server's side: no result, message or email says owed, underpaid or recovered, and
  *   the prospect's email carries no tagline.
  *
- * And around them: closed until a split is approved; ZIP+4 asked only where the locality map needs it; the result
- * read by its link alone and not found once expired. Synthetic data only.
+ * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
+ * ZIP+4 refused (the pricing cannot use one); an address the mail service can send to; the result read by its link
+ * alone and not found once expired. Synthetic data only.
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
@@ -90,6 +92,44 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     expect(audit.rows).toContainEqual({ actor_kind: 'system', object_type: 'screening_upload', purpose: 'screening' });
   });
 
+  it('names patient information first however many other columns come before it, and stores its kind by position', async () => {
+    const email = 'prospect.wide@clinic-wide.synthetic.test';
+    const headers = [...Array.from({ length: 24 }, (_, index) => `Export Field ${String(index + 1)}`), 'Date of Service', 'MRN #', ...SCREENING_HEADERS];
+    const outcome = await submitted(submitInput({ contactEmail: email, headers }));
+    const issues = issuesOf(outcome);
+    expect(issues).toHaveLength(20);
+    expect(issues.slice(0, 2)).toEqual([
+      { field: 'upload', message: 'Column 25 holds dates of service; remove it and upload again' },
+      { field: 'upload', message: 'Column 26 holds member IDs; remove it and upload again' },
+    ]);
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 7 more problems like these' });
+    expect(issues.find((issue) => /rename/.test(issue.message))).toBeUndefined();
+    const { rows } = await world.owner.query<{ rejection_reasons: { code: string }[] }>(
+      'SELECT u.rejection_reasons FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [email],
+    );
+    expect(rows[0]?.rejection_reasons.slice(0, 2)).toEqual([
+      { code: 'phi_column', column: 25, phi: 'date_of_service' },
+      { code: 'phi_column', column: 26, phi: 'member_id' },
+    ]);
+  });
+
+  it('refuses a name in the code column and an identifier under the allowed total, and stores no row of them', async () => {
+    const email = 'prospect.shapes@clinic-shapes.synthetic.test';
+    const outcome = await submitted(
+      submitInput({ contactEmail: email, rows: ['SMITH\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t100\t1', 'MARIA\t\t1\t11\tcommercial\t2026-Q1\t100\t1', '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24'].join('\n') }),
+    );
+    expect(issuesOf(outcome)).toEqual([
+      { field: 'upload', message: 'Row 1: the procedure code is not in the screening’s format' },
+      { field: 'upload', message: 'Row 2: the procedure code is not in the screening’s format' },
+      { field: 'upload', message: 'Row 3: the allowed total is not in the screening’s format' },
+    ]);
+    const stored = await storedText();
+    expect(stored).not.toContain('SMITH');
+    expect(stored).not.toContain('MARIA');
+    expect(stored).not.toContain('12345678900');
+  });
+
   it('checks every row again on the server, whatever the browser said, and refuses a row count that does not match', async () => {
     const tampered = await submitted(submitInput({ rows: '97110\tGP\t2\t11\tmedicare_ffs\t2026-01-15\t100\t1' }));
     expect(issuesOf(tampered)).toEqual([{ field: 'upload', message: 'Row 1: the service band is not in the screening’s format' }]);
@@ -107,6 +147,19 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     const before = await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect');
     const outcome = await submitted(submitInput({ practiceName: 'Jane Synthetic 03/04/1985', state: 'ZZ', zip: '1234', contactEmail: 'not an address' }));
     expect(issuesOf(outcome).map((issue) => issue.field)).toEqual(['practiceName', 'state', 'zip', 'contactEmail']);
+    // Only an address the mail service can send to: plain ASCII, a dot-atom before the @, a dotted domain after it.
+    for (const contactEmail of [
+      'pois,on@clinic-poison.synthetic.test',
+      'prospect@localhost',
+      'prospect@clinic.synthetic.test.',
+      'prospéct@clinic.synthetic.test',
+      '.prospect@clinic.synthetic.test',
+      'pro..spect@clinic.synthetic.test',
+      'prospect@-clinic.synthetic.test',
+      'pro spect@clinic.synthetic.test',
+    ]) {
+      expect(issuesOf(await submitted(submitInput({ contactEmail }))), contactEmail).toEqual([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+    }
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect')).rows).toEqual(before.rows);
     expect(await storedText()).not.toContain('Jane Synthetic');
   });
@@ -120,11 +173,21 @@ describe('SCR-01: an upload holding patient information is refused with its colu
   });
 });
 
-describe('a clean upload: ZIP+4 only where needed, stored, queued, priced, read by its link alone', () => {
-  it('asks for the ZIP+4 only where the locality map needs one', async () => {
-    const needs = await submitted(submitInput({ zip: '00012' }));
-    expect(issuesOf(needs)).toEqual([{ field: 'zipPlusFour', message: 'this ZIP code needs its ZIP+4 to name its Medicare locality: add the four digits after it' }]);
-    expect((await submitted(submitInput({ zip: '00012', zipPlusFour: '0001' }))).status).toBe('ok');
+describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, read by its link alone', () => {
+  it('refuses a ZIP whose Medicare locality needs its ZIP+4, which the pricing cannot use, and never asks for or keeps a ZIP+4', async () => {
+    const email = 'prospect.plusfour@clinic-plusfour.synthetic.test';
+    const needs = await submitted(submitInput({ zip: '00012', contactEmail: email }));
+    expect(issuesOf(needs)).toEqual([
+      {
+        field: 'zip',
+        message: 'this ZIP code spans two Medicare localities, and a free screening cannot price one yet: its rows would need the ZIP+4, which the pricing does not take',
+      },
+    ]);
+    // A ZIP+4 sent anyway is not a field the route takes, and nothing is kept for the refused ZIP.
+    expect(issuesOf(await submitted({ ...submitInput({ zip: '00012', contactEmail: email }), zipPlusFour: '0001' })).map((issue) => issue.field)).toEqual(['zip']);
+    expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
+    const columns = await world.owner.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'screening_prospect' AND column_name LIKE '%plus%'");
+    expect(columns.rows).toEqual([]);
     expect(issuesOf(await submitted(submitInput({ zip: '00099' })))).toEqual([{ field: 'zip', message: 'this ZIP code is not in the Medicare locality map in force; check it' }]);
   });
 
@@ -173,11 +236,22 @@ describe('a clean upload: ZIP+4 only where needed, stored, queued, priced, read 
     }
   });
 
-  it('stays closed until a contract specialist approves a split', async () => {
+  it('stays closed until a contract specialist approves a split, and records nothing of a prospect while closed', async () => {
     const closed = await ScreeningWorld.create({ open: false });
     try {
       expect(await closed.call(screeningPage)).toMatchObject({ status: 'ok', data: { open: false, releaseNo: null } });
       expect(issuesOf(await closed.call(screeningSubmit, { input: submitInput() }))).toEqual([{ field: 'input', message: 'screening is not open yet; try again later' }]);
+      // Not even a refusal: an upload with a member-ID column, posted directly while the page hides the form.
+      const refused = submitInput({ contactEmail: 'closed.probe@clinic-closed.synthetic.test', headers: ['Member ID', ...SCREENING_HEADERS] });
+      expect(issuesOf(await closed.call(screeningSubmit, { input: refused }))).toEqual([{ field: 'input', message: 'screening is not open yet; try again later' }]);
+      for (const table of ['screening_prospect', 'screening_upload', 'screening_run']) {
+        expect((await closed.owner.query(`SELECT count(*)::int AS n FROM ${table}`)).rows, table).toEqual([{ n: 0 }]);
+      }
+      expect((await closed.owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action LIKE 'screening_%'")).rows).toEqual([{ n: 0 }]);
+      // The definer function refuses it too, whoever calls it.
+      await expect(
+        closed.owner.query("SELECT reject_screening_upload('SYNTHETIC', 'MN', '00011', 'closed.probe@clinic-closed.synthetic.test', $1, 1, '[{\"code\":\"no_rows\"}]', 'test')", ['e'.repeat(64)]),
+      ).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
     } finally {
       await closed.close();
     }
@@ -210,6 +284,45 @@ describe('SCR-04: rate limits per business domain, per free-mail address and per
     expect(statuses.at(-2)).toBe('invalid');
     expect(statuses.at(-1)).toBe('rate_limited');
     expect((await attempt('another.synthetic.prospect@gmail.com')).status).toBe('invalid');
+  });
+
+  it('counts a free-mail mailbox once however its address is spelled: plus tags, Gmail dots, googlemail.com, a trailing dot, any case', async () => {
+    const spelled = async (spellings: readonly string[]) => {
+      const statuses: string[] = [];
+      for (const spelling of spellings) {
+        statuses.push((await attempt(spelling)).status);
+      }
+      return statuses;
+    };
+    const limited = (statuses: readonly string[]) => statuses.slice(0, accountLimit).every((status) => status === 'invalid') && statuses.at(-1) === 'rate_limited';
+    expect(limited(await spelled(Array.from({ length: accountLimit + 1 }, (_, index) => `plus.synthetic+${String(index)}@gmail.com`)))).toBe(true);
+    // Every way to place dots in a Gmail address reaches the one inbox.
+    const dotted = Array.from({ length: accountLimit + 1 }, (_, index) => {
+      const letters = 'dotsynthetic'.split('');
+      return `${letters.map((letter, at) => (at > 0 && ((index + 1) >> (at - 1)) % 2 === 1 ? `.${letter}` : letter)).join('')}@gmail.com`;
+    });
+    expect(new Set(dotted).size).toBe(accountLimit + 1);
+    expect(limited(await spelled(dotted))).toBe(true);
+    const mixed = await spelled([
+      ...Array.from({ length: accountLimit }, () => 'alias.synthetic@gmail.com'),
+      'alias.synthetic@googlemail.com',
+      'alias.synthetic@gmail.com.',
+      'ALIAS.SYNTHETIC@GMAIL.COM',
+      'a.l.i.a.s.synthetic+x@googlemail.com',
+    ]);
+    expect(mixed.slice(accountLimit)).toEqual(['rate_limited', 'rate_limited', 'rate_limited', 'rate_limited']);
+    // A free-mail provider's regional subdomain counts by mailbox as the provider does.
+    expect(limited(await spelled(Array.from({ length: accountLimit + 1 }, (_, index) => `person${String(index)}@nc.rr.com`)))).toBe(false);
+  });
+
+  it('counts the mail of the large internet providers by mailbox, so one address cannot use up a domain for everyone', async () => {
+    for (const domain of ['bellsouth.net', 'charter.net', 'earthlink.net', 'optonline.net', 'yahoo.co.uk']) {
+      for (let index = 0; index <= accountLimit; index += 1) {
+        await attempt(`exhausting.synthetic@${domain}`);
+      }
+      expect((await attempt(`exhausting.synthetic@${domain}`)).status, domain).toBe('rate_limited');
+      expect((await attempt(`someone.else.synthetic@${domain}`)).status, domain).toBe('invalid');
+    }
   });
 
   it('counts each client address, whatever accounts it names', async () => {
