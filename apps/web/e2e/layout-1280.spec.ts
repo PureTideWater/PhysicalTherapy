@@ -175,7 +175,7 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expectFitsItsCard(fields, 'the rate record’s fields');
   });
 
-  await test.step('the packet builder: the line schedule fits its card, “Window ends” and the trace column inside it (L2)', async () => {
+  await test.step('the packet builder: the line schedule fits its card, its window column (“Deadline” since tp-packet/2) and the trace column inside it (L2)', async () => {
     await page.goto(at(`/cases/${caseId}/packet`));
     // A retry finds the version the attempt before wrote.
     const first = page.getByRole('region', { name: 'First version' });
@@ -189,7 +189,8 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expect(schedule.locator('thead th').last()).toHaveText('Trace');
     await expectNoSidewaysScroll(page, 'the packet builder');
     await expectFitsItsCard(schedule, 'the line schedule');
-    await expect.soft(schedule.locator('thead th', { hasText: 'Window ends' })).toBeInViewport();
+    // A tp-packet/2 version's window column is its deadline, with the window's end and its status (CO-05).
+    await expect.soft(schedule.locator('thead th', { hasText: 'Deadline' })).toBeInViewport();
     await expectHeadersApart(schedule, 'the line schedule');
   });
 
