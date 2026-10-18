@@ -1,0 +1,37 @@
+name: approval-of-record
+
+# The founder's GitHub review is the approval of record (docs/adr/0063). A pull request that changes the
+# "Approved by:" line of docs/product/domain-model.md or packages/db/domain-model/approvers.json needs an APPROVED
+# review of its latest commit from an approver on the base branch's list (the person the line names) who is not its
+# author; a review re-runs this job. Until the repository variable APPROVAL_REVIEW_REQUIRED is true it passes and
+# says why (docs/runbooks/github-governance.md, step 5). It reads the API with the workflow's own read-only token,
+# installs nothing and runs tools/approval-of-record/approval-of-record.ts on Node 24.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# A newer event on the same pull request (a push, a review) supersedes the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  approval-of-record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: Require the approval of record
+        run: node tools/approval-of-record/approval-of-record.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APPROVAL_REVIEW_REQUIRED: ${{ vars.APPROVAL_REVIEW_REQUIRED }}

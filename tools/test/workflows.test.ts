@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -192,6 +193,46 @@ describe('workflows', () => {
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);
     const publish = stepIndex(steps, (step) => step.run?.includes('tools/publish-content.sh') === true);
     expect(verify).toBeLessThan(publish);
+  });
+});
+
+describe('approval-of-record (docs/adr/0063)', () => {
+  const file = readFileSync(path.join(repositoryRoot, '.github/workflows/approval-of-record.yml'), 'utf8');
+  const parsed = parse(file) as Workflow & { permissions?: unknown; jobs: Record<string, { 'timeout-minutes'?: number }> };
+
+  it('runs on each pull request event and each review, so a review re-runs it', () => {
+    expect(parsed.on).toEqual({
+      pull_request: { types: ['opened', 'synchronize', 'reopened', 'edited', 'ready_for_review'] },
+      pull_request_review: { types: ['submitted', 'edited', 'dismissed'] },
+    });
+    // Its job is the required check the ruleset names (docs/runbooks/github-governance.md, step 4).
+    expect(Object.keys(parsed.jobs)).toEqual(['approval-of-record']);
+  });
+
+  it('reads with a read-only token, installs nothing and runs the decision on Node 24 alone', () => {
+    expect(parsed.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
+    const steps = parsed.jobs['approval-of-record']?.steps ?? [];
+    expect(steps.map((step) => step.uses ?? step.run)).toEqual(['actions/checkout@v4', 'actions/setup-node@v4', 'node tools/approval-of-record/approval-of-record.ts']);
+    expect(steps[0]?.with).toEqual({ 'persist-credentials': false });
+    expect(steps[1]?.with).toEqual({ 'node-version': 24 });
+    expect((steps[2] as Step & { env?: Record<string, string> }).env).toEqual({
+      GITHUB_TOKEN: '${{ github.token }}',
+      APPROVAL_REVIEW_REQUIRED: '${{ vars.APPROVAL_REVIEW_REQUIRED }}',
+    });
+    // No secret but the workflow's own token, and no step that installs or builds anything.
+    expect(file).not.toMatch(/secrets\./);
+    expect(file).not.toMatch(/pnpm|npm (?:ci|install)|pull_request_target/);
+    expect(parsed.jobs['approval-of-record']?.['timeout-minutes']).toBe(5);
+    expect(existsSync(path.join(repositoryRoot, 'tools/approval-of-record/approval-of-record.ts'))).toBe(true);
+  });
+
+  // actionlint where it is installed (or ACTIONLINT names it); the YAML of every workflow is parsed above either way.
+  const actionlint = process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim();
+  it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).map((name) => path.join(repositoryRoot, '.github/workflows', name));
+    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
+    expect(result.stdout + result.stderr).toBe('');
+    expect(result.status).toBe(0);
   });
 });
 

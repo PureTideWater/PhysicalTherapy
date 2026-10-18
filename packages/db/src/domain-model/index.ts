@@ -19,7 +19,19 @@ export {
   provenanceProblems,
 } from './approval';
 export { type GenerateOptions, type GeneratedDomainModel, generateDomainModel } from './generate';
-export { APPROVERS_FILE, DEFAULT_SOURCES, DOMAIN_MODEL_DOCUMENT, DomainModelError, type DomainModelSources, REPO_ROOT, readApprovers } from './sources';
+export {
+  APPROVERS_FILE,
+  APPROVERS_FORMAT,
+  type ApproverRecord,
+  DEFAULT_SOURCES,
+  DOMAIN_MODEL_DOCUMENT,
+  DomainModelError,
+  type DomainModelSources,
+  GITHUB_LOGIN,
+  REPO_ROOT,
+  readApproverRecords,
+  readApprovers,
+} from './sources';
 export { type DocumentAtRef, documentAtRef } from './history';
 export {
   type DocumentChange,

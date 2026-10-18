@@ -70,8 +70,11 @@ prints the hash to sign when it refuses). The name must be exactly an entry of t
 `packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
 (TBD, N/A, name, first name, last name, full name, founder, approver, VERIFY ONLY, Claude, in any case and their common
 spellings such as T.B.D., N.A., VERIFY-ONLY or ClaudeCode, or text in angle brackets) or a name with no letters. The
-list changes only with the founder's approval, in the same pull request as a document the founder signs. It starts
-empty, so every approval is refused until the founder's name is added to it in that pull request. The hash covers every
+list names each approver with the GitHub login whose review is the approval of record, and changes only under that
+approval (docs/adr/0063): the `approval-of-record` job requires of a pull request that changes the approval line or the
+list an APPROVED review of its latest commit from the login, on the base branch's list, of the person the line names,
+never from its author. It passes, saying why, until the repository variable `APPROVAL_REVIEW_REQUIRED` is `true`
+(`docs/runbooks/github-governance.md`, step 5). The hash covers every
 line but that one (the last line) and the provenance line, and must be the hash of both the regenerated text and the
 committed one, so any schema change, or an edit to the document alone, leaves it awaiting a new approval, and no
 migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each

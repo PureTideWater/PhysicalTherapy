@@ -11,7 +11,16 @@ export const DOMAIN_MODEL_DOCUMENT = path.join(REPO_ROOT, 'docs/product/domain-m
 
 /** Who may sign the approval line (approvers.json); `--require-approval` reads it. */
 export const APPROVERS_FILE = path.join(REPO_ROOT, APPROVERS_LIST);
-export const APPROVERS_FORMAT = 'tp-domain-model-approvers/1';
+export const APPROVERS_FORMAT = 'tp-domain-model-approvers/2';
+
+/** A GitHub login as GitHub issues them: letters, digits and single hyphens inside, at most 39 characters. */
+export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
+
+/** One approver: the name as it is signed on the approval line, and the GitHub login whose review is the approval of record. */
+export interface ApproverRecord {
+  readonly name: string;
+  readonly github: string;
+}
 
 /** What the generator reads besides the database: all text in the repository. */
 export interface DomainModelSources {
@@ -161,16 +170,35 @@ export function readExplanations(file: string): Explanations {
 }
 
 /**
- * The approver list: `format`, a `note` and `approvers`, each a person's name as it is signed, with no
- * spaces at either end and none that notAName refuses, so a placeholder cannot be listed to pass.
+ * The approver list: `format`, a `note` and `approvers`, each `{ "name", "github" }`: a person's name as it
+ * is signed, with no spaces at either end and none that notAName refuses, so a placeholder cannot be listed
+ * to pass, and the GitHub login whose APPROVED review is the approval of record (docs/adr/0063). A name or a
+ * login (in any case, as GitHub compares them) listed twice, or an entry with any other field, is refused.
  */
-export function readApprovers(file: string = APPROVERS_FILE): string[] {
+export function readApproverRecords(file: string = APPROVERS_FILE): ApproverRecord[] {
   const json = readJson(file);
   if (json.format !== APPROVERS_FORMAT) throw new DomainModelError(`${file}: format must be "${APPROVERS_FORMAT}"`);
   text(file, 'note', json.note);
-  return texts(file, 'approvers', json.approvers).map((name, i) => {
+  if (!Array.isArray(json.approvers)) throw new DomainModelError(`${file}: approvers must be a list of objects`);
+  const records = objects(file, 'approvers', json.approvers).map((entry, i) => {
+    const where = `approvers[${String(i)}]`;
+    const extra = Object.keys(entry).filter((key) => key !== 'name' && key !== 'github');
+    if (extra.length) throw new DomainModelError(`${file}: ${where} has fields other than name and github: ${extra.join(', ')}`);
+    const name = text(file, `${where}.name`, entry.name);
     const reason = notAName(name) ?? (name === name.trim() ? null : 'has spaces at either end');
-    if (reason !== null) throw new DomainModelError(`${file}: approvers[${String(i)}] ${reason}`);
-    return name;
+    if (reason !== null) throw new DomainModelError(`${file}: ${where}.name ${reason}`);
+    const github = text(file, `${where}.github`, entry.github);
+    if (!GITHUB_LOGIN.test(github)) throw new DomainModelError(`${file}: ${where}.github is not a GitHub login (letters, digits and single hyphens, at most 39)`);
+    return { name, github };
   });
+  records.forEach((record, i) => {
+    if (records.findIndex((r) => r.name === record.name) !== i) throw new DomainModelError(`${file}: approvers[${String(i)}].name is listed twice`);
+    if (records.findIndex((r) => r.github.toLowerCase() === record.github.toLowerCase()) !== i) throw new DomainModelError(`${file}: approvers[${String(i)}].github is listed twice`);
+  });
+  return records;
+}
+
+/** The names on the approver list, as the approval line must give one (readApproverRecords). */
+export function readApprovers(file: string = APPROVERS_FILE): string[] {
+  return readApproverRecords(file).map((record) => record.name);
 }

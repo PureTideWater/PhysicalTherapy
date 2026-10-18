@@ -19,8 +19,10 @@ export const PROVENANCE_PREFIX = '- Generated at commit ';
 /** The day Change Order 001 was issued: no approval of this document is dated before it. */
 export const EARLIEST_APPROVAL_DATE = '2026-10-16';
 /**
- * The reviewed list of who may sign the approval line, from the repository root (readApprovers). It
- * changes only with the founder's approval, in the same pull request as a document the founder signs.
+ * The reviewed list of who may sign the approval line, from the repository root (readApprovers), each with
+ * the GitHub login whose review is the approval of record (readApproverRecords; docs/adr/0063). It changes
+ * only under that approval: the approval-of-record job holds a pull request that changes it to an APPROVED
+ * review from a login on the base branch's list.
  */
 export const APPROVERS_LIST = 'packages/db/domain-model/approvers.json';
 
