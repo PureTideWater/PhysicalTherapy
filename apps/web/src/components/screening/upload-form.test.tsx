@@ -1,0 +1,44 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+
+import type { ActionState } from '../../lib/http/next';
+import { ScreeningUploadForm } from './upload-form';
+
+/**
+ * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
+ * the browser, so its input has no name and no submission can carry it; ZIP+4 waits until the server asks for it;
+ * the contact's email is where the link goes. SYNTHETIC values.
+ */
+
+const action = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
+
+describe('the screening upload form', () => {
+  const html = renderToStaticMarkup(<ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} />);
+
+  it('reads the file in the browser: its input has no name, so no submission carries it', () => {
+    const file = /<input[^>]*type="file"[^>]*>/.exec(html)?.[0] ?? '';
+    expect(file).toContain('id="screening-file"');
+    expect(file).not.toContain('name=');
+    expect(html).toContain('<label data-slot="label" class');
+    expect(html).toContain('for="screening-file"');
+    // The form itself posts nothing by default: the browser screens the file and builds the request.
+    expect(html).not.toMatch(/<form[^>]*\baction=/);
+    expect(html).not.toContain('enctype="multipart/form-data"');
+  });
+
+  it('asks who the screening is for, and where its link is emailed, and not for ZIP+4 until the server asks', () => {
+    for (const name of ['practiceName', 'state', 'zip', 'contactEmail']) {
+      expect(html).toContain(`name="${name}"`);
+    }
+    expect(html).not.toContain('name="zipPlusFour"');
+    expect(html).toContain('<option value="">Choose a state</option>');
+    expect(html).toContain('<option value="MN">MN</option>');
+    expect(html).toContain('50,000 rows');
+  });
+
+  it('says what it refuses and offers the template, never words a screening does not use', () => {
+    expect(html).toContain('No names, dates of birth, member IDs, dates of service or claim numbers');
+    expect(html).toContain('Download the column template');
+    expect(html.replace(/<[^>]+>/g, ' ')).not.toMatch(/\b(?:owed|under-?paid|recovered)\b/i);
+  });
+});

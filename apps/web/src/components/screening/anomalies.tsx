@@ -136,7 +136,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
         <CardDescription>
           {listed.length === 0
             ? 'No row was priced under Medicare.'
-            : `The ${counted(listed.length, 'priced row')} whose allowed total is furthest below the Medicare figure, by your file’s row number. The figure for one claim line is the engine’s, rounded once; the row’s figure is it times the claim count.`}
+            : `${listed.length === 1 ? 'The priced row' : `The ${String(listed.length)} priced rows with the largest differences, the largest first`}, each by its number in your file. A row is below the Medicare figure where its difference is above zero. The figure for one claim line is the engine’s, rounded once; the row’s figure is it times the claim count.`}
         </CardDescription>
       </CardHeader>
       {listed.length === 0 ? null : (

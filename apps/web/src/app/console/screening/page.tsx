@@ -44,8 +44,8 @@ export default async function ScreeningSplitPage(props: Props) {
       <div className="flex flex-col gap-1">
         <h1 className="text-[2rem] font-bold leading-display tracking-display">Screening place of service</h1>
         <p className="text-base text-muted-foreground">
-          The free screening prices each Medicare row at the facility or the non-facility rate by its place of service. A place in neither list is left unpriced. Your approval is recorded with your
-          name and the time; the latest approval is in force for new screenings.
+          The free screening prices each Medicare row at the facility or the non-facility rate by its place of service. A place in neither list is left unpriced. Your approval is recorded under your
+          account with the time; the latest approval is in force for new screenings.
         </p>
       </div>
       {approved ? (
