@@ -200,6 +200,9 @@ test('an audit report is released only once the reviewer signs; the monthly summ
       await expect(exports.locator('[data-line-level="yes"]').first()).toContainText('Line-level PHI');
       await expect(exports.locator('[data-export="audit_report"]')).toHaveCount(3);
       await expect(exports.locator('[data-export="report_document"]')).toHaveCount(4);
+      // Each download in words, its record named with its own article (the screen tour's C1: "PDF of a audit report").
+      await expect(exports).toContainText('PDF of an audit report');
+      expect(await exports.locator('tbody').innerText()).not.toMatch(/\ba [aeiou]/i);
       await expect(page.locator(`[data-headline]`).getByRole('link').first()).toHaveAttribute('href', `${reportPath}#stage-actionable`);
       await expect(page.getByRole('region', { name: 'Share' }).getByLabel('Link to share within the organization')).toHaveValue(new RegExp(`${reports}$`));
       await expectAccessible(page, 'Reports');

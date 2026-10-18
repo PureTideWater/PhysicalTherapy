@@ -42,7 +42,15 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
               'No pricing run had taken effect when this report was generated, so every line counted as unpriced.'
             ) : (
               <>
-                From the pricing run in effect,{' '}
+                {content.runs_in_effect === undefined || content.runs_in_effect === null ? (
+                  'From the pricing run in effect, '
+                ) : (
+                  <>
+                    Each line at its pricing in effect, across <span className="font-mono tabular-nums">{content.runs_in_effect.runs}</span>{' '}
+                    {content.runs_in_effect.runs === 1 ? 'pricing run' : 'pricing runs'} in effect (service {content.runs_in_effect.period_from} to {content.runs_in_effect.period_to}); the latest to
+                    take effect,{' '}
+                  </>
+                )}
                 <Link className="underline" href={`/p/${practiceId}/pricing-runs/${content.run.id}`}>
                   service {content.run.period_from} to {content.run.period_to}
                 </Link>
@@ -58,8 +66,8 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Reason</th>
-              <th className="py-1 text-right font-medium">Lines</th>
+              <th className="py-1 pr-3 font-medium">Reason</th>
+              <th className="py-1 pr-3 text-right font-medium">Lines</th>
               <th className="py-1 font-medium">Remedy</th>
             </tr>
           </thead>
@@ -102,9 +110,9 @@ export function CoverageFigures({ practiceId, content }: { readonly practiceId: 
           <table className="w-full text-left text-sm" aria-label="Plans waiting on mapping">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Payer</th>
-                <th className="py-1 font-medium">Plan</th>
-                <th className="py-1 text-right font-medium">Lines</th>
+                <th className="py-1 pr-3 font-medium">Payer</th>
+                <th className="py-1 pr-3 font-medium">Plan</th>
+                <th className="py-1 pr-3 text-right font-medium">Lines</th>
                 <th className="py-1 text-right font-medium">Billed</th>
               </tr>
             </thead>
@@ -163,22 +171,22 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
           <table className="w-full text-left text-sm" aria-label="Lines by stage">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Stage</th>
-                <th className="py-1 font-medium">Lines</th>
-                <th className="py-1 font-medium">Billed</th>
+                <th className="py-1 pr-3 font-medium">Stage</th>
+                <th className="py-1 pr-3 font-medium">Lines</th>
+                <th className="py-1 pr-3 font-medium">Billed</th>
                 <th className="py-1 font-medium">Dollars</th>
               </tr>
             </thead>
             <tbody>
               {STAGES.map((stage) => (
                 <tr key={stage} className="border-t" data-stage={stage}>
-                  <td className="py-1">{SUMMARY_BUCKET_LABELS[stage]}</td>
-                  <td className="py-1 font-mono tabular-nums">
+                  <td className="py-1 pr-3">{SUMMARY_BUCKET_LABELS[stage]}</td>
+                  <td className="py-1 pr-3 font-mono tabular-nums">
                     <Link className="underline" href={stageLinesHref(practiceId, stage, content.month)}>
                       {content.total.figures[stage].lines}
                     </Link>
                   </td>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     <Money value={content.total.figures[stage].billed_cents} />
                   </td>
                   <td className="py-1">
@@ -187,9 +195,9 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
                 </tr>
               ))}
               <tr className="border-t text-muted-foreground" data-stage="actionable_written_off">
-                <td className="py-1">Written off from a case (not in the actionable total)</td>
-                <td className="py-1 font-mono tabular-nums">{content.total.written_off.lines}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3">Written off from a case (not in the actionable total)</td>
+                <td className="py-1 pr-3 font-mono tabular-nums">{content.total.written_off.lines}</td>
+                <td className="py-1 pr-3">
                   <Money value={content.total.written_off.billed_cents} />
                 </td>
                 <td className="py-1">
@@ -198,13 +206,13 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               </tr>
               {OTHERS.map((bucket) => (
                 <tr key={bucket} className="border-t text-muted-foreground" data-stage={bucket}>
-                  <td className="py-1">{SUMMARY_BUCKET_LABELS[bucket]}</td>
-                  <td className="py-1 font-mono tabular-nums">
+                  <td className="py-1 pr-3">{SUMMARY_BUCKET_LABELS[bucket]}</td>
+                  <td className="py-1 pr-3 font-mono tabular-nums">
                     <Link className="underline" href={monthLinesHref(practiceId, content.month)}>
                       {content.total.figures[bucket].lines}
                     </Link>
                   </td>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     <Money value={content.total.figures[bucket].billed_cents} />
                   </td>
                   <td className="py-1">—</td>
@@ -226,9 +234,9 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
             <table className="w-full text-left text-sm" aria-label="Stages by payer">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Payer</th>
+                  <th className="py-1 pr-3 font-medium">Payer</th>
                   {STAGES.map((stage) => (
-                    <th key={stage} className="py-1 font-medium">
+                    <th key={stage} className="py-1 pr-3 font-medium">
                       {SUMMARY_BUCKET_LABELS[stage]}
                     </th>
                   ))}
@@ -237,9 +245,9 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               <tbody>
                 {content.by_payer.map((row) => (
                   <tr key={row.payer_id ?? 'none'} className="border-t" data-payer={row.payer_id ?? ''}>
-                    <td className="py-1">{row.payer_name ?? 'Unnamed payer'}</td>
+                    <td className="py-1 pr-3">{row.payer_name ?? 'Unnamed payer'}</td>
                     {STAGES.map((stage) => (
-                      <td key={stage} className="py-1">
+                      <td key={stage} className="py-1 pr-3">
                         {row.figures[stage].lines} {row.figures[stage].lines === 1 ? 'line' : 'lines'}
                         {(stage === 'validated' || stage === 'actionable') && row.figures[stage].variance_cents !== null ? (
                           <>
@@ -270,22 +278,22 @@ export function MonthlyFigures({ practiceId, content }: { readonly practiceId: s
               <table className="w-full text-left text-sm" aria-label="Packets approved by their own writer">
                 <thead className="text-muted-foreground">
                   <tr>
-                    <th className="py-1 font-medium">Case</th>
-                    <th className="py-1 font-medium">Packet version</th>
-                    <th className="py-1 font-medium">Approved on</th>
+                    <th className="py-1 pr-3 font-medium">Case</th>
+                    <th className="py-1 pr-3 font-medium">Packet version</th>
+                    <th className="py-1 pr-3 font-medium">Approved on</th>
                     <th className="py-1 font-medium">Hours after it was written</th>
                   </tr>
                 </thead>
                 <tbody>
                   {content.approved_alone.map((row) => (
                     <tr key={row.packet_version_id} className="border-t" data-approved-alone={row.packet_version_id}>
-                      <td className="py-1">
+                      <td className="py-1 pr-3">
                         <Link className="underline" href={`/p/${practiceId}/cases/${row.case_id}/packet`}>
                           Case packet
                         </Link>
                       </td>
-                      <td className="py-1 font-mono text-xs">{row.packet_version_id}</td>
-                      <td className="py-1">{row.approved_on}</td>
+                      <td className="py-1 pr-3 font-mono text-xs">{row.packet_version_id}</td>
+                      <td className="py-1 pr-3">{row.approved_on}</td>
                       <td className="py-1 font-mono tabular-nums">{row.hours_waited}</td>
                     </tr>
                   ))}

@@ -120,18 +120,18 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <table className="w-full text-left text-sm" aria-label="Members">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Email</th>
-                  <th className="py-1 font-medium">Role</th>
-                  <th className="py-1 font-medium">Account</th>
+                  <th className="py-1 pr-3 font-medium">Email</th>
+                  <th className="py-1 pr-3 font-medium">Role</th>
+                  <th className="py-1 pr-3 font-medium">Account</th>
                   <th className="py-1 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {members.map((member) => (
                   <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
-                    <td className="py-1">{member.email}</td>
-                    <td className="py-1">{roleName(member.role)}</td>
-                    <td className="flex flex-wrap gap-1 py-1">
+                    <td className="py-1 pr-3">{member.email}</td>
+                    <td className="py-1 pr-3">{roleName(member.role)}</td>
+                    <td className="flex flex-wrap gap-1 py-1 pr-3">
                       <Badge variant="outline">{member.userStatus}</Badge>
                       {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
                       {member.locked ? <Badge variant="destructive">locked</Badge> : null}
@@ -178,22 +178,22 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <table className="w-full text-left text-sm" aria-label="Invitations">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Email</th>
-                  <th className="py-1 font-medium">Role</th>
-                  <th className="py-1 font-medium">Sent</th>
-                  <th className="py-1 font-medium">State</th>
+                  <th className="py-1 pr-3 font-medium">Email</th>
+                  <th className="py-1 pr-3 font-medium">Role</th>
+                  <th className="py-1 pr-3 font-medium">Sent</th>
+                  <th className="py-1 pr-3 font-medium">State</th>
                   <th className="py-1 font-medium" />
                 </tr>
               </thead>
               <tbody>
                 {invitations.map((invitation) => (
                   <tr key={invitation.id} className="border-t" data-invitation={invitation.acceptedAt !== null ? 'accepted' : invitation.expired ? 'expired' : 'pending'}>
-                    <td className="py-1">{invitation.email}</td>
-                    <td className="py-1">{roleName(invitation.role)}</td>
-                    <td className="py-1">
+                    <td className="py-1 pr-3">{invitation.email}</td>
+                    <td className="py-1 pr-3">{roleName(invitation.role)}</td>
+                    <td className="py-1 pr-3">
                       {utcDate(invitation.sentAt)} ({invitation.sends} {invitation.sends === 1 ? 'send' : 'sends'})
                     </td>
-                    <td className="py-1">{invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}</td>
+                    <td className="py-1 pr-3">{invitation.acceptedAt !== null ? `accepted ${utcDate(invitation.acceptedAt)}` : invitation.expired ? 'expired' : `open until ${utcDate(invitation.expiresAt)}`}</td>
                     <td className="py-1">
                       {invitation.acceptedAt === null ? (
                         <ActionForm action={resendInvitationAction} submit="Send again" variant="outline" className="flex flex-col gap-1">
@@ -223,24 +223,24 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <table className="w-full text-left text-sm" aria-label="Agreements">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Kind</th>
-                  <th className="py-1 font-medium">Practice</th>
-                  <th className="py-1 font-medium">Version</th>
-                  <th className="py-1 font-medium">Signer</th>
-                  <th className="py-1 font-medium">Signed</th>
-                  <th className="py-1 font-medium">Reference</th>
+                  <th className="py-1 pr-3 font-medium">Kind</th>
+                  <th className="py-1 pr-3 font-medium">Practice</th>
+                  <th className="py-1 pr-3 font-medium">Version</th>
+                  <th className="py-1 pr-3 font-medium">Signer</th>
+                  <th className="py-1 pr-3 font-medium">Signed</th>
+                  <th className="py-1 pr-3 font-medium">Reference</th>
                   <th className="py-1 font-medium">SHA-256</th>
                 </tr>
               </thead>
               <tbody>
                 {agreements.map((agreement) => (
                   <tr key={agreement.id} className="border-t">
-                    <td className="py-1">{AGREEMENT_KINDS.find((kind) => kind.value === agreement.kind)?.label ?? agreement.kind}</td>
-                    <td className="py-1">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
-                    <td className="py-1">{agreement.version}</td>
-                    <td className="py-1">{agreement.signer}</td>
-                    <td className="py-1">{utcDate(agreement.signedAt)}</td>
-                    <td className="py-1 font-mono text-xs">{agreement.documentRef}</td>
+                    <td className="py-1 pr-3">{AGREEMENT_KINDS.find((kind) => kind.value === agreement.kind)?.label ?? agreement.kind}</td>
+                    <td className="py-1 pr-3">{agreement.practiceId === null ? 'Whole organization' : (practiceName.get(agreement.practiceId) ?? 'Another organization’s practice')}</td>
+                    <td className="py-1 pr-3">{agreement.version}</td>
+                    <td className="py-1 pr-3">{agreement.signer}</td>
+                    <td className="py-1 pr-3">{utcDate(agreement.signedAt)}</td>
+                    <td className="py-1 pr-3 font-mono text-xs">{agreement.documentRef}</td>
                     <td className="py-1 font-mono text-xs" title={agreement.sha256}>
                       {agreement.sha256.slice(0, 12)}…
                     </td>
@@ -292,22 +292,22 @@ export default async function OrganizationPage(props: { readonly params: Promise
             <table className="w-full text-left text-sm" aria-label="Grants">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Grantee</th>
-                  <th className="py-1 font-medium">Practice</th>
-                  <th className="py-1 font-medium">Roles admitted</th>
-                  <th className="py-1 font-medium">From</th>
-                  <th className="py-1 font-medium">Until</th>
+                  <th className="py-1 pr-3 font-medium">Grantee</th>
+                  <th className="py-1 pr-3 font-medium">Practice</th>
+                  <th className="py-1 pr-3 font-medium">Roles admitted</th>
+                  <th className="py-1 pr-3 font-medium">From</th>
+                  <th className="py-1 pr-3 font-medium">Until</th>
                   <th className="py-1 font-medium">State</th>
                 </tr>
               </thead>
               <tbody>
                 {grants.map((grant) => (
                   <tr key={grant.id} className="border-t">
-                    <td className="py-1">{grant.granteeName}</td>
-                    <td className="py-1">{grant.practiceName}</td>
-                    <td className="py-1">{roleNames(grant.roles)}</td>
-                    <td className="py-1">{utcDate(grant.startsAt)}</td>
-                    <td className="py-1">{utcDate(grant.endsAt)}</td>
+                    <td className="py-1 pr-3">{grant.granteeName}</td>
+                    <td className="py-1 pr-3">{grant.practiceName}</td>
+                    <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
+                    <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
+                    <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
                     <td className="py-1">{grant.revokedAt === null ? (new Date(grant.endsAt) > new Date() ? 'in force' : 'expired') : `revoked ${utcDate(grant.revokedAt)}`}</td>
                   </tr>
                 ))}

@@ -145,8 +145,10 @@ export function VersionFacts({ review, versionHref }: { readonly review: Version
 export function ReviewBody({ review, href, controls }: { readonly review: VersionReview; readonly href: (query: Record<string, string>) => string; readonly controls?: ReviewControls }) {
   const { cited, records, documents } = review;
   return (
+    // Each column may shrink to its track (min-w-0), so nothing in one widens the page; a record's table of fields
+    // scrolls inside its card if it must, as the app's other wide tables do.
     <div className="grid gap-6 xl:grid-cols-2">
-      <Card role="region" aria-label="Cited page">
+      <Card role="region" aria-label="Cited page" className="min-w-0">
         <CardHeader>
           <CardTitle>The page</CardTitle>
         </CardHeader>
@@ -167,7 +169,7 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
           {cited === null ? null : <CitedPageView cited={cited} pageHref={(page) => href({ document: cited.documentId, page: String(page) })} />}
         </CardContent>
       </Card>
-      <section aria-label="Rate records" className="flex flex-col gap-3">
+      <section aria-label="Rate records" className="flex min-w-0 flex-col gap-3">
         <h2 className="text-xl font-bold tracking-display">Rate records</h2>
         {review.unresolved > 0 ? (
           <Alert variant="destructive" data-state="blocked">
@@ -198,29 +200,36 @@ export function ReviewBody({ review, href, controls }: { readonly review: Versio
                     Show the cited page
                   </Link>
                 )}
-                <table className="w-full text-left text-sm" aria-label="Fields">
-                  <tbody>
-                    {record.fields.map((field) => (
-                      <tr key={field.field} className="border-t align-top" data-field={field.field}>
-                        <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
-                          {field.label}
-                        </th>
-                        <td className="py-1 pr-3">{field.text}</td>
-                        <td className="py-1 pr-3 text-xs whitespace-nowrap">
-                          {field.approvedBy === null ? (
-                            <span className="text-destructive">Not approved</span>
-                          ) : (
-                            <span>
-                              Approved by {field.approvedBy}
-                              {field.approvedAt === null ? '' : `, ${utc(field.approvedAt)}`}
-                            </span>
-                          )}
-                        </td>
-                        {controls?.field === undefined ? null : <td className="py-1">{controls.field(record, field)}</td>}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm" aria-label="Fields">
+                    <tbody>
+                      {record.fields.map((field) => (
+                        <tr key={field.field} className="border-t align-top" data-field={field.field}>
+                          <th scope="row" className="py-1 pr-3 font-medium whitespace-nowrap">
+                            {field.label}
+                          </th>
+                          <td className="py-1 pr-3">{field.text}</td>
+                          {/* The approval wraps between its words and keeps its time on one line: a long approver never pushes the table past its card. */}
+                          <td className="py-1 pr-3 text-xs" data-approval>
+                            {field.approvedBy === null ? (
+                              <span className="text-destructive">Not approved</span>
+                            ) : (
+                              <span>
+                                Approved by {field.approvedBy}
+                                {field.approvedAt === null ? null : (
+                                  <>
+                                    , <span className="whitespace-nowrap">{utc(field.approvedAt)}</span>
+                                  </>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                          {controls?.field === undefined ? null : <td className="py-1">{controls.field(record, field)}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 {record.verifiedBy === null ? null : (
                   <p className="text-xs text-muted-foreground">
                     Fields checked against the cited page by {record.verifiedBy}

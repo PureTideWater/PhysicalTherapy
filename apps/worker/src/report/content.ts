@@ -1,4 +1,5 @@
 import { type PracticeCipher, type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
+import { type LedgerEntry, entriesById, ledgerTotals } from '@tp/ledger';
 import { type Cents, centsToString, cents, parseCents, sumCents } from '@tp/money';
 import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
@@ -21,6 +22,7 @@ import {
 import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
+import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
 import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
 
@@ -41,7 +43,11 @@ import { UNPRICED_REMEDIES } from './remedies';
  *   net expected value of the share. A case may hold lines of other runs (a pattern accumulates
  *   across runs); those count in their own runs' reports, so the headline, the cases and the line CSV
  *   reconcile;
- * - payer approved and recovered: zero until the recovery ledger has entries (milestone 9);
+ * - the headline's three numbers come from the cases table's lines, each at its stage now: actionable
+ *   the share's lines still at actionable (not yet approved or recovered), payer approved and recovered
+ *   the recovery ledger's entries for the share's lines (docs/adr/0042: recovered is only ever the
+ *   ledger's posted or deposited cash, at the practice's proof level, net of recoupments and reversals),
+ *   each case's beside it in the table; the headline is the sum of the table's columns;
  * - evidence gaps: what to obtain to price more lines or to pursue them.
  *
  * Amounts are integer cents as text. Nothing here computes an expected amount: every amount is a
@@ -86,6 +92,17 @@ export interface ReportCase {
   readonly pursuit_cost_cents: string | null;
   readonly net_expected_cents: string | null;
   readonly owner: string | null;
+  /**
+   * The share's lines at each stage now, from the same lines (absent in a report generated before the
+   * headline read them): those still at actionable (not written off, not yet approved or recovered) and
+   * their variance; and the recovery ledger's payer approved and recovered (at the practice's proof
+   * level, net of recoupments and reversals) for the share's lines, and for the case as a whole when it
+   * holds no other run's line. The headline is the sum of these over the cases.
+   */
+  readonly actionable_now_lines?: number;
+  readonly actionable_now_cents?: string;
+  readonly payer_approved_cents?: string;
+  readonly recovered_cents?: string;
 }
 
 export interface ReportAnomaly {
@@ -193,9 +210,10 @@ export interface ReportLine {
   /** The line's stage now (flagged, validated, actionable), or empty. */
   readonly stage: string;
   /**
-   * actionable, written_off, not_actionable, held, in_case_other_run (in a case through another run's
-   * pricing of it), overpaid, paid_as_expected, with_visit (a per-visit line the visit's carrying line
-   * counts for), unpriced.
+   * actionable, payer_approved or recovered (in a case through this run's pricing, not written off, at
+   * that stage now), written_off, not_actionable, held, in_case_other_run (in a case through another
+   * run's pricing of it), overpaid, paid_as_expected, with_visit (a per-visit line the visit's carrying
+   * line counts for), unpriced.
    */
   readonly status: string;
   /** Why it is not actionable, or its write-off reason. */
@@ -441,7 +459,8 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     } else if (validatedCents === null) {
       status = 'paid_as_expected';
     } else if (row.case_id !== null && row.case_in_run === true) {
-      status = row.written_off_reason === null ? 'actionable' : 'written_off';
+      // A case line past actionable is counted at its stage now (the ledger moved it), never as actionable too.
+      status = row.written_off_reason !== null ? 'written_off' : row.stage === 'payer_approved' || row.stage === 'recovered' ? row.stage : 'actionable';
       reasons = row.written_off_reason === null ? [] : [row.written_off_reason];
     } else if (row.case_id !== null) {
       status = 'in_case_other_run';
@@ -525,10 +544,35 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     })
     .filter((entry) => entry.lines > 0);
 
+  // The recovery ledger, read as it stands (docs/adr/0042): each case's entries for its lines this run priced
+  // (and for the case as a whole when it holds no other run's line), at the practice's proof level.
+  const { proofLevel } = await practiceLedgerSettings(scope, input.practiceId);
+  const ledger: readonly LedgerEntry[] = caseRows.length === 0 ? [] : await ledgerEntries(scope, input.practiceId);
+  const byId = entriesById(ledger);
+  const inRun = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (row.case_id !== null && row.case_in_run === true) {
+      inRun.set(row.case_id, (inRun.get(row.case_id) ?? new Set()).add(row.service_line_id));
+    }
+  }
+  const actionableNow = (caseId: string) => lines.filter((line) => line.case_id === caseId && line.status === 'actionable');
+  const ledgerOf = (row: CaseRow) => {
+    const share = inRun.get(row.id) ?? new Set<string>();
+    const whole = row.case_lines === row.lines;
+    return ledgerTotals(
+      ledger.filter((entry) => entry.caseId === row.id && (entry.serviceLineId === null ? whole : share.has(entry.serviceLineId))),
+      proofLevel,
+      byId,
+    );
+  };
+
   const cases: ReportCase[] = caseRows.map((row) => {
-    const actionable = parseCents(row.actionable_cents);
+    const still = actionableNow(row.id);
+    const stillCents = sum(still.map((line) => line.variance_cents ?? '0'));
+    const totals = ledgerOf(row);
     const pursuit = row.pursuit_cost_cents === null ? null : parseCents(row.pursuit_cost_cents);
-    const net = netExpectedValue(actionable, pursuit);
+    // What pursuing the case may still bring: its lines still actionable, less the cost.
+    const net = netExpectedValue(stillCents, pursuit);
     return {
       case_id: row.id,
       payer: row.payer_name,
@@ -551,10 +595,17 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       pursuit_cost_cents: row.pursuit_cost_cents,
       net_expected_cents: net === null ? null : text(net),
       owner: row.owner,
+      actionable_now_lines: still.length,
+      actionable_now_cents: text(stillCents),
+      payer_approved_cents: text(totals.payerApprovedCents),
+      recovered_cents: text(totals.recoveredCents),
     };
   });
   const openCases = cases.filter((item) => item.state === 'open');
-  const actionableCents = sum(openCases.map((item) => item.actionable_cents));
+  // The headline is the cases table's columns summed: the same lines, each at its stage now.
+  const pursued = cases.filter((item) => (item.actionable_now_lines ?? 0) > 0);
+  const actionableCents = sum(cases.map((item) => item.actionable_now_cents ?? '0'));
+  const actionableLines = cases.reduce((total, item) => total + (item.actionable_now_lines ?? 0), 0);
   const anomalies: ReportAnomaly[] = anomalyRows.map((row) => ({
     anomaly_id: row.id,
     label: INVESTIGATORY,
@@ -574,9 +625,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   }));
   const shown = headline({
     actionableCents,
-    actionableLines: openCases.reduce((total, item) => total + item.actionable_lines, 0),
-    payerApprovedCents: cents(0n),
-    recoveredCents: cents(0n),
+    actionableLines,
+    payerApprovedCents: sum(cases.map((item) => item.payer_approved_cents ?? '0')),
+    recoveredCents: sum(cases.map((item) => item.recovered_cents ?? '0')),
     flaggedLines: anomalies.reduce((total, item) => total + item.flagged_lines, 0),
     flaggedRangeLowCents: sum(anomalies.map((item) => item.range_low_cents)),
     flaggedRangeHighCents: sum(anomalies.map((item) => item.range_high_cents)),
@@ -584,8 +635,8 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     validatedCents: sum(validated.map((line) => line.validated_cents as string)),
   });
 
-  const pursuitCosts = openCases.map((item) => item.pursuit_cost_cents);
-  const estimated = openCases.length > 0 && pursuitCosts.every((value) => value !== null);
+  const pursuitCosts = pursued.map((item) => item.pursuit_cost_cents);
+  const estimated = pursued.length > 0 && pursuitCosts.every((value) => value !== null);
   const pursuitTotal = estimated ? sum(pursuitCosts) : null;
   const gaps: EvidenceGap[] = [];
   for (const entry of coverage.reasons) {
@@ -660,7 +711,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
     },
     headline: {
       actionable_cents: text(shown.figures[0].cents),
-      actionable_lines: openCases.reduce((total, item) => total + item.actionable_lines, 0),
+      actionable_lines: actionableLines,
       payer_approved_cents: text(shown.figures[1].cents),
       recovered_cents: text(shown.figures[2].cents),
       flagged_lines: shown.flagged.lines,

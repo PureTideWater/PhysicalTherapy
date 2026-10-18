@@ -56,12 +56,12 @@ export default async function RuleReleasesPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Rule releases">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Release</th>
-                <th className="py-1 font-medium">Published</th>
-                <th className="py-1 text-right font-medium">Records</th>
-                <th className="py-1 font-medium">Standing</th>
-                <th className="py-1 text-right font-medium">Complete runs</th>
-                <th className="py-1 text-right font-medium">Re-runs (accepted)</th>
+                <th className="py-1 pr-3 font-medium">Release</th>
+                <th className="py-1 pr-3 font-medium">Published</th>
+                <th className="py-1 pr-3 text-right font-medium">Records</th>
+                <th className="py-1 pr-3 font-medium">Standing</th>
+                <th className="py-1 pr-3 text-right font-medium">Complete runs</th>
+                <th className="py-1 pr-3 text-right font-medium">Re-runs (accepted)</th>
                 <th className="py-1 text-right font-medium">Lines re-runs changed</th>
               </tr>
             </thead>
@@ -112,10 +112,10 @@ export default async function RuleReleasesPage(props: Props) {
                 <table className="w-full text-left text-sm" aria-label="Affected runs by practice">
                   <thead className="text-muted-foreground">
                     <tr>
-                      <th className="py-1 font-medium">Practice</th>
-                      <th className="py-1 text-right font-medium">Runs pinned to it (in effect)</th>
-                      <th className="py-1 text-right font-medium">Re-runs under it (accepted)</th>
-                      <th className="py-1 text-right font-medium">Lines those re-runs changed</th>
+                      <th className="py-1 pr-3 font-medium">Practice</th>
+                      <th className="py-1 pr-3 text-right font-medium">Runs pinned to it (in effect)</th>
+                      <th className="py-1 pr-3 text-right font-medium">Re-runs under it (accepted)</th>
+                      <th className="py-1 pr-3 text-right font-medium">Lines those re-runs changed</th>
                       <th className="py-1 text-right font-medium">Runs in effect on other releases</th>
                     </tr>
                   </thead>
@@ -161,11 +161,11 @@ export default async function RuleReleasesPage(props: Props) {
               <table className="w-full text-left text-sm" aria-label="Drafts">
                 <thead className="text-muted-foreground">
                   <tr>
-                    <th className="py-1 font-medium">Draft file</th>
-                    <th className="py-1 font-medium">Record types</th>
-                    <th className="py-1 text-right font-medium">Records</th>
-                    <th className="py-1 text-right font-medium">L1</th>
-                    <th className="py-1 text-right font-medium">L2</th>
+                    <th className="py-1 pr-3 font-medium">Draft file</th>
+                    <th className="py-1 pr-3 font-medium">Record types</th>
+                    <th className="py-1 pr-3 text-right font-medium">Records</th>
+                    <th className="py-1 pr-3 text-right font-medium">L1</th>
+                    <th className="py-1 pr-3 text-right font-medium">L2</th>
                     <th className="py-1 text-right font-medium">L3</th>
                   </tr>
                 </thead>

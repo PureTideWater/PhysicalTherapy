@@ -104,10 +104,10 @@ export default async function PricingRunsPage(props: Props) {
             <CardDescription>Lists exactly the lines whose expected allowed, unpriced reason or adjustments differ, with the cause from the traces.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form action={`${path}/compare`} method="get" className="grid max-w-3xl gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-              <div className="flex flex-col gap-1.5">
+            <form action={`${path}/compare`} method="get" className="grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="compare-before">First run</Label>
-                <select id="compare-before" name="before" required defaultValue={options[1]?.id} className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="compare-before" name="before" required defaultValue={options[1]?.id} className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   {options.map((option) => (
                     <option key={option.id} value={option.id}>
                       {optionLabel(option)}
@@ -115,9 +115,9 @@ export default async function PricingRunsPage(props: Props) {
                   ))}
                 </select>
               </div>
-              <div className="flex flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5">
                 <Label htmlFor="compare-after">Second run</Label>
-                <select id="compare-after" name="after" required defaultValue={options[0]?.id} className="h-9 rounded-md border bg-background px-2 text-sm">
+                <select id="compare-after" name="after" required defaultValue={options[0]?.id} className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm">
                   {options.map((option) => (
                     <option key={option.id} value={option.id}>
                       {optionLabel(option)}

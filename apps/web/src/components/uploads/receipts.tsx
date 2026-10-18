@@ -145,11 +145,11 @@ export function ReceiptList(props: {
       <table className="w-full text-left text-sm">
         <thead className="text-muted-foreground">
           <tr>
-            <th className="py-1 font-medium">Received</th>
-            <th className="py-1 font-medium">Document</th>
-            <th className="py-1 font-medium">Kind</th>
-            <th className="py-1 font-medium">Size</th>
-            <th className="py-1 font-medium">Status</th>
+            <th className="py-1 pr-3 font-medium">Received</th>
+            <th className="py-1 pr-3 font-medium">Document</th>
+            <th className="py-1 pr-3 font-medium">Kind</th>
+            <th className="py-1 pr-3 font-medium">Size</th>
+            <th className="py-1 pr-3 font-medium">Status</th>
             <th className="py-1 font-medium">
               <span className="sr-only">Actions</span>
             </th>

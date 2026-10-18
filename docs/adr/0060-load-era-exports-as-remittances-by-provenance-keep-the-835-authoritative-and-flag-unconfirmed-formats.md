@@ -251,7 +251,7 @@ unconfirmed.
   its 835 twin),
   `apps/worker/src/intake/intake.db.test.ts`, `apps/web/src/lib/routes/uploads.db.test.ts` and
   `coverage-formats.db.test.ts`, and the `era-exports` end-to-end journeys.
-- The domain model is regenerated with the new kind explained; it awaits the founder's approval.
+- The domain model is regenerated with the new kind explained; the founder approved it on 2026-10-18.
 
 ## Revisit when
 
@@ -262,3 +262,14 @@ flag that its lines cannot price under percent-of-Medicare terms); a design part
 read, or exports past 4 MiB in one file (a streaming normalizer); the owner wants an export's payer aliased to
 the 835 payer of the same name, or the payer added to the export key; or a payer is found to send an 835 whose
 payment an export already holds under another trace, or names its payee in a form the export does not.
+
+## Owner rulings (2026-10-18)
+
+The founder approved the domain model at this migration and ruled on the three questions this ADR left open:
+
+- **The payer stays out of the export key.** A payment of another payer that shares the payee, number, sign,
+  amount and date is held for review (`export_payment_other_payer`), as built; D12 (a)'s key is unchanged.
+- **No payer aliasing.** An export's `NAME:` payer and `PLAN:` plans go to the mapping queue as unmapped payers
+  and plans do (MAP-01); nothing links them to an 835 payer by name.
+- **Both limits stand.** Place of service is a required column (an export without it is held with
+  `export_column_missing`), and one export is at most 4 MiB; a longer period goes up as several files or a zip.

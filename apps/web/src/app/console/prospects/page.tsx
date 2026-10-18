@@ -48,30 +48,30 @@ export default async function ProspectsPage(props: { readonly searchParams: Prom
         <table className="w-full text-left text-sm" aria-label="Audit requests">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Organization</th>
-              <th className="py-1 font-medium">Contact</th>
-              <th className="py-1 font-medium">Locations</th>
-              <th className="py-1 font-medium">Payers</th>
-              <th className="py-1 font-medium">Billing</th>
-              <th className="py-1 font-medium">Received</th>
-              <th className="py-1 font-medium">Status</th>
+              <th className="py-1 pr-3 font-medium">Organization</th>
+              <th className="py-1 pr-3 font-medium">Contact</th>
+              <th className="py-1 pr-3 font-medium">Locations</th>
+              <th className="py-1 pr-3 font-medium">Payers</th>
+              <th className="py-1 pr-3 font-medium">Billing</th>
+              <th className="py-1 pr-3 font-medium">Received</th>
+              <th className="py-1 pr-3 font-medium">Status</th>
               <th className="py-1 font-medium">Next</th>
             </tr>
           </thead>
           <tbody>
             {prospects.map((prospect) => (
               <tr key={prospect.id} className="border-t align-top" data-prospect-status={prospect.status}>
-                <td className="py-1">{prospect.organizationName}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3">{prospect.organizationName}</td>
+                <td className="py-1 pr-3">
                   {prospect.contactName}
                   <br />
                   <span className="text-xs text-muted-foreground">{prospect.contactEmail}</span>
                 </td>
-                <td className="py-1 font-mono tabular-nums">{prospect.locations}</td>
-                <td className="py-1">{prospect.payers.join(', ')}</td>
-                <td className="py-1">{BILLING_ARRANGEMENT_LABELS[prospect.billingArrangement]}</td>
-                <td className="py-1">{utc(prospect.createdAt)}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3 font-mono tabular-nums">{prospect.locations}</td>
+                <td className="py-1 pr-3">{prospect.payers.join(', ')}</td>
+                <td className="py-1 pr-3">{BILLING_ARRANGEMENT_LABELS[prospect.billingArrangement]}</td>
+                <td className="py-1 pr-3">{utc(prospect.createdAt)}</td>
+                <td className="py-1 pr-3">
                   <Badge variant="outline">{prospect.status}</Badge>
                 </td>
                 <td className="py-1">

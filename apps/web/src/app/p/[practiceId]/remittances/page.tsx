@@ -71,12 +71,12 @@ export default async function RemittancesPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Remittances">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Payer</th>
-                  <th className="py-1 font-medium">Payment date</th>
-                  <th className="py-1 font-medium">Trace</th>
-                  <th className="py-1 text-right font-medium">Amount</th>
-                  <th className="py-1 text-right font-medium">Claims</th>
-                  <th className="py-1 font-medium">Balanced</th>
+                  <th className="py-1 pr-3 font-medium">Payer</th>
+                  <th className="py-1 pr-3 font-medium">Payment date</th>
+                  <th className="py-1 pr-3 font-medium">Trace</th>
+                  <th className="py-1 pr-3 text-right font-medium">Amount</th>
+                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                  <th className="py-1 pr-3 font-medium">Balanced</th>
                   <th className="py-1 font-medium">Source file</th>
                 </tr>
               </thead>

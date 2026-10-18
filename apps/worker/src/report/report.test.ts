@@ -113,7 +113,11 @@ describe('the report HTML', () => {
   });
 
   it('keeps the word recovered beside stage five only', () => {
-    const withoutHeadline = html.replace(/<div class="figure"><div class="label">Recovered \(posted\)<\/div>.*?<\/div><\/div>/, '').replace(/Recovered \(posted\) counts only cash posted/, '');
+    const withoutHeadline = html
+      .replace(/<div class="figure"><div class="label">Recovered \(posted\)<\/div>.*?<\/div><\/div>/, '')
+      .replace(/Recovered \(posted\) counts only cash posted/, '')
+      // Stage five's own section, by case, named with its proof level.
+      .replace(/<section aria-label="Payer approved and recovered \(posted\)">.*?<\/section>/, '');
     expect(withoutHeadline).not.toMatch(/recover/i);
     // And never without the cash that proves it.
     expect(html).not.toMatch(/Recovered(?! \((posted|deposited)\))/);
@@ -127,11 +131,40 @@ describe('the report HTML', () => {
   });
 
   it('shows the cases with their totals, deadlines, pursuit cost and net expected value, and the evidence gaps', () => {
-    expect(html).toContain('<td>$280.00</td><td>2027-01-15</td><td>11 lines, $340.00</td><td>$82.50</td><td>$197.50</td>');
-    expect(html).toContain('Pursuit cost of the open cases: <span class="figure-amount">$82.50</span>; net expected value <span class="figure-amount">$197.50</span>.');
+    // Each case's share at its stage now: actionable, payer approved, recovered (a report stored before them shows its share and zeros).
+    expect(html).toContain('<td>Paid below the contract rate</td><td>8 of 8</td><td>$280.00</td><td>2027-01-15</td><td>11 lines, $340.00</td><td>$82.50</td><td>$197.50</td>');
+    // Payer approved and recovered by case, beside them (a report stored before they were read shows zeros).
+    expect(html).toContain('<td>SYNTHETIC PAYER Q</td><td>SYNPLAN-FIX-ONE</td><td>open</td><td>$0.00</td><td>$0.00</td>');
+    expect(html).toContain('Neither had an entry when the report was generated.');
+    expect(html).toContain('Pursuit cost of the cases still actionable: <span class="figure-amount">$82.50</span>; net expected value <span class="figure-amount">$197.50</span>.');
     expect(html).toContain('Below the per-line materiality');
     expect(html).toContain('Overpayments: 1 line, <span class="figure-amount">-$12.00</span>; recorded and shown, never pursued.');
     expect(html).toContain('<td>NO_AGREEMENT</td><td>33</td><td>$3,000.00</td>');
+  });
+
+  it('says beside payer approved and recovered what the ledger held, and names each case’s state (the screen tour’s N4)', () => {
+    const [first] = CONTENT.cases;
+    if (first === undefined) {
+      throw new Error('the fixture has a case');
+    }
+    const recovered = auditHtml({
+      ...CONTENT,
+      headline: { ...CONTENT.headline, actionable_cents: '0', actionable_lines: 0, payer_approved_cents: '3000', recovered_cents: '3000' },
+      cases: [{ ...first, state: 'resolved', actionable_now_lines: 0, actionable_now_cents: '0', payer_approved_cents: '3000', recovered_cents: '3000' }],
+    });
+    const headline = recovered.slice(recovered.indexOf('aria-label="Headline"'), recovered.indexOf('aria-label="Coverage"'));
+    expect(headline).toContain('Payer approved</div><div class="amount">$30.00</div><div class="note">accepted by the payer, from the ledger’s entries; not cash until it posts</div>');
+    expect(headline).toContain('Recovered (posted)</div><div class="amount">$30.00</div><div class="note">cash posted, from the ledger’s entries, net of recoupments and reversals</div>');
+    expect(recovered).not.toContain('recorded yet');
+    expect(recovered).not.toContain('nothing has posted yet');
+    // The case's share at each stage now, beside its state in words: nothing still actionable, 30.00 approved and recovered.
+    expect(recovered).toContain('<td>Paid below the contract rate</td><td>0 of 8</td><td>$0.00</td><td>2027-01-15</td>');
+    expect(recovered).toContain('<td>SYNTHETIC PAYER Q</td><td>SYNPLAN-FIX-ONE</td><td>resolved</td><td>$30.00</td><td>$30.00</td>');
+    expect(recovered).toContain('The headline is the sum of each column.');
+    expect(recovered).not.toContain('Neither had an entry');
+    const submitted = auditHtml({ ...CONTENT, cases: [{ ...first, state: 'submitted' }] });
+    expect(submitted).toContain('<td>submitted</td>');
+    expect(submitted).not.toContain('closed (written off)');
   });
 
   it('escapes every text it shows and loads nothing from outside the document', () => {

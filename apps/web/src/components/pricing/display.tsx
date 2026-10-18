@@ -1,7 +1,8 @@
 import type { RerunReason, RunCoverage } from '@tp/worker/pricing';
-import { Badge } from '@tp/ui';
+import { Badge, EmptyState } from '@tp/ui';
 import Link from 'next/link';
 
+import { unpricedReasonText } from '../../lib/contracts/remedies';
 import type { RunNames, RunStatus, RunSummary } from '../../lib/pricing/queries';
 import { shareOf } from '../../lib/pricing/view';
 import { Money } from '../remittances/display';
@@ -84,6 +85,49 @@ export function CoverageShares({ coverage }: { readonly coverage: RunCoverage })
   );
 }
 
+/**
+ * The run's unpriced lines by reason, each with its remedy and billed dollars (PRD 7, Pricing runs: "the unpriced
+ * reasons by count"), then its engine errors by detail. A run that left no line unpriced says so as an empty state,
+ * never as a table's header over no rows (the screen tour's C3).
+ */
+export function UnpricedReasons({ coverage }: { readonly coverage: RunCoverage }) {
+  const reasons = coverage.reasons.filter((entry) => entry.lines > 0);
+  if (reasons.length === 0) {
+    return <EmptyState title="No line of this run is unpriced" nextStep="Nothing to obtain for this run. Coverage shows what the practice’s other lines wait on, and the lines below open each trace." />;
+  }
+  return (
+    <>
+      <table className="w-full text-left text-sm" aria-label="Unpriced reasons">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="py-1 pr-3 font-medium">Reason</th>
+            <th className="py-1 pr-3 font-medium">Remedy</th>
+            <th className="py-1 pr-3 text-right font-medium">Lines</th>
+            <th className="py-1 text-right font-medium">Billed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {reasons.map((entry) => (
+            <tr key={entry.reason} className="border-t" data-reason={entry.reason}>
+              <td className="py-1 pr-3 font-mono text-xs">{entry.reason}</td>
+              <td className="py-1 pr-3">{unpricedReasonText(entry.reason).remedy}</td>
+              <td className="py-1 pr-3 text-right font-mono tabular-nums">{entry.lines}</td>
+              <td className="py-1 text-right">
+                <Money value={entry.charge_cents} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {coverage.engine_errors.length === 0 ? null : (
+        <p className="pt-3 text-sm">
+          Engine errors by detail: {coverage.engine_errors.map((entry) => `${entry.detail} (${String(entry.lines)}${entry.pages_operator ? ', operator alerted' : ', for review'})`).join('; ')}.
+        </p>
+      )}
+    </>
+  );
+}
+
 const KIND_TEXT: Readonly<Record<string, string>> = {
   contract: 'Contract',
   ma_noncontracted: 'Medicare Advantage, non-contracted',
@@ -99,11 +143,11 @@ export function PatternTable({ practiceId, coverage, names, limit }: { readonly 
     <table className="w-full text-left text-sm" aria-label="Variance by payer pattern">
       <thead className="text-muted-foreground">
         <tr>
-          <th className="py-1 font-medium">Payer and plan</th>
-          <th className="py-1 font-medium">Priced under</th>
-          <th className="py-1 text-right font-medium">Lines</th>
-          <th className="py-1 text-right font-medium">Underpaid lines</th>
-          <th className="py-1 text-right font-medium">Underpaid (validated)</th>
+          <th className="py-1 pr-3 font-medium">Payer and plan</th>
+          <th className="py-1 pr-3 font-medium">Priced under</th>
+          <th className="py-1 pr-3 text-right font-medium">Lines</th>
+          <th className="py-1 pr-3 text-right font-medium">Underpaid lines</th>
+          <th className="py-1 pr-3 text-right font-medium">Underpaid (validated)</th>
           <th className="py-1 text-right font-medium">Overpaid (recorded)</th>
         </tr>
       </thead>

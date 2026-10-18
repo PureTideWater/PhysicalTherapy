@@ -46,33 +46,33 @@ export default async function TicketsPage(props: { readonly searchParams: Promis
         <table className="w-full text-left text-sm" aria-label="Tickets">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Number</th>
-              <th className="py-1 font-medium">From</th>
-              <th className="py-1 font-medium">About</th>
-              <th className="py-1 font-medium">Message</th>
-              <th className="py-1 font-medium">Opened</th>
+              <th className="py-1 pr-3 font-medium">Number</th>
+              <th className="py-1 pr-3 font-medium">From</th>
+              <th className="py-1 pr-3 font-medium">About</th>
+              <th className="py-1 pr-3 font-medium">Message</th>
+              <th className="py-1 pr-3 font-medium">Opened</th>
               <th className="py-1 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {tickets.map((ticket) => (
               <tr key={ticket.id} className="border-t align-top" data-ticket-status={ticket.status}>
-                <td className="py-1 font-mono tabular-nums">{ticket.number}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3 font-mono tabular-nums">{ticket.number}</td>
+                <td className="py-1 pr-3">
                   {ticket.requesterEmail}
                   <br />
                   <span className="text-xs text-muted-foreground">{ticket.organizations.join(', ')}</span>
                 </td>
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   {CATEGORY_LABELS[ticket.category]}
                   <br />
                   <span className="text-xs text-muted-foreground">screen: {ticket.screen}</span>
                 </td>
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   <p className="font-medium">{ticket.subject}</p>
                   <p className="whitespace-pre-wrap">{ticket.message}</p>
                 </td>
-                <td className="py-1">{utc(ticket.createdAt)}</td>
+                <td className="py-1 pr-3">{utc(ticket.createdAt)}</td>
                 <td className="py-1">
                   <Badge variant="outline">{ticket.status}</Badge>
                   <div className="mt-2 flex flex-col gap-1">

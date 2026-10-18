@@ -88,10 +88,10 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
           <table className="w-full text-left text-sm" aria-label="Transaction sets">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Transaction set</th>
-                <th className="py-1 font-medium">Outcome</th>
-                <th className="py-1 text-right font-medium">Claims</th>
-                <th className="py-1 text-right font-medium">Lines</th>
+                <th className="py-1 pr-3 font-medium">Transaction set</th>
+                <th className="py-1 pr-3 font-medium">Outcome</th>
+                <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                <th className="py-1 pr-3 text-right font-medium">Lines</th>
                 <th className="py-1 font-medium">Remittance</th>
               </tr>
             </thead>
@@ -121,8 +121,8 @@ function X12Report({ practiceId, parse }: { readonly practiceId: string; readonl
           <table className="w-full text-left text-sm" aria-label="Errors">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Code</th>
-                <th className="py-1 font-medium">Where</th>
+                <th className="py-1 pr-3 font-medium">Code</th>
+                <th className="py-1 pr-3 font-medium">Where</th>
                 <th className="py-1 font-medium">What</th>
               </tr>
             </thead>
@@ -161,10 +161,10 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
           <table className="w-full text-left text-sm" aria-label="Payments">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Payment</th>
-                <th className="py-1 font-medium">Outcome</th>
-                <th className="py-1 text-right font-medium">Claims</th>
-                <th className="py-1 text-right font-medium">Lines</th>
+                <th className="py-1 pr-3 font-medium">Payment</th>
+                <th className="py-1 pr-3 font-medium">Outcome</th>
+                <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                <th className="py-1 pr-3 text-right font-medium">Lines</th>
                 <th className="py-1 font-medium">Remittance</th>
               </tr>
             </thead>
@@ -197,8 +197,8 @@ function ExportReport({ practiceId, parse }: { readonly practiceId: string; read
           <table className="w-full text-left text-sm" aria-label="Holds">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Reason</th>
-                <th className="py-1 font-medium">Where</th>
+                <th className="py-1 pr-3 font-medium">Reason</th>
+                <th className="py-1 pr-3 font-medium">Where</th>
                 <th className="py-1 font-medium">What, and what to do</th>
               </tr>
             </thead>

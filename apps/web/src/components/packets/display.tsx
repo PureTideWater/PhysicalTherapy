@@ -2,6 +2,7 @@ import type { LineDeadline, PacketContent, VerifierReport } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
 import { Badge } from '@tp/ui';
 import Link from 'next/link';
+import { Fragment } from 'react';
 
 import { Money } from '../remittances/display';
 import { StatusChip, type StatusTone } from '../status';
@@ -30,11 +31,11 @@ export function DeadlineChip({ status }: { readonly status: DeadlineStatus }) {
 
 function LineDeadlineCell({ deadline, windowEndsOn }: { readonly deadline: LineDeadline | undefined; readonly windowEndsOn: string | null }) {
   if (deadline === undefined) {
-    return <span className="font-mono tabular-nums">{windowEndsOn ?? '—'}</span>;
+    return <span className="font-mono tabular-nums whitespace-nowrap">{windowEndsOn ?? '—'}</span>;
   }
   return (
     <span className="flex flex-col items-start gap-0.5">
-      <span className="font-mono tabular-nums">{deadline.ends_on ?? '—'}</span>
+      <span className="font-mono tabular-nums whitespace-nowrap">{deadline.ends_on ?? '—'}</span>
       <DeadlineChip status={deadline.status} />
       {deadline.cause === null ? null : (
         <span className="font-mono text-xs" data-deadline-cause={deadline.cause}>
@@ -94,55 +95,80 @@ export function Citation({ content }: { readonly content: PacketContent }) {
   );
 }
 
+/**
+ * A placeholder as the schedule shows it, with a place to wrap after each underscore and colon
+ * ({{claim_<wbr>control_<wbr>number:<wbr>1}}), so a narrow column breaks it between its words; its text is the
+ * placeholder exactly.
+ */
+function Placeholder({ value }: { readonly value: string }) {
+  return (
+    <>
+      {value.split(/(?<=[_:])/).map((part, index) => (
+        <Fragment key={index}>
+          {index === 0 ? null : <wbr />}
+          {part}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
+/**
+ * The line schedule (PRD 12: claim control numbers, service dates, codes, units, expected, observed and variance,
+ * each with its trace reference), in the app's table pattern: each cell's right padding, figures right-aligned under
+ * their headers, dates kept whole, and a placeholder wrapping between its words, so at a desktop width the whole
+ * schedule fits its card, its window and trace columns in view (the screen tour's L2); a narrower one scrolls
+ * inside the card.
+ */
 export function LineSchedule({ content, practiceId }: { readonly content: PacketContent; readonly practiceId: string }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm" aria-label="Line schedule">
         <thead>
-          <tr className="border-b text-left">
-            <th className="px-2 py-1 font-medium">Row</th>
-            <th className="px-2 py-1 font-medium">Claim</th>
-            <th className="px-2 py-1 font-medium">Patient</th>
-            <th className="px-2 py-1 font-medium">Service date</th>
-            <th className="px-2 py-1 font-medium">Code</th>
-            <th className="px-2 py-1 font-medium">Units</th>
-            <th className="px-2 py-1 font-medium">Expected</th>
-            <th className="px-2 py-1 font-medium">Observed</th>
-            <th className="px-2 py-1 font-medium">Variance (Actionable)</th>
-            <th className="px-2 py-1 font-medium">Paid, on</th>
-            <th className="px-2 py-1 font-medium">{content.format === 'tp-packet/2' ? 'Deadline' : 'Window ends'}</th>
-            <th className="px-2 py-1 font-medium">Trace</th>
+          <tr className="border-b text-left align-bottom">
+            <th className="py-1 pr-3 font-medium">Row</th>
+            <th className="py-1 pr-3 font-medium">Claim</th>
+            <th className="py-1 pr-3 font-medium">Patient</th>
+            <th className="py-1 pr-3 font-medium">Service date</th>
+            <th className="py-1 pr-3 font-medium">Code</th>
+            <th className="py-1 pr-3 text-right font-medium">Units</th>
+            <th className="py-1 pr-3 text-right font-medium">Expected</th>
+            <th className="py-1 pr-3 text-right font-medium">Observed</th>
+            <th className="py-1 pr-3 text-right font-medium">Variance (Actionable)</th>
+            <th className="py-1 pr-3 font-medium">Paid, on</th>
+            <th className="py-1 pr-3 font-medium">{content.format === 'tp-packet/2' ? 'Deadline' : 'Window ends'}</th>
+            <th className="py-1 font-medium">Trace</th>
           </tr>
         </thead>
         <tbody>
           {content.lines.map((line) => (
             <tr key={line.row} className="border-b align-top last:border-0" data-row={line.row} data-deadline={'deadline' in line ? line.deadline.status : undefined}>
-              <td className="px-2 py-1 font-mono tabular-nums">{line.row}</td>
-              <td className="px-2 py-1 font-mono text-xs" data-placeholder="claim_control_number">
-                {line.claim_control_number}
+              <td className="py-1 pr-3 font-mono tabular-nums">{line.row}</td>
+              <td className="py-1 pr-3 font-mono text-xs" data-placeholder="claim_control_number">
+                <Placeholder value={line.claim_control_number} />
               </td>
-              <td className="px-2 py-1 font-mono text-xs" data-placeholder="patient_name">
-                {line.patient_name}
+              <td className="py-1 pr-3 font-mono text-xs" data-placeholder="patient_name">
+                <Placeholder value={line.patient_name} />
               </td>
-              <td className="px-2 py-1 font-mono tabular-nums">{line.service_date}</td>
-              <td className="px-2 py-1 font-mono">{[line.procedure_code, ...line.modifiers].join(' ')}</td>
-              <td className="px-2 py-1 font-mono tabular-nums">{line.units}</td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3 font-mono tabular-nums whitespace-nowrap">{line.service_date}</td>
+              <td className="py-1 pr-3 font-mono">{[line.procedure_code, ...line.modifiers].join(' ')}</td>
+              <td className="py-1 pr-3 text-right font-mono tabular-nums">{line.units}</td>
+              <td className="py-1 pr-3 text-right">
                 <Money value={line.expected_cents} />
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3 text-right">
                 <Money value={line.observed_cents} />
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3 text-right">
                 <Money value={line.variance_cents} />
               </td>
-              <td className="px-2 py-1">
-                <Money value={line.paid_cents} />, {line.paid_on}
+              <td className="py-1 pr-3">
+                <Money value={line.paid_cents} />, <span className="whitespace-nowrap">{line.paid_on}</span>
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 pr-3">
                 <LineDeadlineCell deadline={'deadline' in line ? line.deadline : undefined} windowEndsOn={line.window_ends_on} />
               </td>
-              <td className="px-2 py-1">
+              <td className="py-1 whitespace-nowrap">
                 <Link className="underline" href={`/p/${practiceId}/lines/${line.service_line_id}?run=${line.pricing_run_id}`}>
                   Line trace
                 </Link>

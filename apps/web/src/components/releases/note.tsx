@@ -31,9 +31,9 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
         <table className="w-full text-left text-sm" aria-label="Changes by record type">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Record type</th>
-              <th className="py-1 text-right font-medium">Added</th>
-              <th className="py-1 text-right font-medium">Removed</th>
+              <th className="py-1 pr-3 font-medium">Record type</th>
+              <th className="py-1 pr-3 text-right font-medium">Added</th>
+              <th className="py-1 pr-3 text-right font-medium">Removed</th>
               <th className="py-1 text-right font-medium">Changed</th>
             </tr>
           </thead>
@@ -53,8 +53,8 @@ export function ReleaseChanges({ note }: { readonly note: ReleaseNote }) {
         <table className="w-full text-left text-sm" aria-label="Records that differ">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Record</th>
-              <th className="py-1 font-medium">From</th>
+              <th className="py-1 pr-3 font-medium">Record</th>
+              <th className="py-1 pr-3 font-medium">From</th>
               <th className="py-1 font-medium">Change</th>
             </tr>
           </thead>

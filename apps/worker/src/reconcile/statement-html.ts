@@ -72,9 +72,14 @@ function entryTable(caption: string, entries: readonly LedgerEntry[], empty: str
   return `<table${figureColumns({ id: [1, 2], date: [4] })}><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Entry</th><th scope="col">Case</th><th scope="col">Stage</th><th scope="col">Money moved</th><th scope="col" class="amount">Amount</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** How many entries a figure is recomputed from, with its verb: "Its 1 linked entry gives", "Its 2 linked entries give" (the screen tour's C1). */
+function linkedEntries(count: number): string {
+  return count === 1 ? 'Its 1 linked entry gives' : `Its ${String(count)} linked entries give`;
+}
+
 function figure(title: string, note: string, check: FigureCheck, empty: string): string {
   return `<h2>${escapeHtml(title)}: <span class="figure-amount">${escapeHtml(usd(check.storedCents))}</span></h2>
-  <p>${escapeHtml(note)} ${escapeWithFigures(check.matches ? `Its ${String(check.entries.length)} linked entries give ${usd(check.recomputedCents)}.` : `Its linked entries give ${usd(check.recomputedCents)}, not the figure stored.`)}</p>
+  <p>${escapeHtml(note)} ${escapeWithFigures(check.matches ? `${linkedEntries(check.entries.length)} ${usd(check.recomputedCents)}.` : `Its linked entries give ${usd(check.recomputedCents)}, not the figure stored.`)}</p>
   ${entryTable(`Entries of ${title.toLowerCase()}`, check.entries, empty)}`;
 }
 
