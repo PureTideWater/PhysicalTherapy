@@ -9,6 +9,7 @@ import {
   BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
   FULLY_REDUCED,
+  LEFT_OUT_NOTE,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   MEDICARE_LINE_LABEL,
@@ -61,6 +62,8 @@ const SUMMARY: ScreeningSummaryData = {
   contractRequired: { rows: 2, claimLines: 50, observedCents: c(654_321n) },
   notScreened: { rows: 1, claimLines: 10, observedCents: c(68_179n) },
   couldNotPrice: { rows: 0, claimLines: 0, observedCents: c(0n) },
+  // Two rows of fewer than 11 claim lines the browser left out before sending (SCR-07): in no other figure.
+  leftOut: { rows: 2, claimLines: 13, observedCents: c(54_321n) },
 };
 
 const GROUPS: ScreeningGroup[] = [
@@ -269,6 +272,23 @@ describe('the screening summary', () => {
     const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, priced: { ...SUMMARY.priced, pooledRows: 0, reducedCents: c(600_000n), reducedDifferenceCents: c(88_000n) } }} />);
     expect(none).not.toContain('data-figures="fully-reduced"');
     expect(none).not.toContain(REDUCED_FIGURE_LABEL);
+  });
+
+  it('says how many rows, claim lines and dollars the browser left out before sending, apart from every figure, and nothing when none (SCR-07)', () => {
+    expect(html).toMatch(/data-section="left-out"[\s\S]*?Left out before sending/);
+    expect(LEFT_OUT_NOTE).toBe(
+      'A row of fewer than 11 claim lines was left out by your browser before anything was sent, so that no row could describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.',
+    );
+    expect(text(html)).toContain(LEFT_OUT_NOTE);
+    const stat = (slot: string) => text(new RegExp(`data-figure="${slot}"[^>]*>([\\s\\S]*?)</dd>`).exec(html)?.[1] ?? '').trim();
+    expect(stat('left-out-rows')).toBe('Rows 2');
+    expect(stat('left-out-claim-lines')).toBe('Claim lines 13');
+    expect(stat('left-out-allowed')).toBe('Allowed in your file $543.21');
+    // The file's own totals are the rows sent.
+    expect(stat('file-claim-lines')).toBe('Claim lines 140');
+    const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, leftOut: { rows: 0, claimLines: 0, observedCents: c(0n) } }} />);
+    expect(none).not.toContain('data-section="left-out"');
+    expect(none).not.toContain('Left out before sending');
   });
 
   it('names the release, the engine and when the link stops opening it', () => {

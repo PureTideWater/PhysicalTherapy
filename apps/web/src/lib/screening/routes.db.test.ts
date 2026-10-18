@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
-import { SCREENING_REJECTION_CODES, screeningTokenHash } from '@tp/worker/screening';
+import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RATE_LIMITS } from '../http/rate-limit';
@@ -21,10 +21,13 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInp
  * - SCR-06, the conversion event: converting a screening to an audit request is an audit event.
  * - SCR-05, the wording, on the server's side: no result, message or email says owed, underpaid or recovered, and
  *   the prospect's email carries no tagline.
+ * - SCR-07, the claim-line floor on the server's side: a row of fewer than 11 claim lines posted around the browser is
+ *   refused with its row number, storing nothing of it but the coded reason; 11 is taken; what the browser left out
+ *   is stored as three numbers and the result says so.
  *
  * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
- * ZIP+4 refused (the pricing cannot use one; the owner's ruling of 2026-10-18 keeps the refusal, and an engine change
- * is revisited when release 1's real locality map loads); an address the mail service can send to; the result read by
+ * ZIP+4 refused (the pricing cannot use one; the refusal stays until PR 6b, which takes a ZIP+4 before launch by the
+ * founder's ruling of 2026-10-18, superseding ruling 3); an address the mail service can send to; the result read by
  * its link alone, with both figures for a code in the reduction across codes and the database's standings, and not
  * found once expired; a result under a release since withdrawn keeping its notice and still converting (the owner's
  * ruling of 2026-10-18).
@@ -123,7 +126,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
   it('refuses a name in the code column and an identifier under the allowed total, and stores no row of them', async () => {
     const email = 'prospect.shapes@clinic-shapes.synthetic.test';
     const outcome = await submitted(
-      submitInput({ contactEmail: email, rows: ['SMITH\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t100\t1', 'MARIA\t\t1\t11\tcommercial\t2026-Q1\t100\t1', '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24'].join('\n') }),
+      submitInput({ contactEmail: email, rows: ['SMITH\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t100\t11', 'MARIA\t\t1\t11\tcommercial\t2026-Q1\t100\t11', '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24'].join('\n') }),
     );
     expect(issuesOf(outcome)).toEqual([
       { field: 'upload', message: 'Row 1: the procedure code is not in the screening’s format' },
@@ -137,7 +140,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
   });
 
   it('checks every row again on the server, whatever the browser said, and refuses a row count that does not match', async () => {
-    const tampered = await submitted(submitInput({ rows: '97110\tGP\t2\t11\tmedicare_ffs\t2026-01-15\t100\t1' }));
+    const tampered = await submitted(submitInput({ rows: '97110\tGP\t2\t11\tmedicare_ffs\t2026-01-15\t100\t11' }));
     expect(issuesOf(tampered)).toEqual([{ field: 'upload', message: 'Row 1: the service band is not in the screening’s format' }]);
     const short = await submitted(submitInput({ rowCount: '99' }));
     expect(issuesOf(short)).toEqual([{ field: 'upload', message: 'The rows sent do not match the file; choose the file again' }]);
@@ -179,6 +182,108 @@ describe('SCR-01: an upload holding patient information is refused with its colu
   });
 });
 
+describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient’s service line', () => {
+  const FLOOR_MESSAGE = (row: number) => ({
+    field: 'upload',
+    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11, so that no row can describe one patient’s care: leave it out`,
+  });
+
+  it('refuses a direct POST around the browser with a row of one claim line, by its row number, and stores nothing of the row', async () => {
+    const email = 'prospect.smallcell@clinic-smallcell.synthetic.test';
+    // SYNTHETIC values found nowhere else in this file, so the database and the logs can be searched for them.
+    const small = screeningRow('G0283', 'ma_noncontracted', { modifiers: ['GP'], band: '2025-Q3', place: '22', allowedCents: 4_517n, claims: 1 });
+    const input = submitInput({ contactEmail: email, rows: [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'], allowedCents: 39_600n }), small] });
+    const before = await world.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM screening_result WHERE procedure_code = 'G0283'");
+    const outcome = await submitted(input);
+    expect(issuesOf(outcome)).toEqual([FLOOR_MESSAGE(2)]);
+    expect(JSON.stringify(outcome)).not.toMatch(/G0283|45\.17|2025-Q3/);
+    const { rows } = await world.owner.query<{ upload: Record<string, unknown>; prospect: Record<string, unknown>; runs: number }>(
+      `SELECT to_jsonb(u) - 'id' - 'prospect_id' - 'created_at' - 'expires_at' AS upload, to_jsonb(p) - 'id' - 'created_at' - 'expires_at' AS prospect,
+              (SELECT count(*)::int FROM screening_run r WHERE r.upload_id = u.id) AS runs
+         FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
+      [email],
+    );
+    // Only the hash, the row count and the coded reason (its row and field): no code, count, quarter or dollars of it.
+    expect(rows).toEqual([
+      {
+        upload: {
+          file_sha256: input.fileSha256,
+          row_count: 2,
+          status: 'rejected',
+          rejection_reasons: [{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }],
+          left_out_rows: 0,
+          left_out_claim_lines: 0,
+          left_out_allowed_cents: 0,
+        },
+        prospect: { practice_name: 'Synthetic Therapy Group', state: 'MN', zip: '00011', contact_email: email },
+        runs: 0,
+      },
+    ]);
+    expect((await world.owner.query("SELECT count(*)::int AS n FROM screening_result WHERE procedure_code = 'G0283'")).rows).toEqual(before.rows);
+    // The code and the quarter are searched for everywhere (hex and UUIDs cannot hold them); the dollars were held to the
+    // upload's exact columns above, and no result row holds them.
+    const stored = await storedText();
+    for (const value of ['G0283', '2025-Q3']) {
+      expect(stored, value).not.toContain(value);
+    }
+    expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_result WHERE observed_allowed_cents = 4517')).rows).toEqual([{ n: 0 }]);
+    expect(JSON.stringify(world.logLines)).not.toMatch(/G0283|2025-Q3/);
+    const audit = await world.owner.query(
+      "SELECT e.object_type, e.purpose FROM audit_event e JOIN screening_upload u ON u.id = e.object_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE e.action = 'screening_rejected' AND p.contact_email = $1",
+      [email],
+    );
+    expect(audit.rows).toEqual([{ object_type: 'screening_upload', purpose: 'screening' }]);
+  });
+
+  it('refuses a row of 10 claim lines and takes the same row at 11, naming every small row however many there are', async () => {
+    const at = (claims: number, code = '97110') => screeningRow(code, 'medicare_ffs', { modifiers: ['GP'], allowedCents: BigInt(claims) * 3_600n, claims });
+    expect(issuesOf(await submitted(submitInput({ rows: [at(10)] })))).toEqual([FLOOR_MESSAGE(1)]);
+    expect(await submitted(submitInput({ contactEmail: 'prospect.eleven@clinic-eleven.synthetic.test', rows: [at(11)] }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    const run = await world.owner.query<{ claim_count: number }>(
+      'SELECT s.claim_count FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      ['prospect.eleven@clinic-eleven.synthetic.test'],
+    );
+    expect(run.rows).toEqual([{ claim_count: 11 }]);
+    // Named with the patient information: ahead of every other problem, and each small row by its number.
+    const crowded = submitInput({ rows: [...Array.from({ length: 22 }, () => 'x'), encodeScreeningRows([at(3, '97140')]), encodeScreeningRows([at(10, '97530')])].join('\n') });
+    const issues = issuesOf(await submitted(crowded));
+    expect(issues.slice(0, 2)).toEqual([FLOOR_MESSAGE(23), FLOOR_MESSAGE(24)]);
+    expect(issues.at(-1)).toEqual({ field: 'upload', message: 'And 5 more problems like these' });
+  });
+
+  it('stores what the browser left out as three numbers, and the result says so apart from every figure', async () => {
+    const email = 'prospect.leftout@clinic-leftout.synthetic.test';
+    expect(await submitted(submitInput({ contactEmail: email, leftOut: { rows: 3, claimLines: 16, allowedCents: 111_233n } }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    const upload = await world.owner.query(
+      'SELECT u.row_count, u.left_out_rows, u.left_out_claim_lines, u.left_out_allowed_cents::text AS left_out_allowed_cents FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+      [email],
+    );
+    expect(upload.rows).toEqual([{ row_count: 7, left_out_rows: 3, left_out_claim_lines: 16, left_out_allowed_cents: '111233' }]);
+    await world.price();
+    const result = await world.call(screeningResult, { params: { resultId: world.tokenFor(email) } });
+    expect(result).toMatchObject({ status: 'ok', data: { summary: { rows: 7, claimLines: 79, leftOut: { rows: 3, claimLines: 16, observedCents: 111_233n } } } });
+  });
+
+  it('takes only left-out numbers the browser could have counted, and records nothing otherwise', async () => {
+    const email = 'prospect.leftout.bad@clinic-leftout-bad.synthetic.test';
+    for (const leftOut of [
+      { rows: '1', claimLines: '11', allowedCents: '0' },
+      { rows: '0', claimLines: '1', allowedCents: '0' },
+      { rows: '1', claimLines: '1', allowedCents: '2500001' },
+      { rows: '49999', claimLines: '49999', allowedCents: '0' },
+      { rows: 'x', claimLines: '0', allowedCents: '0' },
+      { rows: '1', claimLines: '-1', allowedCents: '0' },
+      { rows: '1', claimLines: '1', allowedCents: '4.5' },
+    ]) {
+      expect(issuesOf(await submitted(submitInput({ contactEmail: email, leftOut }))), JSON.stringify(leftOut)).toEqual([{ field: 'upload', message: 'the file could not be read here; choose it again' }]);
+    }
+    expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
+    // A request built without the page names nothing left out: blank is none.
+    const blank = { ...submitInput({ contactEmail: 'prospect.leftout.blank@clinic-leftout-blank.synthetic.test' }), leftOutRows: '', leftOutClaimLines: '', leftOutAllowedCents: '' };
+    expect(await submitted(blank)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+  });
+});
+
 describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, read by its link alone', () => {
   it('refuses a ZIP whose Medicare locality needs its ZIP+4, which the pricing cannot use, and never asks for or keeps a ZIP+4', async () => {
     const email = 'prospect.plusfour@clinic-plusfour.synthetic.test';
@@ -213,9 +318,10 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
       return;
     }
     const { summary, groups, coverage, rows } = result.data;
-    expect(summary).toMatchObject({ practiceName: 'Synthetic Therapy Group', state: 'MN', zip: '00011', releaseNo: 900001, rows: 7, claimLines: 38 });
+    expect(summary).toMatchObject({ practiceName: 'Synthetic Therapy Group', state: 'MN', zip: '00011', releaseNo: 900001, rows: 7, claimLines: 79 });
     expect(summary.contractRequired).toEqual({ rows: 2, claimLines: 23, observedCents: 175_000n });
-    expect(summary.notScreened).toEqual({ rows: 2, claimLines: 2, observedCents: 3_700n });
+    expect(summary.notScreened).toEqual({ rows: 2, claimLines: 22, observedCents: 40_700n });
+    expect(summary.leftOut).toEqual({ rows: 0, claimLines: 0, observedCents: 0n });
     expect(summary.priced.rows + summary.couldNotPrice.rows).toBe(3);
     expect(summary.priced.differenceCents).toBe(summary.priced.expectedCents - summary.priced.observedCents);
     expect(groups.reduce((total, group) => total + group.expectedCents, 0n)).toBe(summary.priced.expectedCents);
@@ -226,14 +332,14 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
       // A code in the reduction across codes has its fully reduced figure beside it; any other code has one figure.
       expect(row.reducedCents).toBe(row.inReductionPool ? (row.reducedLineCents ?? -1n) * BigInt(row.claimCount) : null);
     }
-    // The sample's 97110 GP x2 at ZIP 00011, ten claims allowed $400.00 in Q1: $36.84 a line before the reduction across
-    // codes and $31.45 fully reduced (SYNTHETIC release 900001, before sequestration); $40.00 a line is above both.
+    // The sample's 97110 GP x2 at ZIP 00011, eleven claims allowed $440.00 in Q1: $36.84 a line before the reduction
+    // across codes and $31.45 fully reduced (SYNTHETIC release 900001, before sequestration); $40.00 a line is above both.
     expect(rows.find((row) => row.procedureCode === '97110' && row.payerProduct === 'medicare_ffs')).toMatchObject({
       expectedLineCents: 3_684n,
       reducedLineCents: 3_145n,
-      expectedCents: 36_840n,
-      reducedCents: 31_450n,
-      observedCents: 40_000n,
+      expectedCents: 40_524n,
+      reducedCents: 34_595n,
+      observedCents: 44_000n,
       standing: 'at_or_above',
     });
     expect(summary.priced.pooledRows).toBe(rows.filter((row) => row.inReductionPool).length);

@@ -51,16 +51,17 @@ let lines: Record<string, unknown>[];
 
 type Row = readonly [code: string, modifiers: string, units: number, place: string, product: string, band: string, allowedCents: bigint, claims: number];
 
+/** Every row sums at least 11 claim lines (the CMS small-cell standard; a smaller row is never stored). */
 const ROWS: readonly Row[] = [
-  ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 5],
-  ['97110', 'CQ GP', 1, '11', 'ma_noncontracted', '2026-Q2', 2_000n, 1],
+  ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 11],
+  ['97110', 'CQ GP', 1, '11', 'ma_noncontracted', '2026-Q2', 2_000n, 11],
   ['97140', 'GP', 1, '22', 'medicare_ffs', '2026-Q3', 900_000n, 300],
-  ['97530', '', 3, '11', 'ma_contracted', '2026-Q1', 3_000n, 2],
-  ['97112', '', 1, '11', 'commercial', '2026-Q3', 4_000n, 3],
-  ['97116', 'GP', 1, '11', 'medicaid', '2026-Q1', 500n, 1],
-  ['97035', '', 1, '11', 'other', '2026-Q1', 600n, 1],
-  ['97110', 'GP', 8, '11', 'medicare_ffs', '2026-Q1', 1n, 1],
-  ['97110', 'GP', 1, '12', 'ma_noncontracted', '2026-Q4', 1n, 1],
+  ['97530', '', 3, '11', 'ma_contracted', '2026-Q1', 3_000n, 12],
+  ['97112', '', 1, '11', 'commercial', '2026-Q3', 4_000n, 13],
+  ['97116', 'GP', 1, '11', 'medicaid', '2026-Q1', 500n, 11],
+  ['97035', '', 1, '11', 'other', '2026-Q1', 600n, 11],
+  ['97110', 'GP', 8, '11', 'medicare_ffs', '2026-Q1', 11n, 11],
+  ['97110', 'GP', 1, '12', 'ma_noncontracted', '2026-Q4', 11n, 11],
 ];
 
 /** As the application role in a transaction (with an actor when named), as the screening routes run. */
@@ -83,7 +84,7 @@ async function asApp<T extends Record<string, unknown>>(sql: string, values: unk
 
 async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string } = {}): Promise<string> {
   const rows = options.rows ?? ROWS;
-  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS id', [
+  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS id', [
     'Synthetic Therapy Group',
     'MN',
     options.zip ?? '00011',
@@ -97,6 +98,9 @@ async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: 
     rows.map((row) => row[5]),
     rows.map((row) => row[6].toString()),
     rows.map((row) => row[7]),
+    0,
+    0,
+    '0',
     `test-${randomUUID()}`,
   ]);
   return created?.id ?? '';
@@ -302,31 +306,32 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     // G01's codes at POS 11, ZIP 00011, priced by the unchanged engine before sequestration (SYNTHETIC release
     // 900001): 97110 GP x2 is $36.84 a line before the reduction across codes and $31.45 fully reduced; 97140 GP is
     // $24.58 and $18.20; 97161 GP (an evaluation, outside the reduction) $59.17 alone.
+    // Each row of 11 to 13 claim lines, the fewest a row may sum and a few more.
     const rows: readonly Row[] = [
       // Between its two figures, $34.00 a line: within the range of the reduction across codes.
-      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 3_400n * 4n, 4],
+      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 3_400n * 11n, 11],
       // $5.21 a line below its fully reduced figure: an anomaly.
-      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 1_299n * 2n, 2],
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 1_299n * 12n, 12],
       // Allowed in full at its figure before the reduction, in Q2: no difference.
-      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q2', 2_458n, 1],
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q2', 2_458n * 11n, 11],
       // Exactly $5.00 a line below its fully reduced figure: not more than the threshold, so no anomaly.
-      ['97140', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 1_320n * 2n, 2],
+      ['97140', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 1_320n * 13n, 13],
       // A code outside the reduction, allowed in full at its figure before sequestration: one figure, no difference.
-      ['97161', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 5_917n * 3n, 3],
+      ['97161', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 5_917n * 11n, 11],
       // The same code $5.01 a line below its one figure: an anomaly.
-      ['97161', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 5_416n, 1],
+      ['97161', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 5_416n * 11n, 11],
     ];
     const runId = await submit({ rows });
     const mail = new MemoryMailSender();
     expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
     const stored = await results(runId);
     expect(stored.map((row) => [row.procedure_code, row.expected_line_cents, row.reduced_line_cents, row.expected_cents, row.reduced_cents, row.difference_cents, row.reduced_difference_cents])).toEqual([
-      ['97110', '3684', '3145', '14736', '12580', '1136', '-1020'],
-      ['97140', '2458', '1820', '4916', '3640', '2318', '1042'],
-      ['97140', '2458', '1820', '2458', '1820', '0', '-638'],
-      ['97140', '2458', '1820', '4916', '3640', '2276', '1000'],
-      ['97161', '5917', null, '17751', null, '0', null],
-      ['97161', '5917', null, '5917', null, '501', null],
+      ['97110', '3684', '3145', '40524', '34595', '3124', '-2805'],
+      ['97140', '2458', '1820', '29496', '21840', '13908', '6252'],
+      ['97140', '2458', '1820', '27038', '20020', '0', '-7018'],
+      ['97140', '2458', '1820', '31954', '23660', '14794', '6500'],
+      ['97161', '5917', null, '65087', null, '0', null],
+      ['97161', '5917', null, '65087', null, '5511', null],
     ]);
     const hash = screeningTokenHash(tokenOf(mail.sent[0]));
     const shown = await asApp<{ row_no: number; standing: string; in_reduction_pool: boolean; reduced_cents: string | null }>(
@@ -341,18 +346,19 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
       [5, 'at_or_above'],
       [6, 'anomaly'],
     ]);
-    // The rows come largest difference from the lowest figure first: the anomalies lead.
-    expect((await asApp<{ row_no: number }>('SELECT row_no FROM screening_result_rows($1, 100)', [hash])).map((row) => row.row_no)).toEqual([2, 4, 6, 5, 3, 1]);
+    // The rows come largest difference from the lowest figure first (row 4, exactly $5.00 a line below its fully reduced
+    // figure over 13 lines, then the two anomalies).
+    expect((await asApp<{ row_no: number }>('SELECT row_no FROM screening_result_rows($1, 100)', [hash])).map((row) => row.row_no)).toEqual([4, 2, 6, 5, 1, 3]);
     const groups = await asApp<{ payer_product: string; procedure_code: string; rows: number; anomaly_rows: number; anomaly: boolean; standing: string; reduced_cents: string | null; expected_cents: string }>(
       'SELECT payer_product, procedure_code, rows, anomaly_rows, anomaly, standing, reduced_cents::text AS reduced_cents, expected_cents::text AS expected_cents FROM screening_result_groups($1) ORDER BY payer_product, procedure_code',
       [hash],
     );
     expect(groups.map((group) => [group.payer_product, group.procedure_code, group.rows, group.anomaly_rows, group.anomaly, group.standing, group.reduced_cents])).toEqual([
-      ['ma_noncontracted', '97140', 1, 0, false, 'below_by_threshold_or_less', '3640'],
+      ['ma_noncontracted', '97140', 1, 0, false, 'below_by_threshold_or_less', '23660'],
       ['ma_noncontracted', '97161', 1, 1, true, 'anomaly', null],
-      ['medicare_ffs', '97110', 1, 0, false, 'within_reduction_range', '12580'],
+      ['medicare_ffs', '97110', 1, 0, false, 'within_reduction_range', '34595'],
       // One row of two is an anomaly, though the group's totals are within $5 a claim line: the group is an anomaly.
-      ['medicare_ffs', '97140', 2, 1, true, 'anomaly', '5460'],
+      ['medicare_ffs', '97140', 2, 1, true, 'anomaly', '41860'],
       ['medicare_ffs', '97161', 1, 0, false, 'at_or_above', null],
     ]);
   });
@@ -361,10 +367,11 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     // PRD 11's worked example (golden G01): 97110 GP x2, 97140 GP and 97530 GP on one day at POS 11, ZIP 00011, priced
     // by the unchanged engine as one visit on the band's first day; a practice whose payer allowed that visit, before
     // sequestration as payers normally report it, sends these rows.
+    // Eleven such visits a quarter: the fewest claim lines a row may sum.
     const g01: readonly Row[] = [
-      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
-      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
-      ['97530', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
+      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 11],
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 11],
+      ['97530', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 11],
     ];
     const visitLines = g01.map((row, index) => ({
       ...(screeningClaim({ procedureCode: row[0], modifiers: row[1].split(' '), units: row[2], placeOfService: row[3], serviceBand: row[5] }).lines[0] as ReturnType<typeof screeningClaim>['lines'][number]),
@@ -381,7 +388,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
       if (line?.outcome !== 'priced') {
         throw new Error('the worked example prices');
       }
-      return [row[0], row[1], row[2], row[3], row[4], row[5], beforeSequestration(line).cents, 1];
+      return [row[0], row[1], row[2], row[3], row[4], row[5], beforeSequestration(line).cents * 11n, 11];
     });
     const runId = await submit({ rows: paid });
     const mail = new MemoryMailSender();
@@ -395,9 +402,9 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     // 97110 and 97140 follow 97530 in the visit, at their fully reduced figures: more than $5 a line below the figures
     // priced alone, and within the range of the reduction across codes; 97530, ranked first, at its figure alone.
     expect(groups.map((group) => [group.procedure_code, group.anomaly, group.standing, group.difference_cents, group.reduced_difference_cents])).toEqual([
-      ['97110', false, 'within_reduction_range', '539', '0'],
-      ['97140', false, 'within_reduction_range', '638', '0'],
-      ['97530', false, 'at_or_above', '0', '-722'],
+      ['97110', false, 'within_reduction_range', '5929', '0'],
+      ['97140', false, 'within_reduction_range', '7018', '0'],
+      ['97530', false, 'at_or_above', '0', '-7942'],
     ]);
   });
 });

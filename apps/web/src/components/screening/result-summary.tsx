@@ -6,6 +6,7 @@ import { counted } from '../../lib/copy/words';
 import {
   BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
+  LEFT_OUT_NOTE,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   REDUCED_DIFFERENCE_LABEL,
@@ -20,8 +21,9 @@ import { utc, utcDate } from '../format';
  * 2026-10-18): what the file held, what the Medicare fee schedule prices (its figure labelled "before the reduction
  * across codes", and, when a row's code is in that reduction, the total with those rows fully reduced across codes,
  * labelled so; every figure before sequestration), the dollars that cannot be priced without a contract, and the rows
- * a screening does not price or could not. Every figure is the database's own bigint sum of the engine's per-row
- * results; nothing here adds, rounds or estimates. A screening never says
+ * a screening does not price or could not, and the rows of fewer than 11 claim lines the browser left out before
+ * sending (as it counted them, apart from every figure). Every figure is the database's own bigint sum of the engine's
+ * per-row results; nothing here adds, rounds or estimates. A screening never says
  * owed, underpaid or recovered: the prospect's figure is "allowed in your file", and what lies between is the
  * difference. Each figure renders in the mono face with tabular numerals.
  */
@@ -62,6 +64,8 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly notScreened: ScreeningGroupTotals;
   /** Medicare rows the engine left unpriced, or whose rates change inside the quarter. */
   readonly couldNotPrice: ScreeningGroupTotals;
+  /** Rows of fewer than 11 claim lines the browser left out before sending: in no other figure. */
+  readonly leftOut: ScreeningGroupTotals;
 }
 
 /** A dollar figure: the mono face, tabular numerals. */
@@ -149,12 +153,23 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
       <Card>
         <CardHeader>
           <CardTitle id="screening-totals">Your file</CardTitle>
-          <CardDescription>Every row of the upload, whatever its payer product.</CardDescription>
+          <CardDescription>Every row sent, whatever its payer product.</CardDescription>
         </CardHeader>
         <CardContent>
           <GroupStats group={summary} slot="file" />
         </CardContent>
       </Card>
+      {summary.leftOut.rows === 0 ? null : (
+        <Card data-section="left-out">
+          <CardHeader>
+            <CardTitle>Left out before sending</CardTitle>
+            <CardDescription>{LEFT_OUT_NOTE}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <GroupStats group={summary.leftOut} slot="left-out" />
+          </CardContent>
+        </Card>
+      )}
       <Card data-section="priced">
         <CardHeader>
           <CardTitle>Priced under Medicare</CardTitle>

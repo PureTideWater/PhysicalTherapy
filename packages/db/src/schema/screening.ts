@@ -62,6 +62,14 @@ export const screeningUpload = pgTable(
     status: text('status', { enum: SCREENING_UPLOAD_STATUSES }).notNull(),
     /** Codes, column positions, rows, fields and PHI kinds only (screening_rejections_valid()). */
     rejectionReasons: jsonb('rejection_reasons').$type<readonly Readonly<Record<string, string | number>>[]>().notNull(),
+    /**
+     * The rows of fewer than 11 claim lines the prospect's browser left out before sending (the CMS small-cell
+     * standard), as three numbers for the result to say: how many, their claim lines and their allowed total. Never
+     * which rows; zero on a rejected upload.
+     */
+    leftOutRows: integer('left_out_rows').notNull().default(0),
+    leftOutClaimLines: integer('left_out_claim_lines').notNull().default(0),
+    leftOutAllowedCents: bigint('left_out_allowed_cents', { mode: 'bigint' }).notNull().default(0n),
     createdAt: createdAt(),
     expiresAt: expiresAt(),
   },
@@ -128,6 +136,7 @@ export const screeningResult = pgTable(
     payerProduct: text('payer_product', { enum: SCREENING_PAYER_PRODUCTS }).notNull(),
     /** A calendar quarter, YYYY-Qn. */
     serviceBand: text('service_band').notNull(),
+    /** 11 to 100,000: a row of fewer claim lines can be one patient's service line, and is never stored. */
     claimCount: integer('claim_count').notNull(),
     observedAllowedCents: bigint('observed_allowed_cents', { mode: 'bigint' }).notNull(),
     disposition: text('disposition', { enum: SCREENING_DISPOSITIONS }).notNull(),

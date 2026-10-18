@@ -14,6 +14,11 @@ import { type Cents, MoneyError, cents, parseAmount, parseCents } from '@tp/mone
  * positions, row numbers, fields and kinds only, never a header's text or a cell's value
  * (screening_rejections_valid() in the migration admits nothing else), patient information first, so the column that
  * holds it is named however many other problems the file has.
+ *
+ * A row sums at least 11 claim lines (SCREENING_MIN_CLAIM_LINES, the CMS small-cell standard): one of fewer, beside its
+ * quarter and the practice's name and ZIP, can be one patient's service line. The browser leaves such a row out before
+ * anything is sent and counts what it left out (screenTable); the server refuses one it is sent, naming its row
+ * (decodeScreeningRows); the database refuses one stored (screening_result_claim_count).
  */
 
 /** The eight columns, each required once, in the canonical rows' order. */
@@ -65,6 +70,7 @@ export const SCREENING_REJECTION_CODES = [
   'no_rows',
   'too_many_rows',
   'row_count_mismatch',
+  'too_few_claim_lines',
 ] as const;
 export type ScreeningRejectionCode = (typeof SCREENING_REJECTION_CODES)[number];
 
@@ -102,6 +108,17 @@ export const SCREENING_MAX_LINE_ALLOWED_CENTS: Cents = cents(2_500_000n);
 export const SCREENING_MAX_UNITS = 999;
 /** The most claim lines one row may count: more than a quarter of one code at a large practice, fewer than an ID's digits. */
 export const SCREENING_MAX_CLAIMS = 100_000;
+/**
+ * The fewest claim lines a row may sum: 11, the CMS small-cell standard (CMS suppresses a count of 1 to 10). A row of
+ * fewer, with its quarter beside the practice's name and ZIP, can be one patient's service line, which is not
+ * de-identified under HIPAA Safe Harbor, and a prospect has no business associate agreement (the founder's ruling of
+ * 2026-10-18 on the best-option audit's item 6; docs/adr/0062). One setting, enforced three times: the browser leaves
+ * such a row out before sending and says how many rows, claim lines and dollars it left out (screenTable); the server
+ * refuses a row of fewer that it is sent anyway, naming the row (decodeScreeningRows); and the screening_result_claim_count
+ * CHECK refuses one stored, held to this number by format.test.ts. Counsel confirms the number, and whether it counts
+ * claim lines or patients (a plan of care can give one patient 11 lines in a quarter).
+ */
+export const SCREENING_MIN_CLAIM_LINES = 11;
 
 // ---------------------------------------------------------------------------------------------------
 // Headers
@@ -368,6 +385,8 @@ const REASON_ORDER: Readonly<Record<ScreeningRejectionCode, number>> = {
   no_rows: 5,
   too_many_rows: 5,
   row_count_mismatch: 5,
+  // A row that may be one patient's service line is named with the patient information.
+  too_few_claim_lines: 0,
 };
 
 /** The reasons to keep: at most 20, patient information first, each kind in the order found. */
@@ -560,6 +579,11 @@ function moneyOf(cell: string): Cents | null {
   }
 }
 
+/** Whether a row sums too few claim lines to be screened: fewer than SCREENING_MIN_CLAIM_LINES. */
+export function belowClaimFloor(claimCount: number): boolean {
+  return claimCount < SCREENING_MIN_CLAIM_LINES;
+}
+
 /** Whether a row's allowed total comes to at most $25,000.00 a claim line (in bigint: total <= ceiling x count). */
 export function plausibleAllowed(allowedCents: Cents, claimCount: number): boolean {
   return allowedCents <= SCREENING_MAX_LINE_ALLOWED_CENTS * BigInt(claimCount);
@@ -629,14 +653,52 @@ export function rowKey(row: Pick<ScreeningRow, 'procedureCode' | 'modifiers' | '
   return [row.procedureCode, row.modifiers.join(' '), String(row.units), row.placeOfService, row.payerProduct, row.serviceBand].join('\t');
 }
 
+/**
+ * The rows the browser left out because each sums fewer than SCREENING_MIN_CLAIM_LINES claim lines: how many, their
+ * claim lines and their allowed total, summed in bigint. Never which rows, and nothing else of them: the form sends
+ * these three numbers beside the rows it keeps, and the result shows them.
+ */
+export interface ScreeningLeftOut {
+  readonly rows: number;
+  readonly claimLines: number;
+  readonly allowedCents: Cents;
+}
+
+/** Nothing left out. */
+export const NOTHING_LEFT_OUT: ScreeningLeftOut = { rows: 0, claimLines: 0, allowedCents: cents(0n) };
+
+/**
+ * Whether three left-out numbers are ones the browser could have counted beside `rowCount` rows sent: whole numbers,
+ * each row left out 1 to 10 claim lines, at most $25,000.00 a claim line, and no more rows in all than a file may hold.
+ * The server's check of what the form says; the screening_upload CHECKs hold the same.
+ */
+export function leftOutPlausible(leftOut: ScreeningLeftOut, rowCount: number): boolean {
+  const { rows, claimLines, allowedCents } = leftOut;
+  return (
+    Number.isSafeInteger(rows) &&
+    Number.isSafeInteger(claimLines) &&
+    Number.isSafeInteger(rowCount) &&
+    rows >= 0 &&
+    rowCount >= 0 &&
+    rows + rowCount <= SCREENING_MAX_ROWS &&
+    claimLines >= rows &&
+    claimLines <= (SCREENING_MIN_CLAIM_LINES - 1) * rows &&
+    allowedCents >= 0n &&
+    allowedCents <= SCREENING_MAX_LINE_ALLOWED_CENTS * BigInt(claimLines)
+  );
+}
+
 /** What the browser has once it has read a table: the reasons it is refused, or what the form sends. */
 export type ScreenedTable =
   | {
       readonly ok: true;
       /** What the form sends as the header: each cell's canonical column name, in the file's order, never the text typed. */
       readonly headers: readonly ScreeningColumn[];
+      /** The rows sent: every row of at least SCREENING_MIN_CLAIM_LINES claim lines. */
       readonly rowCount: number;
       readonly rows: string;
+      /** The rows of fewer claim lines, left out and never sent. */
+      readonly leftOut: ScreeningLeftOut;
     }
   | {
       readonly ok: false;
@@ -646,6 +708,8 @@ export type ScreenedTable =
       readonly reasons: readonly ScreeningRejection[];
       /** How many reasons there were in all. */
       readonly total: number;
+      /** When every row sums fewer than SCREENING_MIN_CLAIM_LINES claim lines: what was left out, leaving nothing to send. */
+      readonly leftOut?: ScreeningLeftOut;
     };
 
 /** Collects a table's reasons: every one counted, at most 20 of each order kept, patient information first. */
@@ -673,7 +737,9 @@ class ReasonList {
  * A table of cells (its first row the header) screened as the server will: the header, then every row's shape,
  * values, band and key. Every row is read, so a band holding dates of service is named wherever it is; at most 20
  * reasons are kept, patient information first, with how many there were. On a pass, the header's canonical column
- * names and the rows in their canonical form: no header text the person typed is sent.
+ * names and the rows in their canonical form: no header text the person typed is sent. A row of fewer than
+ * SCREENING_MIN_CLAIM_LINES claim lines that is otherwise clean is left out, never sent, and counted in `leftOut`; a
+ * table whose every row is left out has nothing to send and is refused, with what was left out.
  */
 export function screenTable(table: readonly (readonly string[])[], now: Date): ScreenedTable {
   const [header, ...data] = table;
@@ -717,10 +783,20 @@ export function screenTable(table: readonly (readonly string[])[], now: Date): S
   if (reasons.total > 0) {
     return { ok: false, headers: typed, reasons: reasons.kept(), total: reasons.total };
   }
+  const kept = rows.filter((row) => !belowClaimFloor(row.claimCount));
+  const small = rows.filter((row) => belowClaimFloor(row.claimCount));
+  const leftOut: ScreeningLeftOut = {
+    rows: small.length,
+    claimLines: small.reduce((total, row) => total + row.claimCount, 0),
+    allowedCents: cents(small.reduce((total, row) => total + row.allowedCents, 0n)),
+  };
+  if (kept.length === 0) {
+    return { ok: false, headers: typed, reasons: [{ code: 'too_few_claim_lines' }], total: 1, leftOut };
+  }
   const canonical = Object.entries(checked.positions)
     .sort(([, a], [, b]) => a - b)
     .map(([column]) => column as ScreeningColumn);
-  return { ok: true, headers: canonical, rowCount: rows.length, rows: encodeScreeningRows(rows) };
+  return { ok: true, headers: canonical, rowCount: kept.length, rows: encodeScreeningRows(kept), leftOut };
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -754,8 +830,10 @@ export type RowsDecode =
 
 /**
  * The form's rows read back, strictly: every field already canonical (a procedure code of the real shape, an allowed
- * total of at most $25,000.00 a claim line), at most 50,000 rows, no key twice, no band after the current quarter.
- * The server's check of what the browser sent; at most 20 reasons kept, with how many there were.
+ * total of at most $25,000.00 a claim line), at least SCREENING_MIN_CLAIM_LINES claim lines a row (the browser leaves a
+ * smaller row out, so one here was sent around it: refused, naming its row), at most 50,000 rows, no key twice, no band
+ * after the current quarter. The server's check of what the browser sent; at most 20 reasons kept, with how many there
+ * were.
  */
 export function decodeScreeningRows(text: string, now: Date): RowsDecode {
   if (text === '') {
@@ -797,6 +875,9 @@ export function decodeScreeningRows(text: string, now: Date): RowsDecode {
       }
       if (CANONICAL.band.test(band) && band > quarter) {
         reasons.add({ code: 'band_in_future', row: rowNo, field: 'service_band' });
+      }
+      if (claimsValid && belowClaimFloor(Number(claims))) {
+        reasons.add({ code: 'too_few_claim_lines', row: rowNo, field: 'claim_count' });
       }
       if (reasons.total === before) {
         const row: ScreeningRow = {

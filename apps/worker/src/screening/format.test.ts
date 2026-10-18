@@ -14,6 +14,7 @@ import {
   SCREENING_MAX_REASONS,
   SCREENING_MAX_ROWS,
   SCREENING_MAX_ROWS_TEXT,
+  SCREENING_MIN_CLAIM_LINES,
   SCREENING_PAYER_PRODUCTS,
   SCREENING_PHI_KINDS,
   SCREENING_REJECTION_CODES,
@@ -26,6 +27,7 @@ import {
   encodeScreeningRows,
   headerLosesText,
   keptReasons,
+  leftOutPlausible,
   normalizeHeader,
   quarterDays,
   rowKey,
@@ -37,6 +39,8 @@ import {
  * The screening upload's format (CO-04; test matrix SCR-01, the rejection, in its pure part): which headers are
  * the eight columns and which are refused as patient information, by kind, with the column named by position; the
  * row rules; the canonical rows the form sends and the server decodes; and the lists the migration's CHECKs hold.
+ * SCR-07, in its pure part: a row of fewer than 11 claim lines is left out by the browser, which counts its rows,
+ * claim lines and dollars, and refused by the server's decode with its row number; 11 is taken.
  */
 
 const NOW = new Date('2026-10-18T12:00:00Z');
@@ -69,6 +73,14 @@ describe('the lists the migration holds', () => {
     expect(sqlList("(reason ->> 'phi') IN").sort()).toEqual([...SCREENING_PHI_KINDS].sort());
     expect(Object.keys(PHI_KIND_LABELS).sort()).toEqual([...SCREENING_PHI_KINDS].sort());
     expect(Object.values(PHI_KIND_LABELS).sort()).toEqual(['claim numbers', 'dates of birth', 'dates of service', 'member IDs', 'names']);
+  });
+
+  it('holds the claim-line floor as one setting: the database refuses a stored row, and counts the rows left out, by the same number', () => {
+    expect(SCREENING_MIN_CLAIM_LINES).toBe(11);
+    expect(MIGRATION).toContain(`CONSTRAINT screening_result_claim_count CHECK (claim_count BETWEEN ${String(SCREENING_MIN_CLAIM_LINES)} AND ${String(SCREENING_MAX_CLAIMS)})`);
+    expect(MIGRATION).toContain(`CHECK (left_out_claim_lines BETWEEN left_out_rows AND ${String(SCREENING_MIN_CLAIM_LINES - 1)} * left_out_rows)`);
+    expect(MIGRATION).toContain(`CHECK (left_out_rows BETWEEN 0 AND ${String(SCREENING_MAX_ROWS)})`);
+    expect(MIGRATION).toContain(`CHECK (left_out_allowed_cents BETWEEN 0 AND ${SCREENING_MAX_LINE_ALLOWED_CENTS.toString()}::bigint * left_out_claim_lines)`);
   });
 
   it('imports nothing but @tp/money, so the browser can run it', () => {
@@ -370,8 +382,8 @@ describe('rows', () => {
   it('reads a row: code upper-cased, modifiers sorted and distinct, POS padded, product and band normalized, dollars to integer cents', () => {
     const screened = screenTable(table([' 97110 ', 'gp;59', '002', '2', 'Medicare FFS', 'q3 2026', '$1,234.5', '1,000']), NOW);
     // The header sent is the columns' canonical names, never the text typed.
-    expect(screened).toEqual({ ok: true, headers: [...SCREENING_COLUMNS], rowCount: 1, rows: '97110\t59 GP\t2\t02\tmedicare_ffs\t2026-Q3\t123450\t1000' });
-    const reordered = screenTable([['Claims', 'Allowed', 'Band', 'Product', 'POS', 'Units', 'Mods', 'CPT'], ['1', '10', '2026-Q1', 'other', '11', '1', '', '97110']], NOW);
+    expect(screened).toEqual({ ok: true, headers: [...SCREENING_COLUMNS], rowCount: 1, rows: '97110\t59 GP\t2\t02\tmedicare_ffs\t2026-Q3\t123450\t1000', leftOut: { rows: 0, claimLines: 0, allowedCents: 0n } });
+    const reordered = screenTable([['Claims', 'Allowed', 'Band', 'Product', 'POS', 'Units', 'Mods', 'CPT'], ['11', '10', '2026-Q1', 'other', '11', '1', '', '97110']], NOW);
     expect(reordered).toMatchObject({ ok: true, headers: ['claim_count', 'allowed_total', 'service_band', 'payer_product', 'place_of_service', 'units', 'modifiers', 'procedure_code'] });
     for (const [typed, band] of [
       ['2026-Q1', '2026-Q1'],
@@ -445,7 +457,8 @@ describe('rows', () => {
     expect(SCREENING_MAX_LINE_ALLOWED_CENTS).toBe(2_500_000n);
     expect(row('123456789', '24')).toEqual([{ code: 'invalid_value', row: 1, field: 'allowed_total' }]);
     expect(row('25,000.01', '1')).toEqual([{ code: 'invalid_value', row: 1, field: 'allowed_total' }]);
-    expect(row('25,000.00', '1')).toEqual([]);
+    expect(row('275,000.01', '11')).toEqual([{ code: 'invalid_value', row: 1, field: 'allowed_total' }]);
+    expect(row('275,000.00', '11')).toEqual([]);
     expect(row('999,999,999.99', '100,000')).toEqual([]);
     expect(row('100', '654321')).toEqual([{ code: 'invalid_value', row: 1, field: 'claim_count' }]);
   });
@@ -542,18 +555,18 @@ describe('the canonical rows', () => {
     expect(text).toBe('97110\tCQ GP\t2\t11\tmedicare_ffs\t2026-Q1\t123450\t12\n97110\t\t2\t11\tcommercial\t2026-Q1\t0\t12');
     expect(decodeScreeningRows(text, NOW)).toEqual({ ok: true, rows });
     for (const [line, field] of [
-      ['97110\tGP CQ\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'modifiers'],
-      ['97110\tgp\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'modifiers'],
-      ['97110\tGP\t02\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'units'],
-      ['97110\tGP\t2\t1\tmedicare_ffs\t2026-Q1\t1\t1', 'place_of_service'],
-      ['97110\tGP\t2\t11\tMedicare FFS\t2026-Q1\t1\t1', 'payer_product'],
-      ['97110\tGP\t2\t11\tmedicare_ffs\t2026 Q1\t1\t1', 'service_band'],
-      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1.00\t1', 'allowed_total'],
-      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t100000000000\t1', 'allowed_total'],
+      ['97110\tGP CQ\t2\t11\tmedicare_ffs\t2026-Q1\t1\t11', 'modifiers'],
+      ['97110\tgp\t2\t11\tmedicare_ffs\t2026-Q1\t1\t11', 'modifiers'],
+      ['97110\tGP\t02\t11\tmedicare_ffs\t2026-Q1\t1\t11', 'units'],
+      ['97110\tGP\t2\t1\tmedicare_ffs\t2026-Q1\t1\t11', 'place_of_service'],
+      ['97110\tGP\t2\t11\tMedicare FFS\t2026-Q1\t1\t11', 'payer_product'],
+      ['97110\tGP\t2\t11\tmedicare_ffs\t2026 Q1\t1\t11', 'service_band'],
+      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1.00\t11', 'allowed_total'],
+      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t100000000000\t11', 'allowed_total'],
       ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1000001', 'claim_count'],
-      ['9711o\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'procedure_code'],
-      ['SMITH\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'procedure_code'],
-      ['MARIA\t\t1\t11\tcommercial\t2026-Q1\t1\t1', 'procedure_code'],
+      ['9711o\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t11', 'procedure_code'],
+      ['SMITH\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t11', 'procedure_code'],
+      ['MARIA\t\t1\t11\tcommercial\t2026-Q1\t1\t11', 'procedure_code'],
       ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24', 'allowed_total'],
       ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t10000\t654321', 'claim_count'],
     ] as const) {
@@ -578,7 +591,7 @@ describe('the canonical rows', () => {
       placeOfService: fc.integer({ min: 1, max: 99 }).map((place) => String(place).padStart(2, '0')),
       payerProduct: fc.constantFrom(...SCREENING_PAYER_PRODUCTS),
       serviceBand: fc.tuple(fc.integer({ min: 2000, max: 2026 }), fc.integer({ min: 1, max: 4 })).map(([year, quarter]) => `${String(year)}-Q${String(quarter)}`),
-      claimCount: fc.integer({ min: 1, max: 100_000 }),
+      claimCount: fc.integer({ min: SCREENING_MIN_CLAIM_LINES, max: 100_000 }),
       allowedPerLine: fc.bigInt({ min: 0n, max: 2_500_000n }),
     }).map(({ allowedPerLine, ...rest }) => {
       const total = allowedPerLine * BigInt(rest.claimCount);
@@ -592,5 +605,114 @@ describe('the canonical rows', () => {
       }),
     );
     expect(70 * SCREENING_MAX_ROWS).toBeLessThanOrEqual(SCREENING_MAX_ROWS_TEXT);
+  });
+});
+
+describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient’s service line', () => {
+  const ROW = ['97110', 'GP', '2', '11', 'medicare_ffs', '2026-Q1', '1,234.50', '12'];
+  const withClaims = (claims: string, allowed: string, code = '97110') => [code, ...ROW.slice(1, 6), allowed, claims];
+
+  it('is left out by the browser at 10 claim lines and kept at 11, and nothing of the row left out is sent', () => {
+    const screened = screenTable(table(withClaims('10', '360.00', '97140'), withClaims('11', '396.00')), NOW);
+    expect(screened).toEqual({
+      ok: true,
+      headers: [...SCREENING_COLUMNS],
+      rowCount: 1,
+      rows: '97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t39600\t11',
+      leftOut: { rows: 1, claimLines: 10, allowedCents: 36_000n },
+    });
+    expect(screened.ok ? screened.rows : '').not.toContain('97140');
+    expect(screenTable(table(withClaims('11', '396.00')), NOW)).toMatchObject({ ok: true, rowCount: 1, leftOut: { rows: 0, claimLines: 0, allowedCents: 0n } });
+  });
+
+  it('counts the rows, claim lines and dollars it left out, to the cent', () => {
+    const screened = screenTable(
+      table(withClaims('1', '12.34', '97140'), withClaims('24', '864.00'), withClaims('5', '100.00', '97530'), withClaims('10', '999.99', '97112'), withClaims('1,000', '36,000.00', '97116')),
+      NOW,
+    );
+    expect(screened).toMatchObject({ ok: true, rowCount: 2, leftOut: { rows: 3, claimLines: 16, allowedCents: 111_233n } });
+    // The rows kept are the file's rows of 11 claim lines or more, in its order.
+    expect(screened.ok ? screened.rows.split('\n').map((line) => line.split('\t')[0]) : []).toEqual(['97110', '97116']);
+  });
+
+  it('refuses a file whose every row is left out, saying what was left out, and still refuses a small row holding a date', () => {
+    expect(screenTable(table(withClaims('3', '30.00'), withClaims('10', '1.00', '97140')), NOW)).toEqual({
+      ok: false,
+      headers: HEADER,
+      reasons: [{ code: 'too_few_claim_lines' }],
+      total: 1,
+      leftOut: { rows: 2, claimLines: 13, allowedCents: 3_100n },
+    });
+    // A row of one claim line is checked like any other before it is left out: a day in its band refuses the file.
+    const dated = ['97110', 'GP', '2', '11', 'medicare_ffs', '2026-02-11', '45.00', '1'];
+    expect(screenTable(table(dated, withClaims('11', '396.00')), NOW)).toMatchObject({ ok: false, reasons: [{ code: 'band_holds_date', column: 6, row: 1, phi: 'date_of_service' }] });
+    // And a small row that repeats a kept row's key is a repeated row, never quietly dropped.
+    expect(screenTable(table(withClaims('11', '396.00'), withClaims('2', '72.00')), NOW)).toMatchObject({ ok: false, reasons: [{ code: 'duplicate_row', row: 2, first_row: 1 }] });
+  });
+
+  it('is refused by the server at 10 claim lines, by its row number and field alone, and taken at 11', () => {
+    const line = (claims: number, code = '97110') => `${code}\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t${String(claims * 3_600)}\t${String(claims)}`;
+    expect(decodeScreeningRows(line(10), NOW)).toEqual({ ok: false, reasons: [{ code: 'too_few_claim_lines', row: 1, field: 'claim_count' }], total: 1 });
+    expect(decodeScreeningRows(line(11), NOW)).toMatchObject({ ok: true, rows: [{ procedureCode: '97110', claimCount: 11, allowedCents: 39_600n }] });
+    const mixed = decodeScreeningRows([line(11), line(1, '97140'), line(40, '97530'), line(10, '97112')].join('\n'), NOW);
+    expect(mixed).toEqual({
+      ok: false,
+      reasons: [
+        { code: 'too_few_claim_lines', row: 2, field: 'claim_count' },
+        { code: 'too_few_claim_lines', row: 4, field: 'claim_count' },
+      ],
+      total: 2,
+    });
+    // Named with the patient information, ahead of any other problem, and storable as it is.
+    const crowded = decodeScreeningRows([...Array.from({ length: 25 }, () => 'x'), line(1)].join('\n'), NOW);
+    expect(crowded.ok ? null : crowded.reasons[0]).toEqual({ code: 'too_few_claim_lines', row: 26, field: 'claim_count' });
+    expect(storableRejections([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }])).toEqual([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }]);
+  });
+
+  it('takes only left-out numbers the browser could have counted', () => {
+    const plausible = (rows: number, claimLines: number, allowedCents: bigint, rowCount = 5) => leftOutPlausible({ rows, claimLines, allowedCents: cents(allowedCents) }, rowCount);
+    expect(plausible(0, 0, 0n)).toBe(true);
+    expect(plausible(1, 1, 0n)).toBe(true);
+    expect(plausible(1, 10, 25_000_000n)).toBe(true);
+    expect(plausible(3, 16, 111_233n)).toBe(true);
+    expect(plausible(0, 1, 0n)).toBe(false);
+    expect(plausible(0, 0, 1n)).toBe(false);
+    expect(plausible(1, 11, 0n)).toBe(false);
+    expect(plausible(2, 1, 0n)).toBe(false);
+    expect(plausible(1, 10, 25_000_001n)).toBe(false);
+    expect(plausible(-1, 0, 0n)).toBe(false);
+    expect(plausible(1, 1, -1n)).toBe(false);
+    expect(plausible(1.5, 3, 0n)).toBe(false);
+    expect(plausible(SCREENING_MAX_ROWS - 5, SCREENING_MAX_ROWS - 5, 0n)).toBe(true);
+    expect(plausible(SCREENING_MAX_ROWS - 4, SCREENING_MAX_ROWS - 4, 0n)).toBe(false);
+  });
+
+  it('splits any clean table into the rows sent and the rows left out, every claim line and cent in one or the other (property)', () => {
+    const arbitraryRow = fc.record({
+      code: fc.stringMatching(/^[0-9]{5}$/),
+      claims: fc.integer({ min: 1, max: 40 }),
+      dollarsPerLine: fc.integer({ min: 0, max: 250 }),
+    });
+    fc.assert(
+      fc.property(fc.uniqueArray(arbitraryRow, { minLength: 1, maxLength: 30, selector: (row) => row.code }), (rows) => {
+        const cells = rows.map((row) => [row.code, 'GP', '1', '11', 'ma_noncontracted', '2026-Q2', String(row.dollarsPerLine * row.claims), String(row.claims)]);
+        const screened = screenTable(table(...cells), NOW);
+        const small = rows.filter((row) => row.claims < SCREENING_MIN_CLAIM_LINES);
+        const kept = rows.filter((row) => row.claims >= SCREENING_MIN_CLAIM_LINES);
+        const leftOut = {
+          rows: small.length,
+          claimLines: small.reduce((sum, row) => sum + row.claims, 0),
+          allowedCents: cents(small.reduce((sum, row) => sum + BigInt(row.dollarsPerLine * row.claims) * 100n, 0n)),
+        };
+        if (kept.length === 0) {
+          expect(screened).toMatchObject({ ok: false, reasons: [{ code: 'too_few_claim_lines' }], leftOut });
+          return;
+        }
+        expect(screened).toMatchObject({ ok: true, rowCount: kept.length, leftOut });
+        const sent = decodeScreeningRows(screened.ok ? screened.rows : '', NOW);
+        expect(sent.ok ? sent.rows.map((row) => [row.procedureCode, row.claimCount]) : null).toEqual(kept.map((row) => [row.code, row.claims]));
+        expect(leftOutPlausible(leftOut, kept.length)).toBe(true);
+      }),
+    );
   });
 });

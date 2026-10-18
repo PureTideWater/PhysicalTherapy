@@ -7,7 +7,7 @@ import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
 import { screeningPage } from '../../lib/screening/routes';
-import { TEMPLATE_COLUMNS } from '../../lib/screening/template';
+import { TEMPLATE_COLUMNS, TEMPLATE_RULES } from '../../lib/screening/template';
 import { submitScreeningAction } from './actions';
 
 export const metadata: Metadata = { title: 'Free screening' };
@@ -17,7 +17,9 @@ export const metadata: Metadata = { title: 'Free screening' };
  * totals, one row per code, modifier set, units, place of service, payer product and quarter, with the allowed total
  * and the claim count, and no patient information. The browser reads the file and sends only its rows of totals; the
  * Medicare fee schedule at the practice's locality prices the Medicare rows, row by row, through the unchanged engine;
- * the result is emailed as a link that opens it for 30 days. The page shows the lockup without the tagline (D11), and
+ * the result is emailed as a link that opens it for 30 days. Each row sums at least 11 claim lines (a smaller row is
+ * left out before sending), and denied lines are left out of every total: the page states both rules in plain words
+ * beside the template (the founder's rulings of 2026-10-18). The page shows the lockup without the tagline (D11), and
  * never says owed, underpaid or recovered. Screening opens once a rule release is in force and a contract specialist
  * has approved the place-of-service split.
  */
@@ -54,7 +56,12 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             </AlertDescription>
           </Alert>
         ) : (
-          <ScreeningUploadForm action={submitScreeningAction} states={data.states.map((code) => ({ value: code, label: code }))} maxRows={data.limits.maxRows} />
+          <ScreeningUploadForm
+            action={submitScreeningAction}
+            states={data.states.map((code) => ({ value: code, label: code }))}
+            maxRows={data.limits.maxRows}
+            minClaimLines={data.limits.minClaimLines}
+          />
         )}
         <Card>
           <CardHeader>
@@ -64,7 +71,14 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
               member IDs, dates of service or claim numbers refuses the file.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col gap-4">
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm" aria-label="The template’s rules" data-slot="template-rules">
+              {TEMPLATE_RULES.map((rule) => (
+                <li key={rule.id} data-rule={rule.id}>
+                  {rule.text}
+                </li>
+              ))}
+            </ul>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm" aria-label="The screening columns">
                 <thead className="text-muted-foreground">

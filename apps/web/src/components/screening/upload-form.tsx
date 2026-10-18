@@ -4,7 +4,7 @@ import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDes
 import { type FormEvent, startTransition, useActionState, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
-import { FILE_MESSAGES } from '../../lib/screening/messages';
+import { FILE_MESSAGES, leftOutMessage } from '../../lib/screening/messages';
 import { type ScreeningParse, parseScreeningFile } from '../../lib/screening/parse';
 import { TEMPLATE_FILE_NAME, screeningTemplateCsv } from '../../lib/screening/template';
 import { Field, SelectField } from '../field';
@@ -14,10 +14,13 @@ import { Field, SelectField } from '../field';
  * in the browser, and never sent: the file input has no name, so no form submission carries it. The browser hashes
  * its bytes, checks the header and every row against the screening's format, and refuses a file that holds patient
  * information (names, dates of birth, member IDs, dates of service or claim numbers), naming the column by its
- * position and header, before anything is sent. A clean file goes to the server as its hash, its header's canonical
- * column names, its row count and its rows of totals in their canonical form; the server checks them all again. No
+ * position and header, before anything is sent. A row of fewer than 11 claim lines (the CMS small-cell standard) is
+ * left out before sending, since it can be one patient's service line, and the form says how many rows, claim lines
+ * and dollars it left out. A clean file goes to the server as its hash, its header's canonical column names, its row
+ * count, its rows of totals in their canonical form and those three left-out numbers; the server checks them again. No
  * ZIP+4 is asked for: the pricing takes a five-digit ZIP alone, so a ZIP that spans two Medicare localities cannot be
- * screened yet, and the form says so before the upload (decision D20 a, held for the owner). The result is emailed:
+ * screened yet, and the form says so before the upload (decision D20 a; until PR 6b, which takes a ZIP+4 before launch by
+ * the founder's ruling of 2026-10-18). The result is emailed:
  * the page only says to check the email.
  */
 
@@ -25,6 +28,8 @@ export interface ScreeningUploadFormProps {
   readonly action: (state: ActionState, form: FormData) => Promise<ActionState>;
   readonly states: readonly { readonly value: string; readonly label: string }[];
   readonly maxRows: number;
+  /** The fewest claim lines a row may sum; a smaller row is left out before sending. */
+  readonly minClaimLines: number;
 }
 
 /** The fields the server names in its refusals, as the form labels them. */
@@ -41,7 +46,7 @@ function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
 }
 
-export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUploadFormProps) {
+export function ScreeningUploadForm({ action, states, maxRows, minClaimLines }: ScreeningUploadFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const [parsed, setParsed] = useState<ScreeningParse | null>(null);
   const [reading, setReading] = useState(false);
@@ -86,6 +91,9 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
       body.set('headers', JSON.stringify(result.headers));
       body.set('rowCount', String(result.rowCount));
       body.set('rows', result.rows);
+      body.set('leftOutRows', String(result.leftOut.rows));
+      body.set('leftOutClaimLines', String(result.leftOut.claimLines));
+      body.set('leftOutAllowedCents', result.leftOut.allowedCents.toString());
       startTransition(() => {
         formAction(body);
       });
@@ -102,6 +110,7 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
   };
 
   const problems = parsed !== null && !parsed.ok ? parsed.messages : [];
+  const leftOut = parsed?.ok === true ? leftOutMessage(parsed.leftOut) : null;
   return (
     <form onSubmit={submit} className="flex flex-col gap-6" data-slot="screening-upload">
       <Card>
@@ -122,7 +131,7 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
         <CardHeader>
           <CardTitle>Your file</CardTitle>
           <CardDescription>
-            A CSV or tab-separated file of totals, one row per code, modifier set, units, place of service, payer product and quarter, at most {maxRows.toLocaleString('en-US')} rows. It is read in this browser and never uploaded: only its rows of totals are sent.
+            A CSV or tab-separated file of totals, one row per code, modifier set, units, place of service, payer product and quarter, at most {maxRows.toLocaleString('en-US')} rows. It is read in this browser and never uploaded: only its rows of totals are sent, and a row of fewer than {minClaimLines} claim lines is left out, so that no row can describe one patient’s care.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -141,16 +150,28 @@ export function ScreeningUploadForm({ action, states, maxRows }: ScreeningUpload
               No names, dates of birth, member IDs, dates of service or claim numbers: a file with any of them is refused before anything is sent.
             </p>
           </div>
-          <div>
-            <Button type="button" variant="outline" size="sm" onClick={download}>
-              Download the column template
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div>
+              <Button type="button" variant="outline" size="sm" onClick={download} aria-describedby="screening-template-rules">
+                Download the column template
+              </Button>
+            </div>
+            <p id="screening-template-rules" className="text-xs text-muted-foreground" data-slot="template-hint">
+              The template is the header line alone. Each row sums at least {minClaimLines} claim lines, and denied lines are left out of every total: the rules are under “What the file holds”.
+            </p>
           </div>
           {reading ? <p className="text-sm text-muted-foreground" data-state="reading">Reading the file in this browser…</p> : null}
           {parsed?.ok === true ? (
-            <p className="text-sm" data-state="file-ready">
-              The file is ready: <span className="font-mono tabular-nums">{parsed.rowCount.toLocaleString('en-US')}</span> {parsed.rowCount === 1 ? 'row' : 'rows'} of totals, and no column of patient information.
-            </p>
+            <div className="flex flex-col gap-1 text-sm">
+              <p data-state="file-ready">
+                The file is ready: <span className="font-mono tabular-nums">{parsed.rowCount.toLocaleString('en-US')}</span> {parsed.rowCount === 1 ? 'row' : 'rows'} of totals, and no column of patient information.
+              </p>
+              {leftOut === null ? null : (
+                <p data-state="left-out" data-rows={parsed.leftOut.rows} data-claim-lines={parsed.leftOut.claimLines} data-allowed-cents={parsed.leftOut.allowedCents.toString()}>
+                  {leftOut}
+                </p>
+              )}
+            </div>
           ) : null}
           {problems.length + local.length > 0 ? (
             <Alert variant="destructive" data-state="file-refused">

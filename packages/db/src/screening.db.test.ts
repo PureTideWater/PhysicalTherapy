@@ -16,7 +16,9 @@ import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrg
  * reach them through the definer functions alone, each granted to its one role), rejection reasons that cannot hold
  * a header or a cell, MA contracted and commercial rows that are never priced, figures that are the line amount
  * times the count in bigint, runs that move one way, a token stored only as its hash, rows kept until they expire,
- * and a split a contract specialist approves. Synthetic data only.
+ * and a split a contract specialist approves. SCR-07, the database's part: no row of fewer than 11 claim lines is
+ * stored (10 refused, 11 taken), and an upload keeps only three numbers of the rows the browser left out, held to what
+ * the browser could have counted. Synthetic data only.
  */
 
 const SCREENING_TABLES = ['screening_place_of_service_split', 'screening_prospect', 'screening_result', 'screening_run', 'screening_upload'] as const;
@@ -81,22 +83,26 @@ interface SubmitOptions {
   readonly zip?: string;
   readonly email?: string;
   readonly rows?: readonly (readonly [string, string, number, string, string, string, bigint, number])[];
+  /** The rows of fewer than 11 claim lines the browser left out: how many, their claim lines and their allowed cents. */
+  readonly leftOut?: readonly [number | null, number | null, bigint | null];
 }
 
-const FIRST_ROW = ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 5] as const;
+/** Every row sums at least 11 claim lines (the CMS small-cell standard). */
+const FIRST_ROW = ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 11] as const;
 const ROWS: NonNullable<SubmitOptions['rows']> = [
   FIRST_ROW,
-  ['97110', 'CQ GP', 1, '11', 'ma_noncontracted', '2026-Q2', 2_000n, 1],
-  ['97140', '', 1, '22', 'ma_contracted', '2026-Q1', 3_000n, 2],
-  ['97530', '', 3, '11', 'commercial', '2026-Q3', 4_000n, 3],
-  ['97112', '', 1, '11', 'medicaid', '2026-Q1', 500n, 1],
-  ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 1],
+  ['97110', 'CQ GP', 1, '11', 'ma_noncontracted', '2026-Q2', 2_000n, 11],
+  ['97140', '', 1, '22', 'ma_contracted', '2026-Q1', 3_000n, 12],
+  ['97530', '', 3, '11', 'commercial', '2026-Q3', 4_000n, 13],
+  ['97112', '', 1, '11', 'medicaid', '2026-Q1', 500n, 11],
+  ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 11],
 ];
 
-const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS run_id';
+const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS run_id';
 
 function submitValues(options: SubmitOptions = {}): unknown[] {
   const rows = options.rows ?? ROWS;
+  const [leftRows, leftLines, leftCents] = options.leftOut ?? [0, 0, 0n];
   return [
     '  Synthetic Therapy Group  ',
     'MN',
@@ -111,6 +117,9 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     rows.map((row) => row[5]),
     rows.map((row) => row[6].toString()),
     rows.map((row) => row[7]),
+    leftRows,
+    leftLines,
+    leftCents === null ? null : leftCents.toString(),
     `test-${randomUUID()}`,
   ];
 }
@@ -221,7 +230,8 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'created_at',
       'expires_at',
     ]);
-    // An upload keeps no byte of its file: no bytea, no free text but the hash and the coded reasons.
+    // An upload keeps no byte of its file: no bytea, no free text but the hash and the coded reasons, and of the rows of
+    // fewer than 11 claim lines the browser left out, three numbers alone.
     expect(rows.filter((row) => row.type === 'bytea')).toEqual([]);
     expect(rows.filter((row) => row.table_name === 'screening_upload').map((row) => row.column_name)).toEqual([
       'id',
@@ -230,6 +240,9 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'row_count',
       'status',
       'rejection_reasons',
+      'left_out_rows',
+      'left_out_claim_lines',
+      'left_out_allowed_cents',
       'created_at',
       'expires_at',
     ]);
@@ -277,6 +290,10 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
     expect(await valid([])).toBe(true);
     expect(await valid([{ code: 'phi_column', column: 4, phi: 'member_id' }])).toBe(true);
     expect(await valid([{ code: 'invalid_value', row: 12, field: 'units' }, { code: 'duplicate_row', row: 40, first_row: 3 }])).toBe(true);
+    // A row of fewer than 11 claim lines is named by its number and field alone, never its count.
+    expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }])).toBe(true);
+    expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count', claim_count: 1 }])).toBe(false);
+    expect(await valid([{ code: 'too_few_claim_lines', row: 2, field: 'claim_count', value: '97110' }])).toBe(false);
     expect(await valid([{ code: 'phi_column', column: 4, phi: 'member_id', header: 'Member ID' }])).toBe(false);
     expect(await valid([{ code: 'phi_column', column: 'Member ID' }])).toBe(false);
     expect(await valid([{ code: 'invalid_value', row: 12, field: 'units', value: 'SYNTHETIC 1234' }])).toBe(false);
@@ -390,7 +407,8 @@ describe('the screening rules', () => {
   it('stores the prospect, an accepted upload of hash and count, a queued run pinned to the release and split, and every row, with its audit event', async () => {
     const runId = await submit({ email: ' Prospect.Pinned@Synthetic.Test ' });
     const { rows } = await admin.query(
-      `SELECT p.practice_name, p.state, p.zip, p.contact_email, u.file_sha256, u.row_count AS upload_rows, u.status AS upload_status, u.rejection_reasons,
+      `SELECT p.practice_name, p.state, p.zip, p.contact_email, u.file_sha256, u.row_count AS upload_rows,
+              ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out, u.status AS upload_status, u.rejection_reasons,
               r.release_no, r.release_manifest_sha256, r.row_count, r.status, r.attempts, r.result_token_sha256,
               r.place_of_service_split_id = screening_split_in_force() AS split_in_force, r.expires_at = r.created_at + interval '30 days' AS thirty_days
          FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = $1`,
@@ -404,6 +422,7 @@ describe('the screening rules', () => {
         contact_email: 'prospect.pinned@synthetic.test',
         file_sha256: hex('d'),
         upload_rows: 6,
+        left_out: ['0', '0', '0'],
         upload_status: 'accepted',
         rejection_reasons: [],
         release_no: 900001,
@@ -436,13 +455,13 @@ describe('the screening rules', () => {
     const values = submitValues();
     await expect(as(APP_ROLE, SUBMIT, values.map((value, index) => (index === 8 ? [2] : value)))).rejects.toMatchObject({ constraint: 'screening_rows' });
     await expect(submit({ rows: [] })).rejects.toMatchObject({ constraint: 'screening_rows' });
-    const many = Array.from({ length: 50_001 }, (_, index) => ['97110', '', 1 + (index % 999), '11', 'medicare_ffs', `20${String(10 + Math.floor(index / 999) % 17)}-Q1`, 0n, 1] as const);
+    const many = Array.from({ length: 50_001 }, (_, index) => ['97110', '', 1 + (index % 999), '11', 'medicare_ffs', `20${String(10 + Math.floor(index / 999) % 17)}-Q1`, 0n, 11] as const);
     await expect(submit({ rows: many })).rejects.toMatchObject({ constraint: 'screening_rows' });
     await expect(submit({ rows: [FIRST_ROW, FIRST_ROW] })).rejects.toMatchObject({ code: '23505', constraint: 'screening_result_once' });
-    await expect(submit({ rows: [['97110', 'GP CQ', 1, '11', 'medicare_ffs', '2026-Q1', 1n, 1]] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_modifiers' });
-    await expect(submit({ rows: [['97110', 'GP GP', 1, '11', 'medicare_ffs', '2026-Q1', 1n, 1]] })).rejects.toMatchObject({ constraint: 'screening_result_modifiers' });
-    await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-01', 1n, 1]] })).rejects.toMatchObject({ constraint: 'screening_result_service_band' });
-    await expect(submit({ rows: [['97110', '', 1, '11', 'tricare', '2026-Q1', 1n, 1]] })).rejects.toMatchObject({ constraint: 'screening_result_payer_product' });
+    await expect(submit({ rows: [['97110', 'GP CQ', 1, '11', 'medicare_ffs', '2026-Q1', 1n, 11]] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_modifiers' });
+    await expect(submit({ rows: [['97110', 'GP GP', 1, '11', 'medicare_ffs', '2026-Q1', 1n, 11]] })).rejects.toMatchObject({ constraint: 'screening_result_modifiers' });
+    await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-01', 1n, 11]] })).rejects.toMatchObject({ constraint: 'screening_result_service_band' });
+    await expect(submit({ rows: [['97110', '', 1, '11', 'tricare', '2026-Q1', 1n, 11]] })).rejects.toMatchObject({ constraint: 'screening_result_payer_product' });
     await expect(submit({ email: 'not an address' })).rejects.toMatchObject({ constraint: 'screening_prospect_contact_email' });
     // Only an address the mail service can send to: plain ASCII, a dot-atom before the @, a dotted domain after it.
     for (const email of ['pois,on@clinic.synthetic.test', 'prospect@localhost', 'prospect@clinic.synthetic.test.', 'prospéct@clinic.synthetic.test', '.p@clinic.synthetic.test', 'p..q@clinic.synthetic.test', `${'p'.repeat(65)}@clinic.synthetic.test`]) {
@@ -450,13 +469,61 @@ describe('the screening rules', () => {
     }
     // A procedure code has a real code's shape: five letters (a name) are refused, and so are identifiers in the figures.
     for (const code of ['SMITH', 'MARIA', 'A1B2C', 'W1234']) {
-      await expect(submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 1n, 1]] }), code).rejects.toMatchObject({ constraint: 'screening_result_procedure_code' });
+      await expect(submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 1n, 11]] }), code).rejects.toMatchObject({ constraint: 'screening_result_procedure_code' });
     }
     await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-Q1', 12_345_678_900n, 24]] })).rejects.toMatchObject({ constraint: 'screening_result_observed' });
     await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-Q1', 100n, 100_001]] })).rejects.toMatchObject({ constraint: 'screening_result_claim_count' });
     for (const code of ['97110', '0001F', '0042T', '0001U', '0002M', 'G0283', 'V2020']) {
-      expect(await submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 2_500_000n, 1]] }), code).toMatch(/^[0-9a-f-]{36}$/);
+      expect(await submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 27_500_000n, 11]] }), code).toMatch(/^[0-9a-f-]{36}$/);
     }
+    await expect(submit({ rows: [['97110', '', 1, '11', 'commercial', '2026-Q1', 27_500_001n, 11]] })).rejects.toMatchObject({ constraint: 'screening_result_observed' });
+  });
+
+  it('stores no row of fewer than 11 claim lines, which can be one patient’s service line: 10 refused, 11 taken (SCR-07)', async () => {
+    for (const claims of [1, 10]) {
+      await expect(submit({ rows: [['97110', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 4_500n, claims]] }), String(claims)).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'screening_result_claim_count',
+      });
+    }
+    const taken = await submit({ rows: [['97110', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 4_500n, 11]] });
+    expect((await admin.query('SELECT s.claim_count FROM screening_result s WHERE s.run_id = $1', [taken])).rows).toEqual([{ claim_count: 11 }]);
+    // Not even the owner can store one: the CHECK, not the function, holds the floor.
+    await expect(
+      admin.query(
+        "INSERT INTO screening_result (run_id, row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents, disposition) VALUES ($1, 2, '97140', '{}', 1, '11', 'commercial', '2026-Q1', 10, 0, 'contract_required')",
+        [taken],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_claim_count' });
+  });
+
+  it('keeps of the rows the browser left out three numbers alone, held to what it could have counted (SCR-07)', async () => {
+    const runId = await submit({ leftOut: [3, 16, 111_233n] });
+    const stored = await admin.query(
+      'SELECT u.left_out_rows, u.left_out_claim_lines, u.left_out_allowed_cents::text AS cents FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1',
+      [runId],
+    );
+    expect(stored.rows).toEqual([{ left_out_rows: 3, left_out_claim_lines: 16, cents: '111233' }]);
+    expect(await submit({ leftOut: [1, 10, 25_000_000n] })).toMatch(/^[0-9a-f-]{36}$/);
+    // Each row left out sums 1 to 10 claim lines, at most $25,000.00 a claim line.
+    await expect(submit({ leftOut: [1, 11, 0n] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_upload_left_out_claim_lines' });
+    await expect(submit({ leftOut: [2, 1, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_left_out_claim_lines' });
+    await expect(submit({ leftOut: [0, 1, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_left_out_claim_lines' });
+    await expect(submit({ leftOut: [0, 0, 1n] })).rejects.toMatchObject({ constraint: 'screening_upload_left_out_allowed' });
+    await expect(submit({ leftOut: [1, 1, 2_500_001n] })).rejects.toMatchObject({ constraint: 'screening_upload_left_out_allowed' });
+    await expect(submit({ leftOut: [-1, -1, 0n] })).rejects.toMatchObject({ code: '23514' });
+    // No more rows in all than a file may hold.
+    await expect(submit({ leftOut: [49_995, 49_995, 0n] })).rejects.toMatchObject({ constraint: 'screening_upload_accepted_rows' });
+    expect(await submit({ leftOut: [49_994, 49_994, 0n] })).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(submit({ leftOut: [null, 0, 0n] })).rejects.toMatchObject({ code: '23502' });
+    // A rejected upload leaves nothing out: its rows were never screened.
+    const [prospect] = (await admin.query<{ id: string }>("INSERT INTO screening_prospect (practice_name, state, zip, contact_email) VALUES ('SYNTHETIC', 'MN', '00011', 'left.out@synthetic.test') RETURNING id")).rows;
+    await expect(
+      admin.query(
+        `INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, rejection_reasons, left_out_rows, left_out_claim_lines) VALUES ($1, $2, 2, 'rejected', '[{"code":"no_rows"}]', 1, 1)`,
+        [prospect?.id, hex('e')],
+      ),
+    ).rejects.toMatchObject({ constraint: 'screening_upload_left_out_accepted' });
   });
 
   it('records a rejected upload with its reasons alone, and its audit event', async () => {
@@ -492,13 +559,13 @@ describe('the screening rules', () => {
       ['priced', 'priced'],
       ['100', '100'],
       ['100', '100'],
-      ['200', '300'],
-      ['-2800', '-3700'],
+      ['1200', '1300'],
+      ['-1800', '-2700'],
       [true, true],
       ['80', '80'],
       ['80', '80'],
-      ['160', '240'],
-      ['-2840', '-3760'],
+      ['960', '1040'],
+      ['-2040', '-2960'],
       [hex('e'), hex('e')],
       [null, null],
       [null, null],
@@ -507,12 +574,12 @@ describe('the screening rules', () => {
     expect(recorded).toEqual([{ n: 0 }]);
     // Even the owner cannot move one back to pending, or insert one priced as non-contracted.
     await expect(admin.query("UPDATE screening_result SET disposition = 'pending' WHERE run_id = $1 AND row_no = 4", [runId])).rejects.toMatchObject({ code: '23514' });
-    await expect(submit({ rows: [['97140', '', 1, '22', 'commercial', '2026-Q1', 1n, 1]] }).then((id) =>
+    await expect(submit({ rows: [['97140', '', 1, '22', 'commercial', '2026-Q1', 1n, 11]] }).then((id) =>
       admin.query("UPDATE screening_result SET disposition = 'rates_change_in_band', trace_sha256 = $2 WHERE run_id = $1", [id, hex('f')]),
     )).rejects.toMatchObject({ code: '23514' });
-    // Row 1: 5 claim lines, $100.00 allowed in the file. A pooled row's fully reduced figure: $40.00 a line, $200.00, $100.00 above the allowed total.
+    // Row 1: 11 claim lines, $100.00 allowed in the file. A pooled row's fully reduced figure: $40.00 a line, $440.00, $340.00 above the allowed total.
     type Reduced = readonly [line: string | null, unrounded: string | null, total: string | null, difference: string | null, trace: string | null];
-    const REDUCED: Reduced = ['4000', '4000.4', '20000', '10000', hex('e')];
+    const REDUCED: Reduced = ['4000', '4000.4', '44000', '34000', hex('e')];
     const NONE: Reduced = [null, null, null, null, null];
     const figures = (line: string, unrounded: string, expected: string, difference: string, pooled: boolean | null = true, reduced: Reduced = pooled === true ? REDUCED : NONE) =>
       as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
@@ -530,24 +597,24 @@ describe('the screening rules', () => {
         [hex('f')],
       ]);
     // A priced row says whether its code is in the reduction across a visit's codes.
-    await expect(figures('5000', '5000.4', '25000', '15000', null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_priced' });
-    await expect(figures('5000', '5000.4', '24999', '14999')).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_figures' });
-    await expect(figures('5000', '5001', '25000', '15000')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
-    await expect(figures('5000', '5000.4', '25000', '15001')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
-    await expect(figures('-1', '-1', '-5', '-10005')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45000', null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_priced' });
+    await expect(figures('5000', '5000.4', '54999', '44999')).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_figures' });
+    await expect(figures('5000', '5001', '55000', '45000')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45001')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
+    await expect(figures('-1', '-1', '-11', '-10011')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
     // A pooled row has its fully reduced figure, and only a pooled row has one (the owner's ruling of 2026-10-18).
-    await expect(figures('5000', '5000.4', '25000', '15000', true, NONE)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_reduced' });
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10000', null])).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
-    await expect(figures('5000', '5000.4', '25000', '15000', false, REDUCED)).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, NONE)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_reduced' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['4000', '4000.4', '44000', '34000', null])).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
+    await expect(figures('5000', '5000.4', '55000', '45000', false, REDUCED)).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
     // It is the line amount times the count, its difference from the allowed total, and never above the figure before the reduction.
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '19999', '9999', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10001', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4001', '20000', '10000', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['5001', '5001', '25005', '15005', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
-    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10000', 'not-a-hash'])).rejects.toMatchObject({ constraint: 'screening_result_reduced_trace_sha256' });
-    expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 1 }]);
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['4000', '4000.4', '43999', '33999', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['4000', '4000.4', '44000', '34001', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['4000', '4001', '44000', '34000', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['5001', '5001', '55011', '45011', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '55000', '45000', true, ['4000', '4000.4', '44000', '34000', 'not-a-hash'])).rejects.toMatchObject({ constraint: 'screening_result_reduced_trace_sha256' });
+    expect(await figures('5000', '5000.4', '55000', '45000')).toEqual([{ n: 1 }]);
     // A row is priced once.
-    expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 0 }]);
+    expect(await figures('5000', '5000.4', '55000', '45000')).toEqual([{ n: 0 }]);
     // The largest figure a row can hold stays exact: 999 units at about $500 a unit, times 100,000 claim lines.
     const big = await submit({ rows: [['97110', '', 999, '11', 'medicare_ffs', '2026-Q1', 99_999_999_999n, 100_000]] });
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [big])).toHaveLength(1);
@@ -634,8 +701,8 @@ describe('the screening rules', () => {
       ['priced', 'rates_change_in_band'],
       ['5000', null],
       ['5000', null],
-      ['25000', null],
-      ['15000', null],
+      ['55000', null],
+      ['45000', null],
       [false, null],
       [null, null],
       [null, null],
@@ -686,7 +753,7 @@ describe('the screening rules', () => {
     expect(await as(APP_ROLE, 'SELECT * FROM screening_result_summary($1)', ['not-a-hash'])).toEqual([]);
     await expect(
       admin.query(
-        "INSERT INTO screening_result (run_id, row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents, disposition) VALUES ($1, 99, '97110', '{}', 1, '11', 'medicare_ffs', '2026-Q4', 1, 0, 'pending')",
+        "INSERT INTO screening_result (run_id, row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents, disposition) VALUES ($1, 99, '97110', '{}', 1, '11', 'medicare_ffs', '2026-Q4', 11, 0, 'pending')",
         [runId],
       ),
     ).rejects.toMatchObject({ code: '23514' });

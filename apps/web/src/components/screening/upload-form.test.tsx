@@ -7,13 +7,15 @@ import { ScreeningUploadForm } from './upload-form';
 /**
  * The screening's upload form as the server renders it (CO-04; decisions D18 a, D20 a and D21 a): the file is read in
  * the browser, so its input has no name and no submission can carry it; no ZIP+4 is asked for (the pricing cannot use
- * one); the contact's email is where the link goes. SYNTHETIC values.
+ * one); the contact's email is where the link goes; and it says, in plain words, that a row of fewer than 11 claim
+ * lines is left out and that denied lines stay out of every total (the founder's rulings of 2026-10-18). SYNTHETIC
+ * values.
  */
 
 const action = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
 
 describe('the screening upload form', () => {
-  const html = renderToStaticMarkup(<ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} />);
+  const html = renderToStaticMarkup(<ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} minClaimLines={11} />);
 
   it('reads the file in the browser: its input has no name, so no submission carries it', () => {
     const file = /<input[^>]*type="file"[^>]*>/.exec(html)?.[0] ?? '';
@@ -41,5 +43,12 @@ describe('the screening upload form', () => {
     expect(html).toContain('No names, dates of birth, member IDs, dates of service or claim numbers');
     expect(html).toContain('Download the column template');
     expect(html.replace(/<[^>]+>/g, ' ')).not.toMatch(/\b(?:owed|under-?paid|recovered)\b/i);
+  });
+
+  it('says, in plain words, that a row of fewer than 11 claim lines is left out and that denied lines stay out of every total', () => {
+    const text = html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    expect(text).toContain('a row of fewer than 11 claim lines is left out, so that no row can describe one patient’s care');
+    expect(text).toContain('Each row sums at least 11 claim lines, and denied lines are left out of every total');
+    expect(html).toMatch(/aria-describedby="screening-template-rules"/);
   });
 });

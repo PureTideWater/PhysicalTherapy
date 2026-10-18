@@ -1,4 +1,5 @@
-import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, type ScreeningColumn, type ScreeningRejection } from '@tp/worker/screening-format';
+import { formatUsd } from '@tp/money';
+import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, SCREENING_MIN_CLAIM_LINES, type ScreeningColumn, type ScreeningLeftOut, type ScreeningRejection } from '@tp/worker/screening-format';
 
 /**
  * What the screening page says about an upload it refuses (Change Order 001, CO-04: "reject any upload containing
@@ -6,8 +7,12 @@ import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, type Screen
  * in the browser) and, in the browser alone, by the header text the person typed; a row by its number under the
  * header. Patient information comes first, so its column is named however many other problems the file has. A
  * message never holds a cell's value, and the header text never leaves the browser: the server's own messages name
- * the position and the kind only. Plain data, safe to import in the browser.
+ * the position and the kind only. And what the browser says of the rows of fewer than 11 claim lines it leaves out:
+ * how many, their claim lines and their allowed total, never which. Plain data, safe to import in the browser.
  */
+
+/** Why a row of fewer claim lines is left out, in plain words. */
+export const CLAIM_FLOOR_REASON = `a screening takes a row of at least ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so that no row can describe one patient’s care`;
 
 /** The most messages a refusal shows: the format keeps at most 20 reasons. */
 export const MAX_MESSAGES = SCREENING_MAX_REASONS;
@@ -33,7 +38,7 @@ export const FIELD_RULES: Readonly<Record<ScreeningColumn, string>> = {
   payer_product: 'one of medicare_ffs, ma_noncontracted, ma_contracted, commercial, medicaid or other',
   service_band: 'a calendar quarter, such as 2026-Q1; a month is not taken, so use its quarter',
   allowed_total: 'dollars with at most two decimals, such as 1234.56, from 0 to 999,999,999.99 and at most $25,000.00 a claim line',
-  claim_count: 'a whole number of claims from 1 to 100,000',
+  claim_count: `a whole number of claim lines from 1 to 100,000 (a row of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} is left out, never sent)`,
 };
 
 /** A column as a message names it: its position, and in the browser the header text typed there. */
@@ -82,7 +87,27 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
       return `The file has more than ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows. Combine rows that share a code, modifiers, units, place of service, payer product and quarter, or screen the rest separately.`;
     case 'row_count_mismatch':
       return 'The rows sent do not add up to the file’s row count. Choose the file again.';
+    case 'too_few_claim_lines':
+      return reason.row === undefined
+        ? `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen: ${CLAIM_FLOOR_REASON}.`
+        : `${rowName(reason.row)} sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines: ${CLAIM_FLOOR_REASON}. Leave the row out.`;
   }
+}
+
+/** A count and its noun, the count grouped by thousands. */
+function many(count: number, one: string): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? one : `${one}s`}`;
+}
+
+/**
+ * What the browser says of the rows it left out because each sums fewer than 11 claim lines: how many, their claim
+ * lines and their allowed total, never which rows; null when it left none out.
+ */
+export function leftOutMessage(leftOut: ScreeningLeftOut): string | null {
+  if (leftOut.rows === 0) {
+    return null;
+  }
+  return `Left out: ${many(leftOut.rows, 'row')} of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines each, ${many(leftOut.claimLines, 'claim line')} and ${formatUsd(leftOut.allowedCents)} allowed in your file. They are not sent, and no figure includes them: ${CLAIM_FLOOR_REASON}.`;
 }
 
 /**

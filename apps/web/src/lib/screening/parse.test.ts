@@ -1,15 +1,17 @@
 import { createHash } from 'node:crypto';
 
+import { cents } from '@tp/money';
 import { decodeScreeningRows } from '@tp/worker/screening-format';
 import { describe, expect, it } from 'vitest';
 
-import { reasonMessage } from './messages';
+import { leftOutMessage, reasonMessage } from './messages';
 import { MAX_FILE_BYTES, type ScreeningParse, delimiterOf, fileProblem, looksLikeSpreadsheet, parseScreeningBytes, parseScreeningFile, readTable, sha256Hex, utf8Text } from './parse';
 import { screeningTemplateCsv } from './template';
 
 /**
  * The screening upload as the browser reads it (CO-04; decision D18 a): the file's own checks, its text as a table,
- * its hash. SYNTHETIC rows of totals, built here; no CSV is committed.
+ * its hash, and (SCR-07) the rows of fewer than 11 claim lines it leaves out, never sent, with how many rows, claim
+ * lines and dollars it left out. SYNTHETIC rows of totals, built here; no CSV is committed.
  */
 
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -96,6 +98,7 @@ describe('a clean file (CO-04)', () => {
       headers: HEADER.split(','),
       rowCount: 2,
       rows: ['97110\tGP\t1\t11\tma_noncontracted\t2026-Q1\t60000\t40', '97140\t59 GP\t1\t11\tmedicare_ffs\t2026-Q2\t250000\t50'].join('\n'),
+      leftOut: { rows: 0, claimLines: 0, allowedCents: 0n },
     });
     // What the browser sends is what the server decodes.
     expect(result.ok && decodeScreeningRows(result.rows, NOW).ok).toBe(true);
@@ -103,14 +106,14 @@ describe('a clean file (CO-04)', () => {
 
   it('takes the common spellings of each column, in any order, as CSV or tab-separated text', async () => {
     const header = ['CPT/HCPCS', 'Mods', 'Units', 'POS', 'Product', 'Quarter', 'Allowed Amount', 'Claims'];
-    const tsv = bytes(`\uFEFF${header.join('\t')}\n97110\tGP\t1\t11\tmedicare_ffs\tQ1 2026\t$60.00\t1\n`);
+    const tsv = bytes(`\uFEFF${header.join('\t')}\n97110\tGP\t1\t11\tmedicare_ffs\tQ1 2026\t$660.00\t11\n`);
     const result = await parse(tsv, 'totals.tsv');
-    expect(result.ok && result.rows).toBe('97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t6000\t1');
+    expect(result.ok && result.rows).toBe('97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t66000\t11');
     // The header sent is each column's canonical name, never the text typed.
     expect(result.ok && result.headers).toEqual(['procedure_code', 'modifiers', 'units', 'place_of_service', 'payer_product', 'service_band', 'allowed_total', 'claim_count']);
     for (const spelling of [['HCPCS Code', 'Modifier', 'Unit', 'Place of Service', 'Payer Product', 'Service Date Band', 'Allowed Total', 'Claim Count'], ['code', 'modifier_set', 'units_per_line', 'pos', 'product', 'service_quarter', 'allowed', 'count']]) {
       const reordered = [spelling[7], ...spelling.slice(0, 7)] as string[];
-      const content = csv(reordered.join(','), '1,97110,GP,1,11,medicare_ffs,2026 Q1,60.00');
+      const content = csv(reordered.join(','), '11,97110,GP,1,11,medicare_ffs,2026 Q1,660.00');
       expect((await parse(content)).ok, spelling.join(',')).toBe(true);
     }
   });
@@ -118,6 +121,40 @@ describe('a clean file (CO-04)', () => {
   it('takes the template the page builds, once its rows are filled', async () => {
     const result = await parse(bytes(`${screeningTemplateCsv()}${ROW_A}\r\n`));
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient’s service line, is left out in the browser', () => {
+  it('leaves out a row of 10 claim lines and sends one of 11, saying how many rows, claim lines and dollars it left out', async () => {
+    const content = csv(HEADER, '97140,GP,1,11,medicare_ffs,2026-Q1,360.00,10', '97110,GP,1,11,medicare_ffs,2026-Q1,396.00,11', '97530,GP,2,11,commercial,2026-Q2,"1,000.01",1');
+    const result = await parse(content);
+    expect(result).toEqual({
+      ok: true,
+      fileSha256: createHash('sha256').update(content).digest('hex'),
+      headers: HEADER.split(','),
+      rowCount: 1,
+      rows: '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t39600\t11',
+      leftOut: { rows: 2, claimLines: 11, allowedCents: 136_001n },
+    });
+    // Nothing of a row left out is sent: neither its code nor its figures.
+    expect(result.ok ? result.rows : '').not.toMatch(/97140|97530|36000|100001/);
+    expect(leftOutMessage(result.ok ? result.leftOut : { rows: 0, claimLines: 0, allowedCents: cents(0n) })).toBe(
+      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,360.01 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+    );
+    expect(leftOutMessage({ rows: 1, claimLines: 1, allowedCents: cents(4_500n) })).toBe(
+      'Left out: 1 row of fewer than 11 claim lines each, 1 claim line and $45.00 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+    );
+    expect(leftOutMessage({ rows: 0, claimLines: 0, allowedCents: cents(0n) })).toBeNull();
+  });
+
+  it('sends nothing when every row is left out, and says what it left out', async () => {
+    expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2026-Q1,45.00,1', '97140,GP,1,11,ma_noncontracted,2026-Q2,"1,234.56",10'))).toEqual([
+      'Every row sums fewer than 11 claim lines, so nothing is left to screen: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,279.56 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+    ]);
+    expect(reasonMessage({ code: 'too_few_claim_lines', row: 3, field: 'claim_count' })).toBe(
+      'Row 3 sums fewer than 11 claim lines: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care. Leave the row out.',
+    );
   });
 });
 

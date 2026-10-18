@@ -7,18 +7,22 @@ import { cents, formatUsd } from '@tp/money';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
-import { CLEAN_ROWS, SCREENING_ZIP, dateOfServiceCsv, expireScreeningsOnce, memberIdCsv, outboxFor, priceScreeningsOnce, resultLinkIn, screeningCsv } from './screening';
+import { CLEAN_ROWS, SCREENING_ZIP, SMALL_LEFT_OUT, SMALL_ROWS, dateOfServiceCsv, expireScreeningsOnce, memberIdCsv, outboxFor, priceScreeningsOnce, resultLinkIn, screeningCsv } from './screening';
 
 /**
  * The free screening in the browser (Change Order 001, CO-04; reconciliation-001, D11 and D18 to D21; test matrix
  * SCR-01, SCR-02, SCR-03, SCR-05 and SCR-06, the screens' side). A contract specialist approves the place-of-service
  * split in the console. A prospect, with no account, fills the form; a file with a Member ID column, and one with a
- * date-of-service column, are refused in the browser with the column named, and nothing is sent. A clean SYNTHETIC
- * file of totals, built in memory, is sent as its hash and rows; the worker's sweep prices it (an operator pool on the
+ * date-of-service column, are refused in the browser with the column named, and nothing is sent. The page states the
+ * template's rules: each row at least 11 claim lines, and denied lines left out of every total. A SYNTHETIC file of
+ * totals, built in memory, with two rows of fewer than 11 claim lines (SCR-07): the browser leaves those two out and
+ * says how many rows, claim lines and dollars it left out, and sends the rest as its hash and rows (nothing of the two
+ * in the request); the worker's sweep prices it (an operator pool on the
  * e2e database) and emails the link to the local outbox. The link opens the result: the Medicare figures under D19's
  * label and the fully reduced ones under theirs (the owner's rulings of 2026-10-18), the anomalies with the database's
  * standings (G01's 97110 within the range of the reduction across codes, 97140 an anomaly), the coverage and the
- * dollars that cannot be priced without a contract, the database's own sums to the cent, with no owed, underpaid or
+ * dollars that cannot be priced without a contract, the rows left out before sending as the browser counted them, the
+ * database's own sums to the cent, with no owed, underpaid or
  * recovered and no tagline, accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the screening_converted event; once the screening is past its 30
  * days the link opens nothing, the expiry job deletes it, and the conversion's event remains. Synthetic data only.
  */
@@ -42,7 +46,7 @@ async function noSidewaysScroll(page: Page, width: number, what: string): Promis
   expect(scroll, `${what} at ${String(width)} px scrolls sideways`).toBeLessThanOrEqual(inner);
 }
 
-test('a specialist approves the split; a file with patient information is refused in the browser; a clean file is priced, emailed, opened, converted and expires (SCR-01 to SCR-06)', async ({ browser }) => {
+test('a specialist approves the split; a file with patient information is refused in the browser; a clean file, its small rows left out, is priced, emailed, opened, converted and expires (SCR-01 to SCR-07)', async ({ browser }) => {
   test.setTimeout(240_000);
 
   await test.step('a contract specialist approves the screening’s place-of-service split in the console', async () => {
@@ -72,9 +76,11 @@ test('a specialist approves the split; a file with patient information is refuse
   const context = await browser.newContext();
   const page = await context.newPage();
   const posted: string[] = [];
+  const bodies: string[] = [];
   page.on('request', (request) => {
     if (request.method() === 'POST') {
       posted.push(new URL(request.url()).pathname);
+      bodies.push(request.postData() ?? '');
     }
   });
 
@@ -82,6 +88,13 @@ test('a specialist approves the split; a file with patient information is refuse
     await page.goto('/screening');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('A free screening of your allowed amounts');
     await expect(page.locator('[data-slot="public-header"] [data-slot="lockup"]')).toBeVisible();
+    // The template's rules, in plain words: the claim-line floor and denied lines left out (the founder's rulings of 2026-10-18).
+    const rules = page.getByRole('list', { name: 'The template’s rules' });
+    await expect(rules.locator('[data-rule="claim-floor"]')).toContainText('Each row sums at least 11 claim lines.');
+    await expect(rules.locator('[data-rule="claim-floor"]')).toContainText('tells you how many rows, claim lines and dollars it left out');
+    await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('Leave denied lines out of every total');
+    await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('A denial is not a rate variance');
+    await expect(page.locator('[data-slot="template-hint"]')).toContainText('Each row sums at least 11 claim lines, and denied lines are left out of every total');
     await expectAccessible(page, 'the screening page');
     await fillProspect(page);
     // The file input has no name: no form submission carries the file.
@@ -101,24 +114,54 @@ test('a specialist approves the split; a file with patient information is refuse
     expect(uploads).toBe('0');
   });
 
-  const clean = screeningCsv(CLEAN_ROWS);
-  await test.step('a clean SYNTHETIC file is sent as its hash and rows of totals, and the page says to check the email (no link in the browser)', async () => {
+  const clean = screeningCsv([...CLEAN_ROWS, ...SMALL_ROWS]);
+  await test.step('a SYNTHETIC file is sent as its hash and rows of totals, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: clean });
     await expect(page.locator('[data-state="file-ready"]')).toContainText(`${String(CLEAN_ROWS.length)} rows of totals`);
+    const leftOut = page.locator('[data-state="left-out"]');
+    await expect(leftOut).toContainText(
+      `Left out: ${String(SMALL_LEFT_OUT.rows)} rows of fewer than 11 claim lines each, ${String(SMALL_LEFT_OUT.claimLines)} claim lines and ${SMALL_LEFT_OUT.allowed} allowed in your file.`,
+    );
+    await expect(leftOut).toContainText('They are not sent, and no figure includes them');
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(page).toHaveURL(/\/screening\?sent=1$/);
     await expect(page.locator('[data-state="sent"]')).toContainText('Check your email');
     expect(await page.locator('body').innerText()).not.toMatch(/\/screening\/results\//);
+    // The request carried nothing of the rows left out: neither their code nor their quarter, only the three numbers.
+    expect(bodies.length).toBeGreaterThanOrEqual(1);
+    for (const body of bodies) {
+      expect(body).not.toContain('97164');
+      expect(body).not.toContain('2026-Q3');
+    }
     const upload = await withDatabase(
       async (client) =>
         (
-          await client.query<{ file_sha256: string; row_count: number; status: string }>(
-            'SELECT u.file_sha256, u.row_count, u.status FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1',
+          await client.query<{ file_sha256: string; row_count: number; status: string; left_out: string[] }>(
+            `SELECT u.file_sha256, u.row_count, u.status, ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out
+               FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
             [CONTACT],
           )
         ).rows,
     );
-    expect(upload).toEqual([{ file_sha256: createHash('sha256').update(clean).digest('hex'), row_count: CLEAN_ROWS.length, status: 'accepted' }]);
+    expect(upload).toEqual([
+      {
+        file_sha256: createHash('sha256').update(clean).digest('hex'),
+        row_count: CLEAN_ROWS.length,
+        status: 'accepted',
+        left_out: [String(SMALL_LEFT_OUT.rows), String(SMALL_LEFT_OUT.claimLines), SMALL_LEFT_OUT.allowedCents.toString()],
+      },
+    ]);
+    const small = await withDatabase(
+      async (client) =>
+        (
+          await client.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+              WHERE p.contact_email = $1 AND (s.procedure_code = '97164' OR s.service_band = '2026-Q3' OR s.claim_count < 11)`,
+            [CONTACT],
+          )
+        ).rows[0]?.n,
+    );
+    expect(small).toBe('0');
   });
 
   let link = '';
@@ -162,6 +205,11 @@ test('a specialist approves the split; a file with patient information is refuse
     await expect(page.locator('[data-figure="contract-required-allowed"] dd')).toHaveText('$7,321.09');
     expect(observed('contract_required')).toBe('$7,321.09');
     await expect(page.locator('[data-figure="not-screened-allowed"] dd')).toHaveText('$150.00');
+    // The rows left out before sending, as the browser counted them, apart from every figure (SCR-07).
+    await expect(page.locator('[data-section="left-out"]')).toContainText('Left out before sending');
+    await expect(page.locator('[data-figure="left-out-rows"] dd')).toHaveText(String(SMALL_LEFT_OUT.rows));
+    await expect(page.locator('[data-figure="left-out-claim-lines"] dd')).toHaveText(String(SMALL_LEFT_OUT.claimLines));
+    await expect(page.locator('[data-figure="left-out-allowed"] dd')).toHaveText(SMALL_LEFT_OUT.allowed);
     await expect(page.locator('[data-figure="could-not-price-allowed"] dd')).toHaveText(observed('unpriced', 'rates_change_in_band'));
     // The row whose place of service the split leaves out is unpriced for that reason.
     await expect(page.locator('[data-coverage="medicare_ffs:unpriced"][data-reason="ENGINE_ERROR"]')).toContainText('The place of service is not in the approved place-of-service split');

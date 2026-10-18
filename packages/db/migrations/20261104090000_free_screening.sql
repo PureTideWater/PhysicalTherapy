@@ -9,11 +9,18 @@
 -- expects under Medicare for each row. Nothing here is PHI and nothing names a practice: the browser parses the
 -- file, the server checks its header names and typed rows, and no byte of it is stored, only its SHA-256, its row
 -- count and, when refused, the reasons by code, column position and kind (never a header's text or a cell).
+-- Every row sums at least 11 claim lines (the CMS small-cell standard; the founder's ruling of 2026-10-18): a row of
+-- fewer, beside its quarter and the practice's name and ZIP, can be one patient's service line. The browser leaves
+-- such a row out and the upload keeps only how many rows, claim lines and dollars it left out; the server refuses
+-- one sent anyway, by its row number; and screening_result_claim_count refuses one stored.
 --
 -- - screening_prospect: the practice's name, state, five-digit ZIP and the contact address the result link goes to.
 --   No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose locality_map record needs its ZIP+4 is refused
---   (screening_zip_plus_four) rather than asked for a ZIP+4 nothing could use.
--- - screening_upload: one file a prospect sent: its hash, its row count, accepted or rejected, and the reasons.
+--   (screening_zip_plus_four) rather than asked for a ZIP+4 nothing could use, until PR 6b, which the founder's ruling
+--   of 2026-10-18 puts before launch, takes one.
+-- - screening_upload: one file a prospect sent: its hash, its row count, accepted or rejected, and the reasons; for
+--   an accepted one, how many rows of fewer than 11 claim lines the browser left out, their claim lines and their
+--   allowed total (never which rows).
 -- - screening_place_of_service_split: the platform's default facility or non-facility setting per place of
 --   service, approved by a contract specialist (rate_record.approve; a person, never a model), append-only; the
 --   latest approval is in force. A fifth table beside CO-12's four: the engine needs a split and no rule record
@@ -52,13 +59,14 @@
 
 -- An upload's rejection reasons: at most 20, each an object of these keys only: a code, and where it applies the
 -- column's position (1 to 64), a row (1 to 10,000,000), the first row of a run of them, the field (one of the
--- eight columns) and the PHI kind. Never a header's text or a cell's value.
+-- eight columns) and the PHI kind. Never a header's text or a cell's value: a row of fewer than 11 claim lines
+-- (too_few_claim_lines) is named by its number and the claim_count field alone, never its count, code or quarter.
 CREATE FUNCTION screening_rejection_valid(reason jsonb) RETURNS boolean
 LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
   SELECT CASE WHEN jsonb_typeof(reason) IS DISTINCT FROM 'object' THEN false ELSE coalesce(
        jsonb_typeof(reason -> 'code') = 'string'
    AND (reason ->> 'code') IN ('phi_column', 'unknown_column', 'duplicate_column', 'missing_column', 'row_shape', 'invalid_value', 'band_holds_date',
-                               'band_in_future', 'duplicate_row', 'no_rows', 'too_many_rows', 'row_count_mismatch')
+                               'band_in_future', 'duplicate_row', 'no_rows', 'too_many_rows', 'row_count_mismatch', 'too_few_claim_lines')
    AND NOT EXISTS (SELECT 1 FROM jsonb_object_keys(reason) k WHERE k NOT IN ('code', 'column', 'row', 'first_row', 'field', 'phi'))
    AND (NOT reason ? 'column' OR (jsonb_typeof(reason -> 'column') = 'number' AND (reason ->> 'column') ~ '^[1-9][0-9]?$' AND (reason ->> 'column')::integer <= 64))
    AND (NOT reason ? 'row' OR (jsonb_typeof(reason -> 'row') = 'number' AND (reason ->> 'row') ~ '^[1-9][0-9]{0,7}$' AND (reason ->> 'row')::integer <= 10000000))
@@ -142,11 +150,21 @@ CREATE TABLE screening_upload (
   row_count integer NOT NULL CONSTRAINT screening_upload_row_count CHECK (row_count BETWEEN 0 AND 10000000),
   status text NOT NULL CONSTRAINT screening_upload_status CHECK (status IN ('accepted', 'rejected')),
   rejection_reasons jsonb NOT NULL DEFAULT '[]'::jsonb CONSTRAINT screening_upload_reasons CHECK (screening_rejections_valid(rejection_reasons)),
+  -- The rows the prospect's browser left out before sending because each sums fewer than 11 claim lines (format.ts,
+  -- SCREENING_MIN_CLAIM_LINES): how many, their claim lines and their allowed total, as the browser counted them, for
+  -- the result to say. Never which rows, and nothing else of any of them; zero on a rejected upload.
+  left_out_rows integer NOT NULL DEFAULT 0 CONSTRAINT screening_upload_left_out_rows CHECK (left_out_rows BETWEEN 0 AND 50000),
+  left_out_claim_lines integer NOT NULL DEFAULT 0,
+  left_out_allowed_cents bigint NOT NULL DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
   CONSTRAINT screening_upload_rejected CHECK (
     (status = 'rejected') = (CASE WHEN jsonb_typeof(rejection_reasons) = 'array' THEN jsonb_array_length(rejection_reasons) > 0 ELSE false END)),
-  CONSTRAINT screening_upload_accepted_rows CHECK (status <> 'accepted' OR row_count BETWEEN 1 AND 50000),
+  CONSTRAINT screening_upload_accepted_rows CHECK (status <> 'accepted' OR (row_count BETWEEN 1 AND 50000 AND row_count + left_out_rows <= 50000)),
+  -- Each row left out sums 1 to 10 claim lines, at most $25,000.00 a claim line; a rejected upload leaves nothing out.
+  CONSTRAINT screening_upload_left_out_claim_lines CHECK (left_out_claim_lines BETWEEN left_out_rows AND 10 * left_out_rows),
+  CONSTRAINT screening_upload_left_out_allowed CHECK (left_out_allowed_cents BETWEEN 0 AND 2500000::bigint * left_out_claim_lines),
+  CONSTRAINT screening_upload_left_out_accepted CHECK (status = 'accepted' OR left_out_rows = 0),
   CONSTRAINT screening_upload_expiry CHECK (expires_at = created_at + interval '30 days')
 );
 CREATE INDEX screening_upload_by_prospect ON screening_upload (prospect_id);
@@ -255,7 +273,9 @@ CREATE TABLE screening_result (
   payer_product text NOT NULL CONSTRAINT screening_result_payer_product
     CHECK (payer_product IN ('medicare_ffs', 'ma_noncontracted', 'ma_contracted', 'commercial', 'medicaid', 'other')),
   service_band text NOT NULL CONSTRAINT screening_result_service_band CHECK (service_band ~ '^20[0-9]{2}-Q[1-4]$'),
-  claim_count integer NOT NULL CONSTRAINT screening_result_claim_count CHECK (claim_count BETWEEN 1 AND 100000),
+  -- At least 11 claim lines (the CMS small-cell standard; format.ts, SCREENING_MIN_CLAIM_LINES): a row of fewer can be
+  -- one patient's service line, so it is never stored. At most 100,000.
+  claim_count integer NOT NULL CONSTRAINT screening_result_claim_count CHECK (claim_count BETWEEN 11 AND 100000),
   -- At most $25,000.00 a claim line, so an identifier typed under the allowed total is refused, never kept as dollars.
   observed_allowed_cents bigint NOT NULL CONSTRAINT screening_result_observed
     CHECK (observed_allowed_cents BETWEEN 0 AND 99999999999 AND observed_allowed_cents <= 2500000::bigint * claim_count),
@@ -403,13 +423,15 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_te
    WHERE r.release_no = current_rule_release() AND r.record_type = 'locality_map' AND r.key = jsonb_build_object('zip', zip5)
 $$;
 
--- An accepted upload: the prospect, the upload (hash and row count), a queued run pinned to the release and the
--- split in force, and every row, decoded and checked by the server; the arrays are the rows' columns in order
--- (modifier sets space-joined, '' for none). Returns the run. A ZIP the release maps to no locality, or to one that
--- needs its ZIP+4, is refused. The tables' CHECKs and the row key's uniqueness hold the rest; nothing in an error
--- names a value.
+-- An accepted upload: the prospect, the upload (hash, row count, and the rows of fewer than 11 claim lines the browser
+-- left out, as three numbers), a queued run pinned to the release and the split in force, and every row, decoded and
+-- checked by the server; the arrays are the rows' columns in order (modifier sets space-joined, '' for none). Returns
+-- the run. A ZIP the release maps to no locality, or to one that needs its ZIP+4, is refused. The tables' CHECKs and
+-- the row key's uniqueness hold the rest (a row of fewer than 11 claim lines among them); nothing in an error names a
+-- value.
 CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, email text, file_sha256 text, codes text[], modifier_sets text[],
-  unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], request text) RETURNS uuid
+  unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[],
+  rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   in_force integer := current_rule_release();
@@ -445,8 +467,8 @@ BEGIN
     VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
     RETURNING id
   ), upload AS (
-    INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status)
-    SELECT prospect.id, file_sha256, n, 'accepted' FROM prospect
+    INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, left_out_rows, left_out_claim_lines, left_out_allowed_cents)
+    SELECT prospect.id, file_sha256, n, 'accepted', rows_left_out, claim_lines_left_out, allowed_cents_left_out FROM prospect
     RETURNING id
   ), run AS (
     INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count)
@@ -524,6 +546,7 @@ RETURNS TABLE (
   contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint,
   not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint,
   unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint,
+  left_out_rows integer, left_out_claim_lines bigint, left_out_observed_cents bigint,
   converted boolean, release_withdrawn boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT r.id, p.practice_name, p.state, p.zip, r.release_no, r.engine_version, r.created_at, r.expires_at,
@@ -533,6 +556,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
          t.contract_rows, t.contract_claims, t.contract_observed,
          t.not_screened_rows, t.not_screened_claims, t.not_screened_observed,
          t.unpriced_rows, t.unpriced_claims, t.unpriced_observed,
+         u.left_out_rows, u.left_out_claim_lines::bigint, u.left_out_allowed_cents,
          r.converted_at IS NOT NULL,
          EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
     FROM screening_run r
@@ -867,7 +891,7 @@ REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_s
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
   screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_split_in_force(), screening_status(),
   screening_standing(bigint, bigint, bigint, bigint),
-  screening_zip_status(text), submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
+  screening_zip_status(text), submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
   reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
@@ -876,7 +900,7 @@ REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_va
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
-  submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
+  submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
   reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb) TO tp_app;

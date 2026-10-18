@@ -10,14 +10,17 @@ import {
   SCREENING_MAX_REASONS,
   SCREENING_MAX_ROWS,
   SCREENING_MAX_ROWS_TEXT,
+  SCREENING_MIN_CLAIM_LINES,
   SCREENING_PAYER_PRODUCTS,
   SCREENING_STATES,
   SCREENING_TOKEN,
   type ScreeningColumn,
+  type ScreeningLeftOut,
   type ScreeningRejection,
   type ScreeningRow,
   checkHeaders,
   decodeScreeningRows,
+  leftOutPlausible,
   screeningTokenHash,
   storableRejections,
 } from '@tp/worker/screening';
@@ -37,14 +40,17 @@ import { screeningRateAccount } from './rate';
  *   split approved; production stays closed until release 1), the columns, products, states and limits.
  * - The upload (/screening, public action, the screening rate limit: per client address, and per email domain or
  *   free-mail mailbox). Nothing is recorded while screening is closed. The browser parsed the file and sends no byte
- *   of it: the hash, the header's canonical column names, the row count and the rows' totals in their canonical form.
- *   The server checks the form's fields (an address it can mail: plain ASCII, a dotted domain), the header names and
- *   every row again; a refused upload is recorded by hash, count and reasons alone (reject_screening_upload()), and
- *   its messages name a column by position and kind, never a header's text or a cell's value. A clean one is stored
+ *   of it: the hash, the header's canonical column names, the row count and the rows' totals in their canonical form,
+ *   and how many rows of fewer than 11 claim lines it left out, their claim lines and their allowed total (three
+ *   numbers; never which rows). The server checks the form's fields (an address it can mail: plain ASCII, a dotted
+ *   domain), the header names and every row again; a row of fewer than 11 claim lines, sent around the browser, is
+ *   refused by its row number (it can be one patient's service line). A refused upload is recorded by hash, count and
+ *   reasons alone (reject_screening_upload()), and its messages name a column by position and kind, never a header's
+ *   text or a cell's value. A clean one is stored
  *   and queued for pricing in one call (submit_screening()), and the browser says to check the email: the result's
  *   link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
- *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept (the owner's ruling of 2026-10-18, until release
- *   1's real locality map loads).
+ *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept. The refusal stays until PR 6b, which takes a
+ *   ZIP+4 and resolves its locality before launch (the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3).
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
  *   engine's per-row results, before sequestration; a code in the reduction across codes has two figures (before
@@ -76,6 +82,8 @@ export interface ScreeningLimits {
   readonly maxHeaderCells: number;
   readonly maxHeaderLength: number;
   readonly maxReasons: number;
+  /** The fewest claim lines a row may sum (the CMS small-cell standard): a smaller row is left out before sending. */
+  readonly minClaimLines: number;
 }
 
 export const SCREENING_LIMITS: ScreeningLimits = {
@@ -84,6 +92,7 @@ export const SCREENING_LIMITS: ScreeningLimits = {
   maxHeaderCells: SCREENING_MAX_HEADER_CELLS,
   maxHeaderLength: SCREENING_MAX_HEADER_LENGTH,
   maxReasons: SCREENING_MAX_REASONS,
+  minClaimLines: SCREENING_MIN_CLAIM_LINES,
 };
 
 export interface ScreeningPageData {
@@ -179,6 +188,11 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
       return `A screening takes at most ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows`;
     case 'row_count_mismatch':
       return 'The rows sent do not match the file; choose the file again';
+    case 'too_few_claim_lines': {
+      const floor = String(SCREENING_MIN_CLAIM_LINES);
+      const why = `a screening takes a row of at least ${floor}, so that no row can describe one patient’s care`;
+      return reason.row === undefined ? `Every row sums fewer than ${floor} claim lines, so there is nothing to screen: ${why}` : `${row} sums fewer than ${floor} claim lines; ${why}: leave it out`;
+    }
   }
 }
 
@@ -275,6 +289,23 @@ function checkUpload(
 
 const UPLOAD_UNREADABLE = 'the file could not be read here; choose it again';
 
+/** A whole number the form sent, blank as zero (a request that names nothing left out), or null when it is not one. */
+function wholeField(text: string, digits: number): number | null {
+  const trimmed = text.trim();
+  if (trimmed === '') {
+    return 0;
+  }
+  return new RegExp(`^[0-9]{1,${String(digits)}}$`).test(trimmed) ? Number(trimmed) : null;
+}
+
+/** The rows the browser says it left out, as sent: three whole numbers, or null when one is not. */
+function leftOutFields(input: { readonly leftOutRows: string; readonly leftOutClaimLines: string; readonly leftOutAllowedCents: string }): ScreeningLeftOut | null {
+  const rows = wholeField(input.leftOutRows, 6);
+  const claimLines = wholeField(input.leftOutClaimLines, 7);
+  const allowed = wholeField(input.leftOutAllowedCents, 13);
+  return rows === null || claimLines === null || allowed === null ? null : { rows, claimLines, allowedCents: cents(BigInt(allowed)) };
+}
+
 export const screeningSubmit = publicRoute({
   id: 'public.screening_submit',
   kind: 'action',
@@ -294,6 +325,11 @@ export const screeningSubmit = publicRoute({
     headers: field(SCREENING_MAX_HEADER_CELLS * (SCREENING_MAX_HEADER_LENGTH * 6 + 3) + 2),
     rowCount: field(12),
     rows: field(SCREENING_MAX_ROWS_TEXT),
+    // The rows of fewer than 11 claim lines the browser left out: how many, their claim lines and their allowed total
+    // in cents. Blank is none (a request built without the page).
+    leftOutRows: field(12),
+    leftOutClaimLines: field(12),
+    leftOutAllowedCents: field(20),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
@@ -304,7 +340,8 @@ export const screeningSubmit = publicRoute({
     const fileSha256 = input.fileSha256.trim().toLowerCase();
     const headers = headerCells(input.headers);
     const rowCount = /^[0-9]{1,8}$/.test(input.rowCount.trim()) ? Number(input.rowCount.trim()) : null;
-    if (!HEX64.test(fileSha256) || headers === null || rowCount === null) {
+    const leftOut = leftOutFields(input);
+    if (!HEX64.test(fileSha256) || headers === null || rowCount === null || leftOut === null) {
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
     const checked = checkUpload(headers, input.rows, rowCount, services.now());
@@ -324,10 +361,14 @@ export const screeningSubmit = publicRoute({
       throw new InputError(reasonIssues(reasons, checked.total));
     }
     const { rows } = checked;
+    // What the browser says it left out must be what it could have counted beside these rows; nothing is recorded otherwise.
+    if (!leftOutPlausible(leftOut, rows.length)) {
+      throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
+    }
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
-        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS run_id', [
+        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS run_id', [
           ...prospectValues,
           fileSha256,
           rows.map((row) => row.procedureCode),
@@ -338,6 +379,9 @@ export const screeningSubmit = publicRoute({
           rows.map((row) => row.serviceBand),
           rows.map((row) => row.allowedCents.toString()),
           rows.map((row) => row.claimCount),
+          leftOut.rows,
+          leftOut.claimLines,
+          leftOut.allowedCents.toString(),
           request.requestId,
         ]);
         return result.rows[0]?.run_id ?? '';
@@ -420,6 +464,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly notScreened: ScreeningGroupTotals;
   /** Medicare rows the engine left unpriced, or whose rates change inside the quarter. */
   readonly couldNotPrice: ScreeningGroupTotals;
+  /** Rows of fewer than 11 claim lines the browser left out before sending, as it counted them: in no other figure. */
+  readonly leftOut: ScreeningGroupTotals;
 }
 
 export interface ScreeningResultGroup {
@@ -524,7 +570,10 @@ type SummaryRow = Record<
   | 'not_screened_claim_lines'
   | 'not_screened_observed_cents'
   | 'unpriced_claim_lines'
-  | 'unpriced_observed_cents',
+  | 'unpriced_observed_cents'
+  | 'left_out_rows'
+  | 'left_out_claim_lines'
+  | 'left_out_observed_cents',
   string | number
 > & {
   readonly practice_name: string;
@@ -624,6 +673,7 @@ export const screeningResult = publicRoute({
           contractRequired: totals('contract_rows', 'contract_claim_lines', 'contract_observed_cents'),
           notScreened: totals('not_screened_rows', 'not_screened_claim_lines', 'not_screened_observed_cents'),
           couldNotPrice: totals('unpriced_rows', 'unpriced_claim_lines', 'unpriced_observed_cents'),
+          leftOut: totals('left_out_rows', 'left_out_claim_lines', 'left_out_observed_cents'),
         },
         groups: groups.rows.map((group) => ({
           payerProduct: group.payer_product,

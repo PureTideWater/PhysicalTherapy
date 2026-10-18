@@ -1,5 +1,5 @@
 import type { UnpricedReason } from '@tp/pricing';
-import type { ScreeningPayerProduct } from '@tp/worker/screening-format';
+import { SCREENING_MIN_CLAIM_LINES, type ScreeningPayerProduct } from '@tp/worker/screening-format';
 
 import { unpricedReasonText } from '../contracts/remedies';
 
@@ -72,6 +72,13 @@ export type ScreeningStanding = (typeof SCREENING_STANDINGS)[number];
 /** What makes a row an anomaly (the owner's ruling of 2026-10-18; ADR 0038's $5 a line, exceeded). */
 export const ANOMALY_RULE =
   'A row is an anomaly when the allowed total in your file is more than $5 a claim line below its lowest Medicare figure: the fully reduced figure for a code in the reduction across codes, the one figure otherwise.';
+
+/**
+ * The rows a screening leaves out (the founder's ruling of 2026-10-18; the CMS small-cell standard): a row of fewer
+ * than 11 claim lines can be one patient's service line, so the browser leaves it out before anything is sent, and
+ * the result counts what was left out apart from every figure.
+ */
+export const LEFT_OUT_NOTE = `A row of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines was left out by your browser before anything was sent, so that no row could describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.`;
 
 /** That a screening is investigatory, never a contract figure (CO-04). */
 export const SCREENING_INVESTIGATORY_NOTE =

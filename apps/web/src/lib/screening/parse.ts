@@ -1,6 +1,6 @@
-import { SCREENING_MAX_FILE_BYTES, type ScreeningRejection, screenTable } from '@tp/worker/screening-format';
+import { SCREENING_MAX_FILE_BYTES, type ScreeningLeftOut, type ScreeningRejection, screenTable } from '@tp/worker/screening-format';
 
-import { FILE_MESSAGES, reasonMessages } from './messages';
+import { FILE_MESSAGES, leftOutMessage, reasonMessages } from './messages';
 
 /**
  * The screening upload, read in the browser (Change Order 001, CO-04; reconciliation-001, D18 a: "the browser parses
@@ -10,7 +10,9 @@ import { FILE_MESSAGES, reasonMessages } from './messages';
  * same rules the server applies again), and gives either the problems, at most 20, patient information first, each
  * naming its column by position and header text and its row by number, or what the form sends: the hash, the header's
  * canonical column names in the file's order (never the text typed), the row count and the rows of totals in their
- * canonical form. A problem never quotes a cell's value, and no header text leaves the browser.
+ * canonical form. A row of fewer than 11 claim lines is left out and never sent (it can be one patient's service
+ * line); the form sends only how many rows, claim lines and dollars were left out. A problem never quotes a cell's
+ * value, and no header text leaves the browser.
  */
 
 /** The most a file may be (25 MiB): 50,000 rows of totals fit in far less. */
@@ -25,6 +27,8 @@ export type ScreeningParse =
       readonly rowCount: number;
       /** The rows in their canonical form (encodeScreeningRows): what the server decodes. */
       readonly rows: string;
+      /** The rows of fewer than 11 claim lines left out, never sent: how many, their claim lines and their allowed total. */
+      readonly leftOut: ScreeningLeftOut;
     }
   | { readonly ok: false; readonly messages: readonly string[]; readonly reasons: readonly ScreeningRejection[] };
 
@@ -168,8 +172,9 @@ function refused(message: string): ScreeningParse {
   return { ok: false, messages: [message], reasons: [] };
 }
 
-function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly string[], total: number): ScreeningParse {
-  return { ok: false, messages: reasonMessages(reasons, headers, total), reasons };
+function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly string[], total: number, leftOut?: ScreeningLeftOut): ScreeningParse {
+  const left = leftOut === undefined ? null : leftOutMessage(leftOut);
+  return { ok: false, messages: [...reasonMessages(reasons, headers, total), ...(left === null ? [] : [left])], reasons };
 }
 
 /** Reads and screens the bytes of a chosen file. */
@@ -192,9 +197,9 @@ export async function parseScreeningBytes(file: { readonly name: string; readonl
   // The format's own screen, the server's rules: the header, then every row's shape, values, quarter and key.
   const screened = screenTable(table.rows, now);
   if (!screened.ok) {
-    return refusedFor(screened.reasons, screened.headers, screened.total);
+    return refusedFor(screened.reasons, screened.headers, screened.total, screened.leftOut);
   }
-  return { ok: true, fileSha256: await sha256Hex(bytes), headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows };
+  return { ok: true, fileSha256: await sha256Hex(bytes), headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows, leftOut: screened.leftOut };
 }
 
 /** Reads a chosen file in this browser and screens it; nothing is sent. `now` dates the current quarter. */

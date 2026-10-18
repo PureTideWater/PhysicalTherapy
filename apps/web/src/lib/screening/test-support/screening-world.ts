@@ -7,7 +7,7 @@ import { cents } from '@tp/money';
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
 import { type MailMessage, MemoryMailSender, type SweepResult, sweepScreeningRuns } from '@tp/worker/runtime';
-import { type ScreeningPayerProduct, type ScreeningRow, encodeScreeningRows } from '@tp/worker/screening';
+import { SCREENING_MIN_CLAIM_LINES, type ScreeningPayerProduct, type ScreeningRow, encodeScreeningRows } from '@tp/worker/screening';
 
 import { DevAuthProvider } from '../../auth/dev-provider';
 import { MemoryDevStore } from '../../auth/dev-store';
@@ -44,7 +44,7 @@ class MemoryJar implements CookieJar {
   }
 }
 
-/** A row of totals, written short. */
+/** A row of totals, written short: 11 claim lines (the fewest a row may sum) unless told otherwise. */
 export function screeningRow(
   procedureCode: string,
   payerProduct: ScreeningPayerProduct,
@@ -58,19 +58,19 @@ export function screeningRow(
     payerProduct,
     serviceBand: options.band ?? '2026-Q1',
     allowedCents: cents(options.allowedCents ?? 10_000n),
-    claimCount: options.claims ?? 1,
+    claimCount: options.claims ?? SCREENING_MIN_CLAIM_LINES,
   };
 }
 
-/** A small clean upload: priced, contract-required and not-screened rows. */
+/** A small clean upload: priced, contract-required and not-screened rows, each of at least 11 claim lines. */
 export const SAMPLE_ROWS: readonly ScreeningRow[] = [
-  screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'], units: 2, allowedCents: 40_000n, claims: 10 }),
-  screeningRow('97110', 'ma_noncontracted', { modifiers: ['GP'], units: 2, band: '2026-Q2', allowedCents: 9_000n, claims: 2 }),
-  screeningRow('97140', 'medicare_ffs', { modifiers: ['CQ', 'GP'], place: '22', band: '2026-Q3', allowedCents: 1_000n, claims: 1 }),
+  screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'], units: 2, allowedCents: 44_000n, claims: 11 }),
+  screeningRow('97110', 'ma_noncontracted', { modifiers: ['GP'], units: 2, band: '2026-Q2', allowedCents: 54_000n, claims: 12 }),
+  screeningRow('97140', 'medicare_ffs', { modifiers: ['CQ', 'GP'], place: '22', band: '2026-Q3', allowedCents: 11_000n, claims: 11 }),
   screeningRow('97530', 'ma_contracted', { units: 3, allowedCents: 120_000n, claims: 12 }),
   screeningRow('97112', 'commercial', { allowedCents: 55_000n, claims: 11 }),
-  screeningRow('97116', 'medicaid', { allowedCents: 3_000n, claims: 1 }),
-  screeningRow('97035', 'other', { allowedCents: 700n, claims: 1 }),
+  screeningRow('97116', 'medicaid', { allowedCents: 33_000n, claims: 11 }),
+  screeningRow('97035', 'other', { allowedCents: 7_700n, claims: 11 }),
 ];
 
 export interface SubmitOverrides {
@@ -82,9 +82,14 @@ export interface SubmitOverrides {
   readonly rows?: readonly ScreeningRow[] | string;
   readonly rowCount?: string;
   readonly fileSha256?: string;
+  /** What the browser says it left out (rows of fewer than 11 claim lines); none unless given. */
+  readonly leftOut?: { readonly rows: number | string; readonly claimLines: number | string; readonly allowedCents: bigint | string };
 }
 
-/** The form the upload page sends for these rows: no byte of the file, its hash, header cells, count and canonical rows. */
+/**
+ * The form the upload page sends for these rows: no byte of the file, its hash, header cells, count and canonical rows,
+ * and the three numbers of what it left out.
+ */
 export function submitInput(overrides: SubmitOverrides = {}): Record<string, string> {
   const rows = overrides.rows ?? SAMPLE_ROWS;
   const text = typeof rows === 'string' ? rows : encodeScreeningRows(rows);
@@ -98,6 +103,9 @@ export function submitInput(overrides: SubmitOverrides = {}): Record<string, str
     headers: JSON.stringify(overrides.headers ?? SCREENING_HEADERS),
     rowCount: overrides.rowCount ?? String(count),
     rows: text,
+    leftOutRows: String(overrides.leftOut?.rows ?? 0),
+    leftOutClaimLines: String(overrides.leftOut?.claimLines ?? 0),
+    leftOutAllowedCents: String(overrides.leftOut?.allowedCents ?? 0),
   };
 }
 

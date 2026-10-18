@@ -1,7 +1,7 @@
 import { performance } from 'node:perf_hooks';
 
 import { formatCents } from '@tp/money';
-import { SCREENING_MAX_ROWS, SCREENING_PAYER_PRODUCTS, type ScreeningRow, encodeScreeningRows, screenTable } from '@tp/worker/screening';
+import { SCREENING_MAX_ROWS, SCREENING_MIN_CLAIM_LINES, SCREENING_PAYER_PRODUCTS, type ScreeningRow, encodeScreeningRows, screenTable } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { screeningResult, screeningSubmit } from './routes';
@@ -20,7 +20,7 @@ const CODES = ['97110', '97112', '97116', '97140', '97530', '97161', '97162', '9
 const MODIFIER_SETS: readonly (readonly string[])[] = [[], ['GP'], ['GO'], ['CQ', 'GP'], ['59', 'GP'], ['GP', 'KX'], ['CO', 'GO'], ['GN']];
 const BANDS = ['2026-Q1', '2026-Q2', '2026-Q3', '2026-Q4', '2025-Q1', '2025-Q2', '2025-Q3', '2025-Q4'];
 
-/** 50,000 distinct rows over the codes, modifier sets, units, places, products and bands. */
+/** 50,000 distinct rows over the codes, modifier sets, units, places, products and bands, each of 11 to 50 claim lines. */
 function rows(): ScreeningRow[] {
   const all: ScreeningRow[] = [];
   for (const payerProduct of SCREENING_PAYER_PRODUCTS) {
@@ -30,7 +30,7 @@ function rows(): ScreeningRow[] {
           for (const place of ['11', '22']) {
             for (let units = 1; units <= 6; units += 1) {
               if (all.length < SCREENING_MAX_ROWS) {
-                all.push(screeningRow(code, payerProduct, { modifiers, units, place, band, allowedCents: BigInt(1_000 + ((all.length * 37) % 90_000)), claims: 1 + (all.length % 40) }));
+                all.push(screeningRow(code, payerProduct, { modifiers, units, place, band, allowedCents: BigInt(1_000 + ((all.length * 37) % 90_000)), claims: SCREENING_MIN_CLAIM_LINES + (all.length % 40) }));
               }
             }
           }
