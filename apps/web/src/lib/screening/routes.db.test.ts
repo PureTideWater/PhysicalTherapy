@@ -23,10 +23,11 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInp
  *   the prospect's email carries no tagline.
  *
  * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
- * ZIP+4 refused (the pricing cannot use one; the owner's ruling of 2026-10-18 keeps that until release 1's real
- * locality map loads); an address the mail service can send to; the result read by its link alone, with both figures
- * for a code in the reduction across codes and the database's standings, and not found once expired; a result
- * under a release since withdrawn keeping its notice and still converting (the owner's ruling of 2026-10-18).
+ * ZIP+4 refused (the pricing cannot use one; the owner's ruling of 2026-10-18 keeps the refusal, and an engine change
+ * is revisited when release 1's real locality map loads); an address the mail service can send to; the result read by
+ * its link alone, with both figures for a code in the reduction across codes and the database's standings, and not
+ * found once expired; a result under a release since withdrawn keeping its notice and still converting (the owner's
+ * ruling of 2026-10-18).
  * Synthetic data only.
  */
 

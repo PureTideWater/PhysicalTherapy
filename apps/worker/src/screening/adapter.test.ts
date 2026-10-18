@@ -312,7 +312,7 @@ describe('the screening pricing adapter', () => {
       // The figure is the trace's amount before sequestration, which is above the engine's final amount (SYNTHETIC 3%).
       expect(priced.expectedLineUnrounded).toBe(traceBeforeSequestration(line));
       expect(priced.expectedLineCents).toBeGreaterThan(line.expectedAllowedCents);
-      // A payer that allowed the figure in full, as payers report it, before sequestration: no difference.
+      // A payer that allowed the figure in full, as payers normally report it, before sequestration: no difference.
       const paidInFull = pricer.outcome({ ...pending, observedAllowedCents: priced.expectedCents });
       expect(paidInFull).toMatchObject({ disposition: 'priced', differenceCents: 0n });
     }

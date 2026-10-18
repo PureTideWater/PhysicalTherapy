@@ -360,7 +360,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
   it('calls no code of the reduction across a visit’s codes an anomaly when paid as one visit: golden G01, allowed before sequestration, is within each row’s range', async () => {
     // PRD 11's worked example (golden G01): 97110 GP x2, 97140 GP and 97530 GP on one day at POS 11, ZIP 00011, priced
     // by the unchanged engine as one visit on the band's first day; a practice whose payer allowed that visit, before
-    // sequestration as payers report it, sends these rows.
+    // sequestration as payers normally report it, sends these rows.
     const g01: readonly Row[] = [
       ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
       ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],

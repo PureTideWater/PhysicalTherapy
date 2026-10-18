@@ -47,7 +47,7 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   mail service can send to (plain ASCII, an RFC 5322 dot-atom before the @, a dotted domain with no trailing dot
   after it). No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose `locality_map` record needs its ZIP+4
   is refused (`screening_zip_plus_four`, "a free screening cannot price one yet") rather than asked for four digits
-  nothing could use; D20's ZIP+4 waits for the owner (see Consequences).
+  nothing could use; the owner's ruling 3 keeps this refusal (see Owner rulings).
 - `screening_upload`: the file's SHA-256, its row count, accepted or rejected, and the rejection reasons, which
   `screening_rejections_valid()` holds to at most 20 objects of a code, a column position, a row, a first row, a
   field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored.
@@ -143,7 +143,8 @@ the reduction across codes" wherever it appears, and so is every figure worked o
 expected under Medicare, before the reduction across codes"; "Difference, before the reduction across codes"); the
 second is "Expected under Medicare, fully reduced across codes", with its line ("One claim line, expected under
 Medicare, fully reduced across codes") and its difference ("Difference, fully reduced across codes"). The page says
-that every figure is before sequestration, as payers report allowed amounts. MA contracted and commercial rows are
+that every figure is before Medicare's sequestration, because payers normally report allowed amounts before it (for
+the specialist to confirm, Q21). MA contracted and commercial rows are
 never priced: their allowed totals are "the dollars that cannot be priced without a contract".
 
 **A platform job prices and emails (D21 a).** The web app sends `screening_price` with the run's ID (singleton key
@@ -177,9 +178,10 @@ the rate limiter's keyed hash only. The input schema is bounded text, so the lim
 The conversion counts against the public form's limit.
 
 **Words (D11 a).** Screening outputs carry the lockup without the tagline (the prospect email variant and the
-public header), and never say owed, underpaid or recovered: "below the Medicare figure", "allowed in your file",
-"difference", "within the range of the reduction across codes", "cannot be priced without a contract". The copy lint reads the screening paths, the worker's
-screening module included.
+public header), and never say owed, underpaid or recovered: "below the figure before the reduction across codes",
+"below the fully reduced figure", "below the Medicare figure" (a code with one figure), "at or above both Medicare
+figures", "allowed in your file", "difference", "within the range of the reduction across codes", "cannot be priced
+without a contract". The copy lint reads the screening paths, the worker's screening module included.
 
 ## Alternatives considered
 
@@ -190,7 +192,7 @@ screening module included.
 | Price a row's visit composition (D19 c), or show a range computed outside the engine (D19 b) | Asks the prospect for what an aggregate has not got, or computes a number outside the engine. The owner's ruling 1 gets the range from the engine itself: both ends are `price()` outputs. Revisit if prospects send visit-level aggregates. |
 | A fully reduced figure from a higher-valued pool code ahead of the row | Depends on which codes the release carries and their practice-expense parts at the place of service; the row's own code with one unit always ranks first by the engine's tie rule, and the second line's cut is its own whatever ranks first. |
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
-| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`); the owner's ruling 3 keeps the refusal until release 1's real locality map loads. |
+| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`); the owner's ruling 3 keeps the refusal; an engine change, separately approved, is revisited when release 1's real locality map loads. |
 | Infer the product from payer names (D20 b), or price everything as MA non-contracted (D20 c) | A guess about a contract; MA contracted rows must never price as non-contracted. |
 | Rate-limit by domain and IP only (D21 b) | Every gmail.com prospect would share one count. |
 | Show the result in the browser only (D21 c) | Nothing verifies the contact, and the result could not be reopened. |
@@ -255,7 +257,7 @@ The questions this pull request put to the owner, ruled by the founder, Tyler Wi
    to an audit request (the audit prices nothing from the screening). *Built:* unchanged, now tested.
 
 What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
-sequestration, the comparison moves to the engine's final amount, which the trace also carries); the engine change for ZIP+4 localities,
+sequestration, the comparison is put to the owner again); the engine change for ZIP+4 localities,
 when release 1's locality map loads; and visit-level aggregates (see Revisit when).
 
 ## Revisit when
