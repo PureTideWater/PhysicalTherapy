@@ -1,8 +1,0 @@
-SYNTHETIC NCCI practitioner procedure-to-procedure edits for tests - invented - not CMS data
-Column 1	Column 2	*=in existence prior to 1996	Effective Date	Deletion Date *=no data	Modifier 0=not allowed 1=allowed 9=not applicable	PTP Edit Rationale
-97140	97530		20260101	*	1	SYNTHETIC rationale
-97530	97116		20260101	*	1	SYNTHETIC rationale
-97161	97140		20260101	*	1	SYNTHETIC rationale
-97164	97110		20260101	20260701	0	SYNTHETIC rationale, deleted mid-year
-97035	97026	*	19960101	*	9	SYNTHETIC rationale
-97112	97110		20260301	20260301	1	SYNTHETIC edit deleted the day it took effect

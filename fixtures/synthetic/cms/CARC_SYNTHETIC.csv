@@ -1,8 +1,0 @@
-SYNTHETIC claim adjustment reason codes for tests - invented descriptions - not X12 data,,,,,
-Code,Description,Start Date,Last Modified,Stop Date,Notes
-1,SYNTHETIC description for reason 1,01/01/2001,,,
-2,SYNTHETIC description for reason 2,01/01/2001,,,
-3,SYNTHETIC description for reason 3,01/01/2001,,,
-23,SYNTHETIC description for reason 23,01/01/2001,,,
-45,"SYNTHETIC description for reason 45, with a comma",01/01/2001,03/01/2025,,
-9001,SYNTHETIC reason deactivated in 2020,01/01/2001,,06/30/2020,SYNTHETIC note
