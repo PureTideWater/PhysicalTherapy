@@ -5,7 +5,11 @@
   "assertion": "Audit request recorded and logged as an audit event",
   "synthetic": true,
   "completesIn": 6,
-  "assertedBy": ["packages/db/src/screening.db.test.ts","apps/web/src/lib/screening/routes.db.test.ts"],
+  "assertedBy": [
+    "packages/db/src/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "The conversion is a route and an audit event; no file.",
   "files": [],

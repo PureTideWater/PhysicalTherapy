@@ -201,17 +201,20 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/screening/format.test.ts',
     'apps/web/src/lib/screening/parse.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
   ]),
   'SCR-02': none(6, 'Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.', [
     'apps/worker/src/screening/adapter.test.ts',
     'apps/worker/src/screening/screening.db.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/src/lib/screening/screening.large.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
   ]),
   'SCR-03': none(6, 'Expiry is a database and platform-job property; no file.', [
     'packages/db/src/screening.db.test.ts',
     'apps/worker/src/screening/screening.db.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
   ]),
   'SCR-04': none(6, 'Rate limits are counted in the database per request; no file.', ['apps/web/src/lib/screening/routes.db.test.ts']),
   'SCR-05': none(6, 'Wording is held by the copy lint and by tests of what the routes, components and emails return; no file.', [
@@ -219,8 +222,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/screening/message.test.ts',
     'apps/web/src/components/screening/result.test.tsx',
     'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
   ]),
-  'SCR-06': none(6, 'The conversion is a route and an audit event; no file.', ['packages/db/src/screening.db.test.ts', 'apps/web/src/lib/screening/routes.db.test.ts']),
+  'SCR-06': none(6, 'The conversion is a route and an audit event; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
   'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
   'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
     'apps/worker/src/worker.test.ts',

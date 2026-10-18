@@ -9,7 +9,8 @@
     "apps/worker/src/screening/adapter.test.ts",
     "apps/worker/src/screening/screening.db.test.ts",
     "apps/web/src/lib/screening/routes.db.test.ts",
-    "apps/web/src/lib/screening/screening.large.db.test.ts"
+    "apps/web/src/lib/screening/screening.large.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.",
