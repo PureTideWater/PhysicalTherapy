@@ -129,14 +129,14 @@ export async function requestApproval(
 }
 
 interface MilestoneRows {
-  readonly versions: readonly { drafted_by: string; created_at: Date; version_no: number; verifier_passed: boolean; approved_by: string | null; approved_at: Date | null; approved_alone: boolean; exported_at: Date | null; export_sha256: string | null }[];
+  readonly versions: readonly { drafted_by: string; created_at: Date; version_no: number; verifier_passed: boolean; approved_by: string | null; approved_at: Date | null; approved_alone: boolean; exported_at: Date | null; export_sha256: string | null; attested_at: Date | null }[];
   readonly submissions: readonly { submitted_by: string; created_at: Date; version_no: number; dispute_level: number; channel: keyof typeof CHANNEL_TEXT }[];
   readonly responses: readonly { recorded_by: string | null; created_at: Date; kind: ResponseKindText; reopens_case: boolean }[];
 }
 
 async function milestones(scope: Scope, practiceId: string, caseId: string): Promise<MilestoneRows> {
   const { rows: versions } = await scope.client.query<MilestoneRows['versions'][number]>(
-    `SELECT v.drafted_by, v.created_at, v.version_no, v.verifier_passed, v.approved_by, v.approved_at, v.approved_alone, v.exported_at, v.export_sha256
+    `SELECT v.drafted_by, v.created_at, v.version_no, v.verifier_passed, v.approved_by, v.approved_at, v.approved_alone, v.exported_at, v.export_sha256, v.attested_at
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE p.case_id = $1 AND v.practice_id = $2 ORDER BY v.version_no`,
     [caseId, practiceId],
   );
@@ -198,6 +198,9 @@ export async function caseTimeline(
     }
     if (row.exported_at !== null && row.export_sha256 !== null) {
       events.push({ kind: 'version_exported', at: row.exported_at.toISOString(), by: null, versionNo: row.version_no, sha256: row.export_sha256 });
+    }
+    if (row.attested_at !== null) {
+      events.push({ kind: 'export_attested', at: row.attested_at.toISOString(), by: null, versionNo: row.version_no });
     }
   }
   for (const row of rows.submissions) {

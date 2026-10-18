@@ -1,5 +1,5 @@
 import { rolesPermit } from '@tp/db/runtime';
-import { NARRATIVE_MAX_LENGTH } from '@tp/worker/packets';
+import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH } from '@tp/worker/packets';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
@@ -8,7 +8,8 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
-import { NOT_EXPORTABLE, type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { DEADLINE_NOT_EXPORTABLE, NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
@@ -26,6 +27,11 @@ import { opaqueId, optionalText } from './schemas';
  * practice's writer wait 24 hours); exporting and downloading the export is phi.export, since the
  * export inserts the identifiers (the billing manager and the firm principal). Every step records an
  * audit event, and is made once.
+ *
+ * CO-05 and D16 (docs/adr/0061): the export is refused while the version's deadline is not verified, with
+ * the next step in words; once exported, the reimbursement reviewer (audit_finding.validate, the reviewer
+ * role under a support grant) reviews the export's PDF and CSV on its review page and attests over their
+ * SHA-256, once, and a submission is logged only after that. The reviewer edits nothing else.
  */
 
 const STATE_CODE = z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'a two-letter state code');
@@ -228,6 +234,12 @@ export const exportPacketAction = practiceRoute({
     if (outcome === 'refused') {
       throw new InputError([{ field: 'refused', message: NOT_EXPORTABLE }]);
     }
+    if (outcome === 'deadline_unverified') {
+      throw new InputError([{ field: 'deadline', message: DEADLINE_NOT_EXPORTABLE }]);
+    }
+    if (outcome === 'outdated') {
+      throw new InputError([{ field: 'versionId', message: OUTDATED_NOT_EXPORTABLE }]);
+    }
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome === 'queued' ? 'export_requested' : 'exported'}` };
   },
   // The world's exported version: exported already, so nothing is queued.
@@ -279,4 +291,136 @@ export const packetCsv = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
-export const PACKET_ROUTES = [packetPage, writeVersionAction, requestApprovalAction, approvePacketVersionAction, exportPacketAction, packetPdf, packetCsv] as const;
+const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256');
+const confirmed = z.literal('on', 'confirm this item');
+
+export interface PacketReviewsPageData {
+  readonly practiceId: string;
+  readonly awaiting: readonly ExportAwaitingAttestation[];
+}
+
+/** The exports waiting for the reimbursement reviewer's attestation (D16), oldest first. */
+export const packetReviewsPage = practiceRoute({
+  id: 'practice.packet_reviews',
+  kind: 'page',
+  path: '/p/[practiceId]/packet-reviews',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId }),
+  handle: async ({ scope, practiceId }): Promise<PacketReviewsPageData> => ({ practiceId, awaiting: await awaitingAttestation(scope, practiceId) }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+export interface PacketReviewPageData {
+  readonly practiceId: string;
+  readonly review: PacketReview;
+  readonly checklist: typeof PACKET_CHECKLIST;
+  readonly notice: 'attested' | null;
+}
+
+/** The reviewer's review of one export: its content, deadline, files and their SHA-256, and the checklist to attest over them. */
+export const packetReviewPage = practiceRoute({
+  id: 'practice.cases.packet.review',
+  kind: 'page',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId, notice: optionalText(z.enum(['attested'])) }),
+  handle: async ({ scope, practiceId, params, request, actor, services }): Promise<PacketReviewPageData> => ({
+    practiceId,
+    review: await packetReview(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, viewerId: actor.userId, requestId: request.requestId }),
+    checklist: PACKET_CHECKLIST,
+    notice: params.notice ?? null,
+  }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+/**
+ * The reviewer attests the export (D16; once: an attested export is left as it is): every item confirmed
+ * and the SHA-256 of the PDF and the CSV the review showed, which must be the export's. No free text. The
+ * database refuses a reviewer who drafted, wrote or approved the packet, a version not current or whose
+ * case changed, and one whose deadline is not verified now.
+ */
+export const attestPacketExportAction = practiceRoute({
+  id: 'practice.cases.packet.attest',
+  kind: 'action',
+  path: '/p/[practiceId]/cases/packet/attest',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: z.object({ practiceId: opaqueId }),
+  input: z.object({
+    caseId: opaqueId,
+    versionId: opaqueId,
+    pdfSha256: sha256,
+    csvSha256: sha256,
+    confirm_figures: confirmed,
+    confirm_deadline: confirmed,
+    confirm_calculation: confirmed,
+    confirm_identifiers: confirmed,
+    confirm_files: confirmed,
+    confirm_independent: confirmed,
+  }),
+  audit: { action: 'packet_export_attested', objectType: 'packet_version' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    await underPacketRules(() => attestOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, pdfSha256: input.pdfSha256, csvSha256: input.csvSha256, requestId: request.requestId }));
+    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet/${input.versionId}/review?notice=attested` };
+  },
+  sample: {
+    params: (refs) => ({ practiceId: refs.practiceId }),
+    // The world's exported version, attested already before its submission: nothing changes.
+    input: (refs) => ({
+      caseId: refs.submittedCaseId,
+      versionId: refs.exportedVersionId,
+      pdfSha256: refs.exportedVersionPdfSha256,
+      csvSha256: refs.exportedVersionCsvSha256,
+      ...Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on'])),
+    }),
+  },
+});
+
+/** The exported PDF for the reviewer the review names it to (audit_finding.validate): read-only, checked against its SHA-256, the download recorded. */
+export const reviewPacketPdf = practiceRoute({
+  id: 'practice.cases.packet.review_pdf',
+  kind: 'handler',
+  method: 'GET',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/pdf',
+  rateLimit: 'export',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: downloadParams,
+  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
+    download: { filename: `packet-${context.params.versionId}.pdf`, contentType: 'application/pdf', body: await exported(context, 'pdf') },
+  }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+/** The exported CSV schedule for the reviewer (line-level PHI, under the support grant): checked against its SHA-256, the download recorded. */
+export const reviewPacketCsv = practiceRoute({
+  id: 'practice.cases.packet.review_csv',
+  kind: 'handler',
+  method: 'GET',
+  path: '/p/[practiceId]/cases/[caseId]/packet/[versionId]/review/csv',
+  rateLimit: 'export',
+  phi: true,
+  permission: 'audit_finding.validate',
+  params: downloadParams,
+  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
+    download: { filename: `packet-schedule-${context.params.versionId}.csv`, contentType: 'text/csv; charset=utf-8', body: await exported(context, 'csv') },
+  }),
+  sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
+});
+
+export const PACKET_ROUTES = [
+  packetPage,
+  writeVersionAction,
+  requestApprovalAction,
+  approvePacketVersionAction,
+  exportPacketAction,
+  packetPdf,
+  packetCsv,
+  packetReviewsPage,
+  packetReviewPage,
+  attestPacketExportAction,
+  reviewPacketPdf,
+  reviewPacketCsv,
+] as const;

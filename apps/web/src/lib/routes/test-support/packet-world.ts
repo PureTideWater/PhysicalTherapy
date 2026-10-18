@@ -4,20 +4,24 @@ import { type DatabaseClient, type DatabasePool, type KeyProvider, type Practice
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import type { DocumentStore } from '@tp/worker/documents';
-import { approvePacketVersion, logSubmission, writePacketVersion } from '@tp/worker/packets';
+import { approvePacketVersion, attestPacketExport, logSubmission, writePacketVersion } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 
 /**
  * Test support: a route-test world's packets (docs/adr/0041 and 0044), for the packet builder and the
  * submissions routes. Synthetic data only. Before the run is priced, a third line on the world's claim
- * paid below the signed-off schedule (97110 x 1 allowed 19.00 against 32.00: 13.00 short); after
- * triage's case, a second case of that line (its own pattern, so both are open at once). The first
+ * paid below the signed-off schedule (97110 x 1 allowed 19.00 against 32.00: 13.00 short); once it is
+ * priced, and before the audit report's triage runs (seedPacketCases: the line's window is verified, so
+ * that triage would otherwise take it into triage's case of the same pattern), a second case of that line
+ * (its own pattern, so both are open at once). The first
  * case's packet has one version, the code-built draft written by the practice's analyst (passing the
  * verifier, unapproved); the second's version is written by the analyst, approved by the billing
- * manager, exported by the export job's code with a stand-in printer and submitted by the billing
- * manager today. A third case, a Medicare Advantage non-contracted pattern on a fourth line, whose
- * version (the analyst's draft) cites the regulation and waits for the contract specialist's
- * confirmation. And a payer letter, clean and stored, that a response carries.
+ * manager, exported by the export job's code with a stand-in printer (its deadline verified: the
+ * signed-off version cites and verifies its window), attested by the reimbursement reviewer under the
+ * world's support grant (docs/adr/0061) and submitted by the billing manager today. A third case, a
+ * Medicare Advantage non-contracted pattern on a fourth line, whose version (the analyst's draft) cites
+ * the regulation and waits for the contract specialist's confirmation. And a payer letter, clean and
+ * stored, that a response carries.
  */
 
 export interface PacketLineOptions {
@@ -41,45 +45,36 @@ export async function seedPacketLine(options: PacketLineOptions & { readonly lin
   });
 }
 
-export interface PacketWorldOptions {
+export interface PacketCaseOptions {
   readonly owner: DatabaseClient;
-  readonly app: DatabasePool;
-  readonly keys: KeyProvider;
-  readonly documents: DocumentStore;
   readonly practiceId: string;
   readonly pricingRunId: string;
-  /** Triage's case (the first), the second case's line and the third's (the Medicare Advantage case). */
-  readonly caseId: string;
+  /** The second case's line and the third's (the Medicare Advantage case). */
   readonly packetLineServiceLineId: string;
   readonly regulationLineServiceLineId: string;
   readonly payerId: string;
   readonly planId: string;
   readonly signedOffVersionId: string;
-  /** The practice's analyst (drafts) and billing manager (approves and submits). */
-  readonly analystId: string;
-  readonly managerId: string;
   readonly uploaderId: string;
 }
 
-export interface SeededPackets {
+export interface SeededPacketCases {
   readonly caseRateRecordId: string;
-  readonly packetVersionId: string;
-  readonly packetVersionSha256: string;
   readonly submittedCaseId: string;
-  readonly exportedVersionId: string;
-  readonly submissionId: string;
+  readonly regulationCaseId: string;
   readonly responseDocumentId: string;
-  readonly regulationVersionId: string;
 }
 
-const standInPdf = () => new TextEncoder().encode(`%PDF-1.7\n% SYNTHETIC stand-in packet for the route tests ${randomUUID()}\n`);
-
-export async function seedPackets(options: PacketWorldOptions): Promise<SeededPackets> {
-  const { owner, app, keys, practiceId } = options;
-  const seeded = await asOwner(owner, [practiceId], async () => {
+/**
+ * The second and third cases, with their lines (as triage records them, actionable), and the payer letter:
+ * seeded once the run is priced and before the audit report's triage, which leaves lines already in a case.
+ */
+export async function seedPacketCases(options: PacketCaseOptions): Promise<SeededPacketCases> {
+  const { owner, practiceId } = options;
+  return asOwner(owner, [practiceId], async () => {
     const one = async (sql: string, values: unknown[]) => ((await owner.query<{ id: string }>(sql, values)).rows[0] as { id: string }).id;
-    const caseRateRecordId = await one('SELECT rate_record_id AS id FROM "case" WHERE id = $1', [options.caseId]);
     const pricedLineId = await one('SELECT id FROM priced_line WHERE pricing_run_id = $1 AND service_line_id = $2', [options.pricingRunId, options.packetLineServiceLineId]);
+    const caseRateRecordId = await one('SELECT rate_record_id AS id FROM priced_line WHERE id = $1', [pricedLineId]);
     const patternKey = {
       payer_id: options.payerId,
       plan_id: options.planId,
@@ -95,7 +90,6 @@ export async function seedPackets(options: PacketWorldOptions): Promise<SeededPa
       options.planId,
       caseRateRecordId,
     ]);
-    // The audit report's triage may have validated the line already (it is below the case materiality).
     for (const stage of ['validated', 'actionable']) {
       await owner.query(
         'INSERT INTO line_status (practice_id, service_line_id, stage, priced_line_id) SELECT $1, $2, $3, $4 WHERE NOT EXISTS (SELECT 1 FROM line_status WHERE service_line_id = $2 AND stage = $3)',
@@ -125,6 +119,39 @@ export async function seedPackets(options: PacketWorldOptions): Promise<SeededPa
     );
     return { caseRateRecordId, submittedCaseId, regulationCaseId, responseDocumentId };
   });
+}
+
+export interface PacketWorldOptions {
+  readonly owner: DatabaseClient;
+  readonly app: DatabasePool;
+  readonly keys: KeyProvider;
+  readonly documents: DocumentStore;
+  readonly practiceId: string;
+  /** Triage's case (the first). */
+  readonly caseId: string;
+  /** The practice's analyst (drafts) and billing manager (approves and submits), and the reimbursement reviewer under a support grant (attests). */
+  readonly analystId: string;
+  readonly managerId: string;
+  readonly reviewerId: string;
+}
+
+export interface SeededPackets {
+  readonly caseRateRecordId: string;
+  readonly packetVersionId: string;
+  readonly packetVersionSha256: string;
+  readonly submittedCaseId: string;
+  readonly exportedVersionId: string;
+  readonly exportedVersionPdfSha256: string;
+  readonly exportedVersionCsvSha256: string;
+  readonly submissionId: string;
+  readonly responseDocumentId: string;
+  readonly regulationVersionId: string;
+}
+
+const standInPdf = () => new TextEncoder().encode(`%PDF-1.7\n% SYNTHETIC stand-in packet for the route tests ${randomUUID()}\n`);
+
+export async function seedPackets(options: PacketWorldOptions, seeded: SeededPacketCases): Promise<SeededPackets> {
+  const { owner, app, keys, practiceId } = options;
   const as = <T>(actorId: string, run: (scope: PracticeScope<ScopeClient>) => Promise<T>) => withPracticeScope(app, { actorId, practiceIds: [practiceId] }, run);
   const draft = (caseId: string) => as(options.analystId, (scope) => writePacketVersion(scope, keys, { practiceId, caseId, basedOnVersionId: null, requestId: `seed-${randomUUID()}` }));
   const first = await draft(options.caseId);
@@ -139,6 +166,15 @@ export async function seedPackets(options: PacketWorldOptions): Promise<SeededPa
     { practice_id: practiceId, packet_version_id: second.versionId },
     { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(app, { jobId, practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
+  const { rows: hashes } = await asOwner(owner, [practiceId], () =>
+    owner.query<{ export_sha256: string | null; export_csv_sha256: string | null }>('SELECT export_sha256, export_csv_sha256 FROM packet_version WHERE id = $1', [second.versionId]),
+  );
+  const pdfSha256 = hashes[0]?.export_sha256 ?? null;
+  const csvSha256 = hashes[0]?.export_csv_sha256 ?? null;
+  if (pdfSha256 === null || csvSha256 === null) {
+    throw new Error('the seeded packet was not exported (is its deadline verified?)');
+  }
+  await as(options.reviewerId, (scope) => attestPacketExport(scope, { practiceId, versionId: second.versionId, pdfSha256, csvSha256, requestId: `seed-${randomUUID()}` }));
   const submitted = await as(options.managerId, (scope) =>
     logSubmission(scope, keys, {
       practiceId,
@@ -155,6 +191,8 @@ export async function seedPackets(options: PacketWorldOptions): Promise<SeededPa
     packetVersionSha256: first.contentSha256,
     submittedCaseId: seeded.submittedCaseId,
     exportedVersionId: second.versionId,
+    exportedVersionPdfSha256: pdfSha256,
+    exportedVersionCsvSha256: csvSha256,
     submissionId: submitted.submissionId,
     responseDocumentId: seeded.responseDocumentId,
     regulationVersionId: regulation.versionId,

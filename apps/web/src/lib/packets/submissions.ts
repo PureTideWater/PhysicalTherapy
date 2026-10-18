@@ -80,16 +80,32 @@ export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { re
   }));
 }
 
-/** The exported version a submission may send now: the packet's current version, once exported. */
-export async function submittableVersion(scope: Scope, input: { readonly practiceId: string; readonly caseId: string }): Promise<{ readonly versionId: string; readonly versionNo: number; readonly disputeLevel: number; readonly exportedOn: string; readonly exportSha256: string; readonly exportCsvSha256: string } | null> {
-  const { rows } = await scope.client.query<{ id: string; version_no: number; dispute_level: number; exported_on: string; export_sha256: string; export_csv_sha256: string }>(
-    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256
+/**
+ * The exported version a submission may send now: the packet's current version, once exported, and
+ * whether the reimbursement reviewer has attested its export (D16: a submission is logged only after).
+ */
+export async function submittableVersion(
+  scope: Scope,
+  input: { readonly practiceId: string; readonly caseId: string },
+): Promise<{ readonly versionId: string; readonly versionNo: number; readonly disputeLevel: number; readonly exportedOn: string; readonly exportSha256: string; readonly exportCsvSha256: string; readonly attestedAt: string | null } | null> {
+  const { rows } = await scope.client.query<{ id: string; version_no: number; dispute_level: number; exported_on: string; export_sha256: string; export_csv_sha256: string; attested_at: Date | null }>(
+    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256, v.attested_at
        FROM packet p JOIN packet_version v ON v.id = p.current_version_id
       WHERE p.case_id = $1 AND p.practice_id = $2 AND v.exported_at IS NOT NULL`,
     [input.caseId, input.practiceId],
   );
   const row = rows[0];
-  return row === undefined ? null : { versionId: row.id, versionNo: row.version_no, disputeLevel: row.dispute_level, exportedOn: row.exported_on, exportSha256: row.export_sha256, exportCsvSha256: row.export_csv_sha256 };
+  return row === undefined
+    ? null
+    : {
+        versionId: row.id,
+        versionNo: row.version_no,
+        disputeLevel: row.dispute_level,
+        exportedOn: row.exported_on,
+        exportSha256: row.export_sha256,
+        exportCsvSha256: row.export_csv_sha256,
+        attestedAt: row.attested_at?.toISOString() ?? null,
+      };
 }
 
 export interface ResponseDocument {

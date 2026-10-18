@@ -136,6 +136,7 @@ export type ShellSection =
   | 'cases'
   | 'reconciliation'
   | 'reports'
+  | 'packet_reviews'
   | 'notifications'
   | 'contracts'
   | 'abstraction'
@@ -174,6 +175,9 @@ function ShellNav({ shell, section }: { readonly shell: Shell; readonly section:
         <nav aria-label="Practice" className="flex flex-col gap-1">
           <RailLink href={`/p/${shell.currentPracticeId}/reports`} active={section === 'reports'}>
             Reports
+          </RailLink>
+          <RailLink href={`/p/${shell.currentPracticeId}/packet-reviews`} active={section === 'packet_reviews'}>
+            Packets to attest
           </RailLink>
         </nav>
       ) : (

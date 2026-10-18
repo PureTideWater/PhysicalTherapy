@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
-import { type PacketVersionDetail, approvePacketVersion, packetOfCase, packetVersionOf, writePacketVersion } from '@tp/worker/packets';
+import type { DeadlineStatus } from '@tp/triage';
+import { type PacketAttestation, type PacketVersionDetail, approvePacketVersion, packetOfCase, packetVersionOf, writePacketVersion } from '@tp/worker/packets';
 
 import type { Services } from '../server/services';
 import type { JobQueue } from '../uploads/queue';
@@ -19,6 +20,11 @@ import { type ApprovalState, approvalState } from './approval';
  * job inserts them, into the PDF and CSV. Each step is made once: saving the text a current version
  * already holds writes nothing, approving an approved version and exporting an exported one do
  * nothing.
+ *
+ * CO-05 (docs/adr/0061): the builder shows each line's deadline and its status, and the version's; the
+ * export is asked for only when the database, deriving the deadline again now, says it is not
+ * unverified. D16: once exported, a reimbursement reviewer attests the export over its two SHA-256 on
+ * the review page; a submission is logged only after that.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -37,6 +43,9 @@ export interface VersionSummary {
   readonly exportedAt: string | null;
   readonly exportSha256: string | null;
   readonly exportCsvSha256: string | null;
+  /** The deadline status the version stated when it was written (tp-packet/1: unverified). */
+  readonly deadlineStatus: DeadlineStatus;
+  readonly attestedAt: string | null;
 }
 
 export interface VersionView {
@@ -60,6 +69,14 @@ export interface VersionView {
   readonly exportCsvSha256: string | null;
   /** The documents the person attached to its evidence list. */
   readonly attachedDocumentIds: readonly string[];
+  /** The deadline status the version stated when it was written. */
+  readonly deadlineStatus: DeadlineStatus;
+  /** The deadline status the database derives now (what the export is held to; CO-05). */
+  readonly deadlineNow: DeadlineStatus;
+  /** The verifier's report over what the export printed, once exported. */
+  readonly exportVerifier: VerifierReport | null;
+  /** The reimbursement reviewer's attestation over the export (D16), once made. */
+  readonly attestation: { readonly by: string | null; readonly at: string; readonly checklist: PacketAttestation['checklist'] } | null;
 }
 
 export interface ApprovalRequest {
@@ -100,13 +117,15 @@ interface HistoryRow {
   readonly exported_at: Date | null;
   readonly export_sha256: string | null;
   readonly export_csv_sha256: string | null;
+  readonly deadline_verification_status: DeadlineStatus;
+  readonly attested_at: Date | null;
 }
 
 /** The case's packet's versions, newest first (codes, dates and hashes; no narrative). */
 async function history(scope: Scope, practiceId: string, packetId: string): Promise<{ rows: HistoryRow[]; drafterId: string | null }> {
   const { rows } = await scope.client.query<HistoryRow>(
     `SELECT v.id, v.version_no, p.current_version_id = v.id AS current, v.created_at, v.drafted_by, v.verifier_passed, v.approved_at, v.approved_by, v.approved_alone,
-            v.exported_at, v.export_sha256, v.export_csv_sha256
+            v.exported_at, v.export_sha256, v.export_csv_sha256, v.deadline_verification_status, v.attested_at
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.packet_id = $1 AND v.practice_id = $2 ORDER BY v.version_no DESC`,
     [packetId, practiceId],
   );
@@ -134,7 +153,13 @@ function attachedOf(content: PacketContent): string[] {
   return content.evidence.filter((item) => item.kind === 'attached_document' && item.document_id !== null).map((item) => item.document_id as string);
 }
 
-function versionView(detail: PacketVersionDetail, writtenBy: string | null): VersionView {
+/** The deadline status the database derives now for a version's content (CO-05: what the export is held to). */
+export async function deadlineNow(scope: Scope, caseId: string, content: PacketContent): Promise<DeadlineStatus> {
+  const { rows } = await scope.client.query<{ status: DeadlineStatus }>('SELECT packet_version_deadline_status($1, $2::jsonb) AS status', [caseId, JSON.stringify(content)]);
+  return rows[0]?.status ?? 'unverified';
+}
+
+function versionView(detail: PacketVersionDetail, writtenBy: string | null, now: DeadlineStatus, attestedBy: string | null): VersionView {
   return {
     id: detail.versionId,
     packetId: detail.packetId,
@@ -152,6 +177,10 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null): Ver
     exportSha256: detail.exportSha256,
     exportCsvSha256: detail.exportCsvSha256,
     attachedDocumentIds: attachedOf(detail.content),
+    deadlineStatus: detail.deadlineStatus,
+    deadlineNow: now,
+    exportVerifier: detail.exportVerifier,
+    attestation: detail.attestedAt === null || detail.attestation === null ? null : { by: attestedBy, at: detail.attestedAt.toISOString(), checklist: detail.attestation.checklist },
   };
 }
 
@@ -227,8 +256,10 @@ export async function builderView(
       exportedAt: row.exported_at?.toISOString() ?? null,
       exportSha256: row.export_sha256,
       exportCsvSha256: row.export_csv_sha256,
+      deadlineStatus: row.deadline_verification_status,
+      attestedAt: row.attested_at?.toISOString() ?? null,
     })),
-    version: versionView(detail, person(shown.drafted_by)),
+    version: versionView(detail, person(shown.drafted_by), await deadlineNow(scope, input.caseId, detail.content), await attesterEmail(scope, detail.attestedBy)),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
     ...common,
@@ -318,17 +349,50 @@ export async function approveOnce(scope: Scope, input: { readonly practiceId: st
 export const NOT_EXPORTABLE = 'an export prints the packet’s current version once it is approved';
 
 /**
+ * Why an export with a deadline that is not verified is not asked for, and what the billing manager does
+ * about it (CO-05, D17): the window's evidence is cited and verified, then the version is written again.
+ */
+export const DEADLINE_NOT_EXPORTABLE = 'The export is blocked: this version’s deadline is not verified, so the packet is not exported. Each reason, and who supplies the missing evidence, is under Deadline above.';
+
+/** A /1 version's export: it states no deadline, so it is written again. */
+export const OUTDATED_NOT_EXPORTABLE = 'This version was written before packets stated their deadline. Write a new version of the packet and approve it; only that one can be exported.';
+
+/** The person who attested an export, by email; null when they are no longer a user. */
+async function attesterEmail(scope: Scope, userId: string | null): Promise<string | null> {
+  if (userId === null) {
+    return null;
+  }
+  const { rows } = await scope.client.query<{ email: string }>('SELECT email FROM "user" WHERE id = $1', [userId]);
+  return rows[0]?.email ?? null;
+}
+
+/**
  * Asks the worker to print a version's export (the packet_export job: the PDF and the CSV schedule, the
  * identifiers inserted, stored sealed, their SHA-256 recorded on the version; CAS-11, CAS-12). A version
- * exported already is left as it is ('exported'); one not approved or not current is refused.
+ * exported already is left as it is ('exported'); one not approved or not current is refused, and one
+ * whose deadline the database does not verify now (CO-05), or a tp-packet/1 version, which states none.
  */
-export async function requestExportOnce(scope: Scope, queue: JobQueue, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string }): Promise<'queued' | 'exported' | 'refused'> {
+export async function requestExportOnce(
+  scope: Scope,
+  queue: JobQueue,
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string },
+): Promise<'queued' | 'exported' | 'refused' | 'deadline_unverified' | 'outdated'> {
   const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
   if (version.exported) {
     return 'exported';
   }
   if (!version.approved || !version.current) {
     return 'refused';
+  }
+  const { rows } = await scope.client.query<{ format: string; status: DeadlineStatus }>(
+    "SELECT v.content ->> 'format' AS format, packet_version_deadline_status(p.case_id, v.content) AS status FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2",
+    [input.versionId, input.practiceId],
+  );
+  if (rows[0]?.format !== 'tp-packet/2') {
+    return 'outdated';
+  }
+  if (rows[0].status === 'unverified') {
+    return 'deadline_unverified';
   }
   await queue.enqueue('packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
   return 'queued';

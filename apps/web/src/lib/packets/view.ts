@@ -1,4 +1,5 @@
 import type { EvidenceGapCode, EvidenceKind, MismatchCode, SourceKind } from '@tp/packets';
+import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
 
 /**
  * The packet screens' words for the codes a version holds (PRD 7, Packet builder; Submissions and
@@ -88,3 +89,30 @@ export type FollowUpState = 'answered' | 'due' | 'waiting';
 export function followUpState(followUpOn: string, asOf: string, answered: boolean): FollowUpState {
   return answered ? 'answered' : followUpOn <= asOf ? 'due' : 'waiting';
 }
+
+/** A deadline's status as a label (never a color alone; brand.md). */
+export const DEADLINE_STATUS_TEXT: Readonly<Record<DeadlineStatus, string>> = {
+  verified: 'Deadline verified',
+  unverified: 'Deadline not verified',
+  not_applicable: 'No window',
+};
+
+/**
+ * Why a deadline is not verified (D17), in words a billing manager can act on: what is missing and who
+ * supplies it. A deadline is verified only from evidence a person signed off: a contract version's own
+ * window with its page, quote and hash, or a Medicare window record verified to L2. A signed-off version
+ * never changes, so evidence added later is on a corrected or amended version, and verifies the lines
+ * priced under it.
+ */
+export const DEADLINE_CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, string>> = {
+  COMMERCIAL_DEFAULT:
+    'These lines’ window is the rule release’s default for commercial plans, which is never verified: the contract version cites no window of its own. Ask the contract specialist to cite and verify the contract’s dispute window (its page, quote and hash) on an amended or corrected version; lines priced under it once it is signed off have a verified deadline.',
+  RECORD_NOT_IN_RELEASE: 'The Medicare window record these lines were priced with is not in the rule release they were priced under, so their deadline is not verified. Lines priced under a release that holds the record, verified, have a verified deadline.',
+  RECORD_BELOW_LEVEL: 'The Medicare window record these lines were priced with is not verified to level L2 in their rule release. Lines priced under a release whose record a second reader verified have a verified deadline.',
+  CONTRACT_WINDOW_UNCITED:
+    'The contract version these lines were priced under states a dispute window but cites no page, quote and hash for it. Ask the contract specialist to cite and verify the window on an amended or corrected version; lines priced under it once a billing manager signs it off have a verified deadline.',
+  CONTRACT_WINDOW_UNVERIFIED: 'The contract window is cited, but no specialist verified the citation. Ask the contract specialist to verify it before the version is approved and signed off.',
+  CONTRACT_VERSION_NOT_SIGNED_OFF: 'The contract version these lines were priced under is no longer signed off (a corrected version replaced it), so their deadline is not verified. Lines priced under the signed-off version in force have their own deadline.',
+  CONTRACT_WINDOW_DIFFERS: 'The window these lines were priced with is not the length the contract version cites, so their deadline is not verified. Ask the contract specialist to check the version’s window against its page.',
+  NEXT_LEVEL_UNCITED: 'The next dispute level’s window is the contract’s appeal level, which cites no page, quote or hash, so this level’s deadline cannot be verified and its packet is not exported.',
+};

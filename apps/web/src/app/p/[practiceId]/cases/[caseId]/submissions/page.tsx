@@ -96,36 +96,42 @@ export default async function SubmissionsPage(props: Props) {
               <p className="text-sm">
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
               </p>
-              <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
-                <FormKeys />
-                <input type="hidden" name="practiceId" value={practiceId} />
-                <input type="hidden" name="caseId" value={item.id} />
-                <input type="hidden" name="versionId" value={submittable.versionId} />
-                <div className="flex flex-wrap gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="submitted-on">Submitted on</Label>
-                    <Input id="submitted-on" name="submittedOn" type="date" defaultValue={asOf} min={submittable.exportedOn} max={asOf} required />
+              {submittable.attestedAt === null ? (
+                <p className="text-sm" data-attestation="waiting">
+                  Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
+                </p>
+              ) : (
+                <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
+                  <FormKeys />
+                  <input type="hidden" name="practiceId" value={practiceId} />
+                  <input type="hidden" name="caseId" value={item.id} />
+                  <input type="hidden" name="versionId" value={submittable.versionId} />
+                  <div className="flex flex-wrap gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="submitted-on">Submitted on</Label>
+                      <Input id="submitted-on" name="submittedOn" type="date" defaultValue={asOf} min={submittable.exportedOn} max={asOf} required />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="channel">Channel</Label>
+                      <select id="channel" name="channel" className="h-9 rounded-md border bg-background px-2 text-sm" required>
+                        {SUBMISSION_CHANNELS.map((channel) => (
+                          <option key={channel} value={channel}>
+                            {CHANNEL_TEXT[channel]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="channel">Channel</Label>
-                    <select id="channel" name="channel" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                      {SUBMISSION_CHANNELS.map((channel) => (
-                        <option key={channel} value={channel}>
-                          {CHANNEL_TEXT[channel]}
-                        </option>
-                      ))}
-                    </select>
+                    <Label htmlFor="reference">Payer’s reference (a portal confirmation, a fax receipt)</Label>
+                    <Input id="reference" name="reference" maxLength={200} />
                   </div>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="reference">Payer’s reference (a portal confirmation, a fax receipt)</Label>
-                  <Input id="reference" name="reference" maxLength={200} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="follow-up-on">Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
-                  <Input id="follow-up-on" name="followUpOn" type="date" />
-                </div>
-              </ActionForm>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="follow-up-on">Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
+                    <Input id="follow-up-on" name="followUpOn" type="date" />
+                  </div>
+                </ActionForm>
+              )}
             </CardContent>
           )}
         </Card>

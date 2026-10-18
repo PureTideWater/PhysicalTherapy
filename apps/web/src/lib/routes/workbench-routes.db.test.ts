@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { addMembership, asOwner, createUser } from '@tp/db/testing';
+import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { packetExportHandler } from '@tp/worker/runtime';
@@ -20,7 +20,21 @@ import { SESSION_COOKIE, openSession } from '../auth/sessions';
 import type { CookieJar, Download, MutationResult, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
-import { approvePacketVersionAction, exportPacketAction, packetCsv, packetPage, packetPdf, requestApprovalAction, writeVersionAction } from './packets';
+import {
+  approvePacketVersionAction,
+  attestPacketExportAction,
+  exportPacketAction,
+  packetCsv,
+  packetPage,
+  packetPdf,
+  packetReviewPage,
+  packetReviewsPage,
+  requestApprovalAction,
+  reviewPacketCsv,
+  reviewPacketPdf,
+  writeVersionAction,
+} from './packets';
+import { PACKET_CHECKLIST } from '../packets/review';
 import { practiceHome } from './practice';
 import { logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
 import { casePage, casesPage } from './triage';
@@ -33,7 +47,9 @@ import { csrfTokenFor } from '../http/csrf';
  * matrix CAS-03 to CAS-15; docs/adr/0041 and 0044). Each practice loads SYNTHETIC CAS fixtures through
  * the parse_835 job, signs off a fixed schedule (97110 at 50.00 per unit), prices the month with the
  * price job and triages it; then its people work it through the screens' routes, and the export job's
- * own code prints the packets (with a stand-in printer where Chromium is not installed).
+ * own code prints the packets (with a stand-in printer where Chromium is not installed). Its window is the
+ * contract's own 3,650 days, cited and verified (D17), so the deadline is verified and the export allowed;
+ * a reimbursement reviewer under a support grant attests the export before it is submitted (D16).
  */
 
 let w: TriageWorld;
@@ -63,10 +79,12 @@ class Jar implements CookieJar {
 }
 
 const tokens = new Map<string, string>();
+/** The internal users of the tests (the reviewers): they sign in with a hardware key. */
+const internalUsers = new Set<string>();
 async function sessionOf(userId: string): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
-    token = (await openSession(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSession(w.app, { userId, method: internalUsers.has(userId) ? 'webauthn' : 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;
@@ -117,6 +135,32 @@ afterAll(async () => {
   await w.close();
   rmSync(documentsDir, { recursive: true, force: true });
 });
+
+/** A reimbursement reviewer of the internal organization under a four-hour support grant on the practice (D16). */
+async function reviewerOf(target: Practice): Promise<string> {
+  const internal = await createOrganization(w.owner, 'internal', `review ${randomUUID().slice(0, 8)}`);
+  const id = await createUser(w.owner, { hardwareKeyRequired: true });
+  await addMembership(w.owner, internal, id, 'reviewer');
+  await asOwner(w.owner, [target.practiceId], () =>
+    w.owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'RV-ROUTES', 'SYNTHETIC PACKET REVIEW', now() + interval '4 hours')`, [target.practiceId, id]),
+  );
+  internalUsers.add(id);
+  return id;
+}
+
+/** The reviewer attests the version's export through the review's route, over the SHA-256 the review shows. */
+async function attestThroughRoutes(target: Practice, reviewer: string, caseId: string, versionId: string): Promise<void> {
+  const review = ok(await call(packetReviewPage, reviewer, { practiceId: target.practiceId, caseId, versionId })).review;
+  ok(
+    await call(attestPacketExportAction, reviewer, { practiceId: target.practiceId }, {
+      caseId,
+      versionId,
+      pdfSha256: review.exportSha256 ?? '',
+      csvSha256: review.exportCsvSha256 ?? '',
+      ...Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on'])),
+    }),
+  );
+}
 
 async function person(target: Practice, role: 'billing_manager' | 'analyst' | 'viewer'): Promise<string> {
   const id = await createUser(w.owner);
@@ -368,10 +412,48 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     );
     expect(downloads[0]?.n).toBe(2);
 
-    // The submission log carries the export's SHA-256 (CAS-12); the same submission again logs nothing.
+    // The builder shows each line's deadline, verified from the contract's cited window, and the export's verifier report (CO-05).
+    expect(exported?.deadlineNow).toBe('verified');
+    expect(exported?.content.format === 'tp-packet/2' ? exported.content.deadline : null).toMatchObject({ basis: 'line_windows', status: 'verified', lines_verified: 3, lines: 3, causes: [] });
+    expect(exported?.exportVerifier).toMatchObject({ format: 'tp-packet-verifier/2', passed: true });
+    expect(exported?.attestation).toBeNull();
+
+    // D16: the submission waits for the reimbursement reviewer's attestation over the export's SHA-256.
     const submittable = ok(await call(submissionsPage, practice.manager, { ...P, caseId })).submittable;
-    expect(submittable).toMatchObject({ versionId: version?.id, exportSha256: exported?.exportSha256, exportCsvSha256: exported?.exportCsvSha256 });
+    expect(submittable).toMatchObject({ versionId: version?.id, exportSha256: exported?.exportSha256, exportCsvSha256: exported?.exportCsvSha256, attestedAt: null });
     const submission = { caseId, versionId: version?.id ?? '', submittedOn: today(), channel: 'payer_portal', reference: 'SYNTHETIC-PORTAL-REF-9', followUpOn: '' };
+    expect(refused(await call(logSubmissionAction, practice.manager, P, submission))).toBe('a packet is submitted once a reimbursement reviewer has attested its export');
+    const reviewer = await reviewerOf(practice);
+    const reviewParams = { ...P, caseId, versionId: version?.id ?? '' };
+    // The billing managers do not attest, nor open the reviewer's pages; the reviewer does.
+    expect((await call(packetReviewPage, practice.manager, reviewParams)).status).toBe('forbidden');
+    expect((await call(reviewPacketCsv, second, reviewParams)).status).toBe('forbidden');
+    const confirmations = Object.fromEntries(PACKET_CHECKLIST.map((item) => [`confirm_${item.id}`, 'on']));
+    expect((await call(attestPacketExportAction, second, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations })).status).toBe('forbidden');
+    expect(ok(await call(packetReviewsPage, reviewer, P)).awaiting.map((item) => item.versionId)).toEqual([version?.id]);
+    const review = ok(await call(packetReviewPage, reviewer, reviewParams)).review;
+    expect(review).toMatchObject({ exportSha256: exported?.exportSha256, exportCsvSha256: exported?.exportCsvSha256, deadlineNow: 'verified', attestation: null, viewerTookPart: false });
+    const reviewedPdf = ok<Download<Uint8Array<ArrayBuffer>>>(await call(reviewPacketPdf, reviewer, reviewParams));
+    expect(createHash('sha256').update(reviewedPdf.download.body).digest('hex')).toBe(exported?.exportSha256);
+    const reviewedCsv = ok<Download<Uint8Array<ArrayBuffer>>>(await call(reviewPacketCsv, reviewer, reviewParams));
+    expect(createHash('sha256').update(reviewedCsv.download.body).digest('hex')).toBe(exported?.exportCsvSha256);
+    // Every item is confirmed, over the files the review showed: other files are refused.
+    expect((await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '' })).status).toBe('invalid');
+    expect(refused(await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: 'f'.repeat(64), csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations }))).toBe(
+      'the files reviewed are not this export’s; open the review again',
+    );
+    await attestThroughRoutes(practice, reviewer, caseId, version?.id ?? '');
+    await attestThroughRoutes(practice, reviewer, caseId, version?.id ?? '');
+    expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.attestation).toMatchObject({ byViewer: true, checklist: PACKET_CHECKLIST.map((item) => item.id) });
+    expect(ok(await call(packetReviewsPage, reviewer, P)).awaiting).toEqual([]);
+    const { rows: attestations } = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE practice_id = $1 AND action = 'packet_export_attested' AND object_id = $2", [practice.practiceId, version?.id]),
+    );
+    expect(attestations[0]?.n).toBeGreaterThanOrEqual(1);
+    expect(ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version?.attestation).toMatchObject({ checklist: PACKET_CHECKLIST.map((item) => item.id) });
+
+    // The submission log carries the export's SHA-256 (CAS-12); the same submission again logs nothing.
+    expect(ok(await call(submissionsPage, practice.manager, { ...P, caseId })).submittable?.attestedAt).not.toBeNull();
     ok(await call(logSubmissionAction, practice.manager, P, submission));
     ok(await call(logSubmissionAction, practice.manager, P, submission));
     expect((await call(logSubmissionAction, viewer, P, submission)).status).toBe('forbidden');
@@ -383,7 +465,7 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(ok(await call(submissionsPage, viewer, { ...P, caseId })).submissions[0]?.reference).toBeNull();
     const detail = ok(await call(casePage, practice.manager, { ...P, caseId }));
     expect(detail.case.state).toBe('submitted');
-    expect(detail.timeline.map((event) => event.kind)).toEqual(expect.arrayContaining(['version_written', 'version_approved', 'version_exported', 'submitted']));
+    expect(detail.timeline.map((event) => event.kind)).toEqual(expect.arrayContaining(['version_written', 'version_approved', 'version_exported', 'export_attested', 'submitted']));
 
     // CAS-13: an edit after approval is a new version, which clears the approval.
     ok(await call(writeVersionAction, practice.manager, P, { caseId, basedOnVersionId: version?.id ?? '', useDraft: 'on' }));
@@ -425,6 +507,7 @@ describe('submissions and responses (CAS-14, J10)', () => {
     const version = ok(await call(packetPage, practice.manager, { ...P, caseId })).builder.version;
     ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '' }));
     await runExport(practice, version?.id ?? '');
+    await attestThroughRoutes(practice, await reviewerOf(practice), caseId, version?.id ?? '');
     const { rows } = await asOwner(w.owner, [practice.practiceId], () =>
       w.owner.query<{ id: string }>(
         `INSERT INTO source_document (practice_id, kind, sha256, size_bytes, content_type, uploaded_by, scan_status, scan_at, status)

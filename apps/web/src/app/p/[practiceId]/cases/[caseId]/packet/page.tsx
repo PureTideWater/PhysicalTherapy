@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../../components/action-form';
 import { utc } from '../../../../../../components/format';
 import { Countdown } from '../../../../../../components/packets/countdown';
-import { Citation, EvidenceList, Hash, InterestSection, LineSchedule, Sources, StoredNarrative } from '../../../../../../components/packets/display';
+import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule, Sources, StoredNarrative } from '../../../../../../components/packets/display';
 import { DraftBadge, HandEntryNotice, ModelNoticeAlert, draftOf } from '../../../../../../components/models/display';
 import { NarrativeEditor } from '../../../../../../components/packets/narrative-editor';
 import { Money } from '../../../../../../components/remittances/display';
@@ -14,7 +14,8 @@ import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { loadPage } from '../../../../../../lib/http/next';
 import { BLOCKED_TEXT, waitText } from '../../../../../../lib/packets/approval';
-import type { AttachableDocument, BuilderView, VersionView } from '../../../../../../lib/packets/queries';
+import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
+import { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -28,8 +29,9 @@ const NOTICES = {
   unchanged: 'Nothing changed: the current version already holds this, so no version was written.',
   requested: 'Approval is requested. A second person who approves packets approves it here.',
   approved: 'The version is approved. Export it to print the PDF and CSV with the identifiers.',
-  export_requested: 'The export is asked for: the worker prints the PDF and CSV, inserts the identifiers and records their SHA-256. Reload the page in a moment.',
-  exported: 'This version is exported. Its SHA-256 is below and goes into the submission log.',
+  export_requested:
+    'The export is asked for: the worker checks the deadline and the narrative again, prints the PDF and CSV, inserts the identifiers and records their SHA-256. Reload the page in a moment.',
+  exported: 'This version is exported. Its SHA-256 is below; once the reimbursement reviewer attests it, it goes into the submission log.',
 } as const;
 
 const KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'Payer letter', other: 'Other document', contract: 'Contract', exhibit: 'Exhibit' };
@@ -80,6 +82,10 @@ function VersionFields({ practiceId, caseId, builder, version }: { readonly prac
  * placeholders until export"; PRD 5, J9; PRD 12): one packet per case, its versions immutable, each
  * edit a new version whose narrative the server verifies again; the approval panel says what the
  * viewer may do and why not; the export prints the PDF and CSV with the identifiers and their SHA-256.
+ * CO-05 (docs/adr/0061): each line's deadline shows with its status as a label, the version's deadline
+ * with its evidence and, when it is not verified, why and what to do; the export is blocked until the
+ * database verifies it; once exported, the reimbursement reviewer attests the export before it is
+ * submitted (D16).
  */
 export default async function PacketPage(props: Props) {
   const page = await loadPage(packetPage, props);
@@ -177,6 +183,31 @@ export default async function PacketPage(props: Props) {
               <LineSchedule content={version.content} practiceId={practiceId} />
             </CardContent>
           </Card>
+          <Card role="region" aria-label="Deadline">
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                Deadline {version.content.format === 'tp-packet/2' ? <DeadlineChip status={version.content.deadline.status} /> : null}
+              </CardTitle>
+              <CardDescription>
+                A deadline is verified only from evidence a person signed off: the contract version’s own dispute window with its page, quote and hash, or a Medicare window record of the rule release verified to
+                level L2. The export is held to the deadline as the database derives it when the export is made.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DeadlineSummary content={version.content} now={version.deadlineNow} />
+            </CardContent>
+          </Card>
+          {version.content.format === 'tp-packet/2' ? (
+            <Card role="region" aria-label="Calculation">
+              <CardHeader>
+                <CardTitle>Calculation per line</CardTitle>
+                <CardDescription>Each line’s steps and its one rounding, copied from the line’s stored trace (the unrounded amount kept beside the rounded one). The patient share is shown and never counted.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <CalculationTable content={version.content} />
+              </CardContent>
+            </Card>
+          ) : null}
           <Card role="region" aria-label="Interest">
             <CardHeader>
               <CardTitle>Interest</CardTitle>
@@ -323,12 +354,38 @@ export default async function PacketPage(props: Props) {
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm">
               {version.exportedAt !== null ? (
-                <p data-export="done">
-                  Exported {utc(version.exportedAt)}. PDF SHA-256 <Hash value={version.exportSha256} label="PDF SHA-256" />; CSV SHA-256 <Hash value={version.exportCsvSha256} label="CSV SHA-256" />.{' '}
-                  <Link className="underline" href={`${casePath}/submissions`}>
-                    Log its submission
-                  </Link>
-                </p>
+                <>
+                  <p data-export="done">
+                    Exported {utc(version.exportedAt)}. PDF SHA-256 <Hash value={version.exportSha256} label="PDF SHA-256" />; CSV SHA-256 <Hash value={version.exportCsvSha256} label="CSV SHA-256" />.
+                    {version.exportVerifier === null ? null : ` The verifier checked the narrative the export printed: ${version.exportVerifier.passed ? 'passed' : 'failed'}.`}
+                  </p>
+                  {version.attestation === null ? (
+                    <p data-attestation="waiting">Waiting for the reimbursement reviewer’s attestation of the export over its two SHA-256; the submission is logged after it.</p>
+                  ) : (
+                    <p data-attestation="attested">
+                      Attested {utc(version.attestation.at)} by {version.attestation.by ?? 'the reimbursement reviewer'} over the export’s SHA-256.{' '}
+                      <Link className="underline" href={`${casePath}/submissions`}>
+                        Log its submission
+                      </Link>
+                    </p>
+                  )}
+                </>
+              ) : approval?.status === 'approved' && version.current && (version.content.format !== 'tp-packet/2' || version.deadlineNow === 'unverified') ? (
+                <Alert variant="destructive" data-export="blocked" data-reason={version.content.format !== 'tp-packet/2' ? 'outdated' : 'deadline_unverified'}>
+                  <AlertTitle>Export blocked</AlertTitle>
+                  <AlertDescription>
+                    {version.content.format !== 'tp-packet/2' ? OUTDATED_NOT_EXPORTABLE : DEADLINE_NOT_EXPORTABLE}
+                    {version.content.format === 'tp-packet/2' && version.content.deadline.causes.length > 0 ? (
+                      <ul className="mt-1 list-disc pl-5" aria-label="Why the export is blocked">
+                        {version.content.deadline.causes.map((cause) => (
+                          <li key={cause} data-blocked-cause={cause}>
+                            {DEADLINE_CAUSE_TEXT[cause]}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </AlertDescription>
+                </Alert>
               ) : approval?.status === 'approved' && version.current ? (
                 canExport ? (
                   <ActionForm action={exportFormAction} submit="Export PDF and CSV" className="flex flex-col gap-2">
@@ -363,6 +420,7 @@ export default async function PacketPage(props: Props) {
                     <th className="px-2 py-1 font-medium">Version</th>
                     <th className="px-2 py-1 font-medium">Written</th>
                     <th className="px-2 py-1 font-medium">Verifier</th>
+                    <th className="px-2 py-1 font-medium">Deadline stated</th>
                     <th className="px-2 py-1 font-medium">Approved</th>
                     <th className="px-2 py-1 font-medium">Exported, SHA-256</th>
                     <th className="px-2 py-1 font-medium">Files</th>
@@ -382,6 +440,9 @@ export default async function PacketPage(props: Props) {
                         {utc(entry.writtenAt)}, {entry.writtenBy ?? '—'}
                       </td>
                       <td className="px-2 py-1">{entry.verifierPassed ? 'Passed' : 'Failed'}</td>
+                      <td className="px-2 py-1">
+                        <DeadlineChip status={entry.deadlineStatus} />
+                      </td>
                       <td className="px-2 py-1">{entry.approvedAt === null ? '—' : `${utc(entry.approvedAt)}, ${entry.approvedBy ?? '—'}${entry.approvedAlone ? ' (alone, flagged)' : ''}`}</td>
                       <td className="px-2 py-1">
                         {entry.exportedAt === null ? (
@@ -395,6 +456,7 @@ export default async function PacketPage(props: Props) {
                             <span>
                               CSV <Hash value={entry.exportCsvSha256} />
                             </span>
+                            <span>{entry.attestedAt === null ? 'Not attested yet' : `Attested ${utc(entry.attestedAt)}`}</span>
                           </span>
                         )}
                       </td>

@@ -37,6 +37,8 @@ export type TimelineEvent =
   | { readonly kind: 'version_written'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly verifierPassed: boolean }
   | { readonly kind: 'version_approved'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly approvedAlone: boolean }
   | { readonly kind: 'version_exported'; readonly at: string; readonly by: null; readonly versionNo: number; readonly sha256: string }
+  /** The reimbursement reviewer's attestation over the export (D16): never a person of the practice. */
+  | { readonly kind: 'export_attested'; readonly at: string; readonly by: null; readonly versionNo: number }
   | { readonly kind: 'submitted'; readonly at: string; readonly by: string | null; readonly versionNo: number; readonly level: number; readonly channel: keyof typeof CHANNEL_TEXT }
   | { readonly kind: 'response'; readonly at: string; readonly by: string | null; readonly response: ResponseKindText; readonly reopens: boolean };
 
@@ -67,6 +69,8 @@ export function eventText(event: TimelineEvent): string {
       return `Packet version ${String(event.versionNo)} approved${event.approvedAlone ? ' alone after the 24-hour delay (single-user practice, audit flag)' : ' by a second person'}`;
     case 'version_exported':
       return `Packet version ${String(event.versionNo)} exported as PDF and CSV (PDF SHA-256 ${event.sha256.slice(0, 12)}…)`;
+    case 'export_attested':
+      return `Packet version ${String(event.versionNo)}’s export attested over its SHA-256 by the reimbursement reviewer`;
     case 'submitted':
       return `Packet version ${String(event.versionNo)} submitted through the ${CHANNEL_TEXT[event.channel].toLowerCase()}, dispute level ${String(event.level)}`;
     case 'response':
@@ -82,6 +86,8 @@ export function eventActor(event: TimelineEvent): string {
   switch (event.kind) {
     case 'version_exported':
       return 'the export job';
+    case 'export_attested':
+      return 'the reimbursement reviewer';
     case 'response':
       return 'the recovery ledger’s matching';
     case 'stage':

@@ -209,14 +209,17 @@ export interface SampleRefs {
   /**
    * The workbench (docs/adr/0044): the case's rate record (its pattern names it); the case's packet's
    * current version, written by an analyst and passing the verifier, unapproved, with the hash an
-   * approval names; a second case with an approved, exported version and its submission; and a payer
-   * letter a response carries.
+   * approval names; a second case with an approved, exported version (its PDF's and CSV's SHA-256),
+   * attested by the reimbursement reviewer (docs/adr/0061), and its submission; and a payer letter a
+   * response carries.
    */
   readonly caseRateRecordId: string;
   readonly packetVersionId: string;
   readonly packetVersionSha256: string;
   readonly submittedCaseId: string;
   readonly exportedVersionId: string;
+  readonly exportedVersionPdfSha256: string;
+  readonly exportedVersionCsvSha256: string;
   readonly submissionId: string;
   readonly responseDocumentId: string;
   /** A third case, a Medicare Advantage non-contracted pattern, whose current version cites the regulation and waits for a specialist's confirmation (docs/adr/0047). */
