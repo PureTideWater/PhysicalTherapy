@@ -1,6 +1,6 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 18:45 UTC.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 18:52 UTC.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
@@ -94,11 +94,11 @@ When asking the founder a question, recommend the best option first. Never let t
 - **Re-pricing breaks packets** (screen tour) belongs to PR 11.
 
 ## Restart of 2026-10-18 18:40 UTC (spend limit, then a container restart)
-The org's spend limit stopped several agents mid-run. The founder raised it; extra usage credits now cost more, so work economically: replay from cache, merge reviews, run mechanical checks with Bash instead of agents, and let GitHub CI do final verification where possible.
-- **PR 5 audit fixes** (`wf_4eae97e6-03a`): resumed. The setup is cached; the builders continue the window builder's uncommitted work (saved at `salvage/pr5-audit-fixes-wip`). Two reviews instead of three; the verify agent runs at medium effort.
-- **PR 6 audit fixes:** all committed at `1bc9426`. The checks are run by Bash (`scratchpad/pr6a-checks/run.sh`; results in `results.txt`). After that, one review agent.
-- **Governance** (`wf_6a5ccaf0-c47`): resumed with the build cached, one combined review and a fix. The verify agent is dropped: GitHub CI verifies when the PR opens.
-- **Second audit:** 91 of 111 proposals were checked; 20 checks were lost. One merge agent (`wf_e44d6fd2-6d3`) writes `combined-report.md` and `.json`, marking the unchecked items.
+The org's spend limit stopped several agents mid-run; the founder raised it. The founder then ruled (18:50 UTC): **never sacrifice quality to use fewer agents.** Every PR keeps its full pipeline: independent builders, at least two independent adversarial reviews from different angles, a fix round, a fresh-clone CI-equivalent verification agent, then GitHub CI. Credits are saved only where quality is untouched: replaying finished steps from cache, finishing saved edits instead of redoing them, and not rerunning suites without need.
+- **PR 5 audit fixes** (`wf_4eae97e6-03a`): resumed on the original design (three reviews, full verify). The setup is cached; the builders finish the saved work (`salvage/co-001-pr-05-packet-deadline-wip`).
+- **PR 6 audit fixes** (`wf_fb7ce904-a6f`): resumed on the original design. The build role reviews the committed work at `1bc9426` and completes its checks; two reviews, fix, verify.
+- **Governance** (`wf_6a5ccaf0-c47`): resumed on the original design (two reviews, fix, verify). The build is cached.
+- **Second audit** (`wf_8e577203-afb`): resumed on the original design. 101 steps are cached; the 20 cut-off adversarial checks run, then the merge writes `combined-report.md` and `.json`.
 - **Saving unfinished edits** (the founder asked for this): `tools/salvage.sh` snapshots every worktree's uncommitted edits to `salvage/<branch>-wip` on GitHub. Every check-in runs it.
 
 ## Environment recipe (cloud container)
