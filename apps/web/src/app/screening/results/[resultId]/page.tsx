@@ -5,7 +5,7 @@ import { PublicHeader } from '../../../../components/public-header';
 import { ScreeningAnomalies, ScreeningTopRows } from '../../../../components/screening/anomalies';
 import { ScreeningConvertForm } from '../../../../components/screening/convert-form';
 import { ScreeningCoverage } from '../../../../components/screening/coverage';
-import { ScreeningHeading, ScreeningSummary } from '../../../../components/screening/result-summary';
+import { ScreeningHeading, ScreeningReleaseWithdrawn, ScreeningSummary } from '../../../../components/screening/result-summary';
 import { loadPublicPage } from '../../../../lib/http/next';
 import { screeningResult } from '../../../../lib/screening/routes';
 import { convertScreeningAction } from './actions';
@@ -19,8 +19,8 @@ export const metadata: Metadata = { title: 'Your screening', robots: { index: fa
  * across codes"; the anomalies by code and payer product; the coverage, with the rows missing a contract; the dollars
  * that cannot be priced without a contract, apart from the rows not screened or not priced; the rows with the largest
  * differences; and the conversion to an audit request. A link that is unknown, expired or not yet priced is not
- * found. Every figure is the database's sum of the engine's per-row results. The lockup without the tagline (D11);
- * never owed, underpaid or recovered.
+ * found; one priced under a rule release since withdrawn says so above its figures. Every figure is the database's sum
+ * of the engine's per-row results. The lockup without the tagline (D11); never owed, underpaid or recovered.
  */
 export default async function ScreeningResultPage(props: {
   readonly params: Promise<Record<string, string | string[] | undefined>>;
@@ -32,6 +32,7 @@ export default async function ScreeningResultPage(props: {
       <PublicHeader />
       <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 md:p-10" data-slot="screening-result">
         <ScreeningHeading summary={data.summary} />
+        <ScreeningReleaseWithdrawn summary={data.summary} />
         <ScreeningSummary summary={data.summary} />
         <ScreeningAnomalies groups={data.groups} />
         <ScreeningCoverage coverage={data.coverage} />

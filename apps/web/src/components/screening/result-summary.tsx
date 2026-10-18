@@ -1,9 +1,9 @@
 import { type Cents, formatUsd } from '@tp/money';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { ReactNode } from 'react';
 
 import { counted } from '../../lib/copy/words';
-import { MEDICARE_FIGURE_LABEL, MEDICARE_FIGURE_NOTE, SCREENING_INVESTIGATORY_NOTE } from '../../lib/screening/labels';
+import { DIFFERENCE_LABEL, MEDICARE_FIGURE_LABEL, MEDICARE_FIGURE_NOTE, SCREENING_INVESTIGATORY_NOTE } from '../../lib/screening/labels';
 import { utc, utcDate } from '../format';
 
 /**
@@ -36,6 +36,8 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly engineVersion: string;
   readonly createdAt: Date | string;
   readonly expiresAt: Date | string;
+  /** The rule release it was priced under has since been withdrawn. */
+  readonly releaseWithdrawn: boolean;
   readonly priced: ScreeningPricedTotals;
   /** Medicare Advantage under contract and commercial rows (decision D20 a). */
   readonly contractRequired: ScreeningGroupTotals;
@@ -104,6 +106,21 @@ export function ScreeningHeading({ summary }: { readonly summary: ScreeningSumma
   );
 }
 
+/** A notice, above everything, when the rule release the screening was priced under has since been withdrawn. */
+export function ScreeningReleaseWithdrawn({ summary }: { readonly summary: ScreeningSummaryData }) {
+  if (!summary.releaseWithdrawn) {
+    return null;
+  }
+  return (
+    <Alert variant="destructive" data-state="release-withdrawn">
+      <AlertTitle>The rule release behind these figures was withdrawn</AlertTitle>
+      <AlertDescription>
+        Rule release <span className="font-mono tabular-nums">{summary.releaseNo}</span> was withdrawn after this screening was priced: its content was found to be wrong, so the Medicare figures below may be too. Screen the file again for figures under the release in force.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 /** The file's totals, the Medicare-priced figures, and the dollars that cannot be priced without a contract. */
 export function ScreeningSummary({ summary }: { readonly summary: ScreeningSummaryData }) {
   const { priced } = summary;
@@ -133,7 +150,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
             <Stat label="Allowed in your file" slot="priced-allowed">
               <ScreeningMoney cents={priced.observedCents} />
             </Stat>
-            <Stat label="Difference" slot="priced-difference">
+            <Stat label={DIFFERENCE_LABEL} slot="priced-difference">
               <ScreeningMoney cents={priced.differenceCents} />
               <span className="block text-xs font-normal text-muted-foreground">Allowed in your file is {differenceWords(priced.differenceCents)} in total.</span>
             </Stat>

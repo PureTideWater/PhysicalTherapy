@@ -2,16 +2,19 @@ import type { Cents } from '@tp/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 
 import { counted } from '../../lib/copy/words';
-import { MEDICARE_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
+import { BEFORE_REDUCTION, DIFFERENCE_LABEL, MEDICARE_FIGURE_LABEL, MEDICARE_LINE_LABEL, productLabel } from '../../lib/screening/labels';
 import { StatusChip } from '../status';
 import { ScreeningCount, ScreeningMoney, differenceWords } from './result-summary';
 
 /**
  * A screening's anomalies by code and payer product, and its top rows (Change Order 001, CO-04). Each group is the
- * Medicare-priced rows of one code under one payer product, summed by the database; it is an anomaly when the file's
- * allowed total is below the Medicare figure by at least $5 a claim line (ADR 0038's default threshold), a flag the
- * database sets, never this screen. Status shows as a labelled chip, never color alone. Expected, allowed and the
- * difference appear in that order, each in the mono face.
+ * Medicare-priced rows of one code under one payer product, summed by the database. Below the Medicare figure by at
+ * least $5 a claim line (ADR 0038's default threshold) is an anomaly only for a code outside the reduction across a
+ * visit's codes; for a code in it, the figure priced alone is before that reduction, so the group is shown as below
+ * the figure before the reduction, never as an anomaly. Both flags are the database's, never this screen's. Every
+ * figure built from the Medicare figure (the line, the row's, the difference) carries D19's qualifier, "before the
+ * reduction across codes". Status shows as a labelled chip, never color alone. Expected, allowed and the difference
+ * appear in that order, each in the mono face.
  */
 
 export interface ScreeningGroup {
@@ -22,7 +25,10 @@ export interface ScreeningGroup {
   readonly expectedCents: Cents;
   readonly observedCents: Cents;
   readonly differenceCents: Cents;
+  /** Below by at least $5 a claim line, for a code outside the reduction across codes (the database's flag). */
   readonly anomaly: boolean;
+  /** Below by at least $5 a claim line, for a code in the reduction across codes: before it, never an anomaly. */
+  readonly belowBeforeReduction: boolean;
 }
 
 export interface ScreeningRow {
@@ -46,12 +52,19 @@ const HEAD_NUMBER = 'py-1 pr-3 text-right font-medium';
 const CELL = 'py-1 pr-3';
 const CELL_NUMBER = 'py-1 pr-3 text-right';
 
-/** A group's status: an anomaly, or where its total sits, always in words. */
+/** A group's status: an anomaly, below before the reduction across codes, or where its total sits, always in words. */
 function GroupStatus({ group }: { readonly group: ScreeningGroup }) {
   if (group.anomaly) {
     return (
       <StatusChip tone="short" data-anomaly="true">
         Anomaly: below the Medicare figure
+      </StatusChip>
+    );
+  }
+  if (group.belowBeforeReduction) {
+    return (
+      <StatusChip tone="neutral" data-anomaly="false" data-before-reduction="true">
+        Below the Medicare figure {BEFORE_REDUCTION}
       </StatusChip>
     );
   }
@@ -62,17 +75,27 @@ function GroupStatus({ group }: { readonly group: ScreeningGroup }) {
   );
 }
 
-export function ScreeningAnomalies({ groups }: { readonly groups: readonly ScreeningGroup[] }) {
+/** What the anomalies card says above its table: how many groups are anomalies, and how many are below only before the reduction. */
+export function anomaliesDescription(groups: readonly ScreeningGroup[]): string {
+  if (groups.length === 0) {
+    return 'No row was priced under Medicare, so there is nothing to compare.';
+  }
   const anomalies = groups.filter((group) => group.anomaly).length;
+  const pooled = groups.filter((group) => group.belowBeforeReduction).length;
+  const first = `${counted(anomalies, 'group')} of ${String(groups.length)} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}: the allowed total in your file is below the Medicare figure by at least $5 a claim line, for a code the reduction across codes does not touch.`;
+  const second =
+    pooled === 0
+      ? ''
+      : ` ${counted(pooled, 'more group')} ${pooled === 1 ? 'is' : 'are'} below by at least $5 a claim line ${BEFORE_REDUCTION}: Medicare reduces ${pooled === 1 ? 'its code' : 'their codes'} when a visit has several, which rows of totals cannot show, so that difference alone is not an anomaly.`;
+  return `${first}${second} Largest difference first.`;
+}
+
+export function ScreeningAnomalies({ groups }: { readonly groups: readonly ScreeningGroup[] }) {
   return (
     <Card data-section="anomalies">
       <CardHeader>
         <CardTitle id="screening-anomalies">Anomalies by code and payer product</CardTitle>
-        <CardDescription>
-          {groups.length === 0
-            ? 'No row was priced under Medicare, so there is nothing to compare.'
-            : `${counted(anomalies, 'group')} of ${String(groups.length)} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}: the allowed total in your file is below the Medicare figure by at least $5 a claim line. Largest difference first.`}
-        </CardDescription>
+        <CardDescription>{anomaliesDescription(groups)}</CardDescription>
       </CardHeader>
       <CardContent>
         {groups.length === 0 ? (
@@ -88,7 +111,7 @@ export function ScreeningAnomalies({ groups }: { readonly groups: readonly Scree
                   <th className={HEAD_NUMBER}>Claim lines</th>
                   <th className={HEAD_NUMBER}>{MEDICARE_FIGURE_LABEL}</th>
                   <th className={HEAD_NUMBER}>Allowed in your file</th>
-                  <th className={HEAD_NUMBER}>Difference</th>
+                  <th className={HEAD_NUMBER}>{DIFFERENCE_LABEL}</th>
                   <th className={HEAD_LAST}>Status</th>
                 </tr>
               </thead>
@@ -136,7 +159,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
         <CardDescription>
           {listed.length === 0
             ? 'No row was priced under Medicare.'
-            : `${listed.length === 1 ? 'The priced row' : `The ${String(listed.length)} priced rows with the largest differences, the largest first`}, each by its number in your file. A row is below the Medicare figure where its difference is above zero. The figure for one claim line is the engine’s, rounded once; the row’s figure is it times the claim count.`}
+            : `${listed.length === 1 ? 'The priced row' : `The ${String(listed.length)} priced rows with the largest differences, the largest first`}, each by its number in your file. A row is below the Medicare figure where its difference is above zero. The figure for one claim line is the engine’s, rounded once; the row’s figure is it times the claim count. Both are ${BEFORE_REDUCTION}, and so is the difference.`}
         </CardDescription>
       </CardHeader>
       {listed.length === 0 ? null : (
@@ -153,10 +176,10 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
                   <th className={HEAD}>Payer product</th>
                   <th className={HEAD}>Quarter</th>
                   <th className={HEAD_NUMBER}>Claims</th>
-                  <th className={HEAD_NUMBER}>One claim line</th>
+                  <th className={HEAD_NUMBER}>{MEDICARE_LINE_LABEL}</th>
                   <th className={HEAD_NUMBER}>{MEDICARE_FIGURE_LABEL}</th>
                   <th className={HEAD_NUMBER}>Allowed in your file</th>
-                  <th className="py-1 text-right font-medium">Difference</th>
+                  <th className="py-1 text-right font-medium">{DIFFERENCE_LABEL}</th>
                 </tr>
               </thead>
               <tbody>

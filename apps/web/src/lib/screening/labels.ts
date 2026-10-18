@@ -10,16 +10,29 @@ import { unpricedReasonText } from '../contracts/remedies';
  * between is the "difference". Plain data, safe to import in the browser.
  */
 
+/** What every Medicare figure, and every figure worked out from one, is qualified by (decision D19 a). */
+export const BEFORE_REDUCTION = 'before the reduction across codes';
+
 /**
  * The Medicare figure's label, shown wherever the figure appears (decision D19 a): each row is priced alone by the
  * unchanged engine, so the multiple procedure payment reduction across the codes of one visit is not applied, and
- * the figure overstates what a whole visit would price at.
+ * the figure can be higher than a visit with several codes would price at.
  */
-export const MEDICARE_FIGURE_LABEL = 'Expected under Medicare, before the reduction across codes';
+export const MEDICARE_FIGURE_LABEL = `Expected under Medicare, ${BEFORE_REDUCTION}`;
 
-/** Why the label says so, in one sentence, beside the figures. */
+/** The engine's figure for one claim line of a row: as much a Medicare figure, and as much before the reduction. */
+export const MEDICARE_LINE_LABEL = `One claim line, expected under Medicare, ${BEFORE_REDUCTION}`;
+
+/** The difference between the Medicare figure and the allowed amount in the file: worked out from the figure, so qualified as it is. */
+export const DIFFERENCE_LABEL = `Difference, ${BEFORE_REDUCTION}`;
+
+/**
+ * Why the labels say so, beside the figures: the reduction across codes, and the sequestration taken from the whole
+ * amount (a row of totals has no patient share), against an allowed amount that payers normally report before it
+ * (fixtures/golden/QUESTIONS.md, Q21).
+ */
 export const MEDICARE_FIGURE_NOTE =
-  'Each row is priced on its own under the Medicare physician fee schedule at your locality, with the therapy adjustments. The reduction Medicare applies across the codes of one visit cannot be seen in rows of totals, so the figure is before it and is higher than a whole visit would be.';
+  'Each row is priced on its own under the Medicare physician fee schedule at your locality, with the therapy adjustments. The reduction Medicare applies across the codes of one visit cannot be seen in rows of totals, so the figure is before it, and can be higher than a visit with several codes would price at. The figure is also after Medicare’s sequestration, taken from the whole amount, while the allowed amount in a payer’s remittance is normally before it, so a row paid in full can show its allowed amount about 2% above the figure.';
 
 /** That a screening is investigatory, never a contract figure (CO-04). */
 export const SCREENING_INVESTIGATORY_NOTE =
@@ -84,7 +97,7 @@ export const DISPOSITION_NOTES: Readonly<Record<ScreeningDisposition, string>> =
  */
 const DETAIL_LABELS: Readonly<Record<string, string>> = {
   place_of_service_unmapped: 'The place of service is not in the approved place-of-service split',
-  locality_needs_zip_plus_four: 'The ZIP needs its ZIP+4 to name a Medicare locality',
+  locality_needs_zip_plus_four: 'The ZIP spans two Medicare localities, which a free screening cannot price yet',
   no_locality: 'The ZIP has no Medicare locality on the quarter’s first day',
   no_gpci: 'No geographic adjustment for the locality in the year',
   no_conversion_factor: 'No conversion factor for the year',
