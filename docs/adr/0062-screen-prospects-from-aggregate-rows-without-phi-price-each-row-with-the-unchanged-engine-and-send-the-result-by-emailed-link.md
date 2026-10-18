@@ -2,8 +2,8 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-18
-- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams); the build (PR 6 of Change Order 001)
-- **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
+- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001)
+- **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
 
 ## Context
 
@@ -47,10 +47,15 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   mail service can send to (plain ASCII, an RFC 5322 dot-atom before the @, a dotted domain with no trailing dot
   after it). No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose `locality_map` record needs its ZIP+4
   is refused (`screening_zip_plus_four`, "a free screening cannot price one yet") rather than asked for four digits
-  nothing could use; the owner's ruling 3 keeps this refusal (see Owner rulings).
+  nothing could use. This pull request keeps the refusal until PR 6b lands: the founder's ruling of 11:47 UTC on
+  2026-10-18 supersedes ruling 3 and has ZIP+4 localities fixed before launch there (see Owner rulings).
 - `screening_upload`: the file's SHA-256, its row count, accepted or rejected, and the rejection reasons, which
   `screening_rejections_valid()` holds to at most 20 objects of a code, a column position, a row, a first row, a
-  field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored.
+  field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored. On an accepted
+  upload, three numbers of the rows of fewer than 11 claim lines the browser left out (`left_out_rows`,
+  `left_out_claim_lines`, `left_out_allowed_cents`): never which rows. Their CHECKs hold them to what a browser could
+  have counted (each row left out 1 to 10 claim lines, at most $25,000.00 a claim line, no more than 50,000 rows sent
+  and left out together) and to zero on a rejected upload.
 - `screening_place_of_service_split`: the platform's default facility or non-facility setting per place of
   service, approved by a contract specialist (`rate_record.approve`, the existing permission; the matrix is
   frozen until PR 14), append-only, the latest approval in force. A fifth table beside CO-12's four, because the
@@ -71,9 +76,9 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   expected_line_cents * claim_count` and `difference_cents = expected_cents - observed_allowed_cents`, give the
   fully reduced figure to a priced pooled row and to no other (`screening_result_reduced`), hold it to the same two
   equations and to at most the figure before the reduction (`screening_result_reduced_figures`), take only a real code's shape
-  (CPT Category I, II, III, PLA or MAAA, or HCPCS Level II: never five letters, which may be a name), at most
-  100,000 claim lines, and at most $25,000.00 of allowed amount a claim line (so an identifier typed under the
-  allowed total is refused, never kept as dollars).
+  (CPT Category I, II, III, PLA or MAAA, or HCPCS Level II: never five letters, which may be a name), at least 11 and
+  at most 100,000 claim lines (`screening_result_claim_count`; see the floor below), and at most $25,000.00 of
+  allowed amount a claim line (so an identifier typed under the allowed total is refused, never kept as dollars).
 
 Every row but the split expires 30 days after its upload: the reads refuse a run from its `expires_at` on, a delete
 before then is refused (`screening_kept_until_expiry`), and the `screening_expiry` job deletes prospect, upload, run
@@ -114,6 +119,46 @@ the file input has no name. The server checks the form's fields, the header name
 recorded by hash, count and coded reasons, and its messages name a column by position and kind ("Column 4 holds
 member IDs; remove it and upload again"), never a header or a cell, and tell a person to remove a column that is not
 one of the eight, never to rename it.
+
+**At least 11 claim lines a row (the founder's ruling of 2026-10-18 on the best-option audit's item 6).** A row of
+fewer, with its quarter beside the practice's name and ZIP, can be one patient's service line, which is not
+de-identified under HIPAA Safe Harbor, and a prospect has no business associate agreement. The floor is 11, the CMS
+small-cell standard (CMS suppresses a count of 1 to 10), and it is one setting, `SCREENING_MIN_CLAIM_LINES` in
+`format.ts`, enforced three times:
+
+- The browser (`screenTable`) checks every row as before, then leaves out each clean row of fewer than 11 claim
+  lines: it is never sent. A row left out is checked like any other first, so a day in its band still refuses the
+  file and a row repeating another's key is still a repeated row. The page says how many rows, claim lines and
+  dollars it left out (for example, "Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $436.84
+  allowed in your file. They are not sent, and no figure includes them"), and a file whose every row is left out is refused
+  with those numbers, since nothing is left to screen. The form sends the three numbers beside the rows it keeps.
+- The server (`decodeScreeningRows`) refuses a row of fewer than 11 claim lines that a request sent around the
+  browser, by its row number ("Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11, so that
+  no row can describe one patient's care: leave it out"), named with the patient information ahead of any other
+  problem. The refusal is recorded as any other is, by the file's hash, the row count and the coded reasons, here
+  `too_few_claim_lines` with the row and the field `claim_count` alone: nothing of the row's code, claim count,
+  quarter or dollars is stored or logged. It takes the browser's three numbers only when they are ones the browser could
+  have counted beside the rows sent (`leftOutPlausible`), and records nothing otherwise; blank is none.
+- The database refuses a stored row of fewer (`screening_result_claim_count`, `BETWEEN 11 AND 100000`), whoever
+  writes it, and `format.test.ts` holds that CHECK and the upload's left-out CHECKs to the setting.
+
+The result shows the rows left out as the browser counted them ("Left out before sending": rows, claim lines and
+allowed in your file), apart from every other figure, when there are any. The template's rules and the upload page
+state the floor in plain words ("Each row sums at least 11 claim lines. A row of fewer could describe one patient's
+care, so this page leaves it out before anything is sent and tells you how many rows, claim lines and dollars it
+left out"). The template file is the header line alone, since any other line would be read as a row of totals, so
+its rules stand beside it on the page and in its column guide. Counsel confirms the number, and whether it counts
+claim lines or patients: a plan of care can give one patient 11 lines in a quarter, and a row of totals cannot say
+how many patients its lines are. If counsel says patients, a patient-count column is added to the format and the
+row (a new migration) and the floor moves to it.
+
+**Denied lines out of every total (the founder's ruling of 2026-10-18 on the best-option audit's item 1, the
+template's part).** A denied line pays nothing for a reason that is not a rate (no authorization, a visit limit
+reached, a duplicate, timely filing, a service not covered), and a row of totals cannot say which of its lines were
+denied, so a denied line inside a row would read as a shortfall against Medicare. The template's rules and the
+upload page tell the prospect to leave denied lines out of every total, because a denial is not a rate variance;
+the column guide says so beside the allowed total and the claim count. Reading the payer's denial codes in the paid
+audit's triage is PR 6d, not this pull request.
 
 **Each row priced by the unchanged engine, alone and as a later code of a visit, its figure before sequestration
 read from the engine's trace, multiplied outside it (D19 a, D20 a; the owner's rulings 1 and 2 of 2026-10-18).**
@@ -192,7 +237,10 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 | Price a row's visit composition (D19 c), or show a range computed outside the engine (D19 b) | Asks the prospect for what an aggregate has not got, or computes a number outside the engine. The owner's ruling 1 gets the range from the engine itself: both ends are `price()` outputs. Revisit if prospects send visit-level aggregates. |
 | A fully reduced figure from a higher-valued pool code ahead of the row | Depends on which codes the release carries and their practice-expense parts at the place of service; the row's own code with one unit always ranks first by the engine's tie rule, and the second line's cut is its own whatever ranks first. |
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
-| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`); the owner's ruling 3 keeps the refusal; an engine change, separately approved, is revisited when release 1's real locality map loads. |
+| Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. |
+| Keep a row of fewer than 11 claim lines and hide it in the result | It would still be stored: one patient's service line in tables built as non-PHI, from a prospect with no BAA. |
+| Refuse a whole file in the browser when a row is small | A practice's file of totals has many small cells (a rare code, a quarter's tail); refusing it would turn most prospects away for rows that are left out safely. The founder ruled to leave them out and say how much was left out. |
+| Count patients rather than claim lines | A row of totals has no patient count. Counsel decides; if counsel says patients, a patient-count column is added and the floor moves to it. |
 | Infer the product from payer names (D20 b), or price everything as MA non-contracted (D20 c) | A guess about a contract; MA contracted rows must never price as non-contracted. |
 | Rate-limit by domain and IP only (D21 b) | Every gmail.com prospect would share one count. |
 | Show the result in the browser only (D21 c) | Nothing verifies the contact, and the result could not be reopened. |
@@ -217,8 +265,17 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 - A ZIP whose `locality_map` record needs its ZIP+4 is refused, with the message that a free screening cannot price
   one yet, and no ZIP+4 is asked for or kept: the engine takes a five-digit ZIP alone (`PracticeSettings.zip`) and
   stops with `ENGINE_ERROR locality_needs_zip_plus_four` for such a locality, so D20's "ZIP+4 asked only where
-  `locality_map` requires it" is not met. The owner's ruling 3 keeps the refusal; an engine change, separately
-  approved, is revisited when release 1's real locality map loads.
+  `locality_map` requires it" is not met by this pull request. The founder's ruling of 11:47 UTC on 2026-10-18
+  supersedes ruling 3: PR 6b meets it before launch, and the refusal stays in this pull request's code until PR 6b
+  lands.
+- A row of fewer than 11 claim lines is never sent, stored or priced (the founder's ruling on the audit's item 6):
+  the browser leaves it out and counts it, the server refuses one sent around the browser by its row number, and the
+  database refuses one stored. A practice whose rows are mostly small sees much of its file left out, with the rows,
+  claim lines and dollars left out said in the browser and on the result. Whether 11 counts lines or patients waits
+  for counsel; until then a row of 11 or more lines can still be one patient's plan of care.
+- The template and the upload page tell the prospect to leave denied lines out of every total (the founder's ruling
+  on the audit's item 1); a file that keeps them shows them as a difference below the Medicare figure, which the
+  screening cannot tell from a rate variance. The paid audit's triage of denials is PR 6d.
 - A result priced under a rule release since withdrawn says so above its figures and may still be converted to an
   audit request, which prices nothing from the screening (the owner's ruling 4).
 - The platform split is a fifth table the domain model shows as a divergence from CO-12; approving the document
@@ -230,7 +287,13 @@ without a contract". The copy lint reads the screening paths, the worker's scree
   the range) and more than $5 a line below the fully reduced one (an anomaly), 97161 with one figure, a row allowed in
   full at the figure before sequestration with no difference (`adapter.test.ts`, `screening.db.test.ts`); a ZIP
   needing its ZIP+4 refused (`routes.db.test.ts`, `screening.db.test.ts`); a result under a withdrawn release
-  converted with its notice (`routes.db.test.ts`, `screening.db.test.ts`).
+  converted with its notice (`routes.db.test.ts`, `screening.db.test.ts`). The floor, SCR-07: 10 claim lines left out
+  and 11 kept in the browser, with the rows, claim lines and dollars left out counted to the cent (`format.test.ts`,
+  `parse.test.ts`), refused at 10 and taken at 11 by the server's decode and route, a direct POST around the browser
+  with a row of one claim line refused by its row number and storing nothing of the row (`routes.db.test.ts`), the
+  CHECK refusing 1 and 10 and taking 11, and the left-out numbers held to what a browser could count
+  (`packages/db/src/screening.db.test.ts`), the result's card (`result.test.tsx`) and the journey, which leaves two
+  small rows out of what it sends (`e2e/screening.spec.ts`).
 
 ## Owner rulings (2026-10-18)
 
@@ -253,16 +316,36 @@ The questions this pull request put to the owner, ruled by the founder, Tyler Wi
    computed in its place.
 3. **ZIP+4.** Screening keeps refusing a ZIP whose locality needs its ZIP+4, with the clear message; an engine change is
    revisited when release 1's real locality map loads. *Built:* unchanged (`screening_zip_plus_four`).
+   *Superseded at 11:47 UTC on 2026-10-18 by the founder, Tyler Williams:* ZIP+4 localities are fixed before launch in
+   their own pull request, PR 6b: practice settings and the screening accept a ZIP+4, the engine resolves the locality
+   from it, five-digit ZIPs and the golden lines are unchanged, and the change order's engine freeze is loosened for
+   that lookup only. This pull request keeps the refusal in its code until PR 6b lands.
 4. **A withdrawn release.** A result priced under a release later withdrawn keeps its notice and may still be converted
    to an audit request (the audit prices nothing from the screening). *Built:* unchanged, now tested.
 
+The founder's approval of 2026-10-18 after the best-option audit of that day (its items 6 and 1), by the founder,
+Tyler Williams, under the standing rule of that day (choose the best option for accuracy, quality, user
+experience, privacy and compliance, never weighted by build effort):
+
+5. **At least 11 claim lines a row (audit item 6, critical).** One setting enforced in the browser, in the server's
+   check and in a database rule; the browser leaves small rows out before sending and says how many rows, claim
+   lines and dollars it left out, and the result says so too; a request around the browser is refused with the row
+   numbers, and nothing about the refused rows is stored but what the rejection reasons allow; the template and the
+   upload page state the floor in plain words; counsel confirms the number and whether it counts lines or patients.
+   *Built:* the floor above, SCR-07.
+6. **Denied lines (audit item 1, the template's part).** The screening template and the upload page tell prospects
+   to leave denied lines (zero-paid for authorization, visit limit, duplicate, timely filing, not covered) out of
+   their totals, because a denial is not a rate variance. *Built:* the template's rules and its column guide; the
+   triage change is PR 6d.
+
 What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
-sequestration, the comparison is put to the owner again); the engine change for ZIP+4 localities,
-when release 1's locality map loads; and visit-level aggregates (see Revisit when).
+sequestration, the comparison is put to the owner again); ZIP+4 localities, in PR 6b before launch; counsel's answer
+on the floor (the number, and lines or patients); and visit-level aggregates (see Revisit when).
 
 ## Revisit when
 
-Release 1 is published (screening opens), and its real locality map loads (the owner's ruling 3: ZIP+4 localities
-and the engine); the reimbursement specialist answers Q21 (the owner's ruling 2: which figure a payer's allowed
-amount is compared with); prospects ask for visit-level aggregates (the reduction across codes); or the permission
-matrix gains a dedicated permission for platform pricing defaults (PR 14).
+Release 1 is published (screening opens); PR 6b lands (ZIP+4 localities: the refusal here is replaced); counsel
+answers on the floor (the number, and whether it counts claim lines or patients); the reimbursement specialist
+answers Q21 (the owner's ruling 2: which figure a payer's allowed amount is compared with); prospects ask for
+visit-level aggregates (the reduction across codes); or the permission matrix gains a dedicated permission for
+platform pricing defaults (PR 14).
