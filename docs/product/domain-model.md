@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `c594c17a419c13773bf4e6a58635f4fdc2f5f710` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `bd3c98f37f83544fc3bb2e3851a0cead473f4ac5` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261104090000_free_screening.sql`
 - PostgreSQL 18; schema `public`: 84 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 28 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -4522,10 +4522,9 @@ Invariants enforced by triggers:
 | 2 | `practice_name` | `text` | NOT NULL |  |  | `20261104090000` |  |
 | 3 | `state` | `text` | NOT NULL |  |  | `20261104090000` | one of AL, AK, AZ, AR, CA, CO, CT, DE, FL, GA, HI, ID, IL, IN, IA, KS, KY, LA, ME, MD, MA, MI, MN, MS, MO, MT, NE, NV, NH, NJ, NM, NY, NC, ND, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VT, VA, WA, WV, WI, WY, DC, PR, VI, GU, AS, MP |
 | 4 | `zip` | `text` | NOT NULL |  |  | `20261104090000` |  |
-| 5 | `zip_plus_four` | `text` | null |  |  | `20261104090000` |  |
-| 6 | `contact_email` | `text` | NOT NULL |  |  | `20261104090000` |  |
-| 7 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
-| 8 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
+| 5 | `contact_email` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 6 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 7 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
 
 Keys:
 - Primary: (id)
@@ -4539,12 +4538,11 @@ Policies (1):
   - WITH CHECK `true`
 
 Invariants enforced by constraints:
-- `screening_prospect_contact_email`: `CHECK (contact_email ~ '^[^@ ]+@[^@ ]+$'::text AND length(contact_email) <= 254 AND contact_email = lower(contact_email))`
+- `screening_prospect_contact_email`: `CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_'{\|}~-]+(\.[a-z0-9!#$%&''*+/=?^_'{\|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'::text AND length(contact_email) <= 254 AND strpos(contact_email, '@'::text) <= 65 AND contact_email = lower(contact_email))`
 - `screening_prospect_expiry`: `CHECK (expires_at = (created_at + '30 days'::interval))`
 - `screening_prospect_practice_name`: `CHECK (btrim(practice_name) <> ''::text AND length(practice_name) <= 200 AND practice_name = btrim(practice_name))`
 - `screening_prospect_state`: `CHECK (state = ANY (ARRAY['AL'::text, 'AK'::text, 'AZ'::text, 'AR'::text, 'CA'::text, 'CO'::text, 'CT'::text, 'DE'::text, 'FL'::text, 'GA'::text, 'HI'::text, 'ID'::text, 'IL'::text, 'IN'::text, 'IA'::text, 'KS'::text, 'KY'::text, 'LA'::text, 'ME'::text, 'MD'::text, 'MA'::text, 'MI'::text, 'MN'::text, 'MS'::text, 'MO'::text, 'MT'::text, 'NE'::text, 'NV'::text, 'NH'::text, 'NJ'::text, 'NM'::text, 'NY'::text, 'NC'::text, 'ND'::text, 'OH'::text, 'OK'::text, 'OR'::text, 'PA'::text, 'RI'::text, 'SC'::text, 'SD'::text, 'TN'::text, 'TX'::text, 'UT'::text, 'VT'::text, 'VA'::text, 'WA'::text, 'WV'::text, 'WI'::text, 'WY'::text, 'DC'::text, 'PR'::text, 'VI'::text, 'GU'::text, 'AS'::text, 'MP'::text]))`
 - `screening_prospect_zip`: `CHECK (zip ~ '^[0-9]{5}$'::text)`
-- `screening_prospect_zip_plus_four`: `CHECK (zip_plus_four ~ '^[0-9]{4}$'::text)`
 
 Invariants enforced by triggers:
 - `screening_prospect_fixed`: `BEFORE UPDATE ON screening_prospect FOR EACH ROW EXECUTE FUNCTION reject_change()`
@@ -4749,9 +4747,10 @@ Invariants enforced by triggers:
 | 13 | `expected_line_unrounded` | `numeric` | null |  |  | `20261104090000` |  |
 | 14 | `expected_cents` | `bigint` | null |  |  | `20261104090000` |  |
 | 15 | `difference_cents` | `bigint` | null |  |  | `20261104090000` |  |
-| 16 | `unpriced_reason` | `text` | null |  |  | `20261104090000` | one of NO_AGREEMENT, NO_MAPPING, AMBIGUOUS_RATE, NO_RATE_FOR_CODE, NO_PFS_VALUE, UNSUPPORTED_METHOD, SECONDARY_PAYER, MUE_EXCEEDED, UNITS_RULE_UNKNOWN, DATE_OUTSIDE_VERSIONS, REVERSED_CLAIM, ENGINE_ERROR |
-| 17 | `unpriced_detail` | `text` | null |  |  | `20261104090000` |  |
-| 18 | `trace_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 16 | `in_reduction_pool` | `boolean` | null |  |  | `20261104090000` |  |
+| 17 | `unpriced_reason` | `text` | null |  |  | `20261104090000` | one of NO_AGREEMENT, NO_MAPPING, AMBIGUOUS_RATE, NO_RATE_FOR_CODE, NO_PFS_VALUE, UNSUPPORTED_METHOD, SECONDARY_PAYER, MUE_EXCEEDED, UNITS_RULE_UNKNOWN, DATE_OUTSIDE_VERSIONS, REVERSED_CLAIM, ENGINE_ERROR |
+| 18 | `unpriced_detail` | `text` | null |  |  | `20261104090000` |  |
+| 19 | `trace_sha256` | `text` | null |  |  | `20261104090000` |  |
 
 Keys:
 - Primary: (run_id, row_no)
@@ -4767,18 +4766,18 @@ Policies (1):
   - WITH CHECK `true`
 
 Invariants enforced by constraints:
-- `screening_result_claim_count`: `CHECK (claim_count >= 1 AND claim_count <= 1000000)`
+- `screening_result_claim_count`: `CHECK (claim_count >= 1 AND claim_count <= 100000)`
 - `screening_result_contract_required`: `CHECK ((payer_product = ANY (ARRAY['ma_contracted'::text, 'commercial'::text])) = (disposition = 'contract_required'::text))`
 - `screening_result_disposition`: `CHECK (disposition = ANY (ARRAY['pending'::text, 'priced'::text, 'unpriced'::text, 'rates_change_in_band'::text, 'contract_required'::text, 'not_screened'::text]))`
 - `screening_result_figures`: `CHECK (disposition <> 'priced'::text OR expected_line_cents >= 0 AND abs(expected_line_unrounded - expected_line_cents::numeric) < 1::numeric AND expected_cents = (expected_line_cents * claim_count) AND difference_cents = (expected_cents - observed_allowed_cents))`
 - `screening_result_medicare`: `CHECK ((payer_product <> ALL (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text])) OR (disposition = ANY (ARRAY['pending'::text, 'priced'::text, 'unpriced'::text, 'rates_change_in_band'::text])))`
 - `screening_result_modifiers`: `CHECK (screening_modifiers_valid(modifiers))`
 - `screening_result_not_screened`: `CHECK ((payer_product = ANY (ARRAY['medicaid'::text, 'other'::text])) = (disposition = 'not_screened'::text))`
-- `screening_result_observed`: `CHECK (observed_allowed_cents >= 0 AND observed_allowed_cents <= '99999999999'::bigint)`
+- `screening_result_observed`: `CHECK (observed_allowed_cents >= 0 AND observed_allowed_cents <= '99999999999'::bigint AND observed_allowed_cents <= (2500000::bigint * claim_count))`
 - `screening_result_payer_product`: `CHECK (payer_product = ANY (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text, 'ma_contracted'::text, 'commercial'::text, 'medicaid'::text, 'other'::text]))`
 - `screening_result_place_of_service`: `CHECK (place_of_service ~ '^(0[1-9]\|[1-9][0-9])$'::text)`
-- `screening_result_priced`: `CHECK ((disposition = 'priced'::text) = (expected_line_cents IS NOT NULL) AND (disposition = 'priced'::text) = (expected_line_unrounded IS NOT NULL) AND (disposition = 'priced'::text) = (expected_cents IS NOT NULL) AND (disposition = 'priced'::text) = (difference_cents IS NOT NULL))`
-- `screening_result_procedure_code`: `CHECK (procedure_code ~ '^[0-9A-Z]{5}$'::text)`
+- `screening_result_priced`: `CHECK ((disposition = 'priced'::text) = (expected_line_cents IS NOT NULL) AND (disposition = 'priced'::text) = (expected_line_unrounded IS NOT NULL) AND (disposition = 'priced'::text) = (expected_cents IS NOT NULL) AND (disposition = 'priced'::text) = (difference_cents IS NOT NULL) AND (disposition = 'priced'::text) = (in_reduction_pool IS NOT NULL))`
+- `screening_result_procedure_code`: `CHECK (procedure_code ~ '^([0-9]{4}[0-9FMTU]\|[A-V][0-9]{4})$'::text)`
 - `screening_result_row_no`: `CHECK (row_no >= 1 AND row_no <= 50000)`
 - `screening_result_service_band`: `CHECK (service_band ~ '^20[0-9]{2}-Q[1-4]$'::text)`
 - `screening_result_trace`: `CHECK ((disposition = ANY (ARRAY['priced'::text, 'unpriced'::text, 'rates_change_in_band'::text])) = (trace_sha256 IS NOT NULL))`
@@ -5949,13 +5948,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_practice_administrator_emails(uuid)` | `TABLE(email text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `e66800658c20c850` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_record_support_notice(uuid,text,text)` | `TABLE(recorded boolean, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `cd723eaf7325fa60` |
-| `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, zip text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `68722215943cf13e` |
+| `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `bd1872d80d9defc5` |
 | `operator_screening_complete(uuid,text,text,text)` | `TABLE(contact_email text, row_count integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `bbebaad106b62e92` |
 | `operator_screening_due(integer,integer)` | `TABLE(run_id uuid, status text, attempts integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6fcad5f2528ea9e3` |
 | `operator_screening_expire(integer,text)` | `TABLE(prospects integer, runs integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `124030b5627f7ee4` |
 | `operator_screening_fail(uuid,text,text)` | `TABLE(contact_email text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `5c89cb44346a8629` |
-| `operator_screening_record(uuid,integer[],text[],bigint[],numeric[],bigint[],bigint[],text[],text[],text[])` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `418414fb1522d643` |
-| `operator_screening_release(uuid)` | `TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `9c459103e71043bc` |
+| `operator_screening_record(uuid,integer[],text[],bigint[],numeric[],bigint[],bigint[],boolean[],text[],text[],text[])` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `be55906e3cb89def` |
+| `operator_screening_release(uuid)` | `TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `257407132c673007` |
 | `operator_screening_rows(uuid,integer,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `088304edaf070fb6` |
 | `operator_support_mail_read(text[])` | `TABLE(mail_ref text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `da2a6ab110478618` |
 | `organization_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `45fcaf44bc28ae33` |
@@ -6026,7 +6025,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `record_sign_in_with_mfa()` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `33357d6149a90f6c` |
 | `refuse_new_work_while_suspended()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0a92559e621ef0f0` |
 | `reject_change()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `9a6259207407034b` |
-| `reject_screening_upload(text,text,text,text,text,text,integer,jsonb,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `75684cb7a9eecdb2` |
+| `reject_screening_upload(text,text,text,text,text,integer,jsonb,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7bd6f8bcb346f63c` |
 | `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `e23bac606a695625` |
 | `report_document_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1f2bfc271aad9a0c` |
 | `report_document_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a4415278b751e6c5` |
@@ -6046,11 +6045,11 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `screening_rejection_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `ed904bfa21f7e12b` |
 | `screening_rejections_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `44d088a7b92201f1` |
 | `screening_result_coverage(text)` | `TABLE(payer_product text, disposition text, unpriced_reason text, unpriced_detail text, rows integer, claim_lines bigint, observed_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d0ded51d5c43a4fd` |
-| `screening_result_groups(text)` | `TABLE(payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, observed_cents bigint, difference_cents bigint, anomaly boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c343794f4aeab0b3` |
+| `screening_result_groups(text)` | `TABLE(payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, observed_cents bigint, difference_cents bigint, anomaly boolean, in_reduction_pool boolean, below_before_reduction boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8a2a85c2306cc4d4` |
 | `screening_result_inserted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f556a1e47dc13dee` |
 | `screening_result_rows(text,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a60b982b28b914bb` |
 | `screening_result_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `740dacdcc9915f56` |
-| `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, converted boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8d8e847432298e19` |
+| `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, converted boolean, release_withdrawn boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4601b467adadf350` |
 | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8ea20634148c36b8` |
 | `screening_split_in_force()` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `32bb20f8a402f18e` |
 | `screening_split_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `44ae8e24ea5d8386` |
@@ -6072,7 +6071,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
-| `submit_screening(text,text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f3141b82253a8643` |
+| `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c5b84d3f0f58bed8` |
 | `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24615116b611dcb0` |
 | `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9bff8d1f6d16f0e6` |
 | `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e2ccf3fc52ddc22` |
@@ -6146,7 +6145,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261104090000_free_screening.sql` | ADR 0062 | `23cc03b5bf2788ca9586ce7cf44e671dacb0c2d7abce1db4059dadbf70e5554f` |
+| 41 | `20261104090000_free_screening.sql` | ADR 0062 | `2f7e14cd611b4f9dba75540cadfd25d2005108bd364579c1f7f0ac8bb44e8d4c` |
 
 ## Cross-checks
 
@@ -6164,4 +6163,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261104090000_free_screening.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `e2b1394e3dca246dda093bc3a5a53fc9c98b78727829c766a727ed28d4ddceae`
+Approved by: ________  Date: ________  Document SHA-256: `3b2e537fc1b6cd5c0d6e9bb03713c12f112cac774d546a07ed43ccec2782a3fd`
