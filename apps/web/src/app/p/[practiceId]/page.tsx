@@ -3,13 +3,13 @@ import { STAGE_LABELS } from '@tp/triage';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { Figure, PricedShare } from '../../../components/coverage/share';
 import { roleNames, utc, utcDate } from '../../../components/format';
 import { NotificationText } from '../../../components/monitoring/display';
 import { proofLevelWords, recoveredLabel } from '../../../components/reconciliation/display';
 import { Money } from '../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../components/shell';
 import { loadPage } from '../../../lib/http/next';
-import { shareOf } from '../../../lib/pricing/view';
 import { DEADLINE_WINDOW_DAYS, type Queues } from '../../../lib/dashboard/queries';
 import { stageLinesHref } from '../../../lib/reports/links';
 import { practiceHome } from '../../../lib/routes/practice';
@@ -294,8 +294,12 @@ export default async function PracticePage(props: { readonly params: Promise<{ p
                     </>
                   ) : (
                     <Link className="underline" href={`/p/${practice.id}/coverage`}>
-                      {dashboard.coverage.pricedLines} of {dashboard.coverage.lines} lines priced ({shareOf(dashboard.coverage.pricedLines, dashboard.coverage.lines)}), <Money value={dashboard.coverage.pricedChargeCents} /> of{' '}
-                      <Money value={dashboard.coverage.chargeCents} /> billed, in the run of {dashboard.coverage.periodFrom} to {dashboard.coverage.periodTo}
+                      <PricedShare
+                        priced={{ lines: dashboard.coverage.pricedLines, chargeCents: dashboard.coverage.pricedChargeCents }}
+                        of={{ lines: dashboard.coverage.lines, chargeCents: dashboard.coverage.chargeCents }}
+                      />
+                      , each line at its pricing in effect, across <Figure>{dashboard.coverage.runs}</Figure> {dashboard.coverage.runs === 1 ? 'run' : 'runs'} in effect (service{' '}
+                      {dashboard.coverage.periodFrom} to {dashboard.coverage.periodTo})
                     </Link>
                   )}
                 </dd>

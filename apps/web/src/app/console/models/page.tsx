@@ -93,16 +93,16 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
             <table className="w-full text-left text-sm" aria-label="Model flags">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Flag</th>
-                  <th className="py-1 font-medium">Applies to</th>
+                  <th className="py-1 pr-3 font-medium">Flag</th>
+                  <th className="py-1 pr-3 font-medium">Applies to</th>
                   <th className="py-1 font-medium">Value</th>
                 </tr>
               </thead>
               <tbody>
                 {flags.map((flag) => (
                   <tr key={`${flag.key}-${flag.scope}-${flag.scopeId ?? 'global'}`} className="border-t">
-                    <td className="py-1">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
-                    <td className="py-1">{flag.appliesTo}</td>
+                    <td className="py-1 pr-3">{keys.find((key) => key.value === flag.key)?.label ?? flag.key}</td>
+                    <td className="py-1 pr-3">{flag.appliesTo}</td>
                     <td className={flag.key === 'model.daily_budget_cents' ? 'py-1 font-mono tabular-nums' : 'py-1'}>{flag.key === 'model.daily_budget_cents' ? usd(flag.value) : flag.value}</td>
                   </tr>
                 ))}
@@ -120,20 +120,20 @@ export default async function ConsoleModelsPage(props: { readonly searchParams: 
           <table className="w-full text-left text-sm" aria-label="Model spend by practice">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Practice</th>
-                <th className="py-1 text-right font-medium">Calls</th>
-                <th className="py-1 text-right font-medium">Spent</th>
-                <th className="py-1 text-right font-medium">Budget</th>
+                <th className="py-1 pr-3 font-medium">Practice</th>
+                <th className="py-1 pr-3 text-right font-medium">Calls</th>
+                <th className="py-1 pr-3 text-right font-medium">Spent</th>
+                <th className="py-1 pr-3 text-right font-medium">Budget</th>
                 <th className="py-1 font-medium">State</th>
               </tr>
             </thead>
             <tbody>
               {spend.map((row) => (
                 <tr key={row.practiceId} className="border-t" data-practice-spend={row.practiceId}>
-                  <td className="py-1">{row.name}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">{row.calls}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">{usd(row.spentCents)}</td>
-                  <td className="py-1 text-right font-mono tabular-nums">{usd(row.budgetCents)}</td>
+                  <td className="py-1 pr-3">{row.name}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{row.calls}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.spentCents)}</td>
+                  <td className="py-1 pr-3 text-right font-mono tabular-nums">{usd(row.budgetCents)}</td>
                   <td className="py-1">
                     {row.killSwitch ? (
                       <Badge variant="destructive">Switched off</Badge>

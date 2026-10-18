@@ -92,22 +92,22 @@ export default async function AgreementsSettingsPage(props: { readonly params: P
             <table className="w-full text-left text-sm" aria-label="Grants">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Organization</th>
-                  <th className="py-1 font-medium">Roles</th>
-                  <th className="py-1 font-medium">From</th>
-                  <th className="py-1 font-medium">Until</th>
+                  <th className="py-1 pr-3 font-medium">Organization</th>
+                  <th className="py-1 pr-3 font-medium">Roles</th>
+                  <th className="py-1 pr-3 font-medium">From</th>
+                  <th className="py-1 pr-3 font-medium">Until</th>
                   <th className="py-1 font-medium">State</th>
                 </tr>
               </thead>
               <tbody>
                 {grants.map((grant) => (
                   <tr key={grant.id} className="border-t">
-                    <td className="py-1">
+                    <td className="py-1 pr-3">
                       {grant.granteeName} <span className="text-xs text-muted-foreground">({grant.granteeKind})</span>
                     </td>
-                    <td className="py-1">{roleNames(grant.roles)}</td>
-                    <td className="py-1">{utcDate(grant.startsAt)}</td>
-                    <td className="py-1">{utcDate(grant.endsAt)}</td>
+                    <td className="py-1 pr-3">{roleNames(grant.roles)}</td>
+                    <td className="py-1 pr-3">{utcDate(grant.startsAt)}</td>
+                    <td className="py-1 pr-3">{utcDate(grant.endsAt)}</td>
                     <td className="py-1">{grant.revokedAt !== null ? `revoked ${utcDate(grant.revokedAt)}` : grant.inForce ? 'in force' : 'not in force'}</td>
                   </tr>
                 ))}

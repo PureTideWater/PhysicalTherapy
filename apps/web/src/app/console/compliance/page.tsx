@@ -200,18 +200,18 @@ export default async function CompliancePage(props: { readonly searchParams: Pro
           <table className="w-full text-left text-sm" aria-label="Evidence records">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">What</th>
-                <th className="py-1 font-medium">Subject</th>
-                <th className="py-1 font-medium">On</th>
+                <th className="py-1 pr-3 font-medium">What</th>
+                <th className="py-1 pr-3 font-medium">Subject</th>
+                <th className="py-1 pr-3 font-medium">On</th>
                 <th className="py-1 font-medium">Reference</th>
               </tr>
             </thead>
             <tbody>
               {records.map((record) => (
                 <tr key={record.id} className="border-t">
-                  <td className="py-1">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
-                  <td className="py-1 font-mono text-xs">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</td>
-                  <td className="py-1">{record.occurredOn}</td>
+                  <td className="py-1 pr-3">{recordKinds.find((kind) => kind.value === record.kind)?.label ?? record.kind}</td>
+                  <td className="py-1 pr-3 font-mono text-xs">{workforce.find((member) => member.userId === record.subject)?.email ?? record.subject}</td>
+                  <td className="py-1 pr-3">{record.occurredOn}</td>
                   <td className="py-1 font-mono text-xs" title={record.sha256}>
                     {record.documentRef}
                   </td>

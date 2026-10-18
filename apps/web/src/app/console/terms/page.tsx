@@ -31,22 +31,22 @@ export default async function ConsoleTermsPage() {
         <table className="w-full text-left text-sm" aria-label="Terms versions">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Version</th>
-              <th className="py-1 font-medium">Published</th>
-              <th className="py-1 font-medium">Document</th>
-              <th className="py-1 font-medium">SHA-256</th>
+              <th className="py-1 pr-3 font-medium">Version</th>
+              <th className="py-1 pr-3 font-medium">Published</th>
+              <th className="py-1 pr-3 font-medium">Document</th>
+              <th className="py-1 pr-3 font-medium">SHA-256</th>
               <th className="py-1 font-medium">Acceptances</th>
             </tr>
           </thead>
           <tbody>
             {versions.map((version) => (
               <tr key={version.id} className="border-t">
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   {version.version} {version.inForce ? <Badge variant="outline">in force</Badge> : null}
                 </td>
-                <td className="py-1">{utc(version.publishedAt)}</td>
-                <td className="py-1 font-mono text-xs">{version.documentRef}</td>
-                <td className="py-1 font-mono text-xs" title={version.sha256}>
+                <td className="py-1 pr-3">{utc(version.publishedAt)}</td>
+                <td className="py-1 pr-3 font-mono text-xs">{version.documentRef}</td>
+                <td className="py-1 pr-3 font-mono text-xs" title={version.sha256}>
                   {version.sha256.slice(0, 12)}…
                 </td>
                 <td className="py-1 font-mono tabular-nums">{version.acceptances}</td>

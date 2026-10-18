@@ -11,7 +11,8 @@ import { UNPRICED_REMEDIES } from './remedies';
 
 /**
  * The v1 reports' printed documents (PRD 5, J12; PRD 6, Reports and exports; PRD 7, Reports;
- * docs/adr/0040 and 0045): the coverage report (the Coverage screen of the run in effect) and a
+ * docs/adr/0040 and 0045): the coverage report (the Coverage screen: each line at its pricing in effect,
+ * across the runs in effect) and a
  * month's variance summary. A person generates one in the web app, which reads its figures with the
  * screens' own queries and stores them as generated (report_document.content); the worker prints the
  * stored figures to PDF through the audit report's Chromium pipeline, and the CSV is computed from the
@@ -39,14 +40,20 @@ export const coverageReportSchema = z.strictObject({
   format: z.literal(COVERAGE_REPORT_FORMAT),
   /** The day (UTC) its figures were read. */
   generated_on: day,
-  /** The run in effect its shares and reasons come from; null before any run took effect. */
+  /** The run in effect that took effect last; null before any run took effect. */
   run: z.strictObject({ id: z.uuid(), period_from: day, period_to: day, release_no: z.number().int().positive(), completed_at: z.string() }).nullable(),
+  /**
+   * The runs in effect the shares and reasons read, each line at its pricing in effect, and the service
+   * dates they cover; null before any run took effect. Absent in a report generated before shares read
+   * every run in effect, whose shares and reasons were the run's alone.
+   */
+  runs_in_effect: z.strictObject({ runs: z.number().int().positive(), period_from: day, period_to: day }).nullable().optional(),
   /** Every line the practice holds. */
   lines: totals,
-  /** The run's lines priced, and the lines and billed dollars they are a share of (the run's, or every line's before a run). */
+  /** The lines priced, and the lines and billed dollars they are a share of (every line the runs in effect priced, or every line's before a run). */
   priced: z.strictObject({ lines: count, charge_cents: nonNegativeCents }),
   of: z.strictObject({ lines: count, charge_cents: nonNegativeCents }),
-  /** Every reason of the closed list, in its order, with the run's count of it (zero before a run). */
+  /** Every reason of the closed list, in its order, with its count of lines unpriced in effect (zero before a run). */
   reasons: z.array(z.strictObject({ reason: z.enum(UNPRICED_REASONS), lines: count })).length(UNPRICED_REASONS.length),
   /** Lines with no mapping on their service date, in all and by plan, the most billed first. */
   waiting: totals,
@@ -153,6 +160,20 @@ export function coverageReportCsv(content: CoverageReportContent): string {
       { number: '' },
       { number: '' },
     ],
+    ...(content.runs_in_effect === undefined || content.runs_in_effect === null
+      ? []
+      : [
+          [
+            text('runs_in_effect'),
+            text(''),
+            text(`${plural(content.runs_in_effect.runs, 'pricing run')} in effect, service ${content.runs_in_effect.period_from} to ${content.runs_in_effect.period_to}`),
+            { number: '' },
+            { number: '' },
+            { number: '' },
+            { number: '' },
+            { number: '' },
+          ],
+        ]),
     [text('priced'), text('lines'), text('priced lines'), number(content.priced.lines), { number: '' }, dollars(content.priced.charge_cents), { number: '' }, text(shareText(content.priced.lines, content.of.lines))],
     [text('priced'), text('of'), text('lines in the share'), number(content.of.lines), { number: '' }, dollars(content.of.charge_cents), { number: '' }, text(shareText(content.priced.charge_cents, content.of.charge_cents))],
     [text('practice'), text('lines'), text('every line held'), number(content.lines.lines), number(content.lines.claims), dollars(content.lines.charge_cents), dollars(content.lines.paid_cents), text('')],
@@ -278,7 +299,9 @@ export function coverageReportHtml(content: CoverageReportContent, pins: Documen
       ? content.pricing_runs === 0
         ? 'No pricing run has priced this practice’s lines yet, so every line counts as unpriced.'
         : 'No pricing run had completed when this report was generated; the shares count every line as unpriced.'
-      : `From the pricing run in effect, service ${content.run.period_from} to ${content.run.period_to}, priced under rule release ${String(content.run.release_no)}.`;
+      : content.runs_in_effect === undefined || content.runs_in_effect === null
+        ? `From the pricing run in effect, service ${content.run.period_from} to ${content.run.period_to}, priced under rule release ${String(content.run.release_no)}.`
+        : `Each line at its pricing in effect, across ${plural(content.runs_in_effect.runs, 'pricing run')} in effect (service ${content.runs_in_effect.period_from} to ${content.runs_in_effect.period_to}); the latest to take effect priced service ${content.run.period_from} to ${content.run.period_to} under rule release ${String(content.run.release_no)}.`;
   const readiness = content.readiness.allowed
     ? 'Every plan with lines has a mapping: a pricing run can start.'
     : `${plural(content.readiness.unmapped_plans, 'plan')} had no mapping at all: a pricing run over them is refused until they are mapped.`;

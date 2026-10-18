@@ -34,8 +34,14 @@ export interface ReportSummary {
   readonly failureCode: string | null;
   readonly pdfSha256: string | null;
   readonly csvSha256: string | null;
+  /**
+   * Who signed the attestation, once signed: their email where the user directory lets the reader see it,
+   * else their role, "the reimbursement reviewer" (an internal reviewer reaches the practice under a support
+   * grant, and the directory hides them from the practice's people). Null until signed.
+   */
   readonly attestedBy: string | null;
   readonly attestedAt: string | null;
+  /** Who released it, once released: their email where the reader may see it, else "a member of the practice". Null until released. */
   readonly releasedBy: string | null;
   readonly releasedAt: string | null;
   /** The headline as generated; null until the report is ready. */
@@ -88,6 +94,9 @@ const REPORTS = (withContent: boolean) => `
     LEFT JOIN "user" au ON au.id = a.attested_by
     LEFT JOIN "user" lu ON lu.id = a.released_by`;
 
+/** The signer named by role where the directory hides their address (as Contracts names "the contract specialist"). */
+export const REVIEWER_ROLE = 'the reimbursement reviewer';
+
 function summary(row: ReportRow): ReportSummary {
   return {
     id: row.id,
@@ -102,9 +111,9 @@ function summary(row: ReportRow): ReportSummary {
     failureCode: row.failure_code,
     pdfSha256: row.pdf_sha256,
     csvSha256: row.csv_sha256,
-    attestedBy: row.attested_by,
+    attestedBy: row.attested_at === null ? null : (row.attested_by ?? REVIEWER_ROLE),
     attestedAt: row.attested_at?.toISOString() ?? null,
-    releasedBy: row.released_by,
+    releasedBy: row.released_at === null ? null : (row.released_by ?? 'a member of the practice'),
     releasedAt: row.released_at?.toISOString() ?? null,
     headline: row.headline,
   };

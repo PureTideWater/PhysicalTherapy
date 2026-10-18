@@ -109,12 +109,12 @@ export default async function MappingPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Payers and plans">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Payer</th>
-                  <th className="py-1 font-medium">Plan</th>
-                  <th className="py-1 font-medium">Status</th>
-                  <th className="py-1 text-right font-medium">Claims</th>
-                  <th className="py-1 text-right font-medium">Billed</th>
-                  <th className="py-1 text-right font-medium">Waiting</th>
+                  <th className="py-1 pr-3 font-medium">Payer</th>
+                  <th className="py-1 pr-3 font-medium">Plan</th>
+                  <th className="py-1 pr-3 font-medium">Status</th>
+                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                  <th className="py-1 pr-3 text-right font-medium">Billed</th>
+                  <th className="py-1 pr-3 text-right font-medium">Waiting</th>
                   <th className="py-1 font-medium">Mapped to</th>
                 </tr>
               </thead>

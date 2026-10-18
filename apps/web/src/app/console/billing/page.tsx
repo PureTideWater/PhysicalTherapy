@@ -40,17 +40,17 @@ export default async function ConsoleBillingPage() {
           <table className="w-full text-left text-sm" aria-label="Billing status">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Organization</th>
-                <th className="py-1 font-medium">Standing</th>
-                <th className="py-1 font-medium">Plan</th>
-                <th className="py-1 font-medium">Owed</th>
+                <th className="py-1 pr-3 font-medium">Organization</th>
+                <th className="py-1 pr-3 font-medium">Standing</th>
+                <th className="py-1 pr-3 font-medium">Plan</th>
+                <th className="py-1 pr-3 font-medium">Owed</th>
                 <th className="py-1 font-medium">Practices (granted, active)</th>
               </tr>
             </thead>
             <tbody>
               {organizations.map((row) => (
                 <tr key={row.organizationId} className="border-t" data-standing={row.standing}>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     {row.name} <span className="text-xs text-muted-foreground">({KIND[row.kind] ?? row.kind})</span>
                     {row.status === 'active' ? null : (
                       <Badge className="ml-2" variant="destructive">
@@ -58,12 +58,12 @@ export default async function ConsoleBillingPage() {
                       </Badge>
                     )}
                   </td>
-                  <td className="py-1">
+                  <td className="py-1 pr-3">
                     <Badge variant={row.standing === 'good' ? 'outline' : 'destructive'}>{STANDING[row.standing] ?? row.standing}</Badge>
                     {row.suspendedSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.suspendedSince)}</span> : row.pastDueSince !== null ? <span className="ml-2 text-xs">since {utcDate(row.pastDueSince)}</span> : null}
                   </td>
-                  <td className="py-1">{row.plan === null ? 'None' : `${row.plan === 'monthly' ? 'Monthly' : 'Annual'} (${row.subscriptionStatus ?? ''})`}</td>
-                  <td className="py-1 font-mono tabular-nums">{formatUsd(parseCents(row.openCents))}</td>
+                  <td className="py-1 pr-3">{row.plan === null ? 'None' : `${row.plan === 'monthly' ? 'Monthly' : 'Annual'} (${row.subscriptionStatus ?? ''})`}</td>
+                  <td className="py-1 pr-3 font-mono tabular-nums">{formatUsd(parseCents(row.openCents))}</td>
                   <td className="py-1">{row.snapshotOn === null ? '—' : `${String(row.grantedPractices)}, ${String(row.activePractices)} on ${row.snapshotOn}`}</td>
                 </tr>
               ))}

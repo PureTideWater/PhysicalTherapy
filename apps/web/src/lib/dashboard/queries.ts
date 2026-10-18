@@ -5,8 +5,9 @@ import { centsToString } from '@tp/money';
 import { practiceLedgerTotals, unmatchedItems } from '@tp/worker/ledger';
 import { followUpsDue } from '@tp/worker/packets';
 
+import { coverageInEffect } from '../coverage/in-effect';
 import { practiceStageSummary } from '../monitoring/queries';
-import { RUN_IN_EFFECT, latestRunInEffect } from '../pricing/queries';
+import { RUN_IN_EFFECT } from '../pricing/queries';
 import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
 
 /**
@@ -24,6 +25,8 @@ import { ACTIONABLE_NOW, practiceTriageSettings } from '../triage/queries';
  *   Reconciliation shows them; recovered this quarter is the same for entries dated in the quarter;
  * - flagged and validated: the lines at those stages now, as the monthly summary counts them (validated
  *   with its shortfall under the pricing in effect), Claims and lines filtered to the stage;
+ * - coverage: each line's result in its pricing in effect, across every run in effect (the digest's
+ *   statement, as Coverage reads it), never the latest run's lines alone;
  * - the queues: what waits for a person on each screen.
  *
  * Counts, integer cents as text and opaque IDs only; no patient, claim or line identifier.
@@ -59,8 +62,19 @@ export interface Queues {
 }
 
 export interface Dashboard {
-  /** The coverage of the latest run in effect (Coverage's own), or null before any run is in effect. */
-  readonly coverage: { readonly runId: string; readonly periodFrom: string; readonly periodTo: string; readonly lines: number; readonly pricedLines: number; readonly chargeCents: string; readonly pricedChargeCents: string } | null;
+  /**
+   * Coverage under the pricing in effect (Coverage's own): the lines the runs in effect priced, each at its
+   * pricing in effect, and the service dates those runs cover; null before any run is in effect.
+   */
+  readonly coverage: {
+    readonly runs: number;
+    readonly periodFrom: string;
+    readonly periodTo: string;
+    readonly lines: number;
+    readonly pricedLines: number;
+    readonly chargeCents: string;
+    readonly pricedChargeCents: string;
+  } | null;
   readonly headline: Headline;
   /** The practice's cases by state, with each state's stage-three figure (lines still at actionable). */
   readonly casesByState: readonly { readonly state: string; readonly cases: number; readonly actionableCents: string }[];
@@ -119,9 +133,8 @@ async function queuesOf(scope: Scope, practiceId: string): Promise<Queues> {
 }
 
 /** The dashboard's counts and totals, on `today` (UTC). */
-export async function dashboard(scope: Scope, practiceId: string, today: string, requestId: string): Promise<Dashboard> {
-  const latest = await latestRunInEffect(scope, practiceId, requestId);
-  const coverage = latest?.coverage ?? null;
+export async function dashboard(scope: Scope, practiceId: string, today: string): Promise<Dashboard> {
+  const coverage = await coverageInEffect(scope, practiceId);
   const states = await scope.client.query<{ state: string; cases: number; actionable: string }>(
     `SELECT c.state, count(*)::int AS cases, coalesce(sum(${ACTIONABLE_NOW('c')}), 0)::text AS actionable FROM "case" c WHERE c.practice_id = $1 GROUP BY c.state ORDER BY c.state`,
     [practiceId],
@@ -136,9 +149,17 @@ export async function dashboard(scope: Scope, practiceId: string, today: string,
   const period = quarterPeriod(quarter);
   return {
     coverage:
-      latest === undefined || coverage === null
+      coverage.runs === 0 || coverage.periodFrom === null || coverage.periodTo === null
         ? null
-        : { runId: latest.id, periodFrom: latest.periodFrom, periodTo: latest.periodTo, lines: coverage.lines, pricedLines: coverage.priced.lines, chargeCents: coverage.charge_cents, pricedChargeCents: coverage.priced.charge_cents },
+        : {
+            runs: coverage.runs,
+            periodFrom: coverage.periodFrom,
+            periodTo: coverage.periodTo,
+            lines: coverage.of.lines,
+            pricedLines: coverage.priced.lines,
+            chargeCents: coverage.of.chargeCents,
+            pricedChargeCents: coverage.priced.chargeCents,
+          },
     headline: await headlineOf(scope, practiceId),
     casesByState: states.rows.map((row) => ({ state: row.state, cases: row.cases, actionableCents: row.actionable })),
     deadlines: { cases: near.rows[0]?.cases ?? 0, actionableCents: near.rows[0]?.actionable ?? '0', earliest: near.rows[0]?.earliest ?? null },

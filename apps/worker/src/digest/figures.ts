@@ -31,6 +31,17 @@ interface PayerRow {
   readonly cents: string;
 }
 
+/**
+ * Coverage under the pricing in effect, for the practice `$1`: each line's result in its pricing in
+ * effect (PRICED_IN_EFFECT, the latest run in effect that priced it, whichever period), priced against
+ * all, by lines and billed dollars. The one statement the digest, the dashboard, Coverage and the
+ * coverage report read coverage with (docs/adr/0039, 0040), so their figures agree.
+ */
+export const COVERAGE_IN_EFFECT = `SELECT count(*)::int AS lines, (count(*) FILTER (WHERE latest.unpriced_reason IS NULL))::int AS priced_lines,
+            coalesce(sum(l.charge_cents), 0)::text AS billed, coalesce(sum(l.charge_cents) FILTER (WHERE latest.unpriced_reason IS NULL), 0)::text AS priced_billed
+       FROM (${PRICED_IN_EFFECT('$1', 'true')}) latest
+       JOIN service_line l ON l.id = latest.service_line_id`;
+
 /** The statements the digest reads with, by what they read (exported for the JOB-03 test). */
 export const DIGEST_QUERIES = {
   validated: `WITH validated AS (
@@ -50,10 +61,7 @@ export const DIGEST_QUERIES = {
   deadlines: `SELECT count(*)::int AS cases, coalesce(sum(c.actionable_cents), 0)::text AS cents
        FROM "case" c
       WHERE c.practice_id = $1 AND c.state = 'open' AND c.deadline_on BETWEEN $2::date AND $2::date + $3::int`,
-  coverage: `SELECT count(*)::int AS lines, (count(*) FILTER (WHERE latest.unpriced_reason IS NULL))::int AS priced_lines,
-            coalesce(sum(l.charge_cents), 0)::text AS billed, coalesce(sum(l.charge_cents) FILTER (WHERE latest.unpriced_reason IS NULL), 0)::text AS priced_billed
-       FROM (${PRICED_IN_EFFECT('$1', 'true')}) latest
-       JOIN service_line l ON l.id = latest.service_line_id`,
+  coverage: COVERAGE_IN_EFFECT,
   ledger: `SELECT e.id, e.case_id, e.service_line_id, e.stage, e.amount_cents::text AS amount_cents, e.evidence_kind, e.evidence_id, e.allocated, e.effective_on::text AS effective_on
        FROM ledger_entry e
       WHERE e.practice_id = $1

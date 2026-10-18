@@ -100,10 +100,10 @@ export default async function AbstractionPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Versions in progress">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Contract</th>
-                <th className="py-1 font-medium">Version</th>
-                <th className="py-1 font-medium">Status</th>
-                <th className="py-1 font-medium">Effective</th>
+                <th className="py-1 pr-3 font-medium">Contract</th>
+                <th className="py-1 pr-3 font-medium">Version</th>
+                <th className="py-1 pr-3 font-medium">Status</th>
+                <th className="py-1 pr-3 font-medium">Effective</th>
                 <th className="py-1 text-right font-medium">Rate records</th>
               </tr>
             </thead>

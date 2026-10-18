@@ -46,23 +46,23 @@ export default async function AccessLogPage(props: { readonly params: Promise<{ 
         <table className="w-full text-left text-sm" aria-label="Access log">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">When</th>
-              <th className="py-1 font-medium">Who</th>
-              <th className="py-1 font-medium">Through</th>
-              <th className="py-1 font-medium">What</th>
+              <th className="py-1 pr-3 font-medium">When</th>
+              <th className="py-1 pr-3 font-medium">Who</th>
+              <th className="py-1 pr-3 font-medium">Through</th>
+              <th className="py-1 pr-3 font-medium">What</th>
               <th className="py-1 font-medium">Record</th>
             </tr>
           </thead>
           <tbody>
             {entries.map((entry) => (
               <tr key={entry.id} className="border-t" data-action={entry.action}>
-                <td className="py-1">{utc(entry.at)}</td>
-                <td className="py-1">{entry.actor}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3">{utc(entry.at)}</td>
+                <td className="py-1 pr-3">{entry.actor}</td>
+                <td className="py-1 pr-3">
                   {entry.via}
                   {entry.ticket === null ? '' : ` (ticket ${entry.ticket})`}
                 </td>
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   {entry.action}
                   {entry.purpose === null ? '' : ` (${entry.purpose})`}
                 </td>

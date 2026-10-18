@@ -1,5 +1,7 @@
 import { pricingTraceSchema } from '@tp/pricing';
 
+import { labelOf } from '../copy/words';
+
 /**
  * How pricing results read on screen (PRD 7; PRD 8, The status machine; PRD 12, From validated to
  * actionable): a line's stage from the run that priced it, priced shares as percentages worked out in
@@ -78,8 +80,9 @@ const TITLES: Readonly<Record<string, string>> = {
   outcome: 'Outcome',
 };
 
+/** A part's title: its own, else its key as a label, initialisms in capitals ("ncci_ptp" is "NCCI PTP"; lib/copy/words.ts). */
 function titleOf(key: string): string {
-  return TITLES[key] ?? key.replaceAll('_', ' ').replace(/^./, (first) => first.toUpperCase());
+  return TITLES[key] ?? labelOf(key);
 }
 
 function isRecordRef(value: unknown): value is { record_type: string; key: Record<string, unknown>; effective_from: string; effective_to: string | null; sha256: string } {

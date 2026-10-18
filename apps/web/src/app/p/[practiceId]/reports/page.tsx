@@ -12,6 +12,7 @@ import { ShareLink } from '../../../../components/share';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { loadPage } from '../../../../lib/http/next';
 import type { ExportRecord } from '../../../../lib/reports/documents';
+import { exportWhat } from '../../../../lib/reports/export-words';
 import { reportsPage } from '../../../../lib/routes/reports';
 import { generateReportFormAction } from './actions';
 import { generateReportDocumentFormAction } from './documents/actions';
@@ -20,21 +21,6 @@ import { FormKeys } from '../../../../components/form-keys';
 export const metadata: Metadata = { title: 'Reports' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
-
-const KIND_WORDS: Readonly<Record<ExportRecord['kind'], string>> = {
-  audit_report: 'audit report',
-  roi_statement: 'ROI statement',
-  report_document: 'report',
-  monthly_summary: 'monthly summary',
-  packet_export: 'packet',
-};
-
-const FILE_WORDS: Readonly<Record<ExportRecord['file'], string>> = {
-  pdf: 'PDF',
-  csv: 'CSV',
-  line_csv: 'line CSV',
-  packet: 'PDF or CSV schedule, identifiers inserted',
-};
 
 /** Where an export history entry's record is. */
 function exportHref(practiceId: string, entry: ExportRecord): string | null {
@@ -253,9 +239,9 @@ export default async function ReportsPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Generated reports">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Report</th>
-                <th className="py-1 font-medium">Figures fixed</th>
-                <th className="py-1 font-medium">PDF</th>
+                <th className="py-1 pr-3 font-medium">Report</th>
+                <th className="py-1 pr-3 font-medium">Figures fixed</th>
+                <th className="py-1 pr-3 font-medium">PDF</th>
                 <th className="py-1 font-medium">Files</th>
               </tr>
             </thead>
@@ -301,15 +287,15 @@ export default async function ReportsPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Exports">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">When</th>
-                <th className="py-1 font-medium">What</th>
+                <th className="py-1 pr-3 font-medium">When</th>
+                <th className="py-1 pr-3 font-medium">What</th>
                 <th className="py-1 font-medium">By</th>
               </tr>
             </thead>
             <tbody>
               {history.items.map((entry) => {
                 const href = exportHref(practiceId, entry);
-                const what = `${FILE_WORDS[entry.file]} of ${entry.kind === 'monthly_summary' ? 'the monthly summary' : `a ${KIND_WORDS[entry.kind]}`}`;
+                const what = exportWhat(entry);
                 return (
                   <tr key={entry.eventId} className="border-t" data-export={entry.kind} data-line-level={entry.lineLevel ? 'yes' : 'no'}>
                     <td className="py-1 pr-3">{utc(entry.downloadedAt)}</td>

@@ -13,6 +13,7 @@ import {
 } from '@tp/worker/reports';
 
 import { UNPRICED_REASON_TEXT } from '../contracts/remedies';
+import { coverageInEffect } from '../coverage/in-effect';
 import { allWaitingPlans, lineTotals, pricingReadiness, waitingTotals } from '../contracts/mapping-queries';
 import { peopleEmails } from '../cases/people';
 import { type ListPage, pageWindow } from '../http/paging';
@@ -36,23 +37,29 @@ type Scope = PracticeScope<ScopeClient>;
 // Generating
 // ---------------------------------------------------------------------------------------------------
 
-/** The Coverage screen's figures, as a coverage report stores them: the run in effect's shares and reasons, and every plan waiting on a mapping. */
+/**
+ * The Coverage screen's figures, as a coverage report stores them: the shares and reasons of each line at its
+ * pricing in effect across the runs in effect (lib/coverage/in-effect.ts), the run that took effect last, and
+ * every plan waiting on a mapping.
+ */
 export async function coverageContent(scope: Scope, practiceId: string, today: string, requestId: string): Promise<CoverageReportContent> {
   const latest = await latestRunInEffect(scope, practiceId, requestId);
-  const coverage = latest?.coverage ?? null;
-  const run = latest === undefined || coverage === null || latest.completedAt === null ? null : { latest, coverage, completedAt: latest.completedAt };
+  const run = latest === undefined || latest.completedAt === null ? null : { latest, completedAt: latest.completedAt };
+  const inEffect = await coverageInEffect(scope, practiceId);
   const lines = await lineTotals(scope, practiceId);
   const waiting = await waitingTotals(scope, practiceId);
-  const counts = new Map((run?.coverage.reasons ?? []).map((entry) => [entry.reason, entry.lines]));
+  const counts = new Map(inEffect.reasons.map((entry) => [entry.reason, entry.lines]));
+  const priced = inEffect.runs > 0 && inEffect.periodFrom !== null && inEffect.periodTo !== null ? { runs: inEffect.runs, from: inEffect.periodFrom, to: inEffect.periodTo } : null;
   const readiness = await pricingReadiness(scope, practiceId, requestId);
   return {
     format: COVERAGE_REPORT_FORMAT,
     generated_on: today,
     run: run === null ? null : { id: run.latest.id, period_from: run.latest.periodFrom, period_to: run.latest.periodTo, release_no: run.latest.releaseNo, completed_at: run.completedAt },
+    runs_in_effect: priced === null ? null : { runs: priced.runs, period_from: priced.from, period_to: priced.to },
     lines: { lines: lines.lines, claims: lines.claims, charge_cents: lines.chargeCents, paid_cents: lines.paidCents },
-    priced: run === null ? { lines: 0, charge_cents: '0' } : { lines: run.coverage.priced.lines, charge_cents: run.coverage.priced.charge_cents },
-    of: run === null ? { lines: lines.lines, charge_cents: lines.chargeCents } : { lines: run.coverage.lines, charge_cents: run.coverage.charge_cents },
-    // The closed list in the Coverage screen's order (the rules reference's), each with the run's count; zero before a run.
+    priced: priced === null ? { lines: 0, charge_cents: '0' } : { lines: inEffect.priced.lines, charge_cents: inEffect.priced.chargeCents },
+    of: priced === null ? { lines: lines.lines, charge_cents: lines.chargeCents } : { lines: inEffect.of.lines, charge_cents: inEffect.of.chargeCents },
+    // The closed list in the Coverage screen's order (the rules reference's), each with its count in effect; zero before a run.
     reasons: UNPRICED_REASON_TEXT.map((entry) => ({ reason: entry.reason, lines: counts.get(entry.reason) ?? 0 })),
     waiting: { lines: waiting.lines, claims: waiting.claims, charge_cents: waiting.chargeCents, paid_cents: waiting.paidCents },
     waiting_plans: (await allWaitingPlans(scope, practiceId, requestId)).map((plan) => ({

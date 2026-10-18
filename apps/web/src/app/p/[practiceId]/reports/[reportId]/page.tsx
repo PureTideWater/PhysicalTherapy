@@ -90,8 +90,8 @@ export default async function ReportPage(props: Props) {
               <CardDescription>
                 {report.attestedAt === null
                   ? 'No reimbursement reviewer has signed this report’s checklist yet; it cannot be released unsigned.'
-                  : `Attested ${utc(report.attestedAt)} by ${report.attestedBy ?? '—'}, over the files above.`}{' '}
-                {report.releasedAt === null ? '' : `Released ${utc(report.releasedAt)} by ${report.releasedBy ?? '—'}.`}
+                  : `Attested ${utc(report.attestedAt)} by ${report.attestedBy ?? 'the reimbursement reviewer'}, over the files above.`}{' '}
+                {report.releasedAt === null ? '' : `Released ${utc(report.releasedAt)} by ${report.releasedBy ?? 'a member of the practice'}.`}
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">

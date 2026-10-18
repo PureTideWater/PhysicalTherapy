@@ -117,9 +117,9 @@ export default async function ReleasesPage(props: Props) {
           <table className="w-full text-left text-sm" aria-label="Rule releases">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="py-1 font-medium">Release</th>
-                <th className="py-1 font-medium">Published</th>
-                <th className="py-1 font-medium">Standing</th>
+                <th className="py-1 pr-3 font-medium">Release</th>
+                <th className="py-1 pr-3 font-medium">Published</th>
+                <th className="py-1 pr-3 font-medium">Standing</th>
                 <th className="py-1 text-right font-medium">Your runs in effect on it</th>
               </tr>
             </thead>

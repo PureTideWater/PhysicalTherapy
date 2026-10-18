@@ -59,7 +59,7 @@ export default async function ReviewChecklistPage(props: Props) {
               <CardDescription>
                 {report.attestedAt === null
                   ? 'Confirm every item. You sign over these files: '
-                  : `Signed ${utc(report.attestedAt)} by ${report.attestedBy ?? '—'} over these files: `}
+                  : `Signed ${utc(report.attestedAt)} by ${report.attestedBy ?? 'the reimbursement reviewer'} over these files: `}
                 <span className="font-mono text-xs">PDF {report.pdfSha256}</span>, <span className="font-mono text-xs">CSV {report.csvSha256}</span>.
               </CardDescription>
             </CardHeader>

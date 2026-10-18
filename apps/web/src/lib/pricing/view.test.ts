@@ -70,6 +70,16 @@ describe('the trace’s steps', () => {
     expect(views.at(-1)).toMatchObject({ key: 'extra', title: 'Extra' });
     expect(traceSteps(null)).toEqual([]);
   });
+
+  it('title a step they have no title for from its key, initialisms in capitals (the screen tour: "Ncci ptp" is NCCI PTP)', () => {
+    const views = traceSteps({ ...(trace as object), mue_values: { note: 'kept' } });
+    const titles = new Map(views.map((item) => [item.key, item.title]));
+    expect(titles.get('ncci_ptp')).toBe('NCCI PTP');
+    expect(titles.get('per_visit')).toBe('Per visit');
+    expect(titles.get('mue_values')).toBe('MUE values');
+    // No title spells one of the engine's initialisms in anything but capitals.
+    expect(views.map((item) => item.title).filter((title) => /\b(?:[Nn]cci|[Pp]tp|[Mm]ue|[Mm]ppr|[Pp]fs|[Rr]vu|[Gg]pci)\b/.test(title))).toEqual([]);
+  });
 });
 
 describe('a run’s period by months', () => {

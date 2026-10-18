@@ -86,10 +86,10 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
               <table className="w-full text-left text-sm" aria-label="Transaction sets">
                 <thead className="text-muted-foreground">
                   <tr>
-                    <th className="py-1 font-medium">Transaction set</th>
-                    <th className="py-1 font-medium">Outcome</th>
-                    <th className="py-1 text-right font-medium">Claims</th>
-                    <th className="py-1 text-right font-medium">Lines</th>
+                    <th className="py-1 pr-3 font-medium">Transaction set</th>
+                    <th className="py-1 pr-3 font-medium">Outcome</th>
+                    <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                    <th className="py-1 pr-3 text-right font-medium">Lines</th>
                     <th className="py-1 font-medium">Remittance</th>
                   </tr>
                 </thead>
@@ -137,8 +137,8 @@ export default async function UploadDocumentPage(props: { readonly params: Promi
               <table className="w-full text-left text-sm" aria-label="Errors">
                 <thead className="text-muted-foreground">
                   <tr>
-                    <th className="py-1 font-medium">Code</th>
-                    <th className="py-1 font-medium">Where</th>
+                    <th className="py-1 pr-3 font-medium">Code</th>
+                    <th className="py-1 pr-3 font-medium">Where</th>
                     <th className="py-1 font-medium">What</th>
                   </tr>
                 </thead>

@@ -65,14 +65,14 @@ export default async function SupportPage() {
         <table className="w-full text-left text-sm" aria-label="Support grants">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">State</th>
-              <th className="py-1 font-medium">Ticket</th>
-              <th className="py-1 font-medium">Practice</th>
-              <th className="py-1 font-medium">Granted to</th>
-              <th className="py-1 font-medium">Opened</th>
-              <th className="py-1 font-medium">Expires</th>
-              <th className="py-1 font-medium">Reads</th>
-              <th className="py-1 font-medium">Expiry notice</th>
+              <th className="py-1 pr-3 font-medium">State</th>
+              <th className="py-1 pr-3 font-medium">Ticket</th>
+              <th className="py-1 pr-3 font-medium">Practice</th>
+              <th className="py-1 pr-3 font-medium">Granted to</th>
+              <th className="py-1 pr-3 font-medium">Opened</th>
+              <th className="py-1 pr-3 font-medium">Expires</th>
+              <th className="py-1 pr-3 font-medium">Reads</th>
+              <th className="py-1 pr-3 font-medium">Expiry notice</th>
               <th className="py-1 font-medium">
                 <span className="sr-only">End</span>
               </th>
@@ -81,19 +81,19 @@ export default async function SupportPage() {
           <tbody>
             {grants.map((grant) => (
               <tr key={grant.id} className="border-t" data-ticket={grant.ticket}>
-                <td className="py-1">
+                <td className="py-1 pr-3">
                   <Badge variant={grant.open ? 'default' : 'outline'}>{grant.open ? 'Open' : 'Ended'}</Badge>
                 </td>
-                <td className="py-1">{grant.ticket}</td>
-                <td className="py-1">{grant.practiceName}</td>
-                <td className="py-1">
+                <td className="py-1 pr-3">{grant.ticket}</td>
+                <td className="py-1 pr-3">{grant.practiceName}</td>
+                <td className="py-1 pr-3">
                   {grant.engineerEmail}
                   {grant.granteeRole === null ? null : <span className="block text-xs text-muted-foreground">{roleName(grant.granteeRole)}</span>}
                 </td>
-                <td className="py-1">{utc(grant.createdAt)}</td>
-                <td className="py-1">{utc(grant.expiresAt)}</td>
-                <td className="py-1">{grant.reads}</td>
-                <td className="py-1">{utc(grant.notifiedAt)}</td>
+                <td className="py-1 pr-3">{utc(grant.createdAt)}</td>
+                <td className="py-1 pr-3">{utc(grant.expiresAt)}</td>
+                <td className="py-1 pr-3">{grant.reads}</td>
+                <td className="py-1 pr-3">{utc(grant.notifiedAt)}</td>
                 <td className="py-1">
                   {grant.open ? (
                     <ActionForm action={endSupportGrantAction} submit="End now" variant="outline" className="flex items-center gap-2">

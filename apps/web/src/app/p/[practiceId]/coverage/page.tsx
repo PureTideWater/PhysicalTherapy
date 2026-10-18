@@ -4,6 +4,7 @@ import Link from 'next/link';
 
 import { ActionForm } from '../../../../components/action-form';
 import { QuestionList, TotalsText } from '../../../../components/contracts/display';
+import { Figure } from '../../../../components/coverage/share';
 import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
 import { Money, Pager } from '../../../../components/remittances/display';
@@ -24,17 +25,19 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * The Coverage screen (PRD 7): the share of lines and dollars priced, the unpriced reasons by count
  * with each reason's remedy linked to the screen it is taken on, the dollars waiting on mappings, what
  * to obtain to raise coverage, and the request-to-payer letter for a missing schedule (a text file from
- * a fixed template). Shares and counts are the latest complete pricing run's; until one completes,
- * they are zero.
+ * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
+ * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
+ * that took effect last named beside them; until a run takes effect, they are zero.
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
-  // The shares are of the latest complete run's lines; before one, of every line the practice holds.
-  const of = run === null ? { lines: lines.lines, chargeCents: lines.chargeCents } : { lines: run.lines, chargeCents: run.chargeCents };
+  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
+  // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
+  const inEffect = share.runs > 0;
+  const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
   const path = `/p/${practiceId}/coverage`;
   return (
     <AppShell shell={page.shell} section="coverage">
@@ -46,15 +49,16 @@ export default async function CoveragePage(props: Props) {
       <Card role="region" aria-label="Priced share">
         <CardHeader>
           <CardTitle>
-            Priced: {priced.lines} of {of.lines} lines ({shareOf(priced.lines, of.lines)}); <Money value={priced.chargeCents} /> of <Money value={of.chargeCents} /> billed ({shareOf(priced.chargeCents, of.chargeCents)})
+            Priced: <Figure>{priced.lines}</Figure> of <Figure>{of.lines}</Figure> lines (<Figure>{shareOf(priced.lines, of.lines)}</Figure>); <Money value={priced.chargeCents} /> of{' '}
+            <Money value={of.chargeCents} /> billed (<Figure>{shareOf(priced.chargeCents, of.chargeCents)}</Figure>)
           </CardTitle>
           <CardDescription>
-            {run === null ? (
+            {!inEffect || run === null ? (
               pricingRuns === 0 ? (
-                'No pricing run has priced this practice’s lines yet, so every line counts as unpriced. A pricing run prices each line under the signed-off contract version in force on its service date, or records why it cannot; the shares and counts here come from the latest one.'
+                'No pricing run has priced this practice’s lines yet, so every line counts as unpriced. A pricing run prices each line under the signed-off contract version in force on its service date, or records why it cannot; the shares and counts here take each line at its pricing in effect.'
               ) : (
                 <>
-                  No pricing run has completed yet; the shares and counts here come from the latest complete one (
+                  No pricing run has completed yet; the shares and counts here take each line at its pricing in effect once one does (
                   <Link className="underline" href={`/p/${practiceId}/pricing-runs`}>
                     Pricing runs
                   </Link>
@@ -63,11 +67,12 @@ export default async function CoveragePage(props: Props) {
               )
             ) : (
               <>
-                From the latest complete pricing run,{' '}
+                Each line at its pricing in effect, across <Figure>{share.runs}</Figure> {share.runs === 1 ? 'pricing run' : 'pricing runs'} in effect (service {share.periodFrom} to {share.periodTo}). The
+                latest to take effect is{' '}
                 <Link className="underline" href={`/p/${practiceId}/pricing-runs/${run.id}`}>
                   {run.periodFrom} to {run.periodTo}
                 </Link>{' '}
-                under rule release {run.releaseNo}, complete {utc(run.completedAt)}. The practice holds {lines.lines} lines in all.
+                under rule release {run.releaseNo}, complete {utc(run.completedAt)}. The practice holds <Figure>{lines.lines}</Figure> lines in all.
               </>
             )}
           </CardDescription>
@@ -108,11 +113,11 @@ export default async function CoveragePage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Plans waiting on mapping">
               <thead className="text-muted-foreground">
                 <tr>
-                  <th className="py-1 font-medium">Payer</th>
-                  <th className="py-1 font-medium">Plan</th>
-                  <th className="py-1 text-right font-medium">Lines</th>
-                  <th className="py-1 text-right font-medium">Claims</th>
-                  <th className="py-1 text-right font-medium">Billed</th>
+                  <th className="py-1 pr-3 font-medium">Payer</th>
+                  <th className="py-1 pr-3 font-medium">Plan</th>
+                  <th className="py-1 pr-3 text-right font-medium">Lines</th>
+                  <th className="py-1 pr-3 text-right font-medium">Claims</th>
+                  <th className="py-1 pr-3 text-right font-medium">Billed</th>
                   <th className="py-1 text-right font-medium">Paid</th>
                 </tr>
               </thead>
@@ -143,13 +148,15 @@ export default async function CoveragePage(props: Props) {
       </Card>
       <section aria-label="Unpriced reasons" className="flex flex-col gap-2">
         <h2 className="text-xl font-bold tracking-display">Unpriced reasons</h2>
-        <p className="text-sm text-muted-foreground">{run === null ? 'Counts appear once a pricing run completes.' : 'Lines of the latest complete pricing run, by the reason it left them unpriced.'}</p>
+        <p className="text-sm text-muted-foreground">
+          {inEffect ? 'Lines the runs in effect priced, each by the reason its pricing in effect left it unpriced.' : 'Counts appear once a pricing run completes.'}
+        </p>
         <table className="w-full text-left text-sm" aria-label="Unpriced reasons and their remedies">
           <thead className="text-muted-foreground">
             <tr>
-              <th className="py-1 font-medium">Reason</th>
-              <th className="py-1 font-medium">Meaning</th>
-              <th className="py-1 text-right font-medium">Lines</th>
+              <th className="py-1 pr-3 font-medium">Reason</th>
+              <th className="py-1 pr-3 font-medium">Meaning</th>
+              <th className="py-1 pr-3 text-right font-medium">Lines</th>
               <th className="py-1 font-medium">Remedy</th>
             </tr>
           </thead>

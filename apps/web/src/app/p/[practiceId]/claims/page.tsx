@@ -20,7 +20,7 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
 
 /**
  * The Claims and lines screen (PRD 7): a server-side paginated, filterable table of every service
- * line, with patient reference, claim control numbers, service date, code and modifiers, units,
+ * line, with patient reference and claim control numbers (one cell), service date, code and modifiers, units,
  * charge, then expected allowed, observed allowed and the short (variance) between them in the brand's
  * order (expected, paid, short; docs/brand/BRAND.md, section 7), then paid and patient share, the
  * remittance's split of what it allowed, and the status chips, the expected and short from the
@@ -135,9 +135,8 @@ export default async function ClaimsPage(props: Props) {
             <table className="w-full text-left text-sm" aria-label="Claims and lines">
               <thead className="text-muted-foreground">
                 <tr className="align-bottom">
-                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Patient reference</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Claim control numbers</th> : null}
-                  {canReadPhi ? <th className="py-1 pr-2 font-medium whitespace-nowrap">Service date</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Patient reference and claim control numbers</th> : null}
+                  {canReadPhi ? <th className="py-1 pr-2 font-medium">Service date</th> : null}
                   <th className="py-1 pr-2 font-medium">Code and modifiers</th>
                   <th className="py-1 pr-2 text-right font-medium">Units</th>
                   <th className="py-1 pr-2 text-right font-medium">Charge</th>
@@ -158,17 +157,16 @@ export default async function ClaimsPage(props: Props) {
               <tbody>
                 {list.rows.map((row) => (
                   <tr key={`${row.claimId}:${row.lineId ?? 'claim'}`} className="border-t align-top" data-claim={row.claimId} data-line={row.lineId ?? ''}>
+                    {/* The patient and the claim's numbers in one cell, stacked as the status and its reason are, so the PHI roles' table fits its card at a desktop width (the screen tour's L3). */}
                     {row.identifiers === null ? null : (
                       <td className="py-2 pr-2">
                         <Link className="underline" href={`${path}?view=${filters.view}&patient=${row.patientRefId}`}>
                           {row.identifiers.patient}
                         </Link>
-                      </td>
-                    )}
-                    {row.identifiers === null ? null : (
-                      <td className="py-2 pr-2 font-mono text-xs">
-                        <div>{row.identifiers.patientControlNumber}</div>
-                        <div>{row.identifiers.payerClaimControlNumber}</div>
+                        <div className="pt-1 font-mono text-xs" data-identifiers="claim">
+                          <div>{row.identifiers.patientControlNumber}</div>
+                          <div>{row.identifiers.payerClaimControlNumber}</div>
+                        </div>
                       </td>
                     )}
                     {row.identifiers === null ? null : (
