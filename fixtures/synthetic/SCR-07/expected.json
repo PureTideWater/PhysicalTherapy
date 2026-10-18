@@ -1,0 +1,24 @@
+{
+  "case": "SCR-07",
+  "module": "SCR",
+  "title": "Screening row of fewer than 11 claim lines",
+  "assertion": "Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the hash, row count and coded reasons; refused by the database's CHECK; 11 claim lines taken",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/screening/format.test.ts",
+    "apps/web/src/lib/screening/parse.test.ts",
+    "apps/web/src/components/screening/result.test.tsx",
+    "packages/db/src/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Rows of fewer than 11 claim lines are built in memory by the tests from synthetic totals; no file is committed.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

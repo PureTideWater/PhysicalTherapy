@@ -231,6 +231,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
   ]),
+  'SCR-07': none(6, 'Rows of fewer than 11 claim lines are built in memory by the tests from synthetic totals; no file is committed.', [
+    'apps/worker/src/screening/format.test.ts',
+    'apps/web/src/lib/screening/parse.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'packages/db/src/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
   'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
   'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
     'apps/worker/src/worker.test.ts',

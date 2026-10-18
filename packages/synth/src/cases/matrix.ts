@@ -135,6 +135,12 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   { id: 'SCR-05', title: 'Screening output wording', assertion: 'No page, message or email says owed, underpaid or recovered; no tagline' },
   { id: 'SCR-06', title: 'Screening converted to an audit request', assertion: 'Audit request recorded and logged as an audit event' },
+  {
+    id: 'SCR-07',
+    title: 'Screening row of fewer than 11 claim lines',
+    assertion:
+      "Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the hash, row count and coded reasons; refused by the database's CHECK; 11 claim lines taken",
+  },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
   { id: 'JOB-03', title: 'Digest', assertion: 'Counts and totals only; no PHI column referenced' },
