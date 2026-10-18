@@ -127,7 +127,7 @@
       "id": "billing",
       "title": "Billing and onboarding",
       "dictionary": "Operations (no PHI by design)",
-      "about": "Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, user invitations, and terms of use with their acceptances.",
+      "about": "Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, platform place-of-service split, runs and aggregate results (no PHI, no practice).",
       "tables": [
         "subscription",
         "subscription_claim",
@@ -138,7 +138,12 @@
         "prospect_request",
         "invitation",
         "terms_version",
-        "terms_acceptance"
+        "terms_acceptance",
+        "screening_prospect",
+        "screening_upload",
+        "screening_place_of_service_split",
+        "screening_run",
+        "screening_result"
       ]
     },
     {

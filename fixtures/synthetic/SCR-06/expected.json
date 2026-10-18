@@ -1,0 +1,17 @@
+{
+  "case": "SCR-06",
+  "module": "SCR",
+  "title": "Screening converted to an audit request",
+  "assertion": "Audit request recorded and logged as an audit event",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": ["packages/db/src/screening.db.test.ts","apps/web/src/lib/screening/routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The conversion is a route and an audit event; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

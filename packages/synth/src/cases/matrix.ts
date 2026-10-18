@@ -111,6 +111,26 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'SEC-13', title: 'Restore from snapshot', assertion: 'Row counts and catalog test pass on the restored instance' },
   { id: 'SEC-14', title: 'Fixture with a non-synthetic sender', assertion: 'Hook refuses the write' },
   { id: 'SEC-15', title: 'Session idle past 30 minutes on a PHI screen', assertion: 'Expired' },
+  {
+    id: 'SEC-17',
+    title: 'Screening tables hold no PHI-shaped columns',
+    assertion: "Catalog read finds no name, birth date, member ID, service date or claim number column, no practice_id and no registry row; owner-only policy, no other role's privilege",
+  },
+  {
+    id: 'SCR-01',
+    title: 'Screening upload with a date-of-service or member-ID column',
+    assertion: 'Rejected with the column named by position and kind; only the file hash, row count and reasons stored',
+  },
+  {
+    id: 'SCR-02',
+    title: 'Screening pricing of a clean upload',
+    assertion:
+      "Each Medicare row is the engine's one-line amount times its claim count in bigint; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds",
+  },
+  { id: 'SCR-03', title: 'Screening 30 days after its upload', assertion: 'Link refuses it; the expiry job deletes the run and its results; the conversion stays' },
+  { id: 'SCR-04', title: 'Screening uploads past the limit', assertion: 'Refused per business domain, per free-mail address and per IP; subjects stored as keyed hashes' },
+  { id: 'SCR-05', title: 'Screening output wording', assertion: 'No page, message or email says owed, underpaid or recovered; no tagline' },
+  { id: 'SCR-06', title: 'Screening converted to an audit request', assertion: 'Audit request recorded and logged as an audit event' },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
   { id: 'JOB-03', title: 'Digest', assertion: 'Counts and totals only; no PHI column referenced' },

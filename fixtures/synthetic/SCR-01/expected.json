@@ -1,0 +1,21 @@
+{
+  "case": "SCR-01",
+  "module": "SCR",
+  "title": "Screening upload with a date-of-service or member-ID column",
+  "assertion": "Rejected with the column named by position and kind; only the file hash, row count and reasons stored",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/screening/format.test.ts",
+    "apps/web/src/lib/screening/parse.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

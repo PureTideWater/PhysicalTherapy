@@ -1,0 +1,17 @@
+{
+  "case": "SCR-04",
+  "module": "SCR",
+  "title": "Screening uploads past the limit",
+  "assertion": "Refused per business domain, per free-mail address and per IP; subjects stored as keyed hashes",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": ["apps/web/src/lib/screening/routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Rate limits are counted in the database per request; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
