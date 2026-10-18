@@ -7,6 +7,7 @@ import {
   readWithAudit,
   recordAuditEvent,
   requirePlatformPermission,
+  requirePracticePermission,
 } from '@tp/db/runtime';
 import { type Cents, centsToString, parseCents } from '@tp/money';
 import {
@@ -25,6 +26,7 @@ import {
   verifyNarrative,
   versionSha256,
 } from '@tp/packets';
+import type { DeadlineStatus } from '@tp/triage';
 
 import { type JobSender, enqueue } from '../jobs/enqueue';
 import { todayUtc } from '../triage/execute';
@@ -198,6 +200,14 @@ export interface PacketVersionDetail {
   readonly exportPdfKey: string | null;
   readonly exportCsvKey: string | null;
   readonly exportedAt: Date | null;
+  /** The deadline status the version stated when it was written (CO-12; tp-packet/1: unverified). Never trusted at export. */
+  readonly deadlineStatus: DeadlineStatus;
+  /** The verifier's report over the narrative the export printed (CO-05). */
+  readonly exportVerifier: VerifierReport | null;
+  /** The reimbursement reviewer's attestation over the export's two SHA-256 (D16). */
+  readonly attestedBy: string | null;
+  readonly attestedAt: Date | null;
+  readonly attestation: PacketAttestation | null;
 }
 
 interface VersionRow {
@@ -224,6 +234,11 @@ interface VersionRow {
   readonly export_pdf_key: string | null;
   readonly export_csv_key: string | null;
   readonly exported_at: Date | null;
+  readonly deadline_verification_status: DeadlineStatus;
+  readonly export_verifier_report: VerifierReport | null;
+  readonly attested_by: string | null;
+  readonly attested_at: Date | null;
+  readonly attestation: PacketAttestation | null;
   readonly drafted_by_email: string | null;
   readonly approved_by_email: string | null;
   readonly regulation_confirmed_by_email: string | null;
@@ -231,7 +246,8 @@ interface VersionRow {
 
 export const VERSION_COLUMNS = `v.id, v.practice_id, v.packet_id, p.case_id, v.version_no, (p.current_version_id = v.id) AS current, v.content, v.narrative, v.content_sha256,
   v.verifier_passed, v.verifier_report, v.drafted_by, v.created_at, v.regulation_confirmed_by, v.regulation_confirmed_at, v.approved_by, v.approved_at, v.approved_alone, v.export_sha256,
-  v.export_csv_sha256, v.export_pdf_key, v.export_csv_key, v.exported_at, people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email`;
+  v.export_csv_sha256, v.export_pdf_key, v.export_csv_key, v.exported_at, v.deadline_verification_status, v.export_verifier_report, v.attested_by, v.attested_at, v.attestation,
+  people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email`;
 
 /** A version as stored, its narrative decrypted (a read of the packet, audited), or undefined. */
 export async function packetVersionOf(
@@ -282,6 +298,11 @@ export async function packetVersionOf(
     exportPdfKey: row.export_pdf_key,
     exportCsvKey: row.export_csv_key,
     exportedAt: row.exported_at,
+    deadlineStatus: row.deadline_verification_status,
+    exportVerifier: row.export_verifier_report,
+    attestedBy: row.attested_by,
+    attestedAt: row.attested_at,
+    attestation: row.attestation,
   };
 }
 
@@ -398,8 +419,9 @@ export async function approvePacketVersion(scope: PracticeScope<ScopeClient>, in
  * is queued; the export job checks again. Returns the job's ID, or null when it is already queued.
  */
 export async function requestPacketExport(scope: PracticeScope<ScopeClient>, queue: JobSender, input: VersionAction): Promise<string | null> {
-  const { rows } = await scope.client.query<{ approved: boolean; current: boolean; exported: boolean }>(
-    `SELECT v.approved_by IS NOT NULL AS approved, p.current_version_id = v.id AS current, v.exported_at IS NOT NULL AS exported
+  const { rows } = await scope.client.query<{ approved: boolean; current: boolean; exported: boolean; deadline_status: DeadlineStatus }>(
+    `SELECT v.approved_by IS NOT NULL AS approved, p.current_version_id = v.id AS current, v.exported_at IS NOT NULL AS exported,
+            packet_version_deadline_status(p.case_id, v.content) AS deadline_status
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
     [input.versionId, input.practiceId],
   );
@@ -410,7 +432,128 @@ export async function requestPacketExport(scope: PracticeScope<ScopeClient>, que
   if (!found.approved || !found.current || found.exported) {
     throw new PacketRuleError('23514', found.exported ? 'a packet version is exported once' : 'exporting a packet needs its current version approved');
   }
+  // CO-05: an unverified deadline blocks the export here as in the job and in the database.
+  if (found.deadline_status === 'unverified') {
+    throw new PacketRuleError('23514', DEADLINE_NOT_VERIFIED);
+  }
   return enqueue(queue, 'packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
+}
+
+/** The refusal of an export or an attestation whose deadline is not verified (the database's words). */
+export const DEADLINE_NOT_VERIFIED = 'a packet version whose deadline is not verified is not exported';
+
+/**
+ * What a reimbursement reviewer confirms over a packet's export before attesting it (D16), as codes:
+ * the attestation holds these and the two SHA-256, never a word a person typed (the database refuses any).
+ */
+export const PACKET_ATTESTATION_ITEMS = ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent'] as const;
+export type PacketAttestationItem = (typeof PACKET_ATTESTATION_ITEMS)[number];
+
+/** The attestation over an export (tp-attestation/1, as audit_report's): its checklist's codes and the files' SHA-256. */
+export interface PacketAttestation {
+  readonly format: 'tp-attestation/1';
+  readonly checklist: readonly PacketAttestationItem[];
+  readonly pdf_sha256: string;
+  readonly csv_sha256: string;
+}
+
+export interface AttestExportInput extends VersionAction {
+  /** The SHA-256 of the PDF and CSV the reviewer reviewed: they must be the export's. */
+  readonly pdfSha256: string;
+  readonly csvSha256: string;
+}
+
+export interface AttestedExport {
+  readonly attestedAt: Date;
+  /** False when the export was attested already (by anyone): nothing changed. */
+  readonly attested: boolean;
+}
+
+/**
+ * The reimbursement reviewer's attestation over a packet's export (D16; docs/adr/0061), as audit_report's
+ * over its files: once the export is made and hashed, a reviewer (audit_finding.validate, the reviewer
+ * role, reached under a support grant) attests once over the SHA-256 of the PDF and the CSV they reviewed,
+ * in their own name; a submission is logged only after it. The database refuses the person who drafted,
+ * wrote or approved the packet, a version not current or whose case changed, one whose deadline is not
+ * verified, files that are not the export's, and anyone else; this checks the permission and the files
+ * first. An attested export is left as it is. Internal users approve nothing: the practice's approval
+ * stands as before, and this is the founder's attestation beside it.
+ */
+export async function attestPacketExport(scope: PracticeScope<ScopeClient>, input: AttestExportInput): Promise<AttestedExport> {
+  requirePracticePermission(scope, input.practiceId, 'audit_finding.validate');
+  const { rows } = await scope.client.query<{ export_sha256: string | null; export_csv_sha256: string | null; attested_at: Date | null }>(
+    'SELECT export_sha256, export_csv_sha256, attested_at FROM packet_version WHERE id = $1 AND practice_id = $2 FOR UPDATE',
+    [input.versionId, input.practiceId],
+  );
+  const found = rows[0];
+  if (found === undefined) {
+    throw new PacketRefusedError('version_not_found', 'no such packet version in this practice');
+  }
+  if (found.attested_at !== null) {
+    return { attestedAt: found.attested_at, attested: false };
+  }
+  if (found.export_sha256 === null || found.export_csv_sha256 === null) {
+    throw new PacketRuleError('23514', 'a packet version is attested once its export is made');
+  }
+  if (found.export_sha256 !== input.pdfSha256 || found.export_csv_sha256 !== input.csvSha256) {
+    throw new PacketRuleError('23514', 'the files reviewed are not this export’s; open the review again');
+  }
+  const attestation: PacketAttestation = { format: 'tp-attestation/1', checklist: [...PACKET_ATTESTATION_ITEMS], pdf_sha256: input.pdfSha256, csv_sha256: input.csvSha256 };
+  const { rows: attested } = await underRules(() =>
+    scope.client.query<{ attested_at: Date }>('UPDATE packet_version SET attested_by = app_actor_id(), attestation = $3 WHERE id = $1 AND practice_id = $2 RETURNING attested_at', [
+      input.versionId,
+      input.practiceId,
+      JSON.stringify(attestation),
+    ]),
+  );
+  const at = attested[0];
+  if (at === undefined) {
+    throw new PacketRefusedError('version_not_found', 'no such packet version in this practice');
+  }
+  return { attestedAt: at.attested_at, attested: true };
+}
+
+export interface ExportAwaitingAttestation {
+  readonly versionId: string;
+  readonly caseId: string;
+  readonly versionNo: number;
+  readonly disputeLevel: number;
+  readonly exportedAt: Date;
+  readonly exportSha256: string;
+  readonly exportCsvSha256: string;
+  readonly deadlineEndsOn: string | null;
+  readonly payerName: string;
+  readonly planKey: string;
+  readonly lines: number;
+  readonly varianceCents: Cents;
+}
+
+/**
+ * The exports waiting for a reimbursement reviewer's attestation (D16): each packet's current version,
+ * exported, not attested, oldest first. The version's own content only (identifiers are placeholders in it).
+ */
+export async function exportsAwaitingAttestation(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string }): Promise<ExportAwaitingAttestation[]> {
+  const { rows } = await scope.client.query<{ id: string; case_id: string; version_no: number; exported_at: Date; export_sha256: string; export_csv_sha256: string; content: PacketContent }>(
+    `SELECT v.id, p.case_id, v.version_no, v.exported_at, v.export_sha256, v.export_csv_sha256, v.content
+       FROM packet_version v JOIN packet p ON p.current_version_id = v.id
+      WHERE v.practice_id = $1 AND v.exported_at IS NOT NULL AND v.attested_by IS NULL
+      ORDER BY v.exported_at, v.id`,
+    [input.practiceId],
+  );
+  return rows.map((row) => ({
+    versionId: row.id,
+    caseId: row.case_id,
+    versionNo: row.version_no,
+    disputeLevel: row.content.dispute_level,
+    exportedAt: row.exported_at,
+    exportSha256: row.export_sha256,
+    exportCsvSha256: row.export_csv_sha256,
+    deadlineEndsOn: row.content.format === 'tp-packet/2' ? row.content.deadline.ends_on : null,
+    payerName: row.content.payer.name,
+    planKey: row.content.payer.plan_key,
+    lines: row.content.pattern.lines,
+    varianceCents: parseCents(row.content.pattern.variance_cents),
+  }));
 }
 
 export interface LogSubmissionInput {
@@ -448,8 +591,8 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   if (!(SUBMISSION_CHANNELS as readonly string[]).includes(input.channel)) {
     throw new PacketRuleError('23514', 'a submission goes through the payer portal, fax, mail or provider-relations email');
   }
-  const { rows: versions } = await scope.client.query<{ case_id: string; export_sha256: string | null; export_csv_sha256: string | null; current: boolean; replaced_on: string | null }>(
-    `SELECT p.case_id, v.export_sha256, v.export_csv_sha256, p.current_version_id = v.id AS current,
+  const { rows: versions } = await scope.client.query<{ case_id: string; export_sha256: string | null; export_csv_sha256: string | null; attested: boolean; current: boolean; replaced_on: string | null }>(
+    `SELECT p.case_id, v.export_sha256, v.export_csv_sha256, v.attested_by IS NOT NULL AS attested, p.current_version_id = v.id AS current,
             (SELECT (n.created_at AT TIME ZONE 'UTC')::date::text FROM packet_version n WHERE n.packet_id = v.packet_id AND n.version_no = v.version_no + 1) AS replaced_on
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
     [input.versionId, input.practiceId],
@@ -460,6 +603,10 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   }
   if (version.export_sha256 === null || version.export_csv_sha256 === null) {
     throw new PacketRuleError('23514', 'a packet is submitted once it is exported');
+  }
+  // D16: the reviewer's attestation over the export is its release, as for an audit report.
+  if (!version.attested) {
+    throw new PacketRuleError('23514', 'a packet is submitted once a reimbursement reviewer has attested its export');
   }
   // An edit clears the approval (CAS-13): a version an edit replaced was sent only if it went before the edit.
   if (!version.current && (version.replaced_on === null || input.submittedOn >= version.replaced_on)) {

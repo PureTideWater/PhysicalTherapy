@@ -1,6 +1,7 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
-import { formatUsd, parseCents } from '@tp/money';
-import { EVIDENCE_GAP_CODES, type EvidenceGapCode, type ExportedPacket } from '@tp/packets';
+import { decimal, formatUsd, parseCents } from '@tp/money';
+import { EVIDENCE_GAP_CODES, type EvidenceGapCode, type ExportedPacket, type LineDeadline, type PacketContentV2 } from '@tp/packets';
+import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
@@ -18,6 +19,12 @@ import { escapeHtml, escapeWithFigures } from '../report/escape';
  * its payer through its own channel, so the practice's name leads the cover and the running header (the
  * frame's white-label slot) and PaidWhole's lockup and name are not on it (docs/adr/0056). A packet states
  * no recovered total, so it never earns the seal or the badge.
+ *
+ * tp-packet/2 (CO-05, docs/adr/0061) adds the deadline the dispute is filed against, with its status in
+ * words and the evidence it rests on (the contract's cited window, or the rule release's record and its
+ * level), each line's window and its status, and each line's calculation summary as its trace recorded it
+ * (the steps, the one rounding with the unrounded amount beside it, the patient share, the trace's SHA-256).
+ * Only a version whose deadline is verified is exported, so the status printed is the database's own.
  */
 
 export interface ApprovalRecord {
@@ -32,6 +39,70 @@ export interface ApprovalRecord {
 }
 
 const usd = (value: string) => formatUsd(parseCents(value));
+
+/** Cents as decimal text (an unrounded amount keeps its fraction of a cent) in dollars. */
+function exactUsd(value: string): string {
+  return /^-?\d+$/.test(value) ? usd(value) : `$${decimal(value).dividedBy(decimal(100n)).toString()}`;
+}
+
+const DEADLINE_STATUS_TEXT: Readonly<Record<DeadlineStatus, string>> = {
+  verified: 'verified',
+  unverified: 'not verified',
+  not_applicable: 'no window',
+};
+
+const CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, string>> = {
+  COMMERCIAL_DEFAULT: 'the window is the rule release’s commercial default, which is never verified',
+  RECORD_NOT_IN_RELEASE: 'the window’s record is not in the rule release',
+  RECORD_BELOW_LEVEL: 'the window’s record is not verified to the level required',
+  CONTRACT_WINDOW_UNCITED: 'the contract version cites no page, quote and hash for its window',
+  CONTRACT_WINDOW_UNVERIFIED: 'the contract window’s citation is not verified',
+  CONTRACT_VERSION_NOT_SIGNED_OFF: 'the contract version is not signed off',
+  CONTRACT_WINDOW_DIFFERS: 'the window the line was priced with is not the contract version’s cited window',
+  NEXT_LEVEL_UNCITED: 'the next level’s window cites no evidence',
+};
+
+/** What a deadline's status prints as, with its cause when it is not verified. */
+export function deadlineText(deadline: Pick<LineDeadline, 'status' | 'cause'>): string {
+  return deadline.cause === null || deadline.status !== 'unverified' ? DEADLINE_STATUS_TEXT[deadline.status] : `${DEADLINE_STATUS_TEXT[deadline.status]}: ${CAUSE_TEXT[deadline.cause]}`;
+}
+
+/** The deadline section of a tp-packet/2 version, its sources, and each line's window and calculation. */
+function deadlineSection(content: PacketContentV2): string {
+  const { deadline } = content;
+  const basis = deadline.basis === 'next_level_window' ? 'the window of the next dispute level, after the payer’s denial' : 'the earliest of the listed lines’ dispute windows';
+  const sources = deadline.sources.map((source) =>
+    source.kind === 'contract_window'
+      ? `<li>Contract version ${escapeHtml(source.contract_version_id)}: a dispute window of ${source.days === null ? 'unstated' : String(source.days)} days, document ${escapeHtml(source.document_id)}, page ${String(source.page)} (page text SHA-256 ${escapeHtml(source.hash)})${source.verified_at === null ? ', citation not verified' : `, citation verified ${escapeHtml(source.verified_at.slice(0, 10))}`}:<blockquote>${escapeHtml(source.quote)}</blockquote></li>`
+      : `<li>Rule release ${String(source.release_no)}, dispute-window record${source.program === null ? '' : ` (${escapeHtml(source.program)})`} SHA-256 ${escapeHtml(source.sha256)}, verification level ${escapeHtml(source.level ?? 'unknown')}</li>`,
+  );
+  const rows = content.lines.map((line) => {
+    const { calculation } = line;
+    const steps = calculation.steps.map((step) => `${step.step} ${exactUsd(step.amount_cents)}`).join('; ');
+    const rounding = calculation.rounding === null ? '' : `${calculation.rounding.rule}: ${exactUsd(calculation.rounding.unrounded_cents)} to ${usd(calculation.rounding.rounded_cents)}`;
+    return [
+      String(line.row),
+      line.deadline.ends_on ?? 'none',
+      deadlineText(line.deadline),
+      calculation.method,
+      steps,
+      rounding,
+      calculation.patient_share_cents === null ? '' : usd(calculation.patient_share_cents),
+      calculation.trace_sha256.slice(0, 16),
+    ];
+  });
+  return [
+    `<h2>Deadline</h2>`,
+    `<p data-deadline="${deadline.status}"><strong>The dispute is filed by ${escapeHtml(deadline.ends_on ?? 'no date stated')}</strong>, ${escapeHtml(basis)}; deadline ${escapeHtml(DEADLINE_STATUS_TEXT[deadline.status])} (${String(deadline.lines_verified)} of ${String(deadline.lines)} lines’ windows verified).</p>`,
+    sources.length === 0 ? '' : `<ul>${sources.join('')}</ul>`,
+    table(
+      'Each line’s window and calculation, as its trace recorded it',
+      ['Row', 'Window ends', 'Deadline', 'Method', 'Steps', 'Rounding', 'Patient share', 'Trace SHA-256'],
+      rows,
+      { code: [1, 4], date: [2], id: [8], amount: [5, 6, 7] },
+    ),
+  ].join('');
+}
 
 const GAP_TEXT: Readonly<Record<EvidenceGapCode, string>> = {
   interest_rate_unknown: 'The state rule record states no interest rate: interest cannot be computed until it does.',
@@ -180,6 +251,7 @@ ${cited}
 <div class="narrative">${paragraphs}</div>
 <h2>Line schedule</h2>
 ${schedule}
+${content.format === 'tp-packet/2' ? deadlineSection(content) : ''}
 ${interestSection}
 <h2>Evidence</h2>
 <ul>${evidence.join('')}</ul>

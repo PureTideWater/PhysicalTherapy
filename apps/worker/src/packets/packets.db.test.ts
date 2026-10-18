@@ -10,12 +10,17 @@ import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Practice } from '../price/test-support/pricing-world';
+import { DocumentStore, type WrittenDocument } from '../storage/documents';
+import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
+import { PacketExportIntegrityError, exportPacketVersion } from './export';
 import { PacketRefusedError } from './records';
 import {
   PacketRuleError,
   acceptedPayerResponses,
   approvePacketVersion,
+  attestPacketExport,
   confirmRegulation,
+  exportsAwaitingAttestation,
   followUpsDue,
   logSubmission,
   packetOfCase,
@@ -117,15 +122,33 @@ async function caseState(setup: Setup): Promise<{ state: string; deadline_on: st
   return rows[0] as { state: string; deadline_on: string | null };
 }
 
-/** An approved, exported version of the case's code-built draft, approved by the second billing manager. */
+/**
+ * An approved, exported and attested version of the case's code-built draft: approved by the second
+ * billing manager, exported by the job, attested by the practice's reimbursement reviewer (D16).
+ */
 async function exported(setup: Setup): Promise<{ versionId: string; pdfSha256: string; csvSha256: string }> {
   const version = await write(setup, setup.practice.manager);
   await approve(setup, setup.second, version.versionId, version.contentSha256);
   const outcome = await w.export(setup.practice, version.versionId);
   if (outcome.outcome !== 'exported') {
-    throw new Error(`not exported: ${outcome.outcome}`);
+    throw new Error(`not exported: ${outcome.outcome === 'not_exportable' ? outcome.reason : outcome.outcome}`);
   }
+  await w.attest(setup.practice, version.versionId);
   return { versionId: version.versionId, pdfSha256: outcome.pdfSha256, csvSha256: outcome.csvSha256 };
+}
+
+/**
+ * A job writing a version's export directly (as the export job's UPDATE does, with the version's own passing
+ * report unless one is named): what the database refuses, whatever the worker checked.
+ */
+function jobExport(setup: Setup, versionId: string, packetId: string, report: string | null = 'verifier_report'): Promise<unknown> {
+  const key = `practices/${setup.practice.practiceId}/packets/${packetId}/${randomUUID()}`;
+  return withJobScope(w.app, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, (scope) =>
+    scope.client.query(
+      `UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4, export_verifier_report = ${report === null ? 'NULL' : report} WHERE id = $1`,
+      [versionId, `${key}.pdf`, `${key}.csv`, 'a'.repeat(64)],
+    ),
+  );
 }
 
 async function refusal(attempt: Promise<unknown>): Promise<Error> {
@@ -244,7 +267,9 @@ describe('CAS-11: identifiers in a draft', () => {
     const csv = (await w.stored(setup.practice, detail?.exportCsvKey ?? '')).toString('utf8');
     expect(csv).toContain('SYNCCNCAS080001');
     expect(csv).toContain('SYNCCNCAS080003');
-    expect(csv.split('\r\n')[0]).toBe('row,payer_claim_control_number,patient_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,trace_ref');
+    expect(csv.split('\r\n')[0]).toBe(
+      'row,payer_claim_control_number,patient_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,trace_ref,window_ends_on,deadline_status,deadline_source,calculation_method,unrounded,rounded,patient_share,trace_sha256',
+    );
     // The version itself still holds only placeholders.
     expect(detail?.content.lines.map((line) => line.claim_control_number)).toEqual(['{{claim_control_number:1}}', '{{claim_control_number:2}}', '{{claim_control_number:3}}']);
     expect(detail?.narrative).toContain('{{claim_control_number:1}}');
@@ -264,11 +289,10 @@ describe('CAS-12: the export', () => {
     // Only the export job records an export: a person is refused.
     const person = await refusal(
       w.as(setup.practice, setup.practice.manager, (scope) =>
-        scope.client.query(`UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $2, export_sha256 = $3, export_csv_sha256 = $3 WHERE id = $1`, [
-          version.versionId,
-          `practices/${setup.practice.practiceId}/packets/${version.packetId}/${version.versionId}.pdf`,
-          'a'.repeat(64),
-        ]),
+        scope.client.query(
+          `UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $2, export_sha256 = $3, export_csv_sha256 = $3, export_verifier_report = verifier_report WHERE id = $1`,
+          [version.versionId, `practices/${setup.practice.practiceId}/packets/${version.packetId}/${version.versionId}.pdf`, 'a'.repeat(64)],
+        ),
       ),
     );
     expect(person.message).toMatch(/approved|export job/);
@@ -288,12 +312,29 @@ describe('CAS-12: the export', () => {
     // A replay changes nothing (JOB-01).
     expect(await w.export(setup.practice, version.versionId)).toEqual({ outcome: 'already_exported' });
     const detail = await w.as(setup.practice, setup.practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: setup.practice.practiceId, versionId: version.versionId, requestId: 'r' }));
-    expect(detail).toMatchObject({ exportSha256: outcome.pdfSha256, exportCsvSha256: outcome.csvSha256 });
+    // The verifier ran again over what was printed, and its report is stored with the export (CO-05).
+    expect(outcome.verifier).toMatchObject({ format: 'tp-packet-verifier/2', passed: true, narrative_sha256: version.verifier.narrative_sha256 });
+    expect(detail).toMatchObject({ exportSha256: outcome.pdfSha256, exportCsvSha256: outcome.csvSha256, exportVerifier: outcome.verifier, deadlineStatus: 'verified', attestedBy: null });
+    // The stored hash is the SHA-256 of the exported file's bytes, read back through the document store.
     const pdf = await w.stored(setup.practice, detail?.exportPdfKey ?? '');
     const csv = await w.stored(setup.practice, detail?.exportCsvKey ?? '');
     expect(createHash('sha256').update(pdf).digest('hex')).toBe(outcome.pdfSha256);
     expect(createHash('sha256').update(csv).digest('hex')).toBe(outcome.csvSha256);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+
+    // D16: a submission waits for the reimbursement reviewer's attestation, in the service and in Postgres.
+    expect((await refusal(submit(setup, version.versionId))).message).toBe('a packet is submitted once a reimbursement reviewer has attested its export');
+    const unattested = await refusal(
+      w.as(setup.practice, setup.practice.manager, (scope) =>
+        scope.client.query(
+          `INSERT INTO submission (practice_id, case_id, packet_version_id, submitted_on, channel, submitted_by, follow_up_on, export_sha256, export_csv_sha256)
+           VALUES ($1, $2, $3, $4, 'fax', app_actor_id(), $4, $5, $6)`,
+          [setup.practice.practiceId, setup.caseId, version.versionId, w.today(), outcome.pdfSha256, outcome.csvSha256],
+        ),
+      ),
+    );
+    expect(unattested.message).toBe('a packet is submitted once a reimbursement reviewer has attested its export');
+    await w.attest(setup.practice, version.versionId);
 
     const logged = await submit(setup, version.versionId);
     expect(logged).toMatchObject({ exportSha256: outcome.pdfSha256, exportCsvSha256: outcome.csvSha256, disputeLevel: 1 });
@@ -359,16 +400,14 @@ describe('the verifier against what a narrative shows and the case’s own recor
       withJobScope(w.app, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, async (scope) => {
         const { rows } = await scope.client.query<{ packet_id: string }>('SELECT packet_id FROM packet_version WHERE id = $1', [version.versionId]);
         const key = keyOf(rows[0]?.packet_id ?? '');
-        return scope.client.query('UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4 WHERE id = $1', [
-          version.versionId,
-          `${key}.pdf`,
-          `${key}.csv`,
-          'a'.repeat(64),
-        ]);
+        return scope.client.query(
+          'UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4, export_verifier_report = verifier_report WHERE id = $1',
+          [version.versionId, `${key}.pdf`, `${key}.csv`, 'a'.repeat(64)],
+        );
       });
     // Another tenant's key space, and another packet's of the same practice: refused.
-    await expect(job((packetId) => `practices/${other.practice.practiceId}/packets/${packetId}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514' });
-    await expect(job(() => `practices/${setup.practice.practiceId}/packets/${randomUUID()}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514' });
+    await expect(job((packetId) => `practices/${other.practice.practiceId}/packets/${packetId}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514', constraint: 'packet_version_export_keys_its_own' });
+    await expect(job(() => `practices/${setup.practice.practiceId}/packets/${randomUUID()}/${randomUUID()}`)).rejects.toMatchObject({ code: '23514', constraint: 'packet_version_export_keys_its_own' });
     expect(await w.export(setup.practice, version.versionId)).toMatchObject({ outcome: 'exported' });
   });
 
@@ -414,6 +453,147 @@ describe('the verifier against what a narrative shows and the case’s own recor
     expect(new Set(rows.map((row) => JSON.stringify([row.counts, row.totals_cents])))).toEqual(new Set([JSON.stringify([{ days_waiting: 0 }, {}])]));
     // A person never reads the recipients.
     await expect(w.as(setup.practice, setup.practice.manager, (scope) => remindFollowUps(scope, { practiceId: setup.practice.practiceId, asOf: w.today() }))).rejects.toMatchObject({ code: '42501' });
+  });
+});
+
+describe('CO-05: the export runs the verifier again over what it prints, and records the hash of the bytes it wrote', () => {
+  it('refuses a narrative that fails the verifier now (an identifier of the case in it), and Postgres refuses an export without the passing report', async () => {
+    const setup = await cas08('export-verifier');
+    const version = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].' });
+    expect(version.verifier.passed).toBe(true);
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    // Without the verifier's passing report over the version's narrative, Postgres refuses the export.
+    const without = await refusal(jobExport(setup, version.versionId, version.packetId, null));
+    expect(without.message).toBe("a packet version is exported with the verifier's passing report over the narrative it rendered");
+    const failing = JSON.stringify({ ...version.verifier, passed: false, mismatches: [{ code: 'figure_not_in_input', kind: 'amount', sentence: 0, start: 0, end: 3 }] });
+    expect((await refusal(jobExport(setup, version.versionId, version.packetId, `'${failing}'::jsonb`))).message).toBe("a packet version is exported with the verifier's passing report over the narrative it rendered");
+    const other = JSON.stringify({ ...version.verifier, narrative_sha256: 'b'.repeat(64) });
+    expect((await refusal(jobExport(setup, version.versionId, version.packetId, `'${other}'::jsonb`))).message).toBe("a packet version is exported with the verifier's passing report over the narrative it rendered");
+    // The first line's patient is renamed on the record (a SYNTHETIC correction) to a word the narrative holds:
+    // the export's verifier, run again against today's identifiers, fails it, and nothing is written.
+    const line = version.content.lines[0];
+    const { rows } = await asOwner(w.owner, [setup.practice.practiceId], () =>
+      w.owner.query<{ id: string }>('SELECT c.patient_ref_id AS id FROM service_line sl JOIN claim c ON c.id = sl.claim_id WHERE sl.id = $1', [line?.service_line_id]),
+    );
+    await w.superuser('UPDATE patient_ref SET last_name = $2 WHERE id = $1', [rows[0]?.id, setup.practice.cipher.encrypt('patient_ref.last_name', 'PAID')]);
+    expect(await w.export(setup.practice, version.versionId)).toEqual({ outcome: 'not_exportable', reason: 'verifier_failed' });
+    const detail = await w.as(setup.practice, setup.practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: setup.practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(detail).toMatchObject({ exportSha256: null, exportVerifier: null, exportedAt: null });
+  });
+
+  it('fails when the store seals other bytes than the export printed, and records nothing', async () => {
+    const setup = await cas08('export-integrity');
+    const version = await write(setup, setup.practice.manager);
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    class Lying extends DocumentStore {
+      override async write(...args: Parameters<DocumentStore['write']>): Promise<WrittenDocument> {
+        const written = await super.write(...args);
+        return { ...written, sha256: 'f'.repeat(64) };
+      }
+    }
+    const lying = { ...w.services, documents: new Lying(new MemorySealedBytes()) };
+    await expect(exportPacketVersion(w.triage.pricing.jobContext(setup.practice.practiceId), lying, setup.practice.practiceId, version.versionId)).rejects.toBeInstanceOf(PacketExportIntegrityError);
+    const detail = await w.as(setup.practice, setup.practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: setup.practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(detail).toMatchObject({ exportSha256: null, exportedAt: null });
+    // The honest store's export records the SHA-256 of exactly the bytes it sealed.
+    const outcome = await w.export(setup.practice, version.versionId);
+    expect(outcome.outcome).toBe('exported');
+  });
+});
+
+describe('CO-05: an unverified deadline blocks the export (D17)', () => {
+  it('states each line’s deadline unverified with its cause, and refuses the export in the worker, the handler and Postgres, whatever the version states', async () => {
+    const practice = await w.practice('deadline-uncited');
+    const { caseId, opened } = await w.previousImageCase(practice, 'CAS-08/remit.835', 'CE:SYNPLAN-FIX-ONE', MARCH);
+    // Triage itself opens no case for lines whose deadline is not verified.
+    expect(opened).toBe(0);
+    const setup: Setup = { practice, caseId, second: await w.person(practice, 'billing_manager') };
+    const version = await write(setup, practice.manager);
+    expect(version.verifier.passed).toBe(true);
+    if (version.content.format !== 'tp-packet/2') {
+      throw new Error('tp-packet/2 expected');
+    }
+    expect(version.content.deadline).toMatchObject({ basis: 'line_windows', status: 'unverified', lines_verified: 0, lines: 3, causes: ['CONTRACT_WINDOW_UNCITED'], sources: [] });
+    expect(version.content.lines.map((line) => [line.deadline.status, line.deadline.source, line.deadline.cause, line.deadline.ends_on === line.window_ends_on])).toEqual([
+      ['unverified', 'contract', 'CONTRACT_WINDOW_UNCITED', true],
+      ['unverified', 'contract', 'CONTRACT_WINDOW_UNCITED', true],
+      ['unverified', 'contract', 'CONTRACT_WINDOW_UNCITED', true],
+    ]);
+    const stored = await w.as(practice, practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(stored?.deadlineStatus).toBe('unverified');
+    // A version cannot state its deadline verified when the database does not derive it so.
+    const claimed = { ...version.content, deadline: { ...version.content.deadline, status: 'verified' }, lines: version.content.lines.map((line) => ({ ...line, deadline: { ...line.deadline, status: 'verified', cause: null } })) };
+    const stated = await refusal(
+      w.as(practice, practice.manager, (scope) =>
+        scope.client.query(
+          `INSERT INTO packet_version (practice_id, packet_id, version_no, content, narrative, content_sha256, verifier_passed, verifier_report, drafted_by)
+           SELECT practice_id, packet_id, 2, $2, narrative, content_sha256, verifier_passed, verifier_report, drafted_by FROM packet_version WHERE id = $1`,
+          [version.versionId, JSON.stringify(claimed)],
+        ),
+      ),
+    );
+    expect(stated).toMatchObject({ code: '23514' });
+    // Approval is a person's judgement of the version; the export is held to the deadline.
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    expect(await w.export(practice, version.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
+    const queue = { send: () => Promise.resolve('queued') } as never;
+    expect((await refusal(w.as(practice, practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' })))).message).toBe(
+      'a packet version whose deadline is not verified is not exported',
+    );
+    expect((await refusal(jobExport(setup, version.versionId, version.packetId))).message).toBe('a packet version whose deadline is not verified is not exported');
+    const after = await w.as(practice, practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(after).toMatchObject({ exportSha256: null, exportedAt: null, exportVerifier: null });
+    expect((await refusal(submit(setup, version.versionId))).message).toBe('a packet is submitted once it is exported');
+  });
+});
+
+describe('D16: the reimbursement reviewer attests the export over its SHA-256', () => {
+  it('is attested once, after the export, over its two files, by a reviewer under a support grant in their own name; never by a billing manager, the drafter or the approver', async () => {
+    const setup = await cas08('attestation');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    const attest = (actorId: string, files: { pdf: string; csv: string }) =>
+      w.as(practice, actorId, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId: version.versionId, pdfSha256: files.pdf, csvSha256: files.csv, requestId: 'r' }));
+    const version = await write(setup, practice.manager);
+    // Internal users approve nothing (docs/adr/0041): the reviewer is refused the approval.
+    expect(await refusal(approve(setup, reviewer, version.versionId, version.contentSha256))).toMatchObject({ code: '42501' });
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    // Before the export there is nothing to attest.
+    expect((await refusal(attest(reviewer, { pdf: 'a'.repeat(64), csv: 'a'.repeat(64) }))).message).toBe('a packet version is attested once its export is made');
+    const outcome = await w.export(practice, version.versionId);
+    if (outcome.outcome !== 'exported') {
+      throw new Error('not exported');
+    }
+    const files = { pdf: outcome.pdfSha256, csv: outcome.csvSha256 };
+    expect(await w.as(practice, reviewer, (scope) => exportsAwaitingAttestation(scope, { practiceId: practice.practiceId }))).toMatchObject([
+      { versionId: version.versionId, caseId: setup.caseId, exportSha256: files.pdf, exportCsvSha256: files.csv, lines: 3 },
+    ]);
+    // A billing manager who approves packets does not attest: the service refuses, and Postgres in SQL.
+    expect(await refusal(attest(setup.second, files))).toMatchObject({ name: 'PermissionDeniedError' });
+    const signed = (pdf: string, csv: string, checklist: readonly string[] = ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent']) =>
+      JSON.stringify({ format: 'tp-attestation/1', checklist, pdf_sha256: pdf, csv_sha256: csv });
+    const direct = (actorId: string, attestation: string) =>
+      w.as(practice, actorId, (scope) => scope.client.query('UPDATE packet_version SET attested_by = $2, attestation = $3 WHERE id = $1', [version.versionId, actorId, attestation]));
+    expect(await refusal(direct(setup.second, signed(files.pdf, files.csv)))).toMatchObject({ code: '42501' });
+    // In their own name, over the export's files, with no words.
+    expect(await refusal(w.as(practice, reviewer, (scope) => scope.client.query('UPDATE packet_version SET attested_by = $2, attestation = $3 WHERE id = $1', [version.versionId, setup.second, signed(files.pdf, files.csv)])))).toMatchObject({ code: '42501' });
+    expect((await refusal(attest(reviewer, { pdf: 'f'.repeat(64), csv: files.csv }))).message).toBe('the files reviewed are not this export’s; open the review again');
+    expect(await refusal(direct(reviewer, signed('f'.repeat(64), files.csv)))).toMatchObject({ code: '23514', constraint: 'packet_version_attestation_names_its_export' });
+    expect(await refusal(direct(reviewer, signed(files.pdf, files.csv, ['figures', 'SYNTHLAST SYNTHFIRST'])))).toMatchObject({ code: '23514', constraint: 'packet_version_attestation_holds_no_words' });
+    // The person who approved it never attests it (here made the reviewer's own approval, triggers off).
+    await w.superuser('UPDATE packet_version SET approved_by = $2 WHERE id = $1', [version.versionId, reviewer]);
+    expect((await refusal(attest(reviewer, files))).message).toBe('the person who drafted, wrote or approved a packet does not attest its export');
+    await w.superuser('UPDATE packet_version SET approved_by = $2 WHERE id = $1', [version.versionId, setup.second]);
+    const attested = await attest(reviewer, files);
+    expect(attested.attested).toBe(true);
+    // Once: the same attestation again changes nothing, its time is the database's, and the reviewer edits nothing else.
+    expect(await attest(reviewer, files)).toEqual({ attestedAt: attested.attestedAt, attested: false });
+    expect(await refusal(direct(reviewer, signed(files.pdf, files.csv, ['figures'])))).toMatchObject({ code: '23514' });
+    expect(await refusal(w.as(practice, reviewer, (scope) => scope.client.query('UPDATE packet_version SET attested_at = now() WHERE id = $1', [version.versionId])))).toMatchObject({ code: '42501' });
+    const detail = await w.as(practice, practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect(detail).toMatchObject({ attestedBy: reviewer, attestation: { format: 'tp-attestation/1', pdf_sha256: files.pdf, csv_sha256: files.csv } });
+    expect(await w.as(practice, reviewer, (scope) => exportsAwaitingAttestation(scope, { practiceId: practice.practiceId }))).toEqual([]);
+    await expect(submit(setup, version.versionId)).resolves.toMatchObject({ exportSha256: files.pdf, exportCsvSha256: files.csv });
   });
 });
 
@@ -544,10 +724,25 @@ describe('submissions, payer responses and the case states they derive (PRD 8; P
     const second = await write(setup, setup.practice.manager, { basedOn: first.versionId });
     expect(second.content.dispute_level).toBe(2);
     expect(second.content.requested_action).toMatch(/^Dispute level 2\./);
+    // D17: the next level's window is the contract's appeal level, which cites no evidence, so its deadline is
+    // not verified and the second-level packet is not exported (CO-05); its lines' own windows stay verified.
+    expect(second.content.format === 'tp-packet/2' ? second.content.deadline : null).toMatchObject({
+      basis: 'next_level_window',
+      ends_on: reopened.nextWindowEndsOn,
+      status: 'unverified',
+      causes: ['NEXT_LEVEL_UNCITED'],
+    });
+    expect(second.content.format === 'tp-packet/2' ? second.content.lines.map((line) => line.deadline.status) : []).toEqual(['verified', 'verified', 'verified']);
     await approve(setup, setup.second, second.versionId, second.contentSha256);
-    expect(await w.export(setup.practice, second.versionId)).toMatchObject({ outcome: 'exported' });
-    await expect(submit(setup, second.versionId)).resolves.toMatchObject({ disputeLevel: 2 });
-    expect((await caseState(setup)).state).toBe('submitted');
+    expect(await w.export(setup.practice, second.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
+    // The handler refuses it too, and so does Postgres, whatever a job writes.
+    const queue = { send: () => Promise.resolve('queued') } as never;
+    expect((await refusal(w.as(setup.practice, setup.practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: setup.practice.practiceId, versionId: second.versionId, requestId: 'r' })))).message).toBe(
+      'a packet version whose deadline is not verified is not exported',
+    );
+    expect((await refusal(jobExport(setup, second.versionId, second.packetId))).message).toBe('a packet version whose deadline is not verified is not exported');
+    expect((await refusal(submit(setup, second.versionId))).message).toBe('a packet is submitted once it is exported');
+    expect((await caseState(setup)).state).toBe('awaiting_response');
   });
 
   it('closes written off when every line is, and takes no new version or submission then', async () => {

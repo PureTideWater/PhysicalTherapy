@@ -1,12 +1,14 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-import { type KeyProvider, loadPracticeCipher, packetExportKey } from '@tp/db/runtime';
-import { type PacketContent, insertIdentifiers } from '@tp/packets';
+import { type KeyProvider, type ScopeClient, loadPracticeCipher, packetExportKey } from '@tp/db/runtime';
+import { type PacketContent, type VerifierReport, insertIdentifiers, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { type DeadlineStatus, packetDeadlineStatus } from '@tp/triage';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
 import type { DocumentStore } from '../storage/documents';
+import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
 import type { TriageJobContext } from '../triage/execute';
 import { packetCsv } from './csv';
 import { packetHtml } from './html';
@@ -23,6 +25,14 @@ import { scheduleIdentifiers } from './identifiers';
  * and SHA-256 (the database lets only a job record them, once, on an approved current version). A
  * version already exported is left as it is (JOB-01); one not approved, no longer current or whose case
  * changed is refused at once, since no attempt changes that.
+ *
+ * CO-05 (docs/adr/0061): the export is refused, and no file written, when the version's deadline is not
+ * verified, derived again now both by the database (packet_version_deadline_status, which also refuses the
+ * export's UPDATE) and here (the lines' deadlines from their traces and their windows' evidence, or the
+ * next level's), never read from what the version stated; and when the verifier, run again over exactly the
+ * narrative and content the PDF and CSV are printed from and against the schedule rows' identifiers read
+ * now, fails it. Its report is stored with the export. The SHA-256 recorded is of the exact bytes printed,
+ * and the store must have sealed exactly those bytes (its plaintext hash) before the version records them.
  */
 
 export interface PacketExportServices {
@@ -31,14 +41,45 @@ export interface PacketExportServices {
   readonly pdf: PdfRenderer;
 }
 
+export type PacketExportRefusal = 'not_approved' | 'not_current' | 'case_changed' | 'deadline_unverified' | 'verifier_failed';
+
 export type PacketExportOutcome =
-  | { readonly outcome: 'exported'; readonly pdfSha256: string; readonly csvSha256: string }
+  | { readonly outcome: 'exported'; readonly pdfSha256: string; readonly csvSha256: string; readonly verifier: VerifierReport }
   | { readonly outcome: 'already_exported' }
-  | { readonly outcome: 'not_exportable'; readonly reason: 'not_approved' | 'not_current' | 'case_changed' }
+  | { readonly outcome: 'not_exportable'; readonly reason: PacketExportRefusal }
   | { readonly outcome: 'missing' };
+
+/** The store sealed other bytes than the export printed: nothing is recorded, and the job fails. */
+export class PacketExportIntegrityError extends Error {
+  override readonly name = 'PacketExportIntegrityError';
+}
+
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+/**
+ * The version's deadline derived again now (D17), as @tp/triage derives it: at the first dispute level
+ * every line's from its stored trace and its window's evidence, after a reopened denial the next
+ * level's. Never the status the version stated.
+ */
+export async function exportDeadlineStatus(client: ScopeClient, caseId: string, content: PacketContent): Promise<DeadlineStatus> {
+  if (content.format !== 'tp-packet/2') {
+    return 'unverified';
+  }
+  if (content.dispute_level > 1) {
+    return (await nextLevelDeadline(client, caseId)).verification.status;
+  }
+  const deadlines = await lineDeadlines(
+    client,
+    content.lines.map((line) => line.priced_line_id),
+  );
+  return packetDeadlineStatus(content.lines.map((line) => deadlines.get(line.priced_line_id) ?? { status: 'unverified' as const }));
+}
 
 interface ExportRow {
   readonly packet_id: string;
+  readonly case_id: string;
+  readonly deadline_status: DeadlineStatus;
+  readonly verifier_report: VerifierReport;
   readonly version_no: number;
   readonly content: PacketContent;
   readonly narrative: string;
@@ -58,8 +99,9 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     // One export of a version at a time, whatever the queue does.
     await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('packet_export:' || $1::text, 0))", [versionId]);
     const { rows } = await scope.client.query<ExportRow>(
-      `SELECT v.packet_id, v.version_no, v.content, v.narrative, v.content_sha256, v.approved_at, v.approved_alone, v.exported_at,
+      `SELECT v.packet_id, p.case_id, v.version_no, v.content, v.narrative, v.content_sha256, v.verifier_report, v.approved_at, v.approved_alone, v.exported_at,
               p.current_version_id = v.id AS current, packet_version_matches_case(p.case_id, v.content) AS matches,
+              packet_version_deadline_status(p.case_id, v.content) AS deadline_status,
               people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email
          FROM packet_version v JOIN packet p ON p.id = v.packet_id, LATERAL packet_version_people(v.id) people
         WHERE v.id = $1 AND v.practice_id = $2`,
@@ -81,10 +123,19 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     if (!version.matches) {
       return { outcome: 'not_exportable', reason: 'case_changed' };
     }
+    // The deadline, derived again now by the database and by @tp/triage (CO-05): either unverified refuses it.
+    if (version.deadline_status === 'unverified' || (await exportDeadlineStatus(scope.client, version.case_id, version.content)) === 'unverified') {
+      return { outcome: 'not_exportable', reason: 'deadline_unverified' };
+    }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
-    const { rows: identifiers } = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
-    const exported = insertIdentifiers(version.content, narrative, identifiers);
+    const identifiers = await scheduleIdentifiers(scope, cipher, version.content, { purpose: 'packet_export', requestId: context.jobId });
+    // The verifier again, over exactly what is printed below: this narrative, this content, today's identifiers.
+    const verifier = verifyNarrative(narrative, narrativeFacts(version.content), identifiers.all);
+    if (!verifier.passed || verifier.narrative_sha256 !== version.verifier_report.narrative_sha256) {
+      return { outcome: 'not_exportable', reason: 'verifier_failed' };
+    }
+    const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
     const pdf = await services.pdf.render(
       packetHtml(exported, {
         versionNo: version.version_no,
@@ -97,24 +148,32 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
       }),
     );
     const csv = Buffer.from(packetCsv(exported), 'utf8');
+    // The hashes of the exact bytes printed, which the store must seal unchanged.
+    const pdfSha256 = sha256(pdf);
+    const csvSha256 = sha256(csv);
     const pdfKey = packetExportKey(practiceId, version.packet_id, randomUUID(), 'pdf');
     const csvKey = packetExportKey(practiceId, version.packet_id, randomUUID(), 'csv');
     const writtenPdf = await services.documents.write(cipher, pdfKey, Readable.from([pdf]));
     const writtenCsv = await services.documents.write(cipher, csvKey, Readable.from([csv]));
+    if (writtenPdf.sha256 !== pdfSha256 || writtenCsv.sha256 !== csvSha256 || writtenPdf.sizeBytes !== pdf.length || writtenCsv.sizeBytes !== csv.length) {
+      throw new PacketExportIntegrityError('the store sealed other bytes than the export printed');
+    }
     await scope.client.query(
-      'UPDATE packet_version SET export_pdf_key = $3, export_csv_key = $4, export_sha256 = $5, export_csv_sha256 = $6 WHERE id = $1 AND practice_id = $2',
-      [versionId, practiceId, pdfKey, csvKey, writtenPdf.sha256, writtenCsv.sha256],
+      'UPDATE packet_version SET export_pdf_key = $3, export_csv_key = $4, export_sha256 = $5, export_csv_sha256 = $6, export_verifier_report = $7 WHERE id = $1 AND practice_id = $2',
+      [versionId, practiceId, pdfKey, csvKey, pdfSha256, csvSha256, JSON.stringify(verifier)],
     );
-    return { outcome: 'exported', pdfSha256: writtenPdf.sha256, csvSha256: writtenCsv.sha256 };
+    return { outcome: 'exported', pdfSha256, csvSha256, verifier };
   });
 }
 
 /** The error code an export not made is logged with, by reason. */
-const EXPORT_REFUSALS = {
+export const EXPORT_REFUSALS = {
   missing: 'PACKET_VERSION_NOT_FOUND',
   not_approved: 'PACKET_VERSION_NOT_APPROVED',
   not_current: 'PACKET_VERSION_NOT_CURRENT',
   case_changed: 'PACKET_CASE_CHANGED',
+  deadline_unverified: 'PACKET_DEADLINE_UNVERIFIED',
+  verifier_failed: 'PACKET_VERIFIER_FAILED',
 } as const;
 
 export function packetExportHandler(services: PacketExportServices): JobHandler<'packet_export'> {
