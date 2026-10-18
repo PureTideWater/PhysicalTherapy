@@ -10,7 +10,7 @@
     "dev": "tsx tools/dev.ts",
     "build": "pnpm -r --filter @tp/web --filter @tp/worker build",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --workspace-concurrency=4 typecheck",
-    "lint": "eslint . --max-warnings=0",
+    "lint": "node --max-old-space-size=8192 node_modules/eslint/bin/eslint.js . --max-warnings=0",
     "lint:logs": "tsx tools/lint-logs/index.ts",
     "lint:copy": "tsx tools/brand-copy/index.ts",
     "check:fixtures": "tsx tools/fixture-check/index.ts",
