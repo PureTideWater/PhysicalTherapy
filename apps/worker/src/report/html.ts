@@ -26,6 +26,7 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   BELOW_LINE_MATERIALITY: 'Below the per-line materiality',
   WINDOW_PASSED: 'Dispute window passed on the triage date',
   NO_WINDOW: 'No dispute window known',
+  DEADLINE_UNVERIFIED: 'Deadline not verified',
   CLAIM_REVERSED: 'Claim reversed since it was priced',
   CLAIM_SUPERSEDED: 'Claim corrected since it was priced',
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',

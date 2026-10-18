@@ -7,6 +7,7 @@ import { NOT_ACTIONABLE_REASONS, type TriageFacts, judgeLine, shortfallOf, windo
 const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   varianceCents: 3000n as Cents,
   windowEndsOn: '2026-12-31',
+  deadlineStatus: 'verified',
   claimReversed: false,
   claimSuperseded: false,
   mappingKind: 'contract',
@@ -40,6 +41,14 @@ describe('from validated to actionable (PRD 12)', () => {
     expect(judgeLine(facts({ windowEndsOn: AS_OF }), FIVE, AS_OF).actionable).toBe(true);
     expect(judgeLine(facts({ windowEndsOn: null }), FIVE, AS_OF).reasons).toEqual(['NO_WINDOW']);
     expect(windowOpen(null, AS_OF)).toBe(false);
+  });
+
+  it('keeps a line whose deadline is not verified validated with DEADLINE_UNVERIFIED, after the window, and keeps its price (D17 a)', () => {
+    expect(judgeLine(facts({ deadlineStatus: 'unverified' }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['DEADLINE_UNVERIFIED'], validatedCents: 3000n });
+    expect(judgeLine(facts({ deadlineStatus: 'unverified', windowEndsOn: '2026-10-14' }), FIVE, AS_OF).reasons).toEqual(['WINDOW_PASSED', 'DEADLINE_UNVERIFIED']);
+    // No window: NO_WINDOW says it, and a deadline that does not exist is not applicable rather than unverified.
+    expect(judgeLine(facts({ deadlineStatus: 'not_applicable', windowEndsOn: null }), FIVE, AS_OF).reasons).toEqual(['NO_WINDOW']);
+    expect(NOT_ACTIONABLE_REASONS.slice(1, 4)).toEqual(['WINDOW_PASSED', 'NO_WINDOW', 'DEADLINE_UNVERIFIED']);
   });
 
   it('refuses reversed and superseded claims and versions no longer signed off; Medicare Advantage lines need no version', () => {
@@ -88,13 +97,15 @@ describe('from validated to actionable (PRD 12)', () => {
         fc.boolean(),
         fc.constantFrom('signed_off', 'superseded'),
         fc.boolean(),
-        (variance, window, reversed, superseded, status, writtenOff) => {
-          const judged = judgeLine(facts({ varianceCents: variance as Cents, windowEndsOn: window, claimReversed: reversed, claimSuperseded: superseded, contractVersionStatus: status, writtenOff }), FIVE, AS_OF);
+        fc.constantFrom<TriageFacts['deadlineStatus']>('verified', 'unverified'),
+        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus) => {
+          const judged = judgeLine(facts({ varianceCents: variance as Cents, windowEndsOn: window, deadlineStatus, claimReversed: reversed, claimSuperseded: superseded, contractVersionStatus: status, writtenOff }), FIVE, AS_OF);
           expect(judged.validated).toBe(true);
           expect(judged.actionable).toBe(judged.reasons.length === 0);
           expect(judged.reasons).toEqual(NOT_ACTIONABLE_REASONS.filter((reason) => judged.reasons.includes(reason)));
           expect(judged.reasons.includes('BELOW_LINE_MATERIALITY')).toBe(variance < 500n);
           expect(judged.actionable && (window === null || window < AS_OF)).toBe(false);
+          expect(judged.reasons.includes('DEADLINE_UNVERIFIED')).toBe(deadlineStatus === 'unverified');
         },
       ),
     );

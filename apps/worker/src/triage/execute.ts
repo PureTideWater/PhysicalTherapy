@@ -21,6 +21,7 @@ import {
 
 import { PRICED_IN_EFFECT, RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
+import { lineDeadlines } from './deadline';
 
 /**
  * Triage of the pricing run in effect for its period (PRD 12; PRD 5, J8 and J17; PRD 8, The status
@@ -249,8 +250,17 @@ function referencesByRelease(client: ScopeClient): (releaseNo: number) => Promis
   };
 }
 
+/**
+ * The candidates as @tp/triage judges them: each with its pattern (the adjustment behavior detected from its
+ * trace) and whether its deadline is verified (lineDeadlines: D17 a, at L2), a line the loader cannot read being
+ * unverified.
+ */
 export async function candidateLines(client: ScopeClient, rows: readonly CandidateRow[]): Promise<CandidateLine[]> {
   const references = referencesByRelease(client);
+  const deadlines = await lineDeadlines(
+    client,
+    rows.map((row) => row.priced_line_id),
+  );
   const lines: CandidateLine[] = [];
   for (const row of rows) {
     const behavior = detectBehavior(parseTrace(row.trace), await references(row.release_no));
@@ -268,6 +278,7 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
       pattern,
       varianceCents: parseCents(row.variance_cents),
       windowEndsOn: row.window_ends_on,
+      deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
       claimReversed: row.reversed,
       claimSuperseded: row.superseded,
       mappingKind: row.mapping_kind,

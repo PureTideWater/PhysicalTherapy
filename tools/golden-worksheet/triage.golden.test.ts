@@ -1,6 +1,6 @@
 import { type Cents, sumCents } from '@tp/money';
 import { type LinePricing, price } from '@tp/pricing';
-import { type CandidateLine, judgeLine, planCases } from '@tp/triage';
+import { type CandidateLine, type DeadlineStatus, deadlineVerification, judgeLine, planCases } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import { type GoldenClaim, goldenPricingInput, readGoldenClaims } from './engine';
@@ -16,7 +16,9 @@ import { type GoldenClaim, goldenPricingInput, readGoldenClaims } from './engine
  * A per-visit line validates at most its visit's net shortfall, and nothing when the visit as a whole
  * was paid in full; it and a line with an NCCI procedure-to-procedure review flag stay validated for a
  * person's review and join no case until the specialist answers Q44 and Q41. The triage date is the
- * claim's remittance date, on which every window is open.
+ * claim's remittance date, on which every window is open, and every line's deadline is declared verified
+ * (D17 a: these claims test the engine and triage, not the evidence behind a window), except in the last
+ * case, where a contract window carries no citation yet and its line waits with DEADLINE_UNVERIFIED.
  */
 
 const files = readGoldenClaims();
@@ -37,7 +39,7 @@ function visitKey(result: LinePricing): string | null {
   return visit === null ? null : JSON.stringify([visit.service_date, visit.carrier_line_no, result.terms.rateRecordId]);
 }
 
-function candidates(id: string): { readonly asOf: string; readonly lines: CandidateLine[] } {
+function candidates(id: string, deadlineStatus: DeadlineStatus = 'verified'): { readonly asOf: string; readonly lines: CandidateLine[] } {
   const golden = claim(id);
   const results = price(goldenPricingInput(golden));
   const visits = new Map<string, Cents[]>();
@@ -59,6 +61,7 @@ function candidates(id: string): { readonly asOf: string; readonly lines: Candid
         pattern: { payer_id: 'payer', plan_id: 'plan', mapping_kind: result.terms.mappingKind, contract_version_id: result.terms.contractVersionId, rate_record_id: result.terms.rateRecordId, behavior: 'BELOW_CONTRACT_RATE' },
         varianceCents: result.varianceCents,
         windowEndsOn: result.window.endsOn,
+        deadlineStatus,
         claimReversed: false,
         claimSuperseded: false,
         mappingKind: result.terms.mappingKind,
@@ -123,5 +126,31 @@ describe('an NCCI procedure-to-procedure flag keeps a line for review (Q41, PRC-
     const plan = planCases(lines, new Map(), { ...SETTINGS, caseMaterialityCents: 1n as Cents }, asOf);
     expect(plan.created).toEqual([]);
     expect(plan.waiting.get('G184-line-2')).toEqual(['NCCI_REVIEW']);
+  });
+});
+
+describe('a contract window with no citation keeps its line from becoming actionable (D17 a)', () => {
+  it('opens a case on G118 with its window verified, and none while the window is uncited: the line waits with DEADLINE_UNVERIFIED, its price unchanged', () => {
+    const [result] = price(goldenPricingInput(claim('G118')));
+    if (result?.outcome !== 'priced') {
+      throw new Error('G118 prices');
+    }
+    const versionId = result.trace.agreement?.contract_version_id ?? '';
+    const uncited = deadlineVerification({
+      trace: result.trace,
+      recordLevel: null,
+      contractWindow: { contractVersionId: versionId, status: 'signed_off', disputeWindowDays: 90, evidence: null, verifiedBy: null, verifiedAt: null },
+    });
+    expect(uncited).toMatchObject({ status: 'unverified', source: 'contract', endsOn: result.window.endsOn, cause: 'CONTRACT_WINDOW_UNCITED' });
+
+    const verified = candidates('G118');
+    expect(planCases(verified.lines, new Map(), SETTINGS, verified.asOf).created.map((planned) => planned.actionableCents)).toEqual([3250n]);
+
+    const waiting = candidates('G118', uncited.status);
+    expect(waiting.lines.map((line) => line.varianceCents)).toEqual([3250n]);
+    expect(judgeLine(waiting.lines[0] as CandidateLine, SETTINGS.lineMaterialityCents, waiting.asOf)).toMatchObject({ validated: true, actionable: false, validatedCents: 3250n, reasons: ['DEADLINE_UNVERIFIED'] });
+    const plan = planCases(waiting.lines, new Map(), SETTINGS, waiting.asOf);
+    expect(plan.created).toEqual([]);
+    expect(plan.waiting.get('G118-line-1')).toEqual(['DEADLINE_UNVERIFIED']);
   });
 });

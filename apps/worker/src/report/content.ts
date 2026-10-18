@@ -21,6 +21,7 @@ import {
 import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
+import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
 
 /**
@@ -400,6 +401,11 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   }
   const caseRows = await runCases(client, input);
   const rows = await runLines(scope, input);
+  // Whether each line's deadline is verified (D17 a), as triage judged it.
+  const deadlines = await lineDeadlines(
+    client,
+    rows.map((row) => row.priced_line_id),
+  );
 
   const lines: ReportLine[] = rows.map((row) => {
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
@@ -408,6 +414,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       {
         varianceCents: variance,
         windowEndsOn: row.window_ends_on,
+        deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
         claimReversed: row.reversed,
         claimSuperseded: row.superseded,
         mappingKind: row.mapping_kind,

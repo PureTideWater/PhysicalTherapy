@@ -1,5 +1,7 @@
 import { type Cents } from '@tp/money';
 
+import type { DeadlineStatus } from './deadline';
+
 /**
  * From validated to actionable (PRD 12; PRD 8, The status machine; PRD 6, Triage and cases: "A line
  * past its window cannot be actionable"; test matrix PRC-14, PRC-15, CAS-05). A priced line with
@@ -7,7 +9,11 @@ import { type Cents } from '@tp/money';
  *
  * 1. its variance is at or above the per-line materiality (default $5): else BELOW_LINE_MATERIALITY;
  * 2. its dispute window is open on the triage date: else WINDOW_PASSED (or NO_WINDOW when the line has
- *    no known window: a window that cannot be shown open is not open);
+ *    no known window: a window that cannot be shown open is not open); and its deadline is verified from a
+ *    source a person signed off (deadline.ts, D17 a: a release record at L2 or higher, never the release's
+ *    commercial_default, or a signed-off contract window with its page, quote and hash): else
+ *    DEADLINE_UNVERIFIED (CO-06: "an unverified deadline blocks actionability"). It is a reason a validated
+ *    line waits, never an unpriced reason: the line keeps its price;
  * 3. its claim is neither reversed nor superseded (a later remittance may reverse or correct it after
  *    the run): else CLAIM_REVERSED or CLAIM_SUPERSEDED;
  * 4. the contract version that priced it is signed off (a Medicare Advantage non-contracted line has
@@ -32,6 +38,7 @@ export const NOT_ACTIONABLE_REASONS = [
   'BELOW_LINE_MATERIALITY',
   'WINDOW_PASSED',
   'NO_WINDOW',
+  'DEADLINE_UNVERIFIED',
   'CLAIM_REVERSED',
   'CLAIM_SUPERSEDED',
   'VERSION_NOT_SIGNED_OFF',
@@ -47,6 +54,8 @@ export interface TriageFacts {
   readonly varianceCents: Cents | null;
   /** The last day a dispute can be filed (YYYY-MM-DD); null when no window is known. */
   readonly windowEndsOn: string | null;
+  /** Whether that deadline is verified (deadlineVerification(), D17 a); not_applicable without a window. */
+  readonly deadlineStatus: DeadlineStatus;
   readonly claimReversed: boolean;
   readonly claimSuperseded: boolean;
   /** The mapping kind the line priced under: contract or ma_noncontracted. */
@@ -107,6 +116,9 @@ export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf:
     reasons.push('NO_WINDOW');
   } else if (!windowOpen(facts.windowEndsOn, asOf)) {
     reasons.push('WINDOW_PASSED');
+  }
+  if (facts.deadlineStatus === 'unverified') {
+    reasons.push('DEADLINE_UNVERIFIED');
   }
   if (facts.claimReversed) {
     reasons.push('CLAIM_REVERSED');

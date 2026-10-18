@@ -397,7 +397,7 @@ describe('per-visit lines are judged with their visit (PRD 11 step 2; QUESTIONS 
     // The database's shortfall is @tp/triage's judgement of the same line.
     for (const line of lines) {
       const judged = judgeLine(
-        { varianceCents: parseCents(line.variance_cents), visitVarianceCents: line.visit === null ? null : parseCents(line.visit), reviewFlags: line.flags.map((flag) => flag.flag), windowEndsOn: '2036-01-01', claimReversed: false, claimSuperseded: false, mappingKind: 'contract', contractVersionStatus: 'signed_off', writtenOff: false },
+        { varianceCents: parseCents(line.variance_cents), visitVarianceCents: line.visit === null ? null : parseCents(line.visit), reviewFlags: line.flags.map((flag) => flag.flag), windowEndsOn: '2036-01-01', deadlineStatus: 'verified', claimReversed: false, claimSuperseded: false, mappingKind: 'contract', contractVersionStatus: 'signed_off', writtenOff: false },
         parseCents('500'),
         '2026-06-01',
       );
