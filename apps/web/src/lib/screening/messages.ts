@@ -2,10 +2,11 @@ import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, type Screen
 
 /**
  * What the screening page says about an upload it refuses (Change Order 001, CO-04: "reject any upload containing
- * them", naming the column). One sentence per reason, at most 20, each naming a column by its position and, in the
- * browser alone, by the header text the person typed; a row by its number under the header. A message never holds a
- * cell's value, and the header text never leaves the browser: the server's own messages name the position and the
- * kind only. Plain data, safe to import in the browser.
+ * them", naming the column). One sentence per reason, at most 20, each naming a column by its position (any position
+ * in the browser) and, in the browser alone, by the header text the person typed; a row by its number under the
+ * header. Patient information comes first, so its column is named however many other problems the file has. A
+ * message never holds a cell's value, and the header text never leaves the browser: the server's own messages name
+ * the position and the kind only. Plain data, safe to import in the browser.
  */
 
 /** The most messages a refusal shows: the format keeps at most 20 reasons. */
@@ -25,14 +26,14 @@ export const FIELD_LABELS: Readonly<Record<ScreeningColumn, string>> = {
 
 /** What each column holds, for a value it refuses. */
 export const FIELD_RULES: Readonly<Record<ScreeningColumn, string>> = {
-  procedure_code: 'a five-character CPT or HCPCS code, such as 97110',
+  procedure_code: 'a CPT or HCPCS code of five characters, such as 97110 or G0283',
   modifiers: 'up to four different two-character modifiers, such as GP or GP 59, or nothing',
   units: 'a whole number of units from 1 to 999',
   place_of_service: 'a place-of-service code from 01 to 99',
   payer_product: 'one of medicare_ffs, ma_noncontracted, ma_contracted, commercial, medicaid or other',
   service_band: 'a calendar quarter, such as 2026-Q1; a month is not taken, so use its quarter',
-  allowed_total: 'dollars with at most two decimals, from 0 to 999,999,999.99, such as 1234.56',
-  claim_count: 'a whole number of claims from 1 to 1,000,000',
+  allowed_total: 'dollars with at most two decimals, such as 1234.56, from 0 to 999,999,999.99 and at most $25,000.00 a claim line',
+  claim_count: 'a whole number of claims from 1 to 100,000',
 };
 
 /** A column as a message names it: its position, and in the browser the header text typed there. */
@@ -60,7 +61,7 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
     case 'phi_column':
       return `${columnName(reason.column, header)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again. A screening takes totals only, never patient information.`;
     case 'unknown_column':
-      return `${columnName(reason.column, header)} is not one of the eight screening columns; remove it, or rename it to the column it is.`;
+      return `${columnName(reason.column, header)} is not one of the eight screening columns; remove it.`;
     case 'duplicate_column':
       return `${columnName(reason.column, header)} is a second ${fieldName(reason.field)} column; keep one.`;
     case 'missing_column':
@@ -84,10 +85,18 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
   }
 }
 
-/** The messages a refusal shows: at most 20, then how many more there were. */
-export function reasonMessages(reasons: readonly ScreeningRejection[], headers?: readonly string[]): string[] {
+/**
+ * The messages a refusal shows: at most 20. `total` is how many reasons there were (the format keeps 20, patient
+ * information first); when there were more than are shown, the last message says how many more.
+ */
+export function reasonMessages(reasons: readonly ScreeningRejection[], headers?: readonly string[], total: number = reasons.length): string[] {
   const shown = reasons.slice(0, MAX_MESSAGES).map((reason) => reasonMessage(reason, headers));
-  return reasons.length > MAX_MESSAGES ? [...shown.slice(0, MAX_MESSAGES - 1), `And ${(reasons.length - (MAX_MESSAGES - 1)).toLocaleString('en-US')} more problems like these.`] : shown;
+  const all = Math.max(total, reasons.length);
+  if (all <= shown.length) {
+    return shown;
+  }
+  const kept = shown.slice(0, MAX_MESSAGES - 1);
+  return [...kept, `And ${(all - kept.length).toLocaleString('en-US')} more ${all - kept.length === 1 ? 'problem' : 'problems'} like these.`];
 }
 
 /** The browser's refusals of the file itself, before any row is read. */

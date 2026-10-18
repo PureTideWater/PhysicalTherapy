@@ -106,6 +106,8 @@ describe('a clean file (CO-04)', () => {
     const tsv = bytes(`\uFEFF${header.join('\t')}\n97110\tGP\t1\t11\tmedicare_ffs\tQ1 2026\t$60.00\t1\n`);
     const result = await parse(tsv, 'totals.tsv');
     expect(result.ok && result.rows).toBe('97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t6000\t1');
+    // The header sent is each column's canonical name, never the text typed.
+    expect(result.ok && result.headers).toEqual(['procedure_code', 'modifiers', 'units', 'place_of_service', 'payer_product', 'service_band', 'allowed_total', 'claim_count']);
     for (const spelling of [['HCPCS Code', 'Modifier', 'Unit', 'Place of Service', 'Payer Product', 'Service Date Band', 'Allowed Total', 'Claim Count'], ['code', 'modifier_set', 'units_per_line', 'pos', 'product', 'service_quarter', 'allowed', 'count']]) {
       const reordered = [spelling[7], ...spelling.slice(0, 7)] as string[];
       const content = csv(reordered.join(','), '1,97110,GP,1,11,medicare_ffs,2026 Q1,60.00');
@@ -139,11 +141,11 @@ describe('a file holding patient information (CO-04: refused, the column named, 
   });
 
   it.each([
-    ['claim numbers', ['Claim Number', 'Claim #', 'claim no', 'ICN', 'Patient Control Number', 'CLP01', 'Ref #']],
-    ['member IDs', ['Member ID', 'Subscriber ID', 'MBI', 'HICN', 'Policy Number', 'Patient ID', 'Account Number', 'MRN', 'SSN']],
-    ['dates of birth', ['DOB', 'D.O.B.', 'Date of Birth', 'Birthdate', 'Patient DOB', 'Age']],
+    ['claim numbers', ['Claim Number', 'Claim #', 'claim no', 'ICN', 'Patient Control Number', 'CLP01', 'Ref #', 'Clm #', 'Payer ICN', 'Encounter ID', 'Pat Ctrl #']],
+    ['member IDs', ['Member ID', 'Subscriber ID', 'MBI', 'HICN', 'Policy Number', 'Patient ID', 'Account Number', 'MRN', 'SSN', 'Member ID #', 'MRN #', 'Subscriber', 'Medicare #', 'PatientNo', 'SS#']],
+    ['dates of birth', ['DOB', 'D.O.B.', 'Date of Birth', 'Birthdate', 'Patient DOB', 'Age', 'Bday']],
     ['dates of service', ['DOS', 'Date of Service', 'Service Date', 'From Date', 'Visit Date', 'Date', 'Paid Date', 'Check Dt']],
-    ['names', ['Name', 'Patient', 'Patient Name', 'First Name', 'Last Name', 'Surname', 'Guarantor', 'Responsible Party']],
+    ['names', ['Name', 'Patient', 'Patient Name', 'First Name', 'Last Name', 'Surname', 'Guarantor', 'Responsible Party', 'Client Name', 'Patient Last', 'Patient First']],
   ])('refuses each common header for %s, naming its kind', async (kind, spellings) => {
     for (const spelling of spellings) {
       const found = await messages(csv(`${HEADER},${spelling}`, `${ROW_A},x`));
@@ -151,10 +153,46 @@ describe('a file holding patient information (CO-04: refused, the column named, 
     }
   });
 
-  it('refuses a column outside the eight, not as patient information', async () => {
+  it('refuses a column outside the eight, not as patient information, and only says to remove it', async () => {
     for (const spelling of ['Payer Name', 'Provider Name', 'NPI', 'Charge', 'Paid', 'Patient Responsibility']) {
-      expect((await messages(csv(`${HEADER},${spelling}`, `${ROW_A},x`)))[0], spelling).toBe(`Column 9 (“${spelling}”) is not one of the eight screening columns; remove it, or rename it to the column it is.`);
+      expect((await messages(csv(`${HEADER},${spelling}`, `${ROW_A},x`)))[0], spelling).toBe(`Column 9 (“${spelling}”) is not one of the eight screening columns; remove it.`);
     }
+  });
+
+  it('names a column of patient information however many other columns come before it, at any position', async () => {
+    // A billing export's 22 columns, then a date of service, a member ID and a patient's name, then the eight.
+    const exportColumns = ['Clinic', 'Location', 'Provider', 'Provider NPI', 'Referring', 'Payer', 'Payer ID', 'Plan', 'Charge', 'Paid', 'Adjusted', 'Balance'];
+    const others = [...exportColumns, ...Array.from({ length: 10 }, (_, index) => `Export Field ${String(index + 1)}`)];
+    const header = [...others, 'DOS', 'Member ID', 'Patient Name', ...HEADER.split(',')];
+    const found = await messages(csv(header.join(','), [...others.map(() => 'x'), '2026-01-05', 'SYNTHMBR0001', 'SYNTHETIC', ...ROW_A.split(',')].join(',')));
+    expect(found).toHaveLength(20);
+    expect(found.slice(0, 3)).toEqual([
+      'Column 23 (“DOS”) holds dates of service; remove it and upload again. A screening takes totals only, never patient information.',
+      'Column 24 (“Member ID”) holds member IDs; remove it and upload again. A screening takes totals only, never patient information.',
+      'Column 25 (“Patient Name”) holds names; remove it and upload again. A screening takes totals only, never patient information.',
+    ]);
+    expect(found.at(-1)).toBe('And 6 more problems like these.');
+    expect(found.join(' ')).not.toContain('SYNTHMBR0001');
+    // Past the 64th column, by its real position.
+    const far = [...HEADER.split(','), ...Array.from({ length: 57 }, () => 'Charge'), 'Member ID'];
+    expect((await messages(csv(far.join(','), [...ROW_A.split(','), ...Array.from({ length: 57 }, () => '1'), 'SYNTHMBR0001'].join(','))))[0]).toBe(
+      'Column 66 (“Member ID”) holds member IDs; remove it and upload again. A screening takes totals only, never patient information.',
+    );
+  });
+
+  it('never takes a header whose text is not all Latin letters and digits as one of the eight', async () => {
+    const header = HEADER.replace('allowed_total', 'allowed (Иван Петров)');
+    const found = await messages(csv(header, ROW_A));
+    expect(found).toEqual(['Column 7 (“allowed (Иван Петров)”) is not one of the eight screening columns; remove it.', 'The file has no allowed total column; add it.']);
+  });
+
+  it('refuses a name in the code column, and a nine-digit number under the allowed total', async () => {
+    for (const code of ['SMITH', 'Jones', 'A1B2C']) {
+      expect(await messages(csv(HEADER, ROW_A.replace('97110', code))), code).toEqual(['Row 1, procedure code: it must be a CPT or HCPCS code of five characters, such as 97110 or G0283.']);
+    }
+    expect(await messages(csv(HEADER, ROW_A.replace('600.00,40', '123456789,24')))).toEqual([
+      'Row 1, allowed total: it must be dollars with at most two decimals, such as 1234.56, from 0 to 999,999,999.99 and at most $25,000.00 a claim line.',
+    ]);
   });
 });
 
@@ -166,13 +204,17 @@ describe('the rows (CO-04)', () => {
       'Row 3, service band: that quarter has not started yet.',
       'Row 4, service band: it must be a calendar quarter, such as 2026-Q1; a month is not taken, so use its quarter.',
       'Row 5 does not have one cell for each column of the header.',
-      'Row 6, allowed total: it must be dollars with at most two decimals, from 0 to 999,999,999.99, such as 1234.56.',
+      'Row 6, allowed total: it must be dollars with at most two decimals, such as 1234.56, from 0 to 999,999,999.99 and at most $25,000.00 a claim line.',
     ]);
   });
 
-  it('shows at most 20 problems', async () => {
+  it('shows at most 20 problems, the last saying how many more there were, and a band of dates of service first', async () => {
     const rows = Array.from({ length: 30 }, (_, index) => `97110,GP,1,11,medicare_ffs,2026-Q1,x${String(index)},1`);
-    expect(await messages(csv(HEADER, ...rows))).toHaveLength(20);
+    const found = await messages(csv(HEADER, ...rows));
+    expect(found).toHaveLength(20);
+    expect(found.at(-1)).toBe('And 11 more problems like these.');
+    const dated = await messages(csv(HEADER, ...rows, ROW_A.replace('2026-Q1', '5-Jan-26')));
+    expect(dated[0]).toBe('Row 31: column 6 (“service_band”) holds dates of service. A screening takes a calendar quarter only, such as 2026-Q1; remove the dates and upload again.');
   });
 
   it('refuses a header with no rows, a file with no header, and more than 50,000 rows', async () => {

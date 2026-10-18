@@ -9,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 import {
   PHI_KIND_LABELS,
   SCREENING_COLUMNS,
+  SCREENING_MAX_CLAIMS,
+  SCREENING_MAX_LINE_ALLOWED_CENTS,
   SCREENING_MAX_REASONS,
   SCREENING_MAX_ROWS,
   SCREENING_MAX_ROWS_TEXT,
@@ -22,10 +24,13 @@ import {
   currentQuarter,
   decodeScreeningRows,
   encodeScreeningRows,
+  headerLosesText,
+  keptReasons,
   normalizeHeader,
   quarterDays,
   rowKey,
   screenTable,
+  storableRejections,
 } from './format';
 
 /**
@@ -80,6 +85,24 @@ describe('headers', () => {
     expect(normalizeHeader('Claim#')).toBe('claim_number');
     expect(normalizeHeader('D.O.B.')).toBe('d_o_b');
     expect(normalizeHeader('--Allowed  ($) Total--')).toBe('allowed_total');
+    // Camel case is split into words, so a run-together header is read by its words.
+    expect(normalizeHeader('PatientNo')).toBe('patient_no');
+    expect(normalizeHeader('MemberID')).toBe('member_id');
+    expect(normalizeHeader('SSNumber')).toBe('ss_number');
+    expect(normalizeHeader('SvcDt')).toBe('svc_dt');
+    expect(normalizeHeader('CPT/HCPCS')).toBe('cpt_hcpcs');
+  });
+
+  it('never reads a header whose normalizing throws letters away as one of the eight columns', () => {
+    for (const header of ['allowed (Иван Петров)', 'code 张伟', 'count — Ελένη', 'Código', 'units ü']) {
+      expect(headerLosesText(header), header).toBe(true);
+      expect(classifyHeader(header), header).toEqual({ kind: 'unknown' });
+    }
+    for (const header of ['Allowed ($)', '  ＣＰＴ／ＨＣＰＣＳ  ', 'Allowed €', '№', 'Units²']) {
+      expect(headerLosesText(header), header).toBe(false);
+    }
+    // Latin words in such a header are still read for patient information.
+    expect(classifyHeader('Patient Иван')).toEqual({ kind: 'phi', phi: 'name' });
   });
 
   it('takes each column by any of its spellings, in any case and punctuation', () => {
@@ -122,6 +145,19 @@ describe('headers', () => {
         'clp07',
         'Reference Number',
         'Ref #',
+        // By their words: a claim's own word alone or with a reference, and the numbers of a visit or a control.
+        'Claim',
+        'Clm #',
+        'CLM',
+        'Claim Ref',
+        'Payer Claim #',
+        'Payer ICN',
+        'Encounter #',
+        'Encounter ID',
+        'Visit ID',
+        'Control #',
+        'Pat Ctrl #',
+        'Invoice #',
       ],
       member_id: [
         'Member ID',
@@ -150,8 +186,35 @@ describe('headers', () => {
         'chart number',
         'SSN',
         'Social Security Number',
+        // By their words: an ID word after what it identifies, record and account numbers, and a member alone.
+        'Member ID #',
+        'Member No',
+        'Member',
+        'Mem ID',
+        'Subscriber',
+        'Subscriber #',
+        'Subscriber No',
+        'Sub ID',
+        'Insured',
+        'Ins ID',
+        'Insurance #',
+        'MBI #',
+        'HIC #',
+        'Medicare #',
+        'Medicare Number',
+        'MRN #',
+        'Med Rec #',
+        'Patient #',
+        'Pat ID',
+        'Pt #',
+        'PatientNo',
+        'Patient Acct',
+        'Pt Acct',
+        'Account No',
+        'Acct No',
+        'SS#',
       ],
-      date_of_birth: ['DOB', 'D.O.B.', 'Date of Birth', 'birth date', 'Birthdate', 'birthday', 'Patient DOB', 'pt dob', 'Born', 'Age', 'Patient Birth Date'],
+      date_of_birth: ['DOB', 'D.O.B.', 'Date of Birth', 'birth date', 'Birthdate', 'birthday', 'Patient DOB', 'pt dob', 'Born', 'Age', 'Patient Birth Date', 'Bday', 'B-Day'],
       date_of_service: [
         'DOS',
         'Date of Service',
@@ -196,6 +259,17 @@ describe('headers', () => {
         'Beneficiary Name',
         'Guarantor',
         'Responsible Party',
+        // By their words: a person alone, or a person and a part of a name, or a part of a name that is no one else's.
+        'Client',
+        'Client Name',
+        'Patient Last',
+        'Patient First',
+        'Last',
+        'First',
+        'Last, First',
+        'Patient Name (Last, First)',
+        'Beneficiary',
+        'Resident',
       ],
     };
     for (const [phi, list] of Object.entries(spellings)) {
@@ -206,7 +280,26 @@ describe('headers', () => {
   });
 
   it('refuses other headers as unknown, not as patient information', () => {
-    for (const header of ['Payer Name', 'Provider Name', 'Practice Name', 'NPI', 'Charge', 'Paid', 'Patient Responsibility', 'Notes', '', 'Código']) {
+    for (const header of [
+      'Payer Name',
+      'Provider Name',
+      'Practice Name',
+      'Rendering Provider Name',
+      'Insurance Name',
+      'NPI',
+      'Payer ID',
+      'Provider ID',
+      'Charge',
+      'Paid',
+      'Patient Responsibility',
+      'Pt Resp',
+      'PT Units',
+      'Claim Status',
+      'Claims Paid',
+      'Notes',
+      '',
+      'Código',
+    ]) {
       expect(classifyHeader(header), header).toEqual({ kind: 'unknown' });
     }
   });
@@ -223,19 +316,51 @@ describe('headers', () => {
         { code: 'phi_column', column: 4, phi: 'member_id' },
         { code: 'phi_column', column: 10, phi: 'date_of_service' },
       ],
+      total: 2,
     });
+    // Patient information first, then a second copy of a column, a column that is not one of the eight, a column missing.
     expect(checkHeaders(['CPT', 'Payer Name', 'Code', ...HEADER.slice(1, 7)])).toEqual({
       ok: false,
       reasons: [
-        { code: 'unknown_column', column: 2 },
         { code: 'duplicate_column', column: 3, field: 'procedure_code' },
+        { code: 'unknown_column', column: 2 },
         { code: 'missing_column', field: 'claim_count' },
       ],
+      total: 3,
     });
-    // Past the 64th column a reason names no position (the stored reasons name 1 to 64), and never more than 20.
-    const wide = checkHeaders([...HEADER, ...Array.from({ length: 60 }, () => 'Notes'), 'Patient Name']);
+  });
+
+  it('names a column of patient information however many other problems come before it, and by its real position', () => {
+    // A wide billing export: 24 columns that are not the eight, then a date of service and a member ID, then the eight.
+    const unknown = Array.from({ length: 24 }, (_, index) => `Export Field ${String(index + 1)}`);
+    const wide = checkHeaders([...unknown, 'Date of Service', 'Member ID', ...HEADER]);
     expect(wide.ok).toBe(false);
-    expect(wide.ok ? [] : wide.reasons).toHaveLength(SCREENING_MAX_REASONS);
+    if (wide.ok) {
+      return;
+    }
+    expect(wide.reasons).toHaveLength(SCREENING_MAX_REASONS);
+    expect(wide.total).toBe(26);
+    expect(wide.reasons.slice(0, 2)).toEqual([
+      { code: 'phi_column', column: 25, phi: 'date_of_service' },
+      { code: 'phi_column', column: 26, phi: 'member_id' },
+    ]);
+    // Past the 64th column the browser still names the position; what is stored names 1 to 64 only.
+    const far = checkHeaders([...HEADER, ...Array.from({ length: 57 }, () => 'Charge'), 'Member ID', ...Array.from({ length: 3 }, () => 'Notes'), 'DOS']);
+    expect(far.ok ? [] : far.reasons.slice(0, 2)).toEqual([
+      { code: 'phi_column', column: 66, phi: 'member_id' },
+      { code: 'phi_column', column: 70, phi: 'date_of_service' },
+    ]);
+    expect(storableRejections(far.ok ? [] : far.reasons).slice(0, 2)).toEqual([
+      { code: 'phi_column', phi: 'member_id' },
+      { code: 'phi_column', phi: 'date_of_service' },
+    ]);
+    expect(storableRejections([{ code: 'phi_column', column: 64, phi: 'name' }])).toEqual([{ code: 'phi_column', column: 64, phi: 'name' }]);
+    // Never more than 20 kept, patient information first.
+    expect(keptReasons([...Array.from({ length: 25 }, (_, index) => ({ code: 'unknown_column' as const, column: index + 1 })), { code: 'phi_column', column: 26, phi: 'name' }])[0]).toEqual({
+      code: 'phi_column',
+      column: 26,
+      phi: 'name',
+    });
   });
 });
 
@@ -244,7 +369,10 @@ describe('rows', () => {
 
   it('reads a row: code upper-cased, modifiers sorted and distinct, POS padded, product and band normalized, dollars to integer cents', () => {
     const screened = screenTable(table([' 97110 ', 'gp;59', '002', '2', 'Medicare FFS', 'q3 2026', '$1,234.5', '1,000']), NOW);
-    expect(screened).toEqual({ ok: true, headers: HEADER, rowCount: 1, rows: '97110\t59 GP\t2\t02\tmedicare_ffs\t2026-Q3\t123450\t1000' });
+    // The header sent is the columns' canonical names, never the text typed.
+    expect(screened).toEqual({ ok: true, headers: [...SCREENING_COLUMNS], rowCount: 1, rows: '97110\t59 GP\t2\t02\tmedicare_ffs\t2026-Q3\t123450\t1000' });
+    const reordered = screenTable([['Claims', 'Allowed', 'Band', 'Product', 'POS', 'Units', 'Mods', 'CPT'], ['1', '10', '2026-Q1', 'other', '11', '1', '', '97110']], NOW);
+    expect(reordered).toMatchObject({ ok: true, headers: ['claim_count', 'allowed_total', 'service_band', 'payer_product', 'place_of_service', 'units', 'modifiers', 'procedure_code'] });
     for (const [typed, band] of [
       ['2026-Q1', '2026-Q1'],
       ['2026 Q2', '2026-Q2'],
@@ -286,23 +414,40 @@ describe('rows', () => {
     };
     const field = (column: number) => SCREENING_COLUMNS[column];
     for (const [column, values] of [
-      [0, ['9711', '971100', '97 10', '', 'SYN-1']],
+      [0, ['9711', '971100', '97 10', '', 'SYN-1', 'SMITH', 'Jones', 'MARIA', 'A1B2C', 'W1234', '0001X']],
       [1, ['G', 'GPX', 'GP GP', 'GP 59 KX 76 CQ', 'G!']],
       [2, ['0', '1000', '1.5', '2.0', '-1', 'two', '']],
       [3, ['0', '00', '100', '1a', '']],
       [4, ['tricare', 'medicare', '']],
       [6, ['12.345', '1,23', '12,34.00', '-5', '1000000000', '$', 'abc', '']],
-      [7, ['0', '1000001', '1.5', '1,0000', '']],
+      [7, ['0', '100001', '654321', '1000001', '1.5', '1,0000', '']],
     ] as const) {
       for (const value of values) {
         expect(refused(column, value), `${String(field(column))} ${value}`).toEqual([{ code: 'invalid_value', row: 1, field: field(column) }]);
       }
     }
-    expect(refused(6, '999,999,999.99')).toEqual([]);
     expect(refused(6, '0')).toEqual([]);
     expect(refused(6, '.5')).toEqual([]);
-    expect(refused(7, '1,000,000')).toEqual([]);
+    expect(refused(7, '100,000')).toEqual([]);
     expect(refused(2, '999')).toEqual([]);
+    expect(SCREENING_MAX_CLAIMS).toBe(100_000);
+    // Every real code shape: CPT Category I, II (F) and III (T), PLA (U), MAAA (M), and HCPCS Level II (A to V).
+    for (const code of ['97110', '0001F', '0042T', '0001U', '0002M', 'G0283', 'A0021', 'V2020', 'j1100']) {
+      expect(refused(0, code), code).toEqual([]);
+    }
+  });
+
+  it('refuses an allowed total above $25,000 a claim line, so an identifier under the allowed total is never read as dollars', () => {
+    const row = (allowed: string, claims: string) => {
+      const result = screenTable(table([...ROW.slice(0, 6), allowed, claims]), NOW);
+      return result.ok ? [] : result.reasons;
+    };
+    expect(SCREENING_MAX_LINE_ALLOWED_CENTS).toBe(2_500_000n);
+    expect(row('123456789', '24')).toEqual([{ code: 'invalid_value', row: 1, field: 'allowed_total' }]);
+    expect(row('25,000.01', '1')).toEqual([{ code: 'invalid_value', row: 1, field: 'allowed_total' }]);
+    expect(row('25,000.00', '1')).toEqual([]);
+    expect(row('999,999,999.99', '100,000')).toEqual([]);
+    expect(row('100', '654321')).toEqual([{ code: 'invalid_value', row: 1, field: 'claim_count' }]);
   });
 
   it('refuses a band with a day in it as a date-of-service column, a month with "use a quarter", and a quarter not yet started', () => {
@@ -312,10 +457,26 @@ describe('rows', () => {
       const result = screenTable(table(cells), NOW);
       return result.ok ? [] : result.reasons;
     };
-    for (const day of ['2026-01-15', '01/15/2026', '1/5/26', '15.01.2026', '20260115', '2026-01-15T10:00:00Z', 'Jan 15, 2026', '15 January 2026']) {
+    for (const day of [
+      '2026-01-15',
+      '01/15/2026',
+      '1/5/26',
+      '15.01.2026',
+      '20260115',
+      '2026-01-15T10:00:00Z',
+      'Jan 15, 2026',
+      '15 January 2026',
+      'Sept 5 2026',
+      // As spreadsheets write them: a month's name between hyphens or with no separator, and a serial day number.
+      '5-Jan-26',
+      '05-Jan-2026',
+      '05JAN2026',
+      'Jan-05-2026',
+      '46027',
+    ]) {
       expect(band(day), day).toEqual([{ code: 'band_holds_date', column: 6, row: 1, phi: 'date_of_service' }]);
     }
-    for (const month of ['2026-01', 'Jan 2026', '01/2026', 'January', 'Q5 2026', '1999-Q4', '2100-Q1']) {
+    for (const month of ['2026-01', 'Jan 2026', '01/2026', 'January', 'Q5 2026', '1999-Q4', '2100-Q1', '12345', '99999']) {
       expect(band(month), month).toEqual([{ code: 'invalid_value', row: 1, field: 'service_band' }]);
     }
     expect(band('2026-Q4')).toEqual([]);
@@ -333,17 +494,32 @@ describe('rows', () => {
     const repeated = screenTable(table(ROW, ['97112', ...ROW.slice(1)], ['97110', 'GP', '2', '11', 'medicare_ffs', '2026-Q1', '1.00', '1']), NOW);
     expect(repeated).toMatchObject({ ok: false, reasons: [{ code: 'duplicate_row', row: 3, first_row: 1 }] });
     expect(screenTable(table(ROW.slice(0, 7)), NOW)).toMatchObject({ ok: false, reasons: [{ code: 'row_shape', row: 1 }] });
-    expect(screenTable([HEADER], NOW)).toEqual({ ok: false, headers: HEADER, reasons: [{ code: 'no_rows' }] });
-    expect(screenTable([], NOW)).toEqual({ ok: false, headers: [], reasons: [{ code: 'no_rows' }] });
-    expect(screenTable([HEADER, ...Array.from({ length: SCREENING_MAX_ROWS + 1 }, () => ROW)], NOW)).toEqual({ ok: false, headers: HEADER, reasons: [{ code: 'too_many_rows' }] });
+    expect(screenTable([HEADER], NOW)).toEqual({ ok: false, headers: HEADER, reasons: [{ code: 'no_rows' }], total: 1 });
+    expect(screenTable([], NOW)).toEqual({ ok: false, headers: [], reasons: [{ code: 'no_rows' }], total: 1 });
+    expect(screenTable([HEADER, ...Array.from({ length: SCREENING_MAX_ROWS + 1 }, () => ROW)], NOW)).toEqual({ ok: false, headers: HEADER, reasons: [{ code: 'too_many_rows' }], total: 1 });
     const many = screenTable(table(...Array.from({ length: 30 }, () => ['x', ...ROW.slice(1)])), NOW);
     expect(many.ok ? [] : many.reasons).toHaveLength(SCREENING_MAX_REASONS);
+    expect(many.ok ? 0 : many.total).toBe(30);
     // A header with patient information is refused before any row is read.
     expect(screenTable([[...HEADER, 'Patient Name'], [...ROW, 'SYNTHETIC']], NOW)).toEqual({
       ok: false,
       headers: [...HEADER, 'Patient Name'],
       reasons: [{ code: 'phi_column', column: 9, phi: 'name' }],
+      total: 1,
     });
+  });
+
+  it('names a band holding dates of service however many other problems come before it', () => {
+    const bad = Array.from({ length: 25 }, (_, index) => ['x', 'GP', '2', '11', 'medicare_ffs', '2026-Q1', '1.00', String(index + 1)]);
+    const dated = ['97110', 'GP', '2', '11', 'medicare_ffs', '2026-02-11', '1.00', '1'];
+    const screened = screenTable(table(...bad, dated), NOW);
+    expect(screened.ok).toBe(false);
+    if (screened.ok) {
+      return;
+    }
+    expect(screened.reasons[0]).toEqual({ code: 'band_holds_date', column: 6, row: 26, phi: 'date_of_service' });
+    expect(screened.reasons).toHaveLength(SCREENING_MAX_REASONS);
+    expect(screened.total).toBe(26);
   });
 });
 
@@ -376,27 +552,37 @@ describe('the canonical rows', () => {
       ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t100000000000\t1', 'allowed_total'],
       ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1000001', 'claim_count'],
       ['9711o\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'procedure_code'],
+      ['SMITH\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t1\t1', 'procedure_code'],
+      ['MARIA\t\t1\t11\tcommercial\t2026-Q1\t1\t1', 'procedure_code'],
+      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t12345678900\t24', 'allowed_total'],
+      ['97110\tGP\t2\t11\tmedicare_ffs\t2026-Q1\t10000\t654321', 'claim_count'],
     ] as const) {
-      expect(decodeScreeningRows(line, NOW), line).toEqual({ ok: false, reasons: [{ code: 'invalid_value', row: 1, field }] });
+      expect(decodeScreeningRows(line, NOW), line).toEqual({ ok: false, reasons: [{ code: 'invalid_value', row: 1, field }], total: 1 });
     }
-    expect(decodeScreeningRows('', NOW)).toEqual({ ok: false, reasons: [{ code: 'no_rows' }] });
-    expect(decodeScreeningRows('97110\tGP', NOW)).toEqual({ ok: false, reasons: [{ code: 'row_shape', row: 1 }] });
-    expect(decodeScreeningRows(`${encodeScreeningRows([row()])}\n${encodeScreeningRows([row()])}`, NOW)).toEqual({ ok: false, reasons: [{ code: 'duplicate_row', row: 2, first_row: 1 }] });
-    expect(decodeScreeningRows(encodeScreeningRows([row({ serviceBand: '2027-Q1' })]), NOW)).toEqual({ ok: false, reasons: [{ code: 'band_in_future', row: 1, field: 'service_band' }] });
-    expect(decodeScreeningRows(Array.from({ length: SCREENING_MAX_ROWS + 1 }, () => 'x').join('\n'), NOW)).toEqual({ ok: false, reasons: [{ code: 'too_many_rows' }] });
+    expect(decodeScreeningRows('', NOW)).toEqual({ ok: false, reasons: [{ code: 'no_rows' }], total: 1 });
+    expect(decodeScreeningRows('97110\tGP', NOW)).toEqual({ ok: false, reasons: [{ code: 'row_shape', row: 1 }], total: 1 });
+    expect(decodeScreeningRows(`${encodeScreeningRows([row()])}\n${encodeScreeningRows([row()])}`, NOW)).toEqual({ ok: false, reasons: [{ code: 'duplicate_row', row: 2, first_row: 1 }], total: 1 });
+    expect(decodeScreeningRows(encodeScreeningRows([row({ serviceBand: '2027-Q1' })]), NOW)).toEqual({ ok: false, reasons: [{ code: 'band_in_future', row: 1, field: 'service_band' }], total: 1 });
+    expect(decodeScreeningRows(Array.from({ length: SCREENING_MAX_ROWS + 1 }, () => 'x').join('\n'), NOW)).toEqual({ ok: false, reasons: [{ code: 'too_many_rows' }], total: 1 });
+    const many = decodeScreeningRows(Array.from({ length: 30 }, () => 'x').join('\n'), NOW);
+    expect(many).toMatchObject({ ok: false, total: 30 });
+    expect(many.ok ? [] : many.reasons).toHaveLength(SCREENING_MAX_REASONS);
   });
 
   it('round-trips any rows the browser can send, within the server’s text bound (property)', () => {
     const modifier = fc.stringMatching(/^[0-9A-Z]{2}$/);
     const arbitraryRow = fc.record({
-      procedureCode: fc.stringMatching(/^[0-9A-Z]{5}$/),
+      procedureCode: fc.oneof(fc.stringMatching(/^[0-9]{4}[0-9FMTU]$/), fc.stringMatching(/^[A-V][0-9]{4}$/)),
       modifiers: fc.uniqueArray(modifier, { maxLength: 4 }).map((list) => [...list].sort()),
       units: fc.integer({ min: 1, max: 999 }),
       placeOfService: fc.integer({ min: 1, max: 99 }).map((place) => String(place).padStart(2, '0')),
       payerProduct: fc.constantFrom(...SCREENING_PAYER_PRODUCTS),
       serviceBand: fc.tuple(fc.integer({ min: 2000, max: 2026 }), fc.integer({ min: 1, max: 4 })).map(([year, quarter]) => `${String(year)}-Q${String(quarter)}`),
-      allowedCents: fc.bigInt({ min: 0n, max: 99_999_999_999n }).map(cents),
-      claimCount: fc.integer({ min: 1, max: 1_000_000 }),
+      claimCount: fc.integer({ min: 1, max: 100_000 }),
+      allowedPerLine: fc.bigInt({ min: 0n, max: 2_500_000n }),
+    }).map(({ allowedPerLine, ...rest }) => {
+      const total = allowedPerLine * BigInt(rest.claimCount);
+      return { ...rest, allowedCents: cents(total > 99_999_999_999n ? 99_999_999_999n : total) };
     });
     fc.assert(
       fc.property(fc.uniqueArray(arbitraryRow, { minLength: 1, maxLength: 40, selector: rowKey }), (rows) => {

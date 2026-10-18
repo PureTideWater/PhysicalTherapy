@@ -7,9 +7,10 @@ import { FILE_MESSAGES, reasonMessages } from './messages';
  * the upload; the server checks the header names and the typed rows and stores no bytes"). The file never leaves the
  * browser. This module hashes its bytes (SHA-256, crypto.subtle), reads it as UTF-8 CSV or tab-separated text with
  * RFC 4180 quotes, checks the header and every row against the screening's format (@tp/worker/screening-format, the
- * same rules the server applies again), and gives either the problems, at most 20, each naming its column by
- * position and header text and its row by number, or what the form sends: the hash, the header cells, the row count
- * and the rows of totals in their canonical form. A problem never quotes a cell's value.
+ * same rules the server applies again), and gives either the problems, at most 20, patient information first, each
+ * naming its column by position and header text and its row by number, or what the form sends: the hash, the header's
+ * canonical column names in the file's order (never the text typed), the row count and the rows of totals in their
+ * canonical form. A problem never quotes a cell's value, and no header text leaves the browser.
  */
 
 /** The most a file may be (25 MiB): 50,000 rows of totals fit in far less. */
@@ -19,7 +20,7 @@ export type ScreeningParse =
   | {
       readonly ok: true;
       readonly fileSha256: string;
-      /** The header cells as the file has them (at most 64, each at most 200 characters, as the server takes them). */
+      /** The header as the form sends it: each column's canonical name in the file's order, never the text typed. */
       readonly headers: readonly string[];
       readonly rowCount: number;
       /** The rows in their canonical form (encodeScreeningRows): what the server decodes. */
@@ -167,8 +168,8 @@ function refused(message: string): ScreeningParse {
   return { ok: false, messages: [message], reasons: [] };
 }
 
-function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly string[]): ScreeningParse {
-  return { ok: false, messages: reasonMessages(reasons, headers), reasons };
+function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly string[], total: number): ScreeningParse {
+  return { ok: false, messages: reasonMessages(reasons, headers, total), reasons };
 }
 
 /** Reads and screens the bytes of a chosen file. */
@@ -191,7 +192,7 @@ export async function parseScreeningBytes(file: { readonly name: string; readonl
   // The format's own screen, the server's rules: the header, then every row's shape, values, quarter and key.
   const screened = screenTable(table.rows, now);
   if (!screened.ok) {
-    return refusedFor(screened.reasons, screened.headers);
+    return refusedFor(screened.reasons, screened.headers, screened.total);
   }
   return { ok: true, fileSha256: await sha256Hex(bytes), headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows };
 }
