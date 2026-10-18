@@ -5,7 +5,9 @@ import path from 'node:path';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import { urlPhiFindings } from '@tp/observability';
 
-import { brandedSubject, mailHtml, senderAddress } from './template';
+import { type MailVariant, brandedSubject, mailHtml, senderAddress } from './template';
+
+export type { MailVariant } from './template';
 
 /**
  * Email, links only (PRD 15, Stack: "SES; links only, never PHI in a body"; CLAUDE.md: no PHI in an
@@ -24,6 +26,11 @@ export interface MailMessage {
   readonly lines: readonly string[];
   /** Links into the application: opaque IDs only. */
   readonly links: readonly string[];
+  /**
+   * Who reads it (template.ts): a customer, the default, or a prospect without an account (a screening's link),
+   * whose message carries the lockup without the tagline (decision D11) and a footer that says why it came.
+   */
+  readonly variant?: MailVariant;
 }
 
 export interface MailSender {
@@ -51,7 +58,7 @@ export function mailBody(message: MailMessage): string {
  */
 export function mailBodyHtml(message: MailMessage, staticOrigin: string | null): string {
   mailBody(message);
-  return mailHtml(message.subject, message.lines, message.links, staticOrigin);
+  return mailHtml(message.subject, message.lines, message.links, staticOrigin, message.variant ?? 'customer');
 }
 
 /** SES (the account's verified sender; the configuration set and identity arrive with milestone 11). */

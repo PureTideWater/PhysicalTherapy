@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -6,6 +6,7 @@ import { palette } from '@paidwhole/brand';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { LocalMailSender, MailPhiError, type MailMessage, MemoryMailSender, SesMailSender, mailBody, mailBodyHtml, sesMailSender } from './mail';
+import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from './template';
 
 /** The CloudFront static host the deployed tasks name (STATIC_ASSET_ORIGIN), which serves the brand art under /brand/. */
 const STATIC = 'https://static.synthetic.test';
@@ -129,5 +130,53 @@ describe('the branded HTML email (docs/brand/BRAND.md, section 7)', () => {
   it('refuses a link the PHI guard flags, as the text body does', () => {
     expect(() => mailBodyHtml({ ...MESSAGE, links: ['http://localhost:3000/claims/123456789'] }, STATIC)).toThrow(MailPhiError);
     expect(() => mailBodyHtml({ ...MESSAGE, links: ['http://localhost:3000/claims/123456789'] }, null)).toThrow(MailPhiError);
+  });
+});
+
+describe('the prospect variant (a screening’s email; CO-04, decision D11)', () => {
+  const PROSPECT: MailMessage = {
+    to: ['prospect@clinic.synthetic.test'],
+    subject: 'Your screening is ready',
+    lines: ['The screening you started on the PaidWhole screening page is ready.'],
+    links: ['https://app.synthetic.test/screening/results/qwertyuiopasdfghjklzxcvbnmqwerty'],
+    variant: 'prospect',
+  };
+  const html = mailBodyHtml(PROSPECT, STATIC);
+  const repository = path.resolve(import.meta.dirname, '../../../..');
+
+  it('heads the message with the lockup without the tagline, at the same 160 px, from the static host', () => {
+    const images = [...html.matchAll(/<img\b[^>]*>/g)].map((match) => match[0]);
+    expect(images).toHaveLength(1);
+    const [lockup = ''] = images;
+    expect(lockup).toContain(`src="${STATIC}${EMAIL_PROSPECT_LOCKUP_PATH}"`);
+    expect(lockup).toContain('width="160"');
+    expect(lockup).toContain('height="29"');
+    expect(lockup).toContain('alt="PaidWhole"');
+    expect(html).not.toContain('tagline');
+    expect(EMAIL_PROSPECT_LOCKUP_PATH).not.toContain('tagline');
+    // Both arts are the delivered files the static host serves from apps/web/public/brand.
+    expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_PROSPECT_LOCKUP_PATH))).toBe(true);
+    expect(existsSync(path.join(repository, 'apps/web/public', EMAIL_LOCKUP_PATH))).toBe(true);
+  });
+
+  it('ends with the prospect’s footer, which never says to sign in: a prospect has no account', () => {
+    expect(html).toContain(MAIL_FOOTERS.prospect);
+    expect(html).not.toContain(MAIL_FOOTERS.customer);
+    expect(MAIL_FOOTERS.prospect).not.toMatch(/sign in/i);
+    expect(MAIL_FOOTERS.prospect).not.toMatch(/\b(?:owed|under-?paid|recovered)\b/i);
+  });
+
+  it('leaves a customer’s message as it was: a message without a variant is a customer’s', () => {
+    expect(mailBodyHtml(MESSAGE, STATIC)).toBe(mailBodyHtml({ ...MESSAGE, variant: 'customer' }, STATIC));
+    expect(mailBodyHtml(MESSAGE, STATIC)).toContain(MAIL_FOOTERS.customer);
+    expect(mailBodyHtml(MESSAGE, STATIC)).toContain(EMAIL_LOCKUP_PATH);
+  });
+
+  it('keeps the same text body and the same checks: the PHI guard, and no art without a static host', () => {
+    expect(mailBody(PROSPECT)).toBe(`${PROSPECT.lines[0] ?? ''}\n\n${PROSPECT.links[0] ?? ''}`);
+    expect(() => mailBodyHtml({ ...PROSPECT, links: ['https://app.synthetic.test/claims/123456789'] }, STATIC)).toThrow(MailPhiError);
+    const bare = mailBodyHtml(PROSPECT, null);
+    expect(bare).not.toMatch(/<img\b/);
+    expect(bare).toContain(MAIL_FOOTERS.prospect);
   });
 });
