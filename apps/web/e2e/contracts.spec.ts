@@ -132,6 +132,8 @@ test('a contract abstracted by hand, approved and signed off becomes the version
       await window.getByLabel('Quote').fill('Provider may dispute a payment within 365 days of the remittance date.');
       await window.getByRole('button', { name: 'Cite the window' }).click();
       await expect(refusal(specialist).filter({ hasText: 'Not done' })).toContainText('The quote is not on the cited page');
+      // The refused form is reset, as the rate record's is: the page and the quote are entered again.
+      await window.getByLabel('Page').fill('1');
       await window.getByLabel('Quote').fill('Provider may dispute a payment within 120 days of the remittance date.');
       await window.getByRole('button', { name: 'Cite the window' }).click();
       await expect(specialist.locator('[data-window="unverified"]')).toBeVisible();
