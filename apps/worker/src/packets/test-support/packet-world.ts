@@ -7,7 +7,8 @@ import { DocumentStore, collect } from '../../storage/documents';
 import { todayUtc } from '../../triage/execute';
 import { TriageWorld } from '../../triage/test-support/triage-world';
 import { type PacketExportOutcome, type PacketExportServices, exportPacketVersion } from '../export';
-import { attestAsReviewer, grantedReviewer } from './reviewer';
+import type { PacketExportFile } from '../downloads';
+import { attestAsReviewer, downloadExportAs, grantedReviewer } from './reviewer';
 
 /**
  * Test support for packets against a scratch database (synthetic data only): the triage world (SYNTHETIC
@@ -72,9 +73,14 @@ export class PacketWorld {
     return reviewer;
   }
 
-  /** The reviewer attests the version's export over the SHA-256 it records (D16). */
+  /** The reviewer downloads both files of the version's export and attests it over the SHA-256 it records (D16). */
   async attest(target: Practice, versionId: string): Promise<Date> {
-    return attestAsReviewer(this.app, target.practiceId, await this.reviewer(target), versionId);
+    return attestAsReviewer(this.app, this.services, target.practiceId, await this.reviewer(target), versionId);
+  }
+
+  /** `actorId` downloads files of the version's export as a download route serves them: checked against its SHA-256 and recorded as theirs. */
+  download(target: Practice, actorId: string, versionId: string, files: readonly PacketExportFile[] = ['pdf', 'csv']): Promise<void> {
+    return downloadExportAs(this.app, this.services, target.practiceId, actorId, versionId, files);
   }
 
   /** Another person of the practice's own group with the role. */

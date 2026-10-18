@@ -4,7 +4,7 @@ import { type DatabaseClient, type DatabasePool, type KeyProvider, type Practice
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import type { DocumentStore } from '@tp/worker/documents';
-import { approvePacketVersion, attestPacketExport, logSubmission, writePacketVersion } from '@tp/worker/packets';
+import { approvePacketVersion, attestPacketExport, downloadPacketExport, logSubmission, writePacketVersion } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 
 /**
@@ -173,6 +173,10 @@ export async function seedPackets(options: PacketWorldOptions, seeded: SeededPac
   const csvSha256 = hashes[0]?.export_csv_sha256 ?? null;
   if (pdfSha256 === null || csvSha256 === null) {
     throw new Error('the seeded packet was not exported (is its deadline verified?)');
+  }
+  // The reviewer downloads both files, each checked against its SHA-256 as the review serves it, then attests (D16).
+  for (const file of ['pdf', 'csv'] as const) {
+    await as(options.reviewerId, (scope) => downloadPacketExport(scope, { documents: options.documents, keys }, { practiceId, versionId: second.versionId, file, requestId: `seed-${randomUUID()}` }));
   }
   await as(options.reviewerId, (scope) => attestPacketExport(scope, { practiceId, versionId: second.versionId, pdfSha256, csvSha256, requestId: `seed-${randomUUID()}` }));
   const submitted = await as(options.managerId, (scope) =>

@@ -13,6 +13,7 @@ import { DEADLINE_RELEASE, type Practice, RELEASE } from '../price/test-support/
 import { nextLevelDeadline } from '../triage/deadline';
 import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
+import { PacketExportFileIntegrityError, downloadPacketExport, packetExportDownloads } from './downloads';
 import { PacketExportIntegrityError, exportPacketVersion } from './export';
 import { PacketRefusedError } from './records';
 import {
@@ -35,6 +36,7 @@ import {
   writePacketVersion,
 } from './services';
 import { PacketWorld } from './test-support/packet-world';
+import { grantedReviewer } from './test-support/reviewer';
 
 /**
  * Packets against PostgreSQL through the workflow services and the export job's own code (PRD 12; PRD
@@ -566,6 +568,8 @@ describe('D16: the reimbursement reviewer attests the export over its SHA-256', 
       throw new Error('not exported');
     }
     const files = { pdf: outcome.pdfSha256, csv: outcome.csvSha256 };
+    // The reviewer downloads both files first, each checked against its SHA-256 (the owner's addition of 2026-10-18).
+    await w.download(practice, reviewer, version.versionId);
     expect(await w.as(practice, reviewer, (scope) => exportsAwaitingAttestation(scope, { practiceId: practice.practiceId }))).toMatchObject([
       { versionId: version.versionId, caseId: setup.caseId, exportSha256: files.pdf, exportCsvSha256: files.csv, lines: 3 },
     ]);
@@ -595,6 +599,143 @@ describe('D16: the reimbursement reviewer attests the export over its SHA-256', 
     expect(detail).toMatchObject({ attestedBy: reviewer, attestation: { format: 'tp-attestation/1', pdf_sha256: files.pdf, csv_sha256: files.csv } });
     expect(await w.as(practice, reviewer, (scope) => exportsAwaitingAttestation(scope, { practiceId: practice.practiceId }))).toEqual([]);
     await expect(submit(setup, version.versionId)).resolves.toMatchObject({ exportSha256: files.pdf, exportCsvSha256: files.csv });
+  });
+});
+
+describe('D16: the reviewer attests only after downloading both files of that export (the owner’s addition of 2026-10-18; ADR 0061, F9)', () => {
+  const SQL_WORDS = "a packet's export is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256";
+  const signed = (files: { pdf: string; csv: string }) =>
+    JSON.stringify({ format: 'tp-attestation/1', checklist: ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent'], pdf_sha256: files.pdf, csv_sha256: files.csv });
+
+  /** The attestation refused in the handler (the service the attest route runs) and, its check bypassed, in Postgres. */
+  async function refusedInBothLayers(practice: Practice, reviewer: string, versionId: string, files: { pdf: string; csv: string }): Promise<void> {
+    const handler = await refusal(w.as(practice, reviewer, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId, pdfSha256: files.pdf, csvSha256: files.csv, requestId: 'r' })));
+    expect(handler).toMatchObject({ name: 'PacketRefusedError', reason: 'export_not_downloaded' });
+    const sql = await refusal(
+      w.as(practice, reviewer, (scope) => scope.client.query('UPDATE packet_version SET attested_by = app_actor_id(), attestation = $2 WHERE id = $1', [versionId, signed(files)])),
+    );
+    expect(sql).toMatchObject({ code: '23514', message: SQL_WORDS });
+  }
+
+  async function exportedVersion(setup: Setup, basedOn: string | null = null) {
+    const version = await write(setup, setup.practice.manager, basedOn === null ? {} : { basedOn, narrative: 'The payer paid these lines short of the contract [3].' });
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    const outcome = await w.export(setup.practice, version.versionId);
+    if (outcome.outcome !== 'exported') {
+      throw new Error('not exported');
+    }
+    return { versionId: version.versionId, files: { pdf: outcome.pdfSha256, csv: outcome.csvSha256 } };
+  }
+
+  const downloadEvents = async (practice: Practice, versionId: string) =>
+    (
+      await asOwner(w.owner, [practice.practiceId], () =>
+        w.owner.query<{ action: string; actor_id: string }>(
+          "SELECT action, actor_id FROM audit_event WHERE object_id = $1 AND action IN ('packet_export_pdf_downloaded', 'packet_export_csv_downloaded') ORDER BY at, action",
+          [versionId],
+        ),
+      )
+    ).rows;
+
+  it('is refused with no download, with only the PDF, with only the CSV and with another person’s downloads, in the handler and in Postgres', async () => {
+    const setup = await cas08('attest-downloads');
+    const { practice } = setup;
+    const { versionId, files } = await exportedVersion(setup);
+    const grant = () => grantedReviewer(w.owner, practice.practiceId);
+    // No download.
+    const none = await grant();
+    await refusedInBothLayers(practice, none, versionId, files);
+    expect(await w.as(practice, none, (scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
+    // Only the PDF; only the CSV.
+    const pdfOnly = await grant();
+    await w.download(practice, pdfOnly, versionId, ['pdf']);
+    expect(await w.as(practice, pdfOnly, (scope) => packetExportDownloads(scope, { versionId }))).toEqual(['pdf']);
+    await refusedInBothLayers(practice, pdfOnly, versionId, files);
+    const csvOnly = await grant();
+    await w.download(practice, csvOnly, versionId, ['csv']);
+    await refusedInBothLayers(practice, csvOnly, versionId, files);
+    // Another person's downloads of both files (the billing manager's, and another reviewer's: pdfOnly and csvOnly together) are not the attester's.
+    await w.download(practice, practice.manager, versionId);
+    await refusedInBothLayers(practice, none, versionId, files);
+    expect(await w.as(practice, practice.manager, (scope) => packetExportDownloads(scope, { versionId }))).toEqual(['pdf', 'csv']);
+    expect((await downloadEvents(practice, versionId)).map((event) => event.actor_id).sort()).toEqual([pdfOnly, csvOnly, practice.manager, practice.manager].sort());
+    // The attester's own two downloads, after the export: attested.
+    await w.download(practice, none, versionId);
+    await expect(w.as(practice, none, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId, pdfSha256: files.pdf, csvSha256: files.csv, requestId: 'r' }))).resolves.toMatchObject({ attested: true });
+  });
+
+  it('is refused for downloads of another version, and a new export needs its own downloads', async () => {
+    const setup = await cas08('attest-other-version');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    const first = await exportedVersion(setup);
+    // The reviewer downloads the first export's two files, then a later version is written, approved and exported.
+    await w.download(practice, reviewer, first.versionId);
+    const second = await exportedVersion(setup, first.versionId);
+    expect(second.files).not.toEqual(first.files);
+    expect(await w.as(practice, reviewer, (scope) => packetExportDownloads(scope, { versionId: second.versionId }))).toEqual([]);
+    await refusedInBothLayers(practice, reviewer, second.versionId, second.files);
+    await w.download(practice, reviewer, second.versionId);
+    await expect(
+      w.as(practice, reviewer, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId: second.versionId, pdfSha256: second.files.pdf, csvSha256: second.files.csv, requestId: 'r' })),
+    ).resolves.toMatchObject({ attested: true });
+  });
+
+  it('records no download whose bytes fail the SHA-256 check, so the attestation is refused', async () => {
+    const setup = await cas08('attest-tampered');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    const { versionId, files } = await exportedVersion(setup);
+    // The store hands back other bytes than the export sealed (a forged or damaged object).
+    class Tampered extends DocumentStore {
+      override async *read(): AsyncIterable<Buffer> {
+        await Promise.resolve();
+        yield Buffer.from('SYNTHETIC bytes that are not the export\n');
+      }
+    }
+    await w.download(practice, reviewer, versionId, ['pdf']);
+    const tampered = { documents: new Tampered(new MemorySealedBytes()), keys: w.keys };
+    await expect(w.as(practice, reviewer, (scope) => downloadPacketExport(scope, tampered, { practiceId: practice.practiceId, versionId, file: 'csv', requestId: 'r' }))).rejects.toBeInstanceOf(
+      PacketExportFileIntegrityError,
+    );
+    expect(await downloadEvents(practice, versionId)).toEqual([{ action: 'packet_export_pdf_downloaded', actor_id: reviewer }]);
+    await refusedInBothLayers(practice, reviewer, versionId, files);
+  });
+
+  it('cannot be evidenced by the job’s scope, under its own ID or the reviewer’s, nor for a version not exported, a person who may not read it or another practice', async () => {
+    const setup = await cas08('attest-job-evidence');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    const { versionId, files } = await exportedVersion(setup);
+    const jobId = randomUUID();
+    const insert = (actorId: string, actorKind: string, action: string, objectId = versionId) =>
+      `INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, purpose, request_id) VALUES ('${actorId}', '${actorKind}', '${action}', 'packet_version', '${objectId}', '${practice.practiceId}', 'line_export', 'r')`;
+    const asJob = (sql: string) => withJobScope(w.app, { jobId, practiceId: practice.practiceId }, (scope) => scope.client.query(sql));
+    for (const action of ['packet_export_pdf_downloaded', 'packet_export_csv_downloaded']) {
+      // Under the job's own ID, whatever kind it names, and in the reviewer's name: the job is no person, and
+      // writes only in its own name (the trigger refuses before the audit log's INSERT policy is checked).
+      for (const [actorId, kind] of [[jobId, 'user'], [jobId, 'service'], [reviewer, 'user']] as const) {
+        expect(await refusal(asJob(insert(actorId, kind, action)))).toMatchObject({ code: '42501', message: "a packet export's download is recorded for the person it was served to, in their own name" });
+      }
+    }
+    // The download function itself, run in the job's scope, records nothing and fails.
+    expect(await refusal(withJobScope(w.app, { jobId, practiceId: practice.practiceId }, (scope) => downloadPacketExport(scope, w.services, { practiceId: practice.practiceId, versionId, file: 'pdf', requestId: 'r' })))).toMatchObject({
+      code: '42501',
+    });
+    expect(await downloadEvents(practice, versionId)).toEqual([]);
+    expect(await withJobScope(w.app, { jobId, practiceId: practice.practiceId }, (scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
+    await refusedInBothLayers(practice, reviewer, versionId, files);
+    // A person who may not read the export, and a version not exported, record no download either.
+    const viewer = await w.person(practice, 'viewer');
+    expect(await refusal(w.as(practice, viewer, (scope) => scope.client.query(insert(viewer, 'user', 'packet_export_pdf_downloaded'))))).toMatchObject({ code: '42501' });
+    // Nor does a person of the practice record one in the reviewer's name.
+    expect(await refusal(w.as(practice, practice.manager, (scope) => scope.client.query(insert(reviewer, 'user', 'packet_export_pdf_downloaded'))))).toMatchObject({ code: '42501' });
+    const unexported = await write(setup, practice.manager, { basedOn: versionId, narrative: 'The payer paid these lines short of the contract [3].' });
+    expect(await refusal(w.as(practice, reviewer, (scope) => scope.client.query(insert(reviewer, 'user', 'packet_export_pdf_downloaded', unexported.versionId))))).toMatchObject({ code: '23514' });
+    // A reviewer of another practice reads none of this practice's evidence.
+    const other = await w.practice('attest-job-evidence-other');
+    const outsider = await w.reviewer(other);
+    expect(await w.as(other, outsider, (scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
   });
 });
 
@@ -871,6 +1012,7 @@ describe('CO-05: a version of an earlier dispute level than the case’s (D17: a
     }
     await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: document });
     const reviewer = await w.reviewer(setup.practice);
+    await w.download(setup.practice, reviewer, stale.versionId);
     const attempt = (actorId: string) =>
       w.as(setup.practice, actorId, (scope) => attestPacketExport(scope, { practiceId: setup.practice.practiceId, versionId: stale.versionId, pdfSha256: outcome.pdfSha256, csvSha256: outcome.csvSha256, requestId: 'r' }));
     expect((await refusal(attempt(reviewer))).message).toBe("only a version of the case's dispute level is attested");
@@ -893,6 +1035,7 @@ describe('D16: the attester took no part in any version of the packet', () => {
     if (outcome.outcome !== 'exported') {
       throw new Error('not exported');
     }
+    await w.download(practice, reviewer, last.versionId);
     const attest = () =>
       w.as(practice, reviewer, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId: last.versionId, pdfSha256: outcome.pdfSha256, csvSha256: outcome.csvSha256, requestId: 'r' }));
     const words = 'the person who drafted, wrote or approved a packet does not attest its export';

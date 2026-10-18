@@ -1,9 +1,16 @@
-import { createHash } from 'node:crypto';
-
-import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
+import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
 import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
-import { type PacketAttestation, type PacketVersionDetail, approvePacketVersion, packetOfCase, packetVersionOf, writePacketVersion } from '@tp/worker/packets';
+import {
+  type PacketAttestation,
+  type PacketExportFile,
+  type PacketVersionDetail,
+  approvePacketVersion,
+  downloadPacketExport,
+  packetOfCase,
+  packetVersionOf,
+  writePacketVersion,
+} from '@tp/worker/packets';
 
 import type { Services } from '../server/services';
 import type { JobQueue } from '../uploads/queue';
@@ -422,52 +429,19 @@ export async function requestExportOnce(
   return 'queued';
 }
 
-/** A stored export did not match the SHA-256 its version recorded: it is never sent. */
-export class PacketFileIntegrityError extends Error {
-  override readonly name = 'PacketFileIntegrityError';
-}
-
-async function collect(source: AsyncIterable<Uint8Array>): Promise<Buffer> {
-  const parts: Buffer[] = [];
-  for await (const part of source) {
-    parts.push(Buffer.from(part));
-  }
-  return Buffer.concat(parts);
-}
-
 /**
  * A version's exported PDF or CSV (line-level PHI: the identifiers are in it), read from the sealed
- * store, checked against the SHA-256 the version recorded, and recorded as an audited line-level
- * export. Undefined when the version has no export.
+ * store, checked against the SHA-256 the version recorded, and recorded as the viewer's download of that
+ * file (@tp/worker/packets downloadPacketExport(): packet_export_pdf_downloaded or
+ * packet_export_csv_downloaded, a line-level export, written only once the bytes hashed to the recorded
+ * SHA-256). A reimbursement reviewer's two downloads are what their attestation needs (docs/adr/0061).
+ * Undefined when the version has no export; a file that does not match throws
+ * PacketExportFileIntegrityError and is never sent.
  */
-export async function exportFile(
+export function exportFile(
   scope: Scope,
   services: Pick<Services, 'keys' | 'documents'>,
-  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: 'pdf' | 'csv'; readonly requestId: string },
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: PacketExportFile; readonly requestId: string },
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
-  const [row] = await readWithAudit(
-    scope,
-    { objectType: 'packet_version', purpose: 'line_export', requestId: input.requestId },
-    async (client) =>
-      (
-        await client.query<{ id: string; practice_id: string; key: string | null; sha256: string | null }>(
-          `SELECT v.id, v.practice_id, ${input.file === 'pdf' ? 'v.export_pdf_key' : 'v.export_csv_key'} AS key, ${input.file === 'pdf' ? 'v.export_sha256' : 'v.export_csv_sha256'} AS sha256
-             FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3`,
-          [input.versionId, input.practiceId, input.caseId],
-        )
-      ).rows,
-    (found) => ({ objectId: found.id, practiceId: found.practice_id }),
-  );
-  if (row?.key === null || row?.key === undefined || row.sha256 === null) {
-    return undefined;
-  }
-  const cipher = await loadPracticeCipher(scope, services.keys, input.practiceId);
-  const bytes = await collect(services.documents.read(cipher, row.key));
-  if (createHash('sha256').update(bytes).digest('hex') !== row.sha256) {
-    throw new PacketFileIntegrityError('the stored packet export does not match the SHA-256 its version recorded');
-  }
-  await recordAuditEvent(scope, { action: 'packet_export_downloaded', objectType: 'packet_version', objectId: input.versionId, practiceId: input.practiceId, purpose: 'line_export', requestId: input.requestId });
-  const out = new Uint8Array(new ArrayBuffer(bytes.length));
-  out.set(bytes);
-  return out;
+  return downloadPacketExport(scope, services, input);
 }

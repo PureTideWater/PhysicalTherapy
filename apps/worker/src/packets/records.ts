@@ -54,6 +54,7 @@ export const PACKET_REFUSALS = [
   'narrative_too_long',
   'stale_version',
   'version_not_found',
+  'export_not_downloaded',
 ] as const;
 export type PacketRefusal = (typeof PACKET_REFUSALS)[number];
 

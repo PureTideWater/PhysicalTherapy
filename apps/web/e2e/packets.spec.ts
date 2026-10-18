@@ -21,7 +21,8 @@ import { startLocalWorker } from './worker';
  * writes a passing version again and is refused approval as its drafter, with the reason; a second
  * billing manager approves it and exports it, the worker printing the PDF and CSV with the identifiers
  * inserted, each line's deadline verified from the contract's cited window (CO-05, D17); the reimbursement
- * reviewer, under a support grant, reviews the export's files and attests over their SHA-256 (D16); and the
+ * reviewer, under a support grant, finds the attest button disabled until they have downloaded both of the
+ * export's files from the review, then attests over their SHA-256 (D16; the owner's addition of 2026-10-18); and the
  * submission logged carries the export's SHA-256. Identifiers stay placeholders on screen. The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
  * payer letter is uploaded on the Contracts screen and recorded as a partial acceptance of 60.00, which
  * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
@@ -165,8 +166,8 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(approver.locator('[data-attestation="waiting"]')).toBeVisible();
     });
 
-    await test.step('the reimbursement reviewer, under a support grant, reviews the export’s files and attests over their SHA-256 (D16)', async () => {
-      const context = await browser.newContext();
+    await test.step('the reimbursement reviewer, under a support grant, downloads both of the export’s files and then attests over their SHA-256 (D16; the owner’s addition of 2026-10-18)', async () => {
+      const context = await browser.newContext({ acceptDownloads: true });
       const reviewer = await context.newPage();
       try {
         await registerKeyAndSignIn(reviewer, 'packet-reviewer');
@@ -174,11 +175,31 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await reviewer.getByRole('table', { name: 'Exports waiting' }).getByRole('link').first().click();
         await expect(reviewer).toHaveURL(new RegExp(`${casePath}/packet/[0-9a-f-]{36}/review$`));
         await expect(reviewer.getByRole('region', { name: 'Deadline' }).locator('[data-deadline-summary="verified"]')).toBeVisible();
-        const review = new URL(reviewer.url()).pathname;
-        const pdf = await reviewer.request.get(`${review}/pdf`);
-        expect(pdf.status()).toBe(200);
-        expect(createHash('sha256').update(await pdf.body()).digest('hex')).toBe(pdfSha256);
+        const exportFiles = reviewer.getByRole('region', { name: 'Export', exact: true });
         const attestation = reviewer.getByRole('region', { name: 'Attestation' });
+        // The billing manager's downloads are not the reviewer's: the attest button is disabled and says why.
+        const blocked = async (missing: string) => {
+          await expect(attestation.locator('[data-attestation="needs_downloads"]')).toBeVisible();
+          await expect(attestation.getByRole('button', { name: 'Attest the export' })).toBeDisabled();
+          await expect(attestation.locator('#attest-blocked')).toHaveText(new RegExp(`^Download ${missing} under Exported files first`));
+        };
+        await blocked('the PDF and the CSV schedule');
+        /** Clicks a file's link on the review, and returns the SHA-256 of what the browser saved. */
+        const download = async (name: string): Promise<string> => {
+          const [saved] = await Promise.all([reviewer.waitForEvent('download'), exportFiles.getByRole('link', { name, exact: true }).click()]);
+          const file = await saved.path();
+          return createHash('sha256').update(readFileSync(file)).digest('hex');
+        };
+        expect(await download('PDF')).toBe(pdfSha256);
+        await reviewer.reload();
+        await expect(exportFiles.locator('[data-download="pdf"]')).toHaveAttribute('data-downloaded', 'true');
+        await expect(exportFiles.locator('[data-download="csv"]')).toHaveAttribute('data-downloaded', 'false');
+        await blocked('the CSV schedule');
+        const csvSha256 = (await exportFiles.getByLabel('CSV SHA-256', { exact: true }).getAttribute('data-sha256')) ?? '';
+        expect(await download('CSV schedule')).toBe(csvSha256);
+        await reviewer.reload();
+        await expect(exportFiles.locator('[data-download="csv"]')).toHaveAttribute('data-downloaded', 'true');
+        await expect(attestation.locator('[data-attestation="needs_downloads"]')).toHaveCount(0);
         for (const box of await attestation.getByRole('checkbox').all()) {
           await box.check();
         }

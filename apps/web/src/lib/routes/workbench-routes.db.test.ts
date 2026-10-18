@@ -8,6 +8,7 @@ import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
+import { EXPORT_NOT_DOWNLOADED } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
 import { TriageWorld } from '@tp/worker/testing/triage';
@@ -148,8 +149,10 @@ async function reviewerOf(target: Practice): Promise<string> {
   return id;
 }
 
-/** The reviewer attests the version's export through the review's route, over the SHA-256 the review shows. */
+/** The reviewer downloads both files through the review's routes and attests the version's export there, over the SHA-256 the review shows. */
 async function attestThroughRoutes(target: Practice, reviewer: string, caseId: string, versionId: string): Promise<void> {
+  ok(await call(reviewPacketPdf, reviewer, { practiceId: target.practiceId, caseId, versionId }));
+  ok(await call(reviewPacketCsv, reviewer, { practiceId: target.practiceId, caseId, versionId }));
   const review = ok(await call(packetReviewPage, reviewer, { practiceId: target.practiceId, caseId, versionId })).review;
   ok(
     await call(attestPacketExportAction, reviewer, { practiceId: target.practiceId }, {
@@ -408,9 +411,13 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(Buffer.from(csv.download.body).toString('utf8')).toContain('SYNCCNCAS080001');
     expect((await call(packetCsv, viewer, { ...P, caseId, versionId: version?.id ?? '' })).status).toBe('forbidden');
     const { rows: downloads } = await asOwner(w.owner, [practice.practiceId], () =>
-      w.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM audit_event WHERE practice_id = $1 AND action = 'packet_export_downloaded' AND purpose = 'line_export'", [practice.practiceId]),
+      w.owner.query<{ action: string; actor_id: string }>("SELECT action, actor_id FROM audit_event WHERE practice_id = $1 AND action LIKE 'packet_export_%downloaded' AND purpose = 'line_export' ORDER BY action", [practice.practiceId]),
     );
-    expect(downloads[0]?.n).toBe(2);
+    // Each file's download is its own event, in the downloader's name (docs/adr/0061).
+    expect(downloads).toEqual([
+      { action: 'packet_export_csv_downloaded', actor_id: practice.manager },
+      { action: 'packet_export_pdf_downloaded', actor_id: practice.manager },
+    ]);
 
     // The builder shows each line's deadline, verified from the contract's cited window, and the export's verifier report (CO-05).
     expect(exported?.deadlineNow).toBe('verified');
@@ -433,10 +440,17 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(ok(await call(packetReviewsPage, reviewer, P)).awaiting.map((item) => item.versionId)).toEqual([version?.id]);
     const review = ok(await call(packetReviewPage, reviewer, reviewParams)).review;
     expect(review).toMatchObject({ exportSha256: exported?.exportSha256, exportCsvSha256: exported?.exportCsvSha256, deadlineNow: 'verified', attestation: null, viewerTookPart: false });
+    // The billing manager's downloads are not the reviewer's: the attest route refuses until the reviewer has downloaded both files (docs/adr/0061).
+    expect(review.viewerDownloaded).toEqual({ pdf: false, csv: false });
+    const attestNow = async () => call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations });
+    expect(refused(await attestNow())).toBe(EXPORT_NOT_DOWNLOADED);
     const reviewedPdf = ok<Download<Uint8Array<ArrayBuffer>>>(await call(reviewPacketPdf, reviewer, reviewParams));
     expect(createHash('sha256').update(reviewedPdf.download.body).digest('hex')).toBe(exported?.exportSha256);
+    expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.viewerDownloaded).toEqual({ pdf: true, csv: false });
+    expect(refused(await attestNow())).toBe(EXPORT_NOT_DOWNLOADED);
     const reviewedCsv = ok<Download<Uint8Array<ArrayBuffer>>>(await call(reviewPacketCsv, reviewer, reviewParams));
     expect(createHash('sha256').update(reviewedCsv.download.body).digest('hex')).toBe(exported?.exportCsvSha256);
+    expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.viewerDownloaded).toEqual({ pdf: true, csv: true });
     // Every item is confirmed, over the files the review showed: other files are refused.
     expect((await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '' })).status).toBe('invalid');
     expect(refused(await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: 'f'.repeat(64), csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations }))).toBe(

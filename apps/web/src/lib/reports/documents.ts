@@ -277,7 +277,12 @@ const KINDS: Readonly<Record<string, ExportKind>> = {
   report_document_downloaded: 'report_document',
   monthly_summary_downloaded: 'monthly_summary',
   packet_export_downloaded: 'packet_export',
+  packet_export_pdf_downloaded: 'packet_export',
+  packet_export_csv_downloaded: 'packet_export',
 };
+
+/** A packet export's download: each file's own action, and the one action recorded before them (docs/adr/0061). */
+const PACKET_DOWNLOADS: ReadonlySet<string> = new Set(['packet_export_downloaded', 'packet_export_pdf_downloaded', 'packet_export_csv_downloaded']);
 
 export const EXPORTS_PER_PAGE = 50;
 
@@ -294,7 +299,7 @@ export async function exportHistory(scope: Scope, practiceId: string, requestedP
     'SELECT event_id, action, object_id, purpose, actor_id, at FROM practice_export_history($1, $2, $3)',
     [practiceId, EXPORTS_PER_PAGE, at.offset],
   );
-  const packetVersions = rows.filter((row) => row.action === 'packet_export_downloaded' && row.object_id !== null).map((row) => row.object_id as string);
+  const packetVersions = rows.filter((row) => PACKET_DOWNLOADS.has(row.action) && row.object_id !== null).map((row) => row.object_id as string);
   const cases =
     packetVersions.length === 0
       ? []
@@ -317,7 +322,7 @@ export async function exportHistory(scope: Scope, practiceId: string, requestedP
       eventId: row.event_id,
       kind: KINDS[row.action] ?? 'report_document',
       objectId: row.object_id,
-      file: row.action === 'packet_export_downloaded' ? 'packet' : row.purpose === 'line_export' ? 'line_csv' : row.purpose === 'report_pdf' ? 'pdf' : 'csv',
+      file: PACKET_DOWNLOADS.has(row.action) ? 'packet' : row.purpose === 'line_export' ? 'line_csv' : row.purpose === 'report_pdf' ? 'pdf' : 'csv',
       lineLevel: row.purpose === 'line_export',
       downloadedBy: row.actor_id === null ? null : (emails.get(row.actor_id) ?? null),
       downloadedAt: row.at.toISOString(),

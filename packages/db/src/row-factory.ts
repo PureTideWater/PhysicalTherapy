@@ -213,7 +213,8 @@ const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: 
 const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: TenantWorld, referenced: Row) => Promise<void>>> = {
   // A submission sends an exported, attested version: a second billing manager approves the factory's version
   // (its drafter cannot), the export job records its files with the verifier's report over the narrative it
-  // rendered (the version's own), and a reimbursement reviewer under a support grant attests the export
+  // rendered (the version's own), and a reimbursement reviewer under a support grant downloads both files (the
+  // two events the download routes record once a file's bytes match its SHA-256) and attests the export
   // (migration 20261103090000).
   'submission.packet_version_id': async (client, world, version) => {
     const approver = await createUser(client);
@@ -235,6 +236,18 @@ const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: 
     await addMembership(client, internal, reviewer, 'reviewer');
     await asOwner(client, [world.practiceId], () =>
       client.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'RF-1', 'SYNTHETIC ATTESTATION', now() + interval '4 hours')`, [world.practiceId, reviewer]),
+    );
+    await asOwner(
+      client,
+      [world.practiceId],
+      () =>
+        client.query(
+          `INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, purpose, request_id)
+           SELECT $2::uuid, 'user', a.action, 'packet_version', $1::uuid, $3::uuid, 'line_export', 'row-factory'
+             FROM unnest(ARRAY['packet_export_pdf_downloaded', 'packet_export_csv_downloaded']) AS a (action)`,
+          [version.id, reviewer, world.practiceId],
+        ),
+      reviewer,
     );
     await asOwner(
       client,

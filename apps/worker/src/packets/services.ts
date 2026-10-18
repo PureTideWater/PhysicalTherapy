@@ -30,6 +30,7 @@ import type { DeadlineStatus } from '@tp/triage';
 
 import { type JobSender, enqueue } from '../jobs/enqueue';
 import { todayUtc } from '../triage/execute';
+import { packetExportDownloads } from './downloads';
 import { scheduleIdentifiers } from './identifiers';
 import { PacketRefusedError, loadAssembly } from './records';
 
@@ -447,6 +448,9 @@ export async function requestPacketExport(scope: PracticeScope<ScopeClient>, que
 /** The refusal of an export or an attestation whose deadline is not verified (the database's words). */
 export const DEADLINE_NOT_VERIFIED = 'a packet version whose deadline is not verified is not exported';
 
+/** The refusal of an attestation before the reviewer has downloaded both files of the export (the review's next step). */
+export const EXPORT_NOT_DOWNLOADED = 'download the export’s PDF and CSV from this review before attesting it; each download is checked against its SHA-256';
+
 /** The refusal of an export of a version written at an earlier dispute level than the case's now (the database's words). */
 export const NOT_CASE_LEVEL = 'only a version of the case\'s dispute level is exported; write the packet again at this level';
 
@@ -483,8 +487,9 @@ export interface AttestedExport {
  * role, reached under a support grant) attests once over the SHA-256 of the PDF and the CSV they reviewed,
  * in their own name; a submission is logged only after it. The database refuses the person who drafted,
  * wrote or approved the packet, a version not current or whose case changed, one whose deadline is not
- * verified, files that are not the export's, and anyone else; this checks the permission and the files
- * first. An attested export is left as it is. Internal users approve nothing: the practice's approval
+ * verified, files that are not the export's, an attester who has not downloaded both files since the export
+ * (each checked against its SHA-256 as it was served), and anyone else; this checks the permission, the files
+ * and the downloads first. An attested export is left as it is. Internal users approve nothing: the practice's approval
  * stands as before, and this is the founder's attestation beside it.
  */
 export async function attestPacketExport(scope: PracticeScope<ScopeClient>, input: AttestExportInput): Promise<AttestedExport> {
@@ -505,6 +510,12 @@ export async function attestPacketExport(scope: PracticeScope<ScopeClient>, inpu
   }
   if (found.export_sha256 !== input.pdfSha256 || found.export_csv_sha256 !== input.csvSha256) {
     throw new PacketRuleError('23514', 'the files reviewed are not this export’s; open the review again');
+  }
+  // The owner's addition of 2026-10-18: the attester's own downloads of both files since the export, each
+  // served only after its bytes hashed to the SHA-256 above (the database asks the same before it attests).
+  const downloaded = await packetExportDownloads(scope, { versionId: input.versionId });
+  if (!downloaded.includes('pdf') || !downloaded.includes('csv')) {
+    throw new PacketRefusedError('export_not_downloaded', EXPORT_NOT_DOWNLOADED);
   }
   const attestation: PacketAttestation = { format: 'tp-attestation/1', checklist: [...PACKET_ATTESTATION_ITEMS], pdf_sha256: input.pdfSha256, csv_sha256: input.csvSha256 };
   const { rows: attested } = await underRules(() =>
