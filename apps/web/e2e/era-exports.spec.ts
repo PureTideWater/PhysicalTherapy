@@ -120,8 +120,33 @@ test('each of the four ERA export formats uploads through Uploads, is read with 
         const table = page.getByRole('table', { name: 'Claims and lines' });
         const rows = table.locator('tbody tr');
         await expect(rows).toHaveCount(expected.rows.length);
-        const shown = await rows.evaluateAll((elements) => elements.map((element) => [...element.querySelectorAll('td')].map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim())));
-        const fromScreen = shown.map((cells) => [cells[1], cells[2], cells[3]?.replace(/(Reversal|Reversed|Superseded)/g, '').trim(), units(cells[4]), cells[5], cells[7], cells[9], cells[10]].join(' | ')).sort();
+        // Each figure is read under its header, so a column that moves or merges cannot shift the comparison.
+        const columns = ['Patient reference and claim control numbers', 'Service date', 'Code and modifiers', 'Units', 'Charge', 'Observed allowed', 'Paid', 'Patient share'] as const;
+        const headers = await table.locator('thead th').evaluateAll((cells) => cells.map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim()));
+        for (const column of columns) expect(headers, `the claims table has a ${column} column`).toContain(column);
+        const at = Object.fromEntries(columns.map((column) => [column, headers.indexOf(column)])) as Record<(typeof columns)[number], number>;
+        const shown = await rows.evaluateAll((elements) =>
+          elements.map((element) =>
+            [...element.querySelectorAll('td')].map((cell) => ({
+              text: (cell.textContent ?? '').replace(/\s+/g, ' ').trim(),
+              claim: (cell.querySelector('[data-identifiers="claim"]')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
+            })),
+          ),
+        );
+        const fromScreen = shown
+          .map((cells) =>
+            [
+              cells[at['Patient reference and claim control numbers']]?.claim,
+              cells[at['Service date']]?.text,
+              cells[at['Code and modifiers']]?.text.replace(/(Reversal|Reversed|Superseded)/g, '').trim(),
+              units(cells[at.Units]?.text),
+              cells[at.Charge]?.text,
+              cells[at['Observed allowed']]?.text,
+              cells[at.Paid]?.text,
+              cells[at['Patient share']]?.text,
+            ].join(' | '),
+          )
+          .sort();
         const fromManifest = expected.rows
           .map((row) =>
             [
