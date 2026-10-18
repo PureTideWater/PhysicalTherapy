@@ -37,6 +37,7 @@ export const ALLOWED_LOG_FIELDS = [
   'contract_version_id',
   'rate_record_id',
   'release_no',
+  'screening_run_id',
   'error_code',
 ] as const;
 

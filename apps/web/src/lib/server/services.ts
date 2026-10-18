@@ -148,6 +148,7 @@ export interface ServiceParts {
 /** No queue configured: refuses rather than dropping the job. */
 const NO_QUEUE: JobQueue = {
   enqueue: () => Promise.reject(new Error('no job queue is configured for these services')),
+  enqueueScreeningRun: () => Promise.reject(new Error('no job queue is configured for these services')),
 };
 
 /** No billing login configured: refuses rather than falling back to the application's login. */

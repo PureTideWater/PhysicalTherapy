@@ -24,6 +24,7 @@ import { REMITTANCE_ROUTES } from './remittances';
 import { REPORT_DOCUMENT_ROUTES } from './report-documents';
 import { REPORT_ROUTES } from './reports';
 import { ROI_ROUTES } from './roi';
+import { SCREENING_ROUTES } from '../screening/routes';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
 import { SETTINGS_ROUTES } from './settings';
 import { SIGN_IN_ROUTES } from './sign-in';
@@ -86,6 +87,7 @@ export const ROUTES: readonly Route[] = [
   ...SUPPORT_ROUTES,
   ...COMPLIANCE_ROUTES,
   ...CONSOLE_MODEL_ROUTES,
+  ...SCREENING_ROUTES,
 ];
 
 export function routeById(id: string): Route | undefined {

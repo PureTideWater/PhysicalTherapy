@@ -15,9 +15,9 @@ import type { Sealer } from '../auth/seal';
  * them, low enough that guessing and scraping stop within a window.
  */
 
-export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook';
+export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook' | 'screening';
 
-export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook'];
+export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook', 'screening'];
 
 export interface Limit {
   readonly hits: number;
@@ -29,7 +29,7 @@ export interface BucketLimits {
   readonly user?: Limit;
   /** Per client address (when the trusted proxy names one). */
   readonly address?: Limit;
-  /** Per account a sign-in step names (its email, or its pending step). */
+  /** Per account a sign-in step names (its email, or its pending step); for a screening, its email's domain or address. */
   readonly account?: Limit;
 }
 
@@ -44,6 +44,10 @@ export const RATE_LIMITS: Readonly<Record<RateBucket, BucketLimits>> = {
   export: { user: { hits: 60, windowSeconds: 600 }, address: { hits: 300, windowSeconds: 600 } },
   public_form: { address: { hits: 5, windowSeconds: 3600 } },
   webhook: { address: { hits: 1200, windowSeconds: 60 } },
+  // A free screening (CO-04; D21 a): per client address, and per account, which is the email's domain for a business
+  // address and the whole address for a free-mail one (src/lib/screening/rate.ts), so one firm's colleagues share a
+  // day's screenings while gmail.com's prospects do not share one count.
+  screening: { address: { hits: 10, windowSeconds: 3600 }, account: { hits: 20, windowSeconds: 86_400 } },
 };
 
 export interface RateSubjects {
