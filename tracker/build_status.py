@@ -174,6 +174,7 @@ MANUAL = {
   "You answered PR 6's questions": ("Done", "2026-10-18T11:38:00Z", "2026-10-18T11:41:00Z"),
   "You decided the four urgent items": ("Done", "2026-10-18T16:10:00Z", "2026-10-18T16:20:00Z"),
   "Repair main (revert #7, Dependabot to the build branch)": ("Done", "2026-10-18T16:24:00Z", "2026-10-18T16:30:00Z"),
+  "PR 6: the audit's privacy fix (#6, 11-line floor)": ("Running", "2026-10-18T16:47:00Z", None),
   "Fixes on GitHub: CI green, then merge": ("Done", "2026-10-18T00:15:00Z", "2026-10-18T01:13:00Z"),
   "You approve the domain model (PR 4)": ("Done", "2026-10-18T01:58:00Z", "2026-10-18T02:08:00Z"),
   "PR 4 on GitHub: CI green, then merge": ("Done", "2026-10-18T02:28:00Z", "2026-10-18T03:21:00Z"),
@@ -192,7 +193,7 @@ STEP_RUNS = {
   "PR 3: EMR export fixtures and fixture guard (CO-03)": "wf_fd24ff2c-ef4",
   "PR 4: EMR exports as intake (CO-03)": "wf_4afdb8f3-dff",
   "PR 5: packet deadline verification (CO-05)": "wf_e3d92d32-ee0",
-  "PR 6: free screening (CO-04)": "wf_d8c22991-041",
+  "PR 6: free screening (CO-04)": "wf_fb7ce904-a6f",
 }
 BATCHES = [
   # (batch name, journal run id or None, planned labels in order)
