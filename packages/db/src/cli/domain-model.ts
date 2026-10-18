@@ -122,6 +122,12 @@ try {
   throw error;
 }
 
+/** A path as the summary names it: from the repository root when it is inside the repository. */
+function named(file: string): string {
+  const relative = path.relative(REPO_ROOT, file);
+  return `\`${relative.startsWith('..') || path.isAbsolute(relative) ? file : relative}\``;
+}
+
 /** The changes since the document at --summary-since, against `text` from `source`. */
 function printSummary(text: string, source: string, approvers: readonly string[]): void {
   if (since === undefined) return;
@@ -137,7 +143,7 @@ if (values.out === undefined && values.check === undefined) {
     if (error instanceof DomainModelError) fail(error.message, 2);
     throw error;
   }
-  printSummary(readFileSync(DOMAIN_MODEL_DOCUMENT, 'utf8'), `\`${path.relative(REPO_ROOT, DOMAIN_MODEL_DOCUMENT)}\` in the working tree`, names);
+  printSummary(readFileSync(DOMAIN_MODEL_DOCUMENT, 'utf8'), `${named(DOMAIN_MODEL_DOCUMENT)} in the working tree`, names);
   process.exit(0);
 }
 
@@ -157,8 +163,11 @@ try {
   throw error;
 }
 
+/** The document --check compared, which matches the regenerated text when the check passes. */
+let checked: string | undefined;
 if (checkPath !== undefined) {
   const existing = readFileSync(checkPath, 'utf8');
+  checked = existing;
   const difference = firstDifference(existing, generated.text);
   if (difference !== null) {
     fail(
@@ -186,5 +195,6 @@ if (outPath !== undefined) {
 if (values.json !== undefined) writeFileSync(path.resolve(base, values.json), generated.json);
 process.stdout.write(`${outPath === undefined ? '' : `wrote ${outPath}: `}${generated.summary}\n`);
 for (const p of generated.strictProblems) process.stdout.write(`  ${p}\n`);
-if (written !== undefined && outPath !== undefined) printSummary(written, `the text written to \`${path.relative(REPO_ROOT, outPath)}\``, approvers);
+if (written !== undefined && outPath !== undefined) printSummary(written, `the text written to ${named(outPath)}`, approvers);
+else if (checked !== undefined && checkPath !== undefined) printSummary(checked, `${named(checkPath)}, which matches the schema`, approvers);
 else printSummary(generated.text, 'the text regenerated from the database', approvers);
