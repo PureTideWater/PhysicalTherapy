@@ -17,7 +17,9 @@
     "./testing": "./src/price/test-support/pricing-world.ts",
     "./testing/triage": "./src/triage/test-support/triage-world.ts",
     "./billing": "./src/billing/public.ts",
-    "./era-formats": "./src/parse/era/formats.ts"
+    "./era-formats": "./src/parse/era/formats.ts",
+    "./screening": "./src/screening/public.ts",
+    "./screening-format": "./src/screening/format.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",
