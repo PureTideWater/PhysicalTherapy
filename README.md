@@ -38,6 +38,7 @@ pnpm dev             # Postgres and MinIO in Docker, then the web app and the wo
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
 pnpm db:domain-model --check --strict   # docs/product/domain-model.md against the migrated database (--out rewrites it)
+pnpm db:domain-model --summary-since origin/claude/build-platform   # what changed since the last approved document (no database)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
@@ -79,6 +80,13 @@ an edit to a migration after it was signed fails the gate too (`domain-model-dri
 start until the founder approves the document; until then that case fails. The document records PostgreSQL's major
 version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older server its drift case
 fails (on 16, at the version line alone).
+
+Each approval opens with the changes since the last approved document (docs/adr/0063): `pnpm db:domain-model
+--summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working
+tree's, or with the text `--out` or `--check` generates, and prints one line per change, row-level security, policies,
+the PHI registry and grants first, then tables, columns, constraints, functions, triggers and the divergence rows, with
+both documents' SHA-256 and approval state. CI's `check` job writes it into its job summary, and a pull request that
+regenerates the document opens its description with it.
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds

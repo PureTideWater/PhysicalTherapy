@@ -174,6 +174,19 @@ describe('workflows', () => {
     expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
   });
 
+  it('write the changes since the last approved domain model into the check job’s summary, against the base branch, before any check can fail', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const summary = stepIndex(steps, (step) => step.run?.includes('db:domain-model --summary-since') === true);
+    const step = steps[summary] as Step & { env?: Record<string, string> };
+    expect(summary).toBe(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile') + 1);
+    // The base branch by its name from the environment, never pasted into the script; the summary is appended to the job's.
+    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
+    expect(step.run).toContain('pnpm -s db:domain-model --summary-since "origin/$BASE_REF" >> "$GITHUB_STEP_SUMMARY"');
+    expect(step.run).not.toContain('${{');
+    // It needs the base branch's history, which the checkout fetches whole.
+    expect(steps[0]?.with).toMatchObject({ 'fetch-depth': 0 });
+  });
+
   it('run the content checker on each outgoing release before publishing it', () => {
     const steps = workflow('publish-content.yml').jobs.publish?.steps ?? [];
     const verify = stepIndex(steps, (step) => step.run?.includes('pnpm verify-content') === true);

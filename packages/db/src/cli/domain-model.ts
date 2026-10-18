@@ -7,18 +7,21 @@ import { readDatabaseUrl } from '../config';
 import {
   APPROVERS_LIST,
   DOMAIN_MODEL_DOCUMENT,
+  type DocumentAtRef,
   DomainModelError,
   REPO_ROOT,
   documentApprovalProblems,
+  documentAtRef,
   documentToWrite,
   firstDifference,
   generateDomainModel,
   readApprovers,
+  renderSummary,
 } from '../domain-model';
 
 /**
  * `pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE]
- *  [--database-url URL] [--commit SHA] [--branch NAME]`: Change Order 001, CO-02.
+ *  [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]`: Change Order 001, CO-02.
  *
  * Generates docs/product/domain-model.md from the database at DATABASE_URL (or --database-url), which
  * must be freshly migrated with `pnpm db:migrate`; this command migrates nothing and only reads.
@@ -37,6 +40,12 @@ import {
  *   --strict exits 2 when a divergence that is not informational has no reviewed explanation, or an
  *            explanation names a divergence or policy that no longer exists. A table in no area of
  *            packages/db/domain-model/areas.json always exits 2.
+ *   --summary-since REF  prints, in Markdown, the changes since the document at the git ref REF (the
+ *            base branch: its document is the last approved one), one line each, row-level security,
+ *            policies, the PHI registry and grants first, with both documents' SHA-256 and approval state
+ *            (summary.ts, docs/adr/0063). Alone it reads no database and compares with
+ *            docs/product/domain-model.md as it is; with --out or --check, with the text they generate.
+ *            A ref git cannot resolve, or a commit without the document, exits 2.
  *
  * The provenance line names the commit and branch (git, unless --commit is given), and says "with
  * uncommitted changes to its inputs" when git reports changes under packages/db or to the Data
@@ -46,7 +55,7 @@ import {
  * digits, ".", "_", "/" and "-", exits 2 before the database is read.
  */
 const USAGE =
-  'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE] [--database-url URL] [--commit SHA] [--branch NAME]\n';
+  'usage: pnpm db:domain-model [--out [FILE]] [--check [FILE]] [--strict] [--require-approval] [--json FILE] [--summary-since REF] [--database-url URL] [--commit SHA] [--branch NAME]\n';
 
 function fail(message: string, code: number): never {
   process.stderr.write(`db:domain-model: ${message}\n`);
@@ -79,6 +88,7 @@ try {
       json: { type: 'string' },
       strict: { type: 'boolean', default: false },
       'require-approval': { type: 'boolean', default: false },
+      'summary-since': { type: 'string' },
       'database-url': { type: 'string' },
       commit: { type: 'string' },
       branch: { type: 'string' },
@@ -89,7 +99,10 @@ try {
   process.stderr.write(USAGE);
   process.exit(2);
 }
-if (values.out === undefined && values.check === undefined) fail('give --out [FILE] to write, or --check [FILE] to compare', 2);
+const summarySince = values['summary-since'];
+if (values.out === undefined && values.check === undefined && summarySince === undefined) {
+  fail('give --out [FILE] to write, --check [FILE] to compare, or --summary-since REF for the changes since the document at REF', 2);
+}
 if (values['require-approval'] && values.check === undefined) fail('--require-approval needs --check [FILE]', 2);
 
 // A path given on the command line is the caller's, wherever pnpm runs the script from.
@@ -99,6 +112,34 @@ const checkPath = values.check === undefined ? undefined : path.resolve(base, va
 
 /** The generator's inputs: its code, the migrations, the Drizzle schema, its data files and the Data dictionary. */
 const INPUTS = ['packages/db', 'docs/product/data-dictionary.md'];
+
+/** The last approved document, read before the database so that a ref git cannot resolve exits 2 first. */
+let since: DocumentAtRef | undefined;
+try {
+  since = summarySince === undefined ? undefined : documentAtRef(summarySince);
+} catch (error) {
+  if (error instanceof DomainModelError) fail(error.message, 2);
+  throw error;
+}
+
+/** The changes since the document at --summary-since, against `text` from `source`. */
+function printSummary(text: string, source: string, approvers: readonly string[]): void {
+  if (since === undefined) return;
+  process.stdout.write(`${renderSummary({ before: since, after: { text, source }, check: { approvers } })}\n`);
+}
+
+if (values.out === undefined && values.check === undefined) {
+  // --summary-since alone: the committed document as it is in the working tree, and no database.
+  let names: string[];
+  try {
+    names = readApprovers();
+  } catch (error) {
+    if (error instanceof DomainModelError) fail(error.message, 2);
+    throw error;
+  }
+  printSummary(readFileSync(DOMAIN_MODEL_DOCUMENT, 'utf8'), `\`${path.relative(REPO_ROOT, DOMAIN_MODEL_DOCUMENT)}\` in the working tree`, names);
+  process.exit(0);
+}
 
 let generated;
 let approvers;
@@ -137,9 +178,13 @@ if (checkPath !== undefined) {
     process.stdout.write(`${checkPath} carries an approval for this text\n`);
   }
 }
+let written: string | undefined;
 if (outPath !== undefined) {
-  writeFileSync(outPath, documentToWrite(existsSync(outPath) ? readFileSync(outPath, 'utf8') : null, generated.text, { approvers }));
+  written = documentToWrite(existsSync(outPath) ? readFileSync(outPath, 'utf8') : null, generated.text, { approvers });
+  writeFileSync(outPath, written);
 }
 if (values.json !== undefined) writeFileSync(path.resolve(base, values.json), generated.json);
 process.stdout.write(`${outPath === undefined ? '' : `wrote ${outPath}: `}${generated.summary}\n`);
 for (const p of generated.strictProblems) process.stdout.write(`  ${p}\n`);
+if (written !== undefined && outPath !== undefined) printSummary(written, `the text written to \`${path.relative(REPO_ROOT, outPath)}\``, approvers);
+else printSummary(generated.text, 'the text regenerated from the database', approvers);

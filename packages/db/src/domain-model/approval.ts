@@ -109,6 +109,12 @@ export function approvalLineOf(text: string): string | null {
 
 const APPROVAL_LINE = /^Approved by: (.+?) {2}Date: (\S+) {2}Document SHA-256: `([0-9a-f]{64})`$/;
 
+/** The three fields of an approval line in its shape, or null when the line is not in that shape. */
+export function approvalFields(line: string | null): { readonly name: string; readonly date: string; readonly sha256: string } | null {
+  const m = line === null ? null : APPROVAL_LINE.exec(line);
+  return m ? { name: m[1] ?? '', date: m[2] ?? '', sha256: m[3] ?? '' } : null;
+}
+
 /** Words that hold a name's place: a name with one of them as a word, in any case, names no one. */
 const PLACEHOLDER_WORDS = new Set(['tbd', 'name', 'firstname', 'lastname', 'fullname', 'founder', 'approver', 'claude']);
 

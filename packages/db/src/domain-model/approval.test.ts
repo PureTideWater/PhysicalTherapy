@@ -11,6 +11,7 @@ import {
   EARLIEST_APPROVAL_DATE,
   PROVENANCE_LINE_INDEX,
   PROVENANCE_PREFIX,
+  approvalFields,
   approvalLineOf,
   approvalProblems,
   awaitingApprovalLine,
@@ -524,5 +525,15 @@ describe('readApprovers', () => {
       expect(() => readApprovers(target), JSON.stringify(json)).toThrow(DomainModelError);
       expect(() => readApprovers(target), JSON.stringify(json)).toThrow(refusal);
     }
+  });
+});
+
+describe('approvalFields', () => {
+  it('reads the name, date and hash of a line in the approval shape, and null for any other line', () => {
+    const sha = 'a'.repeat(64);
+    expect(approvalFields(`${APPROVAL_PREFIX} A. Signer  Date: 2026-10-17  Document SHA-256: \`${sha}\``)).toEqual({ name: 'A. Signer', date: '2026-10-17', sha256: sha });
+    expect(approvalFields(awaitingApprovalLine(sha))).toEqual({ name: '________', date: '________', sha256: sha });
+    expect(approvalFields(`${APPROVAL_PREFIX} A. Signer Date: 2026-10-17`)).toBeNull();
+    expect(approvalFields(null)).toBeNull();
   });
 });
