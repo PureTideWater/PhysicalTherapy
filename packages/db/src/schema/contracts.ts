@@ -57,6 +57,20 @@ export const contract = pgTable(
   (table) => [index('contract_by_payer').on(table.practiceId, table.payerId)],
 );
 
+/**
+ * The unit a contract's dispute window is counted in, as its quote states it (contract_version.dispute_window_unit,
+ * audit item #5), in the CHECK's order.
+ */
+export const DISPUTE_WINDOW_UNITS = ['calendar_days', 'business_days', 'months'] as const;
+export type DisputeWindowUnit = (typeof DISPUTE_WINDOW_UNITS)[number];
+
+/**
+ * What a contract's dispute window runs from, as its quote states it (contract_version.dispute_window_measured_from,
+ * audit item #5), in the CHECK's order.
+ */
+export const DISPUTE_WINDOW_STARTS = ['date_of_service', 'remittance_date', 'payment_date', 'receipt_date'] as const;
+export type DisputeWindowStart = (typeof DISPUTE_WINDOW_STARTS)[number];
+
 /** A contract window's evidence (contract_version.dispute_window_evidence), as a rate record cites its terms. */
 export interface DisputeWindowEvidence {
   readonly document_id: string;
@@ -100,6 +114,13 @@ export const contractVersion = pgTable(
     /** The contract specialist who verified the window against its page, and when; an edit of the window clears both. */
     disputeWindowVerifiedBy: uuid('dispute_window_verified_by').references(() => user.id),
     disputeWindowVerifiedAt: timestamp('dispute_window_verified_at', { withTimezone: true }),
+    /**
+     * The cited window's unit and what it runs from, as its quote states them (audit item #5): set exactly with
+     * the evidence, frozen with it from approval. The window is verified only while they are the rule the
+     * product computes (contract_window_rule_computed(): calendar days after the remittance date).
+     */
+    disputeWindowUnit: text('dispute_window_unit', { enum: DISPUTE_WINDOW_UNITS }),
+    disputeWindowMeasuredFrom: text('dispute_window_measured_from', { enum: DISPUTE_WINDOW_STARTS }),
   },
   (table) => [
     unique('contract_version_number_once').on(table.contractId, table.versionNo),

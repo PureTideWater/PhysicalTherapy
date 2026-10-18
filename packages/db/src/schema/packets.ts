@@ -24,6 +24,15 @@ export const PAYER_RESPONSE_KIND_VALUES = ['accepted', 'partial', 'denied', 'inf
 export const DENIAL_CATEGORY_VALUES = ['authorization', 'visit_limit', 'modifier', 'medical_necessity', 'timely_filing', 'bundling', 'other'] as const;
 export const PACKET_EXPORT_FILES = ['pdf', 'csv'] as const;
 export type PacketExportFile = (typeof PACKET_EXPORT_FILES)[number];
+/**
+ * Whether a packet version's pricing is still current (audit item #4; migration 20261103090000's
+ * packet_version_pricing_check() and submission.pricing_check), in the CHECK's order: 'current', then each
+ * cause from the most severe. A stale line's pricing is no longer in effect (an accepted re-run, a later first
+ * run), its rule release was withdrawn, or its contract version is no longer signed off or no longer covers
+ * the service date.
+ */
+export const PRICING_CHECK_RESULTS = ['current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'] as const;
+export type PricingCheckResult = (typeof PRICING_CHECK_RESULTS)[number];
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -140,6 +149,12 @@ export const submission = pgTable(
     disputeLevel: integer('dispute_level').notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Whether the version sent was still priced current when the submission was logged (migration
+     * 20261103090000): set by the database from packet_version_pricing_check(), never refused for it, and
+     * never written by the application. Null only on a row logged before that migration.
+     */
+    pricingCheck: text('pricing_check', { enum: PRICING_CHECK_RESULTS }),
   },
   (table) => [index('submission_by_case').on(table.practiceId, table.caseId, table.submittedOn.desc()), index('submission_by_follow_up').on(table.practiceId, table.followUpOn)],
 );
