@@ -23,6 +23,7 @@ export { DocumentIntegrityError, type ParseServices, parseHandler } from './pars
 export { type LoadContext, type TransactionLoad, type TransactionReview, loadTransaction } from './parse/loader';
 export { type ParseReportRow, type ReportedError, type ReportedTransaction, type TransactionResult } from './parse/report';
 export { ZIP_LIMITS, type ZipLimits } from './intake/zip';
+export { ERA_EXPORT_HELD_REASONS, ERA_EXPORT_MAX_BYTES } from './parse/era/normalize';
 export { ENGINE_ERRORS_MESSAGE, type ExecuteOptions, type ExecuteOutcome, type PricingJobContext, executePricingRun } from './price/execute';
 export { priceHandler } from './price/job';
 export { type ReportOptions, type ReportOutcome, type ReportServices, auditReportHandler, generateAuditReport } from './report/generate';

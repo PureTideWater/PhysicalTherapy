@@ -103,6 +103,35 @@ describe('the parse report', () => {
     expect(row).toMatchObject({ codeListRelease: null, unknownCodes: ['carc:2', 'carc:45'] });
   });
 
+  it('holds for review an 835 of a payment first loaded from an ERA export, loading nothing, and calls the document held (D13 a)', () => {
+    expect(resultOf({ kind: 'held_for_review', remittanceId: OTHER, documentId: DOCUMENT, reason: 'payment_loaded_from_export' })).toEqual({ outcome: 'held_for_review', remittanceId: OTHER, documentId: DOCUMENT });
+    const row = parseReportRow(reportOf('PAR-01/remit.835'), new Map([[FIRST, { outcome: 'held_for_review', remittanceId: OTHER, documentId: DOCUMENT }]]));
+    expect(row).toMatchObject({ outcome: 'held', held: 1, loadedTransactions: 0, loadedClaims: 0, loadedLines: 0, duplicateTransactions: 0, errors: [] });
+    expect(row.transactionOutcomes).toEqual([
+      expect.objectContaining({
+        st02: '0001',
+        outcome: 'held_for_review',
+        remittanceId: null,
+        linkedRemittanceId: OTHER,
+        linkedDocumentId: DOCUMENT,
+        linkedProvenance: 'era_export',
+        reviewReason: 'payment_loaded_from_export',
+        claims: 0,
+        lines: 0,
+        reasons: [],
+      }),
+    ]);
+    expect(documentStatus(row.outcome)).toBe('held');
+    // Beside a set that loads, the document is partially held.
+    const both = parseReportRow(reportOf('PAR-02/remit.835'), new Map([
+      [FIRST, loaded(1, 2)],
+      [SECOND, { outcome: 'held_for_review', remittanceId: OTHER, documentId: DOCUMENT }],
+    ]));
+    expect(both).toMatchObject({ outcome: 'partially_held', held: 1, loadedTransactions: 1 });
+    // The other outcomes keep their shape: no provenance or review reason is added to them.
+    expect(Object.keys(both.transactionOutcomes[0] ?? {})).not.toContain('reviewReason');
+  });
+
   it('holds a transaction set the loader refused, with an EDI_SYNTAX at the value’s element', () => {
     expect(resultOf({ kind: 'refused', at: { segmentIndex: 19, segmentId: 'SVC', elementPosition: 5 } })).toEqual({
       outcome: 'held',

@@ -54,11 +54,14 @@ export type MonitorPlan =
       readonly queued: readonly string[];
     };
 
-/** Documents of an upload batch still on their way in: awaiting their bytes, at intake, or waiting to be parsed. */
+/**
+ * Documents of an upload batch still on their way in: awaiting their bytes, at intake, or waiting to be parsed. An
+ * ERA export loads remittances as an 835 does (docs/adr/0060), so a batch waits for both.
+ */
 export async function pendingDocuments(client: ScopeClient, practiceId: string): Promise<number> {
   const { rows } = await client.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM source_document
-      WHERE practice_id = $1 AND kind = 'x12_835' AND status IN ('awaiting_upload', 'received', 'scanned', 'parse_queued')
+      WHERE practice_id = $1 AND kind IN ('x12_835', 'era_export') AND status IN ('awaiting_upload', 'received', 'scanned', 'parse_queued')
         AND created_at > now() - make_interval(mins => $2)`,
     [practiceId, BATCH_WINDOW_MINUTES],
   );

@@ -1,8 +1,10 @@
-import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type ScopeClient } from '@tp/db/runtime';
+import { createHash } from 'node:crypto';
+
+import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type RemittanceProvenance, type ScopeClient } from '@tp/db/runtime';
 import { type KnownRemittance, type LoadableRemittance, remittanceDecision } from '@tp/edi835';
 import { type Cents, cents, negateCents } from '@tp/money';
 
-import { type LoadPlan, type PersonIdentity, type PlanRefusal, type PlannedClaim, loadPlan } from './plan';
+import { type LoadPlan, type PersonIdentity, type PlanRefusal, type PlannedClaim, type PlannedExportRemittance, type PlannedRemittance, loadPlan, normalizeKeyPart } from './plan';
 
 /**
  * The 835 loader (PRD 10, steps 8 and 9; What the loader never does; PRD 6, Canonical model and
@@ -28,6 +30,24 @@ import { type LoadPlan, type PersonIdentity, type PlanRefusal, type PlannedClaim
  *
  * It never infers a claim from a line, never merges practices (one practice per transaction, and the
  * database refuses a reference to another practice's row), and never loads what the parser held.
+ *
+ * A payment of a vendor ERA export (era/normalize.ts; docs/adr/0060) is written by the same steps from its plan,
+ * with provenance era_export, under the same advisory locks, so an 835 and an export of one trace serialize. The
+ * 835 is authoritative (reconciliation-001 D13 a). An export of a payment the practice holds loads nothing and is
+ * linked to it: another export's with the export key (payee, trace, credit or debit, BPR02 and BPR16), or an 835's
+ * (exportIsPaymentOf: every claim of the export is the 835's and the date or the amount agrees, or the payee, date
+ * and amount agree, the amount BPR02 or BPR02 plus the PLB total, since an export carries no PLB). A later 835 of a payment first loaded from
+ * an export is held for review (payment_loaded_from_export) by the same rule, never loaded beside it and never
+ * replacing it, since priced lines are immutable (CLAUDE.md rule 3). Across sources and between exports the trace
+ * is compared in its form (traceForm: upper case, leading zeros removed), as a spreadsheet re-save writes it; two
+ * 835s keep the exact rules of docs/adr/0031. An export whose amount matches a payment that names another payer
+ * and shares no claim with it is held (export_payment_other_payer), never called a repeat of it.
+ * remittance_export_once and the remittance trigger back the exact keys.
+ *
+ * The locks are per practice and bucket of trace forms (TRACE_LOCK_BUCKETS of them, lockTraces): a document's
+ * load takes the buckets of all its traces first, in ascending order (an 835's in DocumentParse.load, an export's
+ * in era/load.ts), so loads sharing traces never wait on each other in a cycle and no transaction holds more than
+ * TRACE_LOCK_BUCKETS advisory locks, however many payments it loads.
  */
 
 export interface LoadContext {
@@ -44,34 +64,79 @@ export interface TransactionReview {
   readonly reason: 'trace_reused_another_date' | 'trace_reused_same_date';
 }
 
+type Loaded = {
+  readonly kind: 'loaded';
+  readonly remittanceId: string;
+  readonly claims: number;
+  readonly lines: number;
+  readonly review: TransactionReview | null;
+};
+
 export type TransactionLoad =
-  | {
-      readonly kind: 'loaded';
-      readonly remittanceId: string;
-      readonly claims: number;
-      readonly lines: number;
-      readonly review: TransactionReview | null;
-    }
+  | Loaded
   | { readonly kind: 'duplicate'; readonly remittanceId: string; readonly documentId: string }
-  | { readonly kind: 'refused'; readonly at: PlanRefusal };
+  | { readonly kind: 'refused'; readonly at: PlanRefusal }
+  /**
+   * The payment was loaded first from an ERA export (D13 a): nothing of this 835 loads, and the receipt links the
+   * export's remittance and document for a person to review.
+   */
+  | { readonly kind: 'held_for_review'; readonly remittanceId: string; readonly documentId: string; readonly reason: 'payment_loaded_from_export' };
+
+/** What loading one payment of an ERA export did. */
+export type ExportPaymentLoad =
+  | Loaded
+  /** The practice holds the payment already, from an 835 or another export: zero rows, linked to it. */
+  | { readonly kind: 'duplicate'; readonly remittanceId: string; readonly documentId: string; readonly provenance: RemittanceProvenance }
+  /**
+   * A payment the practice holds has the same payee, trace, amount and date but names another payer and shares no
+   * claim with it: nothing loads, and the receipt holds the payment for a person rather than call it a repeat.
+   */
+  | { readonly kind: 'held'; readonly reason: 'export_payment_other_payer'; readonly remittanceId: string; readonly documentId: string; readonly provenance: RemittanceProvenance };
 
 interface KnownRow {
   readonly id: string;
   readonly source_document_id: string;
-  readonly st02: string;
-  readonly sender_id: string;
+  readonly provenance: RemittanceProvenance;
+  readonly st02: string | null;
+  readonly sender_id: string | null;
   readonly payee_npi: string;
-  readonly isa13: string;
+  readonly isa13: string | null;
   readonly trn02: string;
-  readonly trn03: string;
+  readonly trn03: string | null;
   readonly bpr02_cents: string;
+  readonly bpr_credit_debit: 'C' | 'D';
   readonly bpr16_date: string;
+  readonly payer_name: string;
+  readonly plb_total_cents: string;
 }
 
-const KNOWN = `SELECT id, source_document_id, st02, sender_id, payee_npi, isa13, trn02, trn03, bpr02_cents::text AS bpr02_cents, bpr16_date::text AS bpr16_date
-  FROM remittance WHERE practice_id = $1 AND trn02 = $2 ORDER BY created_at, id`;
+/** An 835's row, whose envelope the database requires (remittance_x12_envelope). */
+type X12Row = KnownRow & { readonly provenance: 'x12_835'; readonly sender_id: string; readonly isa13: string; readonly trn03: string };
 
-function known(row: KnownRow): KnownRemittance {
+/**
+ * A trace (TRN02, or an export's check or EFT number) in the form the duplicate rules compare it in across sources and
+ * between exports: its ASCII letters in upper case and its leading zeros removed, as a spreadsheet re-save may write
+ * it. TRACE_FORM_SQL is the same in SQL, which remittance_by_trace_form indexes.
+ */
+export function traceForm(trn02: string): string {
+  return trn02.replace(/[a-z]+/g, (letters) => letters.toUpperCase()).replace(/^0+/, '');
+}
+
+const TRACE_FORM_SQL = `ltrim(upper(trn02 COLLATE "C"), '0')`;
+
+const KNOWN = `SELECT id, source_document_id, provenance, st02, sender_id, payee_npi, isa13, trn02, trn03, bpr02_cents::text AS bpr02_cents, bpr_credit_debit,
+         bpr16_date::text AS bpr16_date, payer_name, plb_total_cents::text AS plb_total_cents
+  FROM remittance WHERE practice_id = $1 AND ${TRACE_FORM_SQL} = $2 ORDER BY created_at, id`;
+
+/** The most advisory locks a document's load takes for its traces: one per bucket of trace forms. */
+export const TRACE_LOCK_BUCKETS = 64;
+
+/** A trace's lock bucket: its form's SHA-256, modulo TRACE_LOCK_BUCKETS, so every form of one trace shares a bucket. */
+export function traceBucket(trn02: string): number {
+  return createHash('sha256').update(traceForm(trn02), 'utf8').digest().readUInt32BE(0) % TRACE_LOCK_BUCKETS;
+}
+
+function known(row: X12Row): KnownRemittance {
   return {
     id: row.id,
     key: { senderId: row.sender_id, payeeId: row.payee_npi, isa13: row.isa13, trn02: row.trn02, bpr02Cents: cents(BigInt(row.bpr02_cents)) },
@@ -80,7 +145,83 @@ function known(row: KnownRow): KnownRemittance {
   };
 }
 
+const isX12 = (row: KnownRow): row is X12Row => row.provenance === 'x12_835';
+
+/** One payment as the cross-source rules compare it (its trace's form is the other's: KNOWN found it so). */
+export interface PaymentFacts {
+  readonly payeeId: string;
+  /** BPR16, or an export's payment date. */
+  readonly date: string;
+  /** The payment signed: BPR02, negated for a debit. */
+  readonly signedCents: bigint;
+  /** An 835's PLB total; zero for an export, which carries none. */
+  readonly plbCents: bigint;
+  readonly payerName: string;
+  /** Its claims' payer claim control numbers, by their keyed hash (claim.payer_claim_control_number_hash). */
+  readonly claimHashes: ReadonlySet<string>;
+}
+
+/**
+ * Whether an export's payment and an 835's, their traces of one form, are one payment (D13 a), and by what: 'claims'
+ * when every claim of the export is a claim of the 835 and either the date or the amount agrees (the payee may be
+ * named in another form, the export dated by its deposit; a payer's trace reused on another day for another amount
+ * stays two payments, whatever claims it reverses); 'amount' when the payee and the date are the same and the
+ * amount agrees; null when neither. The amount agrees when the export's is the 835's BPR02 (the export key, which the
+ * remittance trigger also refuses) or BPR02 plus its PLB total (an export carries no PLB, so its amount is the
+ * claims paid, as an 835 balances).
+ */
+export function exportIsPaymentOf(exported: PaymentFacts, x12: PaymentFacts): 'claims' | 'amount' | null {
+  const amount = exported.signedCents === x12.signedCents || exported.signedCents === x12.signedCents + x12.plbCents;
+  const date = exported.date === x12.date;
+  if ((amount || date) && exported.claimHashes.size > 0 && [...exported.claimHashes].every((hash) => x12.claimHashes.has(hash))) {
+    return 'claims';
+  }
+  return exported.payeeId === x12.payeeId && date && amount ? 'amount' : null;
+}
+
+/** The export duplicate key (D12 a) between two exports, their traces of one form: payee, the signed payment and its date. */
+export function sameExportKey(a: PaymentFacts, b: PaymentFacts): boolean {
+  return a.payeeId === b.payeeId && a.date === b.date && a.signedCents === b.signedCents;
+}
+
+/** Whether two payments name one payer, or share a claim (so the payer is one, whatever its name's form). */
+export function onePayer(a: PaymentFacts, b: PaymentFacts): boolean {
+  return normalizeKeyPart(a.payerName) === normalizeKeyPart(b.payerName) || [...a.claimHashes].some((hash) => b.claimHashes.has(hash));
+}
+
+const signedOf = (creditDebit: 'C' | 'D', bpr02: bigint): bigint => (creditDebit === 'D' ? -bpr02 : bpr02);
+
+function factsOfRow(row: KnownRow, claimHashes: ReadonlySet<string> | undefined): PaymentFacts {
+  return {
+    payeeId: row.payee_npi,
+    date: row.bpr16_date,
+    signedCents: signedOf(row.bpr_credit_debit, BigInt(row.bpr02_cents)),
+    plbCents: BigInt(row.plb_total_cents),
+    payerName: row.payer_name,
+    claimHashes: claimHashes ?? new Set(),
+  };
+}
+
+/** A remittance of the same payee and trace (in its form), another payment: loaded and surfaced for review against it (V25). */
+function traceReview(rows: readonly KnownRow[], remittance: PlannedRemittance): TransactionReview | null {
+  const earlier = rows.find((row) => row.payee_npi === remittance.payeeId && traceForm(row.trn02) === traceForm(remittance.trn02));
+  return earlier === undefined ? null : { remittanceId: earlier.id, reason: earlier.bpr16_date === remittance.bpr16Date ? 'trace_reused_same_date' : 'trace_reused_another_date' };
+}
+
 const text = (value: Cents | null): string | null => (value === null ? null : value.toString());
+
+/**
+ * The per-practice locks a load takes before it reads the remittances of its traces, held to the end of the
+ * document's transaction: one per bucket of the traces' forms, in ascending bucket order, an 835's and an export's
+ * alike, so the duplicate rules see each other's rows. A document takes all its traces' buckets first (a lock its
+ * transaction already holds is taken again at once), so two loads never wait on each other in a cycle and a
+ * transaction holds at most TRACE_LOCK_BUCKETS of them.
+ */
+export async function lockTraces(client: ScopeClient, practiceId: string, traces: Iterable<string>): Promise<void> {
+  for (const bucket of [...new Set([...traces].map(traceBucket))].sort((a, b) => a - b)) {
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':remittance-traces:' || $2, 0))", [practiceId, String(bucket)]);
+  }
+}
 
 class Loader {
   private readonly client: ScopeClient;
@@ -88,9 +229,49 @@ class Loader {
   constructor(
     private readonly context: LoadContext,
     private readonly plan: LoadPlan,
-    private readonly remittance: LoadableRemittance,
   ) {
     this.client = context.scope.client;
+  }
+
+  /**
+   * One loader at a time per practice and trace bucket, an 835's or an export's alike: the duplicate and trace
+   * checks see every remittance committed before them (PAR-30), and the unique keys and the trigger back them.
+   * Returns the practice's remittances whose trace has this one's form, oldest first.
+   */
+  async known(): Promise<KnownRow[]> {
+    const { practiceId } = this.context;
+    const { trn02 } = this.plan.remittance;
+    await lockTraces(this.client, practiceId, [trn02]);
+    return (await this.query<KnownRow & Record<string, unknown>>(KNOWN, [practiceId, traceForm(trn02)])).rows;
+  }
+
+  /** The claims' payer claim control number hashes of each remittance given, by remittance. */
+  async claimHashesOf(remittanceIds: readonly string[]): Promise<Map<string, Set<string>>> {
+    const found = new Map<string, Set<string>>(remittanceIds.map((id) => [id, new Set<string>()]));
+    if (remittanceIds.length === 0) {
+      return found;
+    }
+    const { rows } = await this.query<{ remittance_id: string; hash: string }>(
+      'SELECT remittance_id, payer_claim_control_number_hash AS hash FROM claim WHERE practice_id = $1 AND remittance_id = ANY ($2::uuid[])',
+      [this.context.practiceId, remittanceIds],
+    );
+    for (const row of rows) {
+      found.get(row.remittance_id)?.add(row.hash);
+    }
+    return found;
+  }
+
+  /** This plan's payment as the cross-source rules compare it. */
+  facts(): PaymentFacts {
+    const r = this.plan.remittance;
+    return {
+      payeeId: r.payeeId,
+      date: r.bpr16Date,
+      signedCents: signedOf(r.creditDebit, r.bpr02Cents),
+      plbCents: r.plbTotalCents,
+      payerName: r.payerName,
+      claimHashes: new Set(this.plan.claims.map((claim) => this.context.cipher.lookupHash('claim.payer_claim_control_number', claim.payerClaimControlNumber))),
+    };
   }
 
   private query<R extends Record<string, unknown>>(sql: string, values: unknown[]): Promise<{ rows: R[] }> {
@@ -159,21 +340,24 @@ class Loader {
 
   private async insertRemittance(payerId: string, review: TransactionReview | null): Promise<string> {
     const r = this.plan.remittance;
+    // An export invents no envelope: its receiver, ISA13, GS06, ST02, TRN03 and payee qualifier stay null.
+    const x12 = r.provenance === 'x12_835' ? r : null;
     const { rows } = await this.query<{ id: string }>(
-      `INSERT INTO remittance (practice_id, source_document_id, sender_id, receiver_id, isa13, gs06, st02, trn02, trn03, bpr02_cents, bpr_credit_debit, bpr_method,
-         bpr16_date, payer_name, payer_id, payee_npi, payee_id_qualifier, production_date, balance_diff_cents, claim_count, plb_total_cents, status, review_reason,
-         review_of_remittance_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, 'loaded', $22, $23) RETURNING id`,
+      `INSERT INTO remittance (practice_id, source_document_id, provenance, sender_id, receiver_id, isa13, gs06, st02, trn02, trn03, bpr02_cents, bpr_credit_debit,
+         bpr_method, bpr16_date, payer_name, payer_id, payee_npi, payee_id_qualifier, production_date, balance_diff_cents, claim_count, plb_total_cents, status,
+         review_reason, review_of_remittance_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, 'loaded', $23, $24) RETURNING id`,
       [
         this.context.practiceId,
         this.context.documentId,
+        r.provenance,
         r.senderId,
-        r.receiverId,
-        r.isa13,
-        r.gs06,
-        r.st02,
+        x12?.receiverId ?? null,
+        x12?.isa13 ?? null,
+        x12?.gs06 ?? null,
+        x12?.st02 ?? null,
         r.trn02,
-        r.trn03,
+        x12?.trn03 ?? null,
         r.bpr02Cents.toString(),
         r.creditDebit,
         r.method,
@@ -181,7 +365,7 @@ class Loader {
         r.payerName,
         payerId,
         r.payeeId,
-        r.payeeIdQualifier,
+        x12?.payeeIdQualifier ?? null,
         r.productionDate,
         r.balanceDiffCents.toString(),
         r.claimCount,
@@ -407,26 +591,7 @@ class Loader {
     }
   }
 
-  async load(): Promise<TransactionLoad> {
-    const { practiceId } = this.context;
-    const r = this.plan.remittance;
-    // One loader at a time per practice and trace: the duplicate and trace checks below see every
-    // remittance committed before them (PAR-30), and the unique key backs them.
-    await this.query("SELECT pg_advisory_xact_lock(hashtextextended($1 || ':remittance:' || $2, 0))", [practiceId, r.trn02]);
-    const { rows } = await this.query<KnownRow & Record<string, unknown>>(KNOWN, [practiceId, r.trn02]);
-    // The unique key (the data dictionary's, without the payee) first, then the parser's decision.
-    const same = rows.find((row) => row.sender_id === r.senderId && row.isa13 === r.isa13 && row.bpr02_cents === r.bpr02Cents.toString());
-    const decision = remittanceDecision(this.remittance, rows.map(known));
-    const original = same ?? (decision.outcome === 'duplicate_remittance' ? rows.find((row) => row.id === decision.duplicateOf) : undefined);
-    if (original !== undefined) {
-      return { kind: 'duplicate', remittanceId: original.id, documentId: original.source_document_id };
-    }
-    const review: TransactionReview | null =
-      decision.outcome === 'review_trace_reused' ? { remittanceId: decision.sameTraceAs, reason: decision.anotherDate ? 'trace_reused_another_date' : 'trace_reused_same_date' } : null;
-    return this.write(review);
-  }
-
-  private async write(review: TransactionReview | null): Promise<TransactionLoad> {
+  async write(review: TransactionReview | null): Promise<Loaded> {
     const payerId = await this.payer();
     const plans = await this.plans(payerId);
     const people = await this.people();
@@ -446,5 +611,54 @@ export async function loadTransaction(context: LoadContext, remittance: Loadable
   if (planned.kind === 'refused') {
     return { kind: 'refused', at: planned.at };
   }
-  return new Loader(context, planned.plan, remittance).load();
+  const r = planned.plan.remittance;
+  const loader = new Loader(context, planned.plan);
+  const rows = await loader.known();
+  // The X12 decision first, over the 835s of this exact trace alone: the unique key (the data dictionary's, without
+  // the payee), then the parser's decision (a resend under a new envelope is the same payment, ADR 0031).
+  const x12 = rows.filter(isX12).filter((row) => row.trn02 === r.trn02);
+  const same = x12.find((row) => row.sender_id === r.senderId && row.isa13 === r.isa13 && row.bpr02_cents === r.bpr02Cents.toString());
+  const decision = remittanceDecision(remittance, x12.map(known));
+  const original = same ?? (decision.outcome === 'duplicate_remittance' ? x12.find((row) => row.id === decision.duplicateOf) : undefined);
+  if (original !== undefined) {
+    return { kind: 'duplicate', remittanceId: original.id, documentId: original.source_document_id };
+  }
+  // Then the exports of the trace's form: the same payment loaded first from an export is held for review, never
+  // loaded beside it, whether its amount was the claims paid (a PLB) or its claims are this 835's.
+  const exports = rows.filter((row) => row.provenance === 'era_export');
+  const claims = await loader.claimHashesOf(exports.map((row) => row.id));
+  const mine = loader.facts();
+  const exported = exports.find((row) => exportIsPaymentOf(factsOfRow(row, claims.get(row.id)), mine) !== null);
+  if (exported !== undefined) {
+    return { kind: 'held_for_review', remittanceId: exported.id, documentId: exported.source_document_id, reason: 'payment_loaded_from_export' };
+  }
+  const review: TransactionReview | null =
+    decision.outcome === 'review_trace_reused'
+      ? { remittanceId: decision.sameTraceAs, reason: decision.anotherDate ? 'trace_reused_another_date' : 'trace_reused_same_date' }
+      : // An export of the payee's trace with another amount or date: this 835 loads for review against it, as an export would.
+        traceReview(exports, r);
+  return loader.write(review);
+}
+
+/**
+ * Loads one payment of an ERA export from its plan inside the document's transaction (see the module comment):
+ * zero rows when the practice holds the payment already, from an 835 or an export; held when the payment it matches
+ * by amount names another payer and shares no claim with it; else its rows, surfaced for review when the payee's
+ * trace was used for another payment (another amount, or another date).
+ */
+export async function loadExportPayment(context: LoadContext, plan: LoadPlan<PlannedExportRemittance>): Promise<ExportPaymentLoad> {
+  const loader = new Loader(context, plan);
+  const rows = await loader.known();
+  const claims = await loader.claimHashesOf(rows.map((row) => row.id));
+  const mine = loader.facts();
+  for (const row of rows) {
+    const theirs = factsOfRow(row, claims.get(row.id));
+    const match = row.provenance === 'era_export' ? (sameExportKey(mine, theirs) ? 'amount' : null) : exportIsPaymentOf(mine, theirs);
+    if (match === null) {
+      continue;
+    }
+    const linked = { remittanceId: row.id, documentId: row.source_document_id, provenance: row.provenance };
+    return match === 'amount' && !onePayer(mine, theirs) ? { kind: 'held', reason: 'export_payment_other_payer', ...linked } : { kind: 'duplicate', ...linked };
+  }
+  return loader.write(traceReview(rows, plan.remittance));
 }

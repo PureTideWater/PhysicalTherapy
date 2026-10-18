@@ -18,7 +18,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * monitoring journey, and a billing manager, a viewer and a reimbursement reviewer for the reporting
  * journey; and two billing managers of the other group, a contract specialist and a platform
  * administrator (who turns the kill switch on in the console) for the model features' journey, in a
- * practice of its own).
+ * practice of its own; and three billing managers of the other group for the ERA export journeys, in
+ * practices of their own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -87,6 +88,11 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'onboarding-admin', organization: 'internal', role: 'platform_admin' },
   // The brand journey (docs/adr/0056): a billing manager of the other group, in a practice of its own.
   { key: 'brand-manager', organization: 'other_group', role: 'billing_manager' },
+  // The ERA export journeys (docs/adr/0060): billing managers of the other group, each journey in practices of its own,
+  // one for the four formats' uploads, one for the Coverage flag and one for the duplicate receipts.
+  { key: 'era-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'era-coverage-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'era-duplicates-manager', organization: 'other_group', role: 'billing_manager' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { type ContractOption, type QuestionView, contractOptions, listQuestions } from '../contracts/contract-queries';
 import { OBTAIN_TOPICS } from '../contracts/display';
+import { type UnconfirmedFormatSource, unconfirmedFormatSources } from '../contracts/format-sources';
 import { letterCodes, requestToPayerLetter } from '../contracts/letter';
 import { type PricingReadiness, type Totals, type WaitingPage, lineTotals, pricingReadiness, waitingPlans, waitingTotals } from '../contracts/mapping-queries';
 import { UNPRICED_REASON_TEXT, type UnpricedReasonText } from '../contracts/remedies';
@@ -27,7 +28,8 @@ import { opaqueId, optionalText } from './schemas';
  * Before the first run takes effect, they are zero and the screen says why. Beside them: the dollars waiting on mappings (per
  * plan), whether a pricing run over every line would be refused for an unmapped plan (the run's own
  * guard), and the specialist's open questions that ask the practice to obtain a document. The letter is
- * plain text from a fixed template (no model), downloaded as a file.
+ * plain text from a fixed template (no model), downloaded as a file. Lines read from an ERA export whose
+ * format is unconfirmed are flagged with the format's name and why (CO-03; docs/adr/0060).
  */
 
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
@@ -63,6 +65,8 @@ export interface CoveragePageData {
   readonly waiting: Totals;
   readonly waitingPlans: WaitingPage;
   readonly readiness: PricingReadiness;
+  /** For each unconfirmed ERA export format the practice has loaded remittances from: its counts, billed dollars and payers (CO-03). */
+  readonly unconfirmedFormats: readonly UnconfirmedFormatSource[];
   /** Open questions whose answer is a document to obtain (J5). */
   readonly obtain: readonly QuestionView[];
   readonly payers: readonly PayerOption[];
@@ -103,6 +107,7 @@ export const coveragePage = practiceRoute({
       waiting: await waitingTotals(scope, practiceId),
       waitingPlans: await waitingPlans(scope, practiceId, params.page, request.requestId),
       readiness: await pricingReadiness(scope, practiceId, request.requestId),
+      unconfirmedFormats: await unconfirmedFormatSources(scope, practiceId),
       obtain: await listQuestions(scope, practiceId, cipher, request.requestId, { openOnly: true, topics: OBTAIN_TOPICS }),
       payers: await payerOptions(scope, practiceId),
       contracts: await contractOptions(scope, practiceId, request.requestId),

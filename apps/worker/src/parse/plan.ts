@@ -78,7 +78,8 @@ export interface PlannedClaim {
   readonly chargeCents: Cents;
   readonly paidCents: Cents;
   readonly patientRespCents: Cents | null;
-  readonly filingIndicator: string;
+  /** CLP06; null for a claim of an ERA export, which carries none (docs/adr/0060). */
+  readonly filingIndicator: string | null;
   readonly facilityType: string | null;
   readonly frequencyCode: string | null;
   readonly planKey: string;
@@ -109,29 +110,58 @@ export interface PlannedProviderAdjustment {
   readonly category: 'recoupment' | 'forward_balance' | 'interest' | 'authorized_return' | 'other';
 }
 
-export interface PlannedRemittance {
-  readonly senderId: string;
-  readonly receiverId: string;
-  readonly isa13: string;
-  readonly gs06: string;
-  readonly st02: string;
+/** What every remittance holds, whatever it was loaded from. */
+interface PlannedRemittanceBase {
+  /** TRN02, or an ERA export's check or EFT number. */
   readonly trn02: string;
-  readonly trn03: string;
+  /** BPR02 as written, never negative; an export's payment unsigned. */
   readonly bpr02Cents: Cents;
+  /** BPR03; D when an export's payment is negative (a take-back). */
   readonly creditDebit: 'C' | 'D';
-  readonly method: string;
+  /** BPR16, or an export's payment date. */
   readonly bpr16Date: string;
   readonly payerName: string;
   readonly payeeId: string;
-  readonly payeeIdQualifier: string;
   readonly productionDate: string | null;
   readonly balanceDiffCents: Cents;
   readonly claimCount: number;
   readonly plbTotalCents: Cents;
 }
 
-export interface LoadPlan {
-  readonly remittance: PlannedRemittance;
+/** An 835 transaction set, with its whole X12 envelope (remittance_x12_envelope). */
+export interface PlannedX12Remittance extends PlannedRemittanceBase {
+  readonly provenance: 'x12_835';
+  readonly senderId: string;
+  readonly receiverId: string;
+  readonly isa13: string;
+  readonly gs06: string;
+  readonly st02: string;
+  readonly trn03: string;
+  /** BPR04. */
+  readonly method: string;
+  readonly payeeIdQualifier: string;
+}
+
+/**
+ * A payment of a vendor ERA export (docs/adr/0060): no envelope is invented for it (remittance_export_has_no_envelope),
+ * so it has no receiver, ISA13, GS06, ST02, TRN03 or payee qualifier; its sender and payment method are the export's
+ * when its columns hold them.
+ */
+export interface PlannedExportRemittance extends PlannedRemittanceBase {
+  readonly provenance: 'era_export';
+  readonly senderId: string | null;
+  readonly method: string | null;
+}
+
+export type PlannedRemittance = PlannedX12Remittance | PlannedExportRemittance;
+
+/**
+ * The typed load model the loader writes (loader.ts), one remittance with its payer, claims, lines and adjustments:
+ * made from an 835's typed loops by loadPlan(), or from a vendor ERA export's rows by the normalizer
+ * (era/normalize.ts), so pricing, triage and the ledger read one shape whichever it came from.
+ */
+export interface LoadPlan<R extends PlannedRemittance = PlannedRemittance> {
+  readonly remittance: R;
   readonly payer: PayerIdentity;
   readonly claims: readonly PlannedClaim[];
   readonly providerAdjustments: readonly PlannedProviderAdjustment[];
@@ -144,7 +174,7 @@ export interface PlanRefusal {
   readonly elementPosition: number;
 }
 
-export type PlanResult = { readonly kind: 'plan'; readonly plan: LoadPlan } | { readonly kind: 'refused'; readonly at: PlanRefusal };
+export type PlanResult = { readonly kind: 'plan'; readonly plan: LoadPlan<PlannedX12Remittance> } | { readonly kind: 'refused'; readonly at: PlanRefusal };
 
 const MEMBER_ID_QUALIFIERS: ReadonlySet<string> = new Set(['MI', 'HN', 'II', 'MR']);
 const INSURED_ID_QUALIFIERS: ReadonlySet<string> = new Set(['MI', 'II']);
@@ -334,8 +364,9 @@ export function loadPlan(remittance: LoadableRemittance): PlanResult {
       // The 5010 structure requires N103 beside N104, and the parser holds a payee without it.
       throw new Error('a loadable transaction set names its payee with a qualifier');
     }
-    const plan: LoadPlan = {
+    const plan: LoadPlan<PlannedX12Remittance> = {
       remittance: {
+        provenance: 'x12_835',
         senderId: remittance.senderId,
         receiverId: remittance.receiverId,
         isa13: remittance.interchangeControlNumber,

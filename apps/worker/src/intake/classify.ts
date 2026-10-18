@@ -4,8 +4,9 @@ import type { Sniffed } from './sniff';
 
 /**
  * What intake does with a clean document, from its declared kind and what its bytes are (PRD 5, J4:
- * "held with a reason ... not an 835, unreadable"; PRD 6: content sniffing). A clean 835 is scanned
- * and queued for parse; a document of another kind whose bytes are what that kind holds is stored for
+ * "held with a reason ... not an 835, unreadable"; PRD 6: content sniffing). A clean 835, or a clean ERA
+ * export (CSV text, docs/adr/0060), is scanned and queued for parse, the export read there with the vendor
+ * format the person named at upload; a document of another kind whose bytes are what that kind holds is stored for
  * its own workflow (the specialist queue, reconciliation); a zip is expanded (or, inside a zip, held
  * as nested); anything else is held with its reason. An executable, a script or the EICAR test file
  * is quarantined, whatever the malware scan said (PAR-28).
@@ -23,10 +24,12 @@ export type ContentClass = 'x12' | 'pdf' | 'spreadsheet' | 'legacy_spreadsheet' 
  * reconcile step reads an export as text with the practice's template (reconcile/exports.ts), and the
  * one workbook reader in the repository (packages/contracts' evidence reader) keeps a sheet's text but
  * not its cells' columns, so a workbook would be stored and then never read into a row. It is held as
- * wrong_type at intake instead, and the receipt says to save it as CSV.
+ * wrong_type at intake instead, and the receipt says to save it as CSV. An ERA export is CSV only for the
+ * same reason (docs/adr/0060): the parse job reads it with its vendor format's columns.
  */
 export const ACCEPTED_CONTENT: Readonly<Record<DocumentKind, ReadonlySet<ContentClass>>> = {
   x12_835: new Set(['x12']),
+  era_export: new Set(['csv']),
   contract: new Set(['pdf']),
   payer_letter: new Set(['pdf']),
   exhibit: new Set(['pdf', 'spreadsheet', 'csv']),
@@ -35,8 +38,14 @@ export const ACCEPTED_CONTENT: Readonly<Record<DocumentKind, ReadonlySet<Content
   other: new Set(['x12', 'pdf', 'spreadsheet', 'legacy_spreadsheet', 'csv', 'unknown']),
 };
 
+/**
+ * The kinds the parse_835 job loads into remittances: an 835, and an ERA export read with its vendor format
+ * (docs/adr/0060). Every other kind is stored for its own workflow.
+ */
+export const PARSED_KINDS: ReadonlySet<DocumentKind> = new Set(['x12_835', 'era_export']);
+
 export type Disposition =
-  /** A clean 835: status scanned, and its parse_835 job is queued. */
+  /** A clean 835 or ERA export: status scanned, and its parse_835 job is queued. */
   | { readonly action: 'parse'; readonly status: 'scanned' }
   /** A clean document of another kind, kept for its own workflow. */
   | { readonly action: 'store'; readonly status: 'stored' }
@@ -74,5 +83,5 @@ export function dispose(kind: DocumentKind, sniffed: Sniffed, options: { readonl
   if (!ACCEPTED_CONTENT[kind].has(content)) {
     return mismatch;
   }
-  return kind === 'x12_835' ? { action: 'parse', status: 'scanned' } : { action: 'store', status: 'stored' };
+  return PARSED_KINDS.has(kind) ? { action: 'parse', status: 'scanned' } : { action: 'store', status: 'stored' };
 }

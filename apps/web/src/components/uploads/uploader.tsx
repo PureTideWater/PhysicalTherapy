@@ -6,6 +6,7 @@ import { type DragEvent, useCallback, useEffect, useRef, useState } from 'react'
 
 import { spreadsheetExportProblem } from '../../lib/uploads/csv-exports';
 import { type Receipt, formatBytes, receiptState } from '../../lib/uploads/receipt-labels';
+import { FormatUnconfirmedBadge } from './format-flag';
 import { ReceiptList, type ReceiptPage, ReceiptStatus } from './receipts';
 
 /**
@@ -33,11 +34,22 @@ interface BatchFile {
   readonly error?: string;
 }
 
+/** A system's export format a person chooses for an ERA export (source_document.format_id; docs/adr/0060). */
+export interface UploadFormat {
+  readonly id: string;
+  /** "WebPT Billing ERA export". */
+  readonly label: string;
+  /** FORMAT_UNCONFIRMED: read with a placeholder layout, so its lines are flagged. */
+  readonly unconfirmed: boolean;
+}
+
 /** A kind of document the drop zone takes, with the types it may be declared as. */
 export interface UploadKind {
   readonly kind: string;
   readonly label: string;
   readonly contentTypes: readonly string[];
+  /** For an ERA export: the formats to choose from; every file of the batch is sent with the one chosen. */
+  readonly formats?: readonly UploadFormat[];
 }
 
 export interface UploaderProps {
@@ -127,6 +139,9 @@ export function Uploader(props: UploaderProps) {
   const { practiceId, canUpload, gate, limits, kinds, csrfToken } = props;
   const router = useRouter();
   const [kind, setKind] = useState<UploadKind>(kinds?.[0] ?? { kind: 'x12_835', label: '835 remittance', contentTypes: limits.contentTypes });
+  /** The format chosen for a kind that has formats (an ERA export); none until the person chooses. */
+  const [formatId, setFormatId] = useState('');
+  const format = kind.formats?.find((candidate) => candidate.id === formatId);
   const [batch, setBatch] = useState<BatchFile[]>([]);
   const [problems, setProblems] = useState<string[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -163,8 +178,12 @@ export function Uploader(props: UploaderProps) {
       if (chosen.length > limits.maxFiles) {
         found.push(`At most ${String(limits.maxFiles)} files at once; zip the rest and upload the zip.`);
       }
+      // An ERA export is read with its system's layout, so the person says which system's export it is first.
+      if (kind.formats !== undefined && format === undefined && chosen.length > 0) {
+        found.push('Choose which system’s ERA export the files are, then choose the files again.');
+      }
       chosen.forEach((file, index) => {
-        // A spreadsheet chosen as a posting or EFT export: those are read as CSV only (docs/adr/0059).
+        // A spreadsheet chosen as a posting, EFT or ERA export: those are read as CSV only (docs/adr/0059 and 0060).
         const spreadsheet = spreadsheetExportProblem(kind.kind, file, index + 1);
         if (file.size === 0) {
           found.push(`File ${String(index + 1)} is empty.`);
@@ -183,7 +202,7 @@ export function Uploader(props: UploaderProps) {
       let answer: { documents: { documentId: string; upload: UploadTarget }[] };
       try {
         answer = await post(`/p/${practiceId}/uploads/request`, csrfToken, {
-          files: chosen.map((file) => ({ kind: kind.kind, contentType: declaredType(file, kind.contentTypes), sizeBytes: file.size })),
+          files: chosen.map((file) => ({ kind: kind.kind, contentType: declaredType(file, kind.contentTypes), sizeBytes: file.size, ...(format === undefined ? {} : { formatId: format.id }) })),
         });
       } catch (error) {
         setProblems([(error as Error).message]);
@@ -200,7 +219,7 @@ export function Uploader(props: UploaderProps) {
       });
       await Promise.all(workers);
     },
-    [csrfToken, kind, limits, practiceId, send],
+    [csrfToken, format, kind, limits, practiceId, send],
   );
 
   const retry = useCallback(
@@ -306,6 +325,7 @@ export function Uploader(props: UploaderProps) {
                 value={kind.kind}
                 onChange={(event) => {
                   setKind(kinds.find((candidate) => candidate.kind === event.target.value) ?? kind);
+                  setFormatId('');
                 }}
                 className="h-9 rounded-md border bg-background px-2 text-sm"
               >
@@ -315,6 +335,42 @@ export function Uploader(props: UploaderProps) {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          {kind.formats === undefined ? null : (
+            <div className="flex flex-col gap-1">
+              <label htmlFor="upload-format" className="text-sm font-medium">
+                Which system’s export
+              </label>
+              <select
+                id="upload-format"
+                value={formatId}
+                required
+                aria-describedby="upload-format-help"
+                onChange={(event) => {
+                  setFormatId(event.target.value);
+                }}
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Choose the system</option>
+                {kind.formats.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.label}
+                  </option>
+                ))}
+              </select>
+              <p id="upload-format-help" className="max-w-prose text-xs text-muted-foreground">
+                The practice-management system the ERA export came from. Each file of the batch is read with its layout; a CSV export only.
+              </p>
+              {format?.unconfirmed === true ? (
+                <div className="flex max-w-prose flex-col gap-1 text-xs text-muted-foreground" role="note" aria-label="Format unconfirmed">
+                  <FormatUnconfirmedBadge />
+                  <span>
+                    No description of this format has been received from its vendor yet, so PaidWhole reads it with a placeholder layout and flags its lines on the Coverage screen until the
+                    format is confirmed.
+                  </span>
+                </div>
+              ) : null}
             </div>
           )}
           <input

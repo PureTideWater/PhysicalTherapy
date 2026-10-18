@@ -1,3 +1,5 @@
+import { Readable } from 'node:stream';
+
 import { LocalKeyProvider, type PracticeScope, type ScopeClient, documentObjectKey, provisionPracticeKey } from '@tp/db/runtime';
 import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
@@ -17,9 +19,13 @@ const PRACTICE = '7d0c3d0e-8a64-4c1b-9d6f-0b8f4f0f6a01';
 const DOCUMENT = '0b6e2a7c-3f4d-4e5a-8b9c-1d2e3f4a5b03';
 const OTHER = '1e4b8f8a-2c1d-4f7e-8b3a-5d6c7e8f9a02';
 
-async function harness(row: Record<string, unknown>) {
+async function harness(row: Record<string, unknown>, stored?: Buffer) {
   const keys = LocalKeyProvider.random();
   const key = await provisionPracticeKey(keys, PRACTICE);
+  const documents = new DocumentStore(new MemorySealedBytes());
+  if (stored !== undefined) {
+    await documents.write(key.cipher, documentObjectKey(PRACTICE, DOCUMENT), Readable.from([stored]));
+  }
   const queries: string[] = [];
   const lines: Record<string, unknown>[] = [];
   const client = {
@@ -43,11 +49,12 @@ async function harness(row: Record<string, unknown>) {
     enqueue: () => Promise.resolve(null),
     lastAttempt: false,
   };
-  const handler = parseHandler({ documents: new DocumentStore(new MemorySealedBytes()), keys });
+  const handler = parseHandler({ documents, keys });
   return { run: () => handler({ practice_id: PRACTICE, document_id: DOCUMENT }, context), queries, lines };
 }
 
-const waiting = { id: DOCUMENT, kind: 'x12_835', s3_key: documentObjectKey(PRACTICE, DOCUMENT), sha256: 'a'.repeat(64), scan_status: 'clean', status: 'scanned', reported: false };
+const waiting = { id: DOCUMENT, kind: 'x12_835', format_id: null, s3_key: documentObjectKey(PRACTICE, DOCUMENT), sha256: 'a'.repeat(64), scan_status: 'clean', status: 'scanned', reported: false };
+const exported = { ...waiting, kind: 'era_export', format_id: 'webpt_billing_era_v0' };
 
 describe('the parse job’s guards', () => {
   it('refuses to read a document from anywhere but its own key under its practice’s prefix', async () => {
@@ -55,8 +62,15 @@ describe('the parse job’s guards', () => {
     await expect(run()).rejects.toThrow(DocumentIntegrityError);
   });
 
+  it('reads an ERA export only from its own key, and loads nothing from bytes that are not the ones intake hashed (docs/adr/0060)', async () => {
+    await expect((await harness({ ...exported, s3_key: documentObjectKey(OTHER, DOCUMENT) })).run()).rejects.toThrow(DocumentIntegrityError);
+    const { run, queries } = await harness(exported, Buffer.from('Check/EFT Number,Check Date\r\nSYNEFT1,04/06/2026\r\n'));
+    await expect(run()).rejects.toThrow(DocumentIntegrityError);
+    expect(queries.some((text) => text.includes('parse_report (') || text.startsWith('UPDATE') || text.includes('INSERT INTO remittance'))).toBe(false);
+  });
+
   it('leaves a document of another kind, or one already reported, as it is', async () => {
-    for (const row of [{ ...waiting, kind: 'contract' }, { ...waiting, reported: true }, { ...waiting, status: 'loaded' }]) {
+    for (const row of [{ ...waiting, kind: 'contract' }, { ...waiting, kind: 'posting_export' }, { ...waiting, reported: true }, { ...waiting, status: 'loaded' }, { ...exported, reported: true }]) {
       const { run, queries, lines } = await harness(row);
       await run();
       expect(lines.map((line) => line.msg)).toEqual(['document was not waiting for parse']);

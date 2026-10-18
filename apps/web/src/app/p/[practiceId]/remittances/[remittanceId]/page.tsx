@@ -4,6 +4,8 @@ import Link from 'next/link';
 
 import { Fact, Money, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { FormatUnconfirmedBadge } from '../../../../../components/uploads/format-flag';
+import { unconfirmedFormatExplanation } from '../../../../../lib/contracts/format-sources';
 import { loadPage } from '../../../../../lib/http/next';
 import { remittancePage } from '../../../../../lib/routes/remittances';
 
@@ -21,7 +23,9 @@ const CATEGORY_NAMES: Readonly<Record<string, string>> = {
  * One remittance (PRD 7, Remittances: "open a remittance"; "reversals shown linked to their
  * originals"): its payment and trace, the provider-level adjustments, and its claims, each reversal
  * linked to the claim it reverses and each original to the reversal and the correction that
- * supersedes it. Claim identifiers show only to roles that read PHI.
+ * supersedes it. Claim identifiers show only to roles that read PHI. A remittance loaded from an ERA
+ * export says so and names its format, with no X12 envelope to show, and is flagged while its format is
+ * unconfirmed (docs/adr/0060).
  */
 export default async function RemittancePage(props: { readonly params: Promise<{ practiceId: string; remittanceId: string }> }) {
   const page = await loadPage(remittancePage, props);
@@ -53,14 +57,26 @@ export default async function RemittancePage(props: { readonly params: Promise<{
       <Card>
         <CardHeader>
           <CardTitle>Payment</CardTitle>
-          <CardDescription>The 835 transaction set {remittance.st02} of interchange {remittance.isa13}.</CardDescription>
+          <CardDescription>
+            {remittance.provenance === 'era_export'
+              ? `Loaded from ${remittance.format === null ? 'an ERA export' : `the ${remittance.format.name}`}, which carries no X12 envelope: no interchange or transaction set to name.`
+              : `The 835 transaction set ${remittance.st02 ?? '—'} of interchange ${remittance.isa13 ?? '—'}.`}
+          </CardDescription>
+          {remittance.format?.unconfirmed === true ? (
+            <div className="flex flex-col gap-1 text-sm" role="note" aria-label="Format unconfirmed" data-format={remittance.format.id}>
+              <FormatUnconfirmedBadge />
+              <p className="text-muted-foreground">{unconfirmedFormatExplanation(remittance.format.name)}</p>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
           <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-[max-content_1fr] gap-y-1 text-sm">
             <Fact label="Amount">
-              <Money value={remittance.amountCents} /> by {remittance.method}
+              <Money value={remittance.amountCents} />
+              {remittance.method === null ? ' (the export names no payment method)' : ` by ${remittance.method}`}
             </Fact>
-            <Fact label="Trace (TRN02)">
+            <Fact label="Loaded from">{remittance.provenance === 'era_export' ? (remittance.format?.name ?? 'ERA export') : '835'}</Fact>
+            <Fact label={remittance.provenance === 'era_export' ? 'Check or EFT number' : 'Trace (TRN02)'}>
               <span className="font-mono text-xs">{remittance.trace}</span>
             </Fact>
             <Fact label="Balanced">{remittance.balanced ? <Badge>Balanced</Badge> : <Badge variant="destructive">Not balanced</Badge>}</Fact>

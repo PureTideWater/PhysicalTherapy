@@ -199,6 +199,18 @@ describe('the Uploads page', () => {
     const closed = ok(await call(uploadsPage, manager, { practiceId: unsigned }));
     expect(closed.gate).toEqual({ open: false, reason: expect.stringContaining('business associate agreement') });
   });
+
+  it('offers the ERA export formats to choose from, each flagged while its layout is unconfirmed (docs/adr/0060)', async () => {
+    expect(ok(await call(uploadsPage, manager, practice())).eraExport).toEqual({
+      contentTypes: ['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/zip', 'application/x-zip-compressed'],
+      formats: [
+        { id: 'webpt_billing_era_v0', vendorName: 'WebPT Billing', unconfirmed: true },
+        { id: 'prompt_era_v0', vendorName: 'Prompt', unconfirmed: true },
+        { id: 'spry_era_v0', vendorName: 'SPRY', unconfirmed: true },
+        { id: 'raintree_era_v0', vendorName: 'Raintree', unconfirmed: true },
+      ],
+    });
+  });
 });
 
 describe('asking for upload URLs', () => {
@@ -243,6 +255,32 @@ describe('asking for upload URLs', () => {
     expect(await call(requestUploads, manager, practice(), { files: [{ ...csv, kind: 'eft_export', contentType: 'application/octet-stream' }] })).toEqual({ status: 'invalid', issues: [{ field: 'files.0.contentType', message: `File 1 is not a CSV: ${save}` }] });
     expect(await call(requestUploads, manager, practice(), { files: [csv, { ...csv, contentType: 'application/vnd.ms-excel' }] })).toMatchObject({ status: 'ok' });
     expect(await call(requestUploads, viewer, practice(), { files: [file] })).toMatchObject({ status: 'forbidden', permission: 'file.upload' });
+  });
+
+  it('records an ERA export with the system it came from, requires the format of an ERA export and of no other file (docs/adr/0060)', async () => {
+    const era = { kind: 'era_export', contentType: 'text/csv', sizeBytes: 100, formatId: 'spry_era_v0' };
+    const [document] = ok(await call(requestUploads, manager, practice(), { files: [era] })).documents;
+    const { rows } = await owner.query('SELECT kind, format_id, status FROM source_document WHERE id = $1', [document?.documentId]);
+    expect(rows).toEqual([{ kind: 'era_export', format_id: 'spry_era_v0', status: 'awaiting_upload' }]);
+    const csv = { kind: 'posting_export', contentType: 'text/csv', sizeBytes: 100 };
+    const { formatId: _none, ...unnamed } = era;
+    expect(await call(requestUploads, manager, practice(), { files: [csv, unnamed] })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'files.1.formatId', message: "File 2 is an ERA export: choose which system's export it is." }],
+    });
+    expect(await call(requestUploads, manager, practice(), { files: [{ ...csv, formatId: 'spry_era_v0' }] })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'files.0.formatId', message: 'File 1 has an export format but is not an ERA export.' }],
+    });
+    expect(await call(requestUploads, manager, practice(), { files: [{ ...era, formatId: 'spry_posting_v0' }] })).toMatchObject({ status: 'invalid', issues: [{ field: 'files.0.formatId' }] });
+    // An ERA export is read as CSV: a workbook's declared type is refused by its place in the batch, with what to do.
+    expect(await call(requestUploads, manager, practice(), { files: [{ ...era, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }] })).toEqual({
+      status: 'invalid',
+      issues: [{ field: 'files.0.contentType', message: expect.stringMatching(/^File 1 is not a CSV: ERA exports are read as CSV only/) }],
+    });
+    for (const contentType of ['text/plain', 'application/vnd.ms-excel', 'application/zip']) {
+      expect(await call(requestUploads, manager, practice(), { files: [{ ...era, contentType }] }), contentType).toMatchObject({ status: 'ok' });
+    }
   });
 });
 

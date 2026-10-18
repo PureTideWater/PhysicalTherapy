@@ -1,11 +1,17 @@
 import { type DocumentStatus, type KeyProvider, type PracticeCipher, type PracticeScope, type ScopeClient, documentObjectKey, loadPracticeCipher } from '@tp/db/runtime';
 import { type CodeListProvider, type ParseReport, isLoadable, parse835Stream } from '@tp/edi835';
 
+import type { EraFormatId } from '@tp/db/runtime';
+
+import { PARSED_KINDS } from '../intake/classify';
 import type { JobContext, JobHandler } from '../jobs/handlers';
 import { queueMonitoring } from '../monitor/trigger';
 import type { DocumentStore } from '../storage/documents';
 import { publishedCodeLists } from './code-lists';
-import { loadTransaction } from './loader';
+import { TOO_LARGE, loadEraExport, readEraExport } from './era/load';
+import { normalizeEraExport } from './era/normalize';
+import { exportReportRow } from './era/report';
+import { loadTransaction, lockTraces } from './loader';
 import { type ParseReportRow, type TransactionResult, documentStatus, parseReportRow, positionKey, resultOf } from './report';
 
 /**
@@ -34,6 +40,11 @@ import { type ParseReportRow, type TransactionResult, documentStatus, parseRepor
  * the monitoring chain's next step for its practice (monitor, keyed by the document, after a short wait
  * for the rest of its batch; docs/adr/0039). A failure to queue it is logged and never fails the parse:
  * the daily schedule plans the practice again.
+ *
+ * The same job loads a vendor ERA export (kind era_export, docs/adr/0060), with the same payload and key: its
+ * bytes are read once and checked against intake's hash, read with the document's vendor format by the
+ * normalizer (era/normalize.ts) into one load plan per payment, and loaded, reported and marked in one
+ * transaction like an 835's transaction sets; a payment already loaded from an 835 or an export loads nothing.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -49,6 +60,8 @@ const WAITING: readonly DocumentStatus[] = ['scanned', 'parse_queued'];
 interface DocumentRow {
   readonly id: string;
   readonly kind: string;
+  /** An ERA export's vendor format; null for an 835. */
+  readonly format_id: EraFormatId | null;
   readonly s3_key: string;
   readonly sha256: string | null;
   readonly scan_status: string;
@@ -65,6 +78,65 @@ interface Opened {
   readonly row: DocumentRow;
   readonly cipher: PracticeCipher;
   readonly codeLists: CodeListProvider;
+}
+
+/** Writes the document's parse report and its receipt status, inside the document's transaction. */
+async function record(scope: Scope, practiceId: string, documentId: string, row: ParseReportRow<object, object>): Promise<void> {
+  await scope.client.query(
+    `INSERT INTO parse_report (practice_id, source_document_id, outcome, transactions, claims, lines, reversals, held, plb_total_cents, loaded_transactions,
+       loaded_claims, loaded_lines, duplicate_transactions, unknown_codes, errors, transaction_outcomes, code_list_release)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+     ON CONFLICT (source_document_id) DO NOTHING`,
+    [
+      practiceId,
+      documentId,
+      row.outcome,
+      row.transactions,
+      row.claims,
+      row.lines,
+      row.reversals,
+      row.held,
+      row.plbTotalCents,
+      row.loadedTransactions,
+      row.loadedClaims,
+      row.loadedLines,
+      row.duplicateTransactions,
+      row.unknownCodes,
+      JSON.stringify(row.errors),
+      JSON.stringify(row.transactionOutcomes),
+      row.codeListRelease,
+    ],
+  );
+  await scope.client.query('UPDATE source_document SET status = $2 WHERE id = $1 AND status = ANY ($3::text[])', [documentId, documentStatus(row.outcome), WAITING]);
+}
+
+/** An ERA export: read and checked once, normalized with its format, and its payments loaded with the report in one transaction. */
+class ExportParse {
+  constructor(
+    private readonly services: ParseServices,
+    private readonly context: JobContext,
+    private readonly practiceId: string,
+    private readonly opened: Opened,
+  ) {}
+
+  async run(): Promise<ParseReportRow<object, object>> {
+    const { row, cipher, codeLists } = this.opened;
+    const read = await readEraExport(this.services.documents.read(cipher, row.s3_key));
+    if (read.sha256 !== row.sha256) {
+      throw new DocumentIntegrityError('the stored document is not the bytes intake hashed; nothing loads from it');
+    }
+    if (row.format_id === null) {
+      // The database requires a format of every era_export (source_document_format_of_era_export).
+      throw new DocumentIntegrityError('an ERA export is read only with its vendor format');
+    }
+    const normalized = read.bytes === null ? TOO_LARGE : normalizeEraExport({ bytes: read.bytes, formatId: row.format_id, codeLists });
+    return this.context.transaction(async (scope) => {
+      const results = await loadEraExport({ scope, cipher, practiceId: this.practiceId, documentId: row.id }, normalized);
+      const report = exportReportRow(normalized, results, codeLists.release);
+      await record(scope, this.practiceId, row.id, report);
+      return report;
+    });
+  }
 }
 
 class DocumentParse {
@@ -90,13 +162,23 @@ class DocumentParse {
     throw new Error('the parser ended without its report');
   }
 
-  /** Pass two, inside the document's transaction: each loadable transaction set as the stream reaches it. */
+  /**
+   * Pass two, inside the document's transaction: each loadable transaction set as the stream reaches it. The locks of
+   * all the loadable sets' trace buckets are taken first, in ascending order, as an ERA export's are (loader.ts
+   * lockTraces), so this document and another sharing traces never wait on each other in a cycle whatever order
+   * their sets or payments come in, and it holds at most TRACE_LOCK_BUCKETS advisory locks however many sets it has.
+   */
   private async load(scope: Scope, report: ParseReport): Promise<Map<string, TransactionResult>> {
     const results = new Map<string, TransactionResult>();
     const loadable = new Set(report.transactions.filter((outcome) => outcome.loadable).map((outcome) => positionKey(outcome.position)));
     if (loadable.size === 0) {
       return results;
     }
+    await lockTraces(
+      scope.client,
+      this.practiceId,
+      report.transactions.flatMap((outcome) => (outcome.loadable && outcome.dedupKey !== null ? [outcome.dedupKey.trn02] : [])),
+    );
     for await (const item of parse835Stream(this.chunks(), { codeLists: this.opened.codeLists })) {
       if (item.type !== 'transaction') {
         continue;
@@ -112,36 +194,6 @@ class DocumentParse {
     return results;
   }
 
-  private async record(scope: Scope, row: ParseReportRow): Promise<void> {
-    const documentId = this.opened.row.id;
-    await scope.client.query(
-      `INSERT INTO parse_report (practice_id, source_document_id, outcome, transactions, claims, lines, reversals, held, plb_total_cents, loaded_transactions,
-         loaded_claims, loaded_lines, duplicate_transactions, unknown_codes, errors, transaction_outcomes, code_list_release)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-       ON CONFLICT (source_document_id) DO NOTHING`,
-      [
-        this.practiceId,
-        documentId,
-        row.outcome,
-        row.transactions,
-        row.claims,
-        row.lines,
-        row.reversals,
-        row.held,
-        row.plbTotalCents,
-        row.loadedTransactions,
-        row.loadedClaims,
-        row.loadedLines,
-        row.duplicateTransactions,
-        row.unknownCodes,
-        JSON.stringify(row.errors),
-        JSON.stringify(row.transactionOutcomes),
-        row.codeListRelease,
-      ],
-    );
-    await scope.client.query('UPDATE source_document SET status = $2 WHERE id = $1 AND status = ANY ($3::text[])', [documentId, documentStatus(row.outcome), WAITING]);
-  }
-
   async run(): Promise<ParseReportRow> {
     const report = await this.report();
     if (report.documentSha256 !== this.opened.row.sha256) {
@@ -150,7 +202,7 @@ class DocumentParse {
     // One transaction for every set the document loads and its report (PRD 10, step 9).
     return this.context.transaction(async (scope) => {
       const row = parseReportRow(report, await this.load(scope, report));
-      await this.record(scope, row);
+      await record(scope, this.practiceId, this.opened.row.id, row);
       return row;
     });
   }
@@ -160,7 +212,7 @@ async function open(context: JobContext, keys: KeyProvider, practiceId: string, 
   return context.transaction(async (scope) => {
     const row = (
       await scope.client.query<DocumentRow>(
-        `SELECT d.id, d.kind, d.s3_key, d.sha256, d.scan_status, d.status, EXISTS (SELECT 1 FROM parse_report p WHERE p.source_document_id = d.id) AS reported
+        `SELECT d.id, d.kind, d.format_id, d.s3_key, d.sha256, d.scan_status, d.status, EXISTS (SELECT 1 FROM parse_report p WHERE p.source_document_id = d.id) AS reported
            FROM source_document d WHERE d.id = $1`,
         [documentId],
       )
@@ -182,7 +234,7 @@ export function parseHandler(services: ParseServices): JobHandler<'parse_835'> {
       return;
     }
     const { row } = opened;
-    if (row.kind !== 'x12_835' || row.reported || !WAITING.includes(row.status)) {
+    if (!PARSED_KINDS.has(row.kind as never) || row.reported || !WAITING.includes(row.status)) {
       context.logger.info('document was not waiting for parse', { document_id: row.id });
       return;
     }
@@ -196,7 +248,7 @@ export function parseHandler(services: ParseServices): JobHandler<'parse_835'> {
       throw new DocumentIntegrityError('a document is read only from its own key under its practice’s prefix');
     }
     try {
-      const reported = await new DocumentParse(services, context, practiceId, opened).run();
+      const reported = await (row.kind === 'era_export' ? new ExportParse(services, context, practiceId, opened) : new DocumentParse(services, context, practiceId, opened)).run();
       const release = opened.codeLists.release;
       if (reported.outcome === 'loaded') {
         context.logger.info('document parsed and loaded', { document_id: row.id, release_no: release });

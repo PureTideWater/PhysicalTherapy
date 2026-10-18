@@ -9,6 +9,8 @@ import { utc } from '../../../../components/format';
 import { ChecklistCard, HandEntryNotice, ModelNoticeAlert } from '../../../../components/models/display';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
+import { FormatUnconfirmedBadge } from '../../../../components/uploads/format-flag';
+import { type UnconfirmedFormatSource, unconfirmedFormatExplanation } from '../../../../lib/contracts/format-sources';
 import { REMEDY_SCREEN_NAMES, remedyPath } from '../../../../lib/contracts/remedies';
 import { shareOf } from '../../../../lib/pricing/view';
 import { loadPage } from '../../../../lib/http/next';
@@ -21,20 +23,75 @@ export const metadata: Metadata = { title: 'Coverage' };
 
 type Props = { readonly params: Promise<{ practiceId: string }>; readonly searchParams: Promise<Record<string, string | string[] | undefined>> };
 
+function count(value: number, one: string, many = `${one}s`): string {
+  return `${String(value)} ${value === 1 ? one : many}`;
+}
+
+/**
+ * Lines read from an ERA export whose format is unconfirmed (CO-03; docs/adr/0060): per format, a text badge
+ * with an icon and the format's name, its remittances, lines, payers and billed dollars, the payers' names,
+ * and why the lines are flagged, in words; never color alone.
+ */
+function UnconfirmedFormats({ practiceId, sources }: { readonly practiceId: string; readonly sources: readonly UnconfirmedFormatSource[] }) {
+  if (sources.length === 0) {
+    return null;
+  }
+  return (
+    <section aria-label="Unconfirmed export formats" className="flex flex-col gap-2">
+      <h2 className="text-xl font-bold tracking-display">Lines read from an unconfirmed export format</h2>
+      {sources.map((source) => (
+        <Card key={source.formatId} role="region" aria-label={source.name} data-format={source.formatId}>
+          <CardHeader>
+            <div className="flex flex-wrap items-center gap-2">
+              <FormatUnconfirmedBadge />
+              {/* Under the section's own h2, so a level below it: CardTitle's type, as an h3. */}
+              <h3 data-slot="card-title" className="text-lg font-bold leading-snug tracking-display">
+                {source.name}
+              </h3>
+            </div>
+            <CardDescription>{unconfirmedFormatExplanation(source.name)}</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
+              <dt className="text-muted-foreground">Read from it</dt>
+              <dd>
+                <span className="font-mono tabular-nums">{count(source.remittances, 'remittance')}</span>, <span className="font-mono tabular-nums">{count(source.lines, 'line')}</span>, <Money value={source.chargeCents} /> billed
+              </dd>
+              <dt className="text-muted-foreground">{source.payers === 1 ? 'Payer' : `Payers (${String(source.payers)})`}</dt>
+              <dd>{source.payerNames.join(', ')}</dd>
+            </dl>
+            <p className="text-sm">
+              <Link className="underline" href={`/p/${practiceId}/uploads`}>
+                Uploads
+              </Link>{' '}
+              lists each export’s receipt, and{' '}
+              <Link className="underline" href={`/p/${practiceId}/remittances`}>
+                Remittances
+              </Link>{' '}
+              the payments read from it, each with its lines.
+            </p>
+          </CardContent>
+        </Card>
+      ))}
+    </section>
+  );
+}
+
 /**
  * The Coverage screen (PRD 7): the share of lines and dollars priced, the unpriced reasons by count
  * with each reason's remedy linked to the screen it is taken on, the dollars waiting on mappings, what
  * to obtain to raise coverage, and the request-to-payer letter for a missing schedule (a text file from
  * a fixed template). Shares and counts are each line's result in its pricing in effect, across every
  * run in effect (lib/coverage/in-effect.ts, as the dashboard and the digest read them), with the run
- * that took effect last named beside them; until a run takes effect, they are zero.
+ * that took effect last named beside them; until a run takes effect, they are zero. Lines read from an
+ * ERA export of an unconfirmed format are flagged, per format, with its name and why (CO-03).
  */
 export default async function CoveragePage(props: Props) {
   const page = await loadPage(coveragePage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="coverage" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, readiness, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
+  const { practiceId, lines, priced, share, run, pricingRuns, reasons, waiting, waitingPlans, readiness, unconfirmedFormats, obtain, payers, contracts, canGenerateReport, checklist, canSuggest, modelNotice } = page.data;
   // The shares are of every line a run in effect priced; before one takes effect, of every line the practice holds.
   const inEffect = share.runs > 0;
   const of = inEffect ? share.of : { lines: lines.lines, chargeCents: lines.chargeCents };
@@ -97,6 +154,7 @@ export default async function CoveragePage(props: Props) {
           )}
         </CardContent>
       </Card>
+      <UnconfirmedFormats practiceId={practiceId} sources={unconfirmedFormats} />
       <Card role="region" aria-label="Dollars waiting on mappings">
         <CardHeader>
           <CardTitle>

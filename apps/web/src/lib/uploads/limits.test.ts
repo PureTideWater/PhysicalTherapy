@@ -18,6 +18,13 @@ describe('the types an upload may be declared as (PRD 6; docs/adr/0033, 0059)', 
     }
   });
 
+  it('takes an ERA export as CSV only, like a posting export (docs/adr/0060)', () => {
+    expect(CONTENT_TYPES.era_export).toEqual(['text/csv', 'text/plain', XLS, 'application/zip', 'application/x-zip-compressed']);
+    expect(allowedContentType('era_export', XLSX)).toBe(false);
+    expect(allowedContentType('era_export', 'application/edi-x12')).toBe(false);
+    expect(allowedContentType('era_export', 'application/octet-stream')).toBe(false);
+  });
+
   it('still takes an .xlsx exhibit, whose pages can be cited, and a workbook as another document', () => {
     expect(allowedContentType('exhibit', XLSX)).toBe(true);
     expect(allowedContentType('exhibit', XLS)).toBe(false);

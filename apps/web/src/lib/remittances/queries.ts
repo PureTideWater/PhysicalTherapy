@@ -2,6 +2,8 @@ import { type PracticeCipher, type PracticeScope, REVERSAL_STATUS_CODE, type Sco
 
 import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '../pricing/queries';
 import { lineStatusOf } from '../pricing/view';
+import type { Provenance, ReceiptFormat } from '../uploads/receipt-labels';
+import { receiptFormat } from '../uploads/receipts';
 
 /**
  * The Remittances and Claims and lines screens' reads (PRD 7; PRD 6, Canonical model and matching;
@@ -12,6 +14,8 @@ import { lineStatusOf } from '../pricing/view';
  * PHI columns (patient names, patient and payer claim control numbers, service dates, a PLB's
  * reference) are decrypted and returned only for roles that read PHI; for the others they are null
  * and never leave the database. Amounts are integer cents as text, signed as the 835 carries them.
+ * A remittance loaded from an ERA export (docs/adr/0060) says so: it has no X12 envelope (no receiver,
+ * ISA13 or ST02; a sender and payment method only when its columns hold them), and names its format.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -86,7 +90,10 @@ export interface RemittanceSummary {
   readonly trace: string;
   /** BPR02, negative for a debit. */
   readonly amountCents: string;
-  readonly method: string;
+  /** BPR04; null for an ERA export without a payment-method column. */
+  readonly method: string | null;
+  /** What it was loaded from: an 835, or an ERA export (remittance.provenance). */
+  readonly provenance: Provenance;
   readonly claimCount: number;
   readonly reversals: number;
   readonly balanced: boolean;
@@ -103,7 +110,8 @@ interface RemittanceRow {
   readonly payment_date: string;
   readonly trn02: string;
   readonly amount_cents: string;
-  readonly bpr_method: string;
+  readonly bpr_method: string | null;
+  readonly provenance: Provenance;
   readonly claim_count: number;
   readonly reversals: number;
   readonly balanced: boolean;
@@ -113,7 +121,7 @@ interface RemittanceRow {
 }
 
 const REMITTANCE_COLUMNS = `r.id, r.practice_id, r.payer_id, r.payer_name, r.bpr16_date::text AS payment_date, r.trn02,
-  (CASE WHEN r.bpr_credit_debit = 'D' THEN -r.bpr02_cents ELSE r.bpr02_cents END)::text AS amount_cents, r.bpr_method, r.claim_count,
+  (CASE WHEN r.bpr_credit_debit = 'D' THEN -r.bpr02_cents ELSE r.bpr02_cents END)::text AS amount_cents, r.bpr_method, r.provenance, r.claim_count,
   (SELECT count(*)::int FROM claim c WHERE c.remittance_id = r.id AND c.claim_status_code = '${REVERSAL_STATUS_CODE}') AS reversals,
   r.balanced, r.source_document_id, r.review_reason, r.review_of_remittance_id`;
 
@@ -126,6 +134,7 @@ function remittanceSummary(row: RemittanceRow): RemittanceSummary {
     trace: row.trn02,
     amountCents: row.amount_cents,
     method: row.bpr_method,
+    provenance: row.provenance,
     claimCount: row.claim_count,
     reversals: row.reversals,
     balanced: row.balanced,
@@ -227,10 +236,13 @@ export interface ClaimIdentifiers {
 
 export interface RemittanceDetail {
   readonly remittance: RemittanceSummary & {
-    readonly receiverId: string;
-    readonly senderId: string;
-    readonly isa13: string;
-    readonly st02: string;
+    /** The X12 envelope: an 835's always; an ERA export has none (its sender only when a column holds it). */
+    readonly receiverId: string | null;
+    readonly senderId: string | null;
+    readonly isa13: string | null;
+    readonly st02: string | null;
+    /** The ERA export's format, for a remittance loaded from one. */
+    readonly format: ReceiptFormat | null;
     readonly payeeId: string;
     readonly productionDate: string | null;
     readonly plbTotalCents: string;
@@ -280,9 +292,11 @@ export async function remittanceDetail(scope: Scope, practiceId: string, remitta
     { objectType: 'remittance', purpose: 'remittances', requestId },
     async (client) =>
       (
-        await client.query<RemittanceRow & { receiver_id: string; sender_id: string; isa13: string; st02: string; payee_npi: string; production_date: string | null; plb_total_cents: string }>(
-          `SELECT ${REMITTANCE_COLUMNS}, r.receiver_id, r.sender_id, r.isa13, r.st02, r.payee_npi, r.production_date::text AS production_date, r.plb_total_cents::text AS plb_total_cents
-             FROM remittance r WHERE r.practice_id = $1 AND r.id = $2`,
+        await client.query<
+          RemittanceRow & { receiver_id: string | null; sender_id: string | null; isa13: string | null; st02: string | null; format_id: string | null; payee_npi: string; production_date: string | null; plb_total_cents: string }
+        >(
+          `SELECT ${REMITTANCE_COLUMNS}, r.receiver_id, r.sender_id, r.isa13, r.st02, d.format_id, r.payee_npi, r.production_date::text AS production_date, r.plb_total_cents::text AS plb_total_cents
+             FROM remittance r JOIN source_document d ON d.id = r.source_document_id WHERE r.practice_id = $1 AND r.id = $2`,
           [practiceId, remittanceId],
         )
       ).rows,
@@ -325,6 +339,7 @@ export async function remittanceDetail(scope: Scope, practiceId: string, remitta
       senderId: header.sender_id,
       isa13: header.isa13,
       st02: header.st02,
+      format: receiptFormat(header.format_id),
       payeeId: header.payee_npi,
       productionDate: header.production_date,
       plbTotalCents: header.plb_total_cents,

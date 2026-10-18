@@ -177,6 +177,17 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
   'eval_example.source': () => 'permitted',
   // A proposal of contract terms (its call's purpose) holds an object (migration 20261029190000).
   'model_proposal.proposal': () => JSON.stringify({}),
+  // The factory's remittance is an 835 (its provenance's default), which carries its whole X12 envelope, and its
+  // claims carry CLP06 (migration 20261102090000: these columns are nullable for an ERA export's rows only).
+  'remittance.sender_id': () => 'SYNTHSENDER',
+  'remittance.receiver_id': () => 'SYNTHRECEIVER',
+  'remittance.isa13': () => '000000001',
+  'remittance.gs06': () => '1',
+  'remittance.st02': () => '0001',
+  'remittance.trn03': () => '1SYNTHPAYR',
+  'remittance.bpr_method': () => 'ACH',
+  'remittance.payee_id_qualifier': () => 'XX',
+  'claim.filing_indicator': () => 'CI',
 };
 
 /**

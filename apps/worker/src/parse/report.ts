@@ -15,7 +15,9 @@ import type { TransactionLoad, TransactionReview } from './loader';
 export type TransactionResult =
   | { readonly outcome: 'loaded'; readonly remittanceId: string; readonly claims: number; readonly lines: number; readonly review: TransactionReview | null }
   | { readonly outcome: 'duplicate_remittance'; readonly remittanceId: string; readonly documentId: string }
-  | { readonly outcome: 'held'; readonly reasons: readonly EdiError[] };
+  | { readonly outcome: 'held'; readonly reasons: readonly EdiError[] }
+  /** The payment was loaded first from an ERA export (D13 a): the export's remittance and document. */
+  | { readonly outcome: 'held_for_review'; readonly remittanceId: string; readonly documentId: string };
 
 export interface ReportedError {
   readonly code: EdiError['code'];
@@ -36,18 +38,26 @@ export interface ReportedError {
 export interface ReportedTransaction extends TransactionPosition {
   readonly segmentIndex: number;
   readonly st02: string;
-  readonly outcome: 'loaded' | 'loaded_for_review' | 'duplicate_remittance' | 'held';
+  /** held_for_review: the payment was loaded first from an ERA export, so nothing of this set loads (D13 a). */
+  readonly outcome: 'loaded' | 'loaded_for_review' | 'duplicate_remittance' | 'held' | 'held_for_review';
   /** The remittance it loaded, or the one it duplicates or is reviewed against. */
   readonly remittanceId: string | null;
   readonly linkedRemittanceId: string | null;
-  /** The document that loaded the remittance it duplicates. */
+  /** The document that loaded the remittance it duplicates, or the export it is held for review against. */
   readonly linkedDocumentId: string | null;
+  /** On a held_for_review set only: what the linked remittance was loaded from, and why it is held. */
+  readonly linkedProvenance?: 'era_export';
+  readonly reviewReason?: 'payment_loaded_from_export';
   readonly claims: number;
   readonly lines: number;
   readonly reasons: readonly EdiError['code'][];
 }
 
-export interface ParseReportRow {
+/**
+ * The parse_report row of a document. An 835's errors and outcomes are its transaction sets' (ReportedError,
+ * ReportedTransaction); an ERA export's are its payments' (era/report.ts), in the same columns.
+ */
+export interface ParseReportRow<E extends object = ReportedError, T extends object = ReportedTransaction> {
   readonly outcome: 'loaded' | 'held' | 'partially_held' | 'duplicate';
   readonly transactions: number;
   readonly claims: number;
@@ -60,8 +70,8 @@ export interface ParseReportRow {
   readonly loadedLines: number;
   readonly duplicateTransactions: number;
   readonly unknownCodes: readonly string[];
-  readonly errors: readonly ReportedError[];
-  readonly transactionOutcomes: readonly ReportedTransaction[];
+  readonly errors: readonly E[];
+  readonly transactionOutcomes: readonly T[];
   readonly codeListRelease: number | null;
 }
 
@@ -112,6 +122,8 @@ export function resultOf(load: TransactionLoad): TransactionResult {
       return { outcome: 'loaded', remittanceId: load.remittanceId, claims: load.claims, lines: load.lines, review: load.review };
     case 'duplicate':
       return { outcome: 'duplicate_remittance', remittanceId: load.remittanceId, documentId: load.documentId };
+    case 'held_for_review':
+      return { outcome: 'held_for_review', remittanceId: load.remittanceId, documentId: load.documentId };
     case 'refused':
       return {
         outcome: 'held',
@@ -127,8 +139,12 @@ export function resultOf(load: TransactionLoad): TransactionResult {
   }
 }
 
-function overall(results: readonly TransactionResult[], documentErrors: number): ParseReportRow['outcome'] {
-  const held = results.filter((result) => result.outcome === 'held').length;
+/** Whether a result holds its transaction set or payment: held, or (an 835 of a payment an export loaded) held for review. */
+export const isHeld = (result: { readonly outcome: string }): boolean => result.outcome === 'held' || result.outcome === 'held_for_review';
+
+/** The document's outcome from what each transaction set or payment became, and whether the document itself is held. */
+export function overall(results: readonly { readonly outcome: string }[], documentErrors: number): ParseReportRow['outcome'] {
+  const held = results.filter(isHeld).length;
   if (documentErrors > 0 || (results.length > 0 && held === results.length)) {
     return 'held';
   }
@@ -178,7 +194,7 @@ export function parseReportRow(report: ParseReport, results: ReadonlyMap<string,
     claims: report.receipt.claims,
     lines: report.receipt.lines,
     reversals: report.receipt.reversals,
-    held: all.filter((result) => result.outcome === 'held').length,
+    held: all.filter(isHeld).length,
     plbTotalCents: report.receipt.plbTotalCents.toString(),
     loadedTransactions: loaded.length,
     loadedClaims: loaded.reduce((sum, result) => sum + result.claims, 0),
@@ -209,6 +225,19 @@ function reportedTransaction(transaction: TransactionOutcome, result: Transactio
       return { ...base, outcome: 'duplicate_remittance', remittanceId: null, linkedRemittanceId: result.remittanceId, linkedDocumentId: result.documentId, claims: 0, lines: 0, reasons: ['EDI_DUPLICATE'] };
     case 'held':
       return { ...base, outcome: 'held', remittanceId: null, linkedRemittanceId: null, linkedDocumentId: null, claims: 0, lines: 0, reasons: [...new Set(result.reasons.map((reason) => reason.code))] };
+    case 'held_for_review':
+      return {
+        ...base,
+        outcome: 'held_for_review',
+        remittanceId: null,
+        linkedRemittanceId: result.remittanceId,
+        linkedDocumentId: result.documentId,
+        linkedProvenance: 'era_export',
+        reviewReason: 'payment_loaded_from_export',
+        claims: 0,
+        lines: 0,
+        reasons: [],
+      };
   }
 }
 

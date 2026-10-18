@@ -37,9 +37,12 @@ proves recovery by reconciling later remittances to posting and deposits.
 - Unpriced reasons are the closed list in docs/product/unpriced-reasons.md. Never a guessed price.
 - Medicare adjustment flags (apply_mppr, apply_assistant_reduction, apply_sequestration, apply_ncci) default
   to false on commercial contracts and true for MA non-contracted lines.
-- Idempotency: parse by document hash and (practice, sender, ISA13, TRN02, BPR02), the remittance_once key; a
-  resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 is the same payment and loads
-  zero rows (ADR 0031); jobs by singleton key.
+- Idempotency: parse by document hash; an 835 by (practice, sender, ISA13, TRN02, BPR02), the remittance_once
+  key, and a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 is the same payment
+  and loads zero rows (ADR 0031); an ERA export by (practice, payee, TRN02, credit or debit, BPR02, BPR16), the
+  remittance_export_once key, the 835 authoritative: an export of a payment already loaded from either source
+  loads zero rows, and an 835 of a payment first loaded from an export is held for review (ADR 0060); jobs by
+  singleton key.
 - Dates: UTC timestamps; service dates as calendar dates; windows computed from remittance dates.
 - Every mutation: a server action or route handler with a Zod schema, a role check, a practice-scoped
   transaction (SET LOCAL app.practice_ids, app.actor_id) and an audit event.

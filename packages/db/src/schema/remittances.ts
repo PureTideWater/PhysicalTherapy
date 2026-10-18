@@ -13,6 +13,14 @@ import { practice, user } from './tenancy';
  * (src/crypto, ENCRYPTED_COLUMNS).
  */
 
+/**
+ * Where a remittance came from (migration 20261102090000; docs/adr/0060): an 835 transaction set, with its whole
+ * X12 envelope, or a vendor ERA export, with none (no receiver, ISA13, GS06, ST02, TRN03 or payee qualifier; its
+ * sender and payment method when its columns hold them). The same as the document kind it was loaded from.
+ */
+export const REMITTANCE_PROVENANCES = ['x12_835', 'era_export'] as const;
+export type RemittanceProvenance = (typeof REMITTANCE_PROVENANCES)[number];
+
 export const REMITTANCE_STATUSES = ['loaded', 'held', 'duplicate'] as const;
 export type RemittanceStatus = (typeof REMITTANCE_STATUSES)[number];
 
@@ -68,23 +76,23 @@ export const remittance = pgTable(
     sourceDocumentId: uuid('source_document_id')
       .notNull()
       .references(() => sourceDocument.id),
-    senderId: text('sender_id').notNull(),
-    receiverId: text('receiver_id').notNull(),
-    isa13: text('isa13').notNull(),
-    gs06: text('gs06').notNull(),
-    st02: text('st02').notNull(),
+    senderId: text('sender_id'),
+    receiverId: text('receiver_id'),
+    isa13: text('isa13'),
+    gs06: text('gs06'),
+    st02: text('st02'),
     trn02: text('trn02').notNull(),
-    trn03: text('trn03').notNull(),
+    trn03: text('trn03'),
     bpr02Cents: bigint('bpr02_cents', { mode: 'bigint' }).notNull(),
     bprCreditDebit: text('bpr_credit_debit', { enum: ['C', 'D'] }).notNull(),
-    bprMethod: text('bpr_method').notNull(),
+    bprMethod: text('bpr_method'),
     bpr16Date: date('bpr16_date').notNull(),
     payerName: text('payer_name').notNull(),
     payerId: uuid('payer_id')
       .notNull()
       .references(() => payer.id),
     payeeNpi: text('payee_npi').notNull(),
-    payeeIdQualifier: text('payee_id_qualifier').notNull(),
+    payeeIdQualifier: text('payee_id_qualifier'),
     productionDate: date('production_date'),
     balanceDiffCents: bigint('balance_diff_cents', { mode: 'bigint' }).notNull().default(0n),
     balanced: boolean('balanced')
@@ -98,10 +106,18 @@ export const remittance = pgTable(
     reviewOfRemittanceId: uuid('review_of_remittance_id').references((): AnyPgColumn => remittance.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** x12_835 (every row before migration 20261102090000) or era_export; the envelope fields are an 835's only. */
+    provenance: text('provenance', { enum: REMITTANCE_PROVENANCES }).notNull().default('x12_835'),
   },
   (table) => [
     unique('remittance_once').on(table.practiceId, table.senderId, table.isa13, table.trn02, table.bpr02Cents),
+    // The export duplicate key (D12 a): payee, trace, the signed payment and its date, over export rows only.
+    uniqueIndex('remittance_export_once')
+      .on(table.practiceId, table.payeeNpi, table.trn02, table.bprCreditDebit, table.bpr02Cents, table.bpr16Date)
+      .where(sql`provenance = 'era_export'`),
     index('remittance_by_trace').on(table.practiceId, table.trn02),
+    // The trace's form (upper case, leading zeros removed), which the loader compares across sources (docs/adr/0060).
+    index('remittance_by_trace_form').on(table.practiceId, sql`ltrim(upper(${table.trn02} COLLATE "C"), '0')`),
     index('remittance_by_payment_date').on(table.practiceId, table.bpr16Date.desc(), table.id),
     index('remittance_by_payer').on(table.practiceId, table.payerId, table.bpr16Date.desc()),
     index('remittance_by_document').on(table.sourceDocumentId),
@@ -127,7 +143,8 @@ export const claim = pgTable(
     chargeCents: bigint('charge_cents', { mode: 'bigint' }).notNull(),
     paidCents: bigint('paid_cents', { mode: 'bigint' }).notNull(),
     patientRespCents: bigint('patient_resp_cents', { mode: 'bigint' }),
-    filingIndicator: text('filing_indicator').notNull(),
+    /** CLP06; null only on a claim of an ERA export, which carries none (migration 20261102090000). */
+    filingIndicator: text('filing_indicator'),
     facilityType: text('facility_type'),
     frequencyCode: text('frequency_code'),
     patientRefId: uuid('patient_ref_id')
