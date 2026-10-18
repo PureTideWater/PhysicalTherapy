@@ -5,7 +5,7 @@ import path from 'node:path';
 import { TextractPageReader, type TextractPageReaderOptions } from '@tp/contracts';
 import { readDocumentPages } from '@tp/contracts/pages';
 import { parseCents } from '@tp/money';
-import { type AssemblyInput, type PacketCitation, assemblePacket } from '@tp/packets';
+import { type AssemblyInput, type PacketCitation, assemblePacket, canonicalJson } from '@tp/packets';
 import {
   CONTRACT_SET_FORMAT,
   CONTRACT_TRUTH_FORMAT,
@@ -210,18 +210,38 @@ export interface LoadedNarrativeSet {
 
 const PART = /^part-\d{2}\.json$/;
 
-/** The assembly's JSON as @tp/packets takes it: cents as Cents. */
+/**
+ * The assembly's JSON as @tp/packets takes it: cents as Cents. The set's parts predate tp-packet/2 and
+ * never change, so they hold no trace and no window evidence: each line's deadline is its window, stated
+ * unverified (no evidence is cited), and its calculation names no step and the SHA-256 of the line as the
+ * set holds it; a later level's window is not stated. None of it is a figure the narrative's facts gain,
+ * so what the model is given and what the verifier passes are as they were.
+ */
 export function toAssemblyInput(assembly: NarrativeAssembly): AssemblyInput {
+  const citation = assembly.citation as unknown as PacketCitation;
+  const contract = citation.kind === 'contract';
   return {
     ...assembly,
-    citation: assembly.citation as unknown as PacketCitation,
+    citation,
     lines: assembly.lines.map((line) => ({
       ...line,
       expectedCents: parseCents(line.expectedCents),
       observedCents: parseCents(line.observedCents),
       varianceCents: parseCents(line.varianceCents),
       paidCents: parseCents(line.paidCents),
+      deadline: { status: 'unverified', source: contract ? 'contract' : 'release', endsOn: line.windowEndsOn, cause: contract ? 'CONTRACT_WINDOW_UNCITED' : 'RECORD_NOT_IN_RELEASE' },
+      calculation: {
+        method: citation.method,
+        release_no: assembly.releases[0]?.release_no ?? 0,
+        steps: [],
+        rounding: null,
+        observed_basis: 'amt_b6',
+        patient_share_cents: null,
+        trace_sha256: createHash('sha256').update(canonicalJson(line), 'utf8').digest('hex'),
+      },
     })),
+    nextLevelDeadline: assembly.disputeLevel > 1 ? { status: 'unverified', source: contract ? 'contract' : 'release', endsOn: null, cause: 'NEXT_LEVEL_UNCITED' } : null,
+    deadlineSources: [],
   };
 }
 

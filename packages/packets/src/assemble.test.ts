@@ -8,7 +8,7 @@ import { narrativeFacts } from './facts';
 import { IDENTIFIER_KINDS } from './format';
 import { canonicalJson, versionSha256 } from './hash';
 import { lineHoldsOnlyPlaceholders } from './placeholders';
-import { IDS, REGULATION, SHA, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
+import { IDS, REGULATION, SHA, assemblyInput, contractCitation, contractWindowSource, line, promptPayRecord } from './test-support';
 import { verifyNarrative } from './verifier';
 
 describe('assemblePacket', () => {
@@ -108,6 +108,44 @@ describe('assemblePacket', () => {
     expect(unknown.evidence_gaps).toEqual([{ code: 'interest_rate_unknown', row: null }]);
     expect(unknown.requested_action).not.toContain('interest');
     expect(draftNarrative(unknown)).toContain('could not be computed');
+  });
+
+  it('writes tp-packet/2: each line’s deadline with its status and source, and its calculation copied as given (CO-05)', () => {
+    expect(content.format).toBe('tp-packet/2');
+    for (const item of content.lines) {
+      expect(item.deadline).toEqual({ ends_on: '2036-04-05', status: 'verified', source: 'contract', cause: null });
+      expect(item.window_ends_on).toBe(item.deadline.ends_on);
+      expect(item.calculation).toMatchObject({ method: 'FIXED_SCHEDULE', release_no: 900001, steps: [{ step: 'base', amount_cents: item.expected_cents }], trace_sha256: SHA });
+      expect(item.calculation.rounding?.rounded_cents).toBe(item.expected_cents);
+    }
+    expect(content.deadline).toEqual({ basis: 'line_windows', ends_on: '2036-04-05', status: 'verified', lines_verified: 3, lines: 3, causes: [], sources: [contractWindowSource()] });
+  });
+
+  it('states the earliest line window, and an unverified deadline when any line’s is, with each cause once (D17)', () => {
+    const uncited = { status: 'unverified', source: 'contract', cause: 'CONTRACT_WINDOW_UNCITED' } as const;
+    const mixed = assemblePacket(
+      assemblyInput({
+        lines: [
+          line(1, { windowEndsOn: '2027-01-10', deadline: { ...uncited, endsOn: '2027-01-10' } }),
+          line(2, { windowEndsOn: '2026-12-01', deadline: { ...uncited, endsOn: '2026-12-01' } }),
+          line(3),
+        ],
+        deadlineSources: [contractWindowSource({ verified_by: null, verified_at: null }), contractWindowSource({ verified_by: null, verified_at: null })],
+      }),
+    );
+    expect(mixed.deadline).toMatchObject({ basis: 'line_windows', ends_on: '2026-12-01', status: 'unverified', lines_verified: 1, lines: 3, causes: ['CONTRACT_WINDOW_UNCITED'] });
+    // A source named twice is listed once.
+    expect(mixed.deadline.sources).toHaveLength(1);
+    expect(mixed.lines.map((item) => item.deadline.status)).toEqual(['unverified', 'unverified', 'verified']);
+  });
+
+  it('states the next level’s window after a reopened denial, and refuses a later level without it', () => {
+    const next = { status: 'unverified', source: 'contract', endsOn: '2026-12-15', cause: 'NEXT_LEVEL_UNCITED' } as const;
+    const second = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: next }));
+    expect(second.deadline).toMatchObject({ basis: 'next_level_window', ends_on: '2026-12-15', status: 'unverified', lines_verified: 3, lines: 3, causes: ['NEXT_LEVEL_UNCITED'] });
+    const verified = assemblePacket(assemblyInput({ disputeLevel: 2, citation: REGULATION, contractDocuments: [], nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-15', cause: null } }));
+    expect(verified.deadline).toMatchObject({ basis: 'next_level_window', status: 'verified', causes: [] });
+    expect(() => assemblePacket(assemblyInput({ disputeLevel: 2 }))).toThrow(PacketAssemblyError);
   });
 
   it('starts the requested action with its level after a reopened denial', () => {

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
 import { type NarrativeFacts, narrativeFacts } from './facts';
-import type { RegulationCitation } from './format';
-import { IDS, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
+import type { PacketContentV1, RegulationCitation } from './format';
+import { IDS, SHA, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
 
 /**
  * The inputs a narrative may state (./facts.ts): exactly the figures the version's own content holds,
@@ -80,6 +80,7 @@ describe('narrativeFacts', () => {
           line(3, { units: '10' }),
         ],
         interest: { state: 'ZZ', releaseNo: 900003, record: promptPayRecord() },
+        nextLevelDeadline: { status: 'unverified', source: 'contract', endsOn: '2027-01-15', cause: 'NEXT_LEVEL_UNCITED' },
       }),
     );
     expect(sorted(narrativeFacts(content))).toEqual({
@@ -89,7 +90,9 @@ describe('narrativeFacts', () => {
         '1200', // parameters: tiers[0].floor_cents
         '12000', // line 2 expected (and 97140's)
         '131', // interest, row 1: 30.00 at 9% for 177 days
+        '1400', // lines 1 and 3: the calculation's patient share (tp-packet/2)
         '14000', // 97110 observed
+        '1600', // line 2: the calculation's patient share (tp-packet/2)
         '174', // interest, row 2: 40.00 at 9% for 176 days
         '20000', // 97110 expected
         '22000', // the pattern's observed
@@ -119,6 +122,7 @@ describe('narrativeFacts', () => {
         '2026-04-22',
         '2026-04-23', // interest due
         '2026-10-16', // as of
+        '2027-01-15', // the next level's window (tp-packet/2's deadline at dispute level 5)
         '2027-06-30', // effective to
         '2036-04-05',
         '2036-04-06', // windows end
@@ -143,6 +147,7 @@ describe('narrativeFacts', () => {
         '25', // the pattern's units
         '3', // the schedule's lines, claims and patients
         '33', // interest: days to pay
+        '3650', // the contract window: its days, and its quoted clause (tp-packet/2)
         '4.2', // the quote's section
         '5', // the dispute level
         '6', // the contract version
@@ -164,9 +169,18 @@ describe('narrativeFacts', () => {
 
   it('holds the regulation’s figures, and no figure for what the version does not state', () => {
     const regulation: RegulationCitation = { kind: 'regulation', method: 'MA_NONCONTRACTED', reference: 'SYNTHETIC RULE 71', statement: 'SYNTHETIC: a plan pays within 72 days.' };
-    const content = assemblePacket(assemblyInput({ citation: regulation, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
+    const fromRelease = { status: 'verified', source: 'release', endsOn: '2036-04-05', cause: null } as const;
+    const content = assemblePacket(
+      assemblyInput({
+        citation: regulation,
+        interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) },
+        lines: [line(1, { deadline: fromRelease }), line(2, { deadline: fromRelease }), line(3, { deadline: fromRelease })],
+        deadlineSources: [{ kind: 'release_record', release_no: 900001, sha256: SHA, program: 'medicare', level: 'L2' }],
+      }),
+    );
     expect(sorted(narrativeFacts(content))).toEqual({
-      amounts: ['10000', '21000', '3000', '30000', '5600', '7000', '9000'],
+      // The calculations' patient share (1400) besides the schedule's figures.
+      amounts: ['10000', '1400', '21000', '3000', '30000', '5600', '7000', '9000'],
       // No rate, so no interest is computed: no percentage, due date, day count or interest amount.
       percents: [],
       dates: ['2026-03-05', '2026-03-06', '2026-03-07', '2026-04-08', '2026-10-16', '2036-04-05'],
@@ -177,5 +191,16 @@ describe('narrativeFacts', () => {
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6],
     });
+  });
+
+  it('holds none of the deadline and calculation figures for a tp-packet/1 version, which states none', () => {
+    const current = assemblePacket(assemblyInput());
+    const { deadline: _deadline, lines, ...rest } = current;
+    const earlier: PacketContentV1 = { ...rest, format: 'tp-packet/1', lines: lines.map(({ deadline: _line, calculation: _calculation, ...item }) => item) };
+    const facts = narrativeFacts(earlier);
+    expect(facts.amounts.has('1400')).toBe(false);
+    expect(facts.numbers.has('3650')).toBe(false);
+    expect(narrativeFacts(current).amounts.has('1400')).toBe(true);
+    expect([...facts.dates].sort()).toEqual([...narrativeFacts(current).dates].sort());
   });
 });

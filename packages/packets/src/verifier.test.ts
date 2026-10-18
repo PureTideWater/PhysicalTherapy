@@ -302,7 +302,7 @@ const lineArbitrary = fc
     claim: fc.integer({ min: 1, max: 4 }),
   })
   .map(
-    (draw): Omit<AssemblyLine, 'serviceLineId' | 'pricedLineId'> => {
+    (draw): Omit<AssemblyLine, 'serviceLineId' | 'pricedLineId' | 'deadline' | 'calculation'> => {
       const expected = BigInt(draw.perUnit * draw.units);
       const observed = expected - BigInt(draw.short * draw.units);
       return {
@@ -328,8 +328,7 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
   assemblePacket(
     assemblyInput({
       lines: lines.map((item, index) => ({
-        ...line(index + 1),
-        ...item,
+        ...line(index + 1, item),
         serviceLineId: `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
         pricedLineId: `30000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
       })),

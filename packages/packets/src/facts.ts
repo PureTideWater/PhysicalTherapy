@@ -10,6 +10,12 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * clause, the statute, the identification of practice, payer and plan, and the contract's title are
  * read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it.
  * No identifier of a patient or a claim is ever an input: they are placeholders, one per schedule row.
+ *
+ * A tp-packet/2 version also states each line's deadline, its calculation summary and the evidence
+ * behind the deadline, so a narrative may repeat those too: the deadline dates, the contract window's
+ * page and day count, its quoted clause (read as quoted text), and the calculation's whole-cent amounts
+ * (an unrounded amount with a fraction of a cent is not a figure a narrative states). A tp-packet/1
+ * version has none of them.
  */
 export interface NarrativeFacts {
   readonly amounts: ReadonlySet<string>;
@@ -38,6 +44,13 @@ class FactSets {
 
   amount(value: string | null | undefined): void {
     if (value !== null && value !== undefined) {
+      this.amounts.add(value);
+    }
+  }
+
+  /** An amount in cents, when it is whole cents (the trace writes unrounded amounts with their fraction). */
+  wholeCents(value: string | null | undefined): void {
+    if (value !== null && value !== undefined && /^-?\d+$/.test(value)) {
       this.amounts.add(value);
     }
   }
@@ -165,6 +178,27 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     }
     for (const value of [line.service_date, line.paid_on, line.received_on, line.window_ends_on]) {
       sets.date(value);
+    }
+  }
+
+  if (content.format === 'tp-packet/2') {
+    for (const line of content.lines) {
+      sets.date(line.deadline.ends_on);
+      const { calculation } = line;
+      for (const step of calculation.steps) {
+        sets.wholeCents(step.amount_cents);
+      }
+      sets.wholeCents(calculation.rounding?.unrounded_cents);
+      sets.wholeCents(calculation.rounding?.rounded_cents);
+      sets.wholeCents(calculation.patient_share_cents);
+    }
+    sets.date(content.deadline.ends_on);
+    for (const source of content.deadline.sources) {
+      if (source.kind === 'contract_window') {
+        sets.number(source.page);
+        sets.number(source.days);
+        sets.quoted(source.quote);
+      }
     }
   }
 

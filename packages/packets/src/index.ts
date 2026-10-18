@@ -1,18 +1,22 @@
 /**
  * @tp/packets: packet assembly, the deterministic verifier, identifier placeholders and their insertion
- * at export, prompt-pay interest and the next dispute window (PRD 12; milestone 8). Pure functions over
+ * at export, prompt-pay interest, the next dispute window, and (tp-packet/2, CO-05) each line's deadline
+ * with its status and its calculation summary copied from its trace (PRD 12; milestone 8). Pure functions over
  * the records a case and its approved contract hold: no database, network or model inside. The
  * verifier is a hard gate with no bypass; the database refuses an approval of a version it failed.
  * Printing the export (PDF and CSV) is the worker's (apps/worker/src/packets).
  */
-export { type AssemblyInput, type AssemblyLine, type DocumentReference, PacketAssemblyError, assemblePacket, dollars, requestedAction } from './assemble';
+export { type AssemblyInput, type AssemblyLine, type DeadlineInput, type DocumentReference, PacketAssemblyError, assemblePacket, dollars, requestedAction } from './assemble';
+export { CalculationError, lineCalculation, traceSha256 } from './calculation';
 export { addDays, daysFrom, isIsoDate } from './dates';
 export { draftNarrative } from './draft';
 export { type NarrativeFacts, narrativeFacts } from './facts';
 export {
+  type CalculationStep,
   type CitedMethod,
   type CodeSummary,
   type ContractCitation,
+  type DeadlineSource,
   EVIDENCE_GAP_CODES,
   EVIDENCE_KINDS,
   type EvidenceGap,
@@ -24,10 +28,17 @@ export {
   type IdentifierKind,
   type InterestLine,
   type InterestSection,
+  type LineCalculation,
+  type LineDeadline,
   PACKET_FORMAT,
+  PACKET_FORMATS,
   PAYER_RESPONSE_KINDS,
   type PacketCitation,
   type PacketContent,
+  type PacketContentV1,
+  type PacketContentV2,
+  type PacketDeadline,
+  type PacketFormat,
   type PatternFacts,
   type PayerIdentification,
   type PayerResponseKind,
@@ -37,10 +48,12 @@ export {
   SOURCE_KINDS,
   SUBMISSION_CHANNELS,
   type ScheduleLine,
+  type ScheduleLineV2,
   type Source,
   type SourceKind,
   type SubmissionChannel,
   VERIFIER_FORMAT,
+  isPacketV2,
 } from './format';
 export { canonicalJson, versionSha256 } from './hash';
 export { type InterestLineInput, type InterestResult, type PromptPayRecord, promptPayInterest } from './interest';

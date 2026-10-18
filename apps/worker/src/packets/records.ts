@@ -1,8 +1,11 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { type Cents, parseCents } from '@tp/money';
-import type { AssemblyInput, AssemblyLine, ContractCitation, PacketCitation, PromptPayRecord, RegulationCitation } from '@tp/packets';
+import { type AssemblyInput, type AssemblyLine, type ContractCitation, type DeadlineInput, type DeadlineSource, type PacketCitation, type PromptPayRecord, type RegulationCitation, lineCalculation } from '@tp/packets';
+import { type PricingTrace, parseTrace } from '@tp/pricing';
+import type { DeadlineVerification } from '@tp/triage';
 
 import { PRICED_IN_EFFECT } from '../price/in-effect';
+import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
 
 /**
  * Reading a case and its approved records for a packet (PRD 12, The packet: "assembled from the
@@ -11,6 +14,12 @@ import { PRICED_IN_EFFECT } from '../price/in-effect';
  * judged again first); a contract pattern cites its signed-off version's verified rate record (its
  * document, page, quoted clause and page hash); a Medicare Advantage non-contracted pattern cites the
  * regulation the rules reference names. The figures are the database's; @tp/packets assembles them.
+ *
+ * tp-packet/2 (CO-05, D17): each line's deadline is what @tp/triage's deadlineVerification() derives from
+ * its stored trace and the evidence behind its window (the worker's lineDeadlines), and its calculation
+ * summary is copied from that trace; after a reopened denial, the next level's window (nextLevelDeadline).
+ * The evidence the deadlines rest on is listed: a contract version's cited window and the release records
+ * the windows came from, with their level.
  */
 
 export const PACKET_REFUSALS = [
@@ -94,6 +103,13 @@ interface LineRow {
   readonly paid_on: string;
   readonly document_id: string;
   readonly document_sha256: string | null;
+  readonly trace: unknown;
+}
+
+/** A line's deadline as the loader derived it; a line it could not see is unverified (fails closed). */
+function deadlineOf(deadlines: ReadonlyMap<string, DeadlineVerification>, pricedLineId: string): DeadlineInput {
+  const found = deadlines.get(pricedLineId);
+  return found === undefined ? { status: 'unverified', source: null, endsOn: null, cause: null } : asInput(found);
 }
 
 const required = (value: string | null, reason: PacketRefusal, message: string): Cents => {
@@ -132,7 +148,8 @@ async function caseLines(scope: PracticeScope<ScopeClient>, request: AssemblyReq
                   coalesce(e.id = cl.priced_line_id, false) AS in_effect,
                   p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text, p.window_ends_on::text,
                   sl.claim_id, coalesce(sl.service_date, c.service_from)::text AS service_date, sl.procedure_code, sl.modifiers, sl.units::text,
-                  sl.paid_cents::text, c.patient_ref_id, c.received_on::text, r.bpr16_date::text AS paid_on, r.source_document_id AS document_id, d.sha256 AS document_sha256
+                  sl.paid_cents::text, c.patient_ref_id, c.received_on::text, r.bpr16_date::text AS paid_on, r.source_document_id AS document_id, d.sha256 AS document_sha256,
+                  p.trace
              FROM case_line cl
              JOIN priced_line p ON p.id = cl.priced_line_id
              JOIN pricing_run run ON run.id = p.pricing_run_id
@@ -210,6 +227,60 @@ async function contractCitation(client: ScopeClient, practiceId: string, rateRec
   };
 }
 
+const asInput = (verification: Pick<DeadlineVerification, 'status' | 'source' | 'endsOn' | 'cause'>): DeadlineInput => ({
+  status: verification.status,
+  source: verification.source,
+  endsOn: verification.endsOn,
+  cause: verification.cause,
+});
+
+/**
+ * The evidence the lines' windows rest on: each contract version's cited window (its document, page,
+ * quote and page hash, and who verified it), and each release record a window came from, with its level.
+ * A version that cites no window adds none: its lines' deadlines say so.
+ */
+async function deadlineSources(client: ScopeClient, practiceId: string, traces: readonly PricingTrace[], deadlines: ReadonlyMap<string, DeadlineVerification>, pricedLineIds: readonly string[]): Promise<DeadlineSource[]> {
+  const versionIds = [...new Set(traces.filter((trace) => trace.steps.window?.source === 'contract').flatMap((trace) => (trace.agreement?.contract_version_id === null || trace.agreement === null ? [] : [trace.agreement.contract_version_id])))];
+  const { rows: versions } = await client.query<{
+    id: string;
+    dispute_window_days: number | null;
+    dispute_window_evidence: { readonly document_id: string; readonly page: number; readonly quote: string; readonly hash: string } | null;
+    dispute_window_verified_by: string | null;
+    dispute_window_verified_at: Date | null;
+  }>(
+    `SELECT id, dispute_window_days, dispute_window_evidence, dispute_window_verified_by, dispute_window_verified_at
+       FROM contract_version WHERE practice_id = $1 AND id = ANY ($2::uuid[]) AND dispute_window_evidence IS NOT NULL ORDER BY id`,
+    [practiceId, versionIds],
+  );
+  const sources: DeadlineSource[] = versions.flatMap((version) =>
+    version.dispute_window_evidence === null
+      ? []
+      : [
+          {
+            kind: 'contract_window' as const,
+            contract_version_id: version.id,
+            days: version.dispute_window_days,
+            document_id: version.dispute_window_evidence.document_id,
+            page: version.dispute_window_evidence.page,
+            quote: version.dispute_window_evidence.quote,
+            hash: version.dispute_window_evidence.hash,
+            verified_by: version.dispute_window_verified_by,
+            verified_at: version.dispute_window_verified_at?.toISOString() ?? null,
+          },
+        ],
+  );
+  const records = new Map<string, DeadlineSource>();
+  traces.forEach((trace, index) => {
+    const record = trace.steps.window?.record ?? null;
+    if (trace.steps.window?.source !== 'release' || record === null) {
+      return;
+    }
+    const level = deadlines.get(pricedLineIds[index] ?? '')?.level ?? null;
+    records.set(`${String(trace.release.number)}:${record.sha256}`, { kind: 'release_record', release_no: trace.release.number, sha256: record.sha256, program: record.key.program ?? null, level });
+  });
+  return [...sources, ...records.values()];
+}
+
 async function promptPayRecord(client: ScopeClient, releaseNo: number, state: string, asOf: string): Promise<PromptPayRecord | null> {
   const { rows } = await client.query<{ value: Record<string, unknown>; effective_from: string; effective_to: string | null; sha256: string }>(
     `SELECT value, effective_from::text, effective_to::text, sha256 FROM rule_record
@@ -256,8 +327,11 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
   if (rows.some((row) => !row.in_effect)) {
     throw new PacketRefusedError('pricing_changed', 'a line of the case was priced again since it joined; the case is judged again first');
   }
+  const traces = rows.map((row) => parseTrace(row.trace));
+  const pricedLineIds = rows.map((row) => row.priced_line_id);
+  const deadlines = await lineDeadlines(client, pricedLineIds);
   const lines = rows.map(
-    (row): AssemblyLine => ({
+    (row, index): AssemblyLine => ({
       serviceLineId: row.service_line_id,
       claimId: row.claim_id,
       pricedLineId: row.priced_line_id,
@@ -274,6 +348,8 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
       paidOn: row.paid_on,
       receivedOn: row.received_on,
       windowEndsOn: row.window_ends_on,
+      deadline: deadlineOf(deadlines, row.priced_line_id),
+      calculation: lineCalculation(traces[index] as PricingTrace),
     }),
   );
   if (lines.some((line) => line.varianceCents <= 0n)) {
@@ -313,6 +389,8 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
   }
 
   const { rows: level } = await client.query<{ level: number }>('SELECT 1 + case_reopened_levels($1) AS level', [request.caseId]);
+  const disputeLevel = level[0]?.level ?? 1;
+  const next = disputeLevel > 1 ? await nextLevelDeadline(client, request.caseId) : null;
 
   const remittances = new Map<string, { documentId: string; sha256: string | null; paidOn: string }>();
   for (const row of rows) {
@@ -321,7 +399,7 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
 
   return {
     asOf: request.asOf,
-    disputeLevel: level[0]?.level ?? 1,
+    disputeLevel,
     practice: { practice_id: request.practiceId, name: who.name, npi: who.npi, tax_id_last4: who.tax_id_last4 },
     payer: { payer_id: found.payer_id, name: who.payer_name, payer_id_raw: who.payer_id_raw, plan_id: found.plan_id, plan_key: who.plan_key, plan_name: who.plan_name },
     citation,
@@ -332,5 +410,7 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
     contractDocuments,
     remittances: [...remittances.values()],
     attachedDocuments: attachedRows.map((row) => ({ documentId: row.id, sha256: row.sha256 })),
+    nextLevelDeadline: next === null ? null : asInput({ ...next.verification, endsOn: next.endsOn }),
+    deadlineSources: await deadlineSources(client, request.practiceId, traces, deadlines, pricedLineIds),
   };
 }
