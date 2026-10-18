@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
+import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 import { SCREENING_REJECTION_CODES, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -21,8 +23,11 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInp
  *   the prospect's email carries no tagline.
  *
  * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
- * ZIP+4 refused (the pricing cannot use one); an address the mail service can send to; the result read by its link
- * alone and not found once expired. Synthetic data only.
+ * ZIP+4 refused (the pricing cannot use one; the owner's ruling of 2026-10-18 keeps that until release 1's real
+ * locality map loads); an address the mail service can send to; the result read by its link alone, with both figures
+ * for a code in the reduction across codes and the database's standings, and not found once expired; a result
+ * under a release since withdrawn keeping its notice and still converting (the owner's ruling of 2026-10-18).
+ * Synthetic data only.
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
@@ -217,6 +222,24 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     expect(rows.length).toBe(summary.priced.rows);
     for (const row of rows) {
       expect(row.expectedCents).toBe(row.expectedLineCents * BigInt(row.claimCount));
+      // A code in the reduction across codes has its fully reduced figure beside it; any other code has one figure.
+      expect(row.reducedCents).toBe(row.inReductionPool ? (row.reducedLineCents ?? -1n) * BigInt(row.claimCount) : null);
+    }
+    // The sample's 97110 GP x2 at ZIP 00011, ten claims allowed $400.00 in Q1: $36.84 a line before the reduction across
+    // codes and $31.45 fully reduced (SYNTHETIC release 900001, before sequestration); $40.00 a line is above both.
+    expect(rows.find((row) => row.procedureCode === '97110' && row.payerProduct === 'medicare_ffs')).toMatchObject({
+      expectedLineCents: 3_684n,
+      reducedLineCents: 3_145n,
+      expectedCents: 36_840n,
+      reducedCents: 31_450n,
+      observedCents: 40_000n,
+      standing: 'at_or_above',
+    });
+    expect(summary.priced.pooledRows).toBe(rows.filter((row) => row.inReductionPool).length);
+    expect(summary.priced.reducedCents).toBe(rows.reduce((total, row) => total + (row.reducedCents ?? row.expectedCents), 0n));
+    for (const group of groups) {
+      expect(group.anomaly).toBe(group.anomalyRows > 0);
+      expect(group.reducedCents === null).toBe(!group.inReductionPool);
     }
     // A link that is not a token, or no screening's, is not found; so is an expired one (below).
     expect((await world.call(screeningResult, { params: { resultId: 'abc' } })).status).toBe('not_found');
@@ -385,6 +408,35 @@ describe('SCR-06: the conversion from screening to an audit request is an audit 
     // The token is the link's alone: only its hash is stored.
     expect(await storedText()).not.toContain(token);
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_run WHERE result_token_sha256 = $1', [screeningTokenHash(token)])).rows).toEqual([{ n: 1 }]);
+  });
+});
+
+describe('a result priced under a rule release since withdrawn (the owner’s ruling of 2026-10-18)', () => {
+  it('keeps its notice and may still be converted to an audit request, which prices nothing from the screening', async () => {
+    const withdrawn = await ScreeningWorld.create();
+    try {
+      // SYNTHETIC release 900004 (900001 with one value changed) is put in force over 900001, and the screening pins it.
+      await loadRelease(withdrawn.owner, path.resolve(import.meta.dirname, '../../../../../fixtures/synthetic/rules/release-synth-900004'), { release: 900004, allowSyntheticFixtureForTests: true });
+      const email = 'prospect.withdrawn@clinic-withdrawn.synthetic.test';
+      expect((await withdrawn.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).status).toBe('ok');
+      await withdrawn.price();
+      const token = withdrawn.tokenFor(email);
+      expect(await withdrawn.call(screeningResult, { params: { resultId: token } })).toMatchObject({ status: 'ok', data: { summary: { releaseWithdrawn: false } } });
+      await withdrawRelease(withdrawn.owner, { release: 900004, reason: 'SYNTHETIC: withdrawn under a screening result in a test' });
+      const page = await withdrawn.call(screeningResult, { params: { resultId: token } });
+      expect(page).toMatchObject({ status: 'ok', data: { summary: { releaseNo: 900004, releaseWithdrawn: true }, converted: false } });
+      const input = { resultId: token, contactName: 'SYNTHETIC CONTACT', locations: '1', payers: 'SYNTHETIC PAYER', billingArrangement: 'in_house' };
+      expect(await withdrawn.call(screeningConvert, { input })).toEqual({ status: 'ok', data: { redirect: `/screening/results/${token}?requested=1` } });
+      const events = await withdrawn.owner.query(
+        "SELECT e.object_type FROM audit_event e JOIN prospect_request q ON q.id = e.object_id WHERE e.action = 'screening_converted' AND q.contact_email = $1",
+        [email],
+      );
+      expect(events.rows).toEqual([{ object_type: 'prospect_request' }]);
+      // The notice stays above the figures after the conversion.
+      expect(await withdrawn.call(screeningResult, { params: { resultId: token, requested: '1' } })).toMatchObject({ status: 'ok', data: { summary: { releaseWithdrawn: true }, converted: true } });
+    } finally {
+      await withdrawn.close();
+    }
   });
 });
 

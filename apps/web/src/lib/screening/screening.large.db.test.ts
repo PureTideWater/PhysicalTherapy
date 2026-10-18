@@ -11,7 +11,8 @@ import { SCREENING_HEADERS, ScreeningWorld, screeningRow } from './test-support/
  * CO-04's acceptance, at its size: "a clean upload returns a result in under 60 seconds for 50,000 rows" (docs/adr/0062).
  * From the server action's call with 50,000 distinct rows to the result's link in the contact's email: the server's
  * check of every row, the one definer call that stores them, the job's claim, the release read, the engine over
- * every distinct Medicare line, the ten batches recorded, the completion and the email. Then the result page reads
+ * every distinct Medicare line (twice for a code in the reduction across codes: alone, and as a later code of a
+ * visit), the ten batches recorded, the completion and the email. Then the result page reads
  * its figures from the stored rows. SYNTHETIC release 900001, synthetic rows only.
  */
 
@@ -89,6 +90,10 @@ describe('a screening of 50,000 rows', () => {
       expect(summary.rows).toBe(SCREENING_MAX_ROWS);
       expect(summary.priced.rows + summary.couldNotPrice.rows + summary.contractRequired.rows + summary.notScreened.rows).toBe(SCREENING_MAX_ROWS);
       expect(summary.priced.rows).toBeGreaterThan(4_000);
+      // The codes in the reduction across codes were priced a second time, as a later code of a visit (the owner's
+      // ruling of 2026-10-18): their fully reduced figures bring the lowest total below the total priced alone.
+      expect(summary.priced.pooledRows).toBeGreaterThan(1_000);
+      expect(summary.priced.reducedCents).toBeLessThan(summary.priced.expectedCents);
       expect(result.data.rows).toHaveLength(25);
     }
     const pending = await world.owner.query("SELECT count(*)::int AS n FROM screening_result WHERE disposition = 'pending'");

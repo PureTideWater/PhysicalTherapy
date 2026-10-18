@@ -3,14 +3,23 @@ import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription
 import type { ReactNode } from 'react';
 
 import { counted } from '../../lib/copy/words';
-import { DIFFERENCE_LABEL, MEDICARE_FIGURE_LABEL, MEDICARE_FIGURE_NOTE, SCREENING_INVESTIGATORY_NOTE } from '../../lib/screening/labels';
+import {
+  DIFFERENCE_LABEL,
+  MEDICARE_FIGURE_LABEL,
+  MEDICARE_FIGURE_NOTE,
+  REDUCED_DIFFERENCE_LABEL,
+  REDUCED_FIGURE_LABEL,
+  SCREENING_INVESTIGATORY_NOTE,
+} from '../../lib/screening/labels';
 import { utc, utcDate } from '../format';
 
 /**
- * A free screening's totals (Change Order 001, CO-04; reconciliation-001, D19 and D20): what the file held, what
- * the Medicare fee schedule prices (its figure labelled "before the reduction across codes"), the dollars that cannot
- * be priced without a contract, and the rows a screening does not price or could not. Every figure is the database's
- * own bigint sum of the engine's per-row results; nothing here adds, rounds or estimates. A screening never says
+ * A free screening's totals (Change Order 001, CO-04; reconciliation-001, D19 and D20; the owner's rulings of
+ * 2026-10-18): what the file held, what the Medicare fee schedule prices (its figure labelled "before the reduction
+ * across codes", and, when a row's code is in that reduction, the total with those rows fully reduced across codes,
+ * labelled so; every figure before sequestration), the dollars that cannot be priced without a contract, and the rows
+ * a screening does not price or could not. Every figure is the database's own bigint sum of the engine's per-row
+ * results; nothing here adds, rounds or estimates. A screening never says
  * owed, underpaid or recovered: the prospect's figure is "allowed in your file", and what lies between is the
  * difference. Each figure renders in the mono face with tabular numerals.
  */
@@ -26,6 +35,12 @@ export interface ScreeningPricedTotals extends ScreeningGroupTotals {
   readonly expectedCents: Cents;
   /** Expected less allowed: above zero, the file's allowed total is below the Medicare figure. */
   readonly differenceCents: Cents;
+  /** Rows of a code in the reduction across codes. */
+  readonly pooledRows: number;
+  /** The lowest figures: those rows fully reduced, the others at their one figure. */
+  readonly reducedCents: Cents;
+  /** The lowest figures less allowed. */
+  readonly reducedDifferenceCents: Cents;
 }
 
 export interface ScreeningSummaryData extends ScreeningGroupTotals {
@@ -142,7 +157,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
             Original Medicare and Medicare Advantage rows without a contract: {counted(priced.rows, 'row')}, {counted(priced.claimLines, 'claim line')}. {MEDICARE_FIGURE_NOTE}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-3">
           <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Stat label={MEDICARE_FIGURE_LABEL} slot="priced-expected">
               <ScreeningMoney cents={priced.expectedCents} />
@@ -155,6 +170,22 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
               <span className="block text-xs font-normal text-muted-foreground">Allowed in your file is {differenceWords(priced.differenceCents)} in total.</span>
             </Stat>
           </dl>
+          {priced.pooledRows === 0 ? null : (
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-figures="fully-reduced">
+              <Stat label={REDUCED_FIGURE_LABEL} slot="priced-reduced">
+                <ScreeningMoney cents={priced.reducedCents} />
+                <span className="block text-xs font-normal text-muted-foreground">
+                  {counted(priced.pooledRows, 'row')} of a code in the reduction across codes fully reduced; the others at their one figure.
+                </span>
+              </Stat>
+              <Stat label="Allowed in your file" slot="priced-reduced-allowed">
+                <ScreeningMoney cents={priced.observedCents} />
+              </Stat>
+              <Stat label={REDUCED_DIFFERENCE_LABEL} slot="priced-reduced-difference">
+                <ScreeningMoney cents={priced.reducedDifferenceCents} />
+              </Stat>
+            </dl>
+          )}
         </CardContent>
       </Card>
       <Card data-section="contract-required">

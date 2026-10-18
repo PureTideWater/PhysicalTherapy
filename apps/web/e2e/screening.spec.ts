@@ -4,7 +4,7 @@ import { tagline } from '@paidwhole/brand/tokens';
 import { type Page, expect, test } from '@playwright/test';
 import { cents, formatUsd } from '@tp/money';
 
-import { MEDICARE_FIGURE_LABEL } from '../src/lib/screening/labels';
+import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import { CLEAN_ROWS, SCREENING_ZIP, dateOfServiceCsv, expireScreeningsOnce, memberIdCsv, outboxFor, priceScreeningsOnce, resultLinkIn, screeningCsv } from './screening';
@@ -16,9 +16,10 @@ import { CLEAN_ROWS, SCREENING_ZIP, dateOfServiceCsv, expireScreeningsOnce, memb
  * date-of-service column, are refused in the browser with the column named, and nothing is sent. A clean SYNTHETIC
  * file of totals, built in memory, is sent as its hash and rows; the worker's sweep prices it (an operator pool on the
  * e2e database) and emails the link to the local outbox. The link opens the result: the Medicare figures under D19's
- * label, the anomalies, the coverage and the dollars that cannot be priced without a contract, the database's own sums
- * to the cent, with no owed, underpaid or recovered and no tagline, accessible, and with no sideways scroll at 390 and
- * 1280 px. Converting it records an audit request and the screening_converted event; once the screening is past its 30
+ * label and the fully reduced ones under theirs (the owner's rulings of 2026-10-18), the anomalies with the database's
+ * standings (G01's 97110 within the range of the reduction across codes, 97140 an anomaly), the coverage and the
+ * dollars that cannot be priced without a contract, the database's own sums to the cent, with no owed, underpaid or
+ * recovered and no tagline, accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the screening_converted event; once the screening is past its 30
  * days the link opens nothing, the expiry job deletes it, and the conversion's event remains. Synthetic data only.
  */
 
@@ -172,6 +173,28 @@ test('a specialist approves the split; a file with patient information is refuse
     )).rows[0]?.n);
     await expect(page.getByRole('table', { name: 'Anomalies by code and payer product' }).locator('tbody tr')).toHaveCount(Number(groups));
     await expect(page.locator('[data-section="anomalies"] [data-slot="status-chip"]').first()).toBeVisible();
+    // The fully reduced total under its label: each priced row's lowest figure, summed by the database.
+    const lowest = await withDatabase(async (client) => (await client.query<{ lowest: string }>(
+      `SELECT sum(coalesce(s.reduced_cents, s.expected_cents))::text AS lowest
+         FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+        WHERE p.contact_email = $1 AND s.disposition = 'priced'`,
+      [CONTACT],
+    )).rows[0]?.lowest);
+    await expect(page.locator('[data-figure="priced-reduced"] dt')).toHaveText(REDUCED_FIGURE_LABEL);
+    await expect(page.locator('[data-figure="priced-reduced"] dd')).toContainText(usd(lowest));
+    // Each group's status is the database's standing; G01's 97110 lies between its two figures, and 97140 is more than
+    // $5 a claim line below its fully reduced figure.
+    const token = link.slice(link.lastIndexOf('/') + 1);
+    const standings = await withDatabase(async (client) => (await client.query<{ grp: string; standing: string }>(
+      "SELECT procedure_code || ':' || payer_product AS grp, standing FROM screening_result_groups($1)",
+      [createHash('sha256').update(token).digest('hex')],
+    )).rows);
+    expect(standings).toEqual(expect.arrayContaining([{ grp: '97110:ma_noncontracted', standing: 'within_reduction_range' }, { grp: '97140:ma_noncontracted', standing: 'anomaly' }]));
+    for (const { grp, standing } of standings) {
+      await expect(page.locator(`[data-group="${grp}"] [data-slot="status-chip"]`)).toHaveAttribute('data-standing', standing);
+    }
+    await expect(page.locator('[data-group="97110:ma_noncontracted"] [data-slot="status-chip"]')).toHaveText(WITHIN_REDUCTION_RANGE);
+    await expect(page.locator('[data-group="97140:ma_noncontracted"] [data-slot="status-chip"]')).toHaveText('Anomaly: more than $5 a claim line below the fully reduced figure');
     const text = await page.locator('body').innerText();
     expect(text).not.toMatch(FORBIDDEN);
     expect(text).not.toContain(tagline);

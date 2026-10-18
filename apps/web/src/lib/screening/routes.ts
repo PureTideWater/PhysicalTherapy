@@ -27,6 +27,7 @@ import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS } from '../routes/onboarding';
 import { optionalText } from '../routes/schemas';
+import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
 
 /**
@@ -42,10 +43,13 @@ import { screeningRateAccount } from './rate';
  *   its messages name a column by position and kind, never a header's text or a cell's value. A clean one is stored
  *   and queued for pricing in one call (submit_screening()), and the browser says to check the email: the result's
  *   link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
- *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept.
+ *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept (the owner's ruling of 2026-10-18, until release
+ *   1's real locality map loads).
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
- *   engine's per-row results.
+ *   engine's per-row results, before sequestration; a code in the reduction across codes has two figures (before
+ *   the reduction, and fully reduced), and where each row and group stands is the database's (screening_standing()).
+ *   A result under a release since withdrawn keeps its notice and may still be converted.
  * - The conversion (/screening/results/[resultId], public action, the public form's rate limit): an audit request
  *   from the screening, an audit event that outlives the screening's expiry.
  * - The console's split (/console/screening): the contract specialist (rate_record.approve) approves the platform's
@@ -387,10 +391,16 @@ export interface ScreeningGroupTotals {
 }
 
 export interface ScreeningPricedTotals extends ScreeningGroupTotals {
-  /** The Medicare figure, before the reduction across codes. */
+  /** The Medicare figure, before the reduction across codes (and before sequestration, as every figure). */
   readonly expectedCents: Cents;
   /** Expected less allowed. */
   readonly differenceCents: Cents;
+  /** Rows of a code in the reduction across codes, each with a fully reduced figure. */
+  readonly pooledRows: number;
+  /** The lowest figures: the fully reduced figure for those rows, the one figure for the others. */
+  readonly reducedCents: Cents;
+  /** The lowest figures less allowed. */
+  readonly reducedDifferenceCents: Cents;
 }
 
 export interface ScreeningSummary extends ScreeningGroupTotals {
@@ -420,12 +430,18 @@ export interface ScreeningResultGroup {
   readonly expectedCents: Cents;
   readonly observedCents: Cents;
   readonly differenceCents: Cents;
-  /** Below the Medicare figure by at least $5 a claim line, and no row of it in the reduction across a visit's codes. */
-  readonly anomaly: boolean;
+  /** With a row of a code in the reduction across codes: the rows' lowest figures summed (the fully reduced one for such a row); null otherwise. */
+  readonly reducedCents: Cents | null;
+  /** That less allowed; null with it. */
+  readonly reducedDifferenceCents: Cents | null;
   /** A row of it is in the reduction across a visit's codes, which a row priced alone is before. */
   readonly inReductionPool: boolean;
-  /** Below by at least $5 a claim line, but before the reduction across codes: not called an anomaly. */
-  readonly belowBeforeReduction: boolean;
+  /** How many of its rows are anomalies: more than $5 a claim line below their lowest figure. */
+  readonly anomalyRows: number;
+  /** At least one of its rows is an anomaly (the database's flag). */
+  readonly anomaly: boolean;
+  /** Where it stands (screening_standing(), the database's). */
+  readonly standing: ScreeningStanding;
 }
 
 export interface ScreeningResultCoverage {
@@ -451,6 +467,12 @@ export interface ScreeningResultRow {
   readonly expectedLineCents: Cents;
   readonly expectedCents: Cents;
   readonly differenceCents: Cents;
+  readonly inReductionPool: boolean;
+  /** For a code in the reduction across codes: the fully reduced figure for one line, the row's, and its difference; null otherwise. */
+  readonly reducedLineCents: Cents | null;
+  readonly reducedCents: Cents | null;
+  readonly reducedDifferenceCents: Cents | null;
+  readonly standing: ScreeningStanding;
 }
 
 export interface ScreeningResultData {
@@ -462,7 +484,7 @@ export interface ScreeningResultData {
   readonly summary: ScreeningSummary;
   readonly groups: readonly ScreeningResultGroup[];
   readonly coverage: readonly ScreeningResultCoverage[];
-  /** At most 25 rows, the largest difference first. */
+  /** At most 25 rows, the largest difference from their lowest figure first. */
   readonly rows: readonly ScreeningResultRow[];
   readonly arrangements: readonly { readonly value: string; readonly label: string }[];
 }
@@ -470,8 +492,16 @@ export interface ScreeningResultData {
 /** How many rows the result shows. */
 export const SCREENING_TOP_ROWS = 25;
 
+function standingOf(text: string): ScreeningStanding {
+  if (!(SCREENING_STANDINGS as readonly string[]).includes(text)) {
+    throw new Error('the database gave a screening standing this page does not know');
+  }
+  return text as ScreeningStanding;
+}
+
 const resultId = z.string().regex(SCREENING_TOKEN);
 const money = (text: string | number | bigint): Cents => cents(BigInt(text));
+const moneyOrNull = (text: string | null): Cents | null => (text === null ? null : money(text));
 const count = (text: string | number): number => Number(text);
 
 type SummaryRow = Record<
@@ -486,6 +516,9 @@ type SummaryRow = Record<
   | 'expected_cents'
   | 'priced_observed_cents'
   | 'difference_cents'
+  | 'pooled_rows'
+  | 'reduced_cents'
+  | 'reduced_difference_cents'
   | 'contract_claim_lines'
   | 'contract_observed_cents'
   | 'not_screened_claim_lines'
@@ -524,11 +557,14 @@ export const screeningResult = publicRoute({
         rows: number;
         claim_lines: string;
         expected_cents: string;
+        reduced_cents: string | null;
         observed_cents: string;
         difference_cents: string;
-        anomaly: boolean;
+        reduced_difference_cents: string | null;
         in_reduction_pool: boolean;
-        below_before_reduction: boolean;
+        anomaly_rows: number;
+        anomaly: boolean;
+        standing: string;
       }>('SELECT * FROM screening_result_groups($1)', [hash]);
       const coverage = await client.query<{
         payer_product: string;
@@ -552,6 +588,11 @@ export const screeningResult = publicRoute({
         expected_line_cents: string;
         expected_cents: string;
         difference_cents: string;
+        in_reduction_pool: boolean;
+        reduced_line_cents: string | null;
+        reduced_cents: string | null;
+        reduced_difference_cents: string | null;
+        standing: string;
       }>('SELECT * FROM screening_result_rows($1, $2)', [hash, SCREENING_TOP_ROWS]);
       const totals = (rowsKey: keyof SummaryRow, claimsKey: keyof SummaryRow, observedKey: keyof SummaryRow): ScreeningGroupTotals => ({
         rows: count(summary[rowsKey] as number),
@@ -576,6 +617,9 @@ export const screeningResult = publicRoute({
             ...totals('priced_rows', 'priced_claim_lines', 'priced_observed_cents'),
             expectedCents: money(summary.expected_cents),
             differenceCents: money(summary.difference_cents),
+            pooledRows: count(summary.pooled_rows),
+            reducedCents: money(summary.reduced_cents),
+            reducedDifferenceCents: money(summary.reduced_difference_cents),
           },
           contractRequired: totals('contract_rows', 'contract_claim_lines', 'contract_observed_cents'),
           notScreened: totals('not_screened_rows', 'not_screened_claim_lines', 'not_screened_observed_cents'),
@@ -589,9 +633,12 @@ export const screeningResult = publicRoute({
           expectedCents: money(group.expected_cents),
           observedCents: money(group.observed_cents),
           differenceCents: money(group.difference_cents),
-          anomaly: group.anomaly,
+          reducedCents: moneyOrNull(group.reduced_cents),
+          reducedDifferenceCents: moneyOrNull(group.reduced_difference_cents),
           inReductionPool: group.in_reduction_pool,
-          belowBeforeReduction: group.below_before_reduction,
+          anomalyRows: group.anomaly_rows,
+          anomaly: group.anomaly,
+          standing: standingOf(group.standing),
         })),
         coverage: coverage.rows.map((item) => ({
           payerProduct: item.payer_product,
@@ -615,6 +662,11 @@ export const screeningResult = publicRoute({
           expectedLineCents: money(row.expected_line_cents),
           expectedCents: money(row.expected_cents),
           differenceCents: money(row.difference_cents),
+          inReductionPool: row.in_reduction_pool,
+          reducedLineCents: moneyOrNull(row.reduced_line_cents),
+          reducedCents: moneyOrNull(row.reduced_cents),
+          reducedDifferenceCents: moneyOrNull(row.reduced_difference_cents),
+          standing: standingOf(row.standing),
         })),
         arrangements: PROSPECT_BILLING_ARRANGEMENTS.map((value) => ({ value, label: BILLING_ARRANGEMENT_LABELS[value] })),
       };

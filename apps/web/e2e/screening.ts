@@ -30,12 +30,14 @@ export type ScreeningCsvRow = readonly [code: string, modifiers: string, units: 
  * A clean SYNTHETIC upload: Medicare-priced rows (Original Medicare and Medicare Advantage without a contract), one
  * place of service the approved split leaves out (so the engine leaves it unpriced), rows that cannot be priced
  * without a contract (Medicare Advantage under contract, commercial) and one row a screening does not price
- * (Medicaid).
+ * (Medicaid). G01's codes stand in for the owner's rulings of 2026-10-18: 97110 GP at $18.00 a line lies between its
+ * two figures (within the range of the reduction across codes), and 97140 GP at $12.00 a line is more than $5 a line
+ * below its fully reduced figure (an anomaly).
  */
 export const CLEAN_ROWS: readonly ScreeningCsvRow[] = [
-  ['97110', 'GP', '1', '11', 'ma_noncontracted', '2026-Q1', '600.00', '40'],
+  ['97110', 'GP', '1', '11', 'ma_noncontracted', '2026-Q1', '720.00', '40'],
   ['97110', 'GP', '1', '11', 'medicare_ffs', '2026-Q2', '900.00', '30'],
-  ['97140', 'GP', '1', '11', 'ma_noncontracted', '2026-Q2', '2,500.00', '50'],
+  ['97140', 'GP', '1', '11', 'ma_noncontracted', '2026-Q2', '600.00', '50'],
   ['97530', 'GP', '2', '11', 'medicare_ffs', '2026-Q1', '1200.50', '12'],
   ['97112', 'GP', '1', '99', 'medicare_ffs', '2026-Q1', '75.00', '2'],
   ['97110', 'GP', '1', '11', 'ma_contracted', '2026-Q1', '3,000.00', '60'],

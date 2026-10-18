@@ -3,16 +3,32 @@ import { type Cents, cents } from '@tp/money';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { BEFORE_REDUCTION, DIFFERENCE_LABEL, MEDICARE_FIGURE_LABEL, MEDICARE_FIGURE_NOTE, MEDICARE_LINE_LABEL } from '../../lib/screening/labels';
+import {
+  ANOMALY_RULE,
+  BEFORE_REDUCTION,
+  DIFFERENCE_LABEL,
+  FULLY_REDUCED,
+  MEDICARE_FIGURE_LABEL,
+  MEDICARE_FIGURE_NOTE,
+  MEDICARE_LINE_LABEL,
+  REDUCED_DIFFERENCE_LABEL,
+  REDUCED_FIGURE_LABEL,
+  REDUCED_LINE_LABEL,
+  WITHIN_REDUCTION_RANGE,
+} from '../../lib/screening/labels';
 import { type ScreeningGroup, type ScreeningRow, ScreeningAnomalies, ScreeningTopRows, anomaliesDescription } from './anomalies';
 import { type ScreeningCoverageRow, ScreeningCoverage } from './coverage';
 import { type ScreeningSummaryData, ScreeningHeading, ScreeningReleaseWithdrawn, ScreeningSummary, differenceWords } from './result-summary';
 
 /**
- * A screening's result as the page shows it (CO-04; decisions D19 and D20): the totals, the Medicare-priced figures
- * under D19's label, the anomalies by code and payer product, the coverage and the dollars that cannot be priced
- * without a contract, each figure in the mono face, and never owed, underpaid or recovered (SCR-05, the screens'
- * side). SYNTHETIC figures, written by hand.
+ * A screening's result as the page shows it (CO-04; decisions D19 and D20; the owner's rulings of 2026-10-18): the
+ * totals, the Medicare-priced figures under D19's label and, for a code in the reduction across codes, the fully
+ * reduced figure under its own; the anomalies by code and payer product with the database's standings (a pooled row
+ * between its two figures within the range of the reduction across codes, never an anomaly); the coverage and the
+ * dollars that cannot be priced without a contract, each figure in the mono face, and never owed, underpaid or
+ * recovered (SCR-05, the screens' side). SYNTHETIC figures, written by hand from G01's codes as SYNTHETIC release
+ * 900001 prices them before sequestration (97110 GP x2: $36.84 alone, $31.45 fully reduced; 97140 GP: $24.58 and
+ * $18.20; 97161 GP: $59.17, one figure).
  */
 
 const c = (value: bigint): Cents => cents(value);
@@ -29,7 +45,16 @@ const SUMMARY: ScreeningSummaryData = {
   rows: 6,
   claimLines: 140,
   observedCents: c(1_234_500n),
-  priced: { rows: 3, claimLines: 80, expectedCents: c(600_000n), observedCents: c(512_000n), differenceCents: c(88_000n) },
+  priced: {
+    rows: 3,
+    claimLines: 80,
+    expectedCents: c(600_000n),
+    observedCents: c(512_000n),
+    differenceCents: c(88_000n),
+    pooledRows: 2,
+    reducedCents: c(520_000n),
+    reducedDifferenceCents: c(8_000n),
+  },
   contractRequired: { rows: 2, claimLines: 50, observedCents: c(654_321n) },
   notScreened: { rows: 1, claimLines: 10, observedCents: c(68_179n) },
   couldNotPrice: { rows: 0, claimLines: 0, observedCents: c(0n) },
@@ -42,32 +67,75 @@ const GROUPS: ScreeningGroup[] = [
     rows: 2,
     claimLines: 60,
     expectedCents: c(450_000n),
+    reducedCents: null,
     observedCents: c(360_000n),
     differenceCents: c(90_000n),
+    reducedDifferenceCents: null,
+    inReductionPool: false,
+    anomalyRows: 2,
     anomaly: true,
-    belowBeforeReduction: false,
-  },
-  {
-    payerProduct: 'medicare_ffs',
-    procedureCode: '97110',
-    rows: 1,
-    claimLines: 10,
-    expectedCents: c(35_740n),
-    observedCents: c(30_500n),
-    differenceCents: c(5_240n),
-    anomaly: false,
-    belowBeforeReduction: true,
+    standing: 'anomaly',
   },
   {
     payerProduct: 'medicare_ffs',
     procedureCode: '97140',
     rows: 1,
     claimLines: 20,
-    expectedCents: c(150_000n),
-    observedCents: c(152_000n),
-    differenceCents: c(-2_000n),
+    expectedCents: c(49_160n),
+    reducedCents: c(36_400n),
+    observedCents: c(26_000n),
+    differenceCents: c(23_160n),
+    reducedDifferenceCents: c(10_400n),
+    inReductionPool: true,
+    anomalyRows: 1,
+    anomaly: true,
+    standing: 'anomaly',
+  },
+  {
+    // $34.00 a line, between $36.84 and $31.45: within the range of the reduction across codes, $2.84 a line below the figure before it.
+    payerProduct: 'medicare_ffs',
+    procedureCode: '97110',
+    rows: 1,
+    claimLines: 10,
+    expectedCents: c(36_840n),
+    reducedCents: c(31_450n),
+    observedCents: c(34_000n),
+    differenceCents: c(2_840n),
+    reducedDifferenceCents: c(-2_550n),
+    inReductionPool: true,
+    anomalyRows: 0,
     anomaly: false,
-    belowBeforeReduction: false,
+    standing: 'within_reduction_range',
+  },
+  {
+    payerProduct: 'medicare_ffs',
+    procedureCode: '97035',
+    rows: 1,
+    claimLines: 10,
+    expectedCents: c(10_000n),
+    reducedCents: null,
+    observedCents: c(9_800n),
+    differenceCents: c(200n),
+    reducedDifferenceCents: null,
+    inReductionPool: false,
+    anomalyRows: 0,
+    anomaly: false,
+    standing: 'below_by_threshold_or_less',
+  },
+  {
+    payerProduct: 'medicare_ffs',
+    procedureCode: '97530',
+    rows: 1,
+    claimLines: 20,
+    expectedCents: c(54_000n),
+    reducedCents: c(39_560n),
+    observedCents: c(56_000n),
+    differenceCents: c(-2_000n),
+    reducedDifferenceCents: c(-16_440n),
+    inReductionPool: true,
+    anomalyRows: 0,
+    anomaly: false,
+    standing: 'at_or_above',
   },
 ];
 
@@ -81,10 +149,34 @@ const ROWS: ScreeningRow[] = [
     payerProduct: 'ma_noncontracted',
     serviceBand: '2026-Q1',
     claimCount: 40,
-    expectedLineCents: c(7_500n),
-    expectedCents: c(300_000n),
-    observedCents: c(240_000n),
-    differenceCents: c(60_000n),
+    expectedLineCents: c(3_684n),
+    expectedCents: c(147_360n),
+    observedCents: c(136_000n),
+    differenceCents: c(11_360n),
+    inReductionPool: true,
+    reducedLineCents: c(3_145n),
+    reducedCents: c(125_800n),
+    reducedDifferenceCents: c(-10_200n),
+    standing: 'within_reduction_range',
+  },
+  {
+    rowNo: 7,
+    procedureCode: '97161',
+    modifiers: ['GP'],
+    units: 1,
+    placeOfService: '11',
+    payerProduct: 'medicare_ffs',
+    serviceBand: '2026-Q1',
+    claimCount: 3,
+    expectedLineCents: c(5_917n),
+    expectedCents: c(17_751n),
+    observedCents: c(16_000n),
+    differenceCents: c(1_751n),
+    inReductionPool: false,
+    reducedLineCents: null,
+    reducedCents: null,
+    reducedDifferenceCents: null,
+    standing: 'anomaly',
   },
 ];
 
@@ -122,10 +214,11 @@ describe('the screening summary', () => {
       expect(html.match(new RegExp(`data-figure="${slot}"[^>]*><dt[^>]*>([^<]*)</dt>`))?.[1], slot).toContain(BEFORE_REDUCTION);
     }
     expect(html).toMatch(/data-figure="priced-difference"><dt[^>]*>Difference, before the reduction across codes</);
-    // The note says what the figure is before and after: the reduction across codes, and sequestration of the whole amount.
-    expect(text(html)).toContain('can be higher than a visit with several codes would price at');
-    expect(text(html)).not.toContain('is higher than a whole visit would be');
-    expect(MEDICARE_FIGURE_NOTE).toMatch(/after Medicare’s sequestration, taken from the whole amount/);
+    // The note says what the figures are: two for a code in the reduction across codes, and every one before sequestration.
+    expect(MEDICARE_FIGURE_NOTE).toMatch(/before Medicare’s sequestration, because the allowed amount in a payer’s remittance is normally reported before it/);
+    expect(MEDICARE_FIGURE_NOTE).not.toMatch(/after Medicare’s sequestration/);
+    expect(MEDICARE_FIGURE_NOTE).toContain('within the range of the reduction across codes, never an anomaly');
+    expect(text(html)).toContain(MEDICARE_FIGURE_NOTE);
     expect(html).toContain('$12,345.00');
     expect(html).toMatch(/data-figure="priced-expected"[\s\S]*?\$6,000\.00/);
     expect(html).toMatch(/data-figure="priced-allowed"[\s\S]*?\$5,120\.00/);
@@ -134,6 +227,15 @@ describe('the screening summary', () => {
     expect(html).toMatch(/data-section="not-screened"[\s\S]*?\$681\.79/);
     expect(text(html)).toContain('below the Medicare figure in total');
     expect(text(html)).toContain('A screening is investigatory');
+  });
+
+  it('shows the total with the codes in the reduction across codes fully reduced beside it, labelled, when there are any', () => {
+    expect(html).toMatch(new RegExp(`data-figure="priced-reduced"><dt[^>]*>${REDUCED_FIGURE_LABEL}</dt><dd[^>]*><span[^>]*>\\$5,200\\.00</span>`));
+    expect(html).toMatch(new RegExp(`data-figure="priced-reduced-difference"><dt[^>]*>${REDUCED_DIFFERENCE_LABEL}</dt><dd[^>]*><span[^>]*>\\$80\\.00</span>`));
+    expect(text(html)).toContain('2 rows of a code in the reduction across codes fully reduced; the others at their one figure.');
+    const none = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, priced: { ...SUMMARY.priced, pooledRows: 0, reducedCents: c(600_000n), reducedDifferenceCents: c(88_000n) } }} />);
+    expect(none).not.toContain('data-figures="fully-reduced"');
+    expect(none).not.toContain(REDUCED_FIGURE_LABEL);
   });
 
   it('names the release, the engine and when the link stops opening it', () => {
@@ -167,47 +269,76 @@ describe('the screening summary', () => {
 describe('the anomalies by code and payer product', () => {
   const html = renderToStaticMarkup(<ScreeningAnomalies groups={GROUPS} />);
 
-  it('lists each group with expected, allowed and the difference in that order, and its status in words', () => {
+  it('lists each group with both figures, allowed and both differences in that order, and its status in words', () => {
     const headers = [...html.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((match) => match[1]);
-    expect(headers).toEqual(['Code', 'Payer product', 'Rows', 'Claim lines', MEDICARE_FIGURE_LABEL, 'Allowed in your file', DIFFERENCE_LABEL, 'Status']);
-    expect(html).toMatch(/data-group="97161:ma_noncontracted"[\s\S]*?\$4,500\.00[\s\S]*?\$3,600\.00[\s\S]*?\$900\.00[\s\S]*?data-tone="short"[^>]*>Anomaly: below the Medicare figure/);
-    expect(html).toMatch(/data-group="97140:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is above the Medicare figure/);
-    expect(text(html)).toContain('1 group of 3 is an anomaly');
+    expect(headers).toEqual(['Code', 'Payer product', 'Rows', 'Claim lines', MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, 'Allowed in your file', DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL, 'Status']);
+    expect(html).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$368\.40[\s\S]*?\$314\.50[\s\S]*?\$340\.00[\s\S]*?\$28\.40[\s\S]*?-\$25\.50/);
+    expect(html).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is above the Medicare figure/);
+    expect(text(html)).toContain('2 groups of 5 are anomalies.');
     expect(text(html)).toContain('Medicare Advantage, no contract');
   });
 
-  it('never calls a code in the reduction across codes an anomaly on its figure priced alone, and says why', () => {
-    // 97110 is $5.24 a claim line below: over the $5 threshold, but before the reduction across codes.
-    expect(html).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$52\.40[\s\S]*?data-tone="neutral"[^>]*data-before-reduction="true"[^>]*>Below the Medicare figure before the reduction across codes/);
-    expect(html.match(/data-anomaly="true"/g)).toHaveLength(1);
+  it('calls a pooled code between its two figures within the range of the reduction across codes, never an anomaly', () => {
+    // 97110 is $2.84 a line below its figure before the reduction and above its fully reduced figure.
+    expect(html).toMatch(new RegExp(`data-group="97110:medicare_ffs"[\\s\\S]*?data-tone="neutral"[^>]*data-anomaly="false" data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
+    expect(html.match(/data-anomaly="true"/g)).toHaveLength(2);
     expect(anomaliesDescription(GROUPS)).toBe(
-      '1 group of 3 is an anomaly: the allowed total in your file is below the Medicare figure by at least $5 a claim line, for a code the reduction across codes does not touch. 1 more group is below by at least $5 a claim line before the reduction across codes: Medicare reduces its code when a visit has several, which rows of totals cannot show, so that difference alone is not an anomaly. Largest difference first.',
+      `2 groups of 5 are anomalies. ${ANOMALY_RULE} 1 more group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
     );
-    expect(anomaliesDescription(GROUPS.filter((group) => !group.belowBeforeReduction))).toBe(
-      '1 group of 2 is an anomaly: the allowed total in your file is below the Medicare figure by at least $5 a claim line, for a code the reduction across codes does not touch. Largest difference first.',
+    expect(anomaliesDescription(GROUPS.filter((group) => !group.anomaly))).toBe(
+      `No group of 3 is an anomaly. ${ANOMALY_RULE} 1 group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
     );
+    expect(anomaliesDescription([])).toBe('No row was priced under Medicare, so there is nothing to compare.');
   });
 
-  it('puts every figure built from the Medicare figure under a header that says it is before the reduction across codes', () => {
-    // Each money figure is found in the table, and the header of its column named: the Medicare figure, the line's,
-    // and the difference all carry the qualifier; only the file's own allowed amount does not.
-    const check = (markup: string, figures: Readonly<Record<string, boolean>>) => {
+  it('calls a pooled code more than $5 a claim line below its fully reduced figure an anomaly, and says how many rows of a group are', () => {
+    // 97140 is $5.20 a line below its fully reduced figure.
+    expect(html).toMatch(/data-group="97140:medicare_ffs"[\s\S]*?\$364\.00[\s\S]*?\$104\.00[\s\S]*?data-tone="short"[^>]*data-anomaly="true" data-standing="anomaly">Anomaly: more than \$5 a claim line below the fully reduced figure</);
+    expect(html).toMatch(/data-group="97161:ma_noncontracted"[\s\S]*?data-tone="short"[^>]*data-anomaly="true" data-standing="anomaly">Anomaly: 2 of 2 rows more than \$5 a claim line below their lowest figure</);
+    expect(html).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="below_by_threshold_or_less">Below by \$5 a claim line or less</);
+  });
+
+  it('keeps one figure for a code outside the reduction across codes, and says so where the second would be', () => {
+    const outside = /data-group="97161:ma_noncontracted"([\s\S]*?)<\/tr>/.exec(html)?.[1] ?? '';
+    expect(outside.match(/data-figure="one-figure"/g)).toHaveLength(2);
+    expect(text(outside)).toContain('One figure: the code is outside the reduction across codes');
+    const pooled = /data-group="97110:medicare_ffs"([\s\S]*?)<\/tr>/.exec(html)?.[1] ?? '';
+    expect(pooled).not.toContain('data-figure="one-figure"');
+  });
+
+  it('puts every Medicare figure under a header that says which it is: before the reduction across codes, or fully reduced', () => {
+    // Each money figure is found in its table row, and the header of its column named: the figures before the
+    // reduction, the line's and the difference say so; the fully reduced ones say that; only the file's own allowed
+    // amount says neither.
+    const check = (markup: string, row: string, figures: Readonly<Record<string, 'before' | 'fully' | null>>) => {
       const headers = [...markup.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((match) => match[1] ?? '');
-      const firstRow = /<tbody>\s*<tr[^>]*>([\s\S]*?)<\/tr>/.exec(markup)?.[1] ?? '';
-      const cells = [...firstRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => text(match[1] ?? ''));
+      const cellsOf = new RegExp(`<tr[^>]*${row}[^>]*>([\\s\\S]*?)</tr>`).exec(markup)?.[1] ?? '';
+      const cells = [...cellsOf.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => text(match[1] ?? ''));
       for (const [figure, qualified] of Object.entries(figures)) {
         const column = cells.findIndex((cell) => cell.trim() === figure);
         expect(column, figure).toBeGreaterThan(-1);
-        expect(headers[column]?.includes(BEFORE_REDUCTION), `${figure} under "${headers[column] ?? ''}"`).toBe(qualified);
+        const header = headers[column] ?? '';
+        expect(header.includes(BEFORE_REDUCTION) ? 'before' : header.includes(FULLY_REDUCED) ? 'fully' : null, `${figure} under "${header}"`).toBe(qualified);
       }
     };
-    check(html, { '$4,500.00': true, '$3,600.00': false, '$900.00': true });
-    check(renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />), { '$75.00': true, '$3,000.00': true, '$2,400.00': false, '$600.00': true });
+    check(html, 'data-group="97110:medicare_ffs"', { '$368.40': 'before', '$314.50': 'fully', '$340.00': null, '$28.40': 'before', '-$25.50': 'fully' });
+    check(renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />), 'data-row-no="4"', {
+      '$36.84': 'before',
+      '$1,473.60': 'before',
+      '$31.45': 'fully',
+      '$1,258.00': 'fully',
+      '$1,360.00': null,
+      '$113.60': 'before',
+      '-$102.00': 'fully',
+    });
   });
 
   it('gives every header but the last the padding its cells have', () => {
     const classes = [...html.matchAll(/<th class="([^"]*)"/g)].map((match) => match[1] ?? '');
     expect(classes.slice(0, -1).filter((names) => !/\bpr-3\b/.test(names))).toEqual([]);
+    const rows = renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />);
+    const rowClasses = [...rows.matchAll(/<th class="([^"]*)"/g)].map((match) => match[1] ?? '');
+    expect(rowClasses.slice(0, -1).filter((names) => !/\bpr-3\b/.test(names))).toEqual([]);
   });
 
   it('is an empty state when nothing was priced', () => {
@@ -216,11 +347,15 @@ describe('the anomalies by code and payer product', () => {
     expect(empty).toContain('data-slot="empty-state"');
   });
 
-  it('lists the top rows with their one-line figure and the row’s, under D19’s label', () => {
+  it('lists the top rows with their one-line figures and the row’s, both labelled, and each row’s standing', () => {
     const rows = renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />);
-    expect(text(rows)).toContain(MEDICARE_FIGURE_LABEL);
-    expect(text(rows)).toContain(MEDICARE_LINE_LABEL);
-    expect(rows).toMatch(/data-row-no="4"[\s\S]*?97110[\s\S]*?GP[\s\S]*?2026-Q1[\s\S]*?\$75\.00[\s\S]*?\$3,000\.00[\s\S]*?\$2,400\.00[\s\S]*?\$600\.00/);
+    for (const label of [MEDICARE_FIGURE_LABEL, MEDICARE_LINE_LABEL, REDUCED_FIGURE_LABEL, REDUCED_LINE_LABEL, DIFFERENCE_LABEL, REDUCED_DIFFERENCE_LABEL]) {
+      expect(text(rows), label).toContain(label);
+    }
+    expect(rows).toMatch(/data-row-no="4"[\s\S]*?97110[\s\S]*?GP[\s\S]*?2026-Q1[\s\S]*?\$36\.84[\s\S]*?\$1,473\.60[\s\S]*?\$31\.45[\s\S]*?\$1,258\.00[\s\S]*?\$1,360\.00[\s\S]*?\$113\.60[\s\S]*?-\$102\.00/);
+    expect(rows).toMatch(new RegExp(`data-row-no="4"[\\s\\S]*?data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
+    expect(rows).toMatch(/data-row-no="7"[\s\S]*?\$59\.17[\s\S]*?data-figure="one-figure"[\s\S]*?data-standing="anomaly">Anomaly: more than \$5 a claim line below the Medicare figure</);
+    expect(text(rows)).toContain(ANOMALY_RULE);
     const many = renderToStaticMarkup(<ScreeningTopRows rows={Array.from({ length: 30 }, (_, index) => ({ ...ROWS[0] as ScreeningRow, rowNo: index + 1 }))} />);
     expect(many.match(/data-row-no=/g)).toHaveLength(25);
     expect(renderToStaticMarkup(<ScreeningTopRows rows={[]} />)).not.toContain('<table');

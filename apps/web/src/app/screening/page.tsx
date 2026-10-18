@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { PublicHeader } from '../../components/public-header';
 import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
-import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, productLabel } from '../../lib/screening/labels';
+import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
 import { screeningPage } from '../../lib/screening/routes';
 import { TEMPLATE_COLUMNS } from '../../lib/screening/template';
 import { submitScreeningAction } from './actions';
@@ -90,7 +90,10 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
         <Card>
           <CardHeader>
             <CardTitle>What each payer product gets</CardTitle>
-            <CardDescription>The Medicare figure is labelled “{MEDICARE_FIGURE_LABEL}”: each row is priced on its own, so the reduction across the codes of one visit is not applied.</CardDescription>
+            <CardDescription>
+              Each row is priced on its own, labelled “{MEDICARE_FIGURE_LABEL}”. A code Medicare reduces when it follows another in a visit is priced again as a later code of a visit, labelled “{REDUCED_FIGURE_LABEL}”, and a row
+              between the two is not an anomaly. Every figure is before sequestration, as payers report allowed amounts.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="flex flex-col gap-2 text-sm">
