@@ -1,0 +1,4 @@
+SYNTHETIC conversion factors for tests, 2025 - invented values - not CMS data (preparation 2 of 2)
+applicability,conversion_factor,effective_from,effective_to,citation,quote
+non_qualifying_apm,19.6123,2025-01-01,2025-12-31,SYNTHETIC final rule page 2,"SYNTHETIC: the 2025 conversion factor for clinicians who are not qualifying APM participants is $19.6123."
+qualifying_apm,19.7123,2025-01-01,2025-12-31,SYNTHETIC final rule page 2,"SYNTHETIC: the 2025 conversion factor for qualifying APM participants is $19.7123."

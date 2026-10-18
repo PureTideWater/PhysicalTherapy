@@ -1,0 +1,274 @@
+{
+  "case": "PRC-05",
+  "module": "PRC",
+  "title": "Fixed schedule, two units",
+  "assertion": "Amount times units",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": [
+    "tools/golden-worksheet/worksheet.golden.test.ts",
+    "tools/golden-worksheet/engine.golden.test.ts",
+    "packages/pricing/src/engine.test.ts"
+  ],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "remit.835",
+      "sha256": "a26a86cdfea23a72c92b35741aee8bb6e0b5ec9dfb10f72aad2b11644fba98a9",
+      "bytes": 902,
+      "kind": "x12",
+      "description": "Two units under a fixed schedule.",
+      "x12": {
+        "oracle": {
+          "valid": true,
+          "rejections": [],
+          "summary": {
+            "format": "tp-oracle-835/1",
+            "bom": false,
+            "interchanges": [
+              {
+                "isa06": "SYNTHSENDER",
+                "isa08": "SYNTHRECEIVER",
+                "isa09": "260506",
+                "isa12": "00501",
+                "isa13": "040050001",
+                "isa15": "T",
+                "delimiters": {"element":"*","component":":","repetition":"^","segment":"~"},
+                "iea01": "1",
+                "iea02": "040050001",
+                "groups": [
+                  {
+                    "gs01": "HP",
+                    "gs02": "SYNTH",
+                    "gs03": "SYNTHRCV",
+                    "gs04": "2026-05-06",
+                    "gs06": "40050001",
+                    "gs08": "005010X221A1",
+                    "ge01": "1",
+                    "ge02": "40050001",
+                    "transactions": [
+                      {
+                        "st01": "835",
+                        "st02": "0001",
+                        "se01": "23",
+                        "se02": "0001",
+                        "segmentCount": 23,
+                        "bpr": {
+                          "handling": "C",
+                          "amountCents": "10080",
+                          "creditDebit": "C",
+                          "method": "ACH",
+                          "format": "CCP",
+                          "date": "2026-05-06"
+                        },
+                        "trn": {"trace":"SYNEFTPRC05001","originator":"1SYN00000P","supplemental":null},
+                        "currency": null,
+                        "refs": [],
+                        "productionDate": "2026-05-05",
+                        "payer": {
+                          "name": "SYNTHETIC PAYER P",
+                          "idQualifier": null,
+                          "id": null,
+                          "refs": [["2U","SYNPAYERP"]]
+                        },
+                        "payee": {
+                          "name": "SYNTHETIC THERAPY GROUP 01",
+                          "idQualifier": "XX",
+                          "id": "9974219690",
+                          "refs": [["TJ","990837622"]]
+                        },
+                        "claims": [
+                          {
+                            "lx": "1",
+                            "clp01": "SYNPCNPRC05001",
+                            "clp02": "1",
+                            "chargeCents": "16800",
+                            "paidCents": "10080",
+                            "patientResponsibilityCents": "2520",
+                            "clp06": "12",
+                            "clp07": "SYNCCNPRC050001",
+                            "clp08": "11",
+                            "clp09": "1",
+                            "cas": {},
+                            "refs": [["CE","SYNPLAN-COMM-FIX"]],
+                            "dates": [],
+                            "amounts": [],
+                            "lines": [
+                              {
+                                "procedure": "HC:97110",
+                                "chargeCents": "16800",
+                                "paidCents": "10080",
+                                "revenueCode": null,
+                                "units": "2",
+                                "originalProcedure": null,
+                                "originalUnits": null,
+                                "dates": [
+                                  {
+                                    "qualifier": "472",
+                                    "date": "2026-04-10",
+                                    "format": null,
+                                    "period": null
+                                  }
+                                ],
+                                "cas": {"CO-45":"4200","PR-2":"2520"},
+                                "refs": [],
+                                "amounts": [],
+                                "remarks": [],
+                                "differenceCents": "0"
+                              }
+                            ],
+                            "balance": {
+                              "claimDifferenceCents": "0",
+                              "lineChargeDifferenceCents": "0",
+                              "balanced": true
+                            }
+                          }
+                        ],
+                        "plb": [],
+                        "balance": {
+                          "claimsPaidCents": "10080",
+                          "plbTotalCents": "0",
+                          "paymentCents": "10080",
+                          "differenceCents": "0",
+                          "balanced": true,
+                          "claimsBalanced": true
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "parse": {
+          "outcome": "loaded",
+          "documentErrors": [],
+          "transactions": [
+            {
+              "interchange": 0,
+              "group": 0,
+              "transaction": 0,
+              "isa13": "040050001",
+              "gs06": "40050001",
+              "st02": "0001",
+              "status": "loaded",
+              "heldReasons": [],
+              "dedupKey": {
+                "senderId": "SYNTHSENDER",
+                "payeeId": "9974219690",
+                "isa13": "040050001",
+                "trn02": "SYNEFTPRC05001",
+                "bpr02Cents": "10080"
+              },
+              "bprMethod": "ACH",
+              "bprHandling": "C",
+              "bpr16Date": "2026-05-06",
+              "payerName": "SYNTHETIC PAYER P",
+              "payerIds": [["2U","SYNPAYERP"],["TRN03","1SYN00000P"]],
+              "balance": {
+                "claimsPaidCents": "10080",
+                "plbTotalCents": "0",
+                "paymentCents": "10080",
+                "differenceCents": "0",
+                "balanced": true
+              },
+              "counts": {"claims":1,"lines":1,"reversals":0,"plbItems":0},
+              "claims": [
+                {
+                  "index": 0,
+                  "segmentIndex": 17,
+                  "patientControlNumber": "SYNPCNPRC05001",
+                  "payerClaimControlNumber": "SYNCCNPRC050001",
+                  "status": "1",
+                  "chargeCents": "16800",
+                  "paidCents": "10080",
+                  "patientResponsibilityCents": "2520",
+                  "filingIndicator": "12",
+                  "facilityCode": "11",
+                  "frequencyCode": "1",
+                  "planRef": "SYNPLAN-COMM-FIX",
+                  "serviceFrom": "2026-04-10",
+                  "serviceTo": "2026-04-10",
+                  "allowedCents": null,
+                  "adjustments": [],
+                  "lines": [
+                    {
+                      "lineNo": 1,
+                      "segmentIndex": 21,
+                      "procedureQualifier": "HC",
+                      "procedureCode": "97110",
+                      "modifiers": [],
+                      "revenueCode": null,
+                      "chargeCents": "16800",
+                      "paidCents": "10080",
+                      "units": "2",
+                      "originalUnits": null,
+                      "serviceFrom": "2026-04-10",
+                      "serviceTo": "2026-04-10",
+                      "lineAllowedCents": null,
+                      "observedAllowed": {"cents":"12600","basis":"paid_plus_pr","allocatedFromClaim":false},
+                      "patientShareCents": "2520",
+                      "adjustments": [
+                        {
+                          "group": "CO",
+                          "reason": "45",
+                          "amountCents": "4200",
+                          "quantity": null,
+                          "position": 1,
+                          "segmentIndex": 23
+                        },
+                        {
+                          "group": "PR",
+                          "reason": "2",
+                          "amountCents": "2520",
+                          "quantity": null,
+                          "position": 2,
+                          "segmentIndex": 24
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "plb": [],
+              "unknownCodes": []
+            }
+          ],
+          "receipt": {
+            "transactions": 1,
+            "claims": 1,
+            "lines": 1,
+            "reversals": 0,
+            "plbTotalCents": "0",
+            "held": [],
+            "unknownCodes": [],
+            "loaded": {"transactions":1,"claims":1,"lines":1}
+          }
+        }
+      }
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": {
+    "release": 900001,
+    "placeOfService": "11",
+    "locality": "01",
+    "mapping": "contract",
+    "method": "FIXED_SCHEDULE",
+    "schedule": [{"code":"97110","amountCents":"4250"}],
+    "flags": {
+      "apply_mppr": false,
+      "apply_assistant_reduction": false,
+      "apply_sequestration": false,
+      "apply_ncci": false
+    }
+  },
+  "outcome": {
+    "expectedAllowed": "the golden lines in fixtures/golden (the pricing oracle) state the cents",
+    "expectedAllowedCents": "8500"
+  },
+  "notes": []
+}

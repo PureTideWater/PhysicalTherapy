@@ -1,0 +1,49 @@
+{
+  "case": "CON-05",
+  "module": "CON",
+  "title": "Model proposal with a quote not in the page",
+  "assertion": "Verifier fails; specialist sees it",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/contracts/src/evidence/evidence.test.ts",
+    "packages/contracts/src/contracts.db.test.ts",
+    "apps/web/src/lib/routes/contracts-routes.db.test.ts",
+    "apps/web/e2e/contracts.spec.ts"
+  ],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "agreement.txt",
+      "sha256": "12b1383c1ad5a49fb2398022acf7d17c51780242d7c5f36ae745d43f28b4df12",
+      "bytes": 917,
+      "kind": "text",
+      "description": "A fee-schedule agreement the model reads (text; pages separated by form feeds)."
+    },
+    {
+      "path": "agreement.pdf",
+      "sha256": "df9ad071327b8d224198f80b88108a285a54c5da5db449da0a08583fa31bb2b3",
+      "bytes": 2484,
+      "kind": "pdf",
+      "description": "A fee-schedule agreement the model reads (PDF, the same pages)."
+    },
+    {
+      "path": "proposal.json",
+      "sha256": "e6d8f326a6ee2f8c5c9805abc408f9b6a3ab577bb96ff0bdcaee29a37566d8e7",
+      "bytes": 457,
+      "kind": "json",
+      "description": "A recorded SYNTHETIC model proposal: the 97530 quote does not appear on page 3."
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": {
+    "verifier": {"fails":[{"field":"rate.97530","page":3}],"passes":["effective_from","rate.97110"]},
+    "specialist": "sees the failed field"
+  },
+  "notes": [
+    "Page 3 reads: \"Exhibit A. Fee schedule\\nCode  Amount\\n97110  $44.00 per unit\\n97530  $47.25 per unit\"."
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "format": "raintree_posting_v0",
+  "vendor": "Raintree",
+  "kind": "posting_export",
+  "version": 0,
+  "status": "FORMAT_UNCONFIRMED",
+  "confirmation": null,
+  "synthetic": true,
+  "note": "FORMAT_UNCONFIRMED: no format description of the Raintree payment-posting export has been received. These columns are a placeholder in Raintree's plausible vocabulary, not taken from any file, screen or document of Raintree. The design-partner firm supplies the real format as a description and redacted headers only, never a file.",
+  "layout": {
+    "dateFormat": "YYYY-MM-DD",
+    "money": "plain_decimal",
+    "lineEnding": "LF",
+    "bom": false,
+    "listSeparator": ",",
+    "markerColumn": "Pay-To Provider ID",
+    "marker": "SYNTHSENDER"
+  },
+  "columns": [
+    {"header":"Transaction Date","field":"posted_on","type":"date"},
+    {"header":"Pay-To Provider ID","field":"payee_id","type":"identifier"},
+    {"header":"Payer Name","field":"payer","type":"text"},
+    {"header":"Check Number","field":"check_or_trace","type":"identifier"},
+    {"header":"Payment","field":"amount","type":"money"},
+    {"header":"Account Claim No","field":"claim_reference","type":"identifier"},
+    {"header":"Service Code","field":"procedure_code","type":"code"},
+    {"header":"From Date","field":"service_date","type":"date"},
+    {"header":"Batch ID","field":"batch","type":"identifier"}
+  ],
+  "sources": [
+    {"case":"LED-04","file":"posting-export.csv","rows":1},
+    {"case":"LED-08","file":"posting-export-again.csv","rows":2},
+    {"case":"LED-09","file":"lines-posting-export.csv","rows":1},
+    {"case":"LED-06","file":"recoupment-posting-export.csv","rows":1}
+  ],
+  "files": [
+    {
+      "path": "posting-export.csv",
+      "sha256": "626acfef99f959e3e3db62a4ec0fd93b98f3e8dc4eabc01d0142d850df3affcb",
+      "bytes": 553,
+      "rows": 5
+    }
+  ],
+  "rows": [
+    {
+      "postedOn": "2026-06-11",
+      "checkOrTrace": "880060040002",
+      "amountCents": "3000",
+      "payerName": "SYNTHETIC PAYER L",
+      "claimReference": null,
+      "procedureCode": null,
+      "serviceDate": null,
+      "batch": "SYNBATCH-0401"
+    },
+    {
+      "postedOn": "2026-06-11",
+      "checkOrTrace": "880060080002",
+      "amountCents": "3000",
+      "payerName": "SYNTHETIC PAYER L",
+      "claimReference": null,
+      "procedureCode": null,
+      "serviceDate": null,
+      "batch": "SYNBATCH-0801"
+    },
+    {
+      "postedOn": "2026-06-17",
+      "checkOrTrace": "880000000999",
+      "amountCents": "1200",
+      "payerName": "SYNTHETIC PAYER OTHER",
+      "claimReference": null,
+      "procedureCode": null,
+      "serviceDate": null,
+      "batch": "SYNBATCH-0802"
+    },
+    {
+      "postedOn": "2026-06-11",
+      "checkOrTrace": "880060090004",
+      "amountCents": "10000",
+      "payerName": "SYNTHETIC PAYER L",
+      "claimReference": "SYNPCNLED09003",
+      "procedureCode": "97110",
+      "serviceDate": "2026-03-09",
+      "batch": "SYNBATCH-0902"
+    },
+    {
+      "postedOn": "2026-08-05",
+      "checkOrTrace": "SYNEFTLED06003",
+      "amountCents": "-1800",
+      "payerName": "SYNTHETIC PAYER L",
+      "claimReference": "SYNPCNLED06001",
+      "procedureCode": null,
+      "serviceDate": null,
+      "batch": "SYNBATCH-0602"
+    }
+  ]
+}

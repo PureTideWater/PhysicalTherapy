@@ -1,0 +1,382 @@
+{
+  "type": "object",
+  "properties": {
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "method": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "string",
+                "enum": [
+                  "FIXED_SCHEDULE",
+                  "PERCENT_OF_MEDICARE",
+                  "LESSER_OF",
+                  "PER_VISIT",
+                  "UNSUPPORTED"
+                ]
+              },
+              "page": {
+                "type": "integer"
+              },
+              "quote": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "value",
+              "page",
+              "quote"
+            ],
+            "additionalProperties": false
+          },
+          "codes": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modifiers": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "places_of_service": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "percentage": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fee_schedule_year": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lesser_of_schedule": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "FIXED_SCHEDULE",
+                  "PERCENT_OF_MEDICARE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "flags": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "apply_mppr": {
+                    "type": "boolean"
+                  },
+                  "apply_assistant_reduction": {
+                    "type": "boolean"
+                  },
+                  "apply_sequestration": {
+                    "type": "boolean"
+                  },
+                  "apply_ncci": {
+                    "type": "boolean"
+                  },
+                  "timed_units_rule": {
+                    "type": "string",
+                    "enum": [
+                      "MEDICARE_POOLED",
+                      "PER_CODE",
+                      "UNKNOWN"
+                    ]
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "apply_mppr",
+                  "apply_assistant_reduction",
+                  "apply_sequestration",
+                  "apply_ncci",
+                  "timed_units_rule",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rounding": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "enum": [
+                      "HALF_UP_CENT",
+                      "HALF_EVEN_CENT",
+                      "TRUNCATE"
+                    ]
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "value",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "written": {
+                    "type": "string"
+                  },
+                  "page": {
+                    "type": "integer"
+                  },
+                  "quote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "written",
+                  "page",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "label",
+          "method",
+          "codes",
+          "modifiers",
+          "places_of_service",
+          "amount",
+          "percentage",
+          "fee_schedule_year",
+          "lesser_of_schedule",
+          "flags",
+          "rounding",
+          "effective_from",
+          "effective_to"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "candidates"
+  ],
+  "additionalProperties": false
+}

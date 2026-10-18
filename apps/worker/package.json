@@ -1,0 +1,63 @@
+{
+  "name": "@tp/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Node worker: pg-boss jobs (parse, monitor, price, triage, reconcile, digest, export).",
+  "exports": {
+    "./jobs": "./src/jobs/public.ts",
+    "./documents": "./src/storage/documents.ts",
+    "./pricing": "./src/price/public.ts",
+    "./reports": "./src/report/public.ts",
+    "./digests": "./src/digest/public.ts",
+    "./packets": "./src/packets/public.ts",
+    "./ledger": "./src/reconcile/public.ts",
+    "./triage": "./src/triage/public.ts",
+    "./runtime": "./src/runtime.ts",
+    "./testing": "./src/price/test-support/pricing-world.ts",
+    "./testing/triage": "./src/triage/test-support/triage-world.ts",
+    "./billing": "./src/billing/public.ts",
+    "./era-formats": "./src/parse/era/formats.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsx build.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "eval:permitted": "tsx src/models/permitted-cli.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-rds": "^3.1152.0",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/client-sesv2": "^3.1152.0",
+    "@paidwhole/brand": "workspace:*",
+    "@tp/billing": "workspace:*",
+    "@tp/contracts": "workspace:*",
+    "@tp/db": "workspace:*",
+    "@tp/edi835": "workspace:*",
+    "@tp/ledger": "workspace:*",
+    "@tp/model-gateway": "workspace:*",
+    "@tp/money": "workspace:*",
+    "@tp/observability": "workspace:*",
+    "@tp/packets": "workspace:*",
+    "@tp/pricing": "workspace:*",
+    "@tp/rules": "workspace:*",
+    "@tp/triage": "workspace:*",
+    "pg-boss": "^12.38.0",
+    "playwright-core": "1.56.1",
+    "yauzl": "3.4.0",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
+    "esbuild": "^0.28.2",
+    "fast-check": "catalog:",
+    "pdfjs-dist": "^6.4.299",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "yazl": "3.3.1"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "case": "PRC-17",
+  "module": "PRC",
+  "title": "Property: doubling units doubles base (fixed, percent)",
+  "assertion": "Holds",
+  "synthetic": true,
+  "completesIn": 7,
+  "assertedBy": ["packages/pricing/src/properties.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "A property test over generated line facts (fast-check), for the fixed and percent methods; no fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

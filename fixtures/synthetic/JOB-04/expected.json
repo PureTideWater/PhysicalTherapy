@@ -1,0 +1,17 @@
+{
+  "case": "JOB-04",
+  "module": "JOB",
+  "title": "Two heartbeats missed",
+  "assertion": "Alarm",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/worker/src/heartbeat.test.ts","infra/test/monitoring.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Heartbeats are a contract between the worker and its alarm.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

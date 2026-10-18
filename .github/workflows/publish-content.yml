@@ -1,0 +1,56 @@
+name: publish-content
+
+# The release pipeline's last step (PRD section 9): on merge to main, each prepared release in
+# content/outgoing/<n> is run through the content checker (pnpm verify-content, which refuses any
+# record below L2), verified against its MANIFEST.json, moved to content/releases/<n>, committed and
+# tagged content-release-<n> (tools/publish-content.sh, which also refuses L1 and synthetic records).
+# A release that fails a check is never published, even on a direct push to main. Nothing else
+# writes content/releases.
+on:
+  push:
+    branches: [main]
+    paths: ["content/outgoing/**"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-content
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run the content checker on each outgoing release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for dir in content/outgoing/*/; do
+            pnpm verify-content "${dir%/}"
+          done
+
+      - name: Verify, move, commit and tag each outgoing release
+        id: publish
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          published=$(tools/publish-content.sh)
+          echo "releases=$(printf '%s' "$published" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Push the release commits and tags
+        if: steps.publish.outputs.releases != ''
+        run: |
+          set -euo pipefail
+          git push origin HEAD:main
+          for n in ${{ steps.publish.outputs.releases }}; do
+            git push origin "content-release-$n"
+          done

@@ -1,0 +1,155 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C27",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97110",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97110, Payer pays the lesser of the billed charge or $152.13 per unit."
+        },
+        "codes": {
+          "value": ["97110"],
+          "written": ["97110"],
+          "page": 3,
+          "quote": "For CPT 97110, Payer pays the lesser of the billed charge or $152.13 per unit."
+        },
+        "amount": {
+          "value": "15213",
+          "written": "$152.13",
+          "page": 3,
+          "quote": "For CPT 97110, Payer pays the lesser of the billed charge or $152.13 per unit."
+        },
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97110, Payer pays the lesser of the billed charge or $152.13 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97760",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97760, Payer pays the lesser of the billed charge or $148.88 per unit."
+        },
+        "codes": {
+          "value": ["97760"],
+          "written": ["97760"],
+          "page": 3,
+          "quote": "For CPT 97760, Payer pays the lesser of the billed charge or $148.88 per unit."
+        },
+        "amount": {
+          "value": "14888",
+          "written": "$148.88",
+          "page": 3,
+          "quote": "For CPT 97760, Payer pays the lesser of the billed charge or $148.88 per unit."
+        },
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97760, Payer pays the lesser of the billed charge or $148.88 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97535",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97535, Payer pays the lesser of the billed charge or $125.82 per unit."
+        },
+        "codes": {
+          "value": ["97535"],
+          "written": ["97535"],
+          "page": 3,
+          "quote": "For CPT 97535, Payer pays the lesser of the billed charge or $125.82 per unit."
+        },
+        "amount": {
+          "value": "12582",
+          "written": "$125.82",
+          "page": 3,
+          "quote": "For CPT 97535, Payer pays the lesser of the billed charge or $125.82 per unit."
+        },
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 3,
+          "quote": "For CPT 97535, Payer pays the lesser of the billed charge or $125.82 per unit."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "effective_from": {
+          "value": "2026-01-01",
+          "written": "1 January 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 January 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

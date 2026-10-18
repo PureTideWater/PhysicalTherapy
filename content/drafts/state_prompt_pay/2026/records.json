@@ -1,0 +1,53 @@
+[
+  {
+    "record_type": "state_prompt_pay",
+    "key": { "state": "NC" },
+    "value": {
+      "days_to_pay": 30,
+      "day_basis": "calendar",
+      "days_after_requested_information": 30,
+      "interest": {
+        "automatic": true,
+        "accrues_from": "30 days after adequate proof of loss",
+        "annual_rate_percent": null
+      },
+      "applies_to": "North Carolina-licensed insurers regardless of provider location",
+      "exclusions": ["self_funded_erisa_plans"],
+      "statute": "G.S. 58-3-225"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session",
+      "transcribed_on": "2026-10-15",
+      "locator": "State prompt-pay rules table, row \"North Carolina\" (line 55)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
+        "Read G.S. 58-3-225 and the NC Department of Insurance page (https://www.ncdoi.gov/insurance-industry/form-and-rate-filings/life-and-health/prompt-pay-requirement): must an insurer pay or respond within 30 calendar days of receiving a claim, and within 30 days after requested information?",
+        "Does interest accrue automatically from 30 days after adequate proof of loss, and at what annual rate? The rate is not in the rules reference, so annual_rate_percent is null and interest cannot be computed from this record until it is filled in from the statute.",
+        "Are self-funded ERISA plans excluded, and does the rule apply to North Carolina-licensed insurers regardless of provider location?",
+        "Store the statute text and the NCDOI page under content/sources/state_prompt_pay/ and re-cite this record to them, quoting the stored files; and replace effective_from 2026-01-01, a placeholder for the first year release 1 prices, with the date the statute's current text took effect."
+      ]
+    },
+    "quotes": [
+      "An insurer must pay or respond within 30 calendar days of receiving a claim (30 days after any requested information)",
+      "interest accrues automatically on late payment from 30 days after adequate proof of loss",
+      "applies to North Carolina-licensed insurers regardless of provider location",
+      "self-funded ERISA plans excluded",
+      "G.S. 58-3-225"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites the NC Department of Insurance (https://www.ncdoi.gov/insurance-industry/form-and-rate-filings/life-and-health/prompt-pay-requirement) and G.S. 58-3-225. TPAs are not directly subject but the insurer remains liable. Interest is computed by code as its own packet line, never inside expected allowed. The start date is a placeholder for the first year release 1 prices."
+  }
+]

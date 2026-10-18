@@ -1,0 +1,37 @@
+[
+  {
+    "record_type": "sequestration",
+    "key": { "program": "medicare" },
+    "value": { "reduction_percent": "2", "applies_to": "the Medicare payment after the beneficiary share", "suspended": false },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Sequestration\" (line 23)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
+        "Which statute and which CMS notice set the 2% reduction now in force? Store the notice under content/sources/sequestration/ and re-cite this record to it, quoting the stored file.",
+        "Over what dates does the 2% apply, and is any suspension in effect? effective_from 2026-01-01 is a placeholder (the first year release 1 prices), not a date from the source; replace it, and add a record for any suspension.",
+        "Is the reduction taken from the payment after the beneficiary share, as the rules reference says?"
+      ]
+    },
+    "quotes": [
+      "2% of the Medicare payment after the beneficiary share",
+      "Federal law; CMS notices"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites federal law and CMS notices and names no URL and no effective date. The start date is a placeholder for the first year release 1 prices. Applied only when the rate record's apply_sequestration flag is on."
+  }
+]

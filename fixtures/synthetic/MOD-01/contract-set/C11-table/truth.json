@@ -1,0 +1,78 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C11",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "exhibit",
+  "document": "exhibit.csv",
+  "contentType": "text/csv",
+  "scan": null,
+  "pages": 1,
+  "records": [
+    {
+      "label": "CSV row: 97161",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97161"],
+          "written": ["97161"],
+          "page": 1,
+          "quote": "97161 100% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "100",
+          "written": "100%",
+          "page": 1,
+          "quote": "97161 100% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-02-01",
+          "written": "2/1/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 2/1/2026"
+        }
+      }
+    },
+    {
+      "label": "CSV row: 97116 GO",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are percentages of the Medicare Physician Fee Schedule."
+        },
+        "codes": {
+          "value": ["97116"],
+          "written": ["97116"],
+          "page": 1,
+          "quote": "97116 GO 115% of the Medicare fee schedule in effect"
+        },
+        "modifiers": {
+          "value": ["GO"],
+          "written": ["GO"],
+          "page": 1,
+          "quote": "97116 GO 115% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "115",
+          "written": "115%",
+          "page": 1,
+          "quote": "97116 GO 115% of the Medicare fee schedule in effect"
+        },
+        "effective_from": {
+          "value": "2026-02-01",
+          "written": "2/1/2026",
+          "page": 1,
+          "quote": "Fee schedule effective 2/1/2026"
+        }
+      }
+    }
+  ]
+}

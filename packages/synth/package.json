@@ -1,0 +1,21 @@
+{
+  "name": "@tp/synth",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Synthetic 835, contract and export generators; twins (milestone 2).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

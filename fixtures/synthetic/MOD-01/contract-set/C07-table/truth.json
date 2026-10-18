@@ -1,0 +1,240 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C07",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Exhibit A: 97116",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97116"],"written":["97116"],"page":3,"quote":"97116 - - $32.40 per unit"},
+        "amount": {"value":"3240","written":"$32.40","page":3,"quote":"97116 - - $32.40 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97162 POS 12",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97162"],"written":["97162"],"page":3,"quote":"97162 - 12 $71.54 per unit"},
+        "places_of_service": {"value":["12"],"written":["12"],"page":3,"quote":"97162 - 12 $71.54 per unit"},
+        "amount": {"value":"7154","written":"$71.54","page":3,"quote":"97162 - 12 $71.54 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97032 POS 11",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97032"],"written":["97032"],"page":3,"quote":"97032 - 11 $71.83 per unit"},
+        "places_of_service": {"value":["11"],"written":["11"],"page":3,"quote":"97032 - 11 $71.83 per unit"},
+        "amount": {"value":"7183","written":"$71.83","page":3,"quote":"97032 - 11 $71.83 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97168 POS 19",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97168"],"written":["97168"],"page":3,"quote":"97168 - 19 $150.13 per unit"},
+        "places_of_service": {"value":["19"],"written":["19"],"page":3,"quote":"97168 - 19 $150.13 per unit"},
+        "amount": {"value":"15013","written":"$150.13","page":3,"quote":"97168 - 19 $150.13 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97150 POS 11",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97150"],"written":["97150"],"page":3,"quote":"97150 - 11 $129.57 per unit"},
+        "places_of_service": {"value":["11"],"written":["11"],"page":3,"quote":"97150 - 11 $129.57 per unit"},
+        "amount": {"value":"12957","written":"$129.57","page":3,"quote":"97150 - 11 $129.57 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97161",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "codes": {"value":["97161"],"written":["97161"],"page":3,"quote":"97161 - - $137.49 per unit"},
+        "amount": {"value":"13749","written":"$137.49","page":3,"quote":"97161 - - $137.49 per unit"},
+        "lesser_of_schedule": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the fixed amount per unit stated in Exhibit A."
+        },
+        "rounding": {
+          "value": "HALF_UP_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded half up to the nearest cent."
+        },
+        "effective_from": {
+          "value": "2025-07-01",
+          "written": "7/1/2025",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        },
+        "effective_to": {
+          "value": "2026-12-31",
+          "written": "12/31/2026",
+          "page": 1,
+          "quote": "This Agreement is effective 7/1/2025 and remains in effect through 12/31/2026."
+        }
+      }
+    }
+  ]
+}

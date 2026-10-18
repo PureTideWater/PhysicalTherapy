@@ -1,0 +1,17 @@
+{
+  "case": "SEC-07",
+  "module": "SEC",
+  "title": "Log line with a name or member ID",
+  "assertion": "Lint fails",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["tools/lint-logs/scan.test.ts","packages/observability/src/logger.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "The log lint reads source; the canary test logs a synthetic record built in memory.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

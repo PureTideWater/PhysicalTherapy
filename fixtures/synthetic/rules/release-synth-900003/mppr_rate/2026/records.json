@@ -1,0 +1,38 @@
+[
+  {
+    "record_type": "mppr_rate",
+    "key": {
+      "component": "practice_expense"
+    },
+    "value": {
+      "reduction_percent": "45",
+      "applies_to": "SYNTHETIC: the second and later always-therapy units in a day of a code with no share of its own"
+    },
+    "effective_from": "2026-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "SYNTHETIC variant therapy rules for the golden lines (fixtures/golden/sources/synthetic-rules-900003.md)",
+      "url": null,
+      "path": "fixtures/golden/sources/synthetic-rules-900003.md",
+      "retrieved": "2026-10-15",
+      "sha256": "3f368e336fee4f02d870fe5494abef1254e2743bd67c8e365a009056459b836e",
+      "method": "hand_typed",
+      "transcribed_by": "SYNTHETIC fixture author, first pass",
+      "transcribed_on": "2026-10-15",
+      "locator": "line 9",
+      "synthetic": true
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "SYNTHETIC fixture: invented values, never reviewed and never used to price a real line."
+      ]
+    },
+    "quotes": [
+      "SYNTHETIC multiple procedure reduction: 45% of the practice-expense component of the second and later always-therapy units in a day, for a code the MPPR file lists without a share of its own, from January 1, 2026."
+    ],
+    "notes": "SYNTHETIC invented value for tests."
+  }
+]

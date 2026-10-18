@@ -1,0 +1,104 @@
+{
+  "type": "object",
+  "properties": {
+    "payer": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "written": {
+              "type": "string"
+            },
+            "quote": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "written",
+            "quote"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "claim_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "written",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "reason_category": {
+      "type": "string"
+    },
+    "reason_quote": {
+      "type": "string"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "written": {
+              "type": "string"
+            },
+            "quote": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "written",
+            "quote"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requested_documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "written": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "written",
+          "quote"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "payer",
+    "claim_references",
+    "reason_category",
+    "reason_quote",
+    "deadline",
+    "requested_documents"
+  ],
+  "additionalProperties": false
+}

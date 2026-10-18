@@ -1,0 +1,28 @@
+{
+  "transcribed_by": "milestone 0 part B build session",
+  "transcribed_on": "2026-10-15",
+  "records": [
+    {
+      "record_type": "therapy_threshold",
+      "key": { "discipline": "OT" },
+      "value": { "medical_review_threshold_cents": "300000", "kx_threshold_cents": "248000" },
+      "effective_from": "2026-01-01",
+      "effective_to": "2026-12-31",
+      "quotes": [
+        "$2,480 for PT and SLP combined; $2,480 for OT (2026)",
+        "$3,000 for PT and SLP; $3,000 for OT (2026); indexed by the MEI from 2028"
+      ]
+    },
+    {
+      "record_type": "therapy_threshold",
+      "key": { "discipline": "PT_SLP" },
+      "value": { "medical_review_threshold_cents": "300000", "kx_threshold_cents": "248000" },
+      "effective_from": "2026-01-01",
+      "effective_to": "2026-12-31",
+      "quotes": [
+        "$2,480 for PT and SLP combined; $2,480 for OT (2026)",
+        "$3,000 for PT and SLP; $3,000 for OT (2026); indexed by the MEI from 2028"
+      ]
+    }
+  ]
+}

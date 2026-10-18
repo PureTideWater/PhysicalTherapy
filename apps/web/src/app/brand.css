@@ -1,0 +1,58 @@
+/* Base styles that apply the tokens. Import after tokens.css in app/globals.css:
+     @import "@paidwhole/brand/tokens.css";
+     @import "./brand.css";
+*/
+
+html {
+  background: var(--pw-bg);
+  color: var(--pw-fg);
+  font-family: var(--pw-font-sans);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--pw-font-display);
+  font-weight: 700;
+  letter-spacing: var(--pw-tracking-display);
+  line-height: 1.1;
+  color: var(--pw-fg);
+}
+
+h1 { font-size: 32px; }
+h2 { font-size: 24px; }
+h3 { font-size: 18px; font-weight: 600; }
+
+a { color: var(--pw-link); }
+a:hover { color: var(--pw-fg); }
+
+/* Every money figure and every table of figures */
+.pw-money,
+td.pw-money,
+.pw-table td.pw-num {
+  font-family: var(--pw-font-mono);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status: text color and a quiet tint, never a saturated fill behind white text */
+.pw-status-whole { color: var(--pw-whole); background: var(--pw-whole-bg); }
+.pw-status-short { color: var(--pw-short); background: var(--pw-short-bg); }
+.pw-status-unpriced { color: var(--pw-unpriced); background: var(--pw-unpriced-bg); }
+.pw-status-whole, .pw-status-short, .pw-status-unpriced {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--pw-radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Focus is always visible */
+:focus-visible {
+  outline: 2px solid var(--pw-focus);
+  outline-offset: 2px;
+}
+
+/* Clear space around any mark: one quarter of its height on all sides */
+.pw-mark-clear { padding: 0.25em; }

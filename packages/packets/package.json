@@ -1,0 +1,26 @@
+{
+  "name": "@tp/packets",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Packet assembly, the verifier, and PDF and CSV export (milestone 8).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./check": "./src/check.ts",
+    "./testing": "./src/test-support.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@tp/money": "workspace:*",
+    "@tp/pricing": "workspace:*",
+    "@tp/triage": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

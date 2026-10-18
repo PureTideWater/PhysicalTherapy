@@ -1,0 +1,318 @@
+/**
+ * The case registry: one entry for every row of docs/product/test-matrix.md, plus the oracle variants.
+ * Each entry says which milestone completes its expected outcome, which existing tests already assert
+ * it, and either generates its files and expected.json or says why it needs no file.
+ */
+import { type CaseModule } from '../expected/types';
+import { CODE_LIST_RELEASE } from '../expected/parse';
+import { CaseBuilder, type GeneratedCase } from './builder';
+import { LARGE_CLAIMS, LARGE_TRANSACTIONS, largeFixtureFacts } from './large';
+import { TEST_MATRIX } from './matrix';
+import * as par from './par';
+import * as pricing from './pricing';
+import { VARIANTS } from './variants';
+import * as workflow from './workflow';
+import { addContractSet, addNarrativeSet } from '../eval/cases';
+
+type Build = (b: CaseBuilder) => void;
+
+interface Entry {
+  readonly completesIn: number;
+  readonly assertedBy?: readonly string[];
+  /** Generates the case's files; absent with `noFile`. */
+  readonly build?: Build;
+  readonly noFile?: string;
+}
+
+const none = (completesIn: number, noFile: string, assertedBy?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy });
+
+function par29(b: CaseBuilder): void {
+  const facts = largeFixtureFacts();
+  b.noFiles(`The ${String(LARGE_CLAIMS)}-claim file is generated when a test needs it, by writeLargeFixture() from @tp/synth, into fixtures/synthetic/${facts.path} (ignored by git); its size, hash and counts are recorded here.`);
+  b.generatedFile({ path: facts.path, sha256: facts.sha256, bytes: facts.bytes, description: `${String(LARGE_CLAIMS)} claims in ${String(LARGE_TRANSACTIONS)} transaction sets of one interchange, a line feed after every segment.`, oracle: { valid: true, rejections: [], summary: null, summarySha256: facts.summarySha256 } });
+  b.scenario({ claims: facts.claims, lines: facts.lines, transactions: facts.transactions, paidCents: facts.paidCents, perTransaction: facts.perTransaction });
+  b.outcome({ parse: `all ${String(LARGE_CLAIMS)} claims load, balanced`, target: '10,000 claims a minute on one worker vCPU (PRD section 10); memory bounded per transaction set' });
+  b.addAuxiliary('.gitignore', 'generated/\n');
+}
+
+/**
+ * The milestones built so far. A case that completes in one of them names the tests that assert it
+ * (assertedBy), and the fixtures test fails while one does not.
+ */
+export const BUILT_THROUGH_MILESTONE = 5;
+
+/**
+ * The milestones whose code is in the repository though their done check still waits on people
+ * (milestones 6 and 7: the three hand-run audits and the specialist's review of the golden lines;
+ * milestones 8 and 9 on top of them: packets, the workbench, the recovery ledger and reconciliation;
+ * milestone 10: the model gateway and its evaluation, whose real gate needs a model run inside the PHI
+ * boundary or with credentials; see the README). Their cases are traced to their tests all the same:
+ * the fixtures test fails while a case completing in one of them names none.
+ */
+export const CODE_BUILT_THROUGH_MILESTONE = 10;
+
+/** Every test-matrix case, by ID. */
+const ENTRIES: Readonly<Record<string, Entry>> = {
+  'PAR-01': { completesIn: 2, build: par.par01, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-02': { completesIn: 2, build: par.par02, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-03': { completesIn: 2, build: par.par03, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-04': { completesIn: 2, build: par.par04, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/sniff.test.ts'] },
+  'PAR-05': { completesIn: 2, build: par.par05, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-06': { completesIn: 2, build: par.par06, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'packages/db/src/documents.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts'] },
+  'PAR-07': { completesIn: 2, build: par.par07, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-08': { completesIn: 2, build: par.par08, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-09': { completesIn: 2, build: par.par09, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-10': { completesIn: 2, build: par.par10, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts'] },
+  'PAR-11': { completesIn: 2, build: par.par11, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-12': { completesIn: 2, build: par.par12, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-13': { completesIn: 2, build: par.par13, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-14': { completesIn: 5, build: par.par14, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test/remittance-pricing.test.ts'] },
+  'PAR-15': { completesIn: 5, build: par.par15, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test/remittance-pricing.test.ts'] },
+  'PAR-16': { completesIn: 2, build: par.par16, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts'] },
+  'PAR-17': { completesIn: 2, build: par.par17, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-18': { completesIn: 2, build: par.par18, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-19': { completesIn: 2, build: par.par19, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-20': { completesIn: 2, build: par.par20, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-21': { completesIn: 2, build: par.par21, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-22': { completesIn: 2, build: par.par22, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-23': { completesIn: 2, build: par.par23, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-24': { completesIn: 2, build: par.par24, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/intake/sniff.test.ts'] },
+  'PAR-25': { completesIn: 2, build: par.par25, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-26': { completesIn: 2, build: par.par26, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-27': { completesIn: 3, build: par.par27, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/intake/zip.test.ts'] },
+  'PAR-28': { completesIn: 3, build: par.par28, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/intake/zip.test.ts'] },
+  'PAR-29': { completesIn: 2, build: par29, assertedBy: ['packages/edi835/src/performance.test.ts', 'packages/synth/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-30': { completesIn: 2, build: par.par30, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'packages/db/src/documents.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'MAP-01': { completesIn: 3, build: pricing.map01, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/mapping.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts'] },
+  'MAP-02': { completesIn: 5, build: pricing.map02, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
+  'MAP-03': { completesIn: 7, build: pricing.map03, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/worker/src/price/rerun.db.test.ts'] },
+  'MAP-04': { completesIn: 6, build: pricing.map04, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts'] },
+  'MAP-05': { completesIn: 5, build: pricing.map05, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/web/e2e/pricing.spec.ts'] },
+  'CON-01': { completesIn: 4, build: pricing.con01, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts'] },
+  'CON-02': { completesIn: 4, build: pricing.con02, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'CON-03': { completesIn: 4, build: pricing.con03, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts'] },
+  'CON-04': none(4, 'A rate record without a page reference is entered by hand against any version; no document of its own is involved.', ['packages/contracts/src/contracts.db.test.ts', 'packages/contracts/src/terms.test.ts', 'packages/contracts/src/evidence/evidence.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts']),
+  'CON-05': { completesIn: 10, build: pricing.con05, assertedBy: ['packages/contracts/src/evidence/evidence.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts'] },
+  'CON-06': { completesIn: 5, build: pricing.con06, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'CON-07': { completesIn: 5, build: pricing.con07, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'packages/pricing/src/engine.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'PRC-01': { completesIn: 5, build: pricing.prc01, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-02': { completesIn: 5, build: pricing.prc02, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-03': { completesIn: 5, build: pricing.prc03, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-04': { completesIn: 5, build: pricing.prc04, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-05': { completesIn: 7, build: pricing.prc05, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-06': { completesIn: 7, build: pricing.prc06, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-07': { completesIn: 7, build: pricing.prc07, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-08': { completesIn: 5, build: pricing.prc08, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-09': { completesIn: 5, build: pricing.prc09, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-10': { completesIn: 7, build: pricing.prc10, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-11': { completesIn: 7, build: pricing.prc11, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-12': { completesIn: 5, build: pricing.prc12, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/contracts/src/resolver.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
+  'PRC-13': { completesIn: 5, build: pricing.prc13, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/money/src/rounding.test.ts'] },
+  'PRC-14': { completesIn: 6, build: pricing.prc14, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/pricing/src/properties.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-15': { completesIn: 6, build: pricing.prc15, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-16': none(5, 'Recomputes the trace of every golden line in fixtures/golden; no fixture of its own.', ['packages/pricing/src/recompute.test.ts', 'packages/pricing/src/properties.test.ts', 'tools/golden-worksheet/engine.golden.test.ts']),
+  'PRC-17': none(7, 'A property test over generated line facts (fast-check), for the fixed and percent methods; no fixture.', ['packages/pricing/src/properties.test.ts']),
+  'PRC-18': none(5, 'A property test over generated line facts and flag settings (fast-check); no fixture.', ['packages/pricing/src/properties.test.ts']),
+  'PRC-19': { completesIn: 7, build: pricing.prc19, assertedBy: ['apps/worker/src/price/rerun.db.test.ts', 'tools/release/dry-run.db.test.ts', 'apps/web/src/lib/routes/reruns-routes.db.test.ts'] },
+  'PRC-20': none(7, 'The 100,000 lines are generated in memory by the performance test; nothing is committed.', ['packages/pricing/src/performance.test.ts']),
+  'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
+  'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-04': { completesIn: 6, build: workflow.cas04, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts'] },
+  'CAS-05': { completesIn: 6, build: workflow.cas05, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/actionable.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-06': none(6, 'Writes off a line of a case built from the CAS-03 fixture; no file of its own.', ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/cases.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-07': none(6, 'Reopens a line written off in CAS-06; no file of its own.', ['apps/worker/src/triage/triage.db.test.ts', 'apps/worker/src/report/report.db.test.ts', 'packages/triage/src/stages.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-08': { completesIn: 8, build: workflow.cas08, assertedBy: ['apps/worker/src/packets/packets.db.test.ts', 'packages/packets/src/verifier.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts'] },
+  'CAS-09': none(8, 'The drafter of any packet attempts its approval: an action, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-10': none(8, 'A practice with one user, a setting; any packet will do.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-11': none(8, 'Identifier placeholders belong to every draft built from the CAS-03 or CAS-08 lines; no file of its own.', [
+    'apps/worker/src/packets/packets.db.test.ts',
+    'packages/packets/src/placeholders.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-12': none(8, 'Exports any approved packet; the PDF and CSV are outputs, not fixtures.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-13': none(8, 'Edits any approved packet: an action, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-14': none(8, 'A submission logged 45 days before the test date with no response: dates, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-15': { completesIn: 8, build: workflow.cas15, assertedBy: ['apps/worker/src/packets/packets.db.test.ts', 'packages/packets/src/interest.test.ts'] },
+  'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
+  'LED-04': {
+    completesIn: 9,
+    build: workflow.led04,
+    assertedBy: [
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'packages/ledger/src/matching.test.ts',
+      'packages/ledger/src/templates.test.ts',
+      'packages/ledger/src/pairing.test.ts',
+      'apps/worker/src/reconcile/lines.db.test.ts',
+      'apps/worker/src/reconcile/exports.db.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
+      'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    ],
+  },
+  'LED-05': { completesIn: 9, build: workflow.led05, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/matching.test.ts', 'packages/ledger/src/templates.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-06': { completesIn: 9, build: workflow.led06, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/totals.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-07': {
+    completesIn: 9,
+    build: workflow.led07,
+    assertedBy: [
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'packages/ledger/src/totals.test.ts',
+      'packages/ledger/src/stages.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
+      'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    ],
+  },
+  'LED-08': { completesIn: 9, build: workflow.led08, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/templates.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
+  'LED-09': {
+    completesIn: 9,
+    build: workflow.led09,
+    assertedBy: [
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'packages/ledger/src/allocation.test.ts',
+      'packages/ledger/src/matching.test.ts',
+      'apps/worker/src/reconcile/lines.db.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
+    ],
+  },
+  'LED-10': none(9, 'A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts']),
+  'LED-11': none(9, 'Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/roi.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'packages/ledger/src/statement.test.ts']),
+  'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
+  'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests.db.test.ts']),
+  'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
+  'SEC-04': none(1, 'Grant revocation is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
+  'SEC-05': none(1, 'Support grants expire in the database; the notice is a worker job.', ['packages/db/src/access.db.test.ts', 'apps/worker/src/platform/support-notices.db.test.ts', 'apps/web/e2e/hardware-key.spec.ts']),
+  'SEC-06': none(1, 'One practice per job is enforced by the job scope.', ['packages/db/src/authz/scope.test.ts']),
+  'SEC-07': none(1, 'The log lint reads source; the canary test logs a synthetic record built in memory.', ['tools/lint-logs/scan.test.ts', 'packages/observability/src/logger.test.ts']),
+  'SEC-08': none(1, 'URL and S3 key checks run on values built in the tests.', ['packages/observability/src/phi-guard.test.ts', 'apps/web/src/lib/routes/registry.test.ts']),
+  'SEC-09': none(0, 'The lint rule is tested on files it builds in memory.', ['tools/test/eslint-rules.test.ts']),
+  'SEC-10': none(1, 'Audit triggers are a database property.', ['packages/db/src/audit.db.test.ts']),
+  'SEC-11': none(12, 'The deletion workflow runs on a practice seeded with synthetic data; its certificate arrives with milestone 12 (key destruction is tested now).', ['apps/worker/src/storage/practice-objects.db.test.ts', 'packages/db/src/crypto/practice-keys.db.test.ts']),
+  'SEC-12': none(12, 'A legal hold is a lifecycle record; no file.'),
+  'SEC-13': none(1, 'The restore drill restores a database and counts its rows.', ['apps/worker/src/platform/restore-drill.db.test.ts']),
+  'SEC-14': none(2, 'The test builds a non-synthetic interchange in memory and hands it to the hook; it is never written as a file.', ['packages/synth/src/fixture-guard.test.ts']),
+  'SEC-15': none(1, 'Session expiry is a session and route property.', ['packages/db/src/identity.db.test.ts', 'apps/web/src/lib/routes/route-tests.db.test.ts', 'apps/web/e2e/sign-in.spec.ts']),
+  'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
+  'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
+    'apps/worker/src/worker.test.ts',
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/web/src/lib/routes/monitoring-routes.db.test.ts',
+    'apps/web/e2e/monitoring.spec.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'JOB-03': none(7, 'A digest is built from counts and totals in the database; no file.', ['apps/worker/src/monitor/monitor.db.test.ts', 'apps/worker/src/digest/view.test.ts', 'apps/web/e2e/monitoring.spec.ts']),
+  'JOB-04': none(1, 'Heartbeats are a contract between the worker and its alarm.', ['apps/worker/src/heartbeat.test.ts', 'infra/test/monitoring.test.ts']),
+  'MOD-01': {
+    completesIn: 10,
+    build: (b) => {
+      workflow.mod01(b);
+      addContractSet(b);
+    },
+    assertedBy: [
+      'packages/model-gateway/src/fixtures.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'packages/model-gateway/eval/score.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/web/e2e/models.spec.ts',
+    ],
+  },
+  'MOD-02': { completesIn: 10, build: workflow.mod02, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts'] },
+  'MOD-03': {
+    completesIn: 10,
+    build: addNarrativeSet,
+    assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/narrative.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts', 'apps/web/e2e/models.spec.ts'],
+  },
+  'MOD-04': { completesIn: 10, build: workflow.mod04, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/untrusted.test.ts', 'packages/model-gateway/src/gateway.db.test.ts'] },
+  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/models.spec.ts',
+  ]),
+};
+
+export interface CaseDefinition {
+  readonly id: string;
+  readonly module: CaseModule;
+  readonly title: string;
+  readonly assertion: string;
+  readonly completesIn: number;
+  readonly assertedBy: readonly string[];
+  /** Why the case has no file of its own, or null when it generates files. */
+  readonly noFileReason: string | null;
+  /** fixtures/synthetic/<dir>. */
+  readonly dir: string;
+  readonly variant: boolean;
+  generate(): GeneratedCase;
+}
+
+function definition(id: string, title: string, assertion: string, entry: Entry, dir: string, variant: boolean, build: Build | undefined): CaseDefinition {
+  const module = (variant ? 'PAR' : id.slice(0, 3)) as CaseModule;
+  return {
+    id,
+    module,
+    title,
+    assertion,
+    completesIn: entry.completesIn,
+    assertedBy: entry.assertedBy ?? [],
+    noFileReason: entry.noFile ?? null,
+    dir,
+    variant,
+    generate() {
+      const b = new CaseBuilder({ id, module, title, assertion, completesIn: entry.completesIn, assertedBy: entry.assertedBy, codeListRelease: module === 'PAR' || build !== undefined ? CODE_LIST_RELEASE : null }, dir);
+      if (entry.noFile !== undefined) {
+        b.noFiles(entry.noFile);
+      }
+      build?.(b);
+      return b.build();
+    },
+  };
+}
+
+/** The test-matrix cases, in matrix order. */
+export const CASES: readonly CaseDefinition[] = TEST_MATRIX.map((row) => {
+  const entry = ENTRIES[row.id];
+  if (!entry) {
+    throw new Error(`the registry has no entry for ${row.id}`);
+  }
+  return definition(row.id, row.title, row.assertion, entry, row.id, false, entry.build);
+});
+
+/** The oracle variants, in fixtures/synthetic/variants/<id>-<slug>. */
+export const VARIANT_CASES: readonly CaseDefinition[] = VARIANTS.map((variant) =>
+  definition(
+    variant.id,
+    variant.title,
+    'Parses; pyx12 reads the same segments, amounts and balances',
+    { completesIn: 2, assertedBy: ['packages/edi835/src/fixtures.test.ts'] },
+    `variants/${variant.id}-${variant.slug}`,
+    true,
+    variant.build,
+  ),
+);
+
+export const ALL_CASES: readonly CaseDefinition[] = [...CASES, ...VARIANT_CASES];
+
+/** Registry entries with no matrix row (a stale ID) would be a bug. */
+export const REGISTRY_IDS: readonly string[] = Object.keys(ENTRIES);
+
+export function findCase(id: string): CaseDefinition | undefined {
+  return ALL_CASES.find((item) => item.id === id);
+}
+
+export function generateAll(): GeneratedCase[] {
+  return ALL_CASES.map((item) => item.generate());
+}

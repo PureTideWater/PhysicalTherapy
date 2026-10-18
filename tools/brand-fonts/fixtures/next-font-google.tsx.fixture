@@ -1,0 +1,12 @@
+// A fixture for tools/brand-fonts/lint.test.ts: every way a module can reach Google's font loader, which the
+// repository's ESLint config must refuse in every workspace. Its extension keeps the real lint from reading it.
+import { IBM_Plex_Sans } from 'next/font/google';
+import { Inter } from '@next/font/google';
+import target from 'next/font/google/target.css';
+export { Schibsted_Grotesk } from 'next/font/google';
+export * from '@next/font/google';
+
+const loader = await import('next/font/google');
+const legacy = require('@next/font/google');
+
+export const faces = [IBM_Plex_Sans, Inter, target, loader, legacy];

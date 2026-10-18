@@ -1,0 +1,191 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C02",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Exhibit A: 97150 POS 12",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97150"],
+          "written": ["97150"],
+          "page": 3,
+          "quote": "97150 - 12 87.5% of the 2024 Medicare fee schedule"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 3,
+          "quote": "97150 - 12 87.5% of the 2024 Medicare fee schedule"
+        },
+        "percentage": {
+          "value": "87.5",
+          "written": "87.5%",
+          "page": 3,
+          "quote": "97150 - 12 87.5% of the 2024 Medicare fee schedule"
+        },
+        "fee_schedule_year": {
+          "value": "2024",
+          "written": "2024",
+          "page": 3,
+          "quote": "97150 - 12 87.5% of the 2024 Medicare fee schedule"
+        },
+        "lesser_of_schedule": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "Mar. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Mar. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97760 POS 12",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97760"],
+          "written": ["97760"],
+          "page": 3,
+          "quote": "97760 - 12 105% of the Medicare fee schedule in effect"
+        },
+        "places_of_service": {
+          "value": ["12"],
+          "written": ["12"],
+          "page": 3,
+          "quote": "97760 - 12 105% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "105",
+          "written": "105%",
+          "page": 3,
+          "quote": "97760 - 12 105% of the Medicare fee schedule in effect"
+        },
+        "lesser_of_schedule": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "Mar. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Mar. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97164",
+      "fields": {
+        "method": {
+          "value": "LESSER_OF",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "codes": {
+          "value": ["97164"],
+          "written": ["97164"],
+          "page": 3,
+          "quote": "97164 - - 125% of the Medicare fee schedule in effect"
+        },
+        "percentage": {
+          "value": "125",
+          "written": "125%",
+          "page": 3,
+          "quote": "97164 - - 125% of the Medicare fee schedule in effect"
+        },
+        "lesser_of_schedule": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay the lesser of the billed charge and the percentage of the Medicare Physician Fee Schedule stated in Exhibit A."
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": false,
+            "apply_assistant_reduction": false,
+            "apply_sequestration": false,
+            "apply_ncci": true,
+            "timed_units_rule": "PER_CODE"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction does not apply; the assistant reduction does not apply; sequestration does not apply; NCCI edits apply; timed units are counted for each code on its own."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "Mar. 1st, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective Mar. 1st, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

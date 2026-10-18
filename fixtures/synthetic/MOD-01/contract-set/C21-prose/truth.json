@@ -1,0 +1,125 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C21",
+  "layout": "prose",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97164, G0283",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the percentage of the Medicare Physician Fee Schedule stated in Article 3 for each code."
+        },
+        "codes": {
+          "value": ["97164","G0283"],
+          "written": ["97164","G0283"],
+          "page": 3,
+          "quote": "Services billed under CPT 97164 and G0283 are paid at 95 percent of the Medicare Physician Fee Schedule in effect on the date of service."
+        },
+        "percentage": {
+          "value": "95",
+          "written": "95 percent",
+          "page": 3,
+          "quote": "Services billed under CPT 97164 and G0283 are paid at 95 percent of the Medicare Physician Fee Schedule in effect on the date of service."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "2026-04-01",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "2027-12-31",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97140, 97162",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the percentage of the Medicare Physician Fee Schedule stated in Article 3 for each code."
+        },
+        "codes": {
+          "value": ["97140","97162"],
+          "written": ["97140","97162"],
+          "page": 3,
+          "quote": "Services billed under CPT 97140 and 97162 are paid at 110 percent of the 2025 Medicare Physician Fee Schedule."
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110 percent",
+          "page": 3,
+          "quote": "Services billed under CPT 97140 and 97162 are paid at 110 percent of the 2025 Medicare Physician Fee Schedule."
+        },
+        "fee_schedule_year": {
+          "value": "2025",
+          "written": "2025",
+          "page": 3,
+          "quote": "Services billed under CPT 97140 and 97162 are paid at 110 percent of the 2025 Medicare Physician Fee Schedule."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "2026-04-01",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "2027-12-31",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        }
+      }
+    },
+    {
+      "label": "Article 3: 97150",
+      "fields": {
+        "method": {
+          "value": "PERCENT_OF_MEDICARE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the percentage of the Medicare Physician Fee Schedule stated in Article 3 for each code."
+        },
+        "codes": {
+          "value": ["97150"],
+          "written": ["97150"],
+          "page": 3,
+          "quote": "Services billed under CPT 97150 are paid at 110 percent of the Medicare Physician Fee Schedule in effect on the date of service."
+        },
+        "percentage": {
+          "value": "110",
+          "written": "110 percent",
+          "page": 3,
+          "quote": "Services billed under CPT 97150 are paid at 110 percent of the Medicare Physician Fee Schedule in effect on the date of service."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "2026-04-01",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        },
+        "effective_to": {
+          "value": "2027-12-31",
+          "written": "2027-12-31",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and remains in effect through 2027-12-31."
+        }
+      }
+    }
+  ]
+}

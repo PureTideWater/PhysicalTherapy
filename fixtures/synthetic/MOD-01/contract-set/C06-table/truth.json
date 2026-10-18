@@ -1,0 +1,53 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C06",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "exhibit",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 1,
+  "records": [
+    {
+      "label": "Exhibit: 97166",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97166"],"written":["97166"],"page":1,"quote":"97166 - - $52.49 per unit"},
+        "amount": {"value":"5249","written":"$52.49","page":1,"quote":"97166 - - $52.49 per unit"},
+        "effective_from": {
+          "value": "2026-02-01",
+          "written": "February 1, 2026",
+          "page": 1,
+          "quote": "Fee schedule effective February 1, 2026."
+        }
+      }
+    },
+    {
+      "label": "Exhibit: 97164 CO",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 1,
+          "quote": "Rates below are fixed amounts per unit of service."
+        },
+        "codes": {"value":["97164"],"written":["97164"],"page":1,"quote":"97164 CO - $72.97 per unit"},
+        "modifiers": {"value":["CO"],"written":["CO"],"page":1,"quote":"97164 CO - $72.97 per unit"},
+        "amount": {"value":"7297","written":"$72.97","page":1,"quote":"97164 CO - $72.97 per unit"},
+        "effective_from": {
+          "value": "2026-02-01",
+          "written": "February 1, 2026",
+          "page": 1,
+          "quote": "Fee schedule effective February 1, 2026."
+        }
+      }
+    }
+  ]
+}

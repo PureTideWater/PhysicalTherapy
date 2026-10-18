@@ -1,0 +1,72 @@
+[
+  {
+    "record_type": "assistant_modifier",
+    "key": { "modifier": "CQ" },
+    "value": { "payment_percent": "85" },
+    "effective_from": "2022-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Assistant modifiers CQ and CO\" (line 22)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
+        "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services): are services with the CQ modifier paid at 85% of the otherwise applicable amount, effective January 1, 2022?",
+        "Store that CMS page (or the final rule that set the reduction) under content/sources/assistant_modifier/ and re-cite this record to it, quoting the stored file.",
+        "Has CMS changed the percentage since 2022? The window is open-ended."
+      ]
+    },
+    "quotes": [
+      "Assistant modifiers CQ and CO",
+      "Paid at 85% of the otherwise applicable amount, effective January 1, 2022"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services). Applied only when the rate record's apply_assistant_reduction flag is on."
+  },
+  {
+    "record_type": "assistant_modifier",
+    "key": { "modifier": "CO" },
+    "value": { "payment_percent": "85" },
+    "effective_from": "2022-01-01",
+    "effective_to": null,
+    "source": {
+      "title": "Therapy contract-payment platform build plan, Rules reference tab as of 2026-10-14 (copy of docs/product/rules-reference.md)",
+      "url": null,
+      "path": "content/sources/plan/rules-reference.md",
+      "retrieved": "2026-10-15",
+      "sha256": "d7b14abd43d31b993458691e1e6aa0cc9b56f8ab37a71eadc925f952a65f7bcf",
+      "method": "hand_typed",
+      "transcribed_by": "milestone 0 part B build session",
+      "transcribed_on": "2026-10-15",
+      "locator": "Therapy-specific Medicare rules table, row \"Assistant modifiers CQ and CO\" (line 22)",
+      "synthetic": false
+    },
+    "verification": {
+      "level": "L1",
+      "by": "pnpm verify-content",
+      "on": "2026-10-15",
+      "questions": [
+        "The second pass was typed by the same build session as the first, so it is not an independent transcription: a second person redoes records.second-pass.json from the stored primary source (the checker refuses L2 while both passes name the same transcriber).",
+        "Open the CMS therapy services page (https://www.cms.gov/medicare/coding-billing/therapy-services): are services with the CO modifier paid at 85% of the otherwise applicable amount, effective January 1, 2022?",
+        "Store that CMS page (or the final rule that set the reduction) under content/sources/assistant_modifier/ and re-cite this record to it, quoting the stored file.",
+        "Has CMS changed the percentage since 2022? The window is open-ended."
+      ]
+    },
+    "quotes": [
+      "Assistant modifiers CQ and CO",
+      "Paid at 85% of the otherwise applicable amount, effective January 1, 2022"
+    ],
+    "notes": "Hand-typed from the plan's rules reference, which cites CMS therapy services (https://www.cms.gov/medicare/coding-billing/therapy-services). Applied only when the rate record's apply_assistant_reduction flag is on."
+  }
+]

@@ -1,0 +1,108 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C04",
+  "layout": "table",
+  "drawnAs": null,
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": null,
+  "pages": 3,
+  "records": [
+    {
+      "label": "Exhibit A: 97140, 97530, 97542",
+      "fields": {
+        "method": {
+          "value": "PER_VISIT",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay one case rate per visit for the codes listed in Exhibit A, whatever the units billed."
+        },
+        "codes": {
+          "value": ["97140","97530","97542"],
+          "written": ["97140","97530","97542"],
+          "page": 3,
+          "quote": "97140, 97530, 97542 - - $138.57 per visit"
+        },
+        "amount": {
+          "value": "13857",
+          "written": "$138.57",
+          "page": 3,
+          "quote": "97140, 97530, 97542 - - $138.57 per visit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": true,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction applies; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "2026-04-01",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97150, 97116, 97162",
+      "fields": {
+        "method": {
+          "value": "PER_VISIT",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall pay one case rate per visit for the codes listed in Exhibit A, whatever the units billed."
+        },
+        "codes": {
+          "value": ["97150","97116","97162"],
+          "written": ["97150","97116","97162"],
+          "page": 3,
+          "quote": "97150, 97116, 97162 - - $115.49 per visit"
+        },
+        "amount": {
+          "value": "11549",
+          "written": "$115.49",
+          "page": 3,
+          "quote": "97150, 97116, 97162 - - $115.49 per visit"
+        },
+        "flags": {
+          "value": {
+            "apply_mppr": true,
+            "apply_assistant_reduction": true,
+            "apply_sequestration": false,
+            "apply_ncci": false,
+            "timed_units_rule": "MEDICARE_POOLED"
+          },
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.3. Adjustments: the multiple procedure payment reduction applies; the assistant reduction applies; sequestration does not apply; NCCI edits do not apply; timed units are counted under the Medicare pooled 8-minute rule."
+        },
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-04-01",
+          "written": "2026-04-01",
+          "page": 1,
+          "quote": "This Agreement is effective 2026-04-01 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

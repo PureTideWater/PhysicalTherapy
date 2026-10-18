@@ -1,0 +1,23 @@
+{
+  "case": "MOD-05",
+  "module": "MOD",
+  "title": "Budget exceeded",
+  "assertion": "Calls refused; alert",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/gateway.test.ts",
+    "packages/model-gateway/src/gateway.db.test.ts",
+    "apps/web/src/lib/routes/models-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "infra/test/monitoring.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A per-practice budget, a gateway setting; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

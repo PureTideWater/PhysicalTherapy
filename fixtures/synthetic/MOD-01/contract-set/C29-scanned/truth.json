@@ -1,0 +1,55 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C29",
+  "layout": "scanned",
+  "drawnAs": "prose",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 3,
+  "records": [
+    {
+      "label": "Article 3: 97140, 97530, 97164 POS 11",
+      "fields": {
+        "method": {
+          "value": "PER_VISIT",
+          "written": null,
+          "page": 3,
+          "quote": "For a visit that includes any of CPT 97140, 97530 and 97164 in place of service 11, Payer pays a case rate of $73.12 per visit."
+        },
+        "codes": {
+          "value": ["97140","97530","97164"],
+          "written": ["97140","97530","97164"],
+          "page": 3,
+          "quote": "For a visit that includes any of CPT 97140, 97530 and 97164 in place of service 11, Payer pays a case rate of $73.12 per visit."
+        },
+        "places_of_service": {
+          "value": ["11"],
+          "written": ["11"],
+          "page": 3,
+          "quote": "For a visit that includes any of CPT 97140, 97530 and 97164 in place of service 11, Payer pays a case rate of $73.12 per visit."
+        },
+        "amount": {
+          "value": "7312",
+          "written": "$73.12",
+          "page": 3,
+          "quote": "For a visit that includes any of CPT 97140, 97530 and 97164 in place of service 11, Payer pays a case rate of $73.12 per visit."
+        },
+        "rounding": {
+          "value": "HALF_EVEN_CENT",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are rounded to the nearest cent, an exact half going to the even cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "March 1, 2026",
+          "page": 1,
+          "quote": "This Agreement is effective March 1, 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

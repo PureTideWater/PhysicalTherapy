@@ -1,0 +1,118 @@
+{
+  "format": "tp-eval-contract/1",
+  "synthetic": true,
+  "id": "C40",
+  "layout": "scanned",
+  "drawnAs": "table",
+  "kind": "contract",
+  "document": "document.pdf",
+  "contentType": "application/pdf",
+  "scan": "textract.json",
+  "pages": 3,
+  "records": [
+    {
+      "label": "Exhibit A: 97140 CQ GP",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97140"],"written":["97140"],"page":3,"quote":"97140 CQ GP - 45.32 per unit"},
+        "modifiers": {"value":["CQ","GP"],"written":["CQ","GP"],"page":3,"quote":"97140 CQ GP - 45.32 per unit"},
+        "amount": {"value":"4532","written":"45.32","page":3,"quote":"97140 CQ GP - 45.32 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97116 KX GO",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97116"],"written":["97116"],"page":3,"quote":"97116 KX GO - 99.31 per unit"},
+        "modifiers": {"value":["KX","GO"],"written":["KX","GO"],"page":3,"quote":"97116 KX GO - 99.31 per unit"},
+        "amount": {"value":"9931","written":"99.31","page":3,"quote":"97116 KX GO - 99.31 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97033 GP",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97033"],"written":["97033"],"page":3,"quote":"97033 GP - 142.47 per unit"},
+        "modifiers": {"value":["GP"],"written":["GP"],"page":3,"quote":"97033 GP - 142.47 per unit"},
+        "amount": {"value":"14247","written":"142.47","page":3,"quote":"97033 GP - 142.47 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    },
+    {
+      "label": "Exhibit A: 97164 59",
+      "fields": {
+        "method": {
+          "value": "FIXED_SCHEDULE",
+          "written": null,
+          "page": 2,
+          "quote": "Payer shall reimburse Covered Services at the fixed amounts per unit of service stated in Exhibit A."
+        },
+        "codes": {"value":["97164"],"written":["97164"],"page":3,"quote":"97164 59 - 45.16 per unit"},
+        "modifiers": {"value":["59"],"written":["59"],"page":3,"quote":"97164 59 - 45.16 per unit"},
+        "amount": {"value":"4516","written":"45.16","page":3,"quote":"97164 59 - 45.16 per unit"},
+        "rounding": {
+          "value": "TRUNCATE",
+          "written": null,
+          "page": 2,
+          "quote": "Section 2.2. All payment amounts are truncated to the whole cent."
+        },
+        "effective_from": {
+          "value": "2026-03-01",
+          "written": "1 March 2026",
+          "page": 1,
+          "quote": "This Agreement is effective 1 March 2026 and continues until either party ends it on 90 days written notice."
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "case": "SEC-06",
+  "module": "SEC",
+  "title": "Bulk job spanning practices",
+  "assertion": "Refused by design",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/authz/scope.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "One practice per job is enforced by the job scope.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

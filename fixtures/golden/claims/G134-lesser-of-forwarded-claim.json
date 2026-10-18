@@ -1,0 +1,300 @@
+{
+  "format": "tp-golden-claim/3",
+  "id": "G134",
+  "title": "Claim status 19 (processed as primary and forwarded) prices",
+  "covers": ["fixture payer B", "claim status 19", "LESSER_OF"],
+  "notes": "Forwarded to another payer after primary adjudication: priced as primary.",
+  "inputs": {
+    "release": {
+      "number": 900003,
+      "dir": "fixtures/synthetic/rules/release-synth-900003",
+      "manifest_sha256": "e4d7228d5344d9fc824b223ae7d1af7608c81a2c9ec9fc31db1e66f1e555f5c8"
+    },
+    "as_of": "2026-10-15",
+    "practice_settings": {"zip": "00011", "default_rounding": "HALF_UP_CENT"},
+    "place_of_service_settings": {"11": "non_facility", "22": "facility"},
+    "claim": {
+      "claim_id": "SYNTH-CLAIM-G134",
+      "claim_status_code": "19",
+      "reversed": false,
+      "corrected": false,
+      "remittance_date": "2026-09-08",
+      "payer_plan_key": "SYNTH-PAYER-B/PLAN-HMO",
+      "lines": [
+        {
+          "line_no": 1,
+          "procedure_code": "97110",
+          "modifiers": ["GP"],
+          "units": "1",
+          "service_date": "2026-08-18",
+          "place_of_service": "11",
+          "charge_cents": "5000",
+          "observed_allowed_cents": "3332",
+          "observed_allowed_basis": "amt_b6",
+          "patient_share_adjustments": []
+        },
+        {
+          "line_no": 2,
+          "procedure_code": "97530",
+          "modifiers": ["GP"],
+          "units": "1",
+          "service_date": "2026-08-18",
+          "place_of_service": "11",
+          "charge_cents": "4000",
+          "observed_allowed_cents": "3300",
+          "observed_allowed_basis": "amt_b6",
+          "patient_share_adjustments": []
+        }
+      ]
+    },
+    "mappings": [
+      {
+        "mapping_id": "map-b-hmo",
+        "kind": "contract",
+        "contract_version_id": "cv-b-1",
+        "effective_from": "2026-01-01",
+        "effective_to": null
+      }
+    ],
+    "contract_versions": [
+      {
+        "contract_version_id": "cv-b-1",
+        "contract_id": "contract-synth-b",
+        "version_no": 1,
+        "status": "signed_off",
+        "effective_from": "2026-01-01",
+        "effective_to": null,
+        "windows": {
+          "timely_filing_days": 365,
+          "dispute_window_days": null,
+          "appeal_levels": []
+        },
+        "rate_records": [
+          {
+            "rate_record_id": "rr-b-fixed",
+            "scope": {
+              "codes": ["97110", "97112", "97116", "97140"],
+              "modifier_sets": null,
+              "places_of_service": null,
+              "effective_from": "2026-01-01",
+              "effective_to": null
+            },
+            "method": "LESSER_OF",
+            "parameters": {
+              "schedule": {"method": "FIXED_SCHEDULE", "amount_cents": "3400"},
+              "charge_basis": "LINE_CHARGE",
+              "contract_adjustment": {"kind": "PERCENT", "percent": "98"}
+            },
+            "flags": {
+              "apply_mppr": false,
+              "apply_assistant_reduction": false,
+              "apply_sequestration": true,
+              "apply_ncci": false,
+              "timed_units_rule": "MEDICARE_POOLED",
+              "rounding": "HALF_EVEN_CENT"
+            }
+          },
+          {
+            "rate_record_id": "rr-b-medicare",
+            "scope": {
+              "codes": ["97530", "97161", "97162", "97163", "97164", "97026", "97035", "G0283", "97750"],
+              "modifier_sets": null,
+              "places_of_service": null,
+              "effective_from": "2026-01-01",
+              "effective_to": null
+            },
+            "method": "LESSER_OF",
+            "parameters": {
+              "schedule": {
+                "method": "PERCENT_OF_MEDICARE",
+                "percentage": "125",
+                "year_basis": "CURRENT",
+                "locality_basis": "practice",
+                "conversion_factor": "non_qualifying_apm"
+              },
+              "charge_basis": "LINE_CHARGE",
+              "contract_adjustment": null
+            },
+            "flags": {
+              "apply_mppr": false,
+              "apply_assistant_reduction": true,
+              "apply_sequestration": false,
+              "apply_ncci": true,
+              "timed_units_rule": "PER_CODE",
+              "rounding": "TRUNCATE"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "lines": [
+      {
+        "line_no": 1,
+        "outcome": "priced",
+        "expected_allowed_cents": "3332",
+        "expected_unrounded_cents": "3332",
+        "rounding": "HALF_EVEN_CENT",
+        "patient_share_cents": "0",
+        "method": "LESSER_OF",
+        "terms": {
+          "mapping_id": "map-b-hmo",
+          "mapping_kind": "contract",
+          "contract_version_id": "cv-b-1",
+          "rate_record_id": "rr-b-fixed"
+        },
+        "base_cents": "3400",
+        "adjustments": [
+          {"name": "sequestration", "before_cents": "3400", "after_cents": "3400"},
+          {"name": "contract_adjustment", "before_cents": "3400", "after_cents": "3332"}
+        ],
+        "review_flags": [],
+        "variance_cents": "0",
+        "window": {"ends_on": "2026-12-18", "status": "OPEN"}
+      },
+      {
+        "line_no": 2,
+        "outcome": "priced",
+        "expected_allowed_cents": "3375",
+        "expected_unrounded_cents": "3375",
+        "rounding": "TRUNCATE",
+        "patient_share_cents": "0",
+        "method": "LESSER_OF",
+        "terms": {
+          "mapping_id": "map-b-hmo",
+          "mapping_kind": "contract",
+          "contract_version_id": "cv-b-1",
+          "rate_record_id": "rr-b-medicare"
+        },
+        "base_cents": "3375",
+        "adjustments": [
+          {"name": "assistant_reduction", "before_cents": "3375", "after_cents": "3375"}
+        ],
+        "review_flags": [],
+        "variance_cents": "75",
+        "window": {"ends_on": "2026-12-18", "status": "OPEN"}
+      }
+    ]
+  },
+  "worksheet": [
+    "# Worksheet G134: Claim status 19 (processed as primary and forwarded) prices",
+    "",
+    "Computed by the independent worksheet tools/golden-worksheet (Python, exact decimal arithmetic; no code shared with packages/pricing).",
+    "Specialist verified: no. A reimbursement specialist checks every figure here before milestones 5 and 7 close.",
+    "Every reference value comes from SYNTHETIC release 900003: invented for tests, never a CMS value.",
+    "",
+    "## Inputs",
+    "",
+    "- Release 900003 at fixtures/synthetic/rules/release-synth-900003; its MANIFEST.json has SHA-256 e4d7228d5344d9fc824b223ae7d1af7608c81a2c9ec9fc31db1e66f1e555f5c8 and every file matched it.",
+    "- Practice settings: ZIP 00011; default rounding HALF_UP_CENT.",
+    "- Place-of-service settings (SYNTHETIC test assumption; fixtures/golden/QUESTIONS.md): 11 non-facility; 22 facility.",
+    "- Claim SYNTH-CLAIM-G134: status 19 (processed as primary and forwarded); reversed by a later claim: no; superseded by a correction: no; payer and plan SYNTH-PAYER-B/PLAN-HMO.",
+    "- Remittance date: 2026-09-08; dispute windows are judged on the triage date 2026-10-15.",
+    "- Mapping map-b-hmo: contract, contract version cv-b-1, 2026-01-01 to open.",
+    "- Contract version cv-b-1 (contract contract-synth-b, version 1, signed_off, 2026-01-01 to open; windows: timely filing 365 days, dispute not stated, appeal levels none stated):",
+    "  - Rate record rr-b-fixed: LESSER_OF the line charge and the schedule (FIXED_SCHEDULE, 3400 cents ($34.00) per unit); scope codes 97110, 97112, 97116, 97140; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction off, apply_sequestration on, apply_ncci off; timed_units_rule MEDICARE_POOLED; rounding HALF_EVEN_CENT; contract-specific adjustment pays 98% of the amount.",
+    "  - Rate record rr-b-medicare: LESSER_OF the line charge and the schedule (PERCENT_OF_MEDICARE at 125%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm); scope codes 97530, 97161, 97162, 97163, 97164, 97026, 97035, G0283, 97750; any modifiers; any place of service; 2026-01-01 to open; flags apply_mppr off, apply_assistant_reduction on, apply_sequestration off, apply_ncci on; timed_units_rule PER_CODE; rounding TRUNCATE; contract-specific adjustment none.",
+    "",
+    "| Line | Code | Modifiers | Units | Service date | POS | Charge (cents) | Observed allowed (cents) | PR adjustments (cents) |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | 97110 | GP | 1 | 2026-08-18 | 11 | 5000 | 3332 (amt_b6) | none |",
+    "| 2 | 97530 | GP | 1 | 2026-08-18 | 11 | 4000 | 3300 (amt_b6) | none |",
+    "",
+    "## Steps 1 to 3, per line",
+    "",
+    "### Line 1: 97110 x 1 on 2026-08-18",
+    "",
+    "Step 1, the agreement.",
+    "- Mapping map-b-hmo (contract, 2026-01-01 to open) is in force on 2026-08-18.",
+    "- The mapping names contract version cv-b-1 of contract contract-synth-b; the version that prices the line is the signed-off one of that contract in force on 2026-08-18:",
+    "  - cv-b-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.",
+    "- Rate records of cv-b-1 against code 97110, modifier set [GP], place of service 11, 2026-08-18:",
+    "  - rr-b-fixed (codes 97110, 97112, 97116, 97140; any modifiers; any place of service; 2026-01-01 to open): matches.",
+    "  - rr-b-medicare (codes 97530, 97161, 97162, 97163, 97164, 97026, 97035, G0283, 97750; any modifiers; any place of service; 2026-01-01 to open): no match, code 97110 is not in its codes.",
+    "- Rate record rr-b-fixed: LESSER_OF the line charge and the schedule (FIXED_SCHEDULE, 3400 cents ($34.00) per unit); flags apply_mppr off, apply_assistant_reduction off, apply_sequestration on, apply_ncci off; timed_units_rule MEDICARE_POOLED; rounding HALF_EVEN_CENT; contract-specific adjustment: pays 98% of the amount.",
+    "",
+    "Step 2, the base amount by method.",
+    "- LESSER_OF: the schedule's amount for the units billed is compared with the line charge in step 3, and the lesser is the base.",
+    "- The schedule is FIXED_SCHEDULE: 3400 cents ($34.00) per unit for the code and modifier set.",
+    "",
+    "Step 3, units and edits.",
+    "- Units: 1 as billed, under the timed-units rule MEDICARE_POOLED, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).",
+    "- Medically unlikely edit: apply_ncci is off; not checked.",
+    "- Base, the lesser of the schedule and the line charge: the schedule for 1 unit(s) is 3400 cents ($34.00) x 1 = 3400 cents ($34.00); the line charge is 5000 cents ($50.00); the lesser is the schedule, 3400 cents ($34.00).",
+    "- Procedure-to-procedure edits: apply_ncci is off; not checked.",
+    "",
+    "### Line 2: 97530 x 1 on 2026-08-18",
+    "",
+    "Step 1, the agreement.",
+    "- Mapping map-b-hmo (contract, 2026-01-01 to open) is in force on 2026-08-18.",
+    "- The mapping names contract version cv-b-1 of contract contract-synth-b; the version that prices the line is the signed-off one of that contract in force on 2026-08-18:",
+    "  - cv-b-1 (version 1, signed_off, 2026-01-01 to open): signed off and in force.",
+    "- Rate records of cv-b-1 against code 97530, modifier set [GP], place of service 11, 2026-08-18:",
+    "  - rr-b-fixed (codes 97110, 97112, 97116, 97140; any modifiers; any place of service; 2026-01-01 to open): no match, code 97530 is not in its codes.",
+    "  - rr-b-medicare (codes 97530, 97161, 97162, 97163, 97164, 97026, 97035, G0283, 97750; any modifiers; any place of service; 2026-01-01 to open): matches.",
+    "- Rate record rr-b-medicare: LESSER_OF the line charge and the schedule (PERCENT_OF_MEDICARE at 125%, year basis CURRENT, locality basis practice, conversion factor non_qualifying_apm); flags apply_mppr off, apply_assistant_reduction on, apply_sequestration off, apply_ncci on; timed_units_rule PER_CODE; rounding TRUNCATE; contract-specific adjustment: none.",
+    "",
+    "Step 2, the base amount by method.",
+    "- LESSER_OF: the schedule's amount for the units billed is compared with the line charge in step 3, and the lesser is the base.",
+    "- Year basis CURRENT: the fee schedule in effect on the date of service, 2026-08-18 (basis year 2026); each value is the record in force on that date.",
+    "- pfs_rvu 97530 (year 2026, quarter A, 2026-01-01 to 2026-12-31): work 0.35, PE non-facility 0.95, PE facility 0.25, MP 0.15, status A.",
+    "- Place of service 11 is non-facility, so the non-facility practice-expense value applies.",
+    "- Locality: practice ZIP 00011 maps to carrier 99999 locality 01 (locality_map in force on 2026-08-18, 2026-01-01 to 2026-12-31).",
+    "- pfs_gpci 99999-01 (2026-01-01 to 2026-12-31): work 1.000, PE 0.950, MP 0.650.",
+    "- conversion_factor non_qualifying_apm (2026-01-01 to 2026-12-31): $20.0000 per RVU.",
+    "- Geographically adjusted RVUs: work 0.35 x 1.000 = 0.35; PE 0.95 x 0.950 = 0.9025; MP 0.15 x 0.650 = 0.0975; total 1.35.",
+    "- Fee schedule amount per unit: 1.35 x $20.0000 = $27.00.",
+    "- At 125%, per unit: work 875 cents ($8.75), practice expense 2256.25 cents ($22.5625), malpractice 243.75 cents ($2.4375); total 3375 cents ($33.75).",
+    "",
+    "Step 3, units and edits.",
+    "- Units: 1 as billed, under the timed-units rule PER_CODE, recorded: until minute logs are imported the units are taken as billed (PRD 2 point 6).",
+    "- Medically unlikely edit: apply_ncci is on; ncci_mue 97530 (2026-01-01 to 2026-12-31, adjudication indicator 3) allows 5 unit(s); 1 is within it.",
+    "- Base, the lesser of the schedule and the line charge: the schedule for 1 unit(s) is 3375 cents ($33.75) x 1 = 3375 cents ($33.75); the line charge is 4000 cents ($40.00); the lesser is the schedule, 3375 cents ($33.75).",
+    "- Procedure-to-procedure edits: apply_ncci is on; no ncci_ptp record in force on 2026-08-18 has 97530 in column 2 and another line's code of the date in column 1.",
+    "",
+    "## Steps 4 to 8, per line",
+    "",
+    "### Line 1",
+    "",
+    "Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.",
+    "- mppr: flag apply_mppr is off; not applied.",
+    "- assistant_reduction: flag apply_assistant_reduction is off; not applied.",
+    "- sequestration: before 3400, after 3400; sequestration is suspended on 2026-08-18; unchanged.",
+    "- contract_adjustment: before 3400, after 3332; the rate record pays 98% of the amount: 3400 cents ($34.00) x 98% = 3332 cents ($33.32).",
+    "",
+    "Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.",
+    "- Claim status 19 (processed as primary and forwarded); the claim is not reversed.",
+    "",
+    "Step 6, rounding once: 3332 cents under HALF_EVEN_CENT (the rate record's rule; halves move to the even cent) = **3332 cents ($33.32)**; the unrounded 3332 is kept beside it.",
+    "",
+    "Step 7, variance: expected allowed 3332 - observed allowed 3332 cents (amt_b6) = 0 cents: none.",
+    "",
+    "Step 8, dispute window: the contract states no dispute window, so the release's commercial default first-level window applies (dispute_window commercial_default redetermination, 2026-01-01 to open, in force on the remittance date 2026-09-08): 4 months from the date of service 2026-08-18, ends on 2026-12-18; on the triage date 2026-10-15 it is open.",
+    "",
+    "### Line 2",
+    "",
+    "Step 4, adjustments in order: the multiple procedure reduction, the assistant reduction and sequestration where their flags are on, then the rate record's own.",
+    "- mppr: flag apply_mppr is off; not applied.",
+    "- sequestration: flag apply_sequestration is off; not applied.",
+    "- assistant_reduction: before 3375, after 3375; no CQ or CO modifier on the line; unchanged.",
+    "- contract_adjustment: the rate record defines none; not applied.",
+    "",
+    "Step 5, patient share: 0 cents ($0.00) from the line's PR adjustments (none); reported beside the expected amount, never subtracted from it.",
+    "- Claim status 19 (processed as primary and forwarded); the claim is not reversed.",
+    "",
+    "Step 6, rounding once: 3375 cents under TRUNCATE (the rate record's rule; fractions of a cent are dropped toward zero) = **3375 cents ($33.75)**; the unrounded 3375 is kept beside it.",
+    "",
+    "Step 7, variance: expected allowed 3375 - observed allowed 3300 cents (amt_b6) = 75 cents: an underpayment.",
+    "",
+    "Step 8, dispute window: the contract states no dispute window, so the release's commercial default first-level window applies (dispute_window commercial_default redetermination, 2026-01-01 to open, in force on the remittance date 2026-09-08): 4 months from the date of service 2026-08-18, ends on 2026-12-18; on the triage date 2026-10-15 it is open.",
+    "",
+    "## Results",
+    "",
+    "| Line | Outcome | Expected allowed (cents) | Unrounded (cents) | Rounding | Patient share (cents) | Variance (cents) | Dispute window | Review flags |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| 1 | priced | 3332 | 3332 | HALF_EVEN_CENT | 0 | 0 | OPEN (ends 2026-12-18) | none |",
+    "| 2 | priced | 3375 | 3375 | TRUNCATE | 0 | 75 | OPEN (ends 2026-12-18) | none |"
+  ],
+  "provenance": {"computed_by": "independent worksheet tools/golden-worksheet", "specialist_verified": false}
+}

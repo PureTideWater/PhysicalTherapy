@@ -1,0 +1,20 @@
+{
+  "case": "CAS-10",
+  "module": "CAS",
+  "title": "Single-user practice",
+  "assertion": "24-hour delay and audit flag",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/worker/src/packets/packets.db.test.ts",
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A practice with one user, a setting; any packet will do.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

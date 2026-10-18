@@ -1,0 +1,68 @@
+{
+  "format": "tp-audit-inputs/1",
+  "id": "AUDIT-01",
+  "synthetic": true,
+  "description": "SYNTHETIC end-to-end audit (milestone 6): one payer, three plans, one remittance. Invented amounts only; no real patient, payer, practice or claim. packages/synth builds the 835 from these inputs; tools/audit-worksheet computes the expected report from them independently of the application.",
+  "practice": {
+    "settings": {
+      "line_materiality_cents": "500",
+      "case_materiality_cents": "25000",
+      "anomaly_minimum_cohort": 30,
+      "anomaly_threshold_cents": "1000",
+      "staff_rate_cents_per_hour": "6000",
+      "minutes_per_packet": 45,
+      "minutes_per_follow_up": 30
+    }
+  },
+  "judged_on": "2026-10-15",
+  "stable": {
+    "from": "2026-05-07",
+    "to": "2036-04-02",
+    "why": "Every dispute window either closed on 2026-05-06 or stays open until 2036-04-03, so the report is the same on any triage date in between."
+  },
+  "payer": { "key": "AUD", "name": "SYNTHETIC PAYER AUD" },
+  "remittance": { "payment_date": "2026-04-06", "isa13": 950000001, "trace": "SYNEFTAUDIT01001" },
+  "run": { "from_month": "2026-03", "to_month": "2026-03" },
+  "plans": [
+    {
+      "key": "SYNPLAN-AUD-FIX",
+      "mapping": "contract",
+      "contract": {
+        "effective_from": "2026-01-01",
+        "dispute_window_days": 3650,
+        "dispute_window_evidence": { "page": 1, "quote": "Disputes are raised within 3650 days of the remittance." },
+        "schedule": [
+          { "code": "97110", "amount_cents": "5000" },
+          { "code": "97530", "amount_cents": "5200" }
+        ]
+      }
+    },
+    {
+      "key": "SYNPLAN-AUD-SHORT",
+      "mapping": "contract",
+      "contract": {
+        "effective_from": "2026-01-01",
+        "dispute_window_days": 30,
+        "dispute_window_evidence": { "page": 1, "quote": "Disputes are raised within 30 days of the remittance." },
+        "schedule": [{ "code": "97110", "amount_cents": "5000" }]
+      }
+    },
+    { "key": "SYNPLAN-AUD-OON", "mapping": "no_agreement" }
+  ],
+  "line_rules": {
+    "claims": "One claim per line, numbered in the order the groups list them: SYNCCNAUD01 and four digits from 0001.",
+    "service_date": "The group's first service date plus the line's index within the group modulo 20, in days.",
+    "modifiers": "GP on every line.",
+    "patient_share": "PR-2 coinsurance of one fifth of the allowed amount; AMT B6 carries the allowed amount; place of service 11."
+  },
+  "groups": [
+    { "plan": "SYNPLAN-AUD-FIX", "code": "97110", "units": 2, "unit_charge_cents": "7500", "allowed_cents": "6500", "count": 8, "first_service_date": "2026-03-02", "note": "paid 65.00 against 100.00: one pattern above the case materiality" },
+    { "plan": "SYNPLAN-AUD-FIX", "code": "97530", "units": 2, "unit_charge_cents": "8000", "allowed_cents": "9400", "count": 3, "first_service_date": "2026-03-03", "note": "paid 94.00 against 104.00: a pattern below the case materiality, held" },
+    { "plan": "SYNPLAN-AUD-FIX", "code": "97110", "units": 1, "unit_charge_cents": "7500", "allowed_cents": "4700", "count": 1, "first_service_date": "2026-03-10", "note": "3.00 short: below the per-line materiality" },
+    { "plan": "SYNPLAN-AUD-FIX", "code": "97110", "units": 1, "unit_charge_cents": "7500", "allowed_cents": "5600", "count": 1, "first_service_date": "2026-03-11", "note": "overpaid by 6.00: recorded, never pursued" },
+    { "plan": "SYNPLAN-AUD-FIX", "code": "97110", "units": 1, "unit_charge_cents": "7500", "allowed_cents": "5000", "count": 1, "first_service_date": "2026-03-12", "note": "paid as expected" },
+    { "plan": "SYNPLAN-AUD-SHORT", "code": "97110", "units": 2, "unit_charge_cents": "7500", "allowed_cents": "6000", "count": 6, "first_service_date": "2026-03-04", "note": "40.00 short, but the 30-day window closed on 2026-05-06" },
+    { "plan": "SYNPLAN-AUD-OON", "code": "97110", "units": 1, "unit_charge_cents": "12000", "allowed_cents": "9000", "count": 28, "first_service_date": "2026-03-02", "note": "no agreement: the cohort's mode" },
+    { "plan": "SYNPLAN-AUD-OON", "code": "97110", "units": 1, "unit_charge_cents": "12000", "allowed_cents": "7000", "count": 4, "first_service_date": "2026-03-09", "note": "20.00 short of the mode: flagged, investigatory" }
+  ]
+}
