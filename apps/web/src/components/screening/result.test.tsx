@@ -341,6 +341,11 @@ describe('the anomalies by code and payer product', () => {
     expect(rowClasses.slice(0, -1).filter((names) => !/\bpr-3\b/.test(names))).toEqual([]);
   });
 
+  it('lets a keyboard reach each table’s scrolling region, named by its card’s title', () => {
+    expect(html).toContain('<div class="overflow-x-auto" role="region" aria-labelledby="screening-anomalies" tabindex="0" data-scroll="anomalies">');
+    expect(renderToStaticMarkup(<ScreeningTopRows rows={ROWS} />)).toContain('<div class="overflow-x-auto" role="region" aria-labelledby="screening-top-rows" tabindex="0" data-scroll="top-rows">');
+  });
+
   it('is an empty state when nothing was priced', () => {
     const empty = renderToStaticMarkup(<ScreeningAnomalies groups={[]} />);
     expect(empty).not.toContain('<table');

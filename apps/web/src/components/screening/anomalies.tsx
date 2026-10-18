@@ -69,6 +69,8 @@ export interface ScreeningRow {
   readonly standing: ScreeningStanding;
 }
 
+// Both figures widen each table past a narrow card: its region scrolls sideways, and is focusable so a keyboard
+// reaches it (axe's scrollable-region-focusable; WCAG 2.1.1).
 const HEAD = 'py-1 pr-3 font-medium';
 const HEAD_LAST = 'py-1 font-medium';
 const HEAD_NUMBER = 'py-1 pr-3 text-right font-medium';
@@ -148,7 +150,7 @@ export function ScreeningAnomalies({ groups }: { readonly groups: readonly Scree
         {groups.length === 0 ? (
           <EmptyState title="Nothing priced under Medicare" nextStep="Rows of Original Medicare and Medicare Advantage without a contract are priced; the coverage below says why none was." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" role="region" aria-labelledby="screening-anomalies" tabIndex={0} data-scroll="anomalies">
             <table className="w-full text-left text-sm" aria-labelledby="screening-anomalies">
               <thead className="text-muted-foreground">
                 <tr>
@@ -219,7 +221,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
       </CardHeader>
       {listed.length === 0 ? null : (
         <CardContent>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" role="region" aria-labelledby="screening-top-rows" tabIndex={0} data-scroll="top-rows">
             <table className="w-full text-left text-sm" aria-labelledby="screening-top-rows">
               <thead className="text-muted-foreground">
                 <tr>
