@@ -74,6 +74,11 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'ledger-viewer', organization: 'other_group', role: 'viewer' },
   { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
+  // The packet's export attestation (D16; docs/adr/0061): the reimbursement reviewer, under a support grant on the journey's practice.
+  { key: 'packet-reviewer', organization: 'internal', role: 'reviewer' },
+  // The deadline journey (CO-05, D17): billing managers of the other group, in a practice of its own.
+  { key: 'packet-deadline-drafter', organization: 'other_group', role: 'billing_manager' },
+  { key: 'packet-deadline-approver', organization: 'other_group', role: 'billing_manager' },
   { key: 'triage-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'monitoring-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'reports-manager', organization: 'other_group', role: 'billing_manager' },
