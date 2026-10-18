@@ -19,7 +19,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       # The database logs every deliberate refusal the tests provoke; its log is printed after the job and,
       # unquieted, buries the failing test's own output. Only the database's log level changes.
