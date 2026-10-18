@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `f2ed20af0259510128e30d6d851efd74c62f6d7d` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `a57ac32972aa01dafa071b163725345dc056ae0d` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261104090000_free_screening.sql`
 - PostgreSQL 18; schema `public`: 84 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 28 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -4571,8 +4571,11 @@ Invariants enforced by triggers:
 | 4 | `row_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
 | 5 | `status` | `text` | NOT NULL |  |  | `20261104090000` | one of accepted, rejected |
 | 6 | `rejection_reasons` | `jsonb` | NOT NULL | `'[]'::jsonb` |  | `20261104090000` |  |
-| 7 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
-| 8 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
+| 7 | `left_out_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 8 | `left_out_claim_lines` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 9 | `left_out_allowed_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 10 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 11 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
 
 Keys:
 - Primary: (id)
@@ -4587,9 +4590,13 @@ Policies (1):
   - WITH CHECK `true`
 
 Invariants enforced by constraints:
-- `screening_upload_accepted_rows`: `CHECK (status <> 'accepted'::text OR row_count >= 1 AND row_count <= 50000)`
+- `screening_upload_accepted_rows`: `CHECK (status <> 'accepted'::text OR row_count >= 1 AND row_count <= 50000 AND (row_count + left_out_rows) <= 50000)`
 - `screening_upload_expiry`: `CHECK (expires_at = (created_at + '30 days'::interval))`
 - `screening_upload_file_sha256`: `CHECK (file_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_upload_left_out_accepted`: `CHECK (status = 'accepted'::text OR left_out_rows = 0)`
+- `screening_upload_left_out_allowed`: `CHECK (left_out_allowed_cents >= 0 AND left_out_allowed_cents <= (2500000::bigint * left_out_claim_lines))`
+- `screening_upload_left_out_claim_lines`: `CHECK (left_out_claim_lines >= left_out_rows AND left_out_claim_lines <= (10 * left_out_rows))`
+- `screening_upload_left_out_rows`: `CHECK (left_out_rows >= 0 AND left_out_rows <= 50000)`
 - `screening_upload_reasons`: `CHECK (screening_rejections_valid(rejection_reasons))`
 - `screening_upload_rejected`: `CHECK ((status = 'rejected'::text) = CASE     WHEN jsonb_typeof(rejection_reasons) = 'array'::text THEN jsonb_array_length(rejection_reasons) > 0     ELSE false END)`
 - `screening_upload_row_count`: `CHECK (row_count >= 0 AND row_count <= 10000000)`
@@ -4771,7 +4778,7 @@ Policies (1):
   - WITH CHECK `true`
 
 Invariants enforced by constraints:
-- `screening_result_claim_count`: `CHECK (claim_count >= 1 AND claim_count <= 100000)`
+- `screening_result_claim_count`: `CHECK (claim_count >= 11 AND claim_count <= 100000)`
 - `screening_result_contract_required`: `CHECK ((payer_product = ANY (ARRAY['ma_contracted'::text, 'commercial'::text])) = (disposition = 'contract_required'::text))`
 - `screening_result_disposition`: `CHECK (disposition = ANY (ARRAY['pending'::text, 'priced'::text, 'unpriced'::text, 'rates_change_in_band'::text, 'contract_required'::text, 'not_screened'::text]))`
 - `screening_result_figures`: `CHECK (disposition <> 'priced'::text OR expected_line_cents >= 0 AND abs(expected_line_unrounded - expected_line_cents::numeric) < 1::numeric AND expected_cents = (expected_line_cents * claim_count) AND difference_cents = (expected_cents - observed_allowed_cents))`
@@ -5630,7 +5637,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
 | C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
-| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Built as prospect_request is (migration 20261104090000, ADR 0062): screening_prospect, screening_upload, screening_run and screening_result, and a fifth, screening_place_of_service_split, the platform split the engine needs (no rule record carries one), each in public with RLS forced and the owner's policy alone, no practice_id, no phi_table_registry row and no privilege for any other role. The application writes them only through submit_screening() and reject_screening_upload(), reads a result by its link token's SHA-256 and converts it through convert_screening(), and the contract specialist approves the split through console_approve_screening_split() (all SECURITY DEFINER); the platform jobs use operator_screening_*() as tp_operator. An upload stores its hash, row count and coded reasons, never a byte of the file; catalog.ts is unchanged, and SEC-17 reads the catalog for PHI-shaped columns. | decided (reconciliation-001, decision D18 a, approved 2026-10-17) and built; approving this document approves the fifth table, which CO-12 does not list |
+| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Built as prospect_request is (migration 20261104090000, ADR 0062): screening_prospect, screening_upload, screening_run and screening_result, and a fifth, screening_place_of_service_split, the platform split the engine needs (no rule record carries one), each in public with RLS forced and the owner's policy alone, no practice_id, no phi_table_registry row and no privilege for any other role. The application writes them only through submit_screening() and reject_screening_upload(), reads a result by its link token's SHA-256 and converts it through convert_screening(), and the contract specialist approves the split through console_approve_screening_split() (all SECURITY DEFINER); the platform jobs use operator_screening_*() as tp_operator. An upload stores its hash, row count and coded reasons, and of the rows of fewer than 11 claim lines the browser left out three numbers alone, never a byte of the file; no row of fewer than 11 claim lines is stored (the CMS small-cell standard, the founder's ruling of 2026-10-18); catalog.ts is unchanged, and SEC-17 reads the catalog for PHI-shaped columns. | decided (reconciliation-001, decision D18 a, approved 2026-10-17) and built; approving this document approves the fifth table, which CO-12 does not list |
 
 ### D. Tables not in the Data dictionary (informational)
 
@@ -6050,14 +6057,14 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
 | `screening_kept_until_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c2bb68ef6f2811e6` |
 | `screening_modifiers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `5ce982845defbad6` |
-| `screening_rejection_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `ed904bfa21f7e12b` |
+| `screening_rejection_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `de376c36d4958863` |
 | `screening_rejections_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `44d088a7b92201f1` |
 | `screening_result_coverage(text)` | `TABLE(payer_product text, disposition text, unpriced_reason text, unpriced_detail text, rows integer, claim_lines bigint, observed_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d0ded51d5c43a4fd` |
 | `screening_result_groups(text)` | `TABLE(payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, reduced_cents bigint, observed_cents bigint, difference_cents bigint, reduced_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, anomaly boolean, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `56d2ed09de932cad` |
 | `screening_result_inserted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f556a1e47dc13dee` |
 | `screening_result_rows(text,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint, in_reduction_pool boolean, reduced_line_cents bigint, reduced_cents bigint, reduced_difference_cents bigint, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1fc6b8482bf8d179` |
 | `screening_result_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `740dacdcc9915f56` |
-| `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, converted boolean, release_withdrawn boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ec6a71aa1f2a3b0b` |
+| `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, left_out_rows integer, left_out_claim_lines bigint, left_out_observed_cents bigint, converted boolean, release_withdrawn boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3671bcd645d2b5f3` |
 | `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8ea20634148c36b8` |
 | `screening_split_in_force()` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `32bb20f8a402f18e` |
 | `screening_split_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `44ae8e24ea5d8386` |
@@ -6080,7 +6087,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
-| `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c5b84d3f0f58bed8` |
+| `submit_screening(text,text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ec836d01ac6fa60d` |
 | `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24615116b611dcb0` |
 | `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9bff8d1f6d16f0e6` |
 | `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e2ccf3fc52ddc22` |
@@ -6154,7 +6161,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261104090000_free_screening.sql` | ADR 0062 | `2bb7564f6b1ddac9e6687ab59382913ed6a5999813ccfbb9a13e7a3bb00876e9` |
+| 41 | `20261104090000_free_screening.sql` | ADR 0062 | `5fdac96065998f6390ad9a1d9529def58c4f176f433f821ce3a3e869b63e4074` |
 
 ## Cross-checks
 
@@ -6172,4 +6179,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261104090000_free_screening.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `07b0a49e6d902ab99a4ffeb991f1c2c4cc18aae7f12b77bf5ad73feb9887f182`
+Approved by: ________  Date: ________  Document SHA-256: `7359829a36291b1efd4f6b54fb422f1b3923c9ed3624e4a31e3c715dc3d306cf`
