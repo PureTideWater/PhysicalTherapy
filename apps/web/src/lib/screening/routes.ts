@@ -159,11 +159,11 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
     case 'row_shape':
       return `${row} does not have one cell for each column`;
     case 'invalid_value':
-      return `${row}: the ${fieldName} is not in the screening's format`;
+      return `${row}: the ${fieldName} is not in the screening’s format`;
     case 'band_holds_date':
       return `${row}: ${columnName(reason).toLowerCase()} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
     case 'band_in_future':
-      return `${row}: the service band's quarter has not started yet`;
+      return `${row}: the service band’s quarter has not started yet`;
     case 'duplicate_row':
       return `${row} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}; add the two into one row`;
     case 'no_rows':
