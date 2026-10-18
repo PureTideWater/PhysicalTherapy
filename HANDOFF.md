@@ -1,6 +1,6 @@
 # PaidWhole build: handoff and state
 
-This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 13:45 UTC.
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 16:40 UTC.
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
@@ -45,8 +45,29 @@ When asking the founder a question, recommend the best option first. Never let t
   - ZIP+4: superseded at 11:47 UTC. Fix before launch in **PR 6b**: practice settings and screening accept ZIP+4 and the engine resolves the locality from it. Five-digit ZIPs and golden lines are unchanged; the engine freeze is loosened for this lookup only. ADR 0062 still says "keep refusing" and must be amended.
 - **PR 6 limits awaiting confirmation with its approval:** $25,000 per claim line, 100,000 claim lines per row, and a hand-kept free-mail list.
 
+- **2026-10-18 16:20 UTC, after the first audit (founder):**
+  - Make the repository private. The founder clicks it, ideally after upgrading to GitHub Pro: Free gives private repositories no branch protection and only 2,000 Actions minutes a month.
+  - Repair main: revert #7. Done as PR #18, merged at `8d7acce`. Main is again the plan documents, plus `.github/dependabot.yml` with `target-branch: claude/build-platform`. The ten Dependabot PRs (#8 to #17) were closed. Never open or merge a PR into main until launch.
+  - Fold the audit's PR 5 fixes in before merge:
+    - #4: a "pricing still current" check at approval, export, attestation and the audit report;
+    - #5: the contract window records its unit and what it runs from, and Medicare Advantage deadlines stay unverified until the specialist confirms the route (Q34), so no MA packet exports until then;
+    - #26: export refusals are visible with their remedy;
+    - #61: no dead Approve button, one form.
+    The PR 5 fingerprint confirmation waits until these land.
+  - Fold the audit's PR 6 fix in before merge: #6, at least 11 claim lines per screening row, enforced in the browser, the server and the database (counsel confirms the number).
+  - Full governance (#12), in the governance PR (`co-001/governance`, workflow `wf_6a5ccaf0-c47`):
+    - hooks switched on now;
+    - CODEOWNERS;
+    - a "changes since last approved" summary;
+    - an `approval-of-record` CI job that requires the founder's GitHub review once the build agent has its own identity (repository variable `APPROVAL_REVIEW_REQUIRED`);
+    - the founder's guide in `docs/runbooks/github-governance.md`.
+    Approval of record becomes the founder's GitHub "Approve" review, which can be done from the phone. The founder then does: GitHub Pro, private, the bot account, rulesets.
+
 ## Where things stand (2026-10-18 13:45 UTC)
 - **Merged into `claude/build-platform`:** #1 (Step 0), #2 (PR 1 brand and copy), #3 (PR 2 domain model), #4 (PR 3 EMR fixtures), #5 (screen-tour fixes), #6 (PR 4 ERA intake). Head: `fe470c1`.
+- **main:** repaired by #18 (`8d7acce`), the plan documents only, until launch.
+- **First audit done:** 64 upgrades (11 critical, 37 high, 16 medium), in `scratchpad/best-option-audit/report.md` and `report.json`. The second audit (`wf_8e577203-afb`) merges into `combined-report.md`.
+- **Queued after the current PR 5 and PR 6 workflows:** a PR 5 audit-fix workflow (#4, #5, #26, #61) and a PR 6 audit-fix workflow (#6).
 - **PR 5:** `co-001/pr-05-packet-deadline`, worktree `/home/user/pr5`. Workflow `wf_e3d92d32-ee0` (download rule) is in review. Next steps:
   1. The founder confirms the new hash.
   2. Write the approval line.
