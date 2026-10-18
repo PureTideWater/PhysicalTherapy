@@ -149,8 +149,9 @@ const text = (amount: Cents | undefined): string | null => (amount === undefined
 /** Records what pricing found for up to 5,000 rows, in one statement. Returns how many it recorded. */
 export async function recordRows(client: OperatorClient, runId: string, outcomes: readonly { readonly rowNo: number; readonly outcome: ScreeningRowOutcome }[]): Promise<number> {
   const priced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'priced' ? item.outcome : undefined);
+  const reduced = (item: (typeof outcomes)[number]) => priced(item)?.reduced ?? undefined;
   const unpriced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'unpriced' ? item.outcome : undefined);
-  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS recorded', [
+  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS recorded', [
     runId,
     outcomes.map((item) => item.rowNo),
     outcomes.map((item) => item.outcome.disposition),
@@ -159,6 +160,11 @@ export async function recordRows(client: OperatorClient, runId: string, outcomes
     outcomes.map((item) => text(priced(item)?.expectedCents)),
     outcomes.map((item) => text(priced(item)?.differenceCents)),
     outcomes.map((item) => priced(item)?.inReductionPool ?? null),
+    outcomes.map((item) => text(reduced(item)?.lineCents)),
+    outcomes.map((item) => reduced(item)?.lineUnrounded ?? null),
+    outcomes.map((item) => text(reduced(item)?.cents)),
+    outcomes.map((item) => text(reduced(item)?.differenceCents)),
+    outcomes.map((item) => reduced(item)?.traceSha256 ?? null),
     outcomes.map((item) => unpriced(item)?.reason ?? null),
     outcomes.map((item) => unpriced(item)?.detail ?? null),
     outcomes.map((item) => item.outcome.traceSha256),

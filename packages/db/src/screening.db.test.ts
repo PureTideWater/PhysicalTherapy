@@ -130,7 +130,8 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
   expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
   const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000)', [runId]);
   const lines = pending.map(() => 5_000n);
-  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)', [
+  const reduced = pending.map(() => 4_000n);
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
     runId,
     pending.map((row) => row.row_no),
     pending.map(() => 'priced'),
@@ -139,6 +140,11 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
     pending.map((row, index) => ((lines[index] ?? 0n) * BigInt(row.claim_count)).toString()),
     pending.map((row, index) => ((lines[index] ?? 0n) * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
     pending.map(() => true),
+    reduced.map(String),
+    reduced.map((line) => `${line.toString()}.4`),
+    pending.map((row, index) => ((reduced[index] ?? 0n) * BigInt(row.claim_count)).toString()),
+    pending.map((row, index) => ((reduced[index] ?? 0n) * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
+    pending.map(() => hex('e')),
     pending.map(() => null),
     pending.map(() => null),
     pending.map(() => hex('f')),
@@ -480,7 +486,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     // A contract-required row is not pending, so the operator's record leaves it as it is.
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
-    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [
+    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
       runId,
       [3, 4],
       ['priced', 'priced'],
@@ -489,6 +495,11 @@ describe('the screening rules', () => {
       ['200', '300'],
       ['-2800', '-3700'],
       [true, true],
+      ['80', '80'],
+      ['80', '80'],
+      ['160', '240'],
+      ['-2840', '-3760'],
+      [hex('e'), hex('e')],
       [null, null],
       [null, null],
       [hex('f'), hex('f')],
@@ -499,14 +510,41 @@ describe('the screening rules', () => {
     await expect(submit({ rows: [['97140', '', 1, '22', 'commercial', '2026-Q1', 1n, 1]] }).then((id) =>
       admin.query("UPDATE screening_result SET disposition = 'rates_change_in_band', trace_sha256 = $2 WHERE run_id = $1", [id, hex('f')]),
     )).rejects.toMatchObject({ code: '23514' });
-    const figures = (line: string, unrounded: string, expected: string, difference: string, pooled: boolean | null = true) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [runId, [1], ['priced'], [line], [unrounded], [expected], [difference], [pooled], [null], [null], [hex('f')]]);
+    // Row 1: 5 claim lines, $100.00 allowed in the file. A pooled row's fully reduced figure: $40.00 a line, $200.00, $100.00 above the allowed total.
+    type Reduced = readonly [line: string | null, unrounded: string | null, total: string | null, difference: string | null, trace: string | null];
+    const REDUCED: Reduced = ['4000', '4000.4', '20000', '10000', hex('e')];
+    const NONE: Reduced = [null, null, null, null, null];
+    const figures = (line: string, unrounded: string, expected: string, difference: string, pooled: boolean | null = true, reduced: Reduced = pooled === true ? REDUCED : NONE) =>
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
+        runId,
+        [1],
+        ['priced'],
+        [line],
+        [unrounded],
+        [expected],
+        [difference],
+        [pooled],
+        ...reduced.map((value) => [value]),
+        [null],
+        [null],
+        [hex('f')],
+      ]);
     // A priced row says whether its code is in the reduction across a visit's codes.
     await expect(figures('5000', '5000.4', '25000', '15000', null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_priced' });
     await expect(figures('5000', '5000.4', '24999', '14999')).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_figures' });
     await expect(figures('5000', '5001', '25000', '15000')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
     await expect(figures('5000', '5000.4', '25000', '15001')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
     await expect(figures('-1', '-1', '-5', '-10005')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
+    // A pooled row has its fully reduced figure, and only a pooled row has one (the owner's ruling of 2026-10-18).
+    await expect(figures('5000', '5000.4', '25000', '15000', true, NONE)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_reduced' });
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10000', null])).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
+    await expect(figures('5000', '5000.4', '25000', '15000', false, REDUCED)).rejects.toMatchObject({ constraint: 'screening_result_reduced' });
+    // It is the line amount times the count, its difference from the allowed total, and never above the figure before the reduction.
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '19999', '9999', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10001', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4001', '20000', '10000', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['5001', '5001', '25005', '15005', hex('e')])).rejects.toMatchObject({ constraint: 'screening_result_reduced_figures' });
+    await expect(figures('5000', '5000.4', '25000', '15000', true, ['4000', '4000.4', '20000', '10000', 'not-a-hash'])).rejects.toMatchObject({ constraint: 'screening_result_reduced_trace_sha256' });
     expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 1 }]);
     // A row is priced once.
     expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 0 }]);
@@ -516,7 +554,7 @@ describe('the screening rules', () => {
     const line = 49_950_000n;
     const expected = line * 100_000n;
     expect(
-      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [
+      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [
         big,
         [1],
         ['priced'],
@@ -525,6 +563,11 @@ describe('the screening rules', () => {
         [expected.toString()],
         [(expected - 99_999_999_999n).toString()],
         [false],
+        [null],
+        [null],
+        [null],
+        [null],
+        [null],
         [null],
         [null],
         [hex('f')],
@@ -539,7 +582,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId]);
     const record = (disposition: string, reason: string | null, detail: string | null, trace: string | null) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [null], [reason], [detail], [trace]]);
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [null], [null], [null], [null], [null], [null], [reason], [detail], [trace]]);
     await expect(record('unpriced', null, null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'NO_AGREEMENT', 'no_gpci', hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'GUESSED', null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced_reason' });
@@ -585,7 +628,7 @@ describe('the screening rules', () => {
     expect(await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId])).toEqual([{ attempt: 2 }]);
     const pending = await as<{ row_no: number }>(OPERATOR_ROLE, 'SELECT row_no FROM operator_screening_rows($1, 0, 5000)', [runId]);
     expect(pending.map((row) => row.row_no)).toEqual([1, 2]);
-    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)', [
+    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
       runId,
       [1, 2],
       ['priced', 'rates_change_in_band'],
@@ -594,6 +637,11 @@ describe('the screening rules', () => {
       ['25000', null],
       ['15000', null],
       [false, null],
+      [null, null],
+      [null, null],
+      [null, null],
+      [null, null],
+      [null, null],
       [null, null],
       [null, null],
       [hex('f'), hex('f')],

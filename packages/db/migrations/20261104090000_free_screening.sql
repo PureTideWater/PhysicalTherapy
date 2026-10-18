@@ -1,5 +1,6 @@
 -- The free screening layer (Change Order 001, CO-04 and CO-12's four screening tables; reconciliation-001 decisions
--- D18 (a), D19 (a), D20 (a) and D21 (a), approved 2026-10-17; milestone 6 follow-up). Decisions: docs/adr/0062,
+-- D18 (a), D19 (a), D20 (a) and D21 (a), approved 2026-10-17, and the owner's rulings of 2026-10-18 on the reduction
+-- across codes and sequestration; milestone 6 follow-up). Decisions: docs/adr/0062,
 -- 0053 (prospect_request, the public form's pattern this copies), 0029 (the engine), 0038 (the $5 anomaly default),
 -- 0014 and 0019 (platform jobs as the operator role).
 --
@@ -19,12 +20,15 @@
 --   carries one (fixtures/golden/QUESTIONS.md, Q08).
 -- - screening_run: an accepted upload priced under the release in force and the split in force, both pinned at
 --   creation, then queued, pricing, complete or failed. Only the SHA-256 of the result link's token is stored.
--- - screening_result: one row per uploaded row, its facts as decoded and, once priced, the engine's figures:
---   the expected line amount (rounded once by the engine, with the unrounded value beside it) times the claim
---   count, in bigint, outside the engine (D19 a), the difference from the allowed total in the file, and whether the
---   engine ranked the code in the reduction across a visit's codes (so a difference there is not called an anomaly on
---   a figure priced alone). MA contracted and commercial rows are never priced (contract_required); medicaid and
---   other rows are not screened.
+-- - screening_result: one row per uploaded row, its facts as decoded and, once priced, the engine's figures: the
+--   engine's amount for one line before sequestration (read from its trace and rounded once, the unrounded value
+--   beside it; payers report allowed amounts before sequestration) times the claim count, in bigint, outside the
+--   engine (D19 a), and the difference from the allowed total in the file; whether the engine ranked the code in the
+--   reduction across a visit's codes; and, for such a code, the same figures for the row priced again by the engine
+--   as a later procedure of a visit, fully reduced. A row is an anomaly only when its allowed total is more than $5 a
+--   claim line below its lowest figure; a pooled row between its two figures is within the range of the reduction
+--   across codes. MA contracted and commercial rows are never priced (contract_required); medicaid and other rows are
+--   not screened.
 --
 -- The tables live in schema public with row-level security forced and one policy, the owner's; they have no
 -- practice_id and no phi_table_registry row, and no role but the owner reads or writes them. The application role
@@ -36,7 +40,8 @@
 -- to an audit request is an audit event (screening_converted) and outlives the expiry.
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: five tables, their CHECK and trigger
--- functions, the definer functions and their grants. Altered or removed: nothing; no existing table, function,
+-- functions, the standing a result's figures are read by (screening_standing), the definer functions and their
+-- grants. Altered or removed: nothing; no existing table, function,
 -- policy, CHECK or grant changes, and no DDL touches a rule, ledger or pricing table. Rollout: migrate, then the
 -- new worker (it creates the screening queues), then the new web; a submission whose job cannot be sent yet stays
 -- queued and the minute sweep prices it.
@@ -256,8 +261,9 @@ CREATE TABLE screening_result (
     CHECK (observed_allowed_cents BETWEEN 0 AND 99999999999 AND observed_allowed_cents <= 2500000::bigint * claim_count),
   disposition text NOT NULL CONSTRAINT screening_result_disposition
     CHECK (disposition IN ('pending', 'priced', 'unpriced', 'rates_change_in_band', 'contract_required', 'not_screened')),
-  -- The engine's amount for one line of the row (rounded once, its unrounded value beside it), and that amount
-  -- times the claim count, in bigint, and its difference from the allowed total in the file.
+  -- The engine's amount for one line of the row priced alone, before sequestration (its trace's amount before that
+  -- step, rounded once under the trace's rule, its unrounded value beside it): the figure before the reduction
+  -- across codes; that amount times the claim count, in bigint, and its difference from the allowed total in the file.
   expected_line_cents bigint,
   expected_line_unrounded numeric,
   expected_cents bigint,
@@ -265,6 +271,14 @@ CREATE TABLE screening_result (
   -- The engine's trace of the one-line claim ranked its code in the reduction across a visit's codes (the mppr
   -- adjustment's in_pool): a visit with several such codes prices lower than the rows priced alone.
   in_reduction_pool boolean,
+  -- For a row in that reduction only: the engine's amount for the row priced as a later procedure of a visit (every
+  -- unit reduced), before sequestration and rounded once as above: the fully reduced figure; it times the claim
+  -- count, its difference from the allowed total, and the SHA-256 of that pricing's trace.
+  reduced_line_cents bigint,
+  reduced_line_unrounded numeric,
+  reduced_cents bigint,
+  reduced_difference_cents bigint,
+  reduced_trace_sha256 text CONSTRAINT screening_result_reduced_trace_sha256 CHECK (reduced_trace_sha256 ~ '^[0-9a-f]{64}$'),
   unpriced_reason text CONSTRAINT screening_result_unpriced_reason CHECK (unpriced_reason IN (
     'NO_AGREEMENT', 'NO_MAPPING', 'AMBIGUOUS_RATE', 'NO_RATE_FOR_CODE', 'NO_PFS_VALUE', 'UNSUPPORTED_METHOD', 'SECONDARY_PAYER',
     'MUE_EXCEEDED', 'UNITS_RULE_UNKNOWN', 'DATE_OUTSIDE_VERSIONS', 'REVERSED_CLAIM', 'ENGINE_ERROR')),
@@ -288,6 +302,17 @@ CREATE TABLE screening_result (
     disposition <> 'priced'
     OR (expected_line_cents >= 0 AND abs(expected_line_unrounded - expected_line_cents) < 1
         AND expected_cents = expected_line_cents * claim_count AND difference_cents = expected_cents - observed_allowed_cents)),
+  -- The fully reduced figure belongs to a priced row in the reduction across codes, and to no other.
+  CONSTRAINT screening_result_reduced CHECK (
+    coalesce(disposition = 'priced' AND in_reduction_pool, false) = (reduced_line_cents IS NOT NULL)
+    AND coalesce(disposition = 'priced' AND in_reduction_pool, false) = (reduced_line_unrounded IS NOT NULL)
+    AND coalesce(disposition = 'priced' AND in_reduction_pool, false) = (reduced_cents IS NOT NULL)
+    AND coalesce(disposition = 'priced' AND in_reduction_pool, false) = (reduced_difference_cents IS NOT NULL)
+    AND coalesce(disposition = 'priced' AND in_reduction_pool, false) = (reduced_trace_sha256 IS NOT NULL)),
+  CONSTRAINT screening_result_reduced_figures CHECK (
+    reduced_line_cents IS NULL
+    OR (reduced_line_cents BETWEEN 0 AND expected_line_cents AND abs(reduced_line_unrounded - reduced_line_cents) < 1
+        AND reduced_cents = reduced_line_cents * claim_count AND reduced_difference_cents = reduced_cents - observed_allowed_cents)),
   CONSTRAINT screening_result_unpriced CHECK (
     (disposition = 'unpriced') = (unpriced_reason IS NOT NULL) AND (unpriced_detail IS NULL OR unpriced_reason IN ('ENGINE_ERROR', 'NO_PFS_VALUE'))),
   CONSTRAINT screening_result_trace CHECK ((disposition IN ('priced', 'unpriced', 'rates_change_in_band')) = (trace_sha256 IS NOT NULL))
@@ -475,11 +500,27 @@ $$;
 -- link's token, and computes every figure here as bigint sums of the stored rows.
 -- ---------------------------------------------------------------------------------------------------
 
+-- Where an allowed total stands against a row's (or a group's summed) figures, the owner's ruling of 2026-10-18:
+-- 'anomaly' when it is more than $5 a claim line (ADR 0038's default threshold, exceeded) below the lowest figure,
+-- the fully reduced one for a code in the reduction across codes and the one figure otherwise; 'at_or_above' at or
+-- above the figure before that reduction; 'within_reduction_range' from the fully reduced figure up to below the
+-- figure before the reduction; and 'below_by_threshold_or_less' below the lowest figure by $5 a claim line or less.
+CREATE FUNCTION screening_standing(expected bigint, reduced bigint, observed bigint, claim_lines bigint) RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT CASE
+           WHEN coalesce(reduced, expected) - observed > 500 * claim_lines THEN 'anomaly'
+           WHEN observed >= expected THEN 'at_or_above'
+           WHEN reduced IS NOT NULL AND observed >= reduced THEN 'within_reduction_range'
+           ELSE 'below_by_threshold_or_less'
+         END
+$$;
+
 CREATE FUNCTION screening_result_summary(token_sha256 text)
 RETURNS TABLE (
   run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamptz, expires_at timestamptz,
   rows integer, claim_lines bigint, observed_cents bigint,
   priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint,
+  pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint,
   contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint,
   not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint,
   unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint,
@@ -488,6 +529,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
   SELECT r.id, p.practice_name, p.state, p.zip, r.release_no, r.engine_version, r.created_at, r.expires_at,
          t.all_rows, t.all_claims, t.all_observed,
          t.priced_rows, t.priced_claims, t.priced_expected, t.priced_observed, t.priced_difference,
+         t.pooled_rows, t.priced_reduced, t.priced_reduced_difference,
          t.contract_rows, t.contract_claims, t.contract_observed,
          t.not_screened_rows, t.not_screened_claims, t.not_screened_observed,
          t.unpriced_rows, t.unpriced_claims, t.unpriced_observed,
@@ -505,6 +547,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
              coalesce(sum(s.expected_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced_expected,
              coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced_observed,
              coalesce(sum(s.difference_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced_difference,
+             count(*) FILTER (WHERE s.disposition = 'priced' AND s.in_reduction_pool)::integer AS pooled_rows,
+             -- The lowest figures: the fully reduced one for a code in the reduction across codes, the one figure otherwise.
+             coalesce(sum(coalesce(s.reduced_cents, s.expected_cents)) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced_reduced,
+             coalesce(sum(coalesce(s.reduced_difference_cents, s.difference_cents)) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced_reduced_difference,
              count(*) FILTER (WHERE s.disposition = 'contract_required')::integer AS contract_rows,
              coalesce(sum(s.claim_count) FILTER (WHERE s.disposition = 'contract_required'), 0)::bigint AS contract_claims,
              coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'contract_required'), 0)::bigint AS contract_observed,
@@ -518,26 +564,28 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
    WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at
 $$;
 
--- The priced rows by payer product and code, the largest difference first. A group is below by the threshold when
--- its difference is positive and at least $5 a claim line (ADR 0038's default materiality). It is an anomaly only
--- when no row of it is in the reduction across a visit's codes: a row priced alone is before that reduction, which
--- for a typical therapy visit is more than $5 a line, so a pooled code's group is reported as below the figure
--- before the reduction, never as an anomaly on that figure alone.
+-- The priced rows by payer product and code, the largest difference from the lowest figures first. The figure before
+-- the reduction across codes is summed, and, when a row of the group is in that reduction, the fully reduced figure
+-- (each row's lowest: the fully reduced figure for a pooled row, the one figure otherwise). A group is an anomaly when
+-- one of its rows is (screening_standing(), row by row: more than $5 a claim line below its lowest figure), and says
+-- how many; otherwise its standing is its sums'. Neither is ever computed outside these sums of the engine's figures.
 CREATE FUNCTION screening_result_groups(token_sha256 text)
-RETURNS TABLE (payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, observed_cents bigint, difference_cents bigint, anomaly boolean,
-  in_reduction_pool boolean, below_before_reduction boolean)
+RETURNS TABLE (payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, reduced_cents bigint, observed_cents bigint,
+  difference_cents bigint, reduced_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, anomaly boolean, standing text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT g.product, g.code, g.row_total, g.claims, g.expected, g.observed, g.difference,
-         g.difference > 0 AND g.difference >= 500 * g.claims AND NOT g.pooled,
-         g.pooled,
-         g.difference > 0 AND g.difference >= 500 * g.claims AND g.pooled
+  SELECT g.product, g.code, g.row_total, g.claims, g.expected, CASE WHEN g.pooled THEN g.lowest END, g.observed,
+         g.difference, CASE WHEN g.pooled THEN g.lowest_difference END, g.pooled, g.anomalies, g.anomalies > 0,
+         CASE WHEN g.anomalies > 0 THEN 'anomaly' ELSE screening_standing(g.expected, CASE WHEN g.pooled THEN g.lowest END, g.observed, g.claims) END
     FROM (SELECT s.payer_product AS product, s.procedure_code AS code, count(*)::integer AS row_total, sum(s.claim_count)::bigint AS claims,
-                 sum(s.expected_cents)::bigint AS expected, sum(s.observed_allowed_cents)::bigint AS observed, sum(s.difference_cents)::bigint AS difference,
-                 bool_or(s.in_reduction_pool) AS pooled
+                 sum(s.expected_cents)::bigint AS expected, sum(coalesce(s.reduced_cents, s.expected_cents))::bigint AS lowest,
+                 sum(s.observed_allowed_cents)::bigint AS observed, sum(s.difference_cents)::bigint AS difference,
+                 sum(coalesce(s.reduced_difference_cents, s.difference_cents))::bigint AS lowest_difference,
+                 bool_or(s.in_reduction_pool) AS pooled,
+                 (count(*) FILTER (WHERE screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly'))::integer AS anomalies
             FROM screening_run r JOIN screening_result s ON s.run_id = r.id
            WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at AND s.disposition = 'priced'
            GROUP BY s.payer_product, s.procedure_code) g
-   ORDER BY g.difference DESC, g.product, g.code
+   ORDER BY g.lowest_difference DESC, g.product, g.code
 $$;
 
 -- Every row by payer product and what became of it (and why a row could not be priced).
@@ -551,16 +599,19 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
    ORDER BY s.payer_product, s.disposition, s.unpriced_reason NULLS FIRST, s.unpriced_detail NULLS FIRST
 $$;
 
--- At most the top 100 priced rows, the largest difference first.
+-- At most the top 100 priced rows, the largest difference from the row's lowest figure first, each with both figures
+-- where it has two and its standing (screening_standing()).
 CREATE FUNCTION screening_result_rows(token_sha256 text, top integer)
 RETURNS TABLE (row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text,
-  claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint)
+  claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint, in_reduction_pool boolean,
+  reduced_line_cents bigint, reduced_cents bigint, reduced_difference_cents bigint, standing text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT s.row_no, s.procedure_code, s.modifiers, s.units, s.place_of_service, s.payer_product, s.service_band, s.claim_count, s.observed_allowed_cents,
-         s.expected_line_cents, s.expected_cents, s.difference_cents
+         s.expected_line_cents, s.expected_cents, s.difference_cents, s.in_reduction_pool, s.reduced_line_cents, s.reduced_cents, s.reduced_difference_cents,
+         screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count)
     FROM screening_run r JOIN screening_result s ON s.run_id = r.id
    WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at AND s.disposition = 'priced'
-   ORDER BY s.difference_cents DESC, s.row_no
+   ORDER BY coalesce(s.reduced_difference_cents, s.difference_cents) DESC, s.row_no
    LIMIT least(greatest(coalesce(top, 0), 0), 100)
 $$;
 
@@ -707,7 +758,9 @@ $$;
 -- Records what pricing found for up to 5,000 pending rows of a run being priced; the arrays are the rows' fields in
 -- order. Returns how many rows it recorded (a row already recorded is left as it is).
 CREATE FUNCTION operator_screening_record(run uuid, row_nos integer[], dispositions text[], expected_line_cents bigint[], expected_line_unrounded numeric[],
-  expected_cents bigint[], difference_cents bigint[], in_reduction_pools boolean[], unpriced_reasons text[], unpriced_details text[], trace_sha256s text[]) RETURNS integer
+  expected_cents bigint[], difference_cents bigint[], in_reduction_pools boolean[], reduced_line_cents bigint[], reduced_line_unrounded numeric[],
+  reduced_cents bigint[], reduced_difference_cents bigint[], reduced_trace_sha256s text[], unpriced_reasons text[], unpriced_details text[],
+  trace_sha256s text[]) RETURNS integer
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   n integer := coalesce(cardinality($2), 0);
@@ -715,7 +768,8 @@ DECLARE
 BEGIN
   IF n > 5000 OR coalesce(cardinality($3), 0) <> n OR coalesce(cardinality($4), 0) <> n OR coalesce(cardinality($5), 0) <> n OR coalesce(cardinality($6), 0) <> n
      OR coalesce(cardinality($7), 0) <> n OR coalesce(cardinality($8), 0) <> n OR coalesce(cardinality($9), 0) <> n OR coalesce(cardinality($10), 0) <> n
-     OR coalesce(cardinality($11), 0) <> n THEN
+     OR coalesce(cardinality($11), 0) <> n OR coalesce(cardinality($12), 0) <> n OR coalesce(cardinality($13), 0) <> n OR coalesce(cardinality($14), 0) <> n
+     OR coalesce(cardinality($15), 0) <> n OR coalesce(cardinality($16), 0) <> n THEN
     RAISE EXCEPTION 'at most 5,000 rows at a time, every field with a value for each' USING ERRCODE = 'check_violation';
   END IF;
   PERFORM 1 FROM screening_run r WHERE r.id = $1 AND r.status = 'pricing' FOR SHARE;
@@ -724,8 +778,12 @@ BEGIN
   END IF;
   UPDATE screening_result s
      SET disposition = f.disposition, expected_line_cents = f.line_cents, expected_line_unrounded = f.line_unrounded, expected_cents = f.total_cents,
-         difference_cents = f.difference, in_reduction_pool = f.pooled, unpriced_reason = f.reason, unpriced_detail = f.detail, trace_sha256 = f.trace
-    FROM unnest($2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS f (row_no, disposition, line_cents, line_unrounded, total_cents, difference, pooled, reason, detail, trace)
+         difference_cents = f.difference, in_reduction_pool = f.pooled, reduced_line_cents = f.reduced_line, reduced_line_unrounded = f.reduced_unrounded,
+         reduced_cents = f.reduced_total, reduced_difference_cents = f.reduced_difference, reduced_trace_sha256 = f.reduced_trace,
+         unpriced_reason = f.reason, unpriced_detail = f.detail, trace_sha256 = f.trace
+    FROM unnest($2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           AS f (row_no, disposition, line_cents, line_unrounded, total_cents, difference, pooled, reduced_line, reduced_unrounded, reduced_total,
+                 reduced_difference, reduced_trace, reason, detail, trace)
    WHERE s.run_id = $1 AND s.row_no = f.row_no AND s.disposition = 'pending';
   GET DIAGNOSTICS recorded = ROW_COUNT;
   RETURN recorded;
@@ -808,12 +866,13 @@ REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_s
 
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
   screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_split_in_force(), screening_status(),
+  screening_standing(bigint, bigint, bigint, bigint),
   screening_zip_status(text), submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
   reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
   operator_screening_rows(uuid, integer, integer),
-  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], text[], text[], text[]),
+  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[], text[]),
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
@@ -824,5 +883,5 @@ GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
 
 GRANT EXECUTE ON FUNCTION operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
   operator_screening_rows(uuid, integer, integer),
-  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], text[], text[], text[]),
+  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[], text[]),
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) TO tp_operator;

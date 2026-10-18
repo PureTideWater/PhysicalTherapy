@@ -131,7 +131,10 @@ export const screeningResult = pgTable(
     claimCount: integer('claim_count').notNull(),
     observedAllowedCents: bigint('observed_allowed_cents', { mode: 'bigint' }).notNull(),
     disposition: text('disposition', { enum: SCREENING_DISPOSITIONS }).notNull(),
-    /** The engine's amount for one line, rounded once; the unrounded value beside it (numeric without a scale). */
+    /**
+     * The engine's amount for one line priced alone, before sequestration (its trace's), rounded once; the unrounded
+     * value beside it (numeric without a scale): the figure before the reduction across codes.
+     */
     expectedLineCents: bigint('expected_line_cents', { mode: 'bigint' }),
     expectedLineUnrounded: numeric('expected_line_unrounded'),
     /** The line amount times the claim count, in bigint, outside the engine (D19 a). */
@@ -139,6 +142,12 @@ export const screeningResult = pgTable(
     differenceCents: bigint('difference_cents', { mode: 'bigint' }),
     /** For a priced row: the engine's trace ranked its code in the reduction across a visit's codes (mppr in_pool). */
     inReductionPool: boolean('in_reduction_pool'),
+    /** For a pooled row only: the engine's amount for the row as a later procedure of a visit, before sequestration, rounded once: the fully reduced figure. */
+    reducedLineCents: bigint('reduced_line_cents', { mode: 'bigint' }),
+    reducedLineUnrounded: numeric('reduced_line_unrounded'),
+    reducedCents: bigint('reduced_cents', { mode: 'bigint' }),
+    reducedDifferenceCents: bigint('reduced_difference_cents', { mode: 'bigint' }),
+    reducedTraceSha256: text('reduced_trace_sha256'),
     unpricedReason: text('unpriced_reason'),
     unpricedDetail: text('unpriced_detail'),
     traceSha256: text('trace_sha256'),

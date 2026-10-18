@@ -11,7 +11,7 @@ import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { type MailMessage, type MailSender, MemoryMailSender } from '../mail/mail';
-import { ScreeningPricer, releaseChangeDays, screeningClaim } from './adapter';
+import { ScreeningPricer, beforeSequestration, releaseChangeDays, screeningClaim } from './adapter';
 import { expireScreenings } from './expiry';
 import { type ScreeningJobDependencies, forgetScreeningReleases, priceScreeningRun, sweepScreeningRuns } from './job';
 import { SCREENING_TOKEN, screeningTokenHash } from './token';
@@ -20,16 +20,21 @@ import { SCREENING_TOKEN, screeningTokenHash } from './token';
  * The screening jobs against a scratch database (test matrix SCR-02, pricing, and SCR-03, expiry; docs/adr/0062),
  * with SYNTHETIC release 900001 loaded and a split a contract specialist approved:
  *
- * - each priced row's figure is the engine's one-line amount times its count, in bigint, and its difference the
- *   figure less the allowed total; MA contracted and commercial rows count toward the dollars that cannot be priced
- *   without a contract; a ZIP whose locality needs its ZIP+4, which the engine cannot take, is refused;
- * - a code in the reduction across a visit's codes is never an anomaly on its figure priced alone: PRD 11's worked
+ * - each priced row's figure is the engine's one-line amount before sequestration (read from its trace) times its
+ *   count, in bigint, and its difference the figure less the allowed total; MA contracted and commercial rows count
+ *   toward the dollars that cannot be priced without a contract; a ZIP whose locality needs its ZIP+4, which the
+ *   engine cannot take, is refused (the owner's ruling of 2026-10-18);
+ * - a code in the reduction across a visit's codes has two figures, the engine's priced alone and priced as a later
+ *   code of a visit (the owner's ruling of 2026-10-18): a row between them is within the range of the reduction
+ *   across codes, never an anomaly; a row more than $5 a claim line below the fully reduced figure is one; a code
+ *   outside the reduction keeps one figure; a row allowed in full at its figure shows no difference; PRD 11's worked
  *   example (golden G01) paid exactly as one visit shows no anomaly;
  * - the result's link goes by email alone; the token is never stored (its SHA-256 is), never logged, never in a job
  *   payload or an audit event;
  * - a run is priced once however often its job runs; a send that fails leaves the run to a later claim; one contact
  *   address the mail service refuses holds up no other run; a run out of attempts, or whose release is not there as
- *   pinned or has been withdrawn, fails and its contact is told; a result under a withdrawn release says so;
+ *   pinned or has been withdrawn, fails and its contact is told; a result under a withdrawn release says so and can
+ *   still be converted to an audit request (the owner's ruling of 2026-10-18);
  * - 30 days after its upload a screening is deleted with its rows, each an audit event, and its conversion stays.
  */
 
@@ -155,6 +160,11 @@ interface ResultRow {
   readonly unpriced_reason: string | null;
   readonly unpriced_detail: string | null;
   readonly in_reduction_pool: boolean | null;
+  readonly reduced_line_cents: string | null;
+  readonly reduced_line_unrounded: string | null;
+  readonly reduced_cents: string | null;
+  readonly reduced_difference_cents: string | null;
+  readonly reduced_trace_sha256: string | null;
   readonly trace_sha256: string | null;
 }
 
@@ -163,7 +173,9 @@ async function results(runId: string): Promise<ResultRow[]> {
     await owner.query<ResultRow>(
       `SELECT row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents::text AS observed_allowed_cents, disposition,
               expected_line_cents::text AS expected_line_cents, expected_line_unrounded::text AS expected_line_unrounded, expected_cents::text AS expected_cents,
-              difference_cents::text AS difference_cents, unpriced_reason, unpriced_detail, in_reduction_pool, trace_sha256
+              difference_cents::text AS difference_cents, unpriced_reason, unpriced_detail, in_reduction_pool, reduced_line_cents::text AS reduced_line_cents,
+              reduced_line_unrounded::text AS reduced_line_unrounded, reduced_cents::text AS reduced_cents, reduced_difference_cents::text AS reduced_difference_cents,
+              reduced_trace_sha256, trace_sha256
          FROM screening_result WHERE run_id = $1 ORDER BY row_no`,
       [runId],
     )
@@ -234,6 +246,12 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
         expect(row.expected_line_unrounded).toBe(outcome.expectedLineUnrounded);
         expect(BigInt(row.expected_cents ?? '')).toBe(outcome.expectedLineCents * BigInt(row.claim_count));
         expect(BigInt(row.difference_cents ?? '')).toBe(BigInt(row.expected_cents ?? '') - BigInt(row.observed_allowed_cents));
+        expect(row.in_reduction_pool).toBe(outcome.inReductionPool);
+        expect([row.reduced_line_cents, row.reduced_line_unrounded, row.reduced_cents, row.reduced_difference_cents, row.reduced_trace_sha256]).toEqual(
+          outcome.reduced === null
+            ? [null, null, null, null, null]
+            : [outcome.reduced.lineCents.toString(), outcome.reduced.lineUnrounded, outcome.reduced.cents.toString(), outcome.reduced.differenceCents.toString(), outcome.reduced.traceSha256],
+        );
       } else if (outcome.disposition === 'unpriced') {
         expect(row).toMatchObject({ unpriced_reason: outcome.reason, unpriced_detail: outcome.detail, expected_cents: null });
       }
@@ -248,23 +266,31 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     const sum = (list: readonly ResultRow[], pick: (row: ResultRow) => string | null) => list.reduce((total, row) => total + BigInt(pick(row) ?? '0'), 0n);
     expect(BigInt(summary?.expected_cents as string)).toBe(sum(priced, (row) => row.expected_cents));
     expect(BigInt(summary?.difference_cents as string)).toBe(sum(priced, (row) => row.difference_cents));
+    // The lowest figures: the fully reduced one for a pooled row, the one figure for the others.
+    expect(BigInt(summary?.reduced_cents as string)).toBe(sum(priced, (row) => row.reduced_cents ?? row.expected_cents));
+    expect(BigInt(summary?.reduced_difference_cents as string)).toBe(sum(priced, (row) => row.reduced_difference_cents ?? row.difference_cents));
+    expect(summary?.pooled_rows).toBe(priced.filter((row) => row.in_reduction_pool).length);
     // The dollars that cannot be priced without a contract: the MA contracted and commercial rows' allowed totals.
     expect(summary).toMatchObject({ contract_rows: 2, contract_observed_cents: '7000', not_screened_rows: 2, unpriced_rows: 2, priced_rows: 3, rows: 9 });
     const groups = await asApp<{
       payer_product: string;
       procedure_code: string;
       anomaly: boolean;
+      anomaly_rows: number;
       in_reduction_pool: boolean;
-      below_before_reduction: boolean;
+      standing: string;
+      expected_cents: string;
+      reduced_cents: string | null;
       difference_cents: string;
-      claim_lines: string;
+      reduced_difference_cents: string | null;
     }>('SELECT * FROM screening_result_groups($1)', [screeningTokenHash(token)]);
     expect(groups.length).toBeGreaterThan(0);
     for (const group of groups) {
-      const difference = BigInt(group.difference_cents);
-      const below = difference > 0n && difference >= 500n * BigInt(group.claim_lines);
-      expect(group.anomaly).toBe(below && !group.in_reduction_pool);
-      expect(group.below_before_reduction).toBe(below && group.in_reduction_pool);
+      const rows = priced.filter((row) => row.payer_product === group.payer_product && row.procedure_code === group.procedure_code);
+      expect(BigInt(group.expected_cents)).toBe(sum(rows, (row) => row.expected_cents));
+      expect(group.reduced_cents === null ? null : BigInt(group.reduced_cents)).toBe(group.in_reduction_pool ? sum(rows, (row) => row.reduced_cents ?? row.expected_cents) : null);
+      expect(group.anomaly).toBe(group.anomaly_rows > 0);
+      expect(group.anomaly).toBe(group.standing === 'anomaly');
     }
   });
 
@@ -272,9 +298,69 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     await expect(submit({ zip: '00012', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
   });
 
-  it('calls no code of the reduction across a visit’s codes an anomaly on its figure priced alone: golden G01 paid as one visit shows none', async () => {
+  it('gives a pooled code two figures and calls a row an anomaly only more than $5 a claim line below the fully reduced one (G01’s 97110 and 97140, SYNTHETIC)', async () => {
+    // G01's codes at POS 11, ZIP 00011, priced by the unchanged engine before sequestration (SYNTHETIC release
+    // 900001): 97110 GP x2 is $36.84 a line before the reduction across codes and $31.45 fully reduced; 97140 GP is
+    // $24.58 and $18.20; 97161 GP (an evaluation, outside the reduction) $59.17 alone.
+    const rows: readonly Row[] = [
+      // Between its two figures, $34.00 a line: within the range of the reduction across codes.
+      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 3_400n * 4n, 4],
+      // $5.21 a line below its fully reduced figure: an anomaly.
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 1_299n * 2n, 2],
+      // Allowed in full at its figure before the reduction, in Q2: no difference.
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q2', 2_458n, 1],
+      // Exactly $5.00 a line below its fully reduced figure: not more than the threshold, so no anomaly.
+      ['97140', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 1_320n * 2n, 2],
+      // A code outside the reduction, allowed in full at its figure before sequestration: one figure, no difference.
+      ['97161', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 5_917n * 3n, 3],
+      // The same code $5.01 a line below its one figure: an anomaly.
+      ['97161', 'GP', 1, '11', 'ma_noncontracted', '2026-Q1', 5_416n, 1],
+    ];
+    const runId = await submit({ rows });
+    const mail = new MemoryMailSender();
+    expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
+    const stored = await results(runId);
+    expect(stored.map((row) => [row.procedure_code, row.expected_line_cents, row.reduced_line_cents, row.expected_cents, row.reduced_cents, row.difference_cents, row.reduced_difference_cents])).toEqual([
+      ['97110', '3684', '3145', '14736', '12580', '1136', '-1020'],
+      ['97140', '2458', '1820', '4916', '3640', '2318', '1042'],
+      ['97140', '2458', '1820', '2458', '1820', '0', '-638'],
+      ['97140', '2458', '1820', '4916', '3640', '2276', '1000'],
+      ['97161', '5917', null, '17751', null, '0', null],
+      ['97161', '5917', null, '5917', null, '501', null],
+    ]);
+    const hash = screeningTokenHash(tokenOf(mail.sent[0]));
+    const shown = await asApp<{ row_no: number; standing: string; in_reduction_pool: boolean; reduced_cents: string | null }>(
+      'SELECT row_no, standing, in_reduction_pool, reduced_cents::text AS reduced_cents FROM screening_result_rows($1, 100) ORDER BY row_no',
+      [hash],
+    );
+    expect(shown.map((row) => [row.row_no, row.standing])).toEqual([
+      [1, 'within_reduction_range'],
+      [2, 'anomaly'],
+      [3, 'at_or_above'],
+      [4, 'below_by_threshold_or_less'],
+      [5, 'at_or_above'],
+      [6, 'anomaly'],
+    ]);
+    // The rows come largest difference from the lowest figure first: the anomalies lead.
+    expect((await asApp<{ row_no: number }>('SELECT row_no FROM screening_result_rows($1, 100)', [hash])).map((row) => row.row_no)).toEqual([2, 4, 6, 5, 3, 1]);
+    const groups = await asApp<{ payer_product: string; procedure_code: string; rows: number; anomaly_rows: number; anomaly: boolean; standing: string; reduced_cents: string | null; expected_cents: string }>(
+      'SELECT payer_product, procedure_code, rows, anomaly_rows, anomaly, standing, reduced_cents::text AS reduced_cents, expected_cents::text AS expected_cents FROM screening_result_groups($1) ORDER BY payer_product, procedure_code',
+      [hash],
+    );
+    expect(groups.map((group) => [group.payer_product, group.procedure_code, group.rows, group.anomaly_rows, group.anomaly, group.standing, group.reduced_cents])).toEqual([
+      ['ma_noncontracted', '97140', 1, 0, false, 'below_by_threshold_or_less', '3640'],
+      ['ma_noncontracted', '97161', 1, 1, true, 'anomaly', null],
+      ['medicare_ffs', '97110', 1, 0, false, 'within_reduction_range', '12580'],
+      // One row of two is an anomaly, though the group's totals are within $5 a claim line: the group is an anomaly.
+      ['medicare_ffs', '97140', 2, 1, true, 'anomaly', '5460'],
+      ['medicare_ffs', '97161', 1, 0, false, 'at_or_above', null],
+    ]);
+  });
+
+  it('calls no code of the reduction across a visit’s codes an anomaly when paid as one visit: golden G01, allowed before sequestration, is within each row’s range', async () => {
     // PRD 11's worked example (golden G01): 97110 GP x2, 97140 GP and 97530 GP on one day at POS 11, ZIP 00011, priced
-    // by the unchanged engine as one visit on the band's first day; a practice paid exactly that sends these rows.
+    // by the unchanged engine as one visit on the band's first day; a practice whose payer allowed that visit, before
+    // sequestration as payers report it, sends these rows.
     const g01: readonly Row[] = [
       ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
       ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
@@ -295,32 +381,24 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
       if (line?.outcome !== 'priced') {
         throw new Error('the worked example prices');
       }
-      return [row[0], row[1], row[2], row[3], row[4], row[5], line.expectedAllowedCents, 1];
+      return [row[0], row[1], row[2], row[3], row[4], row[5], beforeSequestration(line).cents, 1];
     });
-    // And an evaluation (no reduction across codes), paid $10 under its figure below: that one is an anomaly.
-    const runId = await submit({ rows: [...paid, ['97161', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1]] });
+    const runId = await submit({ rows: paid });
     const mail = new MemoryMailSender();
     expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
     const stored = await results(runId);
-    const evaluation = stored[3];
-    expect(evaluation?.disposition).toBe('priced');
-    const short = BigInt(evaluation?.expected_cents ?? '0') - 1_000n;
-    await rewind('UPDATE screening_result SET observed_allowed_cents = $2::bigint, difference_cents = expected_cents - $2::bigint WHERE run_id = $1 AND row_no = 4', [runId, short.toString()]);
-    const groups = await asApp<{ procedure_code: string; anomaly: boolean; in_reduction_pool: boolean; below_before_reduction: boolean; difference_cents: string }>(
-      'SELECT procedure_code, anomaly, in_reduction_pool, below_before_reduction, difference_cents::text AS difference_cents FROM screening_result_groups($1) ORDER BY procedure_code',
+    expect(stored.map((row) => row.in_reduction_pool)).toEqual([true, true, true]);
+    const groups = await asApp<{ procedure_code: string; anomaly: boolean; standing: string; difference_cents: string; reduced_difference_cents: string }>(
+      'SELECT procedure_code, anomaly, standing, difference_cents::text AS difference_cents, reduced_difference_cents::text AS reduced_difference_cents FROM screening_result_groups($1) ORDER BY procedure_code',
       [screeningTokenHash(tokenOf(mail.sent[0]))],
     );
-    expect(groups.map((group) => [group.procedure_code, group.anomaly, group.in_reduction_pool, group.below_before_reduction])).toEqual([
-      ['97110', false, true, true],
-      ['97140', false, true, true],
-      ['97161', true, false, false],
-      ['97530', false, true, false],
+    // 97110 and 97140 follow 97530 in the visit, at their fully reduced figures: more than $5 a line below the figures
+    // priced alone, and within the range of the reduction across codes; 97530, ranked first, at its figure alone.
+    expect(groups.map((group) => [group.procedure_code, group.anomaly, group.standing, group.difference_cents, group.reduced_difference_cents])).toEqual([
+      ['97110', false, 'within_reduction_range', '539', '0'],
+      ['97140', false, 'within_reduction_range', '638', '0'],
+      ['97530', false, 'at_or_above', '0', '-722'],
     ]);
-    // Priced alone, the first two rows sit more than $5 a line above the visit: the reduction across codes, not an anomaly.
-    expect(BigInt(groups[0]?.difference_cents ?? '0')).toBeGreaterThan(500n);
-    expect(BigInt(groups[1]?.difference_cents ?? '0')).toBeGreaterThan(500n);
-    expect(stored.slice(0, 3).map((row) => row.in_reduction_pool)).toEqual([true, true, true]);
-    expect(evaluation?.in_reduction_pool).toBe(false);
   });
 });
 
@@ -472,7 +550,7 @@ describe('SCR-03: a screening expires 30 days after its upload', () => {
 });
 
 describe('a release withdrawn after a screening was pinned to it', () => {
-  it('prices nothing more under it, even from the cached release, and says so on a result priced under it', async () => {
+  it('prices nothing more under it, even from the cached release, says so on a result priced under it, and lets that result convert', async () => {
     // SYNTHETIC release 900004 (900001 with one value changed) is put in force, two screenings pin it, and one is priced.
     await loadRelease(owner, WITHDRAWN_RELEASE_DIR, { release: 900004, allowSyntheticFixtureForTests: true });
     const priced = await submit({ email: 'prospect.before.withdrawal@synthetic.test' });
@@ -490,6 +568,11 @@ describe('a release withdrawn after a screening was pinned to it', () => {
     expect(mail.sent.at(-1)).toMatchObject({ to: ['prospect.after.withdrawal@synthetic.test'], subject: 'Your screening could not be completed' });
     // The result already priced under it says so.
     expect(await asApp('SELECT release_no, release_withdrawn FROM screening_result_summary($1)', [hash])).toEqual([{ release_no: 900004, release_withdrawn: true }]);
+    // It keeps its notice and may still be converted to an audit request, which prices nothing from the screening (the
+    // owner's ruling of 2026-10-18): the request and its event are recorded, and the notice stays.
+    const [request] = await asApp<{ id: string }>('SELECT convert_screening($1, $2, $3, $4, $5, $6) AS id', [hash, 'SYNTHETIC CONTACT', 1, ['SYNTHETIC PAYER'], 'in_house', `test-${randomUUID()}`]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_converted' AND object_id = $1", [request?.id])).rows).toEqual([{ n: 1 }]);
+    expect(await asApp('SELECT release_withdrawn, converted FROM screening_result_summary($1)', [hash])).toEqual([{ release_withdrawn: true, converted: true }]);
     // A new screening pins the reinstated release.
     const after = await submit();
     expect((await owner.query('SELECT release_no FROM screening_run WHERE id = $1', [after])).rows).toEqual([{ release_no: 900001 }]);
