@@ -465,3 +465,9 @@ Approved by the owner on October 17, 2026, in the build session. Every recommend
 - **Gates (D23):** option (b). `docs/product/gates.md` is reconstructed from the plan and CO-10, marked as reconstructed, and replaced by the owner's text when it arrives.
 
 The domain model (CO-02) is approved separately: PR 2 regenerates `docs/product/domain-model.md` and stops for the founder's name, date and the hash of the text approved.
+
+Ruled by the owner, Tyler Williams, on October 18, 2026, on PR 5 (recorded in ADR 0061, Owner rulings):
+
+- **PR 5's schema (D15, D16, D17):** approved as summarised (migration `20261103090000_deadline_verification_and_export_attestation`), with one addition before the pull request opens. The reimbursement reviewer attests an export only after downloading both its PDF and its CSV, each download having passed its fingerprint check (the bytes read from storage hash to the version's stored `export_sha256` or `export_csv_sha256`), held in the attest route's handler and in Postgres, with evidence a job's scope cannot forge for the reviewer. This closes ADR 0061's residual risk F9. The domain model's text changes with it, so its new hash waits for the founder's confirmation.
+- **D16 (a) for a practice with no other packet approver:** not built in PR 5. The analyst-only and lone billing manager cases are left to the pull request that carries D27 (the owner named PR 10 "or wherever D27's work lands"; this document lists D27 under PR 9 and PR 14), since the reviewer's attestation already blocks every payer submission.
+- **Appeal-level evidence for contract disputes (D17, D33):** `contract_version.appeal_levels` with a page, quote and hash and a contract specialist's check, like the dispute window, lands in PR 8 (the workbench schema), not PR 5. Until then contract disputes stop at level 1.

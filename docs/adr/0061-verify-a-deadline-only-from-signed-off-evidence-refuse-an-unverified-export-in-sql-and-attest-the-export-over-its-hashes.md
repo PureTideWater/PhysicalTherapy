@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-18
-- **Deciders:** the owner (D15 option a, D16 options a and c, D17 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17); the build (PR 5 of Change Order 001)
+- **Deciders:** the owner (D15 option a, D16 options a and c, D17 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the schema approved, the reviewer's downloads added and D16 (a) without a practice approver and contract appeal-level evidence placed in later pull requests, 2026-10-18, see Owner rulings); the build (PR 5 of Change Order 001)
 - **PRD sections:** 2 (point 8, dispute windows), 6 (Packet builder; Submissions and payer responses), 8 (packet_version; Invariants), 11 (step 8, the window), 12 (From validated to actionable; The packet; Approval; Submission), 16 (a narrative inventing a number); Data dictionary, Contracts and Pricing, triage and cases; Change Order 001, CO-05, CO-06 ("an unverified deadline blocks actionability and export") and CO-12 (`packet_version.deadline_verification_status`); ADRs 0028, 0038, 0040, 0041, 0044, 0047 and 0049
 
 ## Context
@@ -139,9 +139,14 @@ dispute level ("only a version of the case's dispute level is exported"), and wh
 then from the content and the rows it names, is unverified ("a packet version whose deadline is not verified is
 not exported"). SQL cannot run the verifier, which is TypeScript: it holds the report the job writes
 (`export_verifier_report`) to the verifier's format, a pass and the version's own narrative SHA-256, and the report
-never changes otherwise. So SQL enforces the deadline and the level; the verifier is enforced by the job, and a
-job-scope write of a forged report and hashes would not be stopped by SQL. Such an export has no files of those
-hashes, so its download fails `exportFile()`'s hash check, but its attestation compares only the stored hashes. `tp_app` cannot bypass it: `tp_owner` owns the tables, triggers and functions,
+never changes otherwise. So SQL enforces the deadline and the level; the verifier is enforced by the job. Residual
+risk F9, as first built: a job-scope write of a forged passing report and forged hashes would not be stopped by SQL,
+and the attestation compared only the stored hashes, so a reviewer could attest files nobody had read. Closed by the
+owner's ruling of 2026-10-18 (below, the reviewer's downloads): the reviewer attests only after downloading both
+files in their own requests, each served only once its bytes hash to the stored SHA-256, so what they attest is the
+bytes they read, forged or not, and a download whose bytes do not match is never served and never counts. What
+remains is a process holding the application login itself, set out with the downloads. `tp_app` cannot bypass the
+guard: `tp_owner` owns the tables, triggers and functions,
 `tp_app` owns nothing and has no BYPASSRLS, cannot ALTER the table or DISABLE a trigger, and cannot set
 `session_replication_role`; its column grants are all it writes (`exported_at` only through
 `packet_version_rules()` for a job actor; `deadline_verification_status` never); and the guard reads rows that
@@ -162,6 +167,53 @@ for the owner's ruling on D27 (see Consequences), and internal users still appro
 `practice_has_other_packet_approver()` and the permission matrix are unchanged. The service is
 `attestPacketExport()` (audit event `packet_export_attested`), its route `practice.cases.packet.attest` (Zod,
 `audit_finding.validate`), with the reviewer's pages to review and download the exported files.
+
+**The reviewer's downloads before the attestation (the owner's addition of 2026-10-18; residual risk F9).** The
+reviewer attests a version's export only after downloading both its PDF and its CSV, each in a web request of their
+own that served the file once its bytes, read from storage, hashed to the version's `export_sha256` or
+`export_csv_sha256`. The evidence of a download is an `audit_event`, so no table is added:
+
+- *Where it is written.* Every download route (the reviewer's `practice.cases.packet.review_pdf` and `review_csv`,
+  the practice's `practice.cases.packet.pdf` and `csv`) serves the file through one function,
+  `downloadPacketExport()` in `@tp/worker/packets` (the web's `exportFile()` calls it): it reads the version's key
+  and stored SHA-256 under the caller's scope (an audited read, purpose `line_export`), reads and unseals the bytes,
+  hashes them, and only when the hash is the stored one records `packet_export_pdf_downloaded` or
+  `packet_export_csv_downloaded` (object the version, purpose `line_export`, actor the person the request is for:
+  `SET LOCAL app.actor_id` from their session) in the same transaction, then returns the bytes. A hash that differs
+  throws, the transaction rolls back and nothing is recorded. The two actions replace `packet_export_downloaded` for
+  every new download; the export history reads all three, so earlier downloads stay listed and count as no evidence.
+- *Why a job cannot write it.* The practice's jobs reach the database on the same application login as the web,
+  through `withJobScope()` only, whose actor is the job's ID (`app.actor_id`, which names no user; `actor_kind`
+  `service`). Three rules hold the evidence against that scope, in Postgres: `audit_event` is append-only for every
+  role, the owner and superusers included, so evidence never changes, moves to another version or disappears; its
+  `tp_app` INSERT policy (`audit_event_record`) writes an event only in the transaction's own actor's name; and
+  `audit_event_packet_download` (new, BEFORE INSERT, only for the two actions; every role) records a download only
+  for a person (`app_actor_is_person()`, `actor_kind` `user`) who holds `phi.export` or `audit_finding.validate` in
+  the event's practice, of a version of that practice in the caller's scope that is exported, with purpose
+  `line_export` (the time is the database's: `tp_app` has no grant on `at`). A job's scope therefore writes no
+  download event at all, under its own ID or anyone else's.
+- *What the attestation asks.* `packet_export_downloads_of_actor(version)` (SECURITY DEFINER, since `tp_app` reads
+  only its own administrators' audit log; STABLE; the caller's scope kept) returns the files this transaction's
+  actor, as a person, downloaded of that version, in its practice, at or after its `exported_at`.
+  `packet_version_attestation_rules` refuses an attestation unless it holds both `pdf` and `csv` ("a packet's export
+  is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256"), after
+  every earlier check, and `attestPacketExport()`, which the attest route runs, refuses first with its own reason
+  (`PacketRefusedError` `export_not_downloaded`). Another person's downloads (the billing manager's), another
+  version's, a download whose hash check failed (none was recorded) and anything a job wrote are not evidence.
+- *A new export needs new downloads.* A version is exported once (`packet_version_rules`: "a packet version is
+  exported once"), so a download of the version at or after its export is a download of the bytes its two hashes
+  name; a later export is of a new version, whose evidence starts empty.
+- *The screen.* The review page shows, for each file, whether the viewer has downloaded it since the export (read
+  from the same function), tells the reviewer to download both first, and shows the attest button disabled with that
+  reason until both are recorded.
+- *What it does not hold against.* Postgres tells a job from a person's request only by `app.actor_id`, which every
+  transaction on the application login sets for itself, and the web and the worker share that login (ADR 0019 and
+  0055). Code that reaches the database through `withJobScope()`, as every job does, cannot write the evidence; a
+  process that holds the application login and runs its own SQL could set `app.actor_id` to the reviewer's ID while
+  their support grant is open, and then write the evidence and the attestation itself, as it could any other step
+  only a person may take (an approval, a sign-off). No row rule tells that process apart. Closing it needs the
+  worker on a login of its own, as billing and the e-signature webhook have (ADR 0055), and the evidence trigger
+  refusing that login (`session_user`); it is recorded under Revisit when.
 
 **Release 900005 and AUDIT-01.** A SYNTHETIC release 900005, written by `renderDeadlineRelease()` in
 `tools/release/synthetic.ts` as 900004 was for PRC-19, is every file of 900001 unchanged but `dispute_window/2026`,
@@ -193,6 +245,10 @@ order: migrate first (ADR 0049).
 | Store the deadline status and trust it at export | A version's statement can go stale (a version superseded since, a release withdrawn, a denial that reopened the case); the guard derives it again from rows that cannot change underneath it, and the job states the version again from its inputs. |
 | Verify the next level from the record of the release in force, whatever date it gives | The stored date was computed once, from the release in force when the denial was recorded; a later release at L2 would then "verify" a date an L1 record gave. Comparing the date the record gives with the stored one needs no new column. |
 | A trigger that also checks the narrative's verifier report in SQL by re-running the verifier | The verifier is TypeScript (@tp/packets); SQL checks the report's shape, result and narrative hash, and the worker runs the verifier itself. |
+| A `packet_export_download` table for the reviewer's downloads, as `audit_report_download` is for a report's | The owner asked for no new table unless unavoidable; `audit_event` already records every download, is append-only for every role and writes only in the transaction's own actor's name, so one trigger and two action codes make it the evidence. |
+| The downloads as columns on `packet_version` (who downloaded each file, when) | A version's row is updated by several people; a column holds one downloader and can be written over, where the audit log keeps every download, by everyone, unchanged. |
+| Bind the evidence to the reviewer's session (`user_session.token_sha256`) | The application role writes sessions too, so a process holding its login could write a session as well as the evidence; it would add a check without closing the gap a login of the worker's own closes. |
+| Give the worker its own database login in this pull request | It changes the deploy job's logins, the roles and every job's pool (ADR 0019, 0055), beyond this pull request's schema; recorded under Revisit when, with the trigger's `session_user` refusal it would allow. |
 
 ## Consequences
 
@@ -206,33 +262,69 @@ order: migrate first (ADR 0049).
   level, and in the worker for a failed verifier or content its inputs do not give; SQL holds the verifier's
   report only to its shape, pass and narrative hash. Every submission names an attested export; the export hashes
   are the stored files' bytes.
-- Contract disputes at level 2 and above cannot be exported. `contract_version.appeal_levels` carries no page, quote
-  or hash, so the next level's deadline of every contract case a denial reopens is unverified (NEXT_LEVEL_UNCITED)
-  and its packet is refused in the worker, the handler and SQL. Unlike a first-level window, a corrected version
-  does not help: no version can carry appeal-level evidence. Milestone 8's contract second-level dispute flow is
-  therefore off until appeal-level evidence is added (a per-level document, page, quote and hash with a
-  specialist's check, frozen by `contract_version_rules`) or the owner rules otherwise; this is an open question
-  for the owner, not built here. A Medicare Advantage case's second level is exported once the reconsideration
-  record in force is at L2 and gives the stored end.
-- D16 (a) without a practice approver is not built: the export still needs a practice approval (milestone 8's
+- An attestation needs the attester's own downloads of both files of that version since its export (the owner's
+  ruling of 2026-10-18), refused in the attest route's service and in SQL; the review page says so and keeps the
+  attest button disabled until both are recorded. A download is now one audit event per file
+  (`packet_export_pdf_downloaded`, `packet_export_csv_downloaded`); the export history lists them with the earlier
+  `packet_export_downloaded`, and a download the previous image recorded during the rollout counts as no evidence, so
+  the reviewer downloads again. F9 is closed against every job's scope; against a process holding the application
+  login it is not, as against any other person-only step, until the worker has a login of its own.
+- Contract disputes stop at level 1 until PR 8 (the owner's ruling of 2026-10-18). `contract_version.appeal_levels`
+  carries no page, quote or hash, so the next level's deadline of every contract case a denial reopens is unverified
+  (NEXT_LEVEL_UNCITED) and its packet is refused in the worker, the handler and SQL; a corrected version does not
+  help, since no version can carry appeal-level evidence yet. PR 8 (the workbench schema) adds it: each appeal level
+  with its document, page, quote and hash and a contract specialist's check, frozen by `contract_version_rules`, as
+  the dispute window's is here; the next level's deadline is then verified from it. A Medicare Advantage case's
+  second level is exported once the reconsideration record in force is at L2 and gives the stored end.
+- D16 (a) for a practice with no other packet approver is not built here (the owner's ruling of 2026-10-18): it is
+  left to the pull request that carries D27. The export still needs a practice approval (milestone 8's
   `packet_version_rules`). Where the drafter is the practice's only packet approver, the drafter still approves
   alone after 24 hours (`approved_alone`, CAS-10) and the reviewer's attestation is the only independent check of
   the export; a practice whose drafter is an analyst and that has no billing manager or firm principal cannot
-  approve, so nothing is exported or attested. Both wait for the owner's ruling on D27, which owns the single-user
-  path; until then an `approved_alone` version is exported and attested, and the review page says it was approved
-  alone.
+  approve, so nothing is exported or attested. Every payer submission still waits for the reviewer's attestation,
+  which is why the owner left it; until D27's pull request an `approved_alone` version is exported and attested, and
+  the review page says it was approved alone.
 - The checks that hold this: `packages/triage/src/deadline.test.ts` (properties over every source and level),
   `apps/worker/src/triage/deadline.db.test.ts` (SQL and TypeScript on the same lines),
   `packages/contracts/src/contracts.db.test.ts` (the window's evidence and its rules), the packet and export
   tests in `packages/packets` and `apps/worker/src/packets`, `tools/audit-worksheet` and
   `apps/web/src/lib/routes/audit-e2e.db.test.ts`, `tools/release/release.test.ts`, and the golden triage test's
-  uncited window (G118), with `fixtures/golden` unchanged.
-- `docs/product/domain-model.md` is regenerated at this migration and waits for the founder's approval (CO-02).
+  uncited window (G118), with `fixtures/golden` unchanged; for the downloads, `apps/worker/src/packets/packets.db.test.ts`
+  (no download, only the PDF, only the CSV, another person's, another version's, a download whose hash failed and
+  evidence written in a job's scope, each refused in the service and in SQL, and both of the attester's own
+  allowed), `apps/web/src/lib/routes/workbench-routes.db.test.ts` (the attest route refused until both review
+  downloads) and `apps/web/e2e/packets.spec.ts` (the disabled button and its reason, both downloads, then the
+  attestation).
+- `docs/product/domain-model.md` is regenerated at this migration and waits for the founder's approval (CO-02). The
+  founder approved the schema as first summarised on 2026-10-18; the downloads change the text, so its new SHA-256
+  waits for the founder's confirmation.
 
 ## Revisit when
 
 A real release's Medicare dispute windows are read at L2 or L3 (the synthetic 900005 then stays a fixture only); a
 payer's contract states its window in a form the specialist cannot cite on one page; PR 8 adds the packet's export
-parts (`packet_export`) and PR 9 the E3 gates; a practice's own reviewer, rather than the founder, attests; the
-owner rules on D27 (the single-user path) or on how a contract's appeal levels gain their evidence; or PR 11
-invalidates the runs of a withdrawn release.
+parts (`packet_export`) and the appeal levels' evidence, and PR 9 the E3 gates; a practice's own reviewer, rather
+than the founder, attests; D27's pull request builds the single-user path and D16 (a) for a practice with no other
+packet approver; the worker gains a database login of its own (then `audit_event_packet_download` also refuses that
+login, and F9 is closed against a process holding it too); or PR 11 invalidates the runs of a withdrawn release.
+
+## Owner rulings (2026-10-18)
+
+The founder, Tyler Williams, ruled on this pull request on 2026-10-18:
+
+- **The schema is approved, with one addition before the pull request opens.** The PR 5 schema (migration
+  `20261103090000_deadline_verification_and_export_attestation`) is approved as summarised. The reimbursement
+  reviewer attests an export only after downloading both its PDF and its CSV, each download having passed its
+  fingerprint check (the bytes read from storage hash to the version's stored `export_sha256` or
+  `export_csv_sha256`), held in the attest route's handler and in Postgres, with evidence a job's scope cannot
+  forge for the reviewer. This closes residual risk F9. Built in this migration, as Decision describes it (the
+  reviewer's downloads before the attestation); no table is added, and the domain model's new text waits for the
+  founder to confirm its hash.
+- **D16 (a) for a practice with no other packet approver is not built here.** The analyst-only and lone billing
+  manager cases are left to the pull request that carries D27 (the founder named PR 10 "or wherever D27's work
+  lands"; reconciliation-001 lists D27 under PR 9 and PR 14), since the reviewer's attestation already blocks every
+  payer submission.
+- **Appeal-level evidence for contract disputes lands in PR 8.** `contract_version.appeal_levels` with a page,
+  quote and hash and a contract specialist's check, like the dispute window, is part of PR 8 (the workbench schema),
+  not this pull request. Until then contract disputes stop at level 1: the next level's deadline is
+  NEXT_LEVEL_UNCITED and its packet is not exported.
