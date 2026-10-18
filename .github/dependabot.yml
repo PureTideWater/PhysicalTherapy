@@ -1,0 +1,26 @@
+# Dependabot reads this file from the default branch (main). Until launch the build lives on
+# claude/build-platform, so every update is opened against it and passes the build's CI there.
+# At launch, when the finished build merges into main, target-branch is removed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories: [/apps/web, /apps/worker]
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
