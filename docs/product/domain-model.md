@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `64e5006a369863f45fc52a5d43066f2d688facdd` on branch `co-001/pr-04-era-intake` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `67e084dd64caa6244eab620a33aa9018134989ec` on branch `co-001/pr-04-era-intake` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 40; head `20261102090000_era_export_intake.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -874,7 +874,7 @@ Every uploaded file, and the 835 remittance loaded from it: transaction sets, cl
 
 Keys:
 - Primary: (id)
-- Unique index `source_document_first_of_its_bytes`: `USING btree (practice_id, sha256) WHERE ((sha256 IS NOT NULL) AND (status <> 'duplicate'::text))`
+- Unique index `source_document_first_of_its_bytes`: `USING btree (practice_id, sha256, COALESCE(format_id, ''::text)) WHERE ((sha256 IS NOT NULL) AND (status <> 'duplicate'::text))`
 - Foreign `source_document_parent_document_id_fkey`: (parent_document_id) -> `source_document`(id), on delete no action
 - Foreign `source_document_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
 - Foreign `source_document_uploaded_by_fkey`: (uploaded_by) -> `user`(id), on delete no action
@@ -986,6 +986,7 @@ Indexes:
 - `remittance_by_payer`: `USING btree (practice_id, payer_id, bpr16_date DESC)`
 - `remittance_by_payment_date`: `USING btree (practice_id, bpr16_date DESC, id)`
 - `remittance_by_trace`: `USING btree (practice_id, trn02)`
+- `remittance_by_trace_form`: `USING btree (practice_id, ltrim(upper((trn02 COLLATE "C")), '0'::text))`
 
 Policies (1):
 - `remittance_tenant`: PERMISSIVE FOR ALL TO public
@@ -5274,7 +5275,7 @@ Checked and matching: 395 dictionary key fields exist (394 with the dictionary's
 | A23 | [`claim`](#table-claim) | `index (practice_id, payer_claim_control_number)` | index | `claim (practice_id, payer_claim_control_number)` (on the deterministic hash of the encrypted value) | claim_by_patient (practice_id, patient_ref_id); claim_by_payer_claim_control_number (practice_id, payer_claim_control_number_hash) | ADR 0027 | explained |
 
 Notes:
-- A1 (`source_document.kind`): era_export is a ninth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence.
+- A1 (`source_document.kind`): era_export is an eighth document kind: a practice-management system's ERA export (CO-03), loaded by the parse job into the same remittance, claim and line rows an 835 makes. It requires source_document.format_id, one of the vendor format registry's four ERA formats (source_document_format_of_era_export). x12_835 stays the CHECK's first value. data-dictionary.md stays verbatim and this document records the divergence.
 - A2 (`rule_record.record_type`): denial_category is a sixteenth record type because the rules reference keeps the denial classification 'as a rule record'. ADR 0008 says this departs from the dictionary's fifteen and is raised with the founder; its revisit condition waits on that ruling. Approving this document approves the sixteenth type; data-dictionary.md stays verbatim and this document records the divergence (reconciliation-001, D2).
 - A3 (`priced_line.expected_unrounded`): numeric with no scale keeps the exact unrounded value; numeric(18,6) would round it (ADR 0029: golden line G09 carries more than six decimal places). CLAUDE.md rule 2 keeps the unrounded value beside the rounded one.
 - A4 (`line_status.reason`): A person's free text can name a patient, so it is encrypted with the practice data key; ENCRYPTED_COLUMNS in packages/db/src/crypto/cipher.ts lists it and the catalog test requires its enc:v1 CHECK.
@@ -5366,8 +5367,8 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | --- | --- |
 | [`practice`](#table-practice) | `deleted_at` (`20261101090000_billing_review` (ADR 0050, ADR 0055)) |
 | [`user`](#table-user) | `failed_sign_ins`, `locked_at` (`20261015170000_identity_and_permissions` (ADR 0012, ADR 0016, ADR 0017))<br>`settings` (`20261020090000_monitoring_digests_notifications` (ADR 0039)) |
-| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033))<br>`format_id` (`20261102090000_era_export_intake` (ADR 0031)) |
-| [`remittance`](#table-remittance) | `trn03`, `bpr_credit_debit`, `payee_id_qualifier`, `review_reason`, `review_of_remittance_id` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`provenance` (`20261102090000_era_export_intake` (ADR 0031)) |
+| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033))<br>`format_id` (`20261102090000_era_export_intake` (ADR 0031, ADR 0059, ADR 0060)) |
+| [`remittance`](#table-remittance) | `trn03`, `bpr_credit_debit`, `payee_id_qualifier`, `review_reason`, `review_of_remittance_id` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`provenance` (`20261102090000_era_export_intake` (ADR 0031, ADR 0059, ADR 0060)) |
 | [`claim`](#table-claim) | `claim_no`, `payer_claim_control_number_hash`, `filing_indicator` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`received_on` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`interest_cents` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`service_line`](#table-service-line) | `procedure_qualifier`, `service_date_to`, `observed_allowed_allocated`, `patient_share_cents` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`adjustment`](#table-adjustment) | `unknown_code` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
@@ -5803,7 +5804,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 37 | `20261101100000_esign_and_billing_logins.sql` | ADR 0053, ADR 0055 | `10e0cd84499263e3b9d946cc57ce2a2c7123ae409c935e8796df032b8bb8ffe9` |
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
-| 40 | `20261102090000_era_export_intake.sql` | ADR 0031 | `63f3074830858be05d3e78d6213637f6d6a1c342eb66531ae6f2df8d7769cfc9` |
+| 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
 
 ## Cross-checks
 
@@ -5821,4 +5822,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261102090000_era_export_intake.sql` (40 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `64841251cad3927d0f0a9658db7930f3e0e46f73e79918d27a9276eb4e3cee1a`
+Approved by: ________  Date: ________  Document SHA-256: `374a7b8393f939b92f62ef78528b017e3f6ea81ce38c3408a5884dccdf1bfcbe`
