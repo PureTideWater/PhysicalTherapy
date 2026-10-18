@@ -199,7 +199,7 @@ describe('decide', () => {
 });
 
 describe('run, against recorded API responses', () => {
-  const TOKEN = 'ghs_syntheticTokenThatMustNeverBePrinted0000';
+  const TOKEN = 'synthetic-workflow-token-never-printed-0001';
   const API = 'https://api.github.com';
   const REPO = 'example/repo';
   /** GET /repos/{owner}/{repo}/pulls/{number} (recorded shape, synthetic values). */
