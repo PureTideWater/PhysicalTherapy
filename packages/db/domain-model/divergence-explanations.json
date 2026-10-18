@@ -180,15 +180,15 @@
       "subject": "CO-12 names tables that do not exist",
       "where": "Change Order 001, CO-12",
       "says": "practice_settings gains two columns; packet_export records five parts.",
-      "schema": "Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at).",
+      "schema": "Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16).",
       "status": "proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts"
     },
     {
       "subject": "CO-12 'roles enum' and 'enum' columns",
       "where": "Change Order 001, CO-12",
       "says": "Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums.",
-      "schema": "There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK.",
-      "status": "proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is"
+      "schema": "There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable).",
+      "status": "proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is; deadline_verification_status built so in PR 5 (reconciliation-001, D17 a), readiness_grade and the two roles still to come (PR 8, PR 14)"
     },
     {
       "subject": "CO-12 case_transition_log has no practice_id",

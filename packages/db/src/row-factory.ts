@@ -211,8 +211,10 @@ const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: 
  * one completes, as the price job completes a run that priced no lines (its coverage counts none).
  */
 const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: TenantWorld, referenced: Row) => Promise<void>>> = {
-  // A submission sends an exported version: a second billing manager approves the factory's version
-  // (its drafter cannot) and the export job records its files.
+  // A submission sends an exported, attested version: a second billing manager approves the factory's version
+  // (its drafter cannot), the export job records its files with the verifier's report over the narrative it
+  // rendered (the version's own), and a reimbursement reviewer under a support grant attests the export
+  // (migration 20261103090000).
   'submission.packet_version_id': async (client, world, version) => {
     const approver = await createUser(client);
     await addMembership(client, world.organizationId, approver, 'billing_manager');
@@ -222,8 +224,29 @@ const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: 
       client,
       [world.practiceId],
       () =>
-        client.query('UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4 WHERE id = $1', [version.id, key('pdf'), key('csv'), 'e'.repeat(64)]),
+        client.query(
+          'UPDATE packet_version SET export_pdf_key = $2, export_csv_key = $3, export_sha256 = $4, export_csv_sha256 = $4, export_verifier_report = verifier_report WHERE id = $1',
+          [version.id, key('pdf'), key('csv'), 'e'.repeat(64)],
+        ),
       randomUUID(),
+    );
+    const internal = await createOrganization(client, 'internal', 'row factory attestation');
+    const reviewer = await createUser(client, { hardwareKeyRequired: true });
+    await addMembership(client, internal, reviewer, 'reviewer');
+    await asOwner(client, [world.practiceId], () =>
+      client.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'RF-1', 'SYNTHETIC ATTESTATION', now() + interval '4 hours')`, [world.practiceId, reviewer]),
+    );
+    await asOwner(
+      client,
+      [world.practiceId],
+      () =>
+        client.query(
+          `UPDATE packet_version SET attested_by = $2,
+                  attestation = jsonb_build_object('format', 'tp-attestation/1', 'checklist', '[]'::jsonb, 'pdf_sha256', export_sha256, 'csv_sha256', export_csv_sha256)
+            WHERE id = $1`,
+          [version.id, reviewer],
+        ),
+      reviewer,
     );
   },
   'audit_report.pricing_run_id': async (client, world, run) => {
@@ -236,9 +259,12 @@ const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: 
   },
 };
 
-/** The content of the factory's packet versions: tp-packet/1 with no lines (its case has none). */
+/**
+ * The content of the factory's packet versions: tp-packet/2 with no lines (its case has none), so its deadline
+ * is not applicable (the only version that asks for no line; @tp/packets never assembles one).
+ */
 const SYNTHETIC_PACKET_CONTENT = {
-  format: 'tp-packet/1',
+  format: 'tp-packet/2',
   as_of: '2026-01-01',
   dispute_level: 1,
   practice: {},
@@ -252,6 +278,7 @@ const SYNTHETIC_PACKET_CONTENT = {
   evidence_gaps: [],
   requested_action: 'SYNTHETIC',
   sources: [],
+  deadline: { basis: 'line_windows', ends_on: null, status: 'not_applicable', lines_verified: 0, lines: 0, causes: [], sources: [] },
 };
 
 /** What a derived column reads from or makes with. */

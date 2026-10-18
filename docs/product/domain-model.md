@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `67e084dd64caa6244eab620a33aa9018134989ec` on branch `co-001/pr-04-era-intake` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 40; head `20261102090000_era_export_intake.sql`
+- Generated at commit `1cd672100f324a3c284c02b937983828afadeceb` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 240 (110 SECURITY DEFINER); triggers: 212, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 247 (110 SECURITY DEFINER); triggers: 216, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 31 tables and 135 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 31 tables and 143 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -100,7 +100,7 @@
 | [`notification`](#table-notification) | Operations | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`organization`](#table-organization) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 6 | 2 | SELECT, INSERT(cols), UPDATE(cols) | SELECT(cols), UPDATE(cols) | - |
 | [`packet`](#table-packet) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols) | - | - |
-| [`packet_version`](#table-packet-version) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 8 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
+| [`packet_version`](#table-packet-version) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 11 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`parse_report`](#table-parse-report) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`patient_ref`](#table-patient-ref) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`payer`](#table-payer) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
@@ -130,7 +130,7 @@
 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, UPDATE(cols) | - | - |
 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, INSERT(cols) | - | - |
 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, INSERT(cols) | - | - |
-| [`submission`](#table-submission) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 5 | SELECT, INSERT(cols) | - | - |
+| [`submission`](#table-submission) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
 | [`subscription`](#table-subscription) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 3 | SELECT | SELECT, INSERT, UPDATE | - |
 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 2 | 3 | - | SELECT, INSERT, UPDATE | - |
 | [`support_grant`](#table-support-grant) | Tenancy and access | PHI (registered) | uuid NOT NULL | yes | yes | 7 | 4 | SELECT, INSERT(cols) | - | - |
@@ -1680,11 +1680,11 @@ Maintains `updated_at`: `contract_updated_at`.
 - Class: PHI (registered); registry policy `contract_version_tenant`, registered by `20261016160000_contracts_and_mapping`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Payers, contracts and rates (PHI-adjacent; confidential): A version or amendment
-- Created by `20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028)
+- Created by `20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028); its DDL, policies or trigger functions changed by `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
-- Column grant: `tp_app` INSERT (`appeal_levels`, `contract_id`, `dispute_window_days`, `effective_from`, `effective_to`, `id`, `notice_days`, `practice_id`, `source_document_ids`, `supersedes_id`, `timely_filing_days`, `version_no`)
-- Column grant: `tp_app` UPDATE (`appeal_levels`, `approved_at`, `approved_by`, `dispute_window_days`, `effective_from`, `effective_to`, `notice_days`, `signed_off_at`, `signed_off_by`, `source_document_ids`, `status`, `supersedes_id`, `timely_filing_days`)
+- Column grant: `tp_app` INSERT (`appeal_levels`, `contract_id`, `dispute_window_days`, `dispute_window_evidence`, `effective_from`, `effective_to`, `id`, `notice_days`, `practice_id`, `source_document_ids`, `supersedes_id`, `timely_filing_days`, `version_no`)
+- Column grant: `tp_app` UPDATE (`appeal_levels`, `approved_at`, `approved_by`, `dispute_window_days`, `dispute_window_evidence`, `dispute_window_verified_at`, `dispute_window_verified_by`, `effective_from`, `effective_to`, `notice_days`, `signed_off_at`, `signed_off_by`, `source_document_ids`, `status`, `supersedes_id`, `timely_filing_days`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -1707,12 +1707,16 @@ Maintains `updated_at`: `contract_updated_at`.
 | 17 | `notice_days` | `integer` | null |  |  | `20261016160000` | not in the dictionary |
 | 18 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261016160000` |  |
 | 19 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261016160000` |  |
+| 20 | `dispute_window_evidence` | `jsonb` | null |  |  | `20261103090000` | not in the dictionary |
+| 21 | `dispute_window_verified_by` | `uuid` | null |  | `user(id)` | `20261103090000` | not in the dictionary |
+| 22 | `dispute_window_verified_at` | `timestamp with time zone` | null |  |  | `20261103090000` | not in the dictionary |
 
 Keys:
 - Primary: (id)
 - Unique `contract_version_number_once`: `UNIQUE (contract_id, version_no)`
 - Foreign `contract_version_approved_by_fkey`: (approved_by) -> `user`(id), on delete no action
 - Foreign `contract_version_contract_id_fkey`: (contract_id) -> `contract`(id), on delete no action
+- Foreign `contract_version_dispute_window_verified_by_fkey`: (dispute_window_verified_by) -> `user`(id), on delete no action
 - Foreign `contract_version_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
 - Foreign `contract_version_signed_off_by_fkey`: (signed_off_by) -> `user`(id), on delete no action
 - Foreign `contract_version_supersedes_id_fkey`: (supersedes_id) -> `contract_version`(id), on delete no action
@@ -1742,6 +1746,10 @@ Invariants enforced by constraints:
 - `contract_version_timely_filing_days_check`: `CHECK (timely_filing_days >= 1 AND timely_filing_days <= 3650)`
 - `contract_version_version_no_check`: `CHECK (version_no >= 1)`
 - `contract_version_window`: `CHECK (effective_to IS NULL OR effective_to > effective_from)`
+- `contract_version_window_evidence_complete`: `CHECK (dispute_window_evidence IS NULL OR rate_record_evidence_complete(dispute_window_evidence) AND (dispute_window_evidence - ARRAY['document_id'::text, 'page'::text, 'quote'::text, 'hash'::text]) = '{}'::jsonb AND char_length(dispute_window_evidence ->> 'quote'::text) <= 2000)`
+- `contract_version_window_evidence_needs_window`: `CHECK (dispute_window_evidence IS NULL OR dispute_window_days IS NOT NULL)`
+- `contract_version_window_verification_recorded`: `CHECK ((dispute_window_verified_by IS NULL) = (dispute_window_verified_at IS NULL))`
+- `contract_version_window_verified_with_evidence`: `CHECK (dispute_window_verified_by IS NULL OR dispute_window_evidence IS NOT NULL)`
 - `contract_version_windows_never_overlap` (exclusion): `EXCLUDE USING gist (uuid_half(contract_id, true) WITH &&, uuid_half(contract_id, false) WITH &&, daterange(effective_from, effective_to, '[)'::text) WITH &&) WHERE (status = 'signed_off'::text OR supersedes_id IS NULL AND (status = ANY (ARRAY['draft'::text, 'proposed'::text, 'approved'::text])))`
 
 Invariants enforced by triggers:
@@ -1749,6 +1757,8 @@ Invariants enforced by triggers:
   - "a contract version is closed or superseded only by the sign-off of its successor"
 - `contract_version_rules`: `BEFORE INSERT OR UPDATE ON contract_version FOR EACH ROW EXECUTE FUNCTION contract_version_rules()`
   - "a contract version starts as a draft"
+  - "a contract version is written with its dispute window unverified; a contract specialist verifies it afterwards"
+  - "a dispute window's evidence is a document of its version"
   - "a contract version belongs to a contract of the same practice"
   - "a contract version's contract and number never change"
   - "a draft is approved by moving it to approved"
@@ -1759,7 +1769,13 @@ Invariants enforced by triggers:
   - "an approved version names the documents it is abstracted from"
   - "a version is approved once each of its rate records is verified, and it has at least one"
   - "every rate record's evidence is a document of its version"
+  - "a version whose dispute window is cited is approved once a contract specialist has verified the window"
   - "a contract version moves draft, proposed, approved, signed off, superseded, in that order"
+  - "only a contract specialist verifies a contract's dispute window"
+  - "a dispute window's verification records the verifying specialist and the time"
+  - "a dispute window is verified as it stands; edit it first, then verify it"
+  - "a dispute window cannot be verified without evidence naming a document, a page, a quote and a hash"
+  - "a dispute window's verification is recorded once"
   - "a version's documents are clean contract, exhibit or payer-letter documents of its practice, each named once"
   - "only a practice administrator or billing manager signs off a contract version"
   - "a sign-off records the signing user and the time and changes nothing else"
@@ -2972,11 +2988,11 @@ Maintains `updated_at`: `packet_updated_at`.
 - Class: PHI (registered); registry policy `packet_version_tenant`, registered by `20261023090000_packets_submissions_and_responses`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): Immutable version
-- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`, `20261029150000_billing`
+- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`, `20261029150000_billing`, `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`content`, `content_sha256`, `drafted_by`, `id`, `narrative`, `packet_id`, `practice_id`, `verifier_passed`, `verifier_report`, `version_no`)
-- Column grant: `tp_app` UPDATE (`approved_by`, `approved_sha256`, `export_csv_key`, `export_csv_sha256`, `export_pdf_key`, `export_sha256`, `regulation_confirmed_by`)
+- Column grant: `tp_app` UPDATE (`approved_by`, `approved_sha256`, `attestation`, `attested_by`, `export_csv_key`, `export_csv_sha256`, `export_pdf_key`, `export_sha256`, `export_verifier_report`, `regulation_confirmed_by`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -3008,11 +3024,17 @@ Maintains `updated_at`: `packet_updated_at`.
 | 26 | `exported_at` | `timestamp with time zone` | null |  |  | `20261023090000` |  |
 | 27 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
 | 28 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
+| 29 | `deadline_verification_status` | `text` | NOT NULL |  |  | `20261103090000` | one of verified, unverified, not_applicable; generated from ` CASE     WHEN ((content ->> 'format'::text) = 'tp-packet/2'::text) THEN ((content -> 'deadline'::text) ->> 'status'::text)     ELSE 'unverified'::text END`; not in the dictionary |
+| 30 | `export_verifier_report` | `jsonb` | null |  |  | `20261103090000` | not in the dictionary |
+| 31 | `attested_by` | `uuid` | null |  | `user(id)` | `20261103090000` | not in the dictionary |
+| 32 | `attested_at` | `timestamp with time zone` | null |  |  | `20261103090000` | not in the dictionary |
+| 33 | `attestation` | `jsonb` | null |  |  | `20261103090000` | not in the dictionary |
 
 Keys:
 - Primary: (id)
 - Unique `packet_version_numbered`: `UNIQUE (packet_id, version_no)`
 - Foreign `packet_version_approved_by_fkey`: (approved_by) -> `user`(id), on delete no action
+- Foreign `packet_version_attested_by_fkey`: (attested_by) -> `user`(id), on delete no action
 - Foreign `packet_version_drafted_by_fkey`: (drafted_by) -> `user`(id), on delete no action
 - Foreign `packet_version_packet_id_fkey`: (packet_id) -> `packet`(id), on delete no action
 - Foreign `packet_version_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
@@ -3034,15 +3056,22 @@ Invariants enforced by constraints:
 - `packet_version_approval_needs_verifier`: `CHECK (approved_by IS NULL OR verifier_passed)`
 - `packet_version_approved_sha256_check`: `CHECK (approved_sha256 ~ '^[0-9a-f]{64}$'::text)`
 - `packet_version_approved_together`: `CHECK ((approved_by IS NULL) = (approved_at IS NULL) AND (approved_at IS NULL) = (approved_sha256 IS NULL))`
+- `packet_version_attestation_holds_no_words`: `CHECK (attestation IS NULL OR (attestation - ARRAY['format'::text, 'checklist'::text, 'pdf_sha256'::text, 'csv_sha256'::text]) = '{}'::jsonb AND (attestation ->> 'format'::text) = 'tp-attestation/1'::text AND jsonb_typeof(attestation -> 'checklist'::text) = 'array'::text AND NOT jsonb_path_exists(attestation -> 'checklist'::text, '$[*]?(@.type() != "string" \|\| !(@ like_regex "^[a-z][a-z_]{0,31}$"))'::jsonpath))`
+- `packet_version_attestation_names_its_export`: `CHECK (attestation IS NULL OR COALESCE((attestation ->> 'pdf_sha256'::text) = export_sha256 AND (attestation ->> 'csv_sha256'::text) = export_csv_sha256, false))`
+- `packet_version_attested_after_export`: `CHECK (attested_at IS NULL OR exported_at IS NOT NULL)`
+- `packet_version_attested_together`: `CHECK ((attested_by IS NULL) = (attested_at IS NULL) AND (attested_at IS NULL) = (attestation IS NULL))`
 - `packet_version_confirmed_together`: `CHECK ((regulation_confirmed_by IS NULL) = (regulation_confirmed_at IS NULL))`
 - `packet_version_content_sha256_check`: `CHECK (content_sha256 ~ '^[0-9a-f]{64}$'::text)`
 - `packet_version_content_valid`: `CHECK (packet_content_valid(content))`
+- `packet_version_deadline_verification_status_check`: `CHECK (deadline_verification_status = ANY (ARRAY['verified'::text, 'unverified'::text, 'not_applicable'::text]))`
 - `packet_version_export_csv_key_check`: `CHECK (export_csv_key ~ '^practices/[0-9a-f-]{36}/packets/[0-9a-f-]{36}/[0-9a-f-]{36}\.csv$'::text)`
 - `packet_version_export_csv_sha256_check`: `CHECK (export_csv_sha256 ~ '^[0-9a-f]{64}$'::text)`
 - `packet_version_export_keys_its_own`: `CHECK ((export_pdf_key IS NULL OR starts_with(export_pdf_key, ((('practices/'::text \|\| practice_id::text) \|\| '/packets/'::text) \|\| packet_id::text) \|\| '/'::text)) AND (export_csv_key IS NULL OR starts_with(export_csv_key, ((('practices/'::text \|\| practice_id::text) \|\| '/packets/'::text) \|\| packet_id::text) \|\| '/'::text)))`
 - `packet_version_export_needs_approval`: `CHECK (exported_at IS NULL OR approved_at IS NOT NULL)`
 - `packet_version_export_pdf_key_check`: `CHECK (export_pdf_key ~ '^practices/[0-9a-f-]{36}/packets/[0-9a-f-]{36}/[0-9a-f-]{36}\.pdf$'::text)`
 - `packet_version_export_sha256_check`: `CHECK (export_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `packet_version_export_verifier_report_valid`: `CHECK (export_verifier_report IS NULL OR packet_verifier_report_valid(export_verifier_report))`
+- `packet_version_export_verifier_report_with_export`: `CHECK (export_verifier_report IS NULL OR exported_at IS NOT NULL)`
 - `packet_version_exported_together`: `CHECK ((exported_at IS NULL) = (export_pdf_key IS NULL) AND (exported_at IS NULL) = (export_csv_key IS NULL) AND (exported_at IS NULL) = (export_sha256 IS NULL) AND (exported_at IS NULL) = (export_csv_sha256 IS NULL))`
 - `packet_version_narrative_check`: `CHECK (narrative ~ '^enc:v1:[A-Za-z0-9_-]+$'::text)`
 - `packet_version_verifier_report_valid`: `CHECK (packet_verifier_report_valid(verifier_report))`
@@ -3050,6 +3079,15 @@ Invariants enforced by constraints:
 - `packet_version_version_no_check`: `CHECK (version_no >= 1)`
 
 Invariants enforced by triggers:
+- `packet_version_attestation_rules`: `BEFORE INSERT OR UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_attestation_rules()`
+  - "a packet version is written unexported and unattested"
+  - "a packet version's export is attested once"
+  - "a packet version is attested once its export is made"
+  - "a packet's export is attested by a reimbursement reviewer, in their own name"
+  - "the person who drafted, wrote or approved a packet does not attest its export"
+  - "only a packet's current version, still asking for its case's lines, is attested"
+  - "a packet version whose deadline is not verified is not attested"
+  - "an attestation's time is the time it was made"
 - `packet_version_becomes_current`: `AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_becomes_current()`
 - `packet_version_belongs`: `AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_belongs()`
   - "a packet version is written by a person who drafts packets, in their own name"
@@ -3060,6 +3098,13 @@ Invariants enforced by triggers:
   - "a packet version is of the case's dispute level"
 - `packet_version_current_verifier`: `BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_current_verifier()`
   - "a packet version is approved only once the current verifier has passed it; write the version again"
+- `packet_version_deadline_stated`: `AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_deadline_stated()`
+  - "a packet version states each line's deadline from the line's own window: its status, the day it ends and its source"
+  - "a packet version states its deadline as the database derives it: the lines' windows at the first level, the next level's window after a reopened denial"
+- `packet_version_export_guard`: `BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_export_guard()`
+  - "a packet version whose deadline is not verified is not exported"
+  - "a packet version is exported with the verifier's passing report over the narrative it rendered"
+  - "an export's verifier report is written with the export, once"
 - `packet_version_export_refused_while_suspended`: `BEFORE UPDATE OF exported_at ON packet_version FOR EACH ROW WHEN (old.exported_at IS NULL AND new.exported_at IS NOT NULL) EXECUTE FUNCTION refuse_new_work_while_suspended()`
   - "%"
 - `packet_version_never_deleted`: `BEFORE DELETE ON packet_version FOR EACH ROW EXECUTE FUNCTION packets_never_deleted()`
@@ -3094,7 +3139,7 @@ Maintains `updated_at`: `packet_version_updated_at`.
 - Class: PHI (registered); registry policy `submission_tenant`, registered by `20261023090000_packets_submissions_and_responses`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): Sent by the customer
-- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`
+- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261027090000_packet_and_ledger_review`, `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`case_id`, `channel`, `export_csv_sha256`, `export_sha256`, `follow_up_on`, `id`, `packet_version_id`, `practice_id`, `reference`, `submitted_by`, `submitted_on`)
@@ -3155,6 +3200,8 @@ Invariants enforced by triggers:
   - "a submission is dated on or after the case's last one"
   - "the payer has answered this dispute; only a denial that reopens the case starts the next level"
   - "the next dispute level is submitted within its window"
+- `submission_needs_attested_export`: `AFTER INSERT ON submission FOR EACH ROW EXECUTE FUNCTION submission_needs_attested_export()`
+  - "a packet is submitted once a reimbursement reviewer has attested its export"
 - `submission_never_deleted`: `BEFORE DELETE ON submission FOR EACH ROW EXECUTE FUNCTION packets_never_deleted()`
   - "% rows are never deleted: packets, submissions and responses keep what they recorded"
 - `submission_no_truncate`: `BEFORE TRUNCATE ON submission FOR EACH STATEMENT EXECUTE FUNCTION packets_no_truncate()`
@@ -5318,8 +5365,8 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | # | Subject | Where | What each says | Live schema | Status |
 | --- | --- | --- | --- | --- | --- |
 | C1 | Remittance duplicate key | PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary | PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents). | remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. An ERA export (provenance era_export, ADR 0060, D12 a) is keyed by remittance_export_once (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) over export rows, and the 835 is authoritative between the two (D13 a). | founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule |
-| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
-| C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is |
+| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts |
+| C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable). | proposed: each CO-12 enum built as text with a CHECK, as every enumeration here is; deadline_verification_status built so in PR 5 (reconciliation-001, D17 a), readiness_grade and the two roles still to come (PR 8, PR 14) |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
 | C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed). | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
 
@@ -5374,12 +5421,12 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | [`adjustment`](#table-adjustment) | `unknown_code` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`provider_adjustment`](#table-provider-adjustment) | `position`, `provider_id`, `category`, `counted` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
 | [`parse_report`](#table-parse-report) | `outcome`, `plb_total_cents`, `loaded_transactions`, `loaded_claims`, `loaded_lines`, `duplicate_transactions`, `unknown_codes`, `transaction_outcomes`, `code_list_release` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
-| [`contract_version`](#table-contract-version) | `notice_days` (`20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028)) |
+| [`contract_version`](#table-contract-version) | `notice_days` (`20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028))<br>`dispute_window_evidence`, `dispute_window_verified_by`, `dispute_window_verified_at` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0049, ADR 0061)) |
 | [`pricing_run`](#table-pricing-run) | `failure_code` (`20261018090000_pricing_runs` (ADR 0029, ADR 0035))<br>`rerun_of_id`, `lines_loaded_by`, `accepted_by`, `accepted_at` (`20261019150000_reruns_and_release_withdrawal` (ADR 0037))<br>`created_by_job_id` (`20261020090000_monitoring_digests_notifications` (ADR 0039)) |
 | [`anomaly`](#table-anomaly) | `validation_requested_by`, `validation_requested_at` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`line_status`](#table-line-status) | `seq`, `priced_line_id` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`case_line`](#table-case-line) | `written_off_text`, `written_off_at`, `reopen_reason`, `reopened_by`, `reopened_at` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
-| [`packet_version`](#table-packet-version) | `content`, `dispute_level`, `content_sha256`, `regulation_confirmed_by`, `regulation_confirmed_at`, `approved_sha256`, `approved_alone`, `export_csv_sha256` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
+| [`packet_version`](#table-packet-version) | `content`, `dispute_level`, `content_sha256`, `regulation_confirmed_by`, `regulation_confirmed_at`, `approved_sha256`, `approved_alone`, `export_csv_sha256` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`deadline_verification_status`, `export_verifier_report`, `attested_by`, `attested_at`, `attestation` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0049, ADR 0061)) |
 | [`submission`](#table-submission) | `export_sha256`, `export_csv_sha256`, `dispute_level` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
 | [`payer_response`](#table-payer-response) | `remittance_id`, `denial_category`, `reopens_case`, `next_window_ends_on`, `recorded_by` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
 | [`posting_row`](#table-posting-row) | `row_no`, `procedure_code`, `service_date`, `payer_name`, `batch`, `template`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
@@ -5446,6 +5493,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `audit_report_download.file` | `pdf`, `csv` |
 | `report_document.kind` | `coverage`, `monthly_summary` |
 | `report_document.status` | `queued`, `ready`, `failed` |
+| `packet_version.deadline_verification_status` | `verified`, `unverified`, `not_applicable` |
 | `submission.channel` | `payer_portal`, `fax`, `mail`, `provider_relations_email` |
 | `payer_response.kind` | `accepted`, `partial`, `denied`, `info_requested`, `reprocessed_no_change` |
 | `payer_response.denial_category` | `authorization`, `visit_limit`, `modifier`, `medical_necessity`, `timely_filing`, `bundling`, `other` |
@@ -5555,6 +5603,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `case_line_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `bcffaf3b76e2a516` |
 | `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8390200e0d5563a1` |
 | `case_next_dispute_window(uuid,integer,date)` | `date` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a6d8aaca2860bcf5` |
+| `case_next_window_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ce11fe240bc4c1e7` |
 | `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b8dacedadc46c5e7` |
 | `case_reopened_levels(uuid)` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9e04003e8f9e60cf` |
 | `case_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0292837d38e4bad` |
@@ -5577,7 +5626,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `contract_version_documents_ok(contract_version)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fa43e7f02e96754b` |
 | `contract_version_retired_by(contract_version,contract_version,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d28cf1aa50ff68a3` |
 | `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d19fbe631239fef` |
-| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `408d9ef506921090` |
+| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c080e392a37c24ec` |
 | `current_rule_release()` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `888c946804c94d4f` |
 | `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1f6b0bde64fc4a4b` |
 | `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  | `97a340475b983d2f` |
@@ -5639,12 +5688,16 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `organization_kind_of(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `9ba89ea8163257bc` |
 | `organization_run_refusal(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `28088464051fab99` |
 | `packet_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2176280110c4aa2b` |
-| `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `6cd2db7375a3c74d` |
+| `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `619ece8c25a26b04` |
 | `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
 | `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
+| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `488e1656629cd223` |
 | `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
 | `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
 | `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
+| `packet_version_deadline_stated()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a6e1fe71e82c331f` |
+| `packet_version_deadline_status(uuid,jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1341aa1b7f092b15` |
+| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `abc5d2af3850ae36` |
 | `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b119012e56d45e9c` |
 | `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
 | `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d6f5841a2aadbeea` |
@@ -5680,6 +5733,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `practice_set_materiality(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bd92f0a44717170b` |
 | `practice_set_pursuit(uuid,text,integer,integer)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ba449fb1c3926ee` |
 | `practice_setting_keys()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `43b5d4392b24804a` |
+| `priced_line_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `93de6efbc600f046` |
 | `priced_line_immutable()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4d2d626ed295e33c` |
 | `priced_line_rows_belong()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0c2beafb3c63d2f3` |
 | `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1980a29c53080675` |
@@ -5729,6 +5783,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
 | `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `744c87f0a23fd1c1` |
 | `submission_latest_response(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9a044fc6cae7cf96` |
+| `submission_needs_attested_export()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `75d65919587f1492` |
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
@@ -5805,6 +5860,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0049, ADR 0061 | `fdd78ccea7f0e103d144d480f2f8fd9fac2c1826b5c8ed0bd21acb1350eb4921` |
 
 ## Cross-checks
 
@@ -5820,6 +5876,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261102090000_era_export_intake.sql` (40 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001). Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `374a7b8393f939b92f62ef78528b017e3f6ea81ce38c3408a5884dccdf1bfcbe`
+Approved by: ________  Date: ________  Document SHA-256: `3d920c3faf518c71e6e9b0045c3676d0aa1872743324a62dff884512208a5d0b`

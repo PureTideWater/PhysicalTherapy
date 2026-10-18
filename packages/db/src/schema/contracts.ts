@@ -57,6 +57,14 @@ export const contract = pgTable(
   (table) => [index('contract_by_payer').on(table.practiceId, table.payerId)],
 );
 
+/** A contract window's evidence (contract_version.dispute_window_evidence), as a rate record cites its terms. */
+export interface DisputeWindowEvidence {
+  readonly document_id: string;
+  readonly page: number;
+  readonly quote: string;
+  readonly hash: string;
+}
+
 export const contractVersion = pgTable(
   'contract_version',
   {
@@ -84,6 +92,14 @@ export const contractVersion = pgTable(
     noticeDays: integer('notice_days'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Where the contract states its dispute window, in a rate record's form (migration 20261103090000):
+     * {document_id, page, quote, hash}, null while uncited. Frozen with the other terms once approved.
+     */
+    disputeWindowEvidence: jsonb('dispute_window_evidence').$type<DisputeWindowEvidence>(),
+    /** The contract specialist who verified the window against its page, and when; an edit of the window clears both. */
+    disputeWindowVerifiedBy: uuid('dispute_window_verified_by').references(() => user.id),
+    disputeWindowVerifiedAt: timestamp('dispute_window_verified_at', { withTimezone: true }),
   },
   (table) => [
     unique('contract_version_number_once').on(table.contractId, table.versionNo),

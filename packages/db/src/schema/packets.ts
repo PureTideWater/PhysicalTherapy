@@ -18,6 +18,8 @@ import { caseTable } from './triage';
  */
 
 export const SUBMISSION_CHANNEL_VALUES = ['payer_portal', 'fax', 'mail', 'provider_relations_email'] as const;
+/** packet_version.deadline_verification_status (CO-12; migration 20261103090000), in the CHECK's order. */
+export const DEADLINE_VERIFICATION_STATUS_VALUES = ['verified', 'unverified', 'not_applicable'] as const;
 export const PAYER_RESPONSE_KIND_VALUES = ['accepted', 'partial', 'denied', 'info_requested', 'reprocessed_no_change'] as const;
 export const DENIAL_CATEGORY_VALUES = ['authorization', 'visit_limit', 'modifier', 'medical_necessity', 'timely_filing', 'bundling', 'other'] as const;
 export const PACKET_EXPORT_FILES = ['pdf', 'csv'] as const;
@@ -55,7 +57,7 @@ export const packetVersion = pgTable(
       .notNull()
       .references(() => packet.id),
     versionNo: integer('version_no').notNull(),
-    /** tp-packet/1 (@tp/packets PacketContent). */
+    /** tp-packet/2, or tp-packet/1 written before 20261103090000 (@tp/packets PacketContent). */
     content: jsonb('content').$type<Readonly<Record<string, unknown>>>().notNull(),
     /** Generated from the content. */
     citation: jsonb('citation')
@@ -96,6 +98,19 @@ export const packetVersion = pgTable(
     exportedAt: timestamp('exported_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Generated from the content (CO-12; migration 20261103090000): tp-packet/2's content.deadline.status, and
+     * unverified for every tp-packet/1 version. What the version stated when written; the export derives it again.
+     */
+    deadlineVerificationStatus: text('deadline_verification_status', { enum: DEADLINE_VERIFICATION_STATUS_VALUES })
+      .notNull()
+      .generatedAlwaysAs(sql`CASE WHEN content ->> 'format' = 'tp-packet/2' THEN content -> 'deadline' ->> 'status' ELSE 'unverified' END`),
+    /** The verifier's report over the narrative the export rendered (tp-packet-verifier/2), written with the export. */
+    exportVerifierReport: jsonb('export_verifier_report').$type<Readonly<Record<string, unknown>>>(),
+    /** The reimbursement reviewer's attestation over the export's two SHA-256 (D16): who, when and tp-attestation/1. */
+    attestedBy: uuid('attested_by').references(() => user.id),
+    attestedAt: timestamp('attested_at', { withTimezone: true }),
+    attestation: jsonb('attestation').$type<Readonly<Record<string, unknown>>>(),
   },
   (table) => [unique('packet_version_numbered').on(table.packetId, table.versionNo), index('packet_version_by_packet').on(table.practiceId, table.packetId, table.versionNo.desc())],
 );

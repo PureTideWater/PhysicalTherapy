@@ -40,6 +40,7 @@ export {
   type ContractRow,
   type ContractStatus,
   type ContractVersionRow,
+  type DisputeWindowEvidence,
   MAPPING_KINDS,
   type MappingKind,
   PROPOSERS,
@@ -249,6 +250,7 @@ export {
   userSession,
 } from './identity';
 export {
+  DEADLINE_VERIFICATION_STATUS_VALUES,
   DENIAL_CATEGORY_VALUES,
   PACKET_EXPORT_FILES,
   PAYER_RESPONSE_KIND_VALUES,
