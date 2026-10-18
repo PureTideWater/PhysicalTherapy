@@ -1,0 +1,97 @@
+# PaidWhole build: handoff and state
+
+This branch (`claude/build-ops`) holds the build's operating state. It has no history in common with the product, so it never merges into `claude/build-platform`. Every product decision also lives in the product repository: ADRs, `docs/product/reconciliation-001.md` (Approval) and `CLAUDE.md`. This file collects in one place what a fresh session needs to carry on. Last updated: 2026-10-18 13:45 UTC.
+
+## How to resume in a new session
+1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
+2. Set up the environment (below). Check open pull requests and the branches listed under "Where things stand".
+3. Update the tracker (below) and tell the founder where things stand before starting new work.
+
+## Standing rule from the founder (2026-10-18)
+Recommend and build only the best option, whatever the effort to build it. The app must be a well-oiled, incredible product focused on quality, accuracy and user experience, and set up to become a multi-million-dollar business. Judge every option on:
+- accuracy, quality, user experience and growth;
+- security and privacy, and compliance (HIPAA, Medicare appeal rules, state prompt-pay laws, payer-contract confidentiality, WCAG and ADA, honest claims);
+- reliability, cost to serve, and dispute success;
+- time to value, resilience to change (CMS and payer updates), AI safety, maintainability, and business and due-diligence readiness.
+
+When asking the founder a question, recommend the best option first. Never let the cost of building it decide the recommendation, and say plainly what each option gives up. This rule goes into every build brief and into `CLAUDE.md` in the next pull request.
+
+## Who decides
+- Tyler Williams is the founder and owner, and the only approver of `docs/product/domain-model.md`: `packages/db/domain-model/approvers.json` lists "Tyler Williams". Use they/them when a pronoun is needed.
+- An approval line is written only when the founder says so, for the exact SHA-256 they approved. Any change to the text means asking again. Agents never write one.
+
+## Owner decisions and rulings (all recorded in the repo as noted)
+- **2026-10-17, reconciliation:**
+  - D1 to D36 accepted as recommended.
+  - D5 (a): all of it, in order.
+  - D4 (a): one PR per item, merged by Claude when CI is green.
+  - D29: independent sign-off threshold $2,500 per case.
+  - D7 (b), D23 (b).
+  - `.claude/rules/brand.md` stays as the drop-in wrote it.
+  - The 2026-10-18 standing rule means the audits below re-check D1 to D36.
+- **D14 timing:** `.claude/settings.json` is committed as the final pass's last commit, because it denies `git push` and turns on the sandbox. The staged copy is described in ADR 0059.
+- **PR 2:** domain model approved on 2026-10-17 (`ec475408…`).
+- **PR 3:** the fixture guard also reads `.txt`, `.dat` and extensionless tables. This is stricter than D14's wording; the founder can revert it.
+- **PR 4:** domain model approved on 2026-10-18 (`374a7b83…bcbe`), along with rulings on the export key, payer aliasing and export limits (ADR 0060).
+- **PR 5, 2026-10-18 (ADR 0061, "Owner rulings"):**
+  - Schema approved at `6435fadd…2673`, with one addition: the reviewer attests only after downloading both the PDF and the CSV, each matching its stored hash, enforced in the handler and in Postgres.
+  - The new hash still needs the founder's confirmation.
+  - D16 (a) without another approver is left to D27's PR.
+  - Contract appeal-level evidence goes into PR 8.
+- **PR 6, 2026-10-18 (ADR 0062, "Owner rulings"):**
+  - Reduction-pool rows are priced twice by the unchanged engine and flagged only below the fully reduced figure.
+  - Compare against the engine's figure before sequestration (specialist to confirm, Q21).
+  - A result priced under a withdrawn release may still convert, with a notice.
+  - ZIP+4: superseded at 11:47 UTC. Fix before launch in **PR 6b**: practice settings and screening accept ZIP+4 and the engine resolves the locality from it. Five-digit ZIPs and golden lines are unchanged; the engine freeze is loosened for this lookup only. ADR 0062 still says "keep refusing" and must be amended.
+- **PR 6 limits awaiting confirmation with its approval:** $25,000 per claim line, 100,000 claim lines per row, and a hand-kept free-mail list.
+
+## Where things stand (2026-10-18 13:45 UTC)
+- **Merged into `claude/build-platform`:** #1 (Step 0), #2 (PR 1 brand and copy), #3 (PR 2 domain model), #4 (PR 3 EMR fixtures), #5 (screen-tour fixes), #6 (PR 4 ERA intake). Head: `fe470c1`.
+- **PR 5:** `co-001/pr-05-packet-deadline`, worktree `/home/user/pr5`. Workflow `wf_e3d92d32-ee0` (download rule) is in review. Next steps:
+  1. The founder confirms the new hash.
+  2. Write the approval line.
+  3. Run `pnpm db:domain-model --check --require-approval`.
+  4. Open the PR and merge it when green.
+- **PR 6:** `co-001/pr-06-free-screening`, worktree `/home/user/pr6`. Workflow `wf_d8c22991-041` (rulings) is in review or fixes. After PR 5 merges:
+  1. Merge `claude/build-platform` into PR 6.
+  2. Regenerate the domain model.
+  3. Ask for approval, including the limits.
+  4. Amend ADR 0062's ZIP+4 ruling.
+  5. Open the PR and merge it when green.
+- **Audits:**
+  - `wf_056e247c-cff`: decisions, deferred items, accuracy, experience and growth.
+  - `wf_8e577203-afb`: ten more angles, merged with the first audit.
+  - Output goes to `scratchpad/best-option-audit/combined-report.md` (copy it here when done). Publish it for the founder and ask for decisions on the critical and high items.
+- **Next PRs:**
+  - PR 6b (ZIP+4).
+  - PR 7 to PR 17, per `reconciliation-001.md`. PR 8 now includes appeal-level evidence.
+  - Milestone 12 (reduced scope), then milestone 13.
+  - Final pass: runbooks, whole-plan audit, phone-width (390 px) screens and mono figures, retry-safe uploads in the models, monitoring, reports and triage e2e journeys, the Dependabot PRs, `settings.json` as the last commit, final verification, and a final report listing the human-blocked items and a day-one launch checklist.
+- **Schema PRs needing the founder's approval:** PR 5, PR 6, possibly PR 6b, PR 8, PR 14 and PR 17.
+- **Re-pricing breaks packets** (screen tour) belongs to PR 11.
+
+## Environment recipe (cloud container)
+- Postgres 16 on 5432: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /root/pgdata -o '-p 5432 -k /tmp' -l /tmp/pg16.log start"`.
+- Postgres 18 on 5433 (CI parity): `su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp' -l /tmp/pg18.log start"`, superuser `postgres:test`.
+- Node 24 is at `/opt/node24/bin`; Python 3.12 with pyx12 is at `/opt/py312-ci/bin`; gitleaks 8.24.3 is at `/tmp/claude-0/gitleaks/gitleaks`. If the container is replaced, reinstall them (see the CI workflow for versions).
+- One worktree per PR (`/home/user/prN`). Each agent role gets its own database (`tp_prN_<role>_<n>`) and its own E2E port.
+- `pnpm lint` needs about 6 GiB of heap.
+- **Disk:** keep more than 5 GB free. Delete only clones that belong to merged PRs or finished workflows, after checking nothing running uses them.
+- **Agents:**
+  - The `security-reviewer`, `edi-reviewer` and `payment-engine-reviewer` agent types have small turn limits, so use general-purpose agents with their brief.
+  - Never SendMessage a workflow agent, because it starts a duplicate.
+  - After a container restart, start Postgres again and resume workflows with `resumeFromRunId`.
+
+## Tracker
+- **Artifact:** https://claude.ai/artifact/MFFHU21aJ9CP4CAnwU7WKR (PaidWhole Build Tracker, a dashboard backed by an artifact database).
+- **Refresh:**
+  1. Run `python3 -I tracker/build_status.py <outdir>`. `MANUAL`, `STEP_RUNS`, `BATCHES`, `HISTORY` and `ETA` are edited by hand.
+  2. Upload each changed JSON as an asset (`Artifact publish {url, asset:true, file_path}`).
+  3. Point `datasets/<id>` at it with ArtifactData update `{source:{kind:file,url:/_blob/<id>,name,format:json}, updated:{at,by:"Claude"}}` and `if_version`.
+  4. Delete the old blob and update `tracker/assets.json`.
+- **ETA** (re-estimated 2026-10-18): 2026-10-21 to 2026-10-24.
+
+## Files here
+- `tracker/`: the tracker generator, asset ids and page.
+- `approval-summaries/`: the plain-language summaries sent to the founder.
+- `workflow-scripts/`: every workflow script run so far. They are reusable briefs for the remaining PRs.
