@@ -40,6 +40,7 @@ export const COMMANDS = {
  */
 export const LOGIN_SECRET_VARIABLES = {
   app: { username: 'TP_APP_LOGIN_USERNAME', password: 'TP_APP_LOGIN_PASSWORD' },
+  worker: { username: 'TP_WORKER_LOGIN_USERNAME', password: 'TP_WORKER_LOGIN_PASSWORD' },
   operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
   queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
   billing: { username: 'TP_BILLING_LOGIN_USERNAME', password: 'TP_BILLING_LOGIN_PASSWORD' },
@@ -97,8 +98,9 @@ interface ContainerSpec {
  *
  * - web: the Next.js server behind the load balancer, as ApplicationRole, with the application, queue
  *   and billing logins and the cookie-sealing secret.
- * - worker: the practice jobs (WORKER_JOBS=practice), as ApplicationRole, with the application and
- *   queue logins.
+ * - worker: the practice jobs (WORKER_JOBS=practice), as ApplicationRole, with the worker's own login
+ *   (a member of tp_app marked as a job's by tp_job, never the application login; docs/adr/0061) and the
+ *   queue login. ApplicationRole reads no login's secret, so the worker cannot fetch the web's login.
  * - platform: the platform jobs (WORKER_JOBS=platform: the audit copy, the restore drill, the support
  *   notices, the monitoring schedule, billing's two and support mail), as OperatorRole, with the operator and queue logins; the only
  *   task with the operator login, and without the application login.
@@ -229,7 +231,9 @@ export class Compute extends Construct {
       logGroup: props.logGroups.worker,
       command: COMMANDS.worker,
       urls: [
-        { url: { variable: 'DATABASE_URL' }, secret: database.appSecret },
+        // The worker's own login, never the application login: the database refuses a packet export's download
+        // evidence and its attestation on it (docs/adr/0061).
+        { url: { variable: 'DATABASE_URL' }, secret: database.workerSecret },
         { url: QUEUE, secret: database.queueSecret },
       ],
       environment: {
@@ -296,6 +300,7 @@ export class Compute extends Construct {
       environment: common,
       secrets: {
         ...loginField(database.appSecret, LOGIN_SECRET_VARIABLES.app),
+        ...loginField(database.workerSecret, LOGIN_SECRET_VARIABLES.worker),
         ...loginField(database.operatorSecret, LOGIN_SECRET_VARIABLES.operator),
         ...loginField(database.queueSecret, LOGIN_SECRET_VARIABLES.queue),
         ...loginField(database.billingSecret, LOGIN_SECRET_VARIABLES.billing),

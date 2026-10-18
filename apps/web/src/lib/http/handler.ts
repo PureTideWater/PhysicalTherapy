@@ -243,13 +243,26 @@ function isDownload(data: unknown): data is Download<string | Uint8Array<ArrayBu
   return typeof data === 'object' && data !== null && 'download' in data;
 }
 
+/** 405 with the outcome's shape: a download is served to a GET alone, so nothing ran and nothing was recorded. */
+function downloadsAreGets(cookies: ResponseCookies): Response {
+  const response = outcomeResponse({ status: 'invalid', issues: [{ field: 'method', message: 'a download is a GET' }] }, cookies);
+  response.headers.set('allow', 'GET');
+  return new Response(response.body, { status: 405, headers: response.headers });
+}
+
 /**
  * A Next route handler for a registered download route (GET): the file as an attachment, private and
- * never cached, with the opaque file name the route chose; any refusal as the JSON outcome.
+ * never cached, with the opaque file name the route chose; any refusal as the JSON outcome. Any other
+ * method is refused before the route runs. Next answers a HEAD with a route's GET handler when the route
+ * exports none, and a download route records the download as it reads the file (a packet export's
+ * download is the reviewer's evidence; docs/adr/0061), so a HEAD that sends no bytes must record nothing.
  */
 export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayBuffer>>>, servicesOf: () => Services) {
   return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
     const cookies = new ResponseCookies(request.headers.get('cookie'));
+    if (request.method !== 'GET') {
+      return downloadsAreGets(cookies);
+    }
     const services = servicesOf();
     const built = await routeRequest(request, cookies, context, undefined, services.trustedProxyHops);
     if (built instanceof Response) {

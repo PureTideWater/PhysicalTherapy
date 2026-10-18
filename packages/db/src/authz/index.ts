@@ -10,6 +10,7 @@ export {
   type ActorScope,
   type ClientOf,
   type AnyScope,
+  JobActorIsPersonError,
   type JobScopeRequest,
   OnePracticePerJobError,
   type PracticeAccess,

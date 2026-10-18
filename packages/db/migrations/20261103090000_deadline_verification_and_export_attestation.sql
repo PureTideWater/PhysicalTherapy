@@ -55,10 +55,16 @@
 --   each recorded by the web request that served it once its bytes hashed to the stored SHA-256. The evidence is
 --   audit_event (append-only for every role; its INSERT policy writes only in the transaction's own actor's name):
 --   packet_export_pdf_downloaded and packet_export_csv_downloaded, which audit_event_packet_download records only
---   for a person who may read the export, of an exported version of the event's practice in the caller's scope,
---   so a job's scope (its actor is the job's ID, no user) writes none. packet_export_downloads_of_actor() reads
---   the caller's own. The export history (practice_export_history(), practice_export_count()) lists the two new
---   actions beside packet_export_downloaded, which earlier downloads keep and which is evidence of nothing.
+--   on a connection that is not the worker's own login, for a person who may read the export, of an exported
+--   version of the event's practice in the caller's scope. The worker's login is a member of the marker role
+--   tp_job (packages/db/src/roles.ts) and the web's is not; app_session_is_job() reads that from session_user,
+--   which SET ROLE, SECURITY DEFINER and set_config('app.actor_id', ...) never change, so a job's code, or a
+--   compromised worker setting app.actor_id to the reviewer's ID, writes no download event and no attestation
+--   (the attestation rules refuse that login too). What the database cannot tell apart is a process holding the
+--   web's own login, which serves the reviewer's files in the first place (ADR 0061, What it does not hold
+--   against). packet_export_downloads_of_actor() reads the caller's own. The export history
+--   (practice_export_history(), practice_export_count()) lists the two new actions beside
+--   packet_export_downloaded, which earlier downloads keep and which is evidence of nothing.
 --
 -- Why tp_app cannot bypass the refusal: tp_owner owns the tables, triggers and functions, and tp_app owns
 -- nothing and has no BYPASSRLS, so it can neither ALTER the table nor DISABLE a trigger, and only a superuser
@@ -78,8 +84,10 @@
 -- Removed: nothing. For the previous image: its tp-packet/1 versions are written and approved, but their export
 -- is refused (its export job fails them), its submissions of unattested exports are refused, its downloads are
 -- recorded as packet_export_downloaded, which no attestation counts (the reviewer downloads again under the new
--- image), and its triage, which does not know DEADLINE_UNVERIFIED, may open cases whose export the guard
--- refuses: each is the approved outcome. Deploy order: migrate first (docs/adr/0049).
+-- image), its worker still connects as the application login until its task is replaced by one on the worker's
+-- own (the deploy job creates that login after the migrations), and its triage, which does not know
+-- DEADLINE_UNVERIFIED, may open cases whose export the guard refuses: each is the approved outcome. Deploy order:
+-- migrate first (docs/adr/0049).
 
 -- ---------------------------------------------------------------------------------------------------
 -- contract_version: the dispute window's evidence and its verification
@@ -699,16 +707,31 @@ END;
 $$;
 CREATE TRIGGER packet_version_export_guard BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_export_guard();
 
+-- Whether this connection signed in as the worker's own login (docs/adr/0061): a member of tp_job, the marker role
+-- that holds no privilege and that only the worker's login (tp_worker_login, tp_worker_dev locally) is granted;
+-- the web's login never is (packages/db/src/roles.ts, apps/worker/src/deploy/logins.ts). session_user is the login
+-- the connection signed in as: SET ROLE and SECURITY DEFINER change current_user and never session_user, and only a
+-- superuser may SET SESSION AUTHORIZATION, so code on the worker's login, a compromised job's included, cannot pass
+-- for a person's request whatever it sets app.actor_id to. A superuser (dev and test only, and able to disable any
+-- trigger) is a member of every role and is not taken for a job.
+CREATE FUNCTION app_session_is_job() RETURNS boolean LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT pg_has_role(session_user, 'tp_job', 'MEMBER') AND NOT coalesce((SELECT r.rolsuper FROM pg_roles r WHERE r.rolname = session_user), false)
+$$;
+
 -- The download of an export's file (the owner's addition of 2026-10-18): the web request that served the PDF or
 -- the CSV records packet_export_pdf_downloaded or packet_export_csv_downloaded once the bytes it read from storage
 -- hashed to the version's stored SHA-256 (@tp/worker/packets downloadPacketExport()), in the same transaction.
--- Such an event is recorded only for a person (a job's actor is its job ID, which names no user), in their own
--- name (audit_event_record), who may read the export there now (phi.export, or audit_finding.validate for the
--- reimbursement reviewer), of an exported version of the event's practice in the caller's scope, as a line-level
--- export. Every role meets it, the owner included; audit_event never changes once written. Its time is the
--- database's: the application role has no grant on audit_event.at.
+-- Such an event is recorded only on a connection that is not the worker's (app_session_is_job()), only for a person
+-- (a job's actor is its job ID, which names no user), in their own name (audit_event_record), who may read the
+-- export there now (phi.export, or audit_finding.validate for the reimbursement reviewer), of an exported version of
+-- the event's practice in the caller's scope, as a line-level export. Every role meets it, the owner included;
+-- audit_event never changes once written. Its time is the database's: the application role has no grant on
+-- audit_event.at.
 CREATE FUNCTION audit_event_packet_download() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+  IF app_session_is_job() THEN
+    RAISE EXCEPTION 'a packet export''s download is recorded by the web request that served it, never on the worker''s login' USING ERRCODE = 'insufficient_privilege';
+  END IF;
   IF NOT app_actor_is_person() OR NEW.actor_kind IS DISTINCT FROM 'user' OR NEW.actor_id IS DISTINCT FROM app_actor_id() THEN
     RAISE EXCEPTION 'a packet export''s download is recorded for the person it was served to, in their own name' USING ERRCODE = 'insufficient_privilege';
   END IF;
@@ -729,9 +752,10 @@ CREATE TRIGGER audit_event_packet_download BEFORE INSERT ON audit_event FOR EACH
 
 -- The files of a packet version's export that this transaction's actor, as a person, downloaded at or after its
 -- export, in its practice (audit_event_packet_download admits only such downloads): {csv}, {pdf}, {csv,pdf} or {}.
--- Only the caller's own, of a version in the caller's scope: nothing for a job, another person's downloads or a
--- version out of scope. Definer's rights over the audit log, whose own policy admits the practice's administrators
--- alone; the caller's scope is kept.
+-- Only the caller's own, of a version in the caller's scope: nothing on the worker's login (session_user is the
+-- caller's under definer's rights too), for a job, another person's downloads or a version out of scope. Definer's
+-- rights over the audit log, whose own policy admits the practice's administrators alone; the caller's scope is
+-- kept.
 CREATE FUNCTION packet_export_downloads_of_actor(target uuid) RETURNS text[]
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT coalesce(array_agg(f.file ORDER BY f.file), '{}'::text[])
@@ -740,7 +764,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
         FROM packet_version v
         JOIN audit_event e ON e.object_id = v.id AND e.object_type = 'packet_version' AND e.practice_id = v.practice_id
        WHERE v.id = target AND practice_in_scope(v.practice_id) AND v.exported_at IS NOT NULL
-         AND app_actor_is_person() AND e.actor_id = app_actor_id() AND e.actor_kind = 'user'
+         AND NOT app_session_is_job() AND app_actor_is_person() AND e.actor_id = app_actor_id() AND e.actor_kind = 'user'
          AND e.action IN ('packet_export_pdf_downloaded', 'packet_export_csv_downloaded') AND e.purpose = 'line_export'
          AND e.at >= v.exported_at
     ) f
@@ -772,10 +796,10 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
 $$;
 
 -- The attestation (D16): written unattested; once exported, attested once by a reimbursement reviewer in their
--- own name, who drafted, wrote and approved no version of the packet, over the current version still asking for
--- its case's lines at the case's dispute level, while its deadline is not unverified, and once the reviewer has
--- downloaded both its PDF and its CSV, each checked against its SHA-256 (packet_export_downloads_of_actor()). The
--- time is the database's.
+-- own name, in a request on a connection that is not the worker's (app_session_is_job()), who drafted, wrote and
+-- approved no version of the packet, over the current version still asking for its case's lines at the case's
+-- dispute level, while its deadline is not unverified, and once the reviewer has downloaded both its PDF and its
+-- CSV, each checked against its SHA-256 (packet_export_downloads_of_actor()). The time is the database's.
 CREATE FUNCTION packet_version_attestation_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   the_case uuid;
@@ -793,6 +817,9 @@ BEGIN
     END IF;
     IF OLD.exported_at IS NULL THEN
       RAISE EXCEPTION 'a packet version is attested once its export is made' USING ERRCODE = 'check_violation';
+    END IF;
+    IF app_session_is_job() THEN
+      RAISE EXCEPTION 'a packet''s export is attested in its reviewer''s own request, never on the worker''s login' USING ERRCODE = 'insufficient_privilege';
     END IF;
     IF NOT app_actor_is_person() OR NEW.attested_by IS DISTINCT FROM app_actor_id() OR NOT coalesce(app_actor_permitted(NEW.practice_id, 'audit_finding.validate'), false) THEN
       RAISE EXCEPTION 'a packet''s export is attested by a reimbursement reviewer, in their own name' USING ERRCODE = 'insufficient_privilege';
@@ -813,7 +840,8 @@ BEGIN
     IF packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
       RAISE EXCEPTION 'a packet version whose deadline is not verified is not attested' USING ERRCODE = 'check_violation';
     END IF;
-    -- The attester's own downloads of this version's two files since its export (a job writes none).
+    -- The attester's own downloads of this version's two files since its export, each recorded by the web request
+    -- that served it (none is recorded on the worker's login, nor for a job's actor).
     IF NOT (packet_export_downloads_of_actor(NEW.id) @> ARRAY['csv', 'pdf']) THEN
       RAISE EXCEPTION 'a packet''s export is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256' USING ERRCODE = 'check_violation';
     END IF;
@@ -844,15 +872,15 @@ CREATE TRIGGER submission_needs_attested_export AFTER INSERT ON submission FOR E
 
 -- ---------------------------------------------------------------------------------------------------
 -- Privileges: the export job writes the export's verifier report with the export; a reviewer attests. A download
--- is an audit event, which tp_app inserts as before (20261015140500, 20261015180000).
+-- is an audit event, which tp_app inserts as before (20261015140500, 20261015180000), on the web's login only.
 -- ---------------------------------------------------------------------------------------------------
 
 GRANT UPDATE (export_verifier_report, attested_by, attestation) ON packet_version TO tp_app;
 
 REVOKE ALL ON FUNCTION priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
   priced_line_calculation(jsonb), packet_version_deadline_stated(), packet_version_export_guard(), packet_version_attestation_rules(), submission_needs_attested_export(),
-  audit_event_packet_download(), packet_export_downloads_of_actor(uuid) FROM PUBLIC;
+  app_session_is_job(), audit_event_packet_download(), packet_export_downloads_of_actor(uuid) FROM PUBLIC;
 -- Called by the triggers, which run as the application role, and by the export job and the screens (the review
 -- reads the viewer's own downloads; the attestation service asks before it attests).
 GRANT EXECUTE ON FUNCTION priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
-  priced_line_calculation(jsonb), packet_export_downloads_of_actor(uuid) TO tp_app;
+  priced_line_calculation(jsonb), app_session_is_job(), packet_export_downloads_of_actor(uuid) TO tp_app;

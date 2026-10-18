@@ -3,7 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-18
 - **Deciders:** the owner (D15 option a, D16 options a and c, D17 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the schema approved, the reviewer's downloads added and D16 (a) without a practice approver and contract appeal-level evidence placed in later pull requests, 2026-10-18, see Owner rulings); the build (PR 5 of Change Order 001)
-- **PRD sections:** 2 (point 8, dispute windows), 6 (Packet builder; Submissions and payer responses), 8 (packet_version; Invariants), 11 (step 8, the window), 12 (From validated to actionable; The packet; Approval; Submission), 16 (a narrative inventing a number); Data dictionary, Contracts and Pricing, triage and cases; Change Order 001, CO-05, CO-06 ("an unverified deadline blocks actionability and export") and CO-12 (`packet_version.deadline_verification_status`); ADRs 0028, 0038, 0040, 0041, 0044, 0047 and 0049
+- **PRD sections:** 2 (point 8, dispute windows), 6 (Packet builder; Submissions and payer responses), 8 (packet_version; Invariants), 11 (step 8, the window), 12 (From validated to actionable; The packet; Approval; Submission), 15 (Stack: compute, database), 16 (a narrative inventing a number; Secrets); Data dictionary, Contracts and Pricing, triage and cases; Change Order 001, CO-05, CO-06 ("an unverified deadline blocks actionability and export") and CO-12 (`packet_version.deadline_verification_status`); ADRs 0009, 0019, 0028, 0038, 0040, 0041, 0044, 0047, 0049 and 0055 (the worker gains a login of its own, beside billing's and the e-signature webhook's)
 
 ## Context
 
@@ -141,11 +141,17 @@ not exported"). SQL cannot run the verifier, which is TypeScript: it holds the r
 (`export_verifier_report`) to the verifier's format, a pass and the version's own narrative SHA-256, and the report
 never changes otherwise. So SQL enforces the deadline and the level; the verifier is enforced by the job. Residual
 risk F9, as first built: a job-scope write of a forged passing report and forged hashes would not be stopped by SQL,
-and the attestation compared only the stored hashes, so a reviewer could attest files nobody had read. Closed by the
-owner's ruling of 2026-10-18 (below, the reviewer's downloads): the reviewer attests only after downloading both
-files in their own requests, each served only once its bytes hash to the stored SHA-256, so what they attest is the
-bytes they read, forged or not, and a download whose bytes do not match is never served and never counts. What
-remains is a process holding the application login itself, set out with the downloads. `tp_app` cannot bypass the
+and the attestation compared only the stored hashes, so a reviewer could attest files nobody had read. The owner's
+ruling of 2026-10-18 (below, the reviewer's downloads, and Owner rulings) answers it: the reviewer attests only after
+downloading both files in their own requests, each served only once its bytes hash to the stored SHA-256, so what
+they attest is the bytes they read, forged or not, and a download whose bytes do not match is never served and never
+counts; and the evidence of a download is something a compromised worker cannot forge, because the worker connects
+as a login of its own that the database refuses for the evidence and the attestation. As first built for the ruling,
+that evidence was told apart only by `app.actor_id`, which job code on the login the web and the worker then shared
+could set to the reviewer's ID, writing the evidence and the attestation itself; review found it, and the worker's
+own login closes it. F9 is closed against job code and a compromised worker once the worker runs on that login (the
+deploy job creates it; Consequences); what remains is a process holding the web's own application login, set out
+with the downloads (What it does not hold against). `tp_app` cannot bypass the
 guard: `tp_owner` owns the tables, triggers and functions,
 `tp_app` owns nothing and has no BYPASSRLS, cannot ALTER the table or DISABLE a trigger, and cannot set
 `session_replication_role`; its column grants are all it writes (`exported_at` only through
@@ -182,38 +188,55 @@ own that served the file once its bytes, read from storage, hashed to the versio
   `SET LOCAL app.actor_id` from their session) in the same transaction, then returns the bytes. A hash that differs
   throws, the transaction rolls back and nothing is recorded. The two actions replace `packet_export_downloaded` for
   every new download; the export history reads all three, so earlier downloads stay listed and count as no evidence.
-- *Why a job cannot write it.* The practice's jobs reach the database on the same application login as the web,
-  through `withJobScope()` only, whose actor is the job's ID (`app.actor_id`, which names no user; `actor_kind`
-  `service`). Three rules hold the evidence against that scope, in Postgres: `audit_event` is append-only for every
-  role, the owner and superusers included, so evidence never changes, moves to another version or disappears; its
-  `tp_app` INSERT policy (`audit_event_record`) writes an event only in the transaction's own actor's name; and
-  `audit_event_packet_download` (new, BEFORE INSERT, only for the two actions; every role) records a download only
-  for a person (`app_actor_is_person()`, `actor_kind` `user`) who holds `phi.export` or `audit_finding.validate` in
-  the event's practice, of a version of that practice in the caller's scope that is exported, with purpose
-  `line_export` (the time is the database's: `tp_app` has no grant on `at`). A job's scope therefore writes no
-  download event at all, under its own ID or anyone else's.
+  A download is served to a GET alone: Next answers a HEAD with a route's GET handler, which would record a download
+  and send no bytes, so `downloadHandler()` refuses every other method with 405 before the route runs.
+- *Who may write it: the web's login, never the worker's.* The worker connects as a login of its own
+  (`tp_worker_login`; `tp_worker_dev` in development and tests), a member of `tp_app`, whose privileges it inherits
+  as the web's login does, and of `tp_job`, a role that holds no privilege, owns nothing and that no login may SET
+  ROLE to (`packages/db/src/roles.ts`, `apps/worker/src/deploy/logins.ts`); the web's login is never a member of it
+  (and the catalog test refuses `tp_app` itself as one). `app_session_is_job()` reads that membership from `session_user`, the login the
+  connection signed in as: `set_config('app.actor_id', ...)`, `SET ROLE` and SECURITY DEFINER change the actor or
+  `current_user`, never `session_user`, and only a superuser may `SET SESSION AUTHORIZATION`, so nothing a job's code
+  runs makes its connection a person's request. `audit_event_packet_download` (new, BEFORE INSERT, only for the two
+  actions; every role) refuses the worker's login first ("a packet export's download is recorded by the web request
+  that served it, never on the worker's login"), then records a download only for a person (`app_actor_is_person()`,
+  `actor_kind` `user`) in their own name, who holds `phi.export` or `audit_finding.validate` in the event's practice,
+  of a version of that practice in the caller's scope that is exported, with purpose `line_export` (the time is the
+  database's: `tp_app` has no grant on `at`). With it, `audit_event` is append-only for every role, the owner and
+  superusers included, so evidence never changes, moves to another version or disappears, and its `tp_app` INSERT
+  policy (`audit_event_record`) writes an event only in the transaction's own actor's name. So a job, through
+  `withJobScope()` or its own SQL, under its own ID or with `app.actor_id` set to the reviewer's, writes no download
+  event. `withJobScope()` also refuses a job ID that names a person (`JobActorIsPersonError`) before the job runs, so
+  no job acts in a person's name through the API on either login. In AWS the worker's task receives only its own
+  login and the queue login, and the task role the web and the worker share reads no login's secret (ECS injects
+  each task's logins through its own execution role), so the worker cannot fetch the web's login either.
 - *What the attestation asks.* `packet_export_downloads_of_actor(version)` (SECURITY DEFINER, since `tp_app` reads
-  only its own administrators' audit log; STABLE; the caller's scope kept) returns the files this transaction's
-  actor, as a person, downloaded of that version, in its practice, at or after its `exported_at`.
-  `packet_version_attestation_rules` refuses an attestation unless it holds both `pdf` and `csv` ("a packet's export
-  is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256"), after
-  every earlier check, and `attestPacketExport()`, which the attest route runs, refuses first with its own reason
-  (`PacketRefusedError` `export_not_downloaded`). Another person's downloads (the billing manager's), another
-  version's, a download whose hash check failed (none was recorded) and anything a job wrote are not evidence.
+  only its own administrators' audit log; STABLE; the caller's scope kept, and `session_user` is the caller's under
+  definer's rights too) returns the files this transaction's actor, as a person, downloaded of that version, in its
+  practice, at or after its `exported_at`, and nothing on the worker's login.
+  `packet_version_attestation_rules` refuses an attestation on the worker's login ("a packet's export is attested in
+  its reviewer's own request, never on the worker's login") and unless the downloads hold both `pdf` and `csv` ("a
+  packet's export is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its
+  SHA-256"), after every earlier check, and `attestPacketExport()`, which the attest route runs, refuses first with
+  its own reason (`PacketRefusedError` `export_not_downloaded`). Another person's downloads (the billing manager's),
+  another version's, a download whose hash check failed (none was recorded), a HEAD, and anything a job or the
+  worker's login wrote are not evidence.
 - *A new export needs new downloads.* A version is exported once (`packet_version_rules`: "a packet version is
   exported once"), so a download of the version at or after its export is a download of the bytes its two hashes
   name; a later export is of a new version, whose evidence starts empty.
 - *The screen.* The review page shows, for each file, whether the viewer has downloaded it since the export (read
   from the same function), tells the reviewer to download both first, and shows the attest button disabled with that
   reason until both are recorded.
-- *What it does not hold against.* Postgres tells a job from a person's request only by `app.actor_id`, which every
-  transaction on the application login sets for itself, and the web and the worker share that login (ADR 0019 and
-  0055). Code that reaches the database through `withJobScope()`, as every job does, cannot write the evidence; a
-  process that holds the application login and runs its own SQL could set `app.actor_id` to the reviewer's ID while
-  their support grant is open, and then write the evidence and the attestation itself, as it could any other step
-  only a person may take (an approval, a sign-off). No row rule tells that process apart. Closing it needs the
-  worker on a login of its own, as billing and the e-signature webhook have (ADR 0055), and the evidence trigger
-  refusing that login (`session_user`); it is recorded under Revisit when.
+- *What it does not hold against.* A process holding the web's own application login: the web request that serves
+  the file is the one that records its download, so the database cannot tell the web's code that hashed the bytes
+  from other code on that login that sets `app.actor_id` to the reviewer's ID while their support grant is open and
+  inserts the event, or attests, as it could take any other step only a person may take (an approval, a sign-off). That
+  process is the one that serves the reviewer the files and the review page in the first place, so it could show them
+  anything; the owner's condition is a compromised worker, which this holds against. Holding the web's process too would
+  need evidence only the person's own browser can give (a signature over the bytes with a key the reviewer holds),
+  recorded under Revisit when. The rollout leaves one window: until the worker's task is replaced by one on its own
+  login (the deploy job creates the login after the migrations, before any service moves; ADR 0049), the previous
+  image's worker still connects as the application login.
 
 **Release 900005 and AUDIT-01.** A SYNTHETIC release 900005, written by `renderDeadlineRelease()` in
 `tools/release/synthetic.ts` as 900004 was for PRC-19, is every file of 900001 unchanged but `dispute_window/2026`,
@@ -247,8 +270,11 @@ order: migrate first (ADR 0049).
 | A trigger that also checks the narrative's verifier report in SQL by re-running the verifier | The verifier is TypeScript (@tp/packets); SQL checks the report's shape, result and narrative hash, and the worker runs the verifier itself. |
 | A `packet_export_download` table for the reviewer's downloads, as `audit_report_download` is for a report's | The owner asked for no new table unless unavoidable; `audit_event` already records every download, is append-only for every role and writes only in the transaction's own actor's name, so one trigger and two action codes make it the evidence. |
 | The downloads as columns on `packet_version` (who downloaded each file, when) | A version's row is updated by several people; a column holds one downloader and can be written over, where the audit log keeps every download, by everyone, unchanged. |
-| Bind the evidence to the reviewer's session (`user_session.token_sha256`) | The application role writes sessions too, so a process holding its login could write a session as well as the evidence; it would add a check without closing the gap a login of the worker's own closes. |
-| Give the worker its own database login in this pull request | It changes the deploy job's logins, the roles and every job's pool (ADR 0019, 0055), beyond this pull request's schema; recorded under Revisit when, with the trigger's `session_user` refusal it would allow. |
+| Bind the evidence to the reviewer's session (`user_session.token_sha256`) | The application role writes sessions too, so code on its login could write a session as well as the evidence; the worker's own login holds it against the worker without it, and against the web's process it adds nothing. |
+| Tell a job from a person by `app.actor_id` alone, on the login the web and the worker shared (as first built for the ruling) | Every transaction sets `app.actor_id` for itself, so job code on that login set it to the reviewer's ID and wrote both download events and the attestation (review's reproduction, in `withJobScope()` itself); it did not meet the owner's condition that a compromised worker cannot forge the evidence. |
+| Leave the worker's login to a later pull request and record F9 open against job code | The owner asked for the evidence to hold against a compromised worker before this pull request opens, naming the roles and grants (`tp_app` versus the job role) as where it holds. |
+| A task role of the worker's own, beside the web's | The two would differ only in which login's secret each reads, and neither task needs to read one at run time (ECS injects them through each task's execution role), so the shared role reads none. |
+| `pg_has_role(session_user, 'tp_job', ...)` without excepting superusers | A superuser is a member of every role, so the test harness's owner connection (the row factory's downloads and attestation) would be taken for a job; a superuser can disable any trigger anyway. |
 
 ## Consequences
 
@@ -267,8 +293,20 @@ order: migrate first (ADR 0049).
   attest button disabled until both are recorded. A download is now one audit event per file
   (`packet_export_pdf_downloaded`, `packet_export_csv_downloaded`); the export history lists them with the earlier
   `packet_export_downloaded`, and a download the previous image recorded during the rollout counts as no evidence, so
-  the reviewer downloads again. F9 is closed against every job's scope; against a process holding the application
-  login it is not, as against any other person-only step, until the worker has a login of its own.
+  the reviewer downloads again. A download route answers a GET alone (405 for a HEAD or any other method). F9 is
+  closed against job code and a compromised worker once the worker runs on its own login; against a process holding
+  the web's own login it is not, as against any other person-only step (What it does not hold against).
+- The worker has a database login of its own (a sixth login and secret): `tp_worker_login` in AWS, with its own
+  `WorkerLoginSecret` rotating as the others do, created by the migration task's login step from
+  `TP_WORKER_LOGIN_USERNAME` and `TP_WORKER_LOGIN_PASSWORD`, a member of `tp_app` and of the marker `tp_job`; the
+  worker task's `DATABASE_URL` is built from it instead of the application login, and the `WorkerLoginSecretArn`
+  output names it. The task role the web and the worker share (ApplicationRole) no longer reads the application
+  login's secret, which neither task read at run time. Locally `pnpm db:migrate --dev-login` creates `tp_worker_dev`,
+  `pnpm dev` and the end-to-end worker connect as it, and the worker's database tests run every job on it
+  (`MigratedDatabase.workerUrl`). The role bootstrap creates `tp_job` with the other roles, so the migrations find it.
+  Its privileges are `tp_app`'s, so every job runs as before; only the two download actions and the attestation are
+  refused on it, which no job writes. `withJobScope()` asks the database once more per transaction whether the job ID
+  names a person.
 - Contract disputes stop at level 1 until PR 8 (the owner's ruling of 2026-10-18). `contract_version.appeal_levels`
   carries no page, quote or hash, so the next level's deadline of every contract case a denial reopens is unverified
   (NEXT_LEVEL_UNCITED) and its packet is refused in the worker, the handler and SQL; a corrected version does not
@@ -291,13 +329,20 @@ order: migrate first (ADR 0049).
   `apps/web/src/lib/routes/audit-e2e.db.test.ts`, `tools/release/release.test.ts`, and the golden triage test's
   uncited window (G118), with `fixtures/golden` unchanged; for the downloads, `apps/worker/src/packets/packets.db.test.ts`
   (no download, only the PDF, only the CSV, another person's, another version's, a download whose hash failed and
-  evidence written in a job's scope, each refused in the service and in SQL, and both of the attester's own
-  allowed), `apps/web/src/lib/routes/workbench-routes.db.test.ts` (the attest route refused until both review
-  downloads) and `apps/web/e2e/packets.spec.ts` (the disabled button and its reason, both downloads, then the
-  attestation).
+  evidence written under a job's actor, each refused in the service and in SQL, and both of the attester's own
+  allowed; on the worker's login, a job that sets `app.actor_id` to the reviewer writes no event, through raw SQL,
+  after `SET ROLE tp_app` or through `downloadPacketExport()`, reads no evidence and cannot attest, and a job ID naming
+  a person is refused on either login), `packages/db/src/authz/scope.test.ts` and `packages/db/src/migrate.test.ts`
+  (the person refusal; the roles and grants), `apps/worker/src/deploy/logins.db.test.ts` (the worker's login: its
+  memberships, `app_session_is_job()` true on it whatever role it sets, false on the application login),
+  `infra/test` (the sixth secret and its rotation, the worker task's login, a task role reading no login),
+  `apps/web/src/lib/http/http.test.ts` and `apps/web/src/lib/routes/workbench-routes.db.test.ts` (a HEAD refused
+  before the route runs and recording nothing; the attest route refused until both review downloads) and
+  `apps/web/e2e/packets.spec.ts` (the disabled button and its reason, both downloads, then the attestation, with the
+  end-to-end worker on its own login).
 - `docs/product/domain-model.md` is regenerated at this migration and waits for the founder's approval (CO-02). The
-  founder approved the schema as first summarised on 2026-10-18; the downloads change the text, so its new SHA-256
-  waits for the founder's confirmation.
+  founder approved the schema as first summarised on 2026-10-18; the downloads and the job role (`tp_job`,
+  `app_session_is_job()`) change the text, so its new SHA-256 waits for the founder's confirmation.
 
 ## Revisit when
 
@@ -305,21 +350,38 @@ A real release's Medicare dispute windows are read at L2 or L3 (the synthetic 90
 payer's contract states its window in a form the specialist cannot cite on one page; PR 8 adds the packet's export
 parts (`packet_export`) and the appeal levels' evidence, and PR 9 the E3 gates; a practice's own reviewer, rather
 than the founder, attests; D27's pull request builds the single-user path and D16 (a) for a practice with no other
-packet approver; the worker gains a database login of its own (then `audit_event_packet_download` also refuses that
-login, and F9 is closed against a process holding it too); or PR 11 invalidates the runs of a withdrawn release.
+packet approver; the web's own process is to be held too (evidence only the reviewer's browser can give, such as a
+signature over the bytes with a key the reviewer holds); or PR 11 invalidates the runs of a withdrawn release.
 
 ## Owner rulings (2026-10-18)
 
 The founder, Tyler Williams, ruled on this pull request on 2026-10-18:
 
 - **The schema is approved, with one addition before the pull request opens.** The PR 5 schema (migration
-  `20261103090000_deadline_verification_and_export_attestation`) is approved as summarised. The reimbursement
-  reviewer attests an export only after downloading both its PDF and its CSV, each download having passed its
-  fingerprint check (the bytes read from storage hash to the version's stored `export_sha256` or
-  `export_csv_sha256`), held in the attest route's handler and in Postgres, with evidence a job's scope cannot
-  forge for the reviewer. This closes residual risk F9. Built in this migration, as Decision describes it (the
-  reviewer's downloads before the attestation); no table is added, and the domain model's new text waits for the
-  founder to confirm its hash.
+  `20261103090000_deadline_verification_and_export_attestation`) is approved as summarised. The addition, in the
+  founder's words: "the reimbursement reviewer may attest an export only after downloading BOTH its PDF and its CSV,
+  each download having passed its fingerprint check (the bytes read from storage hash to the version's stored
+  export_sha256 / export_csv_sha256). This closes ADR 0061's residual risk F9 (a job-scope write of a forged passing
+  report and forged hashes would pass the SQL guard, and the attestation compares only stored hashes). It must hold
+  in the attest route handler AND in Postgres (CLAUDE.md: never rely on one layer), and the evidence of a download
+  must be something a compromised worker (the job-scope role) cannot forge for the reviewer: bind it to the
+  reviewer's own actor in the web request that served the file, after the hash check, written in a way the job role
+  cannot write (check the roles and grants: tp_app versus the job role, SET LOCAL app.actor_id, audit_event's
+  append-only rules)." The founder preferred extending this pull request's unmerged migration over a second one and
+  no new table unless unavoidable; asked that the download be the reviewer's, of this exact version, after its
+  export, of both kinds, with fresh downloads for a re-export; and asked that the review screen tell the reviewer to
+  download both files first and the attest button say why it is disabled until then.
+
+  What the build holds against that condition (a build note of 2026-10-18, not a ruling): when the ruling came there
+  was no job role. The web and the worker shared one login, and the evidence as first built was told apart only by
+  `app.actor_id`, which job code could set to the reviewer's ID (review reproduced it through `withJobScope()`), so a
+  compromised worker could forge it. The worker now has a login of its own, a member of `tp_app` and of the marker
+  role `tp_job`, and the evidence trigger and the attestation rules refuse that login by `session_user`, which job
+  code cannot change (Decision, the reviewer's downloads). So the condition holds against a compromised worker once
+  the worker runs on that login, and F9 is closed to that extent; it stays open against a process holding the web's
+  own application login (What it does not hold against). This adds a sixth login and secret and changes the worker
+  task's login and the shared task role (Consequences), beyond the migration the founder approved: the founder
+  confirms it with the domain model's new hash, which waits for the founder (CO-02). No table is added.
 - **D16 (a) for a practice with no other packet approver is not built here.** The analyst-only and lone billing
   manager cases are left to the pull request that carries D27 (the founder named PR 10 "or wherever D27's work
   lands"; reconciliation-001 lists D27 under PR 9 and PR 14), since the reviewer's attestation already blocks every

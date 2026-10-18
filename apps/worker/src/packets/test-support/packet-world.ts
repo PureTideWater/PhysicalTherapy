@@ -39,6 +39,11 @@ export class PacketWorld {
     return this.triage.app;
   }
 
+  /** The worker's own login (tp_worker_dev), on which the export job of this world runs (docs/adr/0061). */
+  get worker() {
+    return this.triage.pricing.worker;
+  }
+
   get owner() {
     return this.triage.owner;
   }

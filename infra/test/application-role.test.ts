@@ -11,7 +11,7 @@ import { type CfnStatement, actionsOf, getAtt, keyId, logicalIdOf, propertiesOf,
 /**
  * PRD 15 and 16: per-practice data keys under the environment key. The application may generate
  * and decrypt data keys only with an encryption context of practice_id alone; every other use of
- * the key is through S3 or Secrets Manager for named resources.
+ * the key is through S3 for named resources (it reads no database login: docs/adr/0061).
  */
 describe('the application role\'s Cognito actions match what the web app sends', () => {
   it('covers every administrative (IAM-signed) command of the Cognito provider, and no other', () => {
@@ -97,9 +97,9 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     ]);
   });
 
-  it('uses the key otherwise only through S3 for the documents and packets and Secrets Manager for its own login', () => {
+  it('uses the key otherwise only through S3 for the documents and packets', () => {
     const viaService = kmsStatements.filter((statement) => statement.Condition?.StringEquals?.['kms:ViaService'] !== undefined);
-    expect(viaService.map((statement) => statement.Sid).sort()).toEqual(['ApplicationLoginDecrypt', 'BucketEncryptionThroughS3']);
+    expect(viaService.map((statement) => statement.Sid).sort()).toEqual(['BucketEncryptionThroughS3']);
     const s3 = viaService.find((statement) => statement.Sid === 'BucketEncryptionThroughS3');
     const contexts = JSON.stringify(s3?.Condition?.ArnLike?.['kms:EncryptionContext:aws:s3:arn']);
     for (const bucket of [stack.storage.documents, stack.storage.packets]) {
@@ -108,9 +108,6 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     // The audit copies are the operator role's; the trail is CloudTrail's.
     expect(contexts).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
     expect(contexts).not.toContain(logicalIdOf(stack, stack.accountSecurity.trailBucket));
-    const secrets = viaService.find((statement) => statement.Sid === 'ApplicationLoginDecrypt');
-    expect(actionsOf(secrets as CfnStatement)).toEqual(['kms:Decrypt']);
-    expect(JSON.stringify(secrets?.Condition)).toContain(logicalIdOf(stack, stack.database.appSecret));
   });
 
   it('never allows a KMS action on the key without a condition, nor any key-management action', () => {
@@ -121,11 +118,13 @@ describe.each(ENVIRONMENTS)('%s: application role', (environment) => {
     }
   });
 
-  it('reads its own login and never the owner or operator login, nor the audit copies', () => {
+  it('reads no database login, so the worker, which shares it, cannot fetch the web\'s application login; nor the audit copies (docs/adr/0061)', () => {
+    // ECS injects each task's own logins at its start through that task's execution role (compute.test.ts).
     const text = JSON.stringify(statements);
-    expect(text).toContain(logicalIdOf(stack, stack.database.appSecret));
-    expect(text).not.toContain(logicalIdOf(stack, stack.database.ownerSecret));
-    expect(text).not.toContain(logicalIdOf(stack, stack.database.operatorSecret));
+    for (const secret of [stack.database.ownerSecret, stack.database.appSecret, stack.database.workerSecret, stack.database.operatorSecret, stack.database.queueSecret, stack.database.billingSecret]) {
+      expect(text).not.toContain(logicalIdOf(stack, secret));
+    }
+    expect(statements.flatMap((statement) => actionsOf(statement)).filter((action) => action.startsWith('secretsmanager:'))).toEqual([]);
     expect(text).not.toContain(logicalIdOf(stack, stack.storage.auditCopies));
   });
 

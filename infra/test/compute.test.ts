@@ -68,11 +68,12 @@ function field(secretLogicalId: string, name: string): unknown {
   return { 'Fn::Join': ['', [ref(secretLogicalId), `:${name}::`]] };
 }
 
-/** The five logins' secrets (the attachments their tasks reference). */
+/** The six logins' secrets (the attachments their tasks reference). */
 function logins(stack: PlatformStack) {
   return {
     owner: logicalIdOf(stack, stack.database.ownerSecret),
     app: logicalIdOf(stack, stack.database.appSecret),
+    worker: logicalIdOf(stack, stack.database.workerSecret),
     operator: logicalIdOf(stack, stack.database.operatorSecret),
     queue: logicalIdOf(stack, stack.database.queueSecret),
     billing: logicalIdOf(stack, stack.database.billingSecret),
@@ -189,12 +190,14 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       STRIPE_WEBHOOK_SECRET: field(logicalIdOf(stack, stack.compute.stripeSecret), 'webhookSecret'),
       STRIPE_PUBLISHABLE_KEY: field(logicalIdOf(stack, stack.compute.stripeSecret), 'publishableKey'),
     });
-    expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.app), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
+    // The practice jobs connect as the worker's own login, never the application login (docs/adr/0061).
+    expect(secretsOf(definitions.worker)).toEqual({ ...urlSecrets('DATABASE_URL', secret.worker), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
     expect(secretsOf(definitions.platform)).toEqual({ ...urlSecrets('OPERATOR_DATABASE_URL', secret.operator), ...urlSecrets('QUEUE_DATABASE_URL', secret.queue) });
-    // The migration also reads the four service logins, which it creates when they are missing.
+    // The migration also reads the five service logins, which it creates when they are missing.
     expect(secretsOf(definitions.migration)).toEqual({
       ...urlSecrets('DATABASE_URL', secret.owner),
       ...loginFields(LOGIN_SECRET_VARIABLES.app, secret.app),
+      ...loginFields(LOGIN_SECRET_VARIABLES.worker, secret.worker),
       ...loginFields(LOGIN_SECRET_VARIABLES.operator, secret.operator),
       ...loginFields(LOGIN_SECRET_VARIABLES.queue, secret.queue),
       ...loginFields(LOGIN_SECRET_VARIABLES.billing, secret.billing),
@@ -204,9 +207,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
   it('lets each task\'s execution role read only the secrets its container names, and decrypt them only through Secrets Manager', () => {
     const expected: Record<TaskName, string[]> = {
       web: [secret.app, secret.queue, secret.billing, logicalIdOf(stack, stack.compute.cookieSecret), logicalIdOf(stack, stack.compute.stripeSecret)],
-      worker: [secret.app, secret.queue],
+      worker: [secret.worker, secret.queue],
       platform: [secret.operator, secret.queue],
-      migration: [secret.owner, secret.app, secret.operator, secret.queue, secret.billing],
+      migration: [secret.owner, secret.app, secret.worker, secret.operator, secret.queue, secret.billing],
     };
     for (const name of TASKS) {
       const roleId = (propertiesOf(tasks[name][1]).ExecutionRoleArn as { 'Fn::GetAtt': [string] })['Fn::GetAtt'][0];

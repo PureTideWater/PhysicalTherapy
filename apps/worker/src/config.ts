@@ -6,7 +6,10 @@ import { developmentMasterKey, readDatabaseUrl } from '@tp/db';
 export interface WorkerConfig {
   /** NODE_ENV=production: a deployed worker (staging or production), where no local implementation may run. */
   readonly production: boolean;
-  /** The application login practice jobs run as (a member of tp_app), each job in its practice's scope. */
+  /**
+   * The worker's own login practice jobs run as (a member of tp_app, marked as a job's by tp_job; tp_worker_login in
+   * AWS, tp_worker_dev locally; docs/adr/0061), each job in its practice's scope.
+   */
   readonly databaseUrl: string;
   /** pg-boss's own connection; DATABASE_URL unless QUEUE_DATABASE_URL names another login. */
   readonly queueDatabaseUrl: string;

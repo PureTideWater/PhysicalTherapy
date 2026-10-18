@@ -15,7 +15,10 @@ import { ScopeError, isUuid, requireUuid } from './ids';
  *   group's practices, an unexpired support grant) and the scope is the requested ones among them, so
  *   a revoked or expired grant yields nothing on the next transaction.
  * - withJobScope: a job. Exactly one practice (test matrix SEC-06): a bulk job spanning practices is
- *   refused before any connection is taken. The actor is the job, of kind service.
+ *   refused before any connection is taken. The actor is the job, of kind service, and a job ID that names
+ *   a person is refused before the job's work runs, so no job acts in a person's name through this API.
+ *   The worker connects as its own login, which the database tells from the web's whatever app.actor_id
+ *   holds (docs/adr/0061).
  *
  * docs/adr/0013 records the model.
  */
@@ -72,6 +75,11 @@ export type AnyScope<C> = ActorScope<C> | PracticeScope<C>;
 /** A job asked for more than one practice, or for none. */
 export class OnePracticePerJobError extends ScopeError {
   override readonly name = 'OnePracticePerJobError';
+}
+
+/** A job's ID named a person: a job never acts in a person's name. */
+export class JobActorIsPersonError extends ScopeError {
+  override readonly name = 'JobActorIsPersonError';
 }
 
 /**
@@ -228,6 +236,11 @@ export function withJobScope<P extends ScopePool<ScopeClient>, T>(pool: P, reque
     async (client): Promise<PracticeScope<ClientOf<P>>> => {
       // ARRAY[$2::uuid] holds one element by construction: the database never sees a list from a job.
       await client.query(`${SET_ACTOR}, set_config('app.practice_ids', ARRAY[$2::uuid]::text, true)`, [jobId, practiceId]);
+      // A job's ID is the queue's, never a user's: one that names a person would make the job that person.
+      const { rows } = await client.query<{ person: boolean }>('SELECT app_actor_is_person() AS person');
+      if (rows[0]?.person === true) {
+        throw new JobActorIsPersonError('a job ID names no person; a job never acts in a person\'s name');
+      }
       return {
         kind: 'job',
         client,

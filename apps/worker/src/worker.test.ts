@@ -166,10 +166,12 @@ describe('startWorker', () => {
     });
     await handlers.get('digest')?.([{ id: jobId, data: { practice_id: PRACTICE, period: '2026-10' } }]);
     // A digest starts new work, so its practice's standing is asked first, in the same job scope (docs/adr/0050).
+    // Each job scope asks whether its job ID names a person before the job runs (docs/adr/0061).
     const scoped = expect.stringContaining("set_config('app.practice_ids', ARRAY[$2::uuid]::text, true)");
-    expect(recorder.queries.map((query) => query.text)).toEqual(['BEGIN', scoped, 'SELECT practice_run_refusal($1) AS reason', 'COMMIT', 'BEGIN', scoped, 'COMMIT']);
+    const notAPerson = 'SELECT app_actor_is_person() AS person';
+    expect(recorder.queries.map((query) => query.text)).toEqual(['BEGIN', scoped, notAPerson, 'SELECT practice_run_refusal($1) AS reason', 'COMMIT', 'BEGIN', scoped, notAPerson, 'COMMIT']);
     expect(recorder.queries[1]?.values).toEqual([jobId, PRACTICE]);
-    expect(recorder.queries[5]?.values).toEqual([jobId, PRACTICE]);
+    expect(recorder.queries[6]?.values).toEqual([jobId, PRACTICE]);
     await worker.stop();
   });
 

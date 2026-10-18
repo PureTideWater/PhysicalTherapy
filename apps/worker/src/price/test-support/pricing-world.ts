@@ -102,6 +102,8 @@ export class PricingWorld {
     readonly database: MigratedDatabase,
     readonly owner: DatabaseClient,
     readonly app: DatabasePool,
+    /** The worker's own login (tp_worker_dev), which every job of this world runs on, as the worker does (docs/adr/0061). */
+    readonly worker: DatabasePool,
     readonly specialist: string,
   ) {}
 
@@ -110,15 +112,17 @@ export class PricingWorld {
     const owner = databaseClient(database.url);
     await owner.connect();
     const app = openPool(database.appUrl, poolSize);
+    const worker = openPool(database.workerUrl, poolSize);
     await loadRelease(owner, RELEASE_DIR, { release: RELEASE, allowSyntheticFixtureForTests: true });
     const internal = await createOrganization(owner, 'internal', 'pricing');
     const specialist = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, internal, specialist, 'contract_specialist');
-    return new PricingWorld(database, owner, app, specialist);
+    return new PricingWorld(database, owner, app, worker, specialist);
   }
 
   async close(): Promise<void> {
     await endPool(this.app);
+    await endPool(this.worker);
     await this.owner.end();
     await this.database.drop();
   }
@@ -137,13 +141,13 @@ export class PricingWorld {
     return { world, practiceId: world.practiceId, manager, cipher: key.cipher };
   }
 
-  /** A job's context for the practice: its own job ID, a logger writing to `logs`, and its one-practice scope. */
+  /** A job's context for the practice: its own job ID, a logger writing to `logs`, and its one-practice scope on the worker's own login. */
   jobContext(practiceId: string, logs: Record<string, unknown>[] = [], lastAttempt = false): JobContext {
     const jobId = randomUUID();
     return {
       jobId,
       logger: createLogger({ sink: (line) => logs.push(JSON.parse(line) as Record<string, unknown>) }),
-      transaction: (work) => withJobScope(this.app, { jobId, practiceId }, work),
+      transaction: (work) => withJobScope(this.worker, { jobId, practiceId }, work),
       enqueue: () => Promise.resolve(null),
       lastAttempt,
     };

@@ -18,6 +18,7 @@ import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { downloadHandler } from '../http/handler';
 import type { CookieJar, Download, MutationResult, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
@@ -444,6 +445,35 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(review.viewerDownloaded).toEqual({ pdf: false, csv: false });
     const attestNow = async () => call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations });
     expect(refused(await attestNow())).toBe(EXPORT_NOT_DOWNLOADED);
+    // A HEAD in the reviewer's own session (Next answers it with the route's GET handler) sends no bytes, so it records
+    // no download: the download handler refuses it before the route runs, and the attestation is still refused.
+    const throughHandler = async (route: typeof reviewPacketPdf, method: 'GET' | 'HEAD') =>
+      downloadHandler(route, () => services)(
+        new Request(`http://localhost:3100/p/${practice.practiceId}/cases/${caseId}/packet/${version?.id ?? ''}/review/file`, {
+          method,
+          headers: { cookie: `${SESSION_COOKIE}=${await sessionOf(reviewer)}` },
+        }),
+        { params: Promise.resolve(reviewParams) },
+      );
+    const reviewerDownloads = async () =>
+      (
+        await asOwner(w.owner, [practice.practiceId], () =>
+          w.owner.query<{ action: string }>("SELECT action FROM audit_event WHERE object_id = $1 AND actor_id = $2 AND action LIKE 'packet_export_%downloaded' ORDER BY action", [version?.id, reviewer]),
+        )
+      ).rows.map((row) => row.action);
+    for (const route of [reviewPacketPdf, reviewPacketCsv]) {
+      const head = await throughHandler(route, 'HEAD');
+      expect(head.status).toBe(405);
+      expect(head.headers.get('allow')).toBe('GET');
+    }
+    expect(await reviewerDownloads()).toEqual([]);
+    expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.viewerDownloaded).toEqual({ pdf: false, csv: false });
+    expect(refused(await attestNow())).toBe(EXPORT_NOT_DOWNLOADED);
+    // The same handler, on a GET in the same session, sends the PDF's bytes and records their download.
+    const served = await throughHandler(reviewPacketPdf, 'GET');
+    expect(served.status).toBe(200);
+    expect(createHash('sha256').update(Buffer.from(await served.arrayBuffer())).digest('hex')).toBe(exported?.exportSha256);
+    expect(await reviewerDownloads()).toEqual(['packet_export_pdf_downloaded']);
     const reviewedPdf = ok<Download<Uint8Array<ArrayBuffer>>>(await call(reviewPacketPdf, reviewer, reviewParams));
     expect(createHash('sha256').update(reviewedPdf.download.body).digest('hex')).toBe(exported?.exportSha256);
     expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.viewerDownloaded).toEqual({ pdf: true, csv: false });

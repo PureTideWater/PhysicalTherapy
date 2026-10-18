@@ -2,14 +2,14 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `1b0e84fe44d3a60b2d5b40e36f507ecac9c11df5` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `aa8297554f1ba937ed707f900edaf4e85e054897` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 250 (111 SECURITY DEFINER); triggers: 217, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 251 (111 SECURITY DEFINER); triggers: 217, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
-- Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
+- Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 23 to approve, 31 tables and 143 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
@@ -3083,6 +3083,7 @@ Invariants enforced by triggers:
   - "a packet version is written unexported and unattested"
   - "a packet version's export is attested once"
   - "a packet version is attested once its export is made"
+  - "a packet's export is attested in its reviewer's own request, never on the worker's login"
   - "a packet's export is attested by a reimbursement reviewer, in their own name"
   - "the person who drafted, wrote or approved a packet does not attest its export"
   - "only a packet's current version, still asking for its case's lines, is attested"
@@ -4634,6 +4635,7 @@ Invariants enforced by triggers:
 - `audit_event_no_truncate`: `BEFORE TRUNCATE ON audit_event FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 - `audit_event_packet_download`: `BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.action = ANY (ARRAY['packet_export_pdf_downloaded'::text, 'packet_export_csv_downloaded'::text])) EXECUTE FUNCTION audit_event_packet_download()`
+  - "a packet export's download is recorded by the web request that served it, never on the worker's login"
   - "a packet export's download is recorded for the person it was served to, in their own name"
   - "a packet export's download is recorded for a person who may read the export"
   - "a packet export's download is of an exported packet version of its practice, as a line-level export"
@@ -5376,7 +5378,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | # | Subject | Where | What each says | Live schema | Status |
 | --- | --- | --- | --- | --- | --- |
 | C1 | Remittance duplicate key | PRD 8 (PRD.md:318); PRD 10 step 8 (PRD.md:428); CLAUDE.md Conventions; Data dictionary | PRD 8: unique on (practice, sender, ISA13, TRN02). PRD 10: (practice, payee, ISA13, TRN02, BPR02), as CLAUDE.md's idempotency line said until CO-02's pull request corrected it. Data dictionary: unique (practice_id, sender_id, isa13, trn02, bpr02_cents). | remittance_once UNIQUE (practice_id, sender_id, isa13, trn02, bpr02_cents), the dictionary's key; ADR 0031 also treats a resend under a new ISA13 with the same payee, TRN02, TRN03, BPR02 and BPR16 as a duplicate. An ERA export (provenance era_export, ADR 0060, D12 a) is keyed by remittance_export_once (practice_id, payee_npi, trn02, bpr_credit_debit, bpr02_cents, bpr16_date) over export rows, and the 835 is authoritative between the two (D13 a). | founder ruling needed (reconciliation-001, decision D2): confirm the dictionary's key; PRD.md and the dictionary stay verbatim as the imported plan, and CLAUDE.md's idempotency line is corrected to the key and ADR 0031's resend rule |
-| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16), made only once the attester has downloaded both files since the export: each download is an audit_event (packet_export_pdf_downloaded, packet_export_csv_downloaded) that audit_event_packet_download records only for a person who may read the export, read by packet_export_downloads_of_actor(), so no table is added (the founder's addition of 2026-10-18). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts. Built in part: the export's verifier report and the attestation on packet_version, with the downloads it needs in audit_event (20261103090000, ADR 0061, D16), are approved as the packet_version and audit_event sections describe them, and only the rest is a proposal |
+| C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16), made only once the attester has downloaded both files since the export: each download is an audit_event (packet_export_pdf_downloaded, packet_export_csv_downloaded) that audit_event_packet_download records only on a connection that is not the worker's own login (app_session_is_job(), the marker role tp_job), for a person who may read the export, read by packet_export_downloads_of_actor(), so no table is added (the founder's addition of 2026-10-18). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts. Built in part: the export's verifier report and the attestation on packet_version, with the downloads it needs in audit_event (20261103090000, ADR 0061, D16), are approved as the packet_version and audit_event sections describe them, and only the rest is a proposal |
 | C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable). | proposed (CO-12; the schema's rule that every enumeration is text with a CHECK, reconciliation-001 D2 on C3): readiness_grade and the two roles, still to come (PR 8, PR 14). Built in part: packet_version.deadline_verification_status, text generated from the content with its CHECK (20261103090000, ADR 0061; what verified means is D17 a), is approved as the packet_version section describes it, and only the rest is a proposal |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
 | C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed). | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
@@ -5595,9 +5597,10 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `app_actor_platform_permitted(text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3760f234506890ad` |
 | `app_actor_practice_directory()` | `TABLE(practice_id uuid, name text, organization_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `907cf26442af3589` |
 | `app_actor_terms_required()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ef5705187db37687` |
+| `app_session_is_job()` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `485a9f8002babbb6` |
 | `assert_membership_fits_user(uuid,uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e9b1e3a862e37508` |
 | `assert_organization_keeps_administrator(uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `16bb83822a4c4c15` |
-| `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `da2595b61b2f5840` |
+| `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d9ff171f092c4f1` |
 | `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82eb1b21e646b556` |
 | `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
 | `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dcc9fa8b0d88cd5c` |
@@ -5701,10 +5704,10 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `organization_run_refusal(uuid)` | `text` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `28088464051fab99` |
 | `packet_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2176280110c4aa2b` |
 | `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `619ece8c25a26b04` |
-| `packet_export_downloads_of_actor(uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ed80ffff0cc258f0` |
+| `packet_export_downloads_of_actor(uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc26a79c8d0152e2` |
 | `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
 | `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
-| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6cbde5f4b38b3e7a` |
+| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8e8a240adcec036e` |
 | `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
 | `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
 | `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
@@ -5874,7 +5877,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `5921f7cb60697688c8d727591a06838cb365be165d9dbd28bf204f222cc90980` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `0df2593ea2f226e6a6d9173451bdd5dbd7c9cc0d078a6ad06dd677b0a481c6b1` |
 
 ## Cross-checks
 
@@ -5892,4 +5895,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `34494cda69b49681dd78ead066840f969b13c14f4b21b7086f3d11d2c67c2c95`
+Approved by: ________  Date: ________  Document SHA-256: `4ec492ab0868aeb54120cbae29d1973e6760bee35fa7f3948291f47f9a4b32be`

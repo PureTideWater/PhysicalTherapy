@@ -54,6 +54,7 @@ describe('CDK app', () => {
         'RestoreDrillInstanceId',
         'OwnerLoginSecretArn',
         'AppLoginSecretArn',
+        'WorkerLoginSecretArn',
         'OperatorLoginSecretArn',
         'UserPoolId',
         'WebClientId',

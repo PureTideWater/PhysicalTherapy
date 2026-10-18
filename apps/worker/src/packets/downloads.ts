@@ -10,9 +10,11 @@ import { type DocumentStore, collect } from '../storage/documents';
  * when the hash is the one the version recorded, and the download recorded in the same transaction as
  * packet_export_pdf_downloaded or packet_export_csv_downloaded (purpose line_export: the files carry the
  * identifiers). That event is the evidence a reimbursement reviewer's attestation needs: the database records it
- * only for a person, in their own name, who may read the export, of an exported version
- * (audit_event_packet_download), so a job's scope writes none; and the attestation counts only the attester's
- * own downloads of that version since its export (packet_export_downloads_of_actor()).
+ * only on the web's login, never the worker's own (app_session_is_job(): a job's code, whatever it sets
+ * app.actor_id to, writes none), for a person, in their own name, who may read the export, of an exported version
+ * (audit_event_packet_download); and the attestation counts only the attester's own downloads of that version since
+ * its export (packet_export_downloads_of_actor()). The web serves these files to a GET alone (downloadHandler()), so
+ * a HEAD records nothing.
  */
 
 /** The two files of an export. */

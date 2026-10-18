@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { readDatabaseUrl, withJobScope } from '@tp/db';
+import { JobActorIsPersonError, type PracticeScope, type ScopeClient, readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
 import { addDays, nextDisputeWindow } from '@tp/packets';
@@ -702,7 +702,7 @@ describe('D16: the reviewer attests only after downloading both files of that ex
     await refusedInBothLayers(practice, reviewer, versionId, files);
   });
 
-  it('cannot be evidenced by the job’s scope, under its own ID or the reviewer’s, nor for a version not exported, a person who may not read it or another practice', async () => {
+  it('cannot be evidenced under a job’s actor (its own ID, of either kind, or naming the reviewer under it), nor for a version not exported, a person who may not read it or another practice', async () => {
     const setup = await cas08('attest-job-evidence');
     const { practice } = setup;
     const reviewer = await w.reviewer(practice);
@@ -736,6 +736,75 @@ describe('D16: the reviewer attests only after downloading both files of that ex
     const other = await w.practice('attest-job-evidence-other');
     const outsider = await w.reviewer(other);
     expect(await w.as(other, outsider, (scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
+  });
+
+  it('cannot be forged on the worker’s own login, whatever the job sets app.actor_id to: no download event, no evidence read and no attestation (a compromised worker; the owner’s ruling of 2026-10-18)', async () => {
+    const setup = await cas08('attest-worker-login');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    // The export job itself runs on the worker's login (w.export), so the job's own work is untouched.
+    const { versionId, files } = await exportedVersion(setup);
+    const jobId = randomUUID();
+    const PERSON_ONLY = { code: '42501', message: "a packet export's download is recorded by the web request that served it, never on the worker's login" };
+    /** On the worker's login, through withJobScope as every job reaches the database, then app.actor_id set to the reviewer. */
+    const asReviewerOnWorkerLogin = <T>(run: (scope: PracticeScope<ScopeClient>) => Promise<T>) =>
+      withJobScope(w.worker, { jobId, practiceId: practice.practiceId }, async (scope) => {
+        await scope.client.query("SELECT set_config('app.actor_id', $1, true)", [reviewer]);
+        // What made the forgery work on a shared login: the database now takes the job's transaction for the reviewer's.
+        expect((await scope.client.query<{ person: boolean; job: boolean }>('SELECT app_actor_is_person() AS person, app_session_is_job() AS job')).rows).toEqual([{ person: true, job: true }]);
+        return run({ ...scope, kind: 'practice', actorId: reviewer, actorKind: 'user' });
+      });
+    const insert = (action: string) =>
+      `INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, purpose, request_id) VALUES (app_actor_id(), 'user', '${action}', 'packet_version', '${versionId}', '${practice.practiceId}', 'line_export', 'forged')`;
+    for (const action of ['packet_export_pdf_downloaded', 'packet_export_csv_downloaded']) {
+      // A raw event in the reviewer's name, and the same after SET ROLE tp_app (session_user does not change).
+      expect(await refusal(asReviewerOnWorkerLogin((scope) => scope.client.query(insert(action))))).toMatchObject(PERSON_ONLY);
+      expect(await refusal(asReviewerOnWorkerLogin(async (scope) => scope.client.query(`SET LOCAL ROLE tp_app; ${insert(action)}`)))).toMatchObject(PERSON_ONLY);
+    }
+    // The download function itself, its hash check passing, records nothing on the worker's login.
+    for (const file of ['pdf', 'csv'] as const) {
+      expect(await refusal(asReviewerOnWorkerLogin((scope) => downloadPacketExport(scope, w.services, { practiceId: practice.practiceId, versionId, file, requestId: 'forged' })))).toMatchObject(PERSON_ONLY);
+    }
+    // The marker cannot be taken off or put on: the worker's login may not SET ROLE to it or leave it.
+    expect(await refusal(asReviewerOnWorkerLogin((scope) => scope.client.query('SET LOCAL ROLE tp_job')))).toMatchObject({ code: '42501' });
+    expect(await refusal(asReviewerOnWorkerLogin((scope) => scope.client.query('REVOKE tp_job FROM CURRENT_USER')))).toMatchObject({ code: '42501' });
+    expect(await downloadEvents(practice, versionId)).toEqual([]);
+    // The review page reads no download for the reviewer, and the honest reviewer's attestation is refused in both layers.
+    expect(await w.as(practice, reviewer, (scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
+    await refusedInBothLayers(practice, reviewer, versionId, files);
+
+    // Once the reviewer has downloaded both files in their own requests, the worker's login still reads no evidence
+    // and still cannot attest in their name.
+    await w.download(practice, reviewer, versionId);
+    expect(await asReviewerOnWorkerLogin((scope) => packetExportDownloads(scope, { versionId }))).toEqual([]);
+    expect(
+      await refusal(asReviewerOnWorkerLogin((scope) => scope.client.query('UPDATE packet_version SET attested_by = app_actor_id(), attestation = $2 WHERE id = $1', [versionId, signed(files)]))),
+    ).toMatchObject({ code: '42501', message: "a packet's export is attested in its reviewer's own request, never on the worker's login" });
+    // The attest service refuses it first: a job's scope holds no role in the practice, whatever its actor.
+    expect(await refusal(asReviewerOnWorkerLogin((scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId, pdfSha256: files.pdf, csvSha256: files.csv, requestId: 'forged' })))).toMatchObject({
+      name: 'PermissionDeniedError',
+    });
+    const { rows } = await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ attested_by: string | null }>('SELECT attested_by FROM packet_version WHERE id = $1', [versionId]));
+    expect(rows).toEqual([{ attested_by: null }]);
+    // The reviewer's own request, on the web's login, attests.
+    await expect(w.as(practice, reviewer, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId, pdfSha256: files.pdf, csvSha256: files.csv, requestId: 'r' }))).resolves.toMatchObject({ attested: true });
+  });
+
+  it('refuses a job scope whose job ID names a person, on either login, before the job runs', async () => {
+    const setup = await cas08('attest-job-person-id');
+    const { practice } = setup;
+    const reviewer = await w.reviewer(practice);
+    const { versionId } = await exportedVersion(setup);
+    for (const pool of [w.worker, w.app]) {
+      let ran = false;
+      const attempt = withJobScope(pool, { jobId: reviewer, practiceId: practice.practiceId }, async (scope) => {
+        ran = true;
+        return downloadPacketExport(scope, w.services, { practiceId: practice.practiceId, versionId, file: 'pdf', requestId: 'r' });
+      });
+      await expect(attempt).rejects.toBeInstanceOf(JobActorIsPersonError);
+      expect(ran).toBe(false);
+    }
+    expect(await downloadEvents(practice, versionId)).toEqual([]);
   });
 });
 

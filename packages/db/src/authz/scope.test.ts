@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { fakePool } from '../test-support/fake-pool';
 import { ScopeError, isUuid, requireUuid } from './ids';
-import { OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope } from './scope';
+import { JobActorIsPersonError, OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope } from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -185,5 +185,24 @@ describe('withJobScope (one practice per job, SEC-06)', () => {
 
   it('refuses a job ID that is not a UUID', () => {
     expect(() => onePracticeJob({ jobId: 'job-1', practiceId: PRACTICE_A })).toThrow(new ScopeError('jobId must be a UUID'));
+  });
+
+  it('asks the database whether the job ID names a person, and runs the job when it names none', async () => {
+    const { pool, texts } = fakePool((text) => (text.includes('app_actor_is_person') ? [{ person: false }] : undefined));
+    await expect(withJobScope(pool, { jobId: JOB, practiceId: PRACTICE_A }, () => Promise.resolve('ran'))).resolves.toBe('ran');
+    expect(texts()).toEqual(['BEGIN', expect.stringContaining("set_config('app.actor_id'"), 'SELECT app_actor_is_person() AS person', 'COMMIT']);
+  });
+
+  it('refuses a job ID that names a person before the job runs, and rolls back (docs/adr/0061)', async () => {
+    const { pool, texts } = fakePool((text) => (text.includes('app_actor_is_person') ? [{ person: true }] : undefined));
+    let ran = false;
+    await expect(
+      withJobScope(pool, { jobId: ACTOR, practiceId: PRACTICE_A }, () => {
+        ran = true;
+        return Promise.resolve();
+      }),
+    ).rejects.toThrow(JobActorIsPersonError);
+    expect(ran).toBe(false);
+    expect(texts().at(-1)).toBe('ROLLBACK');
   });
 });

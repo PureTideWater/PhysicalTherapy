@@ -22,6 +22,14 @@ export const OWNER_LOGIN = 'tp_owner_login';
 export const APP_LOGIN = 'tp_app_login';
 
 /**
+ * The worker's own login (docs/adr/0061): the practice jobs connect as it, never as the application login. It
+ * is a member of tp_app, as the application login is, and of the marker role tp_job, which tells the database a
+ * job's connection from a person's request by session_user, so job code records no download of a packet export
+ * and attests none, whatever it sets app.actor_id to. The migration task creates it from its secret.
+ */
+export const WORKER_LOGIN = 'tp_worker_login';
+
+/**
  * The platform jobs' login: a member of tp_operator (owns nothing, cannot bypass row-level security;
  * docs/adr/0014), created from its secret like the application login.
  */
@@ -70,12 +78,13 @@ export interface DatabaseProps {
  * daily snapshot, both kept 35 days, and survive the instance's deletion. Multi-AZ and deletion
  * protection follow the environment's settings (production has both).
  *
- * Five logins, five secrets, all encrypted under the environment key: the owner (master) login,
- * which only the migration task uses; the application login; the operator login of the platform
- * jobs; pg-boss's queue login (QUEUE_LOGIN); and billing's own login (BILLING_LOGIN).
+ * Six logins, six secrets, all encrypted under the environment key: the owner (master) login,
+ * which only the migration task uses; the application login, the web app's; the worker's own login
+ * (WORKER_LOGIN), the practice jobs'; the operator login of the platform jobs; pg-boss's queue login
+ * (QUEUE_LOGIN); and billing's own login (BILLING_LOGIN).
  * They rotate every 30 days through Secrets Manager's hosted PostgreSQL rotation functions, which run
  * in the app subnets and reach Secrets Manager through its endpoint. The owner rotates itself (single
- * user). The application, operator, queue and billing logins use the alternating-users scheme, so a running task's
+ * user). The application, worker, operator, queue and billing logins use the alternating-users scheme, so a running task's
  * password stays valid through a rotation; their first rotation waits for the schedule because each
  * login exists only after the deploy job has created it.
  *
@@ -87,6 +96,7 @@ export class Database extends Construct {
   readonly securityGroup: ec2.SecurityGroup;
   readonly ownerSecret: secretsmanager.ISecret;
   readonly appSecret: secretsmanager.ISecret;
+  readonly workerSecret: secretsmanager.ISecret;
   readonly operatorSecret: secretsmanager.ISecret;
   readonly queueSecret: secretsmanager.ISecret;
   readonly billingSecret: secretsmanager.ISecret;
@@ -157,6 +167,12 @@ export class Database extends Construct {
       excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
       masterSecret: this.ownerSecret,
     }).attach(this.instance);
+    this.workerSecret = new rds.DatabaseSecret(this, 'WorkerLoginSecret', {
+      username: WORKER_LOGIN,
+      encryptionKey: key,
+      excludeCharacters: PASSWORD_EXCLUDED_CHARACTERS,
+      masterSecret: this.ownerSecret,
+    }).attach(this.instance);
     this.operatorSecret = new rds.DatabaseSecret(this, 'OperatorLoginSecret', {
       username: OPERATOR_LOGIN,
       encryptionKey: key,
@@ -187,7 +203,7 @@ export class Database extends Construct {
       hostedRotation: secretsmanager.HostedRotation.postgreSqlSingleUser(rotation),
       automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),
     });
-    for (const secret of [this.appSecret, this.operatorSecret, this.queueSecret, this.billingSecret]) {
+    for (const secret of [this.appSecret, this.workerSecret, this.operatorSecret, this.queueSecret, this.billingSecret]) {
       secret.addRotationSchedule('Rotation', {
         hostedRotation: secretsmanager.HostedRotation.postgreSqlMultiUser({ ...rotation, masterSecret: this.ownerSecret }),
         automaticallyAfter: Duration.days(SECRET_ROTATION_DAYS),
