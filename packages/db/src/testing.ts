@@ -52,6 +52,30 @@ export async function createScratchDatabase(adminUrl: string): Promise<ScratchDa
 }
 
 /**
+ * Ends a pool and resolves once every one of its connections has closed. Every test ends its pools with
+ * this before it drops their database. pg-pool's end() resolves as soon as it has asked its idle clients
+ * to end, while their sockets are still closing; a drop WITH (FORCE) then terminates backends that have
+ * not yet read the Terminate message, each such client receives 57P01 ("terminating connection due to
+ * administrator command"), and a pool with no error listener throws it as an unhandled error, which
+ * fails the run (testing.db.test.ts reproduces it). An error a closing client reports here is expected
+ * and ignored.
+ */
+export async function endPool(pool: pg.Pool): Promise<void> {
+  pool.on('error', () => undefined);
+  const open = pool.totalCount;
+  const closed = new Set<pg.PoolClient>();
+  const allClosed = new Promise<void>((resolve) => {
+    if (open === 0) resolve();
+    pool.on('remove', (client) => {
+      closed.add(client);
+      if (closed.size >= open) resolve();
+    });
+  });
+  await pool.end();
+  await allClosed;
+}
+
+/**
  * Creates an empty database for one test, hands its URL to `run`, and drops it afterwards, so
  * database tests never share state. `adminUrl` must be a role allowed to CREATE DATABASE.
  */

@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withActor, withPracticeScope } from '../authz';
 import { readDatabaseUrl } from '../config';
-import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, createUser } from '../testing';
+import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, createUser, endPool } from '../testing';
 import { CiphertextError } from './cipher';
 import { LocalKeyProvider } from './key-provider';
 import { DataKeyDestroyedError, destroyPracticeDataKey, loadPracticeCipher, provisionPracticeKey } from './practice-keys';
@@ -29,7 +29,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });

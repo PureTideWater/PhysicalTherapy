@@ -565,15 +565,15 @@
     },
     {
       "path": "posting-export.csv",
-      "sha256": "e132beffdc7012fd3555e0399b06692c60a8466859f4da4c0579a7b71c791178",
-      "bytes": 133,
+      "sha256": "f7d6bcc3bc7b3116be9e16c0ed7a650853cd25481f9a38cdaeeafaed4064e356",
+      "bytes": 154,
       "kind": "csv",
       "description": "The posting export for the adjusted payment."
     },
     {
       "path": "eft-export.csv",
-      "sha256": "f61ffbf05d31cc9ebf9655386fc3cdab611ec206c8e944fc71f94e86358b4040",
-      "bytes": 117,
+      "sha256": "8970d6364748fe834696d2e870d2ff9451ef35561fd0b58b51fce11c33948d28",
+      "bytes": 143,
       "kind": "csv",
       "description": "The bank export for the adjusted payment."
     },
@@ -831,6 +831,13 @@
           }
         }
       }
+    },
+    {
+      "path": "recoupment-posting-export.csv",
+      "sha256": "186d22965dc29ee7b5f25eb37d7229563aa75e2318efbf4648d661dacb4ec2da",
+      "bytes": 169,
+      "kind": "csv",
+      "description": "The posting export of the take-back: the 18.00 recouped, posted as -18.00 against the corrected claim."
     }
   ],
   "generated": [],

@@ -20,6 +20,12 @@ import { RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR, renderRerunRelease, renderSyn
 
 let root = '';
 
+/**
+ * For a test that runs a child process (bash, or pnpm starting tsx): it waits on the machine's scheduler,
+ * and pnpm release:load alone, about 2 s here, passed the 5 s default at a load average of 11 on four cores.
+ */
+const CHILD_PROCESS_TIMEOUT_MS = 60_000;
+
 const SOURCE_TEXT = 'The KX threshold is $1,111 for PT and SLP combined, with review at $1,333.\n';
 const SOURCE_PATH = 'content/sources/therapy_threshold/rules.md';
 const SOURCE_URL = 'https://example.invalid/rules';
@@ -126,7 +132,7 @@ describe('release:assemble', () => {
     expect(checkContent(root).problems).toEqual([]);
     const verifier = spawnSync('bash', [path.join(repositoryRoot, 'tools/verify-release-manifest.sh'), dir], { encoding: 'utf8' });
     expect(verifier.status, verifier.stderr).toBe(0);
-  });
+  }, CHILD_PROCESS_TIMEOUT_MS);
 
   it('refuses a number already prepared or published', () => {
     writeDrafts([draft('L2')]);
@@ -268,7 +274,7 @@ describe('release:rollback', () => {
       expect(result.status, args.join(' ')).toBe(2);
       expect(result.stderr).toContain('release:rollback needs --reason <text>');
     }
-  }, 60_000);
+  }, CHILD_PROCESS_TIMEOUT_MS);
 });
 
 describe('parseReleaseNumber', () => {
@@ -306,7 +312,7 @@ describe('release:load directories', () => {
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('is a SYNTHETIC fixture release; fixtures load only into scratch test databases');
-  });
+  }, CHILD_PROCESS_TIMEOUT_MS);
 });
 
 describe('the synthetic release fixtures', () => {

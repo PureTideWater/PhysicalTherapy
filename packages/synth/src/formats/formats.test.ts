@@ -63,15 +63,22 @@ describe('exhibits', () => {
 });
 
 describe('exports', () => {
-  it('writes the posting export with US dates, quoting and CRLF', () => {
+  it('writes the posting export with US dates, quoting and CRLF, and SYNTHSENDER as every row’s payee ID (D14)', () => {
     const text = postingExport([
       { postedOn: calendarDate(2026, 6, 11), checkOrTrace: '881', payerName: 'SYNTHETIC PAYER, A', amount: dollars('24.00'), batch: 'B1' },
       { postedOn: calendarDate(2026, 6, 12), checkOrTrace: '882', payerName: 'P "Q"', claimReference: 'SYNPCN1', procedureCode: '97110', serviceDate: calendarDate(2026, 3, 9), amount: dollars('-5.00'), batch: 'B2' },
     ]);
-    expect(text.split('\r\n')).toEqual([POSTING_EXPORT_HEADER.join(','), '06/11/2026,881,"SYNTHETIC PAYER, A",,,,24.00,B1', '06/12/2026,882,"P ""Q""",SYNPCN1,97110,03/09/2026,-5.00,B2', '']);
+    expect(POSTING_EXPORT_HEADER.at(-1)).toBe('Payee ID');
+    expect(text.split('\r\n')).toEqual([
+      POSTING_EXPORT_HEADER.join(','),
+      '06/11/2026,881,"SYNTHETIC PAYER, A",,,,24.00,B1,SYNTHSENDER',
+      '06/12/2026,882,"P ""Q""",SYNPCN1,97110,03/09/2026,-5.00,B2,SYNTHSENDER',
+      '',
+    ]);
   });
 
-  it('writes the bank export with ISO dates', () => {
-    expect(eftExport([{ depositedOn: calendarDate(2026, 6, 9), description: 'D', trace: 'T', amount: dollars('30.00'), batchReference: 'X' }]).split('\r\n')).toEqual([EFT_EXPORT_HEADER.join(','), '2026-06-09,D,T,30.00,X', '']);
+  it('writes the bank export with ISO dates, and SYNTHSENDER as every row’s originator ID (D14)', () => {
+    expect(EFT_EXPORT_HEADER.at(-1)).toBe('Originator ID');
+    expect(eftExport([{ depositedOn: calendarDate(2026, 6, 9), description: 'D', trace: 'T', amount: dollars('30.00'), batchReference: 'X' }]).split('\r\n')).toEqual([EFT_EXPORT_HEADER.join(','), '2026-06-09,D,T,30.00,X,SYNTHSENDER', '']);
   });
 });

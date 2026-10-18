@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, placeholderDataKeyRef } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool, placeholderDataKeyRef } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -39,8 +39,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.end();
-  await operator.end();
+  await endPool(app);
+  await endPool(operator);
   await owner.end();
   await database.drop();
 });

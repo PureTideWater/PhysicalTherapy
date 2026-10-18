@@ -934,8 +934,8 @@
     },
     {
       "path": "posting-export.csv",
-      "sha256": "a27eebcd13b77f63a121a722325649d5c28c7cc4ac49b8729dd063176c326456",
-      "bytes": 131,
+      "sha256": "e3a90e5c78f50363d303562743cdae16cbc6f06b54305a7f9a93d879b94a9fe3",
+      "bytes": 152,
       "kind": "csv",
       "description": "A posting export with one check-level row for part of the check, no line detail."
     },
@@ -1636,8 +1636,8 @@
     },
     {
       "path": "lines-posting-export.csv",
-      "sha256": "4f7e0db845677d64115fa5d85284d3d12e6c111ee36128c61aae8aaa80543dc0",
-      "bytes": 161,
+      "sha256": "629522c852839a67f880ee4040c0104e9293563786379a0c96fdbea23e6313f7",
+      "bytes": 182,
       "kind": "csv",
       "description": "A posting export with line detail: one row posting the corrected claim’s 2026-03-09 line, none for the 2026-03-10 line."
     }

@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { normalizePageText, parsePageText } from '@tp/contracts';
 import { syntheticPdf, syntheticXlsx } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type PracticeCipher, databaseClient, documentObjectKey, documentPagesKey, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser } from '@tp/db/testing';
+import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { assertNoPhi, createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -58,7 +58,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  await app.end();
+  await endPool(app);
   await owner.end();
   await database.drop();
 });
@@ -248,6 +248,22 @@ describe('intake of a single file', () => {
       // A stored posting or EFT export queues the recovery ledger's reconcile, which reads it (docs/adr/0042).
       expect((await intake(h, id)).queued).toEqual(kind === 'posting_export' || kind === 'eft_export' ? [{ type: 'reconcile', payload: { practice_id: world.practiceId, document_id: id } }] : []);
       expect((await one(id)).status, `${kind} ${status}`).toBe(status);
+    }
+  });
+
+  it('holds a workbook, .xlsx or .xls, uploaded as a posting or EFT export as not its type, and queues no reconcile (docs/adr/0059)', async () => {
+    const h = harness();
+    // Each file its own bytes, so none is held as a duplicate of the one before.
+    const workbook = (check: string) => Buffer.from(syntheticXlsx([{ name: 'Postings', rows: [['Post Date', 'Check/EFT #', 'Paid Amount', 'Payee ID'], ['06/11/2026', check, '1.00', 'SYNTHSENDER']] }]));
+    const legacy = Buffer.concat([Buffer.from('d0cf11e0a1b11ae1', 'hex'), Buffer.from(`SYNTHETIC ${randomUUID()}`), Buffer.alloc(464)]);
+    for (const [bytes, kind] of [
+      [workbook('SYN-4'), 'posting_export'],
+      [workbook('SYN-5'), 'eft_export'],
+      [legacy, 'posting_export'],
+    ] as const) {
+      const id = await upload(h, bytes, { kind });
+      expect((await intake(h, id)).queued, kind).toEqual([]);
+      expect((await one(id)).status, kind).toBe('wrong_type');
     }
   });
 

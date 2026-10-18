@@ -13,7 +13,8 @@ import { FIELD_LABELS, OWN_TEMPLATE, columnField } from '../../lib/reconciliatio
  * system's columns: a sample export they choose is read here, in the browser, for its column headers and
  * a preview of the first rows as the template reads them (the same reader the reconcile uses,
  * @tp/ledger). The sample is never sent anywhere: its file input has no name, so the form carries the
- * mapping alone. A claim reference is shown only as present or not.
+ * mapping alone. A claim reference is shown only as present or not. A built-in template whose columns no
+ * format description has confirmed yet (the vendor placeholders, docs/adr/0059) says so beside its name.
  */
 
 const PREVIEW_ROWS = 10;
@@ -84,7 +85,7 @@ export function TemplateMapper({ builtIn, current }: TemplateMapperProps) {
         {builtIn.map((item) => (
           <label key={item.id} className="flex items-center gap-2 text-sm">
             <input type="radio" name="template" value={item.id} checked={choice === item.id} onChange={() => { setChoice(item.id); }} />
-            {item.system} (built in)
+            {item.system} {item.status === 'unconfirmed' ? '(built in, format unconfirmed)' : '(built in)'}
           </label>
         ))}
         <label className="flex items-center gap-2 text-sm">

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { OWNER_ROLE, openPool, readDatabaseUrl } from '@tp/db';
+import { endPool } from '@tp/db/testing';
 import { MANIFEST_FILE, buildManifest, serializeManifest, serializeRecords } from '@tp/rules';
 import { fileSha256, listContentFiles, readRelease } from '@tp/rules/content';
 import { ReleaseLoadError, loadRelease } from '@tp/rules/loader';
@@ -77,7 +78,7 @@ describe('pnpm release:dry-run against a database', () => {
       );
       expect(rows.map((row) => row.object_type)).toEqual(expect.arrayContaining(['claim', 'pricing_run']));
     } finally {
-      await pool.end();
+      await endPool(pool);
     }
   });
 });
