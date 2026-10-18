@@ -5,12 +5,13 @@ import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readD
 import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrganization, createUser, endPool } from '@tp/db/testing';
 import { cents } from '@tp/money';
 import { createLogger } from '@tp/observability';
-import { syntheticRelease } from '@tp/pricing/testing';
-import { loadRelease } from '@tp/rules/loader';
+import { price } from '@tp/pricing';
+import { SYNTHETIC_PLACES, readRuleRelease, syntheticRelease } from '@tp/pricing/testing';
+import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { type MailMessage, type MailSender, MemoryMailSender } from '../mail/mail';
-import { ScreeningPricer } from './adapter';
+import { ScreeningPricer, releaseChangeDays, screeningClaim } from './adapter';
 import { expireScreenings } from './expiry';
 import { type ScreeningJobDependencies, forgetScreeningReleases, priceScreeningRun, sweepScreeningRuns } from './job';
 import { SCREENING_TOKEN, screeningTokenHash } from './token';
@@ -21,15 +22,19 @@ import { SCREENING_TOKEN, screeningTokenHash } from './token';
  *
  * - each priced row's figure is the engine's one-line amount times its count, in bigint, and its difference the
  *   figure less the allowed total; MA contracted and commercial rows count toward the dollars that cannot be priced
- *   without a contract; a ZIP whose locality needs its ZIP+4 leaves its rows unpriced as the engine says;
+ *   without a contract; a ZIP whose locality needs its ZIP+4, which the engine cannot take, is refused;
+ * - a code in the reduction across a visit's codes is never an anomaly on its figure priced alone: PRD 11's worked
+ *   example (golden G01) paid exactly as one visit shows no anomaly;
  * - the result's link goes by email alone; the token is never stored (its SHA-256 is), never logged, never in a job
  *   payload or an audit event;
- * - a run is priced once however often its job runs; a send that fails leaves the run to a later claim; a run out of
- *   attempts, or whose release is not there as pinned, fails and its contact is told;
+ * - a run is priced once however often its job runs; a send that fails leaves the run to a later claim; one contact
+ *   address the mail service refuses holds up no other run; a run out of attempts, or whose release is not there as
+ *   pinned or has been withdrawn, fails and its contact is told; a result under a withdrawn release says so;
  * - 30 days after its upload a screening is deleted with its rows, each an audit event, and its conversion stays.
  */
 
 const RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../fixtures/synthetic/rules/release-synth-900001');
+const WITHDRAWN_RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../fixtures/synthetic/rules/release-synth-900004');
 const ORIGIN = 'https://app.synthetic.test';
 const SPLIT = { '11': 'non_facility', '22': 'facility' } as const;
 
@@ -71,13 +76,12 @@ async function asApp<T extends Record<string, unknown>>(sql: string, values: unk
   }
 }
 
-async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly zipPlusFour?: string | null; readonly email?: string } = {}): Promise<string> {
+async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string } = {}): Promise<string> {
   const rows = options.rows ?? ROWS;
-  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) AS id', [
+  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS id', [
     'Synthetic Therapy Group',
     'MN',
     options.zip ?? '00011',
-    options.zipPlusFour ?? null,
     options.email ?? `prospect.${randomUUID().slice(0, 8)}@synthetic.test`,
     createHash('sha256').update(randomUUID()).digest('hex'),
     rows.map((row) => row[0]),
@@ -150,6 +154,7 @@ interface ResultRow {
   readonly difference_cents: string | null;
   readonly unpriced_reason: string | null;
   readonly unpriced_detail: string | null;
+  readonly in_reduction_pool: boolean | null;
   readonly trace_sha256: string | null;
 }
 
@@ -158,7 +163,7 @@ async function results(runId: string): Promise<ResultRow[]> {
     await owner.query<ResultRow>(
       `SELECT row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents::text AS observed_allowed_cents, disposition,
               expected_line_cents::text AS expected_line_cents, expected_line_unrounded::text AS expected_line_unrounded, expected_cents::text AS expected_cents,
-              difference_cents::text AS difference_cents, unpriced_reason, unpriced_detail, trace_sha256
+              difference_cents::text AS difference_cents, unpriced_reason, unpriced_detail, in_reduction_pool, trace_sha256
          FROM screening_result WHERE run_id = $1 ORDER BY row_no`,
       [runId],
     )
@@ -195,7 +200,13 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
     const stored = await results(runId);
     // The engine's own figures, from the release files, for the same one-line claims.
-    const pricer = new ScreeningPricer({ release: syntheticRelease(900001), zip: '00011', placeOfServiceSettings: SPLIT, asOf: new Date().toISOString().slice(0, 10) });
+    const pricer = new ScreeningPricer({
+      release: syntheticRelease(900001),
+      changeDays: releaseChangeDays(readRuleRelease(RELEASE_DIR).records),
+      zip: '00011',
+      placeOfServiceSettings: SPLIT,
+      asOf: new Date().toISOString().slice(0, 10),
+    });
     for (const row of stored) {
       if (row.payer_product === 'ma_contracted' || row.payer_product === 'commercial') {
         expect(row, `row ${String(row.row_no)}`).toMatchObject({ disposition: 'contract_required', expected_cents: null, trace_sha256: null });
@@ -239,19 +250,77 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     expect(BigInt(summary?.difference_cents as string)).toBe(sum(priced, (row) => row.difference_cents));
     // The dollars that cannot be priced without a contract: the MA contracted and commercial rows' allowed totals.
     expect(summary).toMatchObject({ contract_rows: 2, contract_observed_cents: '7000', not_screened_rows: 2, unpriced_rows: 2, priced_rows: 3, rows: 9 });
-    const groups = await asApp<{ payer_product: string; procedure_code: string; anomaly: boolean; difference_cents: string; claim_lines: string }>('SELECT * FROM screening_result_groups($1)', [
-      screeningTokenHash(token),
-    ]);
+    const groups = await asApp<{
+      payer_product: string;
+      procedure_code: string;
+      anomaly: boolean;
+      in_reduction_pool: boolean;
+      below_before_reduction: boolean;
+      difference_cents: string;
+      claim_lines: string;
+    }>('SELECT * FROM screening_result_groups($1)', [screeningTokenHash(token)]);
+    expect(groups.length).toBeGreaterThan(0);
     for (const group of groups) {
       const difference = BigInt(group.difference_cents);
-      expect(group.anomaly).toBe(difference > 0n && difference >= 500n * BigInt(group.claim_lines));
+      const below = difference > 0n && difference >= 500n * BigInt(group.claim_lines);
+      expect(group.anomaly).toBe(below && !group.in_reduction_pool);
+      expect(group.below_before_reduction).toBe(below && group.in_reduction_pool);
     }
   });
 
-  it('asks for nothing it cannot use: a ZIP whose locality needs its ZIP+4 leaves its rows unpriced as the engine says', async () => {
-    const runId = await submit({ zip: '00012', zipPlusFour: '0001', rows: [ROWS[0] as Row] });
-    expect(await priceScreeningRun(dependencies(new MemoryMailSender()), runId)).toBe('complete');
-    expect(await results(runId)).toMatchObject([{ disposition: 'unpriced', unpriced_reason: 'ENGINE_ERROR', unpriced_detail: 'locality_needs_zip_plus_four' }]);
+  it('refuses a ZIP whose locality needs its ZIP+4: the engine takes a five-digit ZIP alone, so nothing is asked for that it cannot use', async () => {
+    await expect(submit({ zip: '00012', rows: [ROWS[0] as Row] })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
+  });
+
+  it('calls no code of the reduction across a visit’s codes an anomaly on its figure priced alone: golden G01 paid as one visit shows none', async () => {
+    // PRD 11's worked example (golden G01): 97110 GP x2, 97140 GP and 97530 GP on one day at POS 11, ZIP 00011, priced
+    // by the unchanged engine as one visit on the band's first day; a practice paid exactly that sends these rows.
+    const g01: readonly Row[] = [
+      ['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
+      ['97140', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
+      ['97530', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1],
+    ];
+    const visitLines = g01.map((row, index) => ({
+      ...(screeningClaim({ procedureCode: row[0], modifiers: row[1].split(' '), units: row[2], placeOfService: row[3], serviceBand: row[5] }).lines[0] as ReturnType<typeof screeningClaim>['lines'][number]),
+      lineNo: index + 1,
+    }));
+    const visit = price({
+      claim: { ...screeningClaim({ procedureCode: '97110', modifiers: ['GP'], units: 2, placeOfService: '11', serviceBand: '2026-Q1' }), lines: visitLines },
+      release: syntheticRelease(900001),
+      settings: { zip: '00011', defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES },
+      asOf: new Date().toISOString().slice(0, 10),
+    });
+    const paid = g01.map((row, index): Row => {
+      const line = visit[index];
+      if (line?.outcome !== 'priced') {
+        throw new Error('the worked example prices');
+      }
+      return [row[0], row[1], row[2], row[3], row[4], row[5], line.expectedAllowedCents, 1];
+    });
+    // And an evaluation (no reduction across codes), paid $10 under its figure below: that one is an anomaly.
+    const runId = await submit({ rows: [...paid, ['97161', 'GP', 1, '11', 'medicare_ffs', '2026-Q1', 0n, 1]] });
+    const mail = new MemoryMailSender();
+    expect(await priceScreeningRun(dependencies(mail), runId)).toBe('complete');
+    const stored = await results(runId);
+    const evaluation = stored[3];
+    expect(evaluation?.disposition).toBe('priced');
+    const short = BigInt(evaluation?.expected_cents ?? '0') - 1_000n;
+    await rewind('UPDATE screening_result SET observed_allowed_cents = $2::bigint, difference_cents = expected_cents - $2::bigint WHERE run_id = $1 AND row_no = 4', [runId, short.toString()]);
+    const groups = await asApp<{ procedure_code: string; anomaly: boolean; in_reduction_pool: boolean; below_before_reduction: boolean; difference_cents: string }>(
+      'SELECT procedure_code, anomaly, in_reduction_pool, below_before_reduction, difference_cents::text AS difference_cents FROM screening_result_groups($1) ORDER BY procedure_code',
+      [screeningTokenHash(tokenOf(mail.sent[0]))],
+    );
+    expect(groups.map((group) => [group.procedure_code, group.anomaly, group.in_reduction_pool, group.below_before_reduction])).toEqual([
+      ['97110', false, true, true],
+      ['97140', false, true, true],
+      ['97161', true, false, false],
+      ['97530', false, true, false],
+    ]);
+    // Priced alone, the first two rows sit more than $5 a line above the visit: the reduction across codes, not an anomaly.
+    expect(BigInt(groups[0]?.difference_cents ?? '0')).toBeGreaterThan(500n);
+    expect(BigInt(groups[1]?.difference_cents ?? '0')).toBeGreaterThan(500n);
+    expect(stored.slice(0, 3).map((row) => row.in_reduction_pool)).toEqual([true, true, true]);
+    expect(evaluation?.in_reduction_pool).toBe(false);
   });
 });
 
@@ -316,6 +385,35 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 2 }]);
   });
 
+  it('lets no contact address the mail service refuses hold up the sweep, and still fails that run once it is out of attempts', async () => {
+    const poison = 'refused.synthetic@clinic-refused.synthetic.test';
+    const poisonRun = await submit({ email: poison });
+    const laterRun = await submit({ email: 'later.synthetic@clinic-later.synthetic.test' });
+    const memory = new MemoryMailSender();
+    const refusing: MailSender = {
+      send: (message) => (message.to.includes(poison) ? Promise.reject(new Error('SYNTHETIC BadRequestException: Illegal address')) : memory.send(message)),
+    };
+    // The sweep takes the older, refused run first, logs it by ID, and still prices and emails the later one.
+    expect(await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 1, failed: 0, skipped: 1 });
+    expect(memory.sent.map((message) => message.to)).toEqual([['later.synthetic@clinic-later.synthetic.test']]);
+    expect((await owner.query('SELECT status FROM screening_run WHERE id = $1', [laterRun])).rows).toEqual([{ status: 'complete' }]);
+    expect(lines.filter((line) => line.error_code === 'SCREENING_RUN_FAILED').map((line) => line.screening_run_id)).toEqual([poisonRun]);
+    expect(JSON.stringify(lines)).not.toContain(poison);
+    // Claimed again on each stale sweep, it runs out of attempts and ends failed, its notice refused and logged.
+    for (let attempt = 2; attempt <= 3; attempt += 1) {
+      await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [poisonRun]);
+      await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 });
+    }
+    expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [poisonRun])).rows).toEqual([{ status: 'pricing', attempts: 3 }]);
+    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [poisonRun]);
+    lines = [];
+    expect(await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 0, failed: 1, skipped: 0 });
+    expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [poisonRun])).rows).toEqual([{ status: 'failed', failure_code: 'PRICING_ATTEMPTS_EXHAUSTED' }]);
+    expect(lines.map((line) => line.error_code)).toEqual(expect.arrayContaining(['SCREENING_NOTICE_UNDELIVERABLE', 'PRICING_ATTEMPTS_EXHAUSTED']));
+    expect(JSON.stringify(lines)).not.toContain(poison);
+    expect(await sweepScreeningRuns(dependencies(refusing), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 0, failed: 0, skipped: 0 });
+  });
+
   it('fails a run out of attempts, and one whose release is not there as pinned, and tells the contact with a link to start again', async () => {
     const exhausted = await submit({ email: 'prospect.exhausted@synthetic.test' });
     const unavailable = await submit({ email: 'prospect.unavailable@synthetic.test' });
@@ -370,5 +468,30 @@ describe('SCR-03: a screening expires 30 days after its upload', () => {
     expect((await owner.query('SELECT count(*)::int AS n FROM prospect_request WHERE id = $1', [request?.id])).rows).toEqual([{ n: 1 }]);
     // Run again, it finds nothing more.
     expect(await expireScreenings({ operator: admin, jobId: randomUUID() })).toEqual({ prospects: 0, runs: 0 });
+  });
+});
+
+describe('a release withdrawn after a screening was pinned to it', () => {
+  it('prices nothing more under it, even from the cached release, and says so on a result priced under it', async () => {
+    // SYNTHETIC release 900004 (900001 with one value changed) is put in force, two screenings pin it, and one is priced.
+    await loadRelease(owner, WITHDRAWN_RELEASE_DIR, { release: 900004, allowSyntheticFixtureForTests: true });
+    const priced = await submit({ email: 'prospect.before.withdrawal@synthetic.test' });
+    const waiting = await submit({ email: 'prospect.after.withdrawal@synthetic.test' });
+    const pinned = await owner.query<{ release_no: number }>('SELECT release_no FROM screening_run WHERE id = ANY ($1)', [[priced, waiting]]);
+    expect(pinned.rows.map((row) => row.release_no)).toEqual([900004, 900004]);
+    const mail = new MemoryMailSender();
+    expect(await priceScreeningRun(dependencies(mail), priced)).toBe('complete');
+    const hash = screeningTokenHash(tokenOf(mail.sent[0]));
+    expect(await asApp('SELECT release_no, release_withdrawn FROM screening_result_summary($1)', [hash])).toEqual([{ release_no: 900004, release_withdrawn: false }]);
+    await withdrawRelease(owner, { release: 900004, reason: 'SYNTHETIC: withdrawn under a screening in a test' });
+    // This process still holds the release it read; the claim says it is withdrawn, so the run fails and its contact is told.
+    expect(await priceScreeningRun(dependencies(mail), waiting)).toBe('failed');
+    expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [waiting])).rows).toEqual([{ status: 'failed', failure_code: 'RELEASE_UNAVAILABLE' }]);
+    expect(mail.sent.at(-1)).toMatchObject({ to: ['prospect.after.withdrawal@synthetic.test'], subject: 'Your screening could not be completed' });
+    // The result already priced under it says so.
+    expect(await asApp('SELECT release_no, release_withdrawn FROM screening_result_summary($1)', [hash])).toEqual([{ release_no: 900004, release_withdrawn: true }]);
+    // A new screening pins the reinstated release.
+    const after = await submit();
+    expect((await owner.query('SELECT release_no FROM screening_run WHERE id = $1', [after])).rows).toEqual([{ release_no: 900001 }]);
   });
 });

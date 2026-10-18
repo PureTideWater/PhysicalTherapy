@@ -79,7 +79,6 @@ async function publishSyntheticRelease(releaseNo: number): Promise<void> {
 
 interface SubmitOptions {
   readonly zip?: string;
-  readonly zipPlusFour?: string | null;
   readonly email?: string;
   readonly rows?: readonly (readonly [string, string, number, string, string, string, bigint, number])[];
 }
@@ -94,7 +93,7 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
   ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 1],
 ];
 
-const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) AS run_id';
+const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS run_id';
 
 function submitValues(options: SubmitOptions = {}): unknown[] {
   const rows = options.rows ?? ROWS;
@@ -102,7 +101,6 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     '  Synthetic Therapy Group  ',
     'MN',
     options.zip ?? '00011',
-    options.zipPlusFour ?? null,
     options.email ?? ` Prospect.${randomUUID().slice(0, 8)}@Synthetic.Test `,
     hex('d'),
     rows.map((row) => row[0]),
@@ -132,7 +130,7 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
   expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
   const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000)', [runId]);
   const lines = pending.map(() => 5_000n);
-  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)', [
     runId,
     pending.map((row) => row.row_no),
     pending.map(() => 'priced'),
@@ -140,6 +138,7 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
     lines.map((line) => `${line.toString()}.25`),
     pending.map((row, index) => ((lines[index] ?? 0n) * BigInt(row.claim_count)).toString()),
     pending.map((row, index) => ((lines[index] ?? 0n) * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
+    pending.map(() => true),
     pending.map(() => null),
     pending.map(() => null),
     pending.map(() => hex('f')),
@@ -212,7 +211,6 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'practice_name',
       'state',
       'zip',
-      'zip_plus_four',
       'contact_email',
       'created_at',
       'expires_at',
@@ -366,21 +364,21 @@ describe('the screening rules', () => {
     await approveSplit();
   }, 60_000);
 
-  it('opens with the release and the split in force, and asks for a ZIP+4 only where the locality map needs one', async () => {
+  it('opens with the release and the split in force, and refuses a ZIP the locality map does not price from five digits', async () => {
     const [status] = await as<{ release_no: number; place_of_service_split_id: string }>(APP_ROLE, 'SELECT * FROM screening_status()');
     expect(status?.release_no).toBe(900001);
     expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00011'])).toEqual([{ known: true, plus_four_required: false }]);
     expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00012'])).toEqual([{ known: true, plus_four_required: true }]);
     expect(await as(APP_ROLE, 'SELECT * FROM screening_zip_status($1)', ['00099'])).toEqual([{ known: false, plus_four_required: false }]);
     await expect(submit({ zip: '00099' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_unknown' });
+    // The engine takes a five-digit ZIP alone, so a ZIP whose locality needs its ZIP+4 is refused and no ZIP+4 is kept.
     await expect(submit({ zip: '00012' })).rejects.toMatchObject({ code: '23514', constraint: 'screening_zip_plus_four' });
-    const withPlusFour = await submit({ zip: '00012', zipPlusFour: '1234' });
-    const withoutNeed = await submit({ zip: '00011', zipPlusFour: '1234' });
-    const zips = await admin.query<{ id: string; zip_plus_four: string | null }>(
-      'SELECT r.id, p.zip_plus_four FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = ANY ($1)',
-      [[withPlusFour, withoutNeed]],
+    const withoutNeed = await submit({ zip: '00011' });
+    const zips = await admin.query<{ id: string; zip: string }>(
+      'SELECT r.id, p.zip FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE r.id = ANY ($1)',
+      [[withoutNeed]],
     );
-    expect(Object.fromEntries(zips.rows.map((row) => [row.id, row.zip_plus_four]))).toEqual({ [withPlusFour]: '1234', [withoutNeed]: null });
+    expect(zips.rows).toEqual([{ id: withoutNeed, zip: '00011' }]);
   });
 
   it('stores the prospect, an accepted upload of hash and count, a queued run pinned to the release and split, and every row, with its audit event', async () => {
@@ -440,14 +438,26 @@ describe('the screening rules', () => {
     await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-01', 1n, 1]] })).rejects.toMatchObject({ constraint: 'screening_result_service_band' });
     await expect(submit({ rows: [['97110', '', 1, '11', 'tricare', '2026-Q1', 1n, 1]] })).rejects.toMatchObject({ constraint: 'screening_result_payer_product' });
     await expect(submit({ email: 'not an address' })).rejects.toMatchObject({ constraint: 'screening_prospect_contact_email' });
+    // Only an address the mail service can send to: plain ASCII, a dot-atom before the @, a dotted domain after it.
+    for (const email of ['pois,on@clinic.synthetic.test', 'prospect@localhost', 'prospect@clinic.synthetic.test.', 'prospéct@clinic.synthetic.test', '.p@clinic.synthetic.test', 'p..q@clinic.synthetic.test', `${'p'.repeat(65)}@clinic.synthetic.test`]) {
+      await expect(submit({ email }), email).rejects.toMatchObject({ constraint: 'screening_prospect_contact_email' });
+    }
+    // A procedure code has a real code's shape: five letters (a name) are refused, and so are identifiers in the figures.
+    for (const code of ['SMITH', 'MARIA', 'A1B2C', 'W1234']) {
+      await expect(submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 1n, 1]] }), code).rejects.toMatchObject({ constraint: 'screening_result_procedure_code' });
+    }
+    await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-Q1', 12_345_678_900n, 24]] })).rejects.toMatchObject({ constraint: 'screening_result_observed' });
+    await expect(submit({ rows: [['97110', '', 1, '11', 'medicare_ffs', '2026-Q1', 100n, 100_001]] })).rejects.toMatchObject({ constraint: 'screening_result_claim_count' });
+    for (const code of ['97110', '0001F', '0042T', '0001U', '0002M', 'G0283', 'V2020']) {
+      expect(await submit({ rows: [[code, '', 1, '11', 'commercial', '2026-Q1', 2_500_000n, 1]] }), code).toMatch(/^[0-9a-f-]{36}$/);
+    }
   });
 
   it('records a rejected upload with its reasons alone, and its audit event', async () => {
-    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9) AS id', [
+    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8) AS id', [
       'Synthetic Therapy Group',
       'MN',
       '00011',
-      null,
       'Prospect.Rejected@Synthetic.Test',
       hex('e'),
       120,
@@ -459,9 +469,9 @@ describe('the screening rules', () => {
     expect((await admin.query('SELECT count(*)::int AS n FROM screening_run WHERE upload_id = $1', [row?.id])).rows).toEqual([{ n: 0 }]);
     expect((await admin.query('SELECT action, object_type FROM audit_event WHERE object_id = $1', [row?.id])).rows).toEqual([{ action: 'screening_rejected', object_type: 'screening_upload' }]);
     await expect(
-      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9)', ['SYNTHETIC', 'MN', '00011', null, 'p@synthetic.test', hex('e'), 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
+      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', hex('e'), 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
     ).rejects.toMatchObject({ constraint: 'screening_upload_reasons' });
-    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9)', ['SYNTHETIC', 'MN', '00011', null, 'p@synthetic.test', hex('e'), 1, '[]', 'x'])).rejects.toMatchObject({
+    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', hex('e'), 1, '[]', 'x'])).rejects.toMatchObject({
       constraint: 'screening_upload_rejected',
     });
   });
@@ -470,7 +480,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     // A contract-required row is not pending, so the operator's record leaves it as it is.
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
-    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS n', [
+    const recorded = await as<{ n: number }>(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [
       runId,
       [3, 4],
       ['priced', 'priced'],
@@ -478,6 +488,7 @@ describe('the screening rules', () => {
       ['100', '100'],
       ['200', '300'],
       ['-2800', '-3700'],
+      [true, true],
       [null, null],
       [null, null],
       [hex('f'), hex('f')],
@@ -488,8 +499,10 @@ describe('the screening rules', () => {
     await expect(submit({ rows: [['97140', '', 1, '22', 'commercial', '2026-Q1', 1n, 1]] }).then((id) =>
       admin.query("UPDATE screening_result SET disposition = 'rates_change_in_band', trace_sha256 = $2 WHERE run_id = $1", [id, hex('f')]),
     )).rejects.toMatchObject({ code: '23514' });
-    const figures = (line: string, unrounded: string, expected: string, difference: string) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS n', [runId, [1], ['priced'], [line], [unrounded], [expected], [difference], [null], [null], [hex('f')]]);
+    const figures = (line: string, unrounded: string, expected: string, difference: string, pooled: boolean | null = true) =>
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [runId, [1], ['priced'], [line], [unrounded], [expected], [difference], [pooled], [null], [null], [hex('f')]]);
+    // A priced row says whether its code is in the reduction across a visit's codes.
+    await expect(figures('5000', '5000.4', '25000', '15000', null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_priced' });
     await expect(figures('5000', '5000.4', '24999', '14999')).rejects.toMatchObject({ code: '23514', constraint: 'screening_result_figures' });
     await expect(figures('5000', '5001', '25000', '15000')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
     await expect(figures('5000', '5000.4', '25000', '15001')).rejects.toMatchObject({ constraint: 'screening_result_figures' });
@@ -497,13 +510,13 @@ describe('the screening rules', () => {
     expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 1 }]);
     // A row is priced once.
     expect(await figures('5000', '5000.4', '25000', '15000')).toEqual([{ n: 0 }]);
-    // The largest figure a row can hold stays exact: 999 units at about $500 a unit, times a million claim lines.
-    const big = await submit({ rows: [['97110', '', 999, '11', 'medicare_ffs', '2026-Q1', 99_999_999_999n, 1_000_000]] });
+    // The largest figure a row can hold stays exact: 999 units at about $500 a unit, times 100,000 claim lines.
+    const big = await submit({ rows: [['97110', '', 999, '11', 'medicare_ffs', '2026-Q1', 99_999_999_999n, 100_000]] });
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [big])).toHaveLength(1);
     const line = 49_950_000n;
-    const expected = line * 1_000_000n;
+    const expected = line * 100_000n;
     expect(
-      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS n', [
+      await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [
         big,
         [1],
         ['priced'],
@@ -511,13 +524,14 @@ describe('the screening rules', () => {
         [`${line.toString()}.4999999`],
         [expected.toString()],
         [(expected - 99_999_999_999n).toString()],
+        [false],
         [null],
         [null],
         [hex('f')],
       ]),
     ).toEqual([{ n: 1 }]);
     expect((await admin.query('SELECT expected_cents::text AS e, difference_cents::text AS d FROM screening_result WHERE run_id = $1', [big])).rows).toEqual([
-      { e: '49950000000000', d: '49850000000001' },
+      { e: '4995000000000', d: '4895000000001' },
     ]);
   });
 
@@ -525,7 +539,7 @@ describe('the screening rules', () => {
     const runId = await submit();
     await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId]);
     const record = (disposition: string, reason: string | null, detail: string | null, trace: string | null) =>
-      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [reason], [detail], [trace]]);
+      as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS n', [runId, [2], [disposition], [null], [null], [null], [null], [null], [reason], [detail], [trace]]);
     await expect(record('unpriced', null, null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'NO_AGREEMENT', 'no_gpci', hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced' });
     await expect(record('unpriced', 'GUESSED', null, hex('f'))).rejects.toMatchObject({ constraint: 'screening_result_unpriced_reason' });
@@ -544,12 +558,12 @@ describe('the screening rules', () => {
       code: '23514',
     });
     // A claimed run is not claimed again while its pricing is fresh.
-    const [claim] = await as<{ release_no: number; zip: string; settings: object; as_of: string; row_count: number; attempt: number }>(
+    const [claim] = await as<{ release_no: number; release_available: boolean; zip: string; settings: object; as_of: string; row_count: number; attempt: number }>(
       OPERATOR_ROLE,
-      'SELECT release_no, zip, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
+      'SELECT release_no, release_available, zip, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
       [runId],
     );
-    expect(claim).toEqual({ release_no: 900001, zip: '00011', settings: SPLIT, as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string, row_count: 6, attempt: 1 });
+    expect(claim).toEqual({ release_no: 900001, release_available: true, zip: '00011', settings: SPLIT, as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string, row_count: 6, attempt: 1 });
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toEqual([]);
     // The release as the engine reads it: the run's ZIP's locality alone.
     const release = await as<{ record_type: string; key: object; sha256: string }>(OPERATOR_ROLE, 'SELECT record_type, key, sha256 FROM operator_screening_release($1)', [runId]);
@@ -571,7 +585,7 @@ describe('the screening rules', () => {
     expect(await as<{ attempt: number }>(OPERATOR_ROLE, 'SELECT attempt FROM operator_screening_claim($1)', [runId])).toEqual([{ attempt: 2 }]);
     const pending = await as<{ row_no: number }>(OPERATOR_ROLE, 'SELECT row_no FROM operator_screening_rows($1, 0, 5000)', [runId]);
     expect(pending.map((row) => row.row_no)).toEqual([1, 2]);
-    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)', [
+    await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)', [
       runId,
       [1, 2],
       ['priced', 'rates_change_in_band'],
@@ -579,6 +593,7 @@ describe('the screening rules', () => {
       ['5000', null],
       ['25000', null],
       ['15000', null],
+      [false, null],
       [null, null],
       [null, null],
       [hex('f'), hex('f')],

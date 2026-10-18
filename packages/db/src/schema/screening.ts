@@ -1,4 +1,4 @@
-import { bigint, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { prospectRequest } from './onboarding';
 import { user } from './tenancy';
@@ -41,9 +41,8 @@ export const screeningProspect = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     practiceName: text('practice_name').notNull(),
     state: text('state').notNull(),
+    /** Five digits; no ZIP+4 (the engine takes a five-digit ZIP alone, so a ZIP that needs its ZIP+4 is refused). */
     zip: text('zip').notNull(),
-    /** Only where the release's locality_map says the ZIP needs one. */
-    zipPlusFour: text('zip_plus_four'),
     contactEmail: text('contact_email').notNull(),
     createdAt: createdAt(),
     expiresAt: expiresAt(),
@@ -138,6 +137,8 @@ export const screeningResult = pgTable(
     /** The line amount times the claim count, in bigint, outside the engine (D19 a). */
     expectedCents: bigint('expected_cents', { mode: 'bigint' }),
     differenceCents: bigint('difference_cents', { mode: 'bigint' }),
+    /** For a priced row: the engine's trace ranked its code in the reduction across a visit's codes (mppr in_pool). */
+    inReductionPool: boolean('in_reduction_pool'),
     unpricedReason: text('unpriced_reason'),
     unpricedDetail: text('unpriced_detail'),
     traceSha256: text('trace_sha256'),

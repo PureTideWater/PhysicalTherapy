@@ -64,6 +64,8 @@ export async function dueRuns(client: OperatorClient, minQueuedAgeSeconds: numbe
 export interface ClaimedRun {
   readonly releaseNo: number;
   readonly manifestSha256: string;
+  /** The pinned release is still there as pinned: published, its manifest unchanged, and not withdrawn. */
+  readonly releaseAvailable: boolean;
   readonly zip: string;
   readonly placeOfServiceSettings: Readonly<Record<string, PlaceOfServiceSetting>>;
   /** The run's creation date in UTC, YYYY-MM-DD. */
@@ -75,17 +77,27 @@ export interface ClaimedRun {
 /** Claims a run for pricing; null when it is not there to claim (already being priced, done, or out of attempts). */
 export async function claimRun(client: OperatorClient, runId: string): Promise<ClaimedRun | null> {
   const { rows } = await client.query(
-    'SELECT release_no, release_manifest_sha256, zip, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
+    'SELECT release_no, release_manifest_sha256, release_available, zip, settings, as_of::text AS as_of, row_count, attempt FROM operator_screening_claim($1)',
     [runId],
   );
   const row = rows[0] as
-    | { release_no: number; release_manifest_sha256: string; zip: string; settings: Record<string, PlaceOfServiceSetting>; as_of: string; row_count: number; attempt: number }
+    | {
+        release_no: number;
+        release_manifest_sha256: string;
+        release_available: boolean;
+        zip: string;
+        settings: Record<string, PlaceOfServiceSetting>;
+        as_of: string;
+        row_count: number;
+        attempt: number;
+      }
     | undefined;
   return row === undefined
     ? null
     : {
         releaseNo: row.release_no,
         manifestSha256: row.release_manifest_sha256,
+        releaseAvailable: row.release_available,
         zip: row.zip,
         placeOfServiceSettings: row.settings,
         asOf: row.as_of,
@@ -138,7 +150,7 @@ const text = (amount: Cents | undefined): string | null => (amount === undefined
 export async function recordRows(client: OperatorClient, runId: string, outcomes: readonly { readonly rowNo: number; readonly outcome: ScreeningRowOutcome }[]): Promise<number> {
   const priced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'priced' ? item.outcome : undefined);
   const unpriced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'unpriced' ? item.outcome : undefined);
-  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) AS recorded', [
+  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS recorded', [
     runId,
     outcomes.map((item) => item.rowNo),
     outcomes.map((item) => item.outcome.disposition),
@@ -146,6 +158,7 @@ export async function recordRows(client: OperatorClient, runId: string, outcomes
     outcomes.map((item) => priced(item)?.expectedLineUnrounded ?? null),
     outcomes.map((item) => text(priced(item)?.expectedCents)),
     outcomes.map((item) => text(priced(item)?.differenceCents)),
+    outcomes.map((item) => priced(item)?.inReductionPool ?? null),
     outcomes.map((item) => unpriced(item)?.reason ?? null),
     outcomes.map((item) => unpriced(item)?.detail ?? null),
     outcomes.map((item) => item.outcome.traceSha256),

@@ -4,22 +4,40 @@ import path from 'node:path';
 import { MA_NONCONTRACTED_TERMS } from '@tp/contracts';
 import { cents } from '@tp/money';
 import { type LinePricing, UNPRICED_REASONS, price } from '@tp/pricing';
-import { SYNTHETIC_PLACES, readRuleRelease, releaseVariant, syntheticRelease } from '@tp/pricing/testing';
+import { SYNTHETIC_PLACES, readRuleRelease, releaseVariant, ruleRecordLike, syntheticRelease } from '@tp/pricing/testing';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type PendingScreeningRow, SCREENING_MAPPING, ScreeningPricer, type ScreeningPricingContext, coversBand, screeningClaim, screeningOutcome, traceRecords, traceSha256 } from './adapter';
+import {
+  type PendingScreeningRow,
+  SCREENING_MAPPING,
+  ScreeningPricer,
+  type ScreeningPricingContext,
+  changeDaysInBand,
+  coversBand,
+  inReductionPool,
+  releaseChangeDays,
+  samePricing,
+  screeningClaim,
+  screeningOutcome,
+  traceRecords,
+  traceSha256,
+} from './adapter';
 import { quarterDays } from './format';
 
 /**
  * The screening's pricing (test matrix SCR-02, in its pure part; D19 a, D20 a): each priced row's figure is the
  * unchanged engine's amount for one line, under the MA non-contracted terms at the prospect's locality, times the
  * row's claim count in bigint; the difference is that less the allowed total; the engine's unpriced reasons pass
- * through unchanged; a row whose rule records change inside its band shows no figure. SYNTHETIC release 900001 only.
+ * through unchanged; a row whose rule records change inside its band shows no figure, whether a record the trace
+ * names ends there or one it did not need on the band's first day starts there; the trace says whether the code is
+ * in the reduction across a visit's codes. SYNTHETIC release 900001 only, and variants of it built here.
  */
 
+const RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900001';
 const RELEASE = syntheticRelease(900001);
-const CONTEXT: ScreeningPricingContext = { release: RELEASE, zip: '00011', placeOfServiceSettings: SYNTHETIC_PLACES, asOf: '2026-10-18' };
+const CHANGE_DAYS = releaseChangeDays(readRuleRelease(RELEASE_DIR).records);
+const CONTEXT: ScreeningPricingContext = { release: RELEASE, changeDays: CHANGE_DAYS, zip: '00011', placeOfServiceSettings: SYNTHETIC_PLACES, asOf: '2026-10-18' };
 const CODES = ['97110', '97112', '97116', '97140', '97530', '97161', '97162', '97163', '97164', '97026', '97035', 'G0283'] as const;
 
 function row(overrides: Partial<PendingScreeningRow> = {}): PendingScreeningRow {
@@ -91,6 +109,7 @@ describe('the screening pricing adapter', () => {
       expectedLineUnrounded: line.expectedUnroundedCents.toString(),
       expectedCents: line.expectedAllowedCents * 12n,
       differenceCents: line.expectedAllowedCents * 12n - 50_000n,
+      inReductionPool: true,
       traceSha256: traceSha256(line.trace),
     });
     expect(line.trace.agreement?.outcome).toBe('MA_NONCONTRACTED');
@@ -126,8 +145,8 @@ describe('the screening pricing adapter', () => {
 
   it('shows no figure for a row whose rule records change inside its band', () => {
     // 97110's relative values end on 2026-05-15 and a second record starts the next day: Q2 spans both.
-    const base = readRuleRelease('fixtures/synthetic/rules/release-synth-900001');
-    const split = releaseVariant(base, (records) =>
+    const base = readRuleRelease(RELEASE_DIR);
+    const change = (records: typeof base.records) =>
       records.flatMap((record) => {
         const key = record.key as Record<string, string>;
         if (record.record_type !== 'pfs_rvu' || key.hcpcs !== '97110') {
@@ -137,9 +156,9 @@ describe('the screening pricing adapter', () => {
           { ...record, effective_to: '2026-05-15' },
           { ...record, effective_from: '2026-05-16' },
         ];
-      }),
-    );
-    const context = { ...CONTEXT, release: split };
+      });
+    const split = releaseVariant(base, change);
+    const context = { ...CONTEXT, release: split, changeDays: releaseChangeDays(change(base.records.map((record) => structuredClone(record)))) };
     const changed = new ScreeningPricer(context).outcome(row({ serviceBand: '2026-Q2' }));
     expect(changed).toEqual({ disposition: 'rates_change_in_band', traceSha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string });
     // A quarter the first record covers whole prices.
@@ -147,6 +166,62 @@ describe('the screening pricing adapter', () => {
     const line = direct(CONTEXT, row());
     expect(traceRecords(line.trace).length).toBeGreaterThan(3);
     expect(coversBand(line.trace, '2026-Q4')).toBe(true);
+  });
+
+  it('shows no figure for a row when a record absent on its band’s first day takes effect inside the band (a medically unlikely edit from 2026-02-01)', () => {
+    const base = readRuleRelease(RELEASE_DIR);
+    const change = (records: typeof base.records) =>
+      records.map((record) => {
+        const key = record.key as Record<string, string>;
+        return record.record_type === 'ncci_mue' && key.hcpcs === '97110' ? ruleRecordLike(record, { value: { ...(record.value as object), mue: 1 }, effective_from: '2026-02-01' }) : record;
+      });
+    const variant = releaseVariant(base, change);
+    const context: ScreeningPricingContext = { ...CONTEXT, release: variant, changeDays: releaseChangeDays(change(base.records.map((record) => structuredClone(record)))) };
+    const pending = row({ units: 4, serviceBand: '2026-Q1' });
+    // The engine prices the line on the quarter's first day (no edit yet) and refuses it on 2026-02-15.
+    expect(direct(context, pending).outcome).toBe('priced');
+    const dated = screeningClaim(pending);
+    const onFeb15 = price({ claim: { ...dated, lines: dated.lines.map((line) => ({ ...line, serviceDate: '2026-02-15' })) }, release: variant, settings: { zip: '00011', defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES }, asOf: '2026-10-18' });
+    expect(onFeb15[0]).toMatchObject({ outcome: 'unpriced', reason: 'MUE_EXCEEDED' });
+    expect(changeDaysInBand(context.changeDays, '2026-Q1')).toEqual(['2026-02-01']);
+    expect(new ScreeningPricer(context).outcome(pending)).toEqual({ disposition: 'rates_change_in_band', traceSha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string });
+    // A quarter the edit is in force for from its first day is priced or refused as the engine says.
+    expect(new ScreeningPricer(context).outcome(row({ units: 4, serviceBand: '2026-Q2' }))).toMatchObject({ disposition: 'unpriced', reason: 'MUE_EXCEEDED' });
+    // Release 900001 itself changes only on quarters' first days: no band has a day inside it.
+    expect(['2025-Q4', '2026-Q1', '2026-Q2', '2026-Q3', '2026-Q4'].flatMap((band) => changeDaysInBand(CHANGE_DAYS, band))).toEqual([]);
+    expect(releaseChangeDays([{ effective_from: '2026-01-01', effective_to: '2026-03-31' }, { effective_from: '2026-04-01', effective_to: null }])).toEqual(['2026-01-01', '2026-04-01']);
+  });
+
+  it('records from the engine’s own trace whether the row’s code is in the reduction across a visit’s codes', () => {
+    const pooled = new ScreeningPricer(CONTEXT).outcome(row({ procedureCode: '97140', units: 1 }));
+    const evaluation = new ScreeningPricer(CONTEXT).outcome(row({ procedureCode: '97161', modifiers: ['GP'], units: 1 }));
+    expect(pooled).toMatchObject({ disposition: 'priced', inReductionPool: true });
+    expect(evaluation).toMatchObject({ disposition: 'priced', inReductionPool: false });
+    const line = direct(CONTEXT, row());
+    expect(inReductionPool(line.trace)).toBe(line.trace.steps.adjustments.some((adjustment) => adjustment.name === 'mppr' && adjustment.in_pool));
+    expect(samePricing(line, line)).toBe(true);
+    expect(samePricing(line, direct(CONTEXT, row({ units: 8 })))).toBe(false);
+  });
+
+  it('prices PRD 11’s worked example (golden G01) row by row above the visit, by the reduction across codes alone', () => {
+    // G01: 97110 GP x2, 97140 GP, 97530 GP on one day at POS 11, ZIP 00011. As one visit, the reduction ranks the four
+    // units and reduces three; priced alone, each row keeps its first unit whole.
+    const rows = [row({ procedureCode: '97110', units: 2, claimCount: 1 }), row({ procedureCode: '97140', units: 1, claimCount: 1 }), row({ procedureCode: '97530', units: 1, claimCount: 1 })];
+    const visit = price({
+      claim: { ...screeningClaim(rows[0] as PendingScreeningRow), lines: rows.map((item, index) => ({ ...(screeningClaim(item).lines[0] as ReturnType<typeof screeningClaim>['lines'][number]), lineNo: index + 1 })) },
+      release: RELEASE,
+      settings: { zip: '00011', defaultRounding: null, placeOfServiceSettings: SYNTHETIC_PLACES },
+      asOf: '2026-10-18',
+    });
+    const pricer = new ScreeningPricer(CONTEXT);
+    const alone = rows.map((item) => pricer.outcome(item));
+    const visitCents = visit.map((line) => (line.outcome === 'priced' ? line.expectedAllowedCents : -1n));
+    const aloneCents = alone.map((outcome) => (outcome.disposition === 'priced' ? outcome.expectedLineCents : -1n));
+    expect(alone.every((outcome) => outcome.disposition === 'priced' && outcome.inReductionPool)).toBe(true);
+    // Every row priced alone is at least its visit-priced amount, and the first two by more than $5.
+    expect(aloneCents.every((amount, index) => amount >= (visitCents[index] ?? 0n))).toBe(true);
+    expect((aloneCents[0] ?? 0n) - (visitCents[0] ?? 0n)).toBeGreaterThan(500n);
+    expect((aloneCents[1] ?? 0n) - (visitCents[1] ?? 0n)).toBeGreaterThan(500n);
   });
 
   it('builds the row’s one-line claim with sorted modifiers, zero charge and observed, and the band’s first day', () => {

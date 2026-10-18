@@ -9,8 +9,9 @@
 -- file, the server checks its header names and typed rows, and no byte of it is stored, only its SHA-256, its row
 -- count and, when refused, the reasons by code, column position and kind (never a header's text or a cell).
 --
--- - screening_prospect: the practice's name, state, five-digit ZIP (and its ZIP+4 only where the release's
---   locality_map says the ZIP needs one), and the contact address the result link goes to.
+-- - screening_prospect: the practice's name, state, five-digit ZIP and the contact address the result link goes to.
+--   No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose locality_map record needs its ZIP+4 is refused
+--   (screening_zip_plus_four) rather than asked for a ZIP+4 nothing could use.
 -- - screening_upload: one file a prospect sent: its hash, its row count, accepted or rejected, and the reasons.
 -- - screening_place_of_service_split: the platform's default facility or non-facility setting per place of
 --   service, approved by a contract specialist (rate_record.approve; a person, never a model), append-only; the
@@ -20,15 +21,19 @@
 --   creation, then queued, pricing, complete or failed. Only the SHA-256 of the result link's token is stored.
 -- - screening_result: one row per uploaded row, its facts as decoded and, once priced, the engine's figures:
 --   the expected line amount (rounded once by the engine, with the unrounded value beside it) times the claim
---   count, in bigint, outside the engine (D19 a), and the difference from the allowed total in the file. MA
---   contracted and commercial rows are never priced (contract_required); medicaid and other rows are not screened.
+--   count, in bigint, outside the engine (D19 a), the difference from the allowed total in the file, and whether the
+--   engine ranked the code in the reduction across a visit's codes (so a difference there is not called an anomaly on
+--   a figure priced alone). MA contracted and commercial rows are never priced (contract_required); medicaid and
+--   other rows are not screened.
 --
 -- The tables live in schema public with row-level security forced and one policy, the owner's; they have no
 -- practice_id and no phi_table_registry row, and no role but the owner reads or writes them. The application role
 -- reaches them only through the SECURITY DEFINER functions below (submit, reject, read by token, convert, and the
--- console's split), the operator role (platform jobs) only through operator_screening_*(). Every row expires 30
--- days after the upload: the reads refuse it from expires_at on, and the screening_expiry job deletes it. The
--- conversion to an audit request is an audit event (screening_converted) and outlives the expiry.
+-- console's split), the operator role (platform jobs) only through operator_screening_*(). Nothing is recorded while
+-- screening is closed. Every row expires 30 days after the upload: the reads refuse it from expires_at on, and the
+-- screening_expiry job deletes it. A run is priced only under its pinned release while that release is published,
+-- its manifest unchanged and not withdrawn; a result whose release has since been withdrawn says so. The conversion
+-- to an audit request is an audit event (screening_converted) and outlives the expiry.
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: five tables, their CHECK and trigger
 -- functions, the definer functions and their grants. Altered or removed: nothing; no existing table, function,
@@ -114,10 +119,11 @@ CREATE TABLE screening_prospect (
     'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
     'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC', 'PR', 'VI', 'GU', 'AS', 'MP')),
   zip text NOT NULL CONSTRAINT screening_prospect_zip CHECK (zip ~ '^[0-9]{5}$'),
-  -- Only where the release's locality_map record for the ZIP says it needs one (submit_screening clears it otherwise).
-  zip_plus_four text CONSTRAINT screening_prospect_zip_plus_four CHECK (zip_plus_four ~ '^[0-9]{4}$'),
+  -- An address the mail service can send to, lower case: an RFC 5322 dot-atom before the @ (no leading, trailing or
+  -- doubled dot) of at most 64 characters, a domain of two or more labels after it with no trailing dot, plain ASCII.
   contact_email text NOT NULL CONSTRAINT screening_prospect_contact_email
-    CHECK (contact_email ~ '^[^@ ]+@[^@ ]+$' AND length(contact_email) <= 254 AND contact_email = lower(contact_email)),
+    CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&''*+/=?^_`{|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
+           AND length(contact_email) <= 254 AND strpos(contact_email, '@') <= 65 AND contact_email = lower(contact_email)),
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
   CONSTRAINT screening_prospect_expiry CHECK (expires_at = created_at + interval '30 days')
@@ -236,15 +242,18 @@ CREATE TRIGGER screening_run_rules BEFORE UPDATE ON screening_run FOR EACH ROW E
 CREATE TABLE screening_result (
   run_id uuid NOT NULL REFERENCES screening_run (id) ON DELETE CASCADE,
   row_no integer NOT NULL CONSTRAINT screening_result_row_no CHECK (row_no BETWEEN 1 AND 50000),
-  procedure_code text NOT NULL CONSTRAINT screening_result_procedure_code CHECK (procedure_code ~ '^[0-9A-Z]{5}$'),
+  -- CPT Category I, II, III, PLA and MAAA, or HCPCS Level II: five letters (a name) are never a code.
+  procedure_code text NOT NULL CONSTRAINT screening_result_procedure_code CHECK (procedure_code ~ '^([0-9]{4}[0-9FMTU]|[A-V][0-9]{4})$'),
   modifiers text[] NOT NULL CONSTRAINT screening_result_modifiers CHECK (screening_modifiers_valid(modifiers)),
   units integer NOT NULL CONSTRAINT screening_result_units CHECK (units BETWEEN 1 AND 999),
   place_of_service text NOT NULL CONSTRAINT screening_result_place_of_service CHECK (place_of_service ~ '^(0[1-9]|[1-9][0-9])$'),
   payer_product text NOT NULL CONSTRAINT screening_result_payer_product
     CHECK (payer_product IN ('medicare_ffs', 'ma_noncontracted', 'ma_contracted', 'commercial', 'medicaid', 'other')),
   service_band text NOT NULL CONSTRAINT screening_result_service_band CHECK (service_band ~ '^20[0-9]{2}-Q[1-4]$'),
-  claim_count integer NOT NULL CONSTRAINT screening_result_claim_count CHECK (claim_count BETWEEN 1 AND 1000000),
-  observed_allowed_cents bigint NOT NULL CONSTRAINT screening_result_observed CHECK (observed_allowed_cents BETWEEN 0 AND 99999999999),
+  claim_count integer NOT NULL CONSTRAINT screening_result_claim_count CHECK (claim_count BETWEEN 1 AND 100000),
+  -- At most $25,000.00 a claim line, so an identifier typed under the allowed total is refused, never kept as dollars.
+  observed_allowed_cents bigint NOT NULL CONSTRAINT screening_result_observed
+    CHECK (observed_allowed_cents BETWEEN 0 AND 99999999999 AND observed_allowed_cents <= 2500000::bigint * claim_count),
   disposition text NOT NULL CONSTRAINT screening_result_disposition
     CHECK (disposition IN ('pending', 'priced', 'unpriced', 'rates_change_in_band', 'contract_required', 'not_screened')),
   -- The engine's amount for one line of the row (rounded once, its unrounded value beside it), and that amount
@@ -253,6 +262,9 @@ CREATE TABLE screening_result (
   expected_line_unrounded numeric,
   expected_cents bigint,
   difference_cents bigint,
+  -- The engine's trace of the one-line claim ranked its code in the reduction across a visit's codes (the mppr
+  -- adjustment's in_pool): a visit with several such codes prices lower than the rows priced alone.
+  in_reduction_pool boolean,
   unpriced_reason text CONSTRAINT screening_result_unpriced_reason CHECK (unpriced_reason IN (
     'NO_AGREEMENT', 'NO_MAPPING', 'AMBIGUOUS_RATE', 'NO_RATE_FOR_CODE', 'NO_PFS_VALUE', 'UNSUPPORTED_METHOD', 'SECONDARY_PAYER',
     'MUE_EXCEEDED', 'UNITS_RULE_UNKNOWN', 'DATE_OUTSIDE_VERSIONS', 'REVERSED_CLAIM', 'ENGINE_ERROR')),
@@ -270,7 +282,8 @@ CREATE TABLE screening_result (
     (disposition = 'priced') = (expected_line_cents IS NOT NULL)
     AND (disposition = 'priced') = (expected_line_unrounded IS NOT NULL)
     AND (disposition = 'priced') = (expected_cents IS NOT NULL)
-    AND (disposition = 'priced') = (difference_cents IS NOT NULL)),
+    AND (disposition = 'priced') = (difference_cents IS NOT NULL)
+    AND (disposition = 'priced') = (in_reduction_pool IS NOT NULL)),
   CONSTRAINT screening_result_figures CHECK (
     disposition <> 'priced'
     OR (expected_line_cents >= 0 AND abs(expected_line_unrounded - expected_line_cents) < 1
@@ -356,7 +369,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
     FROM (SELECT current_rule_release() AS release, screening_split_in_force() AS split) o
 $$;
 
--- Whether the release in force maps the five-digit ZIP to a locality, and whether it needs the ZIP+4 to.
+-- Whether the release in force maps the five-digit ZIP to a locality, and whether it needs the ZIP+4 to (such a ZIP
+-- is refused: the engine takes a five-digit ZIP alone).
 CREATE FUNCTION screening_zip_status(zip5 text) RETURNS TABLE (known boolean, plus_four_required boolean)
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT count(*) > 0, coalesce(bool_or((r.value ->> 'plus_four_required')::boolean), false)
@@ -366,9 +380,10 @@ $$;
 
 -- An accepted upload: the prospect, the upload (hash and row count), a queued run pinned to the release and the
 -- split in force, and every row, decoded and checked by the server; the arrays are the rows' columns in order
--- (modifier sets space-joined, '' for none). Returns the run. The tables' CHECKs and the row key's uniqueness hold
--- the rest; nothing in an error names a value.
-CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, zip4 text, email text, file_sha256 text, codes text[], modifier_sets text[],
+-- (modifier sets space-joined, '' for none). Returns the run. A ZIP the release maps to no locality, or to one that
+-- needs its ZIP+4, is refused. The tables' CHECKs and the row key's uniqueness hold the rest; nothing in an error
+-- names a value.
+CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, email text, file_sha256 text, codes text[], modifier_sets text[],
   unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[], request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -389,8 +404,8 @@ BEGIN
   IF NOT zip_known THEN
     RAISE EXCEPTION 'the rule release in force maps no locality for this ZIP code' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_zip_unknown';
   END IF;
-  IF plus_four AND zip4 IS NULL THEN
-    RAISE EXCEPTION 'this ZIP code needs its ZIP+4 to name a locality' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_zip_plus_four';
+  IF plus_four THEN
+    RAISE EXCEPTION 'this ZIP code spans two localities, and the engine takes a five-digit ZIP alone' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_zip_plus_four';
   END IF;
   IF n NOT BETWEEN 1 AND 50000
      OR array_ndims(codes) <> 1 OR array_ndims(modifier_sets) IS DISTINCT FROM 1 OR array_ndims(unit_counts) IS DISTINCT FROM 1
@@ -401,8 +416,8 @@ BEGIN
     RAISE EXCEPTION 'a screening is 1 to 50,000 rows, every column with a value for each' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_rows';
   END IF;
   WITH prospect AS (
-    INSERT INTO screening_prospect (practice_name, state, zip, zip_plus_four, contact_email)
-    VALUES (btrim(practice), state_code, zip5, CASE WHEN plus_four THEN zip4 END, lower(btrim(email)))
+    INSERT INTO screening_prospect (practice_name, state, zip, contact_email)
+    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
     RETURNING id
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status)
@@ -427,22 +442,25 @@ BEGIN
 END;
 $$;
 
--- A refused upload: the prospect and the upload with its reasons (codes, positions and kinds only); no run.
-CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, zip4 text, email text, file_sha256 text, row_count integer, reasons jsonb, request text)
+-- A refused upload: the prospect and the upload with its reasons (codes, positions and kinds only); no run. Nothing
+-- is recorded while screening is closed.
+CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, email text, file_sha256 text, row_count integer, reasons jsonb, request text)
 RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
-  plus_four boolean;
   created uuid;
 BEGIN
-  SELECT z.plus_four_required INTO plus_four FROM screening_zip_status(zip5) z;
+  IF NOT EXISTS (SELECT 1 FROM screening_status() o WHERE o.release_no IS NOT NULL AND o.place_of_service_split_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'screening is closed until a rule release is in force and a place-of-service split is approved'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_closed';
+  END IF;
   WITH prospect AS (
-    INSERT INTO screening_prospect (practice_name, state, zip, zip_plus_four, contact_email)
-    VALUES (btrim(practice), state_code, zip5, CASE WHEN plus_four THEN zip4 END, lower(btrim(email)))
+    INSERT INTO screening_prospect (practice_name, state, zip, contact_email)
+    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
     RETURNING id
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, rejection_reasons)
-    SELECT prospect.id, file_sha256, $7, 'rejected', reasons FROM prospect
+    SELECT prospect.id, file_sha256, $6, 'rejected', reasons FROM prospect
     RETURNING id
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
@@ -465,7 +483,7 @@ RETURNS TABLE (
   contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint,
   not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint,
   unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint,
-  converted boolean)
+  converted boolean, release_withdrawn boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT r.id, p.practice_name, p.state, p.zip, r.release_no, r.engine_version, r.created_at, r.expires_at,
          t.all_rows, t.all_claims, t.all_observed,
@@ -473,7 +491,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
          t.contract_rows, t.contract_claims, t.contract_observed,
          t.not_screened_rows, t.not_screened_claims, t.not_screened_observed,
          t.unpriced_rows, t.unpriced_claims, t.unpriced_observed,
-         r.converted_at IS NOT NULL
+         r.converted_at IS NOT NULL,
+         EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
     FROM screening_run r
     JOIN screening_upload u ON u.id = r.upload_id
     JOIN screening_prospect p ON p.id = u.prospect_id
@@ -499,14 +518,22 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
    WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at
 $$;
 
--- The priced rows by payer product and code, the largest difference first; a group is an anomaly when its
--- difference is positive and at least $5 a claim line (ADR 0038's default materiality).
+-- The priced rows by payer product and code, the largest difference first. A group is below by the threshold when
+-- its difference is positive and at least $5 a claim line (ADR 0038's default materiality). It is an anomaly only
+-- when no row of it is in the reduction across a visit's codes: a row priced alone is before that reduction, which
+-- for a typical therapy visit is more than $5 a line, so a pooled code's group is reported as below the figure
+-- before the reduction, never as an anomaly on that figure alone.
 CREATE FUNCTION screening_result_groups(token_sha256 text)
-RETURNS TABLE (payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, observed_cents bigint, difference_cents bigint, anomaly boolean)
+RETURNS TABLE (payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, observed_cents bigint, difference_cents bigint, anomaly boolean,
+  in_reduction_pool boolean, below_before_reduction boolean)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT g.product, g.code, g.row_total, g.claims, g.expected, g.observed, g.difference, g.difference > 0 AND g.difference >= 500 * g.claims
+  SELECT g.product, g.code, g.row_total, g.claims, g.expected, g.observed, g.difference,
+         g.difference > 0 AND g.difference >= 500 * g.claims AND NOT g.pooled,
+         g.pooled,
+         g.difference > 0 AND g.difference >= 500 * g.claims AND g.pooled
     FROM (SELECT s.payer_product AS product, s.procedure_code AS code, count(*)::integer AS row_total, sum(s.claim_count)::bigint AS claims,
-                 sum(s.expected_cents)::bigint AS expected, sum(s.observed_allowed_cents)::bigint AS observed, sum(s.difference_cents)::bigint AS difference
+                 sum(s.expected_cents)::bigint AS expected, sum(s.observed_allowed_cents)::bigint AS observed, sum(s.difference_cents)::bigint AS difference,
+                 bool_or(s.in_reduction_pool) AS pooled
             FROM screening_run r JOIN screening_result s ON s.run_id = r.id
            WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at AND s.disposition = 'priced'
            GROUP BY s.payer_product, s.procedure_code) g
@@ -616,10 +643,11 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
 $$;
 
 -- Claims a run: queued to pricing, or a stale pricing run again with one attempt more (at most three). Returns what
--- pricing needs (the pinned release, the prospect's ZIP, the split, the date the run was created in UTC, its row
--- count and the attempt), or nothing when the run is not there to claim.
+-- pricing needs (the pinned release, whether it is still there as pinned: published, its manifest unchanged and not
+-- withdrawn; the prospect's ZIP, the split, the date the run was created in UTC, its row count and the attempt), or
+-- nothing when the run is not there to claim.
 CREATE FUNCTION operator_screening_claim(run uuid)
-RETURNS TABLE (release_no integer, release_manifest_sha256 text, zip text, settings jsonb, as_of date, row_count integer, attempt integer)
+RETURNS TABLE (release_no integer, release_manifest_sha256 text, release_available boolean, zip text, settings jsonb, as_of date, row_count integer, attempt integer)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   target screening_run%ROWTYPE;
@@ -634,7 +662,11 @@ BEGIN
     RETURN;
   END IF;
   RETURN QUERY
-    SELECT target.release_no, target.release_manifest_sha256, p.zip, s.settings, (target.created_at AT TIME ZONE 'UTC')::date, target.row_count, target.attempts + 1
+    SELECT target.release_no, target.release_manifest_sha256,
+           EXISTS (SELECT 1 FROM rule_release rl
+                    WHERE rl.release_no = target.release_no AND rl.manifest_sha256 = target.release_manifest_sha256 AND rl.published_at IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = rl.release_no)),
+           p.zip, s.settings, (target.created_at AT TIME ZONE 'UTC')::date, target.row_count, target.attempts + 1
       FROM screening_upload u
       JOIN screening_prospect p ON p.id = u.prospect_id
       JOIN screening_place_of_service_split s ON s.id = target.place_of_service_split_id
@@ -644,7 +676,7 @@ $$;
 
 -- The pinned release's rule records as the engine reads them (with the stored SHA-256 the traces name), the
 -- locality map limited to the run's ZIP; only for a run being priced, and only while the release's manifest is
--- the one the run pinned.
+-- the one the run pinned and the release is not withdrawn (content known to be wrong prices nothing).
 CREATE FUNCTION operator_screening_release(run uuid)
 RETURNS TABLE (record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
@@ -655,6 +687,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
     JOIN rule_release rl ON rl.release_no = r.release_no AND rl.manifest_sha256 = r.release_manifest_sha256 AND rl.published_at IS NOT NULL
     JOIN rule_record rr ON rr.release_no = r.release_no
    WHERE r.id = $1 AND r.status = 'pricing'
+     AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
      AND (rr.record_type <> 'locality_map' OR rr.key = jsonb_build_object('zip', p.zip))
    ORDER BY rr.record_type, rr.effective_from, rr.id
 $$;
@@ -674,14 +707,15 @@ $$;
 -- Records what pricing found for up to 5,000 pending rows of a run being priced; the arrays are the rows' fields in
 -- order. Returns how many rows it recorded (a row already recorded is left as it is).
 CREATE FUNCTION operator_screening_record(run uuid, row_nos integer[], dispositions text[], expected_line_cents bigint[], expected_line_unrounded numeric[],
-  expected_cents bigint[], difference_cents bigint[], unpriced_reasons text[], unpriced_details text[], trace_sha256s text[]) RETURNS integer
+  expected_cents bigint[], difference_cents bigint[], in_reduction_pools boolean[], unpriced_reasons text[], unpriced_details text[], trace_sha256s text[]) RETURNS integer
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   n integer := coalesce(cardinality($2), 0);
   recorded integer;
 BEGIN
   IF n > 5000 OR coalesce(cardinality($3), 0) <> n OR coalesce(cardinality($4), 0) <> n OR coalesce(cardinality($5), 0) <> n OR coalesce(cardinality($6), 0) <> n
-     OR coalesce(cardinality($7), 0) <> n OR coalesce(cardinality($8), 0) <> n OR coalesce(cardinality($9), 0) <> n OR coalesce(cardinality($10), 0) <> n THEN
+     OR coalesce(cardinality($7), 0) <> n OR coalesce(cardinality($8), 0) <> n OR coalesce(cardinality($9), 0) <> n OR coalesce(cardinality($10), 0) <> n
+     OR coalesce(cardinality($11), 0) <> n THEN
     RAISE EXCEPTION 'at most 5,000 rows at a time, every field with a value for each' USING ERRCODE = 'check_violation';
   END IF;
   PERFORM 1 FROM screening_run r WHERE r.id = $1 AND r.status = 'pricing' FOR SHARE;
@@ -690,8 +724,8 @@ BEGIN
   END IF;
   UPDATE screening_result s
      SET disposition = f.disposition, expected_line_cents = f.line_cents, expected_line_unrounded = f.line_unrounded, expected_cents = f.total_cents,
-         difference_cents = f.difference, unpriced_reason = f.reason, unpriced_detail = f.detail, trace_sha256 = f.trace
-    FROM unnest($2, $3, $4, $5, $6, $7, $8, $9, $10) AS f (row_no, disposition, line_cents, line_unrounded, total_cents, difference, reason, detail, trace)
+         difference_cents = f.difference, in_reduction_pool = f.pooled, unpriced_reason = f.reason, unpriced_detail = f.detail, trace_sha256 = f.trace
+    FROM unnest($2, $3, $4, $5, $6, $7, $8, $9, $10, $11) AS f (row_no, disposition, line_cents, line_unrounded, total_cents, difference, pooled, reason, detail, trace)
    WHERE s.run_id = $1 AND s.row_no = f.row_no AND s.disposition = 'pending';
   GET DIAGNOSTICS recorded = ROW_COUNT;
   RETURN recorded;
@@ -774,21 +808,21 @@ REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_s
 
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
   screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_split_in_force(), screening_status(),
-  screening_zip_status(text), submit_screening(text, text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
-  reject_screening_upload(text, text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
+  screening_zip_status(text), submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
+  reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
   operator_screening_rows(uuid, integer, integer),
-  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[]),
+  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], text[], text[], text[]),
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
-  submit_screening(text, text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
-  reject_screening_upload(text, text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
+  submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], text),
+  reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb) TO tp_app;
 
 GRANT EXECUTE ON FUNCTION operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
   operator_screening_rows(uuid, integer, integer),
-  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[]),
+  operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], text[], text[], text[]),
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) TO tp_operator;
