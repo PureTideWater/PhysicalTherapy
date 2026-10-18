@@ -259,7 +259,8 @@ export const screeningSubmit = publicRoute({
     zipPlusFour: field(16),
     contactEmail: field(320),
     fileSha256: field(64),
-    headers: field(SCREENING_MAX_HEADER_CELLS * (SCREENING_MAX_HEADER_LENGTH + 8) + 2),
+    // The header cells as JSON: at most 64 of 200 characters, each escaped at worst to six.
+    headers: field(SCREENING_MAX_HEADER_CELLS * (SCREENING_MAX_HEADER_LENGTH * 6 + 3) + 2),
     rowCount: field(12),
     rows: field(SCREENING_MAX_ROWS_TEXT),
   }),
