@@ -7,7 +7,9 @@ report must say: every line's expected allowed amount under its plan's fixed sch
 and dispute window; the anomaly cohorts of the lines that cannot be priced (same payer and plan, code
 and modifier set, place of service and quarter, at least the minimum cohort; the mode per unit; the
 lines short of the mode by more than the threshold; an investigatory range); the judgement from
-validated to actionable on the triage date (per-line materiality, the window open on that date);
+validated to actionable on the triage date (per-line materiality, the window open on that date, and its
+deadline verified: a contract line's only when its contract states where its dispute window is written,
+the page and its words, which the specialist cites and verifies; reconciliation-001 D17 a);
 cases by payer pattern at or above the case materiality; the pursuit-cost estimate from the
 practice's settings; and the headline of three numbers with flagged and validated below.
 
@@ -50,7 +52,7 @@ NUMBER_COLUMNS = {"line_no", "units", "billed", "observed_allowed", "expected_al
 MODIFIERS = ["GP"]
 PLACE_OF_SERVICE = "11"
 BEHAVIOR = "BELOW_CONTRACT_RATE"  # a fixed schedule paid below its amount: no other behavior applies
-NOT_ACTIONABLE_ORDER = ["BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "VERSION_NOT_SIGNED_OFF", "BELOW_CASE_MATERIALITY"]
+NOT_ACTIONABLE_ORDER = ["BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "DEADLINE_UNVERIFIED", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "VERSION_NOT_SIGNED_OFF", "BELOW_CASE_MATERIALITY"]
 
 
 class InputsError(Exception):
@@ -146,6 +148,8 @@ def compute(inputs):
         line["expected"] = rates[line["code"]] * line["units"]
         line["variance"] = line["expected"] - line["allowed"]
         line["window"] = paid_on + datetime.timedelta(days=plan["contract"]["dispute_window_days"])
+        # A contract window is a verified deadline only when the contract says where it is written (D17 a).
+        line["deadline_verified"] = "dispute_window_evidence" in plan["contract"]
         # The report must not depend on the triage date within the stable range.
         if stable_from <= line["window"] < stable_to:
             raise InputsError(f"{line['claim']}: its window ends inside the stable range")
@@ -198,6 +202,8 @@ def compute(inputs):
             line["reasons"].append("BELOW_LINE_MATERIALITY")
         if line["window"] < judged_on:
             line["reasons"].append("WINDOW_PASSED")
+        if not line["deadline_verified"]:
+            line["reasons"].append("DEADLINE_UNVERIFIED")
         # One rate record per code under a fixed schedule: the pattern is the plan and the code.
         patterns.setdefault((line["plan_name"], line["code"]), []).append(line)
     cases = []
@@ -296,6 +302,9 @@ def compute(inputs):
     ]
     overpaid = [line for line in lines if line["variance"] is not None and line["variance"] < 0]
     gaps = [{"kind": "unpriced", "reason": entry["reason"], "lines": entry["lines"], "charge_cents": str(entry["charge_cents"])} for entry in reasons.values()]
+    unverified = [line for line in validated if "DEADLINE_UNVERIFIED" in line["reasons"]]
+    if unverified:
+        gaps.append({"kind": "deadline_unverified", "reason": "DEADLINE_UNVERIFIED", "lines": len(unverified), "charge_cents": str(sum(line["charge"] for line in unverified))})
     if pursuit is None:
         gaps.append({"kind": "pursuit_settings", "reason": None, "lines": 0, "charge_cents": None})
     report = OrderedDict([
@@ -360,11 +369,16 @@ def main(argv):
             if args.command == "write":
                 with open(target, "w", encoding="utf-8", newline="") as handle:
                     handle.write(content)
-                print(f"wrote {target.relative_to(REPOSITORY)}")
+                print(f"wrote {shown(target)}")
             elif not target.exists() or read_exact(target) != content:
                 differs += 1
-                print(f"differs: {target.relative_to(REPOSITORY)}")
+                print(f"differs: {shown(target)}")
     return 1 if differs else 0
+
+
+def shown(path: Path) -> str:
+    """A path as the repository names it, or as it is when it lies outside (a scratch copy of the inputs)."""
+    return str(path.relative_to(REPOSITORY)) if path.is_relative_to(REPOSITORY) else str(path)
 
 
 def read_exact(path: Path) -> str:

@@ -23,6 +23,11 @@ export const AUDIT_INPUTS_FORMAT = 'tp-audit-inputs/1';
 export interface AuditContract {
   readonly effective_from: string;
   readonly dispute_window_days: number;
+  /**
+   * Where the contract states its dispute window (D17 a): the page and its exact words, which the specialist cites
+   * and verifies. Without it the contract's lines have no verified deadline and are not actionable.
+   */
+  readonly dispute_window_evidence?: { readonly page: number; readonly quote: string };
   readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];
 }
 
@@ -94,6 +99,14 @@ export function readAuditInputs(file: string): AuditInputs {
     check(plan.mapping !== 'contract' || plan.contract !== undefined, `${file}: plan ${plan.key} is mapped to a contract without one`);
     for (const rate of plan.contract?.schedule ?? []) {
       check(isCents(rate.amount_cents), `${file}: plan ${plan.key} ${rate.code}: amount_cents is integer cents as text`);
+    }
+    const evidence = plan.contract?.dispute_window_evidence;
+    if (evidence !== undefined) {
+      check(Number.isInteger(evidence.page) && evidence.page >= 1, `${file}: plan ${plan.key}: the window's evidence names a page from 1`);
+      check(
+        typeof evidence.quote === 'string' && evidence.quote.includes(`${String(plan.contract?.dispute_window_days)} days`),
+        `${file}: plan ${plan.key}: the window's evidence quotes the contract's own days`,
+      );
     }
   }
   for (const group of inputs.groups) {

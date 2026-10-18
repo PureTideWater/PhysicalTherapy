@@ -30,6 +30,7 @@
       "contract": {
         "effective_from": "2026-01-01",
         "dispute_window_days": 3650,
+        "dispute_window_evidence": { "page": 1, "quote": "Disputes are raised within 3650 days of the remittance." },
         "schedule": [
           { "code": "97110", "amount_cents": "5000" },
           { "code": "97530", "amount_cents": "5200" }
@@ -42,6 +43,7 @@
       "contract": {
         "effective_from": "2026-01-01",
         "dispute_window_days": 30,
+        "dispute_window_evidence": { "page": 1, "quote": "Disputes are raised within 30 days of the remittance." },
         "schedule": [{ "code": "97110", "amount_cents": "5000" }]
       }
     },

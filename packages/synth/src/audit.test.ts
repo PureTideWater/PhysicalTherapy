@@ -47,6 +47,11 @@ describe('the synthetic audits', () => {
       expect(() => readAuditInputs(write({ ...inputs, payer: { key: 'AUD', name: 'A REAL PAYER' } }))).toThrow(/SYNTHETIC/);
       expect(() => readAuditInputs(write({ ...inputs, groups: [{ plan: 'NOPLAN', code: '97110', units: 1, unit_charge_cents: '100', allowed_cents: '100', count: 1, first_service_date: '2026-03-02', note: '' }] }))).toThrow(/unknown plan/);
       expect(() => readAuditInputs(write({ ...inputs, format: 'other' }))).toThrow(/tp-audit-inputs/);
+      // A contract window's evidence names a page and quotes the contract's own days (D17 a).
+      const [fixed, ...others] = inputs.plans as { readonly contract?: object }[];
+      const withEvidence = (evidence: object) => ({ ...inputs, plans: [{ ...fixed, contract: { ...fixed?.contract, dispute_window_evidence: evidence } }, ...others] });
+      expect(() => readAuditInputs(write(withEvidence({ page: 0, quote: 'Disputes are raised within 3650 days of the remittance.' })))).toThrow(/names a page/);
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote: 'Disputes are raised within 90 days of the remittance.' })))).toThrow(/own days/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

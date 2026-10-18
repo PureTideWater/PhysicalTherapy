@@ -230,6 +230,35 @@ describe('generating an audit report (PRD 4, Audit v0)', () => {
     expect(new Set(lines.map((line) => line[column('counted_as')]))).toEqual(new Set(['unpriced']));
   }, 120_000);
 
+  it('counts a pattern whose contract window is uncited as validated, not actionable: DEADLINE_UNVERIFIED, and names the gap (D17 a)', async () => {
+    const practice = await w.practice('report CAS-03 uncited');
+    await w.load(practice, 'CAS-03/remit.835');
+    const one = await w.fixedContract(practice, FIXED);
+    const two = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }], windowCited: false });
+    const runId = await w.pricedRun(practice, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: one.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: two.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    const id = await w.requestReport(practice, runId);
+    expect((await w.generate(practice, id)).outcome).toBe('ready');
+    const row = await report(practice, id);
+    const content = row.content as AuditReportContent;
+    // The verified window's case alone is actionable; both patterns validate as before, at their prices.
+    expect(content.headline).toMatchObject({ actionable_cents: '28000', actionable_lines: 8, validated_lines: 16 });
+    expect(content.cases.map((item) => item.plan)).toEqual(['CE:SYNPLAN-FIX-ONE']);
+    expect(content.validated.not_actionable).toEqual([{ reason: 'DEADLINE_UNVERIFIED', lines: 8, variance_cents: '27200' }]);
+    expect(content.evidence_gaps).toContainEqual(expect.objectContaining({ kind: 'deadline_unverified', reason: 'DEADLINE_UNVERIFIED', lines: 8 }));
+    const [, ...lines] = csvRows(await w.stored(practice, row.csv_key ?? ''));
+    const column = (name: (typeof CSV_COLUMNS)[number]) => CSV_COLUMNS.indexOf(name);
+    expect(new Set(lines.filter((line) => line[column('plan')] === 'CE:SYNPLAN-FIX-TWO').map((line) => `${String(line[column('counted_as')])} ${String(line[column('reasons')])}`))).toEqual(
+      new Set(['not_actionable DEADLINE_UNVERIFIED']),
+    );
+  }, 120_000);
+
   it('keeps a report’s numbers when a line is reopened after it (CAS-07)', async () => {
     const { practice, runId } = await cas03('report CAS-07');
     // Triage, then write a line of plan one off before the first report.

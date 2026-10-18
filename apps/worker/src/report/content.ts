@@ -107,7 +107,7 @@ export interface ReportAnomaly {
 }
 
 export interface EvidenceGap {
-  readonly kind: 'unpriced' | 'no_window' | 'ma_confirmation' | 'pursuit_settings';
+  readonly kind: 'unpriced' | 'no_window' | 'deadline_unverified' | 'ma_confirmation' | 'pursuit_settings';
   readonly reason: string | null;
   readonly lines: number;
   readonly charge_cents: string | null;
@@ -602,6 +602,18 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       charge_cents: text(sum(noWindow.map((line) => line.charge_cents))),
       detail: 'No dispute window is known for these validated lines: the contract states none and the release has no default for them',
       remedy: 'Obtain the contract’s dispute terms',
+    });
+  }
+  const unverified = validated.filter((line) => line.reasons.includes('DEADLINE_UNVERIFIED'));
+  if (unverified.length > 0) {
+    gaps.push({
+      kind: 'deadline_unverified',
+      reason: 'DEADLINE_UNVERIFIED',
+      lines: unverified.length,
+      charge_cents: text(sum(unverified.map((line) => line.charge_cents))),
+      detail:
+        'The dispute deadline of these validated lines is not verified (D17 a): their contract’s window is not cited and verified on its page, or the release’s window is its commercial default or below L2, so they are not actionable',
+      remedy: 'Have the contract specialist cite the contract’s dispute window on its page and verify it, then sign off the version',
     });
   }
   const maCases = openCases.filter((item) => item.mapping_kind === 'ma_noncontracted');

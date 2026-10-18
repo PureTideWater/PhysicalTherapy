@@ -4,12 +4,12 @@ import path from 'node:path';
 import { independenceClaim } from '@paidwhole/brand';
 import { readDocumentPages } from '@tp/contracts/pages';
 import { UNPRICED_REASONS } from '@tp/pricing';
-import { STAGE_LABELS } from '@tp/triage';
+import { NOT_ACTIONABLE_REASONS, STAGE_LABELS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import type { ReportLine } from './content';
 import { CSV_COLUMNS, auditCsv, csvDocument, csvNumber, csvText } from './csv';
-import { auditHtml, auditReconciliation, escapeHtml } from './html';
+import { auditHtml, auditReconciliation, escapeHtml, reasonText } from './html';
 import { ChromiumPdfRenderer, chromiumInstalled } from './pdf';
 import { UNPRICED_REMEDIES } from './remedies';
 import { CONTENT } from './test-support/audit-content';
@@ -147,6 +147,16 @@ describe('the report HTML', () => {
     expect(without).toContain('No pattern reaches the case materiality yet.');
     expect(without).toContain('No cohort reaches the minimum size');
     expect(without).toContain('Every line priced.');
+  });
+});
+
+describe('why a validated line is not actionable, in words', () => {
+  it('names every reason triage gives, the unverified deadline among them (D17 a)', () => {
+    expect(reasonText('DEADLINE_UNVERIFIED')).toBe('Deadline not verified');
+    // The report judges its lines as not written off; a written-off case line is named by its write-off reason.
+    for (const reason of NOT_ACTIONABLE_REASONS.filter((item) => item !== 'WRITTEN_OFF')) {
+      expect(reasonText(reason), reason).not.toBe(reason);
+    }
   });
 });
 

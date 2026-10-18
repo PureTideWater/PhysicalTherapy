@@ -16,7 +16,7 @@ import { dryRun } from './dry-run';
 import { type AffectedRun, type PricingRunSource, diffRecords, impactLines, recordChangeLines, releaseContents, releaseDirectory, runImpactLines } from './impact';
 import { loadDirectoryRefusal } from './load-directory';
 import { previousPublishedRelease } from './rollback';
-import { RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR, renderRerunRelease, renderSyntheticRelease } from './synthetic';
+import { DEADLINE_RELEASE_DIR, RERUN_RELEASE_DIR, SYNTHETIC_RELEASE_DIR, renderDeadlineRelease, renderRerunRelease, renderSyntheticRelease } from './synthetic';
 
 let root = '';
 
@@ -320,11 +320,37 @@ describe('the synthetic release fixtures', () => {
     for (const [dir, files] of [
       [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
       [RERUN_RELEASE_DIR, renderRerunRelease()],
+      [DEADLINE_RELEASE_DIR, renderDeadlineRelease()],
     ] as const) {
       for (const [file, text] of files) {
         expect(readFileSync(path.join(repositoryRoot, dir, file), 'utf8'), file).toBe(text);
       }
     }
+  });
+
+  it('give release 900005 the three Medicare dispute windows at L2, with their values, source and quotes and an independent second pass, and nothing else (D17 a)', () => {
+    const first = readRelease(path.join(repositoryRoot, SYNTHETIC_RELEASE_DIR)).records.map((located) => located.record);
+    const deadline = readRelease(path.join(repositoryRoot, DEADLINE_RELEASE_DIR));
+    expect(deadline.problems).toEqual([]);
+    expect(deadline.manifest.release).toBe(900_005);
+    const records = deadline.records.map((located) => located.record);
+    // The same rules: no record added, removed or of another value.
+    expect(diffRecords(first, records)).toEqual([]);
+    const windows = records.filter((record) => record.record_type === 'dispute_window');
+    expect(windows.map((record) => [record.key, record.verification.level])).toEqual([
+      [{ program: 'medicare', window: 'timely_filing' }, 'L2'],
+      [{ program: 'medicare', window: 'redetermination' }, 'L2'],
+      [{ program: 'medicare', window: 'reconsideration' }, 'L2'],
+    ]);
+    for (const record of windows) {
+      const before = first.find((other) => other.record_type === 'dispute_window' && JSON.stringify(other.key) === JSON.stringify(record.key));
+      expect([record.value, record.source, record.quotes]).toEqual([before?.value, before?.source, before?.quotes]);
+      expect(record.verification.by).not.toBe(record.source.method === 'hand_typed' ? record.source.transcribed_by : '');
+    }
+    // Every other record is 900001's, level and all.
+    expect(records.filter((record) => record.record_type !== 'dispute_window').map((record) => record.verification.level)).toEqual(first.filter((record) => record.record_type !== 'dispute_window').map((record) => record.verification.level));
+    expect(checkContent(repositoryRoot, [DEADLINE_RELEASE_DIR]).problems).toEqual([]);
+    expect(listFiles(repositoryRoot, DEADLINE_RELEASE_DIR).map((file) => path.relative(DEADLINE_RELEASE_DIR, file).split(path.sep).join('/')).sort()).toEqual([...renderDeadlineRelease().keys()].sort());
   });
 
   it('give release 900004 one changed record against 900001, the 97110 relative value, and it passes the content checker', () => {

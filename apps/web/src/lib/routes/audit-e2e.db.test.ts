@@ -4,7 +4,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, signOffVersion } from '@tp/contracts';
+import {
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  signOffVersion,
+  verifyDisputeWindow,
+} from '@tp/contracts';
 import { documentPages, readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, provisionPracticeKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
@@ -59,7 +71,13 @@ interface Inputs {
   readonly plans: readonly {
     readonly key: string;
     readonly mapping: 'contract' | 'no_agreement';
-    readonly contract?: { readonly effective_from: string; readonly dispute_window_days: number; readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[] };
+    readonly contract?: {
+      readonly effective_from: string;
+      readonly dispute_window_days: number;
+      /** Where the contract states its window, which the specialist cites and verifies (D17 a). */
+      readonly dispute_window_evidence?: { readonly page: number; readonly quote: string };
+      readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];
+    };
   }[];
 }
 
@@ -303,7 +321,10 @@ function as<T>(actorId: string, run: (context: WorkflowContext) => Promise<T>): 
 
 const quoteFor = (code: string, amountCents: string) => `${code} is paid ${formatCents(parseCents(amountCents))} per unit`;
 
-/** A plan's contract as inputs.json states it: abstracted by the specialist, signed off by the billing manager. */
+/**
+ * A plan's contract as inputs.json states it: abstracted by the specialist, its dispute window cited on the page the
+ * inputs name and verified against it (D17 a, as the worksheet reads it), signed off by the billing manager.
+ */
 async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['contract']>, payerId: string): Promise<string> {
   const documentId = randomUUID();
   await asOwner(owner, [practiceId], () =>
@@ -339,6 +360,11 @@ async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['
       for (const field of RATE_RECORD_FIELDS) {
         await approveRateRecordField(context, { practiceId, rateRecordId, field });
       }
+    }
+    const window = contract.dispute_window_evidence;
+    if (window !== undefined) {
+      await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: window.page, quote: window.quote } });
+      expect(await verifyDisputeWindow(context, { practiceId, versionId })).toMatchObject({ verified: true });
     }
     await approveVersion(context, { practiceId, versionId });
   });
