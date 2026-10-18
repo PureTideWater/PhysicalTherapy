@@ -33,6 +33,7 @@ proves recovery by reconciling later remittances to posting and deposits.
 - pnpm verify-content; pnpm lint; pnpm typecheck; pnpm lint:logs; pnpm synth (generate fixtures)
 
 ## Conventions
+- The founder's standing rule (2026-10-18): recommend and build only the best option, never weighted by build effort, judged on accuracy, quality, user experience, growth, security and privacy, compliance, reliability, cost to serve, dispute success, time to value, resilience to change, AI safety, maintainability and business readiness.
 - Five line stages: flagged | validated | actionable | payer_approved | recovered. Monotonic; reopen is explicit.
 - Unpriced reasons are the closed list in docs/product/unpriced-reasons.md. Never a guessed price.
 - Medicare adjustment flags (apply_mppr, apply_assistant_reduction, apply_sequestration, apply_ncci) default
@@ -49,6 +50,7 @@ proves recovery by reconciling later remittances to posting and deposits.
 - Schema gate (CO-02):
   - Milestone 1 does not start until the founder approves `docs/product/domain-model.md`.
   - No migration merges unless `docs/product/domain-model.md` is regenerated in the same pull request and its approval line carries the founder's name, a date and the hash of that text (`pnpm db:domain-model --check --require-approval`).
+  - The approval of record is the founder's APPROVED GitHub review of the pull request's latest commit, enforced by the approval-of-record job once `APPROVAL_REVIEW_REQUIRED` is true (docs/adr/0063); open the pull request with `pnpm db:domain-model --summary-since <base>` and never write the approval line or approvers.json yourself.
 
 ## Where things are
 - Parser: packages/edi835. Engine: packages/pricing. Contracts: packages/contracts. Rules: packages/rules.
