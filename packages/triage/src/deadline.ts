@@ -6,15 +6,16 @@ import { VERIFICATION_LEVELS, type VerificationLevel } from '@tp/rules';
  * approved 2026-10-17; docs/adr/0061). A deadline is verified only from a source a person signed off:
  *
  * - a release window (Medicare redetermination for a Medicare Advantage non-contracted line): the rule record the
- *   trace names (its release and SHA-256) is Medicare's and at the minimum level or higher, L2 for actionability
- *   and the export, L3 for the E3 gate (PR 9). The release's commercial_default, the window a silent contract
- *   falls back to, is never verified, whatever its level;
+ *   trace names (its release and SHA-256) is Medicare's, of a release not withdrawn, and at the minimum level or
+ *   higher, L2 for actionability and the export, L3 for the E3 gate (PR 9). The release's commercial_default, the
+ *   window a silent contract falls back to, is never verified, whatever its level;
  * - a contract window: the version the trace names is signed off, its dispute window cited with a document, a
  *   page, a quote and a hash (contract_version.dispute_window_evidence) and verified by a contract specialist, and
  *   its days are the trace's length, in days.
  *
- * Derived from the stored trace (steps.window and agreement.contract_version_id) and two facts the worker reads
- * beside it (apps/worker/src/triage/deadline.ts): the release record's level and the version's window. The engine
+ * Derived from the stored trace (steps.window and agreement.contract_version_id) and the facts the worker reads
+ * beside it (apps/worker/src/triage/deadline.ts): the release record's level, whether its release was withdrawn,
+ * and the version's window. The engine
  * is untouched and nothing here is a price: DEADLINE_UNVERIFIED is a reason a validated line is not actionable
  * (actionable.ts), never an unpriced reason. Pure: no database, clock or network. The database holds the same
  * rule in priced_line_deadline_status(), case_next_window_deadline_status() and packet_version_deadline_status()
@@ -30,6 +31,8 @@ export const DEADLINE_UNVERIFIED_CAUSES = [
   'COMMERCIAL_DEFAULT',
   /** The release the trace names holds no dispute-window record of the trace's SHA-256. */
   'RECORD_NOT_IN_RELEASE',
+  /** The release the record belongs to was withdrawn (rule_release_withdrawal): its content was wrong, so no one stands behind the record. */
+  'RELEASE_WITHDRAWN',
   /** The record is below the minimum level (L2, or L3 for E3). */
   'RECORD_BELOW_LEVEL',
   /** The contract version's window carries no complete citation (document, page, quote and hash). */
@@ -42,6 +45,8 @@ export const DEADLINE_UNVERIFIED_CAUSES = [
   'CONTRACT_WINDOW_DIFFERS',
   /** The next dispute level's window comes from a contract's appeal levels, which carry no evidence. */
   'NEXT_LEVEL_UNCITED',
+  /** The reconsideration record in force now does not give the next level's stored end from the denial: it is not the record the date came from. */
+  'NEXT_LEVEL_DIFFERS',
 ] as const;
 export type DeadlineUnverifiedCause = (typeof DEADLINE_UNVERIFIED_CAUSES)[number];
 
@@ -81,6 +86,8 @@ export interface DeadlineInput {
   readonly trace: DeadlineTrace;
   /** The level of the rule record named by the trace's release number and steps.window.record.sha256; null when the release holds none. */
   readonly recordLevel: VerificationLevel | null;
+  /** Whether the release the trace names was withdrawn (a rule_release_withdrawal row): its records verify nothing. */
+  readonly releaseWithdrawn: boolean;
   /** The version named by agreement.contract_version_id; null when there is none or it cannot be read. */
   readonly contractWindow: ContractWindowFacts | null;
   readonly minimumLevel?: DeadlineMinimumLevel;
@@ -141,6 +148,9 @@ export function deadlineVerification(input: DeadlineInput): DeadlineVerification
     if (program !== 'medicare' || level === null) {
       return unverified('RECORD_NOT_IN_RELEASE');
     }
+    if (input.releaseWithdrawn) {
+      return unverified('RELEASE_WITHDRAWN');
+    }
     if (!levelAtLeast(level, minimum)) {
       return unverified('RECORD_BELOW_LEVEL');
     }
@@ -167,8 +177,13 @@ export function deadlineVerification(input: DeadlineInput): DeadlineVerification
 export interface NextLevelDeadlineInput {
   /** contract: the version's appeal levels; regulation: the Medicare reconsideration window (Medicare Advantage non-contracted). */
   readonly basis: 'contract' | 'regulation';
-  /** The reconsideration record's level (the release in force on the day the reopening denial was received); null when none is in force. */
+  /** The level of the reconsideration record in force now (the release in force, on the day the reopening denial was received); null when none is. */
   readonly recordLevel: VerificationLevel | null;
+  /**
+   * The end that record gives from the reopening denial (case_next_dispute_window() read now); null when it gives none.
+   * The deadline is verified only when it is the stored end: otherwise the date came from another record.
+   */
+  readonly recordEndsOn: string | null;
   /** The next level's window end (payer_response.next_window_ends_on). */
   readonly endsOn: string | null;
   readonly minimumLevel?: DeadlineMinimumLevel;
@@ -177,7 +192,8 @@ export interface NextLevelDeadlineInput {
 /**
  * The deadline of a dispute's next level, after a denial reopened the case (dispute level 2 and above): a contract's
  * appeal levels carry no page, quote or hash, so they are never verified; the regulation's reconsideration window is
- * verified as a release window is.
+ * verified as a release window is, from the record that gives the stored end: one that gives another end (a later
+ * release's, say) is not the record the date came from (NEXT_LEVEL_DIFFERS).
  */
 export function nextLevelDeadlineVerification(input: NextLevelDeadlineInput): DeadlineVerification {
   if (input.basis === 'contract') {
@@ -186,6 +202,9 @@ export function nextLevelDeadlineVerification(input: NextLevelDeadlineInput): De
   const level = input.recordLevel;
   if (level === null) {
     return { status: 'unverified', source: 'release', endsOn: input.endsOn, level, cause: 'RECORD_NOT_IN_RELEASE' };
+  }
+  if (input.endsOn === null || input.recordEndsOn !== input.endsOn) {
+    return { status: 'unverified', source: 'release', endsOn: input.endsOn, level, cause: 'NEXT_LEVEL_DIFFERS' };
   }
   if (!levelAtLeast(level, input.minimumLevel ?? DEFAULT_DEADLINE_LEVEL)) {
     return { status: 'unverified', source: 'release', endsOn: input.endsOn, level, cause: 'RECORD_BELOW_LEVEL' };

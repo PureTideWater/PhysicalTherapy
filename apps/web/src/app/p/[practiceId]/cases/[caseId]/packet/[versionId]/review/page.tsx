@@ -33,7 +33,18 @@ export default async function PacketReviewPage(props: Props) {
   const { practiceId, review, checklist, notice } = page.data;
   const path = `/p/${practiceId}/cases/${review.caseId}/packet/${review.versionId}/review`;
   const { content } = review;
-  const blocked = review.exportedAt === null ? 'not_exported' : !review.current ? 'not_current' : review.deadlineNow === 'unverified' ? 'deadline_unverified' : review.viewerTookPart ? 'took_part' : null;
+  const blocked =
+    review.exportedAt === null
+      ? 'not_exported'
+      : !review.current
+        ? 'not_current'
+        : !review.atCaseLevel
+          ? 'stale_level'
+          : review.deadlineNow === 'unverified'
+            ? 'deadline_unverified'
+            : review.viewerTookPart
+              ? 'took_part'
+              : null;
   return (
     <AppShell shell={page.shell} section="packet_reviews">
       <div className="flex flex-col gap-1">
@@ -48,6 +59,14 @@ export default async function PacketReviewPage(props: Props) {
           {review.approvedAt === null ? '; not approved.' : `; approved ${utc(review.approvedAt)} by ${review.approvedBy ?? 'a person of the practice'}${review.approvedAlone ? ' (alone, flagged)' : ''}.`}
         </p>
       </div>
+      {review.approvedAlone ? (
+        <Alert data-approved-alone="true">
+          <AlertTitle>Approved alone</AlertTitle>
+          <AlertDescription>
+            No one else in the practice approves packets, so the person who wrote this version approved it alone, 24 hours after writing it. Your attestation is the only check of this export by a person who did not write it.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       {notice === 'attested' ? (
         <Alert data-notice="attested">
           <AlertDescription>The export is attested. The practice may now log its submission.</AlertDescription>
@@ -137,9 +156,11 @@ export default async function PacketReviewPage(props: Props) {
                   ? 'The version is not exported yet.'
                   : blocked === 'not_current'
                     ? 'A later version of the packet was written; only the current version’s export is attested.'
-                    : blocked === 'deadline_unverified'
+                    : blocked === 'stale_level'
+                      ? 'The payer’s denial reopened the case for its next dispute level after this version was written, so it states the earlier level’s deadline and its export is not attested. The practice writes the packet again at this level.'
+                      : blocked === 'deadline_unverified'
                       ? 'Its deadline is not verified now, so the export is not attested.'
-                      : 'You drafted, wrote or approved this packet: another reimbursement reviewer attests it.'}
+                        : 'You drafted, wrote or approved a version of this packet: another reimbursement reviewer attests it.'}
               </AlertDescription>
             </Alert>
           ) : (

@@ -20,6 +20,8 @@ const sorted = (facts: NarrativeFacts) => ({
   codes: [...facts.codes].sort(),
   modifiers: [...facts.modifiers].sort(),
   numbers: [...facts.numbers].sort(),
+  dayCounts: [...facts.dayCounts].sort(),
+  pages: [...facts.pages].sort(),
   identifiers: [...facts.identifiers].sort(),
   rows: facts.rows,
   markers: [...facts.markers].sort((a, b) => a - b),
@@ -147,7 +149,6 @@ describe('narrativeFacts', () => {
         '25', // the pattern's units
         '3', // the schedule's lines, claims and patients
         '33', // interest: days to pay
-        '3650', // the contract window: its days, and its quoted clause (tp-packet/2)
         '4.2', // the quote's section
         '5', // the dispute level
         '6', // the contract version
@@ -161,6 +162,9 @@ describe('narrativeFacts', () => {
         '900002', // the rule releases
         '900003', // the interest's release
       ],
+      // The contract window (tp-packet/2): its days and its quoted clause's numbers as days only, its page as a page only.
+      dayCounts: ['3650'],
+      pages: ['1'],
       identifiers: ['1-2-3', '7-8-9', 'CE:SYNPLAN-63', 'month:2026-05', 'month_day:06-03'], // the statute, the quote, the plan key, the quote's month and day
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6, 7, 8],
@@ -187,6 +191,8 @@ describe('narrativeFacts', () => {
       codes: ['97110'],
       modifiers: [],
       numbers: ['1', '2', '2026', '2036', '3', '33', '6', '71', '72', '900001'],
+      dayCounts: [],
+      pages: [],
       identifiers: ['1-2-3'],
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6],
@@ -200,7 +206,11 @@ describe('narrativeFacts', () => {
     const facts = narrativeFacts(earlier);
     expect(facts.amounts.has('1400')).toBe(false);
     expect(facts.numbers.has('3650')).toBe(false);
+    expect(facts.dayCounts.size + facts.pages.size).toBe(0);
     expect(narrativeFacts(current).amounts.has('1400')).toBe(true);
+    // A tp-packet/2 version's window days are days only, never a number of any other kind.
+    expect(narrativeFacts(current).numbers.has('3650')).toBe(false);
+    expect(narrativeFacts(current).dayCounts.has('3650')).toBe(true);
     expect([...facts.dates].sort()).toEqual([...narrativeFacts(current).dates].sort());
   });
 });

@@ -13,6 +13,7 @@ import type { TriageJobContext } from '../triage/execute';
 import { packetCsv } from './csv';
 import { packetHtml } from './html';
 import { scheduleIdentifiers } from './identifiers';
+import { statesItsInputs } from './records';
 
 /**
  * The packet export job (PRD 12: "Identifiers ... inserted from the record at export"; "Export
@@ -26,12 +27,16 @@ import { scheduleIdentifiers } from './identifiers';
  * version already exported is left as it is (JOB-01); one not approved, no longer current or whose case
  * changed is refused at once, since no attempt changes that.
  *
- * CO-05 (docs/adr/0061): the export is refused, and no file written, when the version's deadline is not
- * verified, derived again now both by the database (packet_version_deadline_status, which also refuses the
- * export's UPDATE) and here (the lines' deadlines from their traces and their windows' evidence, or the
- * next level's), never read from what the version stated; and when the verifier, run again over exactly the
- * narrative and content the PDF and CSV are printed from and against the schedule rows' identifiers read
- * now, fails it. Its report is stored with the export. The SHA-256 recorded is of the exact bytes printed,
+ * CO-05 (docs/adr/0061): the export is refused, and no file written, when the version is not of the case's
+ * dispute level now (one written before a denial reopened the case states the earlier level's deadline);
+ * when the version's deadline is not verified, derived again now both by the database
+ * (packet_version_deadline_status, which also refuses the export's UPDATE) and here (the lines' deadlines
+ * from their traces and their windows' evidence, or the next level's), never read from what the version
+ * stated; when the version does not state its deadlines and calculations exactly as its inputs give them
+ * now (each line's calculation copied again from its trace with the trace's SHA-256, each deadline and its
+ * sources derived again: what is printed is what the inputs hold); and when the verifier, run again over
+ * exactly the narrative and content the PDF and CSV are printed from and against the schedule rows'
+ * identifiers read now, fails it. Its report is stored with the export. The SHA-256 recorded is of the exact bytes printed,
  * and the store must have sealed exactly those bytes (its plaintext hash) before the version records them.
  */
 
@@ -41,7 +46,7 @@ export interface PacketExportServices {
   readonly pdf: PdfRenderer;
 }
 
-export type PacketExportRefusal = 'not_approved' | 'not_current' | 'case_changed' | 'deadline_unverified' | 'verifier_failed';
+export type PacketExportRefusal = 'not_approved' | 'not_current' | 'case_changed' | 'not_case_level' | 'deadline_unverified' | 'inputs_differ' | 'verifier_failed';
 
 export type PacketExportOutcome =
   | { readonly outcome: 'exported'; readonly pdfSha256: string; readonly csvSha256: string; readonly verifier: VerifierReport }
@@ -89,6 +94,7 @@ interface ExportRow {
   readonly exported_at: Date | null;
   readonly current: boolean;
   readonly matches: boolean;
+  readonly at_case_level: boolean;
   readonly drafted_by_email: string | null;
   readonly approved_by_email: string | null;
   readonly regulation_confirmed_by_email: string | null;
@@ -101,6 +107,7 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     const { rows } = await scope.client.query<ExportRow>(
       `SELECT v.packet_id, p.case_id, v.version_no, v.content, v.narrative, v.content_sha256, v.verifier_report, v.approved_at, v.approved_alone, v.exported_at,
               p.current_version_id = v.id AS current, packet_version_matches_case(p.case_id, v.content) AS matches,
+              v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level,
               packet_version_deadline_status(p.case_id, v.content) AS deadline_status,
               people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email
          FROM packet_version v JOIN packet p ON p.id = v.packet_id, LATERAL packet_version_people(v.id) people
@@ -123,9 +130,17 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     if (!version.matches) {
       return { outcome: 'not_exportable', reason: 'case_changed' };
     }
+    // A version of the case's dispute level now: one written before a denial reopened the case states the earlier level's deadline.
+    if (!version.at_case_level) {
+      return { outcome: 'not_exportable', reason: 'not_case_level' };
+    }
     // The deadline, derived again now by the database and by @tp/triage (CO-05): either unverified refuses it.
     if (version.deadline_status === 'unverified' || (await exportDeadlineStatus(scope.client, version.case_id, version.content)) === 'unverified') {
       return { outcome: 'not_exportable', reason: 'deadline_unverified' };
+    }
+    // What the version states of its deadlines and calculations, stated again from its inputs now: anything else is not printed.
+    if (version.content.format !== 'tp-packet/2' || !(await statesItsInputs(scope.client, practiceId, version.case_id, version.content))) {
+      return { outcome: 'not_exportable', reason: 'inputs_differ' };
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
@@ -172,7 +187,9 @@ export const EXPORT_REFUSALS = {
   not_approved: 'PACKET_VERSION_NOT_APPROVED',
   not_current: 'PACKET_VERSION_NOT_CURRENT',
   case_changed: 'PACKET_CASE_CHANGED',
+  not_case_level: 'PACKET_VERSION_NOT_CASE_LEVEL',
   deadline_unverified: 'PACKET_DEADLINE_UNVERIFIED',
+  inputs_differ: 'PACKET_CONTENT_NOT_ITS_INPUTS',
   verifier_failed: 'PACKET_VERIFIER_FAILED',
 } as const;
 

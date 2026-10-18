@@ -84,7 +84,7 @@ describe('deadlineVerification (D17 a)', () => {
     fc.assert(
       fc.property(fc.constantFrom(MA_TRACE, SILENT_CONTRACT_TRACE, CONTRACT_TRACE), level, minimum, fc.boolean(), fc.boolean(), (trace, recordLevel, minimumLevel, noStep, withFacts) => {
         const window = noStep ? null : { ...(trace.steps.window as TraceWindow), source: null, record: null, ends_on: null, status: 'NO_WINDOW' as const };
-        const result = deadlineVerification({ trace: withWindow(trace, window), recordLevel, contractWindow: withFacts ? signedOff() : null, minimumLevel });
+        const result = deadlineVerification({ trace: withWindow(trace, window), recordLevel, releaseWithdrawn: false, contractWindow: withFacts ? signedOff() : null, minimumLevel });
         expect(result).toEqual({ status: 'not_applicable', source: null, endsOn: null, level: null, cause: null });
       }),
     );
@@ -92,12 +92,13 @@ describe('deadlineVerification (D17 a)', () => {
 
   it('verifies a Medicare release window exactly when its record is at the minimum level or higher (L2 by default, L3 for E3)', () => {
     fc.assert(
-      fc.property(level, fc.option(minimum, { nil: undefined }), fc.boolean(), (recordLevel, minimumLevel, withFacts) => {
-        const result = deadlineVerification({ trace: MA_TRACE, recordLevel, contractWindow: withFacts ? signedOff() : null, minimumLevel });
+      fc.property(level, fc.option(minimum, { nil: undefined }), fc.boolean(), fc.boolean(), (recordLevel, minimumLevel, withFacts, releaseWithdrawn) => {
+        const result = deadlineVerification({ trace: MA_TRACE, recordLevel, releaseWithdrawn, contractWindow: withFacts ? signedOff() : null, minimumLevel });
         expectShape(result);
         const wanted = minimumLevel ?? 'L2';
-        expect(result.status).toBe(recordLevel !== null && VERIFICATION_LEVELS.indexOf(recordLevel) >= VERIFICATION_LEVELS.indexOf(wanted) ? 'verified' : 'unverified');
-        expect(result.cause).toBe(recordLevel === null ? 'RECORD_NOT_IN_RELEASE' : result.status === 'verified' ? null : 'RECORD_BELOW_LEVEL');
+        // A withdrawn release's record verifies nothing, at any level.
+        expect(result.status).toBe(recordLevel !== null && !releaseWithdrawn && VERIFICATION_LEVELS.indexOf(recordLevel) >= VERIFICATION_LEVELS.indexOf(wanted) ? 'verified' : 'unverified');
+        expect(result.cause).toBe(recordLevel === null ? 'RECORD_NOT_IN_RELEASE' : releaseWithdrawn ? 'RELEASE_WITHDRAWN' : result.status === 'verified' ? null : 'RECORD_BELOW_LEVEL');
         expect(result).toMatchObject({ source: 'release', endsOn: MA_TRACE.steps.window?.ends_on, level: recordLevel });
       }),
     );
@@ -106,11 +107,11 @@ describe('deadlineVerification (D17 a)', () => {
   it('never verifies a release commercial_default window, at any level', () => {
     fc.assert(
       fc.property(level, minimum, fc.boolean(), (recordLevel, minimumLevel, withFacts) => {
-        const result = deadlineVerification({ trace: SILENT_CONTRACT_TRACE, recordLevel, contractWindow: withFacts ? signedOff() : null, minimumLevel });
+        const result = deadlineVerification({ trace: SILENT_CONTRACT_TRACE, recordLevel, releaseWithdrawn: false, contractWindow: withFacts ? signedOff() : null, minimumLevel });
         expect(result).toEqual({ status: 'unverified', source: 'release', endsOn: SILENT_CONTRACT_TRACE.steps.window?.ends_on, level: recordLevel, cause: 'COMMERCIAL_DEFAULT' });
       }),
     );
-    expect(deadlineVerification({ trace: SILENT_CONTRACT_TRACE, recordLevel: 'L3', contractWindow: null }).status).toBe('unverified');
+    expect(deadlineVerification({ trace: SILENT_CONTRACT_TRACE, recordLevel: 'L3', releaseWithdrawn: false, contractWindow: null }).status).toBe('unverified');
   });
 
   it('verifies a contract window only from a signed-off version whose window is cited, verified and the trace’s length in days', () => {
@@ -122,7 +123,7 @@ describe('deadlineVerification (D17 a)', () => {
       verified: fc.boolean(),
     });
     fc.assert(
-      fc.property(fc.option(facts, { nil: null }), level, minimum, fc.constantFrom<'days' | 'months'>('days', 'months'), (drawn, recordLevel, minimumLevel, unit) => {
+      fc.property(fc.option(facts, { nil: null }), level, minimum, fc.constantFrom<'days' | 'months'>('days', 'months'), fc.boolean(), (drawn, recordLevel, minimumLevel, unit, releaseWithdrawn) => {
         const contractWindow =
           drawn === null
             ? null
@@ -135,7 +136,8 @@ describe('deadlineVerification (D17 a)', () => {
                 verifiedAt: drawn.verified ? '2026-10-01T12:00:00.000Z' : null,
               };
         const trace = withWindow(CONTRACT_TRACE, { ...(CONTRACT_TRACE.steps.window as TraceWindow), unit });
-        const result = deadlineVerification({ trace, recordLevel, contractWindow, minimumLevel });
+        // A contract window rests on the version, never on a release: a withdrawn release changes nothing here.
+        const result = deadlineVerification({ trace, recordLevel, releaseWithdrawn, contractWindow, minimumLevel });
         expectShape(result);
         const cited = contractWindow !== null && contractWindow.contractVersionId === VERSION_ID && contractWindow.evidence !== null && windowEvidenceComplete(contractWindow.evidence);
         const expectedCause = !cited
@@ -155,8 +157,8 @@ describe('deadlineVerification (D17 a)', () => {
   it('never turns unverified into verified by raising the level asked for, and keeps the trace’s source and end', () => {
     fc.assert(
       fc.property(fc.constantFrom(MA_TRACE, SILENT_CONTRACT_TRACE, CONTRACT_TRACE), level, fc.option(fc.constant(signedOff()), { nil: null }), (trace, recordLevel, contractWindow) => {
-        const atTwo = deadlineVerification({ trace, recordLevel, contractWindow, minimumLevel: 'L2' });
-        const atThree = deadlineVerification({ trace, recordLevel, contractWindow, minimumLevel: 'L3' });
+        const atTwo = deadlineVerification({ trace, recordLevel, releaseWithdrawn: false, contractWindow, minimumLevel: 'L2' });
+        const atThree = deadlineVerification({ trace, recordLevel, releaseWithdrawn: false, contractWindow, minimumLevel: 'L3' });
         if (atTwo.status !== 'verified') {
           expect(atThree.status).toBe(atTwo.status);
         }
@@ -170,9 +172,9 @@ describe('deadlineVerification (D17 a)', () => {
 
   it('reads a line with no agreement in its trace as uncited', () => {
     const trace = { ...CONTRACT_TRACE, agreement: null };
-    expect(deadlineVerification({ trace, recordLevel: null, contractWindow: signedOff() })).toMatchObject({ status: 'unverified', cause: 'CONTRACT_WINDOW_UNCITED' });
+    expect(deadlineVerification({ trace, recordLevel: null, releaseWithdrawn: false, contractWindow: signedOff() })).toMatchObject({ status: 'unverified', cause: 'CONTRACT_WINDOW_UNCITED' });
     const noRecord = withWindow(MA_TRACE, { ...(MA_TRACE.steps.window as TraceWindow), record: null });
-    expect(deadlineVerification({ trace: noRecord, recordLevel: 'L3', contractWindow: null })).toMatchObject({ status: 'unverified', cause: 'RECORD_NOT_IN_RELEASE' });
+    expect(deadlineVerification({ trace: noRecord, recordLevel: 'L3', releaseWithdrawn: false, contractWindow: null })).toMatchObject({ status: 'unverified', cause: 'RECORD_NOT_IN_RELEASE' });
   });
 });
 
@@ -198,21 +200,36 @@ describe('the level order and the evidence', () => {
 });
 
 describe('nextLevelDeadlineVerification', () => {
-  it('never verifies a contract’s appeal level, and verifies the regulation’s reconsideration window as a release window', () => {
+  it('never verifies a contract’s appeal level, and verifies the regulation’s reconsideration window as a release window, from the record that gives its end', () => {
+    const date = fc.option(fc.constantFrom('2026-12-01', '2027-01-30'), { nil: null });
     fc.assert(
-      fc.property(fc.constantFrom<'contract' | 'regulation'>('contract', 'regulation'), level, fc.option(minimum, { nil: undefined }), fc.option(fc.constant('2026-12-01'), { nil: null }), (basis, recordLevel, minimumLevel, endsOn) => {
-        const result = nextLevelDeadlineVerification({ basis, recordLevel, endsOn, minimumLevel });
+      fc.property(fc.constantFrom<'contract' | 'regulation'>('contract', 'regulation'), level, fc.option(minimum, { nil: undefined }), date, date, (basis, recordLevel, minimumLevel, endsOn, recordEndsOn) => {
+        const result = nextLevelDeadlineVerification({ basis, recordLevel, recordEndsOn, endsOn, minimumLevel });
         expectShape(result);
         expect(result.endsOn).toBe(endsOn);
         if (basis === 'contract') {
           expect(result).toEqual({ status: 'unverified', source: 'contract', endsOn, level: null, cause: 'NEXT_LEVEL_UNCITED' });
         } else {
-          expect(result.status).toBe(levelAtLeast(recordLevel, minimumLevel ?? 'L2') ? 'verified' : 'unverified');
-          expect(result.cause).toBe(recordLevel === null ? 'RECORD_NOT_IN_RELEASE' : result.status === 'verified' ? null : 'RECORD_BELOW_LEVEL');
+          // Verified only when the record in force gives exactly the stored end, at the level asked for or above.
+          const same = endsOn !== null && recordEndsOn === endsOn;
+          expect(result.status).toBe(same && levelAtLeast(recordLevel, minimumLevel ?? 'L2') ? 'verified' : 'unverified');
+          expect(result.cause).toBe(recordLevel === null ? 'RECORD_NOT_IN_RELEASE' : !same ? 'NEXT_LEVEL_DIFFERS' : result.status === 'verified' ? null : 'RECORD_BELOW_LEVEL');
           expect(result.source).toBe('release');
         }
       }),
     );
+  });
+
+  it('leaves a date that another record gave unverified, though the record in force now is at L2 or L3', () => {
+    for (const recordLevel of ['L2', 'L3'] as const) {
+      expect(nextLevelDeadlineVerification({ basis: 'regulation', recordLevel, recordEndsOn: '2026-12-01', endsOn: '2027-04-10' })).toEqual({
+        status: 'unverified',
+        source: 'release',
+        endsOn: '2027-04-10',
+        level: recordLevel,
+        cause: 'NEXT_LEVEL_DIFFERS',
+      });
+    }
   });
 });
 

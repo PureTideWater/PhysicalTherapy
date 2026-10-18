@@ -139,6 +139,7 @@ describe('a contract window with no citation keeps its line from becoming action
     const uncited = deadlineVerification({
       trace: result.trace,
       recordLevel: null,
+      releaseWithdrawn: false,
       contractWindow: { contractVersionId: versionId, status: 'signed_off', disputeWindowDays: 90, evidence: null, verifiedBy: null, verifiedAt: null },
     });
     expect(uncited).toMatchObject({ status: 'unverified', source: 'contract', endsOn: result.window.endsOn, cause: 'CONTRACT_WINDOW_UNCITED' });

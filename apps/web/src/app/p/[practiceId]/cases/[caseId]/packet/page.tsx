@@ -15,7 +15,7 @@ import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/
 import { loadPage } from '../../../../../../lib/http/next';
 import { BLOCKED_TEXT, waitText } from '../../../../../../lib/packets/approval';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
-import { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
+import { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, STALE_LEVEL_NOT_EXPORTABLE, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -370,12 +370,12 @@ export default async function PacketPage(props: Props) {
                     </p>
                   )}
                 </>
-              ) : approval?.status === 'approved' && version.current && (version.content.format !== 'tp-packet/2' || version.deadlineNow === 'unverified') ? (
-                <Alert variant="destructive" data-export="blocked" data-reason={version.content.format !== 'tp-packet/2' ? 'outdated' : 'deadline_unverified'}>
+              ) : approval?.status === 'approved' && version.current && (version.content.format !== 'tp-packet/2' || !version.atCaseLevel || version.deadlineNow === 'unverified') ? (
+                <Alert variant="destructive" data-export="blocked" data-reason={version.content.format !== 'tp-packet/2' ? 'outdated' : !version.atCaseLevel ? 'stale_level' : 'deadline_unverified'}>
                   <AlertTitle>Export blocked</AlertTitle>
                   <AlertDescription>
-                    {version.content.format !== 'tp-packet/2' ? OUTDATED_NOT_EXPORTABLE : DEADLINE_NOT_EXPORTABLE}
-                    {version.content.format === 'tp-packet/2' && version.content.deadline.causes.length > 0 ? (
+                    {version.content.format !== 'tp-packet/2' ? OUTDATED_NOT_EXPORTABLE : !version.atCaseLevel ? STALE_LEVEL_NOT_EXPORTABLE : DEADLINE_NOT_EXPORTABLE}
+                    {version.content.format === 'tp-packet/2' && version.atCaseLevel && version.content.deadline.causes.length > 0 ? (
                       <ul className="mt-1 list-disc pl-5" aria-label="Why the export is blocked">
                         {version.content.deadline.causes.map((cause) => (
                           <li key={cause} data-blocked-cause={cause}>

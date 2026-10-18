@@ -1,6 +1,23 @@
 import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { type Cents, parseCents } from '@tp/money';
-import { type AssemblyInput, type AssemblyLine, type ContractCitation, type DeadlineInput, type DeadlineSource, type PacketCitation, type PromptPayRecord, type RegulationCitation, lineCalculation } from '@tp/packets';
+import {
+  type AssemblyInput,
+  type AssemblyLine,
+  type ContractCitation,
+  type DeadlineInput,
+  type DeadlineSource,
+  type LineCalculation,
+  type LineDeadline,
+  type PacketCitation,
+  type PacketContentV2,
+  type PacketDeadline,
+  type PromptPayRecord,
+  type RegulationCitation,
+  canonicalJson,
+  lineCalculation,
+  lineDeadline,
+  packetDeadline,
+} from '@tp/packets';
 import { type PricingTrace, parseTrace } from '@tp/pricing';
 import type { DeadlineVerification } from '@tp/triage';
 
@@ -413,4 +430,63 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
     nextLevelDeadline: next === null ? null : asInput({ ...next.verification, endsOn: next.endsOn }),
     deadlineSources: await deadlineSources(client, request.practiceId, traces, deadlines, pricedLineIds),
   };
+}
+
+/** What a tp-packet/2 version states of its lines' deadlines and calculations and of its own deadline. */
+export interface StatedDeadlines {
+  readonly lines: readonly { readonly deadline: LineDeadline; readonly calculation: LineCalculation }[];
+  readonly deadline: PacketDeadline;
+}
+
+/**
+ * A tp-packet/2 version's deadlines and calculations stated again from its inputs as they stand now, as
+ * loadAssembly states them when the version is written: each line's calculation copied again from its stored
+ * trace (with the trace's SHA-256), each line's deadline and the version's derived again, and their sources
+ * read again. Null when a line the version names cannot be read or priced nothing.
+ */
+export async function restatedDeadlines(client: ScopeClient, practiceId: string, caseId: string, content: PacketContentV2): Promise<StatedDeadlines | null> {
+  const pricedLineIds = content.lines.map((line) => line.priced_line_id);
+  const { rows } = await client.query<{ id: string; trace: unknown }>('SELECT id::text AS id, trace FROM priced_line WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, pricedLineIds]);
+  const stored = new Map(rows.map((row) => [row.id, row.trace]));
+  let traces: PricingTrace[];
+  let calculations: LineCalculation[];
+  try {
+    traces = pricedLineIds.map((id) => {
+      if (!stored.has(id)) {
+        throw new Error('a line of the version cannot be read');
+      }
+      return parseTrace(stored.get(id));
+    });
+    calculations = traces.map((trace) => lineCalculation(trace));
+  } catch {
+    return null;
+  }
+  const deadlines = await lineDeadlines(client, pricedLineIds);
+  const next = content.dispute_level > 1 ? await nextLevelDeadline(client, caseId) : null;
+  const lines = pricedLineIds.map((id, index) => ({ deadline: lineDeadline(deadlineOf(deadlines, id)), calculation: calculations[index] as LineCalculation }));
+  const deadline = packetDeadline(
+    {
+      disputeLevel: content.dispute_level,
+      nextLevelDeadline: next === null ? null : asInput({ ...next.verification, endsOn: next.endsOn }),
+      deadlineSources: await deadlineSources(client, practiceId, traces, deadlines, pricedLineIds),
+    },
+    lines,
+  );
+  return { lines, deadline };
+}
+
+/**
+ * Whether a version states its deadlines and calculations exactly as its inputs give them now (CO-05: the export
+ * prints no figure, date or count absent from its inputs). A tp-packet/1 version states none, so never.
+ */
+export async function statesItsInputs(client: ScopeClient, practiceId: string, caseId: string, content: PacketContentV2 | { readonly format: 'tp-packet/1' }): Promise<boolean> {
+  if (content.format !== 'tp-packet/2') {
+    return false;
+  }
+  const restated = await restatedDeadlines(client, practiceId, caseId, content);
+  if (restated === null) {
+    return false;
+  }
+  const stated: StatedDeadlines = { lines: content.lines.map((line) => ({ deadline: line.deadline, calculation: line.calculation })), deadline: content.deadline };
+  return canonicalJson(stated) === canonicalJson(restated);
 }

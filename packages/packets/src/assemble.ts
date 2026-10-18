@@ -192,16 +192,21 @@ export function requestedAction(citation: PacketCitation, disputeLevel: number, 
   return `${level}${reprocess}${interest}`;
 }
 
-const lineDeadline = (deadline: DeadlineInput): LineDeadline => ({ ends_on: deadline.endsOn, status: deadline.status, source: deadline.source, cause: deadline.cause });
+/** A line's deadline as a tp-packet/2 version states it. */
+export const lineDeadline = (deadline: DeadlineInput): LineDeadline => ({ ends_on: deadline.endsOn, status: deadline.status, source: deadline.source, cause: deadline.cause });
 
 const sourceKey = (source: DeadlineSource) =>
   source.kind === 'contract_window' ? `contract_window:${source.contract_version_id}:${source.document_id}` : `release_record:${String(source.release_no)}:${source.sha256}`;
 
 /**
  * The version's deadline: the lines' own windows at the first level (the earliest ends first; verified
- * only when every line's is), the next level's window after a denial reopened the case.
+ * only when every line's is), the next level's window after a denial reopened the case. The export job
+ * states it again from the inputs as they stand (apps/worker/src/packets/records.ts) and compares.
  */
-function packetDeadline(input: AssemblyInput, lines: readonly ScheduleLineV2[]): PacketDeadline {
+export function packetDeadline(
+  input: Pick<AssemblyInput, 'disputeLevel' | 'nextLevelDeadline' | 'deadlineSources'>,
+  lines: readonly { readonly deadline: LineDeadline }[],
+): PacketDeadline {
   const sources = [...new Map(input.deadlineSources.map((source) => [sourceKey(source), source])).values()].sort((a, b) => sourceKey(a).localeCompare(sourceKey(b)));
   const linesVerified = lines.filter((line) => line.deadline.status === 'verified').length;
   if (input.disputeLevel > 1) {

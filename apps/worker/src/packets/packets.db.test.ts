@@ -9,7 +9,8 @@ import { addDays, nextDisputeWindow } from '@tp/packets';
 import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import type { Practice } from '../price/test-support/pricing-world';
+import { DEADLINE_RELEASE, type Practice, RELEASE } from '../price/test-support/pricing-world';
+import { nextLevelDeadline } from '../triage/deadline';
 import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
 import { PacketExportIntegrityError, exportPacketVersion } from './export';
@@ -827,5 +828,212 @@ describe('a Medicare Advantage non-contracted case', () => {
     expect((await refusal(w.as(contract.practice, w.specialist, (scope) => confirmRegulation(scope, { practiceId: contract.practice.practiceId, versionId: cited.versionId, requestId: 'r' })))).message).toBe(
       'a regulation citation is confirmed once, before approval',
     );
+  });
+});
+
+describe('CO-05: a version of an earlier dispute level than the case’s (D17: after a reopened denial the deadline is the next window’s)', () => {
+  /** A contract case whose first appeal level is 60 days, exported, attested and submitted at level 1. */
+  async function submittedFirstLevel(label: string) {
+    const setup = await cas08(label);
+    const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ version: string }>("SELECT pattern_key ->> 'contract_version_id' AS version FROM \"case\" WHERE id = $1", [setup.caseId]));
+    await w.superuser(`UPDATE contract_version SET appeal_levels = '[{"level": 1, "days": 60}]' WHERE id = $1`, [rows[0]?.version]);
+    const first = await exported(setup);
+    const logged = await submit(setup, first.versionId);
+    return { setup, first, logged, document: await documentOf(setup.practice) };
+  }
+
+  it('is approved, but its export is refused in the worker, the handler and Postgres once a denial has reopened the case', async () => {
+    const { setup, first, logged, document } = await submittedFirstLevel('stale-level-export');
+    // An edit written while the dispute is with the payer: still the first level.
+    const stale = await write(setup, setup.practice.manager, { basedOn: first.versionId, narrative: 'The payer paid these lines short of the contract [3].' });
+    expect(stale.content.dispute_level).toBe(1);
+    await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: document });
+    // The case is at level 2 now; the version states level 1's deadline (its lines' windows, verified).
+    expect(stale.content.format === 'tp-packet/2' ? stale.content.deadline : null).toMatchObject({ basis: 'line_windows', status: 'verified' });
+    await expect(approve(setup, setup.second, stale.versionId, stale.contentSha256)).resolves.toMatchObject({ approvedAlone: false });
+    expect(await w.export(setup.practice, stale.versionId)).toEqual({ outcome: 'not_exportable', reason: 'not_case_level' });
+    const queue = { send: () => Promise.resolve('queued') } as never;
+    const words = "only a version of the case's dispute level is exported; write the packet again at this level";
+    expect((await refusal(w.as(setup.practice, setup.practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: setup.practice.practiceId, versionId: stale.versionId, requestId: 'r' })))).message).toBe(words);
+    expect((await refusal(jobExport(setup, stale.versionId, stale.packetId))).message).toBe(words);
+    // A version written now is of level 2, with the next window's deadline (the contract's appeal level: not verified).
+    const current = await write(setup, setup.practice.manager, { basedOn: stale.versionId });
+    expect(current.content.format === 'tp-packet/2' ? current.content.deadline : null).toMatchObject({ basis: 'next_level_window', status: 'unverified', causes: ['NEXT_LEVEL_UNCITED'] });
+  });
+
+  it('exported at its level before the denial, is not attested once the denial has reopened the case', async () => {
+    const { setup, first, logged, document } = await submittedFirstLevel('stale-level-attest');
+    const stale = await write(setup, setup.practice.manager, { basedOn: first.versionId, narrative: 'The payer paid these lines short of the contract [3].' });
+    await approve(setup, setup.second, stale.versionId, stale.contentSha256);
+    const outcome = await w.export(setup.practice, stale.versionId);
+    if (outcome.outcome !== 'exported') {
+      throw new Error('the level-one edit is exported while its level is the case’s');
+    }
+    await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: document });
+    const reviewer = await w.reviewer(setup.practice);
+    const attempt = (actorId: string) =>
+      w.as(setup.practice, actorId, (scope) => attestPacketExport(scope, { practiceId: setup.practice.practiceId, versionId: stale.versionId, pdfSha256: outcome.pdfSha256, csvSha256: outcome.csvSha256, requestId: 'r' }));
+    expect((await refusal(attempt(reviewer))).message).toBe("only a version of the case's dispute level is attested");
+    expect((await refusal(submit(setup, stale.versionId))).message).toBe('a packet is submitted once a reimbursement reviewer has attested its export');
+  });
+});
+
+describe('D16: the attester took no part in any version of the packet', () => {
+  it('refuses the writer of an earlier version and the approver of an earlier version, as it refuses the first drafter', async () => {
+    const setup = await cas08('attester-took-part');
+    const { practice } = setup;
+    const third = await w.person(practice, 'billing_manager');
+    const reviewer = await w.reviewer(practice);
+    const first = await write(setup, practice.manager);
+    await approve(setup, setup.second, first.versionId, first.contentSha256);
+    const middle = await write(setup, setup.second, { basedOn: first.versionId, narrative: 'The payer paid these lines short of the contract [3].' });
+    const last = await write(setup, practice.manager, { basedOn: middle.versionId });
+    await approve(setup, third, last.versionId, last.contentSha256);
+    const outcome = await w.export(practice, last.versionId);
+    if (outcome.outcome !== 'exported') {
+      throw new Error('not exported');
+    }
+    const attest = () =>
+      w.as(practice, reviewer, (scope) => attestPacketExport(scope, { practiceId: practice.practiceId, versionId: last.versionId, pdfSha256: outcome.pdfSha256, csvSha256: outcome.csvSha256, requestId: 'r' }));
+    const words = 'the person who drafted, wrote or approved a packet does not attest its export';
+    // The reviewer as the writer of the middle version, and then as the approver of the first (each set as a migration would, triggers off).
+    await w.superuser('UPDATE packet_version SET drafted_by = $2 WHERE id = $1', [middle.versionId, reviewer]);
+    expect(await refusal(attest())).toMatchObject({ code: '42501', message: words });
+    await w.superuser('UPDATE packet_version SET drafted_by = $2 WHERE id = $1', [middle.versionId, setup.second]);
+    await w.superuser('UPDATE packet_version SET approved_by = $2 WHERE id = $1', [first.versionId, reviewer]);
+    expect(await refusal(attest())).toMatchObject({ code: '42501', message: words });
+    await w.superuser('UPDATE packet_version SET approved_by = $2 WHERE id = $1', [first.versionId, setup.second]);
+    await expect(attest()).resolves.toMatchObject({ attested: true });
+  });
+});
+
+describe('CO-05: a version states its deadline and calculations as its inputs give them', () => {
+  it('is refused when written with another figure, date or source than its trace, its contract window and its lines give, and its export is refused when its content was changed since', async () => {
+    const setup = await cas08('stated-inputs');
+    const { practice } = setup;
+    const version = await write(setup, practice.manager);
+    if (version.content.format !== 'tp-packet/2') {
+      throw new Error('tp-packet/2 expected');
+    }
+    const content = version.content;
+    const [line] = content.lines;
+    const [source] = content.deadline.sources;
+    if (line === undefined || source?.kind !== 'contract_window') {
+      throw new Error('a line and its contract window expected');
+    }
+    const calculationWords = /states each line's calculation as its stored trace has it/;
+    const deadlineWords = /states the day its deadline ends and its lines as its inputs give them/;
+    const evidenceWords = /names the evidence its deadline rests on as it stands/;
+    const exactlyWords = /names exactly the evidence its lines' windows rest on, each once/;
+    const forgeries = {
+      step: { ...content, lines: content.lines.map((item, index) => (index === 0 ? { ...item, calculation: { ...item.calculation, steps: [{ step: 'base', amount_cents: '12345' }] } } : item)) },
+      unrounded: { ...content, lines: content.lines.map((item, index) => (index === 0 && item.calculation.rounding !== null ? { ...item, calculation: { ...item.calculation, rounding: { ...item.calculation.rounding, unrounded_cents: '12345.4' } } } : item)) },
+      release: { ...content, lines: content.lines.map((item, index) => (index === 0 ? { ...item, calculation: { ...item.calculation, release_no: 900099 } } : item)) },
+      ends_on: { ...content, deadline: { ...content.deadline, ends_on: '2037-01-01' } },
+      lines_verified: { ...content, deadline: { ...content.deadline, lines_verified: content.deadline.lines_verified - 1 } },
+      quote: { ...content, deadline: { ...content.deadline, sources: [{ ...source, quote: 'SYNTHETIC FORGED QUOTE 5000 days' }] } },
+      page: { ...content, deadline: { ...content.deadline, sources: [{ ...source, page: 9 }] } },
+      days: { ...content, deadline: { ...content.deadline, sources: [{ ...source, days: 5000 }] } },
+      verifier: { ...content, deadline: { ...content.deadline, sources: [{ ...source, verified_by: setup.second }] } },
+      missing: { ...content, deadline: { ...content.deadline, sources: [] } },
+      twice: { ...content, deadline: { ...content.deadline, sources: [source, source] } },
+    };
+    const refusedWith: Readonly<Record<keyof typeof forgeries, RegExp>> = {
+      step: calculationWords,
+      unrounded: calculationWords,
+      release: calculationWords,
+      ends_on: deadlineWords,
+      lines_verified: deadlineWords,
+      quote: evidenceWords,
+      page: evidenceWords,
+      days: evidenceWords,
+      verifier: evidenceWords,
+      missing: exactlyWords,
+      twice: exactlyWords,
+    };
+    for (const [name, forged] of Object.entries(forgeries) as [keyof typeof forgeries, unknown][]) {
+      const error = await refusal(
+        w.as(practice, practice.manager, (scope) =>
+          scope.client.query(
+            `INSERT INTO packet_version (practice_id, packet_id, version_no, content, narrative, content_sha256, verifier_passed, verifier_report, drafted_by)
+             SELECT practice_id, packet_id, 2, $2, narrative, content_sha256, verifier_passed, verifier_report, drafted_by FROM packet_version WHERE id = $1`,
+            [version.versionId, JSON.stringify(forged)],
+          ),
+        ),
+      );
+      expect(error, name).toMatchObject({ code: '23514' });
+      expect(error.message, name).toMatch(refusedWith[name]);
+    }
+    // The version as written states its inputs; changed since (as only a superuser with triggers off could), the export prints nothing.
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    await w.superuser('UPDATE packet_version SET content = $2 WHERE id = $1', [version.versionId, JSON.stringify(forgeries.quote)]);
+    expect(await w.export(practice, version.versionId)).toEqual({ outcome: 'not_exportable', reason: 'inputs_differ' });
+    await w.superuser('UPDATE packet_version SET content = $2 WHERE id = $1', [version.versionId, JSON.stringify({ ...content, lines: content.lines.map((item, index) => (index === 0 ? { ...item, calculation: { ...item.calculation, trace_sha256: 'c'.repeat(64) } } : item)) })]);
+    expect(await w.export(practice, version.versionId)).toEqual({ outcome: 'not_exportable', reason: 'inputs_differ' });
+    await w.superuser('UPDATE packet_version SET content = $2 WHERE id = $1', [version.versionId, JSON.stringify(content)]);
+    expect(await w.export(practice, version.versionId)).toMatchObject({ outcome: 'exported' });
+  });
+});
+
+// Last in the file: it loads release 900005 (from then on the release in force) and withdraws it at its end.
+describe('a Medicare Advantage case’s next dispute level (the regulation’s reconsideration window, D17 a)', () => {
+  it('is verified only from a reconsideration record at L2 or above that gives the stored end, in SQL and in TypeScript alike', async () => {
+    const setup = await cas08('MA-next-level');
+    const { practice } = setup;
+    await w.superuser(`UPDATE "case" SET rate_record_id = NULL, pattern_key = pattern_key || '{"mapping_kind": "ma_noncontracted", "contract_version_id": null, "rate_record_id": null}' WHERE id = $1`, [setup.caseId]);
+    const confirm = (versionId: string) => w.as(practice, w.specialist, (scope) => confirmRegulation(scope, { practiceId: practice.practiceId, versionId, requestId: 'r' }));
+    const first = await write(setup, practice.manager);
+    await confirm(first.versionId);
+    await approve(setup, setup.second, first.versionId, first.contentSha256);
+    const exportedFirst = await w.export(practice, first.versionId);
+    expect(exportedFirst).toMatchObject({ outcome: 'exported' });
+    await w.attest(practice, first.versionId);
+    const logged = await submit(setup, first.versionId);
+    // The denial is recorded under 900001: the reconsideration window's end comes from its L1 record.
+    const reopened = await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: await documentOf(practice) });
+    expect(reopened.nextWindowEndsOn).toBe(addDays(w.today(), 171));
+    const both = async (minimumLevel: 'L2' | 'L3' = 'L2') =>
+      w.as(practice, practice.manager, async (scope) => ({
+        sql: (await scope.client.query<{ status: string }>('SELECT case_next_window_deadline_status($1, $2) AS status', [setup.caseId, minimumLevel])).rows[0]?.status,
+        ts: (await nextLevelDeadline(scope.client, setup.caseId, minimumLevel)).verification,
+      }));
+    const agree = (seen: Awaited<ReturnType<typeof both>>) => {
+      expect(seen.ts.status).toBe(seen.sql);
+      return seen;
+    };
+    expect(agree(await both())).toMatchObject({ sql: 'unverified', ts: { cause: 'RECORD_BELOW_LEVEL', level: 'L1', endsOn: reopened.nextWindowEndsOn } });
+    const atL1 = await write(setup, practice.manager, { basedOn: first.versionId });
+    expect(atL1.content.format === 'tp-packet/2' ? atL1.content.deadline : null).toMatchObject({ basis: 'next_level_window', status: 'unverified', causes: ['RECORD_BELOW_LEVEL'], ends_on: reopened.nextWindowEndsOn });
+    await confirm(atL1.versionId);
+    await approve(setup, setup.second, atL1.versionId, atL1.contentSha256);
+    expect(await w.export(practice, atL1.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
+
+    // Release 900005 holds the same reconsideration window at L2: the record in force gives the stored end, so it is verified at L2, not at L3.
+    await w.triage.pricing.loadDeadlineRelease();
+    expect(agree(await both())).toMatchObject({ sql: 'verified', ts: { cause: null, level: 'L2' } });
+    expect(agree(await both('L3'))).toMatchObject({ sql: 'unverified', ts: { cause: 'RECORD_BELOW_LEVEL' } });
+    // The version written under 900001 stated the deadline unverified: stated again now it says verified, so it is not exported as it stands.
+    expect(await w.export(practice, atL1.versionId)).toEqual({ outcome: 'not_exportable', reason: 'inputs_differ' });
+
+    // An end another record gave (as one of 60 days would have, in a release in force when the denial was recorded and gone since): the
+    // record in force now gives another end, so it is not the record the date came from, whatever its level (set as a migration would).
+    const { rows } = await w.as(practice, practice.manager, (scope) => scope.client.query<{ id: string }>('SELECT id FROM payer_response WHERE submission_id = $1', [logged.submissionId]));
+    await w.superuser('UPDATE payer_response SET next_window_ends_on = $2 WHERE id = $1', [rows[0]?.id, addDays(w.today(), 60)]);
+    expect(agree(await both())).toMatchObject({ sql: 'unverified', ts: { cause: 'NEXT_LEVEL_DIFFERS', level: 'L2', endsOn: addDays(w.today(), 60) } });
+    expect(agree(await both('L3'))).toMatchObject({ sql: 'unverified', ts: { cause: 'NEXT_LEVEL_DIFFERS' } });
+    await w.superuser('UPDATE payer_response SET next_window_ends_on = $2 WHERE id = $1', [rows[0]?.id, reopened.nextWindowEndsOn]);
+
+    // Written now, the level-2 version's deadline is verified and it is exported.
+    const atL2 = await write(setup, practice.manager, { basedOn: atL1.versionId });
+    expect(atL2.content.format === 'tp-packet/2' ? atL2.content.deadline : null).toMatchObject({ basis: 'next_level_window', status: 'verified', causes: [], ends_on: reopened.nextWindowEndsOn });
+    await confirm(atL2.versionId);
+    await approve(setup, setup.second, atL2.versionId, atL2.contentSha256);
+    expect(await w.export(practice, atL2.versionId)).toMatchObject({ outcome: 'exported' });
+
+    // 900005 withdrawn: 900001 is in force again, and its L1 record verifies nothing.
+    await w.triage.pricing.withdraw(DEADLINE_RELEASE);
+    const { rows: inForce } = await w.as(practice, practice.manager, (scope) => scope.client.query<{ release: number }>('SELECT current_rule_release() AS release'));
+    expect(inForce[0]?.release).toBe(RELEASE);
+    expect(agree(await both())).toMatchObject({ sql: 'unverified', ts: { cause: 'RECORD_BELOW_LEVEL', level: 'L1' } });
   });
 });

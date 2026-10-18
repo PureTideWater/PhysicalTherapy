@@ -12,8 +12,9 @@ import {
 
 /**
  * The facts @tp/triage's deadline rule reads beside a line's stored trace (D17 a; docs/adr/0061), read in the
- * caller's scope: the level of the release record the trace's window names (its release number and SHA-256), and
- * the contract version the trace names as it stands now (status, window, the window's evidence and verification).
+ * caller's scope: the level of the release record the trace's window names (its release number and SHA-256),
+ * whether that release was withdrawn since (rule_release_withdrawal), and the contract version the trace names as
+ * it stands now (status, window, the window's evidence and verification).
  * Triage judges actionability with them (execute.ts), the report counts with them (report/content.ts), and the
  * packet export and the packet builder state and check each line's deadline with them (packets/records.ts,
  * packets/export.ts), so every one of them reads a deadline as the database's priced_line_deadline_status()
@@ -29,6 +30,7 @@ interface LineDeadlineRow {
   readonly window_step: unknown;
   readonly agreement: unknown;
   readonly record_level: string | null;
+  readonly release_withdrawn: boolean;
   readonly version_id: string | null;
   readonly version_status: string | null;
   readonly dispute_window_days: number | null;
@@ -65,6 +67,7 @@ export async function lineDeadlines(client: ScopeClient, pricedLineIds: readonly
             (SELECT r.verification FROM rule_record r
               WHERE r.release_no = CASE WHEN p.trace #>> '{release,number}' ~ '^[1-9][0-9]{0,8}$' THEN (p.trace #>> '{release,number}')::integer END
                 AND r.record_type = 'dispute_window' AND r.sha256 = p.trace #>> '{steps,window,record,sha256}') AS record_level,
+            EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no::text = p.trace #>> '{release,number}') AS release_withdrawn,
             v.id::text AS version_id, v.status AS version_status, v.dispute_window_days, v.dispute_window_evidence,
             v.dispute_window_verified_by::text AS dispute_window_verified_by, v.dispute_window_verified_at
        FROM priced_line p
@@ -75,7 +78,10 @@ export async function lineDeadlines(client: ScopeClient, pricedLineIds: readonly
   );
   for (const row of rows) {
     const trace = { agreement: agreementSchema.parse(row.agreement ?? null), steps: { window: windowSchema.parse(row.window_step ?? null) } };
-    result.set(row.priced_line_id, deadlineVerification({ trace, recordLevel: asLevel(row.record_level), contractWindow: contractWindowOf(row), minimumLevel }));
+    result.set(
+      row.priced_line_id,
+      deadlineVerification({ trace, recordLevel: asLevel(row.record_level), releaseWithdrawn: row.release_withdrawn, contractWindow: contractWindowOf(row), minimumLevel }),
+    );
   }
   return result;
 }
@@ -84,22 +90,25 @@ export async function lineDeadlines(client: ScopeClient, pricedLineIds: readonly
  * A reopened case's next-level deadline (dispute level 2 and above): the window its reopening denial opened
  * (payer_response.next_window_ends_on, the latest denial that reopened it), verified as
  * case_next_window_deadline_status() verifies it: a contract's appeal levels never; the Medicare reconsideration
- * record the database read (the release in force, on the day the denial was received) at `minimumLevel` or above.
+ * record in force now (the release in force, on the day the denial was received) at `minimumLevel` or above, and
+ * only when it gives the stored end from the denial (case_next_dispute_window() read now): a record that gives
+ * another end, as a later release's may, is not the record the date came from.
  */
 export async function nextLevelDeadline(
   client: ScopeClient,
   caseId: string,
   minimumLevel: DeadlineMinimumLevel = DEFAULT_DEADLINE_LEVEL,
 ): Promise<{ readonly endsOn: string | null; readonly verification: DeadlineVerification }> {
-  const { rows } = await client.query<{ contract_version_id: string | null; mapping_kind: string | null; ends_on: string | null; record_level: string | null }>(
+  const { rows } = await client.query<{ contract_version_id: string | null; mapping_kind: string | null; ends_on: string | null; record_ends_on: string | null; record_level: string | null }>(
     `WITH reopened AS (
-       SELECT r.received_on, r.next_window_ends_on
+       SELECT r.received_on, r.next_window_ends_on, s.dispute_level
          FROM payer_response r JOIN submission s ON s.id = r.submission_id
         WHERE s.case_id = $1 AND r.reopens_case
         ORDER BY r.received_on DESC, r.created_at DESC, r.id DESC LIMIT 1
      )
      SELECT c.pattern_key ->> 'contract_version_id' AS contract_version_id, c.pattern_key ->> 'mapping_kind' AS mapping_kind,
             (SELECT o.next_window_ends_on::text FROM reopened o) AS ends_on,
+            (SELECT case_next_dispute_window($1, o.dispute_level, o.received_on)::text FROM reopened o) AS record_ends_on,
             (SELECT x.verification FROM rule_record x, reopened o
               WHERE x.release_no = current_rule_release() AND x.record_type = 'dispute_window'
                 AND x.key = '{"program": "medicare", "window": "reconsideration"}'::jsonb
@@ -112,6 +121,12 @@ export async function nextLevelDeadline(
   const endsOn = row?.ends_on ?? null;
   const regulation = row !== undefined && row.contract_version_id === null && row.mapping_kind === 'ma_noncontracted';
   // A case the caller cannot see, or of no known basis, is read as a contract's: never verified (it fails closed).
-  const verification = nextLevelDeadlineVerification({ basis: regulation ? 'regulation' : 'contract', recordLevel: regulation ? asLevel(row.record_level) : null, endsOn, minimumLevel });
+  const verification = nextLevelDeadlineVerification({
+    basis: regulation ? 'regulation' : 'contract',
+    recordLevel: regulation ? asLevel(row.record_level) : null,
+    recordEndsOn: regulation ? row.record_ends_on : null,
+    endsOn,
+    minimumLevel,
+  });
   return { endsOn, verification };
 }

@@ -419,8 +419,9 @@ export async function approvePacketVersion(scope: PracticeScope<ScopeClient>, in
  * is queued; the export job checks again. Returns the job's ID, or null when it is already queued.
  */
 export async function requestPacketExport(scope: PracticeScope<ScopeClient>, queue: JobSender, input: VersionAction): Promise<string | null> {
-  const { rows } = await scope.client.query<{ approved: boolean; current: boolean; exported: boolean; deadline_status: DeadlineStatus }>(
+  const { rows } = await scope.client.query<{ approved: boolean; current: boolean; exported: boolean; at_case_level: boolean; deadline_status: DeadlineStatus }>(
     `SELECT v.approved_by IS NOT NULL AS approved, p.current_version_id = v.id AS current, v.exported_at IS NOT NULL AS exported,
+            v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level,
             packet_version_deadline_status(p.case_id, v.content) AS deadline_status
        FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
     [input.versionId, input.practiceId],
@@ -432,6 +433,10 @@ export async function requestPacketExport(scope: PracticeScope<ScopeClient>, que
   if (!found.approved || !found.current || found.exported) {
     throw new PacketRuleError('23514', found.exported ? 'a packet version is exported once' : 'exporting a packet needs its current version approved');
   }
+  // A version written before a denial reopened the case states the earlier level's deadline (as the job and the database refuse it).
+  if (!found.at_case_level) {
+    throw new PacketRuleError('23514', NOT_CASE_LEVEL);
+  }
   // CO-05: an unverified deadline blocks the export here as in the job and in the database.
   if (found.deadline_status === 'unverified') {
     throw new PacketRuleError('23514', DEADLINE_NOT_VERIFIED);
@@ -441,6 +446,9 @@ export async function requestPacketExport(scope: PracticeScope<ScopeClient>, que
 
 /** The refusal of an export or an attestation whose deadline is not verified (the database's words). */
 export const DEADLINE_NOT_VERIFIED = 'a packet version whose deadline is not verified is not exported';
+
+/** The refusal of an export of a version written at an earlier dispute level than the case's now (the database's words). */
+export const NOT_CASE_LEVEL = 'only a version of the case\'s dispute level is exported; write the packet again at this level';
 
 /**
  * What a reimbursement reviewer confirms over a packet's export before attesting it (D16), as codes:

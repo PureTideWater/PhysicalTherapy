@@ -73,6 +73,8 @@ export interface VersionView {
   readonly deadlineStatus: DeadlineStatus;
   /** The deadline status the database derives now (what the export is held to; CO-05). */
   readonly deadlineNow: DeadlineStatus;
+  /** Whether the version is of the case's dispute level now: one written before a denial reopened the case is not exported. */
+  readonly atCaseLevel: boolean;
   /** The verifier's report over what the export printed, once exported. */
   readonly exportVerifier: VerifierReport | null;
   /** The reimbursement reviewer's attestation over the export (D16), once made. */
@@ -159,7 +161,13 @@ export async function deadlineNow(scope: Scope, caseId: string, content: PacketC
   return rows[0]?.status ?? 'unverified';
 }
 
-function versionView(detail: PacketVersionDetail, writtenBy: string | null, now: DeadlineStatus, attestedBy: string | null): VersionView {
+/** Whether a version's dispute level is the case's now (1 + its reopened denials), as the export and the attestation require. */
+export async function atCaseLevel(scope: Scope, caseId: string, content: PacketContent): Promise<boolean> {
+  const { rows } = await scope.client.query<{ level: number }>('SELECT 1 + case_reopened_levels($1) AS level', [caseId]);
+  return rows[0]?.level === content.dispute_level;
+}
+
+function versionView(detail: PacketVersionDetail, writtenBy: string | null, now: DeadlineStatus, attestedBy: string | null, caseLevel: boolean): VersionView {
   return {
     id: detail.versionId,
     packetId: detail.packetId,
@@ -179,6 +187,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null, now:
     attachedDocumentIds: attachedOf(detail.content),
     deadlineStatus: detail.deadlineStatus,
     deadlineNow: now,
+    atCaseLevel: caseLevel,
     exportVerifier: detail.exportVerifier,
     attestation: detail.attestedAt === null || detail.attestation === null ? null : { by: attestedBy, at: detail.attestedAt.toISOString(), checklist: detail.attestation.checklist },
   };
@@ -259,7 +268,13 @@ export async function builderView(
       deadlineStatus: row.deadline_verification_status,
       attestedAt: row.attested_at?.toISOString() ?? null,
     })),
-    version: versionView(detail, person(shown.drafted_by), await deadlineNow(scope, input.caseId, detail.content), await attesterEmail(scope, detail.attestedBy)),
+    version: versionView(
+      detail,
+      person(shown.drafted_by),
+      await deadlineNow(scope, input.caseId, detail.content),
+      await attesterEmail(scope, detail.attestedBy),
+      await atCaseLevel(scope, input.caseId, detail.content),
+    ),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
     ...common,
@@ -357,6 +372,10 @@ export const DEADLINE_NOT_EXPORTABLE = 'The export is blocked: this version’s 
 /** A /1 version's export: it states no deadline, so it is written again. */
 export const OUTDATED_NOT_EXPORTABLE = 'This version was written before packets stated their deadline. Write a new version of the packet and approve it; only that one can be exported.';
 
+/** A version written before a denial reopened the case: it states the earlier level's deadline, so it is written again. */
+export const STALE_LEVEL_NOT_EXPORTABLE =
+  'This version was written before the payer’s denial reopened the case for its next dispute level, so it states the earlier level’s deadline. Write a new version of the packet at this level and approve it; only that one can be exported.';
+
 /** The person who attested an export, by email; null when they are no longer a user. */
 async function attesterEmail(scope: Scope, userId: string | null): Promise<string | null> {
   if (userId === null) {
@@ -369,14 +388,15 @@ async function attesterEmail(scope: Scope, userId: string | null): Promise<strin
 /**
  * Asks the worker to print a version's export (the packet_export job: the PDF and the CSV schedule, the
  * identifiers inserted, stored sealed, their SHA-256 recorded on the version; CAS-11, CAS-12). A version
- * exported already is left as it is ('exported'); one not approved or not current is refused, and one
- * whose deadline the database does not verify now (CO-05), or a tp-packet/1 version, which states none.
+ * exported already is left as it is ('exported'); one not approved or not current is refused, one written
+ * before a denial reopened the case ('stale_level'), one whose deadline the database does not verify now
+ * (CO-05), and a tp-packet/1 version, which states none.
  */
 export async function requestExportOnce(
   scope: Scope,
   queue: JobQueue,
   input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string },
-): Promise<'queued' | 'exported' | 'refused' | 'deadline_unverified' | 'outdated'> {
+): Promise<'queued' | 'exported' | 'refused' | 'stale_level' | 'deadline_unverified' | 'outdated'> {
   const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
   if (version.exported) {
     return 'exported';
@@ -384,12 +404,16 @@ export async function requestExportOnce(
   if (!version.approved || !version.current) {
     return 'refused';
   }
-  const { rows } = await scope.client.query<{ format: string; status: DeadlineStatus }>(
-    "SELECT v.content ->> 'format' AS format, packet_version_deadline_status(p.case_id, v.content) AS status FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2",
+  const { rows } = await scope.client.query<{ format: string; at_case_level: boolean; status: DeadlineStatus }>(
+    `SELECT v.content ->> 'format' AS format, v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level, packet_version_deadline_status(p.case_id, v.content) AS status
+       FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
     [input.versionId, input.practiceId],
   );
   if (rows[0]?.format !== 'tp-packet/2') {
     return 'outdated';
+  }
+  if (!rows[0].at_case_level) {
+    return 'stale_level';
   }
   if (rows[0].status === 'unverified') {
     return 'deadline_unverified';

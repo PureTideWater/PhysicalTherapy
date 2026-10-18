@@ -8,7 +8,19 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
-import { DEADLINE_NOT_EXPORTABLE, NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import {
+  DEADLINE_NOT_EXPORTABLE,
+  NOT_EXPORTABLE,
+  OUTDATED_NOT_EXPORTABLE,
+  STALE_LEVEL_NOT_EXPORTABLE,
+  type BuilderView,
+  approveOnce,
+  builderView,
+  exportFile,
+  requestExportOnce,
+  versionOfCase,
+  writeVersionOnce,
+} from '../packets/queries';
 import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
@@ -233,6 +245,9 @@ export const exportPacketAction = practiceRoute({
     const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId });
     if (outcome === 'refused') {
       throw new InputError([{ field: 'refused', message: NOT_EXPORTABLE }]);
+    }
+    if (outcome === 'stale_level') {
+      throw new InputError([{ field: 'versionId', message: STALE_LEVEL_NOT_EXPORTABLE }]);
     }
     if (outcome === 'deadline_unverified') {
       throw new InputError([{ field: 'deadline', message: DEADLINE_NOT_EXPORTABLE }]);

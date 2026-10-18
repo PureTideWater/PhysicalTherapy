@@ -14,8 +14,10 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * A tp-packet/2 version also states each line's deadline, its calculation summary and the evidence
  * behind the deadline, so a narrative may repeat those too: the deadline dates, the contract window's
  * page and day count, its quoted clause (read as quoted text), and the calculation's whole-cent amounts
- * (an unrounded amount with a fraction of a cent is not a figure a narrative states). A tp-packet/1
- * version has none of them.
+ * (an unrounded amount with a fraction of a cent is not a figure a narrative states). The window's day
+ * count and every number its quote holds are day counts, and its page a page: each is a number of its
+ * own kind, which a narrative states only as days ("3650 days") or as a page ("page 4"), so it never
+ * stands in for a count of units, lines or claims. A tp-packet/1 version has none of them.
  */
 export interface NarrativeFacts {
   readonly amounts: ReadonlySet<string>;
@@ -25,6 +27,10 @@ export interface NarrativeFacts {
   readonly modifiers: ReadonlySet<string>;
   /** Counts, units, version, page, release and dispute-level numbers, day counts and years. */
   readonly numbers: ReadonlySet<string>;
+  /** The contract window's days and the numbers its quote holds (tp-packet/2): a number among them only as days, before "day" or "days". */
+  readonly dayCounts: ReadonlySet<string>;
+  /** The contract window's pages (tp-packet/2): a number among them only as a page, after "page". */
+  readonly pages: ReadonlySet<string>;
   /** Figures written as identifiers in the texts the version quotes (a statute section). */
   readonly identifiers: ReadonlySet<string>;
   /** The schedule's rows: a placeholder names one of 1 to rows. */
@@ -40,6 +46,8 @@ class FactSets {
   readonly codes = new Set<string>();
   readonly modifiers = new Set<string>();
   readonly numbers = new Set<string>();
+  readonly dayCounts = new Set<string>();
+  readonly pages = new Set<string>();
   readonly identifiers = new Set<string>();
 
   amount(value: string | null | undefined): void {
@@ -68,8 +76,8 @@ class FactSets {
     }
   }
 
-  /** Every figure a quoted text holds, each as its own kind. */
-  quoted(text: string | null | undefined): void {
+  /** Every figure a quoted text holds, each as its own kind; its numbers into `numbers`, or the set named. */
+  quoted(text: string | null | undefined, numbers: Set<string> = this.numbers): void {
     if (text === null || text === undefined) {
       return;
     }
@@ -82,7 +90,7 @@ class FactSets {
       month_day: (value) => this.identifiers.add(`month_day:${value}`),
       code: (value) => this.codes.add(value),
       modifier: (value) => this.modifiers.add(value),
-      number: (value) => this.numbers.add(value),
+      number: (value) => numbers.add(value),
       identifier: (value) => this.identifiers.add(value),
     };
     // Read as the narrative is read (./readable.ts), so a figure is the same figure in both.
@@ -195,9 +203,11 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     sets.date(content.deadline.ends_on);
     for (const source of content.deadline.sources) {
       if (source.kind === 'contract_window') {
-        sets.number(source.page);
-        sets.number(source.days);
-        sets.quoted(source.quote);
+        sets.pages.add(canonicalNumber(String(source.page)));
+        if (source.days !== null) {
+          sets.dayCounts.add(canonicalNumber(String(source.days)));
+        }
+        sets.quoted(source.quote, sets.dayCounts);
       }
     }
   }
@@ -227,6 +237,8 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     codes: sets.codes,
     modifiers: sets.modifiers,
     numbers: sets.numbers,
+    dayCounts: sets.dayCounts,
+    pages: sets.pages,
     identifiers: sets.identifiers,
     rows: content.lines.length,
     markers: new Set(content.sources.map((source) => source.marker)),

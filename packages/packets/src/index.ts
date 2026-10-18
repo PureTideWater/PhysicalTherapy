@@ -6,7 +6,18 @@
  * verifier is a hard gate with no bypass; the database refuses an approval of a version it failed.
  * Printing the export (PDF and CSV) is the worker's (apps/worker/src/packets).
  */
-export { type AssemblyInput, type AssemblyLine, type DeadlineInput, type DocumentReference, PacketAssemblyError, assemblePacket, dollars, requestedAction } from './assemble';
+export {
+  type AssemblyInput,
+  type AssemblyLine,
+  type DeadlineInput,
+  type DocumentReference,
+  PacketAssemblyError,
+  assemblePacket,
+  dollars,
+  lineDeadline,
+  packetDeadline,
+  requestedAction,
+} from './assemble';
 export { CalculationError, lineCalculation, traceSha256 } from './calculation';
 export { addDays, daysFrom, isIsoDate } from './dates';
 export { draftNarrative } from './draft';

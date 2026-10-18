@@ -14,8 +14,8 @@ import { TriageWorld } from './test-support/triage-world';
  * the worker's loader (lineDeadlines, nextLevelDeadline), against the database's priced_line_deadline_status(),
  * case_next_window_deadline_status() and packet_version_deadline_status() (migration 20261103090000), over lines the
  * price job priced: a contract whose window the specialist cited and verified, one whose window is uncited, a
- * version superseded since, and Medicare Advantage lines under release 900001 (its windows at L1) and 900005 (at L2).
- * Synthetic data only.
+ * version superseded since, and Medicare Advantage lines under release 900001 (its windows at L1) and 900005 (at L2),
+ * and under 900005 once it is withdrawn (its records then verify nothing). Synthetic data only.
  */
 
 let w: TriageWorld;
@@ -159,7 +159,7 @@ describe('a contract’s own window', () => {
 });
 
 describe('a release window (Medicare Advantage non-contracted, Medicare redetermination)', () => {
-  it('is unverified under 900001’s L1 records, and verified at L2 (not at L3) under 900005’s, on both sides', async () => {
+  it('is unverified under 900001’s L1 records, verified at L2 (not at L3) under 900005’s, and unverified once 900005 is withdrawn, on both sides', async () => {
     const practice = await w.practice('DEADLINE-MA');
     await w.load(practice, 'MAP-05/remit.835');
     await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
@@ -181,5 +181,12 @@ describe('a release window (Medicare Advantage non-contracted, Medicare redeterm
     // The first run's lines name 900001's records: a later release does not verify them.
     agree(await both(practice, firstRun));
     expect((await both(practice, firstRun)).every((line) => line.sql === 'unverified')).toBe(true);
+
+    // 900005 withdrawn (its content was wrong): the second run stays pinned to it, and its L2 records verify nothing now, on both sides.
+    await w.pricing.withdraw(DEADLINE_RELEASE);
+    const withdrawn = await both(practice, secondRun);
+    agree(withdrawn);
+    expect(new Set(withdrawn.map((line) => `${String(line.ts?.status)} ${String(line.ts?.level)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified L2 RELEASE_WITHDRAWN']));
+    agree(await both(practice, secondRun, 'L3'));
   }, 120_000);
 });

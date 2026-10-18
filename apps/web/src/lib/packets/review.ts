@@ -5,7 +5,7 @@ import { type ExportAwaitingAttestation, type PacketAttestation, attestPacketExp
 
 import type { Services } from '../server/services';
 import { NotFoundError } from '../http/route';
-import { deadlineNow } from './queries';
+import { atCaseLevel, deadlineNow } from './queries';
 
 /**
  * The reimbursement reviewer's review of a packet's export (D16; docs/adr/0061), as the audit report's
@@ -48,8 +48,10 @@ export interface PacketReview {
   readonly exportVerifier: VerifierReport | null;
   /** The deadline the database derives now: an attestation needs it not unverified. */
   readonly deadlineNow: DeadlineStatus;
+  /** Whether the version is of the case's dispute level now (the database refuses to attest one that is not). */
+  readonly atCaseLevel: boolean;
   readonly attestation: { readonly at: string; readonly byViewer: boolean; readonly checklist: PacketAttestation['checklist'] } | null;
-  /** Whether the viewer drafted, wrote or approved the packet (the database refuses their attestation). */
+  /** Whether the viewer drafted, wrote or approved any version of the packet (the database refuses their attestation). */
   readonly viewerTookPart: boolean;
 }
 
@@ -59,8 +61,9 @@ export async function packetReview(scope: Scope, services: Pick<Services, 'keys'
   if (detail?.caseId !== input.caseId) {
     throw new NotFoundError();
   }
-  const { rows } = await scope.client.query<{ drafted_by: string }>('SELECT v.drafted_by FROM packet_version v WHERE v.packet_id = $1 AND v.version_no = 1', [detail.packetId]);
-  const firstDrafter = rows[0]?.drafted_by ?? detail.draftedBy;
+  // Every version's writer and approver, as the database reads them when it refuses an attestation.
+  const { rows } = await scope.client.query<{ drafted_by: string; approved_by: string | null }>('SELECT v.drafted_by, v.approved_by FROM packet_version v WHERE v.packet_id = $1', [detail.packetId]);
+  const people = new Set([detail.draftedBy, detail.approvedBy, ...rows.flatMap((row) => [row.drafted_by, row.approved_by])]);
   return {
     versionId: detail.versionId,
     caseId: detail.caseId,
@@ -77,8 +80,9 @@ export async function packetReview(scope: Scope, services: Pick<Services, 'keys'
     exportCsvSha256: detail.exportCsvSha256,
     exportVerifier: detail.exportVerifier,
     deadlineNow: await deadlineNow(scope, detail.caseId, detail.content),
+    atCaseLevel: await atCaseLevel(scope, detail.caseId, detail.content),
     attestation: detail.attestedAt === null || detail.attestation === null ? null : { at: detail.attestedAt.toISOString(), byViewer: detail.attestedBy === input.viewerId, checklist: detail.attestation.checklist },
-    viewerTookPart: [firstDrafter, detail.draftedBy, detail.approvedBy].includes(input.viewerId),
+    viewerTookPart: people.has(input.viewerId),
   };
 }
 

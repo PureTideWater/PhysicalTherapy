@@ -108,6 +108,8 @@ export const DEADLINE_CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, strin
   COMMERCIAL_DEFAULT:
     'These lines’ window is the rule release’s default for commercial plans, which is never verified: the contract version cites no window of its own. Ask the contract specialist to cite and verify the contract’s dispute window (its page, quote and hash) on an amended or corrected version; lines priced under it once it is signed off have a verified deadline.',
   RECORD_NOT_IN_RELEASE: 'The Medicare window record these lines were priced with is not in the rule release they were priced under, so their deadline is not verified. Lines priced under a release that holds the record, verified, have a verified deadline.',
+  RELEASE_WITHDRAWN:
+    'The rule release these lines were priced under was withdrawn because its content was wrong, so its Medicare window record verifies nothing. Lines priced again under the release in force, with its record verified to level L2, have a verified deadline.',
   RECORD_BELOW_LEVEL: 'The Medicare window record these lines were priced with is not verified to level L2 in their rule release. Lines priced under a release whose record a second reader verified have a verified deadline.',
   CONTRACT_WINDOW_UNCITED:
     'The contract version these lines were priced under states a dispute window but cites no page, quote and hash for it. Ask the contract specialist to cite and verify the window on an amended or corrected version; lines priced under it once a billing manager signs it off have a verified deadline.',
@@ -115,4 +117,6 @@ export const DEADLINE_CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, strin
   CONTRACT_VERSION_NOT_SIGNED_OFF: 'The contract version these lines were priced under is no longer signed off (a corrected version replaced it), so their deadline is not verified. Lines priced under the signed-off version in force have their own deadline.',
   CONTRACT_WINDOW_DIFFERS: 'The window these lines were priced with is not the length the contract version cites, so their deadline is not verified. Ask the contract specialist to check the version’s window against its page.',
   NEXT_LEVEL_UNCITED: 'The next dispute level’s window is the contract’s appeal level, which cites no page, quote or hash, so this level’s deadline cannot be verified and its packet is not exported.',
+  NEXT_LEVEL_DIFFERS:
+    'The next dispute level’s date was computed from a Medicare reconsideration record that is no longer the one in force: the record in force now gives another date, so this deadline is not verified and its packet is not exported.',
 };

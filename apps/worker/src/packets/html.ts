@@ -54,12 +54,14 @@ const DEADLINE_STATUS_TEXT: Readonly<Record<DeadlineStatus, string>> = {
 const CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, string>> = {
   COMMERCIAL_DEFAULT: 'the window is the rule release’s commercial default, which is never verified',
   RECORD_NOT_IN_RELEASE: 'the window’s record is not in the rule release',
+  RELEASE_WITHDRAWN: 'the window’s rule release was withdrawn',
   RECORD_BELOW_LEVEL: 'the window’s record is not verified to the level required',
   CONTRACT_WINDOW_UNCITED: 'the contract version cites no page, quote and hash for its window',
   CONTRACT_WINDOW_UNVERIFIED: 'the contract window’s citation is not verified',
   CONTRACT_VERSION_NOT_SIGNED_OFF: 'the contract version is not signed off',
   CONTRACT_WINDOW_DIFFERS: 'the window the line was priced with is not the contract version’s cited window',
   NEXT_LEVEL_UNCITED: 'the next level’s window cites no evidence',
+  NEXT_LEVEL_DIFFERS: 'the next level’s date is not the one the record in force gives',
 };
 
 /** What a deadline's status prints as, with its cause when it is not verified. */

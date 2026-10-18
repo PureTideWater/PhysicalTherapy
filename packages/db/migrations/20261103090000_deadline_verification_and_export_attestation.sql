@@ -1,7 +1,7 @@
 -- Deadline verification and the attested export (Change Order 001, CO-05 and CO-12's packet_version row;
 -- reconciliation-001 PR 5 and decisions D15 (a), D16 (a) plus (c) and D17 (a), approved 2026-10-17; PRD 12,
--- The packet, Approval and Submission; PRD 11 step 8; CLAUDE.md rules 1 and 3). Decisions: docs/adr/0061,
--- 0041 and 0038.
+-- The packet, Approval and Submission; PRD 11 step 8; CLAUDE.md rules 1 and 3).
+-- Decisions: docs/adr/0061, 0041 and 0038.
 --
 -- A deadline is verified only from a source a person signed off (D17 a): for Medicare and Medicare Advantage
 -- non-contracted lines, the rule release's dispute-window record at L2 or higher (L3 for E3); for a contract
@@ -29,22 +29,35 @@
 -- - priced_line_deadline_status(), case_next_window_deadline_status() and packet_version_deadline_status():
 --   the derivation, mirroring @tp/triage's deadlineVerification(), nextLevelDeadlineVerification() and
 --   packetDeadlineStatus() (a database test runs both on the same lines). SECURITY INVOKER: under the caller's
---   policies a row it cannot see yields 'unverified', so every check below fails closed.
--- - The export (packet_version_export_guard): refused while the deadline, derived now, is unverified, and
---   unless it carries the verifier's passing tp-packet-verifier/2 report over the narrative it rendered
---   (export_verifier_report, whose narrative_sha256 is the version's). The worker refuses both first.
+--   policies a row it cannot see yields 'unverified', so every check below fails closed. A release record of a
+--   withdrawn release (rule_release_withdrawal) verifies nothing; the next level's deadline is verified only
+--   from the reconsideration record in force that gives exactly its stored end (case_next_dispute_window()).
+-- - packet_version_deadline_stated (when a tp-packet/2 version is written): each line's deadline and its
+--   calculation (priced_line_calculation(): method, release, steps, rounding, observed basis and patient share)
+--   are its stored trace's, and the version's deadline (its end, its line counts and the sources it names: the
+--   contract window's evidence, days and verifier, the release records' SHA-256 and level) is what the lines,
+--   the contract versions, the rule records and the reopening denial give. The trace's SHA-256 is over its
+--   canonical JSON, which the export job checks with every other field by stating the version again.
+-- - The export (packet_version_export_guard): refused for a version not of the case's dispute level now
+--   (1 + case_reopened_levels(): a version written before a denial reopened the case states the earlier level's
+--   deadline), and while the deadline, derived now, is unverified. SQL cannot run the verifier (it is
+--   TypeScript): it holds the report the job writes (export_verifier_report) to the verifier's format, a
+--   passing result and the version's own narrative SHA-256. The export job runs the verifier over what it
+--   prints and refuses first.
 -- - The attestation (D16, audit_report's pattern): once the export is made, a reimbursement reviewer
 --   (audit_finding.validate, which only the reviewer role holds, reaching the practice under a support grant)
 --   attests once, in their own name, over the export's two SHA-256 and a checklist of codes (no words). The
---   attester is neither of the drafters nor the approver; the version is current and still its case's, and its
---   deadline still not unverified. A submission is logged only of an attested export.
+--   attester drafted, wrote and approved no version of the packet; the version is current, still its case's and
+--   of the case's dispute level, and its deadline still not unverified. A submission is logged only of an
+--   attested export.
 --
 -- Why tp_app cannot bypass the refusal: tp_owner owns the tables, triggers and functions, and tp_app owns
 -- nothing and has no BYPASSRLS, so it can neither ALTER the table nor DISABLE a trigger, and only a superuser
 -- sets session_replication_role. Its column grants are the only columns it writes: exported_at only through
 -- packet_version_rules (for a job actor), deadline_verification_status never. The guard reads rows that cannot
--- change underneath it: priced_line and rule_record are immutable, a contract window is frozen from approval,
--- and the version's status is read at export.
+-- change underneath it: priced_line, rule_record and payer_response are immutable, a contract window is frozen
+-- from approval, a withdrawal or a reopening denial only adds a row (which fails the deadline closed or moves the
+-- case's level), and the version's status is read at export.
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: nullable columns and a generated one
 -- (adding it rewrites the small packet_version table under a brief ACCESS EXCLUSIVE lock; every existing row is
@@ -262,7 +275,9 @@ GRANT UPDATE (dispute_window_evidence, dispute_window_verified_by, dispute_windo
 -- packet's deadline (its basis: the lines' own windows at the first level, the next level's window after a
 -- reopened denial; its status; the date it ends, or null) and on each line its deadline (status, the date it
 -- ends or null, its source: the contract, the release, or none) and its calculation (copied from the trace by
--- @tp/packets; which lines and amounts they are is checked against the case when the version is written).
+-- @tp/packets). This is their shape only: when the version is written, its lines and amounts are checked against
+-- the case (packet_version_matches_case), and each line's deadline and calculation and the version's deadline
+-- against the trace and the rows they name (packet_version_deadline_stated).
 CREATE OR REPLACE FUNCTION packet_content_valid(content jsonb) RETURNS boolean LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   line jsonb;
@@ -336,8 +351,9 @@ ALTER TABLE packet_version
 -- ---------------------------------------------------------------------------------------------------
 
 -- A priced line's deadline, from its stored trace: not_applicable without a window; verified for a release
--- window whose record (the trace's release and SHA-256) is Medicare's at `minimum_level` or higher, never for a
--- commercial_default; verified for a contract window when the version the trace names is signed off with its
+-- window whose record (the trace's release and SHA-256) is Medicare's at `minimum_level` or higher, of a release
+-- that was not withdrawn (a withdrawal says its content was wrong), never for a commercial_default; verified for a
+-- contract window when the version the trace names is signed off with its
 -- window verified over complete evidence and of the trace's length in days; unverified otherwise, and for a
 -- line the caller cannot see.
 CREATE FUNCTION priced_line_deadline_status(target uuid, minimum_level text DEFAULT 'L2') RETURNS text
@@ -367,6 +383,7 @@ BEGIN
        WHERE r.release_no = (trace -> 'release' ->> 'number')::integer AND r.record_type = 'dispute_window'
          AND r.sha256 = window_step -> 'record' ->> 'sha256' AND r.key ->> 'program' = 'medicare'
          AND array_position(levels, r.verification) >= array_position(levels, minimum_level)
+         AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
     ) THEN 'verified' ELSE 'unverified' END;
   END IF;
   IF window_step ->> 'source' = 'contract' THEN
@@ -387,13 +404,17 @@ $$;
 
 -- The next level's deadline of a case reopened by a denial (dispute level 2 and above): a contract's appeal
 -- levels carry no evidence, so unverified; a Medicare Advantage non-contracted case's is verified when the
--- Medicare reconsideration record case_next_dispute_window() reads (the release in force, on the day the
--- reopening denial was received) is at `minimum_level` or higher.
+-- Medicare reconsideration record in force now (the release in force, on the day the reopening denial was
+-- received) gives exactly the end stored when the denial was recorded (case_next_dispute_window() read now: a
+-- record that gives another end, as a later release's may, is not the record the date came from) and is at
+-- `minimum_level` or higher.
 CREATE FUNCTION case_next_window_deadline_status(target_case uuid, minimum_level text DEFAULT 'L2') RETURNS text
 LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   pattern jsonb;
   denied_on date;
+  denied_level integer;
+  stated_ends_on date;
   record_level text;
   levels CONSTANT text[] := ARRAY['L1', 'L2', 'L3'];
 BEGIN
@@ -404,11 +425,12 @@ BEGIN
   IF NOT FOUND OR pattern ->> 'contract_version_id' IS NOT NULL OR pattern ->> 'mapping_kind' IS DISTINCT FROM 'ma_noncontracted' THEN
     RETURN 'unverified';
   END IF;
-  SELECT r.received_on INTO denied_on
+  SELECT r.received_on, r.next_window_ends_on, s.dispute_level INTO denied_on, stated_ends_on, denied_level
     FROM payer_response r JOIN submission s ON s.id = r.submission_id
    WHERE s.case_id = target_case AND r.reopens_case
    ORDER BY r.received_on DESC, r.created_at DESC, r.id DESC LIMIT 1;
-  IF denied_on IS NULL THEN
+  IF denied_on IS NULL OR stated_ends_on IS NULL
+     OR case_next_dispute_window(target_case, denied_level, denied_on) IS DISTINCT FROM stated_ends_on THEN
     RETURN 'unverified';
   END IF;
   SELECT r.verification INTO record_level
@@ -474,45 +496,183 @@ ALTER TABLE packet_version
     attestation IS NULL OR coalesce(attestation ->> 'pdf_sha256' = export_sha256 AND attestation ->> 'csv_sha256' = export_csv_sha256, false)
   );
 
--- A tp-packet/2 version states each line's deadline (its status, the day it ends and its source, as the line's
--- stored trace has them) and its own as the database derives them when it is written.
+-- A line's calculation summary as @tp/packets lineCalculation() copies it from the stored trace: the method, the
+-- release, the steps' amounts in the order they applied (the amount per unit or per visit, the schedule, the
+-- charge, the base, then each adjustment's amount after it), the rounding with its unrounded and rounded cents,
+-- the observed basis and the patient share. Without the trace's SHA-256, which is over the trace's canonical JSON
+-- and is the export job's to check. Null for a trace that priced nothing.
+CREATE FUNCTION priced_line_calculation(trace jsonb) RETURNS jsonb
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  units jsonb := trace -> 'steps' -> 'units';
+  per_visit jsonb := trace -> 'steps' -> 'per_visit';
+  rounding jsonb := trace -> 'steps' -> 'rounding';
+  adjustments jsonb := trace -> 'steps' -> 'adjustments';
+  steps jsonb := '[]'::jsonb;
+  step record;
+BEGIN
+  IF trace -> 'outcome' ->> 'result' IS DISTINCT FROM 'priced' OR jsonb_typeof(trace -> 'terms') IS DISTINCT FROM 'object'
+     OR jsonb_typeof(rounding) IS DISTINCT FROM 'object' THEN
+    RETURN NULL;
+  END IF;
+  FOR step IN
+    SELECT s.name, s.amount FROM (
+      SELECT 1 AS place, 0::bigint AS ordinal, CASE WHEN jsonb_typeof(per_visit) = 'object' THEN 'visit' ELSE 'unit' END AS name,
+             CASE WHEN jsonb_typeof(units) = 'object' THEN units -> 'unit_cents' END AS amount
+      UNION ALL SELECT 2, 0, 'schedule', CASE WHEN jsonb_typeof(units) = 'object' THEN units -> 'schedule_cents' END
+      UNION ALL SELECT 3, 0, 'charge', CASE WHEN jsonb_typeof(units) = 'object' THEN units -> 'charge_cents' END
+      UNION ALL SELECT 4, 0, 'base', coalesce(nullif(per_visit -> 'base_cents', 'null'::jsonb), nullif(units -> 'base_cents', 'null'::jsonb))
+      UNION ALL SELECT 5, a.ordinal, a.value ->> 'name', a.value -> 'after_cents'
+        FROM jsonb_array_elements(CASE WHEN jsonb_typeof(adjustments) = 'array' THEN adjustments ELSE '[]'::jsonb END) WITH ORDINALITY a (value, ordinal)
+    ) s
+    WHERE s.amount IS NOT NULL AND s.amount <> 'null'::jsonb
+    ORDER BY s.place, s.ordinal
+  LOOP
+    steps := steps || jsonb_build_array(jsonb_build_object('step', step.name, 'amount_cents', step.amount));
+  END LOOP;
+  RETURN jsonb_build_object(
+    'method', CASE WHEN trace -> 'agreement' ->> 'outcome' = 'MA_NONCONTRACTED' THEN to_jsonb('MA_NONCONTRACTED'::text) ELSE trace -> 'terms' -> 'method' END,
+    'release_no', trace -> 'release' -> 'number',
+    'steps', steps,
+    'rounding', jsonb_build_object('rule', rounding -> 'rule', 'unrounded_cents', rounding -> 'unrounded_cents', 'rounded_cents', rounding -> 'rounded_cents'),
+    'observed_basis', trace -> 'line' -> 'observed_allowed_basis',
+    'patient_share_cents', coalesce(trace -> 'steps' -> 'patient_share_cents', 'null'::jsonb)
+  );
+END;
+$$;
+
+-- A tp-packet/2 version states, when it is written, what its inputs give (CO-05: no figure, date or count absent
+-- from them): each line's deadline (its status, the day it ends and its source) and calculation (as
+-- priced_line_calculation() reads the line's stored trace, and a SHA-256 of it); and its own deadline as the
+-- database derives it: its basis by dispute level, its status, its end (the earliest of the lines' windows at
+-- the first level, the reopening denial's next window above it), how many lines it has and how many have a
+-- verified deadline, causes only when it is not verified, and exactly the sources its lines' windows name, each
+-- as it stands: a contract version's cited window (its document, page, quote, hash, days and verifier) or a
+-- release record (its release, SHA-256, level and program). Nothing it names changes later: priced_line and
+-- rule_record are immutable, a contract window is frozen from approval and a payer response never changes.
 CREATE FUNCTION packet_version_deadline_stated() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   the_case uuid;
   line jsonb;
+  trace jsonb;
   window_step jsonb;
+  deadline jsonb := NEW.content -> 'deadline';
+  verified_lines integer := 0;
+  earliest text;
+  stated_end text;
+  named text[] := ARRAY[]::text[];
+  stated text[] := ARRAY[]::text[];
+  cited jsonb;
 BEGIN
   IF NEW.content ->> 'format' IS DISTINCT FROM 'tp-packet/2' THEN
     RETURN NULL;
   END IF;
   SELECT p.case_id INTO the_case FROM packet p WHERE p.id = NEW.packet_id AND p.practice_id = NEW.practice_id;
   FOR line IN SELECT value FROM jsonb_array_elements(NEW.content -> 'lines') LOOP
-    SELECT p.trace -> 'steps' -> 'window' INTO window_step FROM priced_line p WHERE p.id = (line ->> 'priced_line_id')::uuid;
+    SELECT p.trace INTO trace FROM priced_line p WHERE p.id = (line ->> 'priced_line_id')::uuid;
+    window_step := trace -> 'steps' -> 'window';
     IF line -> 'deadline' ->> 'status' IS DISTINCT FROM priced_line_deadline_status((line ->> 'priced_line_id')::uuid)
        OR line -> 'deadline' ->> 'ends_on' IS DISTINCT FROM window_step ->> 'ends_on'
        OR line -> 'deadline' ->> 'source' IS DISTINCT FROM window_step ->> 'source' THEN
       RAISE EXCEPTION 'a packet version states each line''s deadline from the line''s own window: its status, the day it ends and its source' USING ERRCODE = 'check_violation';
     END IF;
+    IF priced_line_calculation(trace) IS NULL OR (line -> 'calculation') - 'trace_sha256' IS DISTINCT FROM priced_line_calculation(trace)
+       OR coalesce(line -> 'calculation' ->> 'trace_sha256', '') !~ '^[0-9a-f]{64}$' THEN
+      RAISE EXCEPTION 'a packet version states each line''s calculation as its stored trace has it: the method, the release, the steps, the rounding, the observed basis and the patient share' USING ERRCODE = 'check_violation';
+    END IF;
+    IF line -> 'deadline' ->> 'status' = 'verified' THEN
+      verified_lines := verified_lines + 1;
+    END IF;
+    IF window_step ->> 'ends_on' IS NOT NULL AND (earliest IS NULL OR window_step ->> 'ends_on' < earliest) THEN
+      earliest := window_step ->> 'ends_on';
+    END IF;
+    -- The evidence the line's window names: its contract version's cited window, or its release record.
+    IF window_step ->> 'source' = 'contract' AND coalesce(trace #>> '{agreement,contract_version_id}', '') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       AND EXISTS (SELECT 1 FROM contract_version v WHERE v.id = (trace #>> '{agreement,contract_version_id}')::uuid AND v.practice_id = NEW.practice_id AND v.dispute_window_evidence IS NOT NULL) THEN
+      named := named || ('contract_window:' || (trace #>> '{agreement,contract_version_id}'));
+    ELSIF window_step ->> 'source' = 'release' AND jsonb_typeof(window_step -> 'record') = 'object' THEN
+      named := named || ('release_record:' || (trace #>> '{release,number}') || ':' || (window_step -> 'record' ->> 'sha256'));
+    END IF;
   END LOOP;
-  IF NEW.content -> 'deadline' ->> 'basis' IS DISTINCT FROM (CASE WHEN NEW.dispute_level > 1 THEN 'next_level_window' ELSE 'line_windows' END)
-     OR NEW.content -> 'deadline' ->> 'status' IS DISTINCT FROM packet_version_deadline_status(the_case, NEW.content) THEN
+  IF deadline ->> 'basis' IS DISTINCT FROM (CASE WHEN NEW.dispute_level > 1 THEN 'next_level_window' ELSE 'line_windows' END)
+     OR deadline ->> 'status' IS DISTINCT FROM packet_version_deadline_status(the_case, NEW.content) THEN
     RAISE EXCEPTION 'a packet version states its deadline as the database derives it: the lines'' windows at the first level, the next level''s window after a reopened denial' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.dispute_level > 1 THEN
+    SELECT r.next_window_ends_on::text INTO stated_end
+      FROM payer_response r JOIN submission s ON s.id = r.submission_id
+     WHERE s.case_id = the_case AND r.reopens_case
+     ORDER BY r.received_on DESC, r.created_at DESC, r.id DESC LIMIT 1;
+  ELSE
+    stated_end := earliest;
+  END IF;
+  IF deadline -> 'ends_on' IS DISTINCT FROM coalesce(to_jsonb(stated_end), 'null'::jsonb)
+     OR deadline -> 'lines' IS DISTINCT FROM to_jsonb(jsonb_array_length(NEW.content -> 'lines'))
+     OR deadline -> 'lines_verified' IS DISTINCT FROM to_jsonb(verified_lines)
+     OR jsonb_typeof(deadline -> 'causes') IS DISTINCT FROM 'array'
+     OR jsonb_path_exists(deadline -> 'causes', '$[*] ? (@.type() != "string" || !(@ like_regex "^[A-Z][A-Z_]{0,39}$"))')
+     OR (deadline ->> 'status' = 'verified' AND jsonb_array_length(deadline -> 'causes') > 0) THEN
+    RAISE EXCEPTION 'a packet version states the day its deadline ends and its lines as its inputs give them' USING ERRCODE = 'check_violation';
+  END IF;
+  IF jsonb_typeof(deadline -> 'sources') IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'a packet version names the evidence its deadline rests on as it stands' USING ERRCODE = 'check_violation';
+  END IF;
+  FOR cited IN SELECT value FROM jsonb_array_elements(deadline -> 'sources') LOOP
+    IF cited ->> 'kind' = 'contract_window'
+       AND (cited - ARRAY['kind', 'contract_version_id', 'days', 'document_id', 'page', 'quote', 'hash', 'verified_by', 'verified_at']) = '{}'::jsonb
+       AND EXISTS (
+         SELECT 1 FROM contract_version v
+          WHERE v.id::text = cited ->> 'contract_version_id' AND v.practice_id = NEW.practice_id AND v.dispute_window_evidence IS NOT NULL
+            AND cited -> 'document_id' = v.dispute_window_evidence -> 'document_id' AND cited -> 'page' = v.dispute_window_evidence -> 'page'
+            AND cited -> 'quote' = v.dispute_window_evidence -> 'quote' AND cited -> 'hash' = v.dispute_window_evidence -> 'hash'
+            AND cited -> 'days' = coalesce(to_jsonb(v.dispute_window_days), 'null'::jsonb)
+            AND cited -> 'verified_by' = coalesce(to_jsonb(v.dispute_window_verified_by::text), 'null'::jsonb)
+            AND CASE WHEN v.dispute_window_verified_at IS NULL THEN cited -> 'verified_at' = 'null'::jsonb
+                     ELSE coalesce(cited ->> 'verified_at', '') ~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$'
+                          AND (cited ->> 'verified_at')::timestamptz = date_trunc('milliseconds', v.dispute_window_verified_at) END
+       ) THEN
+      stated := stated || ('contract_window:' || (cited ->> 'contract_version_id'));
+    ELSIF cited ->> 'kind' = 'release_record'
+       AND (cited - ARRAY['kind', 'release_no', 'sha256', 'program', 'level']) = '{}'::jsonb
+       AND jsonb_typeof(cited -> 'release_no') = 'number' AND coalesce(cited ->> 'sha256', '') ~ '^[0-9a-f]{64}$'
+       AND cited -> 'level' = coalesce((SELECT to_jsonb(r.verification) FROM rule_record r
+                                         WHERE r.release_no::text = cited ->> 'release_no' AND r.record_type = 'dispute_window' AND r.sha256 = cited ->> 'sha256'), 'null'::jsonb)
+       AND EXISTS (
+         SELECT 1 FROM jsonb_array_elements(NEW.content -> 'lines') l JOIN priced_line p ON p.id = (l ->> 'priced_line_id')::uuid
+          WHERE p.trace #>> '{release,number}' = cited ->> 'release_no' AND p.trace #>> '{steps,window,record,sha256}' = cited ->> 'sha256'
+            AND cited -> 'program' = coalesce(p.trace #> '{steps,window,record,key,program}', 'null'::jsonb)
+       ) THEN
+      stated := stated || ('release_record:' || (cited ->> 'release_no') || ':' || (cited ->> 'sha256'));
+    ELSE
+      RAISE EXCEPTION 'a packet version names the evidence its deadline rests on as it stands' USING ERRCODE = 'check_violation';
+    END IF;
+  END LOOP;
+  IF cardinality(stated) <> (SELECT count(DISTINCT x) FROM unnest(stated) x)
+     OR (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}') FROM unnest(stated) x) IS DISTINCT FROM (SELECT coalesce(array_agg(DISTINCT x ORDER BY x), '{}') FROM unnest(named) x) THEN
+    RAISE EXCEPTION 'a packet version names exactly the evidence its lines'' windows rest on, each once' USING ERRCODE = 'check_violation';
   END IF;
   RETURN NULL;
 END;
 $$;
 CREATE TRIGGER packet_version_deadline_stated AFTER INSERT ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_deadline_stated();
 
--- The export's refusal in SQL (CO-05): on the export, the deadline is derived again now, from the content and
--- the rows it names (never from the stored status), and the export carries the verifier's passing report over
--- the narrative it rendered, which is the version's. Its report is written with the export and never changes.
+-- The export's refusal in SQL (CO-05): on the export, the version is of the case's dispute level now (one
+-- written before a denial reopened the case states the earlier level's deadline), its deadline is derived again
+-- now, from the content and the rows it names (never from the stored status), and the export carries the
+-- verifier's report over the narrative it rendered, which SQL holds to the verifier's format, a pass and the
+-- version's narrative SHA-256 (the verifier itself is the job's). Its report is written with the export and
+-- never changes.
 CREATE FUNCTION packet_version_export_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   the_case uuid;
 BEGIN
   IF OLD.export_sha256 IS NULL AND NEW.export_sha256 IS NOT NULL THEN
     SELECT p.case_id INTO the_case FROM packet p WHERE p.id = NEW.packet_id AND p.practice_id = NEW.practice_id;
-    IF the_case IS NULL OR packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
+    -- The content's level (a BEFORE trigger sees no generated column of NEW; the content never changes).
+    IF the_case IS NULL OR (NEW.content ->> 'dispute_level')::integer IS DISTINCT FROM 1 + case_reopened_levels(the_case) THEN
+      RAISE EXCEPTION 'only a version of the case''s dispute level is exported; write the packet again at this level' USING ERRCODE = 'check_violation';
+    END IF;
+    IF packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
       RAISE EXCEPTION 'a packet version whose deadline is not verified is not exported' USING ERRCODE = 'check_violation';
     END IF;
     IF NOT coalesce(packet_verifier_report_valid(NEW.export_verifier_report) AND NEW.export_verifier_report ->> 'format' = 'tp-packet-verifier/2'
@@ -528,13 +688,12 @@ $$;
 CREATE TRIGGER packet_version_export_guard BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_export_guard();
 
 -- The attestation (D16): written unattested; once exported, attested once by a reimbursement reviewer in their
--- own name, who neither drafted, wrote nor approved the packet, over the current version still asking for its
--- case's lines, while its deadline is not unverified. The time is the database's.
+-- own name, who drafted, wrote and approved no version of the packet, over the current version still asking for
+-- its case's lines at the case's dispute level, while its deadline is not unverified. The time is the database's.
 CREATE FUNCTION packet_version_attestation_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   the_case uuid;
   current_id uuid;
-  first_drafter uuid;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     IF (NEW.export_verifier_report, NEW.attested_by, NEW.attested_at, NEW.attestation) IS DISTINCT FROM (NULL::jsonb, NULL::uuid, NULL::timestamptz, NULL::jsonb) THEN
@@ -552,14 +711,18 @@ BEGIN
     IF NOT app_actor_is_person() OR NEW.attested_by IS DISTINCT FROM app_actor_id() OR NOT coalesce(app_actor_permitted(NEW.practice_id, 'audit_finding.validate'), false) THEN
       RAISE EXCEPTION 'a packet''s export is attested by a reimbursement reviewer, in their own name' USING ERRCODE = 'insufficient_privilege';
     END IF;
-    SELECT v.drafted_by INTO first_drafter FROM packet_version v WHERE v.packet_id = NEW.packet_id AND v.version_no = 1;
-    IF app_actor_id() IS NOT DISTINCT FROM first_drafter OR app_actor_id() IS NOT DISTINCT FROM NEW.drafted_by OR app_actor_id() IS NOT DISTINCT FROM NEW.approved_by THEN
+    -- Any version of the packet: its first drafter, every later writer and every approver, this version's too.
+    IF app_actor_id() IS NOT DISTINCT FROM NEW.drafted_by OR app_actor_id() IS NOT DISTINCT FROM NEW.approved_by
+       OR EXISTS (SELECT 1 FROM packet_version v WHERE v.packet_id = NEW.packet_id AND (v.drafted_by = app_actor_id() OR v.approved_by = app_actor_id())) THEN
       RAISE EXCEPTION 'the person who drafted, wrote or approved a packet does not attest its export' USING ERRCODE = 'insufficient_privilege';
     END IF;
     SELECT p.current_version_id, p.case_id INTO current_id, the_case FROM packet p WHERE p.id = NEW.packet_id AND p.practice_id = NEW.practice_id;
     IF NEW.id IS DISTINCT FROM current_id OR NOT EXISTS (SELECT 1 FROM "case" c WHERE c.id = the_case AND c.state <> 'closed_written_off')
        OR NOT packet_version_matches_case(the_case, NEW.content) THEN
       RAISE EXCEPTION 'only a packet''s current version, still asking for its case''s lines, is attested' USING ERRCODE = 'check_violation';
+    END IF;
+    IF (NEW.content ->> 'dispute_level')::integer IS DISTINCT FROM 1 + case_reopened_levels(the_case) THEN
+      RAISE EXCEPTION 'only a version of the case''s dispute level is attested' USING ERRCODE = 'check_violation';
     END IF;
     IF packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
       RAISE EXCEPTION 'a packet version whose deadline is not verified is not attested' USING ERRCODE = 'check_violation';
@@ -596,6 +759,7 @@ CREATE TRIGGER submission_needs_attested_export AFTER INSERT ON submission FOR E
 GRANT UPDATE (export_verifier_report, attested_by, attestation) ON packet_version TO tp_app;
 
 REVOKE ALL ON FUNCTION priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
-  packet_version_deadline_stated(), packet_version_export_guard(), packet_version_attestation_rules(), submission_needs_attested_export() FROM PUBLIC;
+  priced_line_calculation(jsonb), packet_version_deadline_stated(), packet_version_export_guard(), packet_version_attestation_rules(), submission_needs_attested_export() FROM PUBLIC;
 -- Called by the triggers, which run as the application role, and by the export job and the screens.
-GRANT EXECUTE ON FUNCTION priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb) TO tp_app;
+GRANT EXECUTE ON FUNCTION priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
+  priced_line_calculation(jsonb) TO tp_app;
