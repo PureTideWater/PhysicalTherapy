@@ -28,6 +28,7 @@ import {
 } from './load';
 import type { ContractVersionRecord, DisputeWindowRecord, RateRecord } from './records';
 import { type Citation, RATE_RECORD_FIELDS, type RateRecordField, type RateRecordTerms, appealLevelsSchema, citationSchema, parseRateTerms, rateTermsToJson } from './terms';
+import { type DisputeWindowRule, disputeWindowRuleSchema, windowRuleComputed } from './window-rule';
 
 /**
  * The contract workflow (PRD 5, J5 and J6; PRD 7, Contracts, Rate record review and Payer and plan
@@ -48,9 +49,11 @@ import { type Citation, RATE_RECORD_FIELDS, type RateRecordField, type RateRecor
  * - Approving field by field and approving the version (approveRateRecordField, approveVersion): the
  *   contract specialist (the platform permission rate_record.approve), once the evidence resolves.
  * - Citing the contract's own dispute window (citeDisputeWindow): the specialist (rate_record.edit), as a rate
- *   record is cited; verifying it against its page (verifyDisputeWindow): the specialist (rate_record.approve).
- *   A model never cites or verifies a window: only a verified window of a signed-off version verifies its
- *   lines' deadlines (D17 a, docs/adr/0061).
+ *   record is cited, with the rule the quote states (its unit and what it is counted from, chosen from fixed
+ *   lists); verifying it against its page (verifyDisputeWindow): the specialist (rate_record.approve), and only
+ *   when that rule is the one the engine computes (window-rule.ts). A model never cites or verifies a window:
+ *   only a verified window of a signed-off version verifies its lines' deadlines (D17 a, docs/adr/0061;
+ *   best-option audit #5).
  * - Signing off (signOffVersion): the practice administrator or billing manager (contract.sign_off).
  * - Mapping plans (mapPlan, correctMapping): the billing manager (mapping.edit).
  */
@@ -259,15 +262,17 @@ async function insertVersion(
   context: WorkflowContext,
   fields: DraftFields,
   supersedesId: string | null,
-  windowCitation: Citation | null = null,
+  /** A successor's copy of the prior version's window citation, with the rule it states (both or neither). */
+  window: { readonly citation: Citation; readonly rule: DisputeWindowRule } | null = null,
 ): Promise<{ versionId: string; versionNo: number }> {
   // One new version per contract at a time, so two drafts never take the same number.
   await context.scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('contract_version:' || $1, 0))", [fields.contractId]);
   const { rows } = await overlapRefused(OVERLAP, () =>
     context.scope.client.query<{ id: string; version_no: number }>(
       `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, effective_to, supersedes_id,
-                                     timely_filing_days, dispute_window_days, appeal_levels, notice_days, dispute_window_evidence)
-       SELECT $1, $2, coalesce(max(v.version_no), 0) + 1, $3::uuid[], $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb
+                                     timely_filing_days, dispute_window_days, appeal_levels, notice_days, dispute_window_evidence,
+                                     dispute_window_unit, dispute_window_measured_from)
+       SELECT $1, $2, coalesce(max(v.version_no), 0) + 1, $3::uuid[], $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12, $13
          FROM contract_version v WHERE v.contract_id = $2
        RETURNING id, version_no`,
       [
@@ -281,7 +286,9 @@ async function insertVersion(
         fields.disputeWindowDays,
         JSON.stringify(fields.appealLevels),
         fields.noticeDays,
-        windowCitation === null ? null : JSON.stringify(citationJson(windowCitation)),
+        window === null ? null : JSON.stringify(citationJson(window.citation)),
+        window?.rule.unit ?? null,
+        window?.rule.measuredFrom ?? null,
       ],
     ),
   );
@@ -326,7 +333,7 @@ const updateDraftInput = z.strictObject({
 /**
  * Edits a draft or proposed version's window, documents and windows (the specialist). Any change of the dispute
  * window's days or of the documents clears the window's verification (the database does it); a window made
- * silent loses its citation too, since a citation is of a window the version states.
+ * silent loses its citation and the rule it states too, since a citation is of a window the version states.
  */
 export async function updateDraftVersion(context: WorkflowContext, input: z.input<typeof updateDraftInput>): Promise<void> {
   const request = parse(updateDraftInput, input);
@@ -337,7 +344,9 @@ export async function updateDraftVersion(context: WorkflowContext, input: z.inpu
     context.scope.client.query(
       `UPDATE contract_version SET effective_from = $3, effective_to = $4, source_document_ids = $5::uuid[], timely_filing_days = $6,
               dispute_window_days = $7, appeal_levels = $8::jsonb, notice_days = $9,
-              dispute_window_evidence = CASE WHEN $7::integer IS NULL THEN NULL ELSE dispute_window_evidence END
+              dispute_window_evidence = CASE WHEN $7::integer IS NULL THEN NULL ELSE dispute_window_evidence END,
+              dispute_window_unit = CASE WHEN $7::integer IS NULL THEN NULL ELSE dispute_window_unit END,
+              dispute_window_measured_from = CASE WHEN $7::integer IS NULL THEN NULL ELSE dispute_window_measured_from END
         WHERE id = $1 AND practice_id = $2`,
       [
         request.versionId,
@@ -582,8 +591,10 @@ const versionInput = z.strictObject({ practiceId: uuid, versionId: uuid });
 /**
  * The specialist approves a version once every rate record is verified and every citation still
  * resolves to its page ("every rate record resolves to a page in its source document"), the dispute
- * window's too: a version whose window is cited is approved only with the window verified (an uncited
- * window is approved as the contract's days, and its lines' deadlines stay unverified, D17 a).
+ * window's too: a version whose window is cited with the rule the engine computes is approved only with the
+ * window verified. An uncited window is approved as the contract's days, and a cited window whose rule the
+ * engine does not compute (business days, months, or another start) is approved unverified, since it cannot be
+ * verified until PR 6c computes it: either way its lines' deadlines stay unverified (D17 a; best-option audit #5).
  */
 export async function approveVersion(context: WorkflowContext, input: z.input<typeof versionInput>): Promise<void> {
   const request = parse(versionInput, input);
@@ -595,7 +606,7 @@ export async function approveVersion(context: WorkflowContext, input: z.input<ty
     throw new ContractWorkflowError('invalid', 'a version is approved once each of its rate records is verified, and it has at least one');
   }
   const window = await windowById(context, request.practiceId, version.id);
-  if (window.citation !== null && window.verifiedBy === null) {
+  if (window.citation !== null && window.verifiedBy === null && windowRuleComputed(window.rule)) {
     throw new ContractWorkflowError('invalid', 'a version whose dispute window is cited is approved once its window is verified', [
       { field: 'disputeWindow', message: 'the dispute window is cited but not verified against its page yet: verify it, then approve the version' },
     ]);
@@ -676,13 +687,25 @@ export async function signOffVersion(context: WorkflowContext, input: z.input<ty
 // ---------------------------------------------------------------------------------------------------
 // The contract's own dispute window: cited and verified as a rate record is (D17 a)
 
-const citeWindowInput = z.strictObject({ practiceId: uuid, versionId: uuid, citation: citationInput.nullable() });
+const citeWindowInput = z
+  .strictObject({
+    practiceId: uuid,
+    versionId: uuid,
+    citation: citationInput.nullable(),
+    /** What the quote counts the days in, and from: required with a citation, never without one. */
+    rule: disputeWindowRuleSchema.nullable().default(null),
+  })
+  .refine((value) => (value.citation === null) === (value.rule === null), {
+    path: ['rule'],
+    message: 'a citation states the window’s unit and what it is counted from, as the quote gives them; removing the citation removes them',
+  });
 
 /**
  * Cites the page where the contract states its dispute window (the specialist, as a rate record is cited): the
- * quote is checked against the page and stored with the page's hash. A new citation, or none (null removes it),
- * clears the window's verification. A window is cited once the version states its days; a silent contract's
- * window is the release's commercial_default, which is never verified.
+ * quote is checked against the page and stored with the page's hash, and with the rule the quote states (its unit
+ * and what it is counted from, which the specialist chooses from fixed lists; nothing parses the quote). A new
+ * citation, or none (null removes it with its rule), clears the window's verification. A window is cited once the
+ * version states its days; a silent contract's window is the release's commercial_default, which is never verified.
  */
 export async function citeDisputeWindow(context: WorkflowContext, input: z.input<typeof citeWindowInput>): Promise<{ readonly cited: boolean }> {
   const request = parse(citeWindowInput, input);
@@ -693,11 +716,10 @@ export async function citeDisputeWindow(context: WorkflowContext, input: z.input
     throw new ContractWorkflowError('invalid', 'a dispute window is cited once the version states its days', [{ field: 'disputeWindowDays', message: 'enter the window’s days first' }]);
   }
   const citation = request.citation === null ? null : await citeOrRefuse(context, version, request.citation);
-  await context.scope.client.query('UPDATE contract_version SET dispute_window_evidence = $3::jsonb WHERE id = $1 AND practice_id = $2', [
-    version.id,
-    request.practiceId,
-    citation === null ? null : JSON.stringify(citationJson(citation)),
-  ]);
+  await context.scope.client.query(
+    'UPDATE contract_version SET dispute_window_evidence = $3::jsonb, dispute_window_unit = $4, dispute_window_measured_from = $5 WHERE id = $1 AND practice_id = $2',
+    [version.id, request.practiceId, citation === null ? null : JSON.stringify(citationJson(citation)), citation === null ? null : (request.rule?.unit ?? null), citation === null ? null : (request.rule?.measuredFrom ?? null)],
+  );
   await recordAuditEvent(context.scope, {
     action: citation === null ? 'contract_window_uncited' : 'contract_window_cited',
     objectType: 'contract_version',
@@ -716,8 +738,10 @@ export interface WindowVerificationResult {
 
 /**
  * The specialist verifies the cited window against its page (PRD 7: the specialist verifies each field against
- * the cited page): verified only when the citation still resolves to its page, in the specialist's own name, now.
- * A window already verified stays as it was verified; an edit of the window clears the verification.
+ * the cited page): verified only when the rule it cites is the rule the engine computes (its days as calendar days
+ * after the remittance date; refused otherwise, so a window counted another way never carries a date later than
+ * the contract's) and the citation still resolves to its page, in the specialist's own name, now. A window already
+ * verified stays as it was verified; an edit of the window clears the verification.
  */
 export async function verifyDisputeWindow(context: WorkflowContext, input: z.input<typeof versionInput>): Promise<WindowVerificationResult> {
   const request = parse(versionInput, input);
@@ -727,6 +751,19 @@ export async function verifyDisputeWindow(context: WorkflowContext, input: z.inp
   const window = await windowById(context, request.practiceId, version.id);
   if (window.citation === null) {
     throw new ContractWorkflowError('invalid', 'a dispute window is verified once it is cited', [{ field: 'disputeWindow', message: 'cite the page that states the dispute window first' }]);
+  }
+  if (window.verifiedBy === null && !windowRuleComputed(window.rule)) {
+    throw new ContractWorkflowError(
+      'invalid',
+      'a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the remittance date',
+      [
+        {
+          field: 'disputeWindowRule',
+          message:
+            'the cited rule is not the one the product computes yet (calendar days after the remittance date), so the window stays unverified and its lines wait for a verified deadline; the version can still be approved',
+        },
+      ],
+    );
   }
   const evidence = await requireEvidence(context).resolve(window.citation, version.sourceDocumentIds);
   if (!evidence.resolved || window.verifiedBy !== null) {
@@ -759,8 +796,9 @@ type SuccessorRequest = z.output<typeof successorInput>;
 
 /**
  * A draft that names `prior`, with its documents and windows, and copies of its rate records to verify again.
- * The dispute window's citation is copied while the window's days stay the prior version's, never its
- * verification: the specialist verifies the copy against the successor's documents before it is approved.
+ * The dispute window's citation is copied with the rule it states while the window's days stay the prior
+ * version's, never its verification: the specialist verifies the copy against the successor's documents before it
+ * is approved.
  */
 async function draftSuccessor(context: WorkflowContext, request: SuccessorRequest, prior: ContractVersionRecord, effectiveFrom: string, effectiveTo: string | null): Promise<{ versionId: string; versionNo: number; copied: number }> {
   const disputeWindowDays = request.disputeWindowDays === undefined ? prior.windows.dispute_window_days : request.disputeWindowDays;
@@ -779,7 +817,9 @@ async function draftSuccessor(context: WorkflowContext, request: SuccessorReques
       noticeDays: request.noticeDays === undefined ? prior.noticeDays : request.noticeDays,
     },
     prior.id,
-    disputeWindowDays !== null && disputeWindowDays === priorWindow.days ? priorWindow.citation : null,
+    disputeWindowDays !== null && disputeWindowDays === priorWindow.days && priorWindow.citation !== null && priorWindow.rule !== null
+      ? { citation: priorWindow.citation, rule: priorWindow.rule }
+      : null,
   );
   const records = await loadRateRecords(context.scope, read(context, request.practiceId), [prior.id]);
   for (const record of records) {

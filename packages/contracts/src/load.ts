@@ -4,6 +4,7 @@ import { type Cents, parseCents } from '@tp/money';
 import { type MappedLine, assertPricingAllowed } from './coverage';
 import type { AgreementRecords, ContractVersionRecord, DisputeWindowRecord, PlanMappingRecord, RateRecord } from './records';
 import { citationSchema, evidenceSchema, parseRateTerms } from './terms';
+import { type DisputeWindowRule, disputeWindowRuleSchema } from './window-rule';
 
 /**
  * Reads for the workflow, pricing and coverage, under the practice's policies. Every row returned is
@@ -89,25 +90,33 @@ export interface DisputeWindowRow {
   readonly practice_id: string;
   readonly dispute_window_days: number | null;
   readonly dispute_window_evidence: unknown;
+  readonly dispute_window_unit: string | null;
+  readonly dispute_window_measured_from: string | null;
   readonly dispute_window_verified_by: string | null;
   readonly dispute_window_verified_at: Date | null;
 }
 
-export const DISPUTE_WINDOW_COLUMNS = 'v.id, v.practice_id, v.dispute_window_days, v.dispute_window_evidence, v.dispute_window_verified_by, v.dispute_window_verified_at';
+export const DISPUTE_WINDOW_COLUMNS =
+  'v.id, v.practice_id, v.dispute_window_days, v.dispute_window_evidence, v.dispute_window_unit, v.dispute_window_measured_from, v.dispute_window_verified_by, v.dispute_window_verified_at';
 
 export function disputeWindowRecord(row: DisputeWindowRow): DisputeWindowRecord {
   let citation = null;
+  let rule: DisputeWindowRule | null = null;
   if (row.dispute_window_evidence !== null) {
     const parsed = citationSchema.safeParse(row.dispute_window_evidence);
-    if (!parsed.success) {
+    // The database holds the rule exactly with the citation (contract_version_window_rule_with_citation).
+    const parsedRule = disputeWindowRuleSchema.safeParse({ unit: row.dispute_window_unit, measuredFrom: row.dispute_window_measured_from });
+    if (!parsed.success || !parsedRule.success) {
       throw new ContractDataError('a stored dispute window citation does not match its schema');
     }
     citation = parsed.data;
+    rule = parsedRule.data;
   }
   return {
     versionId: row.id,
     days: row.dispute_window_days,
     citation,
+    rule,
     verifiedBy: row.dispute_window_verified_by,
     verifiedAt: row.dispute_window_verified_at?.toISOString() ?? null,
   };
