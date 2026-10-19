@@ -126,3 +126,8 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 - `tracker/`: the tracker generator, asset ids and page.
 - `approval-summaries/`: the plain-language summaries sent to the founder.
 - `workflow-scripts/`: every workflow script run so far. They are reusable briefs for the remaining PRs.
+
+## Pause of 2026-10-19 01:37 UTC
+- All four runs stopped on the weekly limit (resets 2026-10-20 14:00 UTC): governance (two reviews, fix, verify left), PR 5 audit fixes (three builders' remainder, three reviews, verify), audit 2 (15 checks plus merge of 122), PR 6 audit fixes (build).
+- Uncommitted edits saved: salvage/co-001-pr-05-packet-deadline-wip (e8ac527, on top of 85579f6), salvage/co-001-pr-06-free-screening-wip (eae2ad9, on top of 1bc9426). Governance had none.
+- One resume is scheduled for 2026-10-20 14:10 UTC (trig_01Uz1MHApXbEYtc9P5y48ZMZ). No other check-ins are armed.
