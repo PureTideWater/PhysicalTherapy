@@ -166,8 +166,8 @@ template's part).** A denied line pays nothing for a reason that is not a rate (
 reached, a duplicate, timely filing, a service not covered), and a row of totals cannot say which of its lines were
 denied, so a denied line inside a row would read as a shortfall against Medicare. The template's note lines and the
 upload page tell the prospect to leave denied lines out of every total and claim count, because a denial is not a
-rate variance; the column guide says so beside the allowed total and the claim count. Reading the payer's denial codes in the paid
-audit's triage is PR 6d, not this pull request.
+rate variance; the column guide says so beside the allowed total and the claim count. Reading the payer's denial
+codes in the paid audit's triage is PR 6d, not this pull request.
 
 **Each row priced by the unchanged engine, alone and as a later code of a visit, its figure before sequestration
 read from the engine's trace, multiplied outside it (D19 a, D20 a; the owner's rulings 1 and 2 of 2026-10-18).**
