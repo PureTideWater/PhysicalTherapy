@@ -6,11 +6,14 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../../components/action-form';
 import { utc } from '../../../../../../components/format';
 import { Hash } from '../../../../../../components/packets/display';
+import { PricingNowPanel } from '../../../../../../components/packets/pricing';
+import { StatusChip } from '../../../../../../components/status';
 import { Money } from '../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../../../../../lib/cases/timeline';
 import { loadPage } from '../../../../../../lib/http/next';
+import { PRICING_CAUSE_TEXT } from '../../../../../../lib/packets/pricing';
 import { DENIAL_CATEGORIES, PERSON_RESPONSE_KINDS, submissionsPage } from '../../../../../../lib/routes/submissions';
 import { logSubmissionFormAction, recordResponseFormAction } from './actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -39,6 +42,9 @@ const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', an
  * J10; PRD 12; test matrix CAS-12, CAS-14): the submission log with each export's SHA-256 as sent, each
  * submission's follow-up (45 days unless set), the payer's responses with their documents, and the
  * forms that log them. The product never submits; recording a response moves no money and no stage.
+ * A submission of a version whose pricing is no longer current is logged, never refused (it already happened
+ * outside the product), and flagged with its cause and the figures sent beside the pricing in effect now (audit
+ * item #4); the form says so before it is logged.
  */
 export default async function SubmissionsPage(props: Props) {
   const page = await loadPage(submissionsPage, props);
@@ -63,8 +69,14 @@ export default async function SubmissionsPage(props: Props) {
         </p>
       </div>
       {notice === null ? null : (
-        <Alert data-notice={notice}>
-          <AlertDescription>{notice === 'logged' ? 'The submission is logged with the export’s SHA-256.' : 'The payer’s response is recorded.'}</AlertDescription>
+        <Alert data-notice={notice} variant={notice === 'logged_flagged' ? 'destructive' : undefined}>
+          <AlertDescription>
+            {notice === 'logged'
+              ? 'The submission is logged with the export’s SHA-256.'
+              : notice === 'logged_flagged'
+                ? 'The submission is logged with the export’s SHA-256 and flagged: the version it sent is no longer on the pricing in effect. The submission log below shows why, with the figures sent and the pricing now.'
+                : 'The payer’s response is recorded.'}
+          </AlertDescription>
         </Alert>
       )}
       {latest?.followUp === 'due' ? (
@@ -96,6 +108,15 @@ export default async function SubmissionsPage(props: Props) {
               <p className="text-sm">
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
               </p>
+              {submittable.attestedAt !== null && submittable.pricing.status !== 'current' ? (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status}>
+                  <AlertTitle>This export’s pricing is no longer current</AlertTitle>
+                  <AlertDescription>
+                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. If you already sent it to the payer, log the submission as it happened: it is logged and flagged, never refused. If you have not
+                    sent it yet, do not: write the stale line off on the case page and write, approve and export the packet again.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               {submittable.attestedAt === null ? (
                 <p className="text-sm" data-attestation="waiting">
                   Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
@@ -240,6 +261,15 @@ export default async function SubmissionsPage(props: Props) {
                   <p data-export-hash={submission.exportSha256}>
                     Export SHA-256: PDF <Hash value={submission.exportSha256} label="Submitted PDF SHA-256" />; CSV <Hash value={submission.exportCsvSha256} label="Submitted CSV SHA-256" />
                   </p>
+                  {submission.pricingCheck === null || submission.pricingCheck === 'current' ? null : (
+                    <div className="flex flex-col gap-2 pt-1" data-submission-pricing={submission.pricingCheck}>
+                      <p className="flex flex-wrap items-center gap-2">
+                        <StatusChip tone="danger">Logged with pricing not current</StatusChip>
+                        <span>{PRICING_CAUSE_TEXT[submission.pricingCheck]}, when the submission was logged.</span>
+                      </p>
+                      {submission.pricing === null ? null : <PricingNowPanel pricing={submission.pricing} sent label={`Pricing now, submission of ${submission.submittedOn}`} />}
+                    </div>
+                  )}
                   {submission.responses.length === 0 ? (
                     <p className="text-muted-foreground">No response yet.</p>
                   ) : (

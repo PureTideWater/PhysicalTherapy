@@ -12,6 +12,8 @@ const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   claimSuperseded: false,
   mappingKind: 'contract',
   contractVersionStatus: 'signed_off',
+  contractVersionCoversService: true,
+  releaseWithdrawn: false,
   writtenOff: false,
   visitVarianceCents: null,
   reviewFlags: [],
@@ -59,6 +61,33 @@ describe('from validated to actionable (PRD 12)', () => {
     expect(judgeLine(facts({ writtenOff: true }), FIVE, AS_OF).reasons).toEqual(['WRITTEN_OFF']);
   });
 
+  it('takes a line out of the actionable totals once its rule release is withdrawn or an amendment closed its version before its date (audit item #4)', () => {
+    expect(judgeLine(facts({ releaseWithdrawn: true }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['RELEASE_WITHDRAWN'], validatedCents: 3000n });
+    expect(judgeLine(facts({ contractVersionCoversService: false }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['VERSION_NOT_IN_FORCE'], validatedCents: 3000n });
+    // A version superseded by its correction may still cover the date: both reasons hold when neither does.
+    expect(judgeLine(facts({ contractVersionStatus: 'superseded', contractVersionCoversService: false, releaseWithdrawn: true }), FIVE, AS_OF).reasons).toEqual([
+      'VERSION_NOT_SIGNED_OFF',
+      'VERSION_NOT_IN_FORCE',
+      'RELEASE_WITHDRAWN',
+    ]);
+    // A Medicare Advantage non-contracted line names no version, so only the withdrawal reaches it.
+    expect(judgeLine(facts({ mappingKind: 'ma_noncontracted', contractVersionStatus: null, contractVersionCoversService: true, releaseWithdrawn: true }), FIVE, AS_OF).reasons).toEqual(['RELEASE_WITHDRAWN']);
+    expect(NOT_ACTIONABLE_REASONS).toEqual([
+      'BELOW_LINE_MATERIALITY',
+      'WINDOW_PASSED',
+      'NO_WINDOW',
+      'DEADLINE_UNVERIFIED',
+      'CLAIM_REVERSED',
+      'CLAIM_SUPERSEDED',
+      'VERSION_NOT_SIGNED_OFF',
+      'VERSION_NOT_IN_FORCE',
+      'RELEASE_WITHDRAWN',
+      'PER_VISIT_REVIEW',
+      'NCCI_REVIEW',
+      'WRITTEN_OFF',
+    ]);
+  });
+
   it('judges a per-visit line with its visit: at most the visit’s net shortfall, none when the visit was paid in full, and held for review (Q44)', () => {
     // The payer spread the visit over its lines: the carrier looks short, the visit as a whole is not.
     expect(judgeLine(facts({ varianceCents: 4566n as Cents, visitVarianceCents: -234n as Cents }), FIVE, AS_OF)).toEqual({ validated: false, actionable: false, reasons: [], validatedCents: null });
@@ -98,14 +127,32 @@ describe('from validated to actionable (PRD 12)', () => {
         fc.constantFrom('signed_off', 'superseded'),
         fc.boolean(),
         fc.constantFrom<TriageFacts['deadlineStatus']>('verified', 'unverified'),
-        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus) => {
-          const judged = judgeLine(facts({ varianceCents: variance as Cents, windowEndsOn: window, deadlineStatus, claimReversed: reversed, claimSuperseded: superseded, contractVersionStatus: status, writtenOff }), FIVE, AS_OF);
+        fc.boolean(),
+        fc.boolean(),
+        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus, covers, withdrawn) => {
+          const judged = judgeLine(
+            facts({
+              varianceCents: variance as Cents,
+              windowEndsOn: window,
+              deadlineStatus,
+              claimReversed: reversed,
+              claimSuperseded: superseded,
+              contractVersionStatus: status,
+              contractVersionCoversService: covers,
+              releaseWithdrawn: withdrawn,
+              writtenOff,
+            }),
+            FIVE,
+            AS_OF,
+          );
           expect(judged.validated).toBe(true);
           expect(judged.actionable).toBe(judged.reasons.length === 0);
           expect(judged.reasons).toEqual(NOT_ACTIONABLE_REASONS.filter((reason) => judged.reasons.includes(reason)));
           expect(judged.reasons.includes('BELOW_LINE_MATERIALITY')).toBe(variance < 500n);
           expect(judged.actionable && (window === null || window < AS_OF)).toBe(false);
           expect(judged.reasons.includes('DEADLINE_UNVERIFIED')).toBe(deadlineStatus === 'unverified');
+          expect(judged.reasons.includes('VERSION_NOT_IN_FORCE')).toBe(!covers);
+          expect(judged.reasons.includes('RELEASE_WITHDRAWN')).toBe(withdrawn);
         },
       ),
     );

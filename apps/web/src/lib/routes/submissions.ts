@@ -6,7 +6,18 @@ import { z } from 'zod';
 import { underPacketRules } from '../cases/refusals';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
-import { type ResponseDocument, type SubmissionView, defaultFollowUpOn, logSubmissionOnce, recordResponseOnce, responseDocuments, submissionsOf, submittableVersion } from '../packets/submissions';
+import {
+  type ResponseDocument,
+  type SubmissionView,
+  type SubmittableVersion,
+  defaultFollowUpOn,
+  logSubmissionOnce,
+  loggedPricingCheck,
+  recordResponseOnce,
+  responseDocuments,
+  submissionsOf,
+  submittableVersion,
+} from '../packets/submissions';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { opaqueId, optionalText } from './schemas';
 
@@ -20,6 +31,9 @@ import { opaqueId, optionalText } from './schemas';
  * Reading is practice.open (the payer's references show to the roles that read PHI); logging a
  * submission and recording a response are submission.log (the billing manager and the firm
  * principal), checked again by the database, in the person's own name, with an audit event, once.
+ * A submission whose version's pricing is no longer current is never refused for it (it already happened
+ * outside the product): it is logged, the database flags it (submission.pricing_check), and the page says so
+ * with the figures sent and the pricing in effect now (audit item #4).
  */
 
 const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'a date, YYYY-MM-DD');
@@ -29,12 +43,13 @@ export interface SubmissionsPageData {
   readonly asOf: string;
   readonly case: CaseSummary;
   readonly submissions: readonly SubmissionView[];
-  /** The exported current version a submission sends now, with its hashes; null before an export. */
-  readonly submittable: Awaited<ReturnType<typeof submittableVersion>>;
+  /** The exported current version a submission sends now, with its hashes and whether its pricing is current; null before an export. */
+  readonly submittable: SubmittableVersion | null;
   /** Today's default follow-up date (45 days on). */
   readonly defaultFollowUpOn: string;
   readonly documents: readonly ResponseDocument[];
-  readonly notice: 'logged' | 'recorded' | null;
+  /** What was just done: logged, logged and flagged because the version's pricing is no longer current, or a response recorded. */
+  readonly notice: 'logged' | 'logged_flagged' | 'recorded' | null;
   readonly canLog: boolean;
   readonly canReadPhi: boolean;
 }
@@ -45,7 +60,7 @@ export const submissionsPage = practiceRoute({
   path: '/p/[practiceId]/cases/[caseId]/submissions',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, caseId: opaqueId, notice: optionalText(z.enum(['logged', 'recorded'])) }),
+  params: z.object({ practiceId: opaqueId, caseId: opaqueId, notice: optionalText(z.enum(['logged', 'logged_flagged', 'recorded'])) }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<SubmissionsPageData> => {
     const asOf = services.now().toISOString().slice(0, 10);
     const found = await caseOf(scope, practiceId, params.caseId, asOf, request.requestId);
@@ -59,7 +74,7 @@ export const submissionsPage = practiceRoute({
       asOf,
       case: found,
       submissions: await submissionsOf(scope, services.keys, { practiceId, caseId: params.caseId, readsPhi: canReadPhi, asOf, requestId: request.requestId }),
-      submittable: await submittableVersion(scope, { practiceId, caseId: params.caseId }),
+      submittable: await submittableVersion(scope, { practiceId, caseId: params.caseId, requestId: request.requestId }),
       defaultFollowUpOn: defaultFollowUpOn(asOf),
       documents: canLog ? await responseDocuments(scope, practiceId) : [],
       notice: params.notice ?? null,
@@ -76,7 +91,8 @@ export const submissionsPage = practiceRoute({
  * the export's SHA-256 into the log (CAS-12). The database refuses a version not exported, a date
  * before the export or after today, a dispute the payer answered (unless a denial reopened it, within
  * the next level's window), and anyone who does not log submissions. The same submission again does
- * nothing.
+ * nothing. It is never refused because the version's pricing is no longer current: the database records the
+ * check on it, and the page says it was logged and flagged.
  */
 export const logSubmissionAction = practiceRoute({
   id: 'practice.cases.submissions.log',
@@ -115,7 +131,9 @@ export const logSubmissionAction = practiceRoute({
         requestId: request.requestId,
       }),
     );
-    return { objectId: logged.submissionId, redirect: `/p/${practiceId}/cases/${input.caseId}/submissions?notice=logged` };
+    const check = await loggedPricingCheck(scope, { practiceId, submissionId: logged.submissionId });
+    const notice = check === null || check === 'current' ? 'logged' : 'logged_flagged';
+    return { objectId: logged.submissionId, redirect: `/p/${practiceId}/cases/${input.caseId}/submissions?notice=${notice}` };
   },
   sample: {
     params: (refs) => ({ practiceId: refs.practiceId }),

@@ -13,6 +13,10 @@ import { PRICING_CAUSE_TEXT, type PricingNowView, type PricingTotals } from '../
  * with the version's totals then and now. A server component; it shows nothing while the version is current.
  * The figures are the database's, never recomputed; a line not priced again yet, or no longer priced, says so.
  * Nothing refreshes a case automatically yet, so the remedy is the case page's write-off, or waiting.
+ *
+ * On the submissions page (`sent`), the version already went to the payer: the submission was logged as it
+ * happened and flagged, never refused, and the panel shows what was sent beside the pricing in effect now. Its
+ * `label` names the region when a page shows more than one.
  */
 
 const NOT_PRICED_AGAIN = 'Not priced again yet';
@@ -32,17 +36,17 @@ function TotalNow({ now, figure }: { readonly now: PricingTotals | null; readonl
   return now === null ? <span className="text-fg-muted">{NOT_PRICED_AGAIN}</span> : <Money value={now[figure]} />;
 }
 
-export function PricingNowPanel({ pricing }: { readonly pricing: PricingNowView }) {
+export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }: { readonly pricing: PricingNowView; readonly sent?: boolean; readonly label?: string }) {
   if (pricing.status === 'current') {
     return null;
   }
+  const one = pricing.lines.length === 1;
   return (
-    <Card role="region" aria-label="Pricing now" data-pricing-check={pricing.status}>
+    <Card role="region" aria-label={label} data-pricing-check={pricing.status}>
       <CardHeader>
         <CardTitle>Pricing now</CardTitle>
         <CardDescription>
-          A packet is written, approved, exported and attested only on the pricing in effect. Since this version was written, {pricing.lines.length === 1 ? 'one line is' : `${String(pricing.lines.length)} lines are`} no
-          longer on it.
+          A packet is written, approved, exported and attested only on the pricing in effect. Since this version was written, {one ? 'one line is' : `${String(pricing.lines.length)} lines are`} no longer on it.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
@@ -50,11 +54,17 @@ export function PricingNowPanel({ pricing }: { readonly pricing: PricingNowView 
           <AlertTitle>
             <StatusChip tone="danger">Pricing not current</StatusChip> {PRICING_CAUSE_TEXT[pricing.status]}.
           </AlertTitle>
-          <AlertDescription>
-            Nothing refreshes the case automatically yet. To send the packet without the stale {pricing.lines.length === 1 ? 'line' : 'lines'}, write{' '}
-            {pricing.lines.length === 1 ? 'it' : 'them'} off on the case page and write the packet again; otherwise wait until {pricing.lines.length === 1 ? 'it is' : 'they are'} priced current
-            again. Until then this version is not approved, exported or attested.
-          </AlertDescription>
+          {sent ? (
+            <AlertDescription>
+              This version already went to the payer. Its submission is logged as it happened and flagged, never refused: the figures it sent are not the pricing in effect now. Compare them below;
+              nothing is sent to the payer or corrected automatically.
+            </AlertDescription>
+          ) : (
+            <AlertDescription>
+              Nothing refreshes the case automatically yet. To send the packet without the stale {one ? 'line' : 'lines'}, write {one ? 'it' : 'them'} off on the case page and write the packet again;
+              otherwise wait until {one ? 'it is' : 'they are'} priced current again. Until then this version is not approved, exported or attested.
+            </AlertDescription>
+          )}
         </Alert>
         <div className="overflow-x-auto">
           <table className="w-full text-sm" aria-label="Lines not on current pricing">

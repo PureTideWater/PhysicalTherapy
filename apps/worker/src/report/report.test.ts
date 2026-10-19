@@ -244,4 +244,24 @@ describe('the deadline gap’s remedy (D17 a)', () => {
       expect(deadlineRemedy([cause]), cause).not.toBe('');
     }
   });
+
+  it('says a window cited with a rule the product does not compute yet waits, and a Medicare Advantage line waits for the route (audit item #5, Q34)', () => {
+    const NOT_COMPUTED = /the product does not compute that rule yet, so the date it shows may be later than the contract’s: these lines wait/;
+    const ROUTE = /For a Medicare Advantage non-contracted line, the deadline waits until the contract specialist confirms which dispute route applies .*Q34/;
+    // Citing it again on a corrected version does not help: it is not the generic contract remedy.
+    expect(deadlineRemedy(['CONTRACT_WINDOW_RULE_NOT_COMPUTED'])).toMatch(NOT_COMPUTED);
+    expect(deadlineRemedy(['CONTRACT_WINDOW_RULE_NOT_COMPUTED'])).not.toMatch(CONTRACT);
+    expect(deadlineRemedy(['MA_ROUTE_UNCONFIRMED'])).toMatch(ROUTE);
+    expect(deadlineRemedy(['MA_ROUTE_UNCONFIRMED'])).not.toMatch(MEDICARE);
+    const both = deadlineRemedy(['MA_ROUTE_UNCONFIRMED', 'CONTRACT_WINDOW_RULE_NOT_COMPUTED', 'CONTRACT_WINDOW_UNVERIFIED', 'MA_ROUTE_UNCONFIRMED']);
+    expect([CONTRACT, NOT_COMPUTED, ROUTE].map((pattern) => pattern.test(both))).toEqual([true, true, true]);
+    expect(both.split('. ')).toHaveLength(3);
+  });
+});
+
+describe('the reasons a withdrawal or an amendment takes a line out of the totals, in words (audit item #4)', () => {
+  it('names a version that no longer covers the date and a withdrawn release', () => {
+    expect(reasonText('VERSION_NOT_IN_FORCE')).toBe('Contract version no longer covers the service date (amended since it was priced)');
+    expect(reasonText('RELEASE_WITHDRAWN')).toBe('Rule release withdrawn since it was priced');
+  });
 });

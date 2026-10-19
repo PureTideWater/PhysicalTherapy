@@ -5,14 +5,17 @@ import {
   type ExportAwaitingAttestation,
   type PacketAttestation,
   type PacketExportFile,
+  PacketRuleError,
   attestPacketExport,
   exportsAwaitingAttestation,
   packetExportDownloads,
   packetVersionOf,
 } from '@tp/worker/packets';
+import { packetPricingCheck } from '@tp/worker/pricing';
 
 import type { Services } from '../server/services';
 import { NotFoundError } from '../http/route';
+import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
 import { atCaseLevel, deadlineNow } from './queries';
 
 /**
@@ -24,7 +27,10 @@ import { atCaseLevel, deadlineNow } from './queries';
  * attests over their SHA-256 only once both are downloaded (the owner's addition of 2026-10-18: the
  * handler and the database each refuse an attestation before it); the database refuses anyone who
  * drafted, wrote or approved the packet. Internal users approve nothing: the practice's approval stands
- * beside it.
+ * beside it. An export whose pricing is no longer current (audit item #4: a line priced again since, its rule
+ * release withdrawn, or its contract version no longer signed off or no longer covering the service date) is
+ * not attested: the review shows the lines with their figures then and now, and the attestation is refused here
+ * and in the database.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -61,6 +67,8 @@ export interface PacketReview {
   readonly deadlineNow: DeadlineStatus;
   /** Whether the version is of the case's dispute level now (the database refuses to attest one that is not). */
   readonly atCaseLevel: boolean;
+  /** Whether the version's pricing is still current, with the stale lines' figures then and now (the database refuses to attest it otherwise). */
+  readonly pricingNow: PricingNowView;
   readonly attestation: { readonly at: string; readonly byViewer: boolean; readonly checklist: PacketAttestation['checklist'] } | null;
   /** Whether the viewer drafted, wrote or approved any version of the packet (the database refuses their attestation). */
   readonly viewerTookPart: boolean;
@@ -94,6 +102,7 @@ export async function packetReview(scope: Scope, services: Pick<Services, 'keys'
     exportVerifier: detail.exportVerifier,
     deadlineNow: await deadlineNow(scope, detail.caseId, detail.content),
     atCaseLevel: await atCaseLevel(scope, detail.caseId, detail.content),
+    pricingNow: await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId }),
     attestation: detail.attestedAt === null || detail.attestation === null ? null : { at: detail.attestedAt.toISOString(), byViewer: detail.attestedBy === input.viewerId, checklist: detail.attestation.checklist },
     viewerTookPart: people.has(input.viewerId),
     viewerDownloaded: await viewerDownloads(scope, detail.versionId),
@@ -111,11 +120,21 @@ export function awaitingAttestation(scope: Scope, practiceId: string): Promise<E
   return exportsAwaitingAttestation(scope, { practiceId });
 }
 
-/** Attests the export over the SHA-256 of the files the review showed, once; an attested export is left as it is. */
+/**
+ * Attests the export over the SHA-256 of the files the review showed, once; an attested export is left as it is.
+ * An export whose pricing is no longer current is refused first, with the remedy (the database refuses it too).
+ */
 export async function attestOnce(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly pdfSha256: string; readonly csvSha256: string; readonly requestId: string }): Promise<boolean> {
-  const { rowCount } = await scope.client.query('SELECT 1 FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3', [input.versionId, input.practiceId, input.caseId]);
-  if (rowCount !== 1) {
+  const { rows } = await scope.client.query<{ content: PacketContent; attested: boolean }>(
+    'SELECT v.content, v.attested_by IS NOT NULL AS attested FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3',
+    [input.versionId, input.practiceId, input.caseId],
+  );
+  const found = rows[0];
+  if (found === undefined) {
     throw new NotFoundError();
+  }
+  if (!found.attested && (await packetPricingCheck(scope.client, found.content)) !== 'current') {
+    throw new PacketRuleError('23514', PRICING_BLOCKED_TEXT.attestation);
   }
   const attested = await attestPacketExport(scope, { practiceId: input.practiceId, versionId: input.versionId, pdfSha256: input.pdfSha256, csvSha256: input.csvSha256, requestId: input.requestId });
   return attested.attested;

@@ -66,6 +66,9 @@ function candidates(id: string, deadlineStatus: DeadlineStatus = 'verified'): { 
         claimSuperseded: false,
         mappingKind: result.terms.mappingKind,
         contractVersionStatus: 'signed_off',
+        // The golden lines' contract versions cover their own service dates, and no golden release is withdrawn.
+        contractVersionCoversService: true,
+        releaseWithdrawn: false,
         writtenOff: false,
         visitVarianceCents: key === null ? null : sumCents(visits.get(key) ?? []),
         reviewFlags: result.reviewFlags.map((flag) => flag.flag),

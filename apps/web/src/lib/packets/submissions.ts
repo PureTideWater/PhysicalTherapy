@@ -1,9 +1,10 @@
-import { type KeyProvider, type PracticeScope, type ScopeClient } from '@tp/db/runtime';
+import { type KeyProvider, PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, type ScopeClient } from '@tp/db/runtime';
 import { type Cents, centsToString } from '@tp/money';
-import { FOLLOW_UP_DAYS, type PayerResponseKind, type SubmissionChannel, addDays } from '@tp/packets';
+import { FOLLOW_UP_DAYS, type PacketContent, type PayerResponseKind, type SubmissionChannel, addDays } from '@tp/packets';
 import { type LogSubmissionInput, type RecordResponseInput, logSubmission, recordPayerResponse, submissionLog } from '@tp/worker/packets';
 
 import { peopleEmails } from '../cases/people';
+import { type PricingNowView, pricingNow } from './pricing';
 import { type FollowUpState, followUpState } from './view';
 
 /**
@@ -15,6 +16,11 @@ import { type FollowUpState, followUpState } from './view';
  * dispute level within its window, which the database computes. Recording a response writes no ledger
  * entry and moves no line (LED-01): the recovery ledger does both from the response and the remittances.
  * Each is recorded once: the same submission or response again records nothing.
+ *
+ * A submission is never refused because the version's pricing is no longer current (audit item #4): it records
+ * something that already happened outside the product, so it is logged and the database flags it
+ * (submission.pricing_check, read here with its own query), and the page shows the cause with the figures sent and
+ * the pricing in effect now.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -47,12 +53,45 @@ export interface SubmissionView {
   readonly exportSha256: string;
   readonly exportCsvSha256: string;
   readonly responses: readonly ResponseView[];
+  /**
+   * Whether the version it sent was still priced current when it was logged, as the database recorded it
+   * (submission.pricing_check): 'current', or the cause; null only for a submission logged before the check.
+   */
+  readonly pricingCheck: PricingCheckResult | null;
+  /** For a submission flagged so, the figures it sent and the pricing in effect now; null otherwise. */
+  readonly pricing: PricingNowView | null;
 }
 
-/** The case's submission log, newest first, with each submission's follow-up state on `asOf`. */
+const PRICING_RESULTS: ReadonlySet<string> = new Set(PRICING_CHECK_RESULTS);
+
+/** Each submission's pricing check as the database recorded it, and the content of the version it sent. */
+async function submissionPricing(scope: Scope, input: { readonly practiceId: string; readonly caseId: string }): Promise<ReadonlyMap<string, { readonly check: PricingCheckResult | null; readonly content: PacketContent }>> {
+  const { rows } = await scope.client.query<{ id: string; pricing_check: string | null; content: PacketContent }>(
+    `SELECT s.id, s.pricing_check, v.content FROM submission s JOIN packet_version v ON v.id = s.packet_version_id AND v.practice_id = s.practice_id
+      WHERE s.case_id = $1 AND s.practice_id = $2`,
+    [input.caseId, input.practiceId],
+  );
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      // A value the CHECK does not hold cannot be stored; anything else unexpected reads as not current.
+      { check: row.pricing_check === null ? null : PRICING_RESULTS.has(row.pricing_check) ? (row.pricing_check as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT', content: row.content },
+    ]),
+  );
+}
+
+/** The case's submission log, newest first, with each submission's follow-up state on `asOf` and its pricing flag. */
 export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { readonly practiceId: string; readonly caseId: string; readonly readsPhi: boolean; readonly asOf: string; readonly requestId: string }): Promise<SubmissionView[]> {
   const log = await submissionLog(scope, keys, { practiceId: input.practiceId, caseId: input.caseId, requestId: input.requestId });
   const emails = await peopleEmails(scope, input.practiceId, log.map((entry) => entry.submittedBy));
+  const checks = await submissionPricing(scope, input);
+  const pricing = new Map<string, PricingNowView>();
+  for (const entry of log) {
+    const found = checks.get(entry.submissionId);
+    if (found !== undefined && found.check !== null && found.check !== 'current') {
+      pricing.set(entry.submissionId, await pricingNow(scope, { practiceId: input.practiceId, content: found.content, requestId: input.requestId }));
+    }
+  }
   return log.map((entry, index) => ({
     submissionId: entry.submissionId,
     packetVersionId: entry.packetVersionId,
@@ -77,19 +116,43 @@ export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { re
       nextWindowEndsOn: response.nextWindowEndsOn,
       documentId: response.documentId,
     })),
+    pricingCheck: checks.get(entry.submissionId)?.check ?? null,
+    pricing: pricing.get(entry.submissionId) ?? null,
   }));
 }
 
+export interface SubmittableVersion {
+  readonly versionId: string;
+  readonly versionNo: number;
+  readonly disputeLevel: number;
+  readonly exportedOn: string;
+  readonly exportSha256: string;
+  readonly exportCsvSha256: string;
+  readonly attestedAt: string | null;
+  /**
+   * Whether the version's pricing is still current now, with the stale lines' figures then and now. A submission
+   * that already happened is logged either way (the database flags it); the form says so before it is logged.
+   */
+  readonly pricing: PricingNowView;
+}
+
 /**
- * The exported version a submission may send now: the packet's current version, once exported, and
- * whether the reimbursement reviewer has attested its export (D16: a submission is logged only after).
+ * The exported version a submission may send now: the packet's current version, once exported, whether the
+ * reimbursement reviewer has attested its export (D16: a submission is logged only after), and whether its
+ * pricing is still current (audit item #4: logged and flagged when it is not, never refused).
  */
-export async function submittableVersion(
-  scope: Scope,
-  input: { readonly practiceId: string; readonly caseId: string },
-): Promise<{ readonly versionId: string; readonly versionNo: number; readonly disputeLevel: number; readonly exportedOn: string; readonly exportSha256: string; readonly exportCsvSha256: string; readonly attestedAt: string | null } | null> {
-  const { rows } = await scope.client.query<{ id: string; version_no: number; dispute_level: number; exported_on: string; export_sha256: string; export_csv_sha256: string; attested_at: Date | null }>(
-    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256, v.attested_at
+export async function submittableVersion(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly requestId: string }): Promise<SubmittableVersion | null> {
+  const { rows } = await scope.client.query<{
+    id: string;
+    version_no: number;
+    dispute_level: number;
+    exported_on: string;
+    export_sha256: string;
+    export_csv_sha256: string;
+    attested_at: Date | null;
+    content: PacketContent;
+  }>(
+    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256, v.attested_at, v.content
        FROM packet p JOIN packet_version v ON v.id = p.current_version_id
       WHERE p.case_id = $1 AND p.practice_id = $2 AND v.exported_at IS NOT NULL`,
     [input.caseId, input.practiceId],
@@ -105,7 +168,15 @@ export async function submittableVersion(
         exportSha256: row.export_sha256,
         exportCsvSha256: row.export_csv_sha256,
         attestedAt: row.attested_at?.toISOString() ?? null,
+        pricing: await pricingNow(scope, { practiceId: input.practiceId, content: row.content, requestId: input.requestId }),
       };
+}
+
+/** The pricing check the database recorded on a submission when it was logged (null for one it cannot see or logged before the check). */
+export async function loggedPricingCheck(scope: Scope, input: { readonly practiceId: string; readonly submissionId: string }): Promise<PricingCheckResult | null> {
+  const { rows } = await scope.client.query<{ pricing_check: string | null }>('SELECT pricing_check FROM submission WHERE id = $1 AND practice_id = $2', [input.submissionId, input.practiceId]);
+  const value = rows[0]?.pricing_check ?? null;
+  return value === null ? null : PRICING_RESULTS.has(value) ? (value as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT';
 }
 
 export interface ResponseDocument {

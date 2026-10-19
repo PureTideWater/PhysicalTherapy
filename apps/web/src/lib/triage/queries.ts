@@ -1,4 +1,4 @@
-import { type EncryptedColumn, type PracticeCipher, type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runtime';
+import { type EncryptedColumn, PRICING_CHECK_RESULTS, type PracticeCipher, type PracticeScope, type PricingCheckResult, type ScopeClient, readWithAudit } from '@tp/db/runtime';
 import { parseCents } from '@tp/money';
 import { type AdjustmentBehavior, BEHAVIOR_TEXT, type DeadlineState, type LineStage, type WriteOffReason, deadlineState, netExpectedValue, triageSettings } from '@tp/triage';
 import { IN_EFFECT_SINCE, RUN_IN_EFFECT } from '@tp/worker/pricing';
@@ -31,6 +31,8 @@ export interface RunChoice {
   readonly releaseNo: number;
   /** When it took effect: an accepted re-run when it was accepted, a first run when it completed. */
   readonly completedAt: string;
+  /** Whether its rule release was withdrawn since (its content was wrong): no audit report is built on it (audit item #4). */
+  readonly releaseWithdrawn: boolean;
 }
 
 /**
@@ -40,12 +42,19 @@ export interface RunChoice {
  * (docs/adr/0037 and 0038).
  */
 export async function runsInEffect(scope: Scope, practiceId: string): Promise<RunChoice[]> {
-  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string; release_no: number; in_effect_since: Date }>(
-    `SELECT r.id, r.period_from::text, r.period_to::text, r.release_no, ${IN_EFFECT_SINCE('r')} AS in_effect_since FROM pricing_run r
+  const { rows } = await scope.client.query<{ id: string; period_from: string; period_to: string; release_no: number; in_effect_since: Date; release_withdrawn: boolean }>(
+    `SELECT r.id, r.period_from::text, r.period_to::text, r.release_no, ${IN_EFFECT_SINCE('r')} AS in_effect_since, pricing_run_release_withdrawn(r.id) AS release_withdrawn FROM pricing_run r
       WHERE r.practice_id = $1 AND ${RUN_IN_EFFECT('r')} ORDER BY in_effect_since DESC, r.id DESC LIMIT 100`,
     [practiceId],
   );
-  return rows.map((row) => ({ id: row.id, periodFrom: row.period_from, periodTo: row.period_to, releaseNo: row.release_no, completedAt: row.in_effect_since.toISOString() }));
+  return rows.map((row) => ({
+    id: row.id,
+    periodFrom: row.period_from,
+    periodTo: row.period_to,
+    releaseNo: row.release_no,
+    completedAt: row.in_effect_since.toISOString(),
+    releaseWithdrawn: row.release_withdrawn,
+  }));
 }
 
 /** Whether the practice's run is the run in effect for its period (triage and reports read no other). */
@@ -56,6 +65,19 @@ export async function isRunInEffect(scope: Scope, practiceId: string, runId: str
 
 /** Why a run was refused for triage or a report, as the person sees it. */
 export const RUN_NOT_IN_EFFECT = 'the pricing run in effect for its period: a complete run, or a re-run once it is accepted (not one it replaced)';
+
+/** Whether the run's rule release was withdrawn since it priced (its content was wrong; audit item #4). False for a run the caller cannot see. */
+export async function isRunReleaseWithdrawn(scope: Scope, runId: string): Promise<boolean> {
+  const { rows } = await scope.client.query<{ withdrawn: boolean }>('SELECT pricing_run_release_withdrawn($1) AS withdrawn', [runId]);
+  return rows[0]?.withdrawn === true;
+}
+
+/**
+ * Why an audit report is refused on a run whose rule release was withdrawn, as the person sees it: a report is
+ * never built on a release whose content was wrong, and the remedy.
+ */
+export const RUN_RELEASE_WITHDRAWN =
+  'a run priced under a rule release that is not withdrawn: this run’s release was withdrawn because its content was wrong, so no audit report is built on it; price the period again under the release in force, accept that re-run, then generate the report on it';
 
 /** The practice's triage settings, read from its settings (the defaults where it names none). */
 export async function practiceTriageSettings(scope: Scope, practiceId: string) {
@@ -319,10 +341,17 @@ interface CaseRow {
   readonly closed_at: Date | null;
 }
 
-/** A case's stage-three figure: the variance of its lines not written off whose stage is still actionable (the Cases screen's and the dashboard's). */
+/**
+ * A case's stage-three figure: the variance of its lines not written off whose stage is still actionable and whose
+ * pricing is still current (the Cases screen's, the case page's and the dashboard's). A line priced again since it
+ * joined, priced under a rule release withdrawn since, or priced under a contract version no longer signed off or
+ * no longer covering its service date (the database's priced_line_pricing_check(); audit item #4) drops out at once,
+ * though the case keeps it and its stored actionable_cents until PR 11 refreshes the case.
+ */
 export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
     WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
-      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable')`;
+      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
+      AND priced_line_pricing_check(x.priced_line_id) = 'current')`;
 
 const CASES = `
   SELECT c.id, c.practice_id, c.state, py.name_raw AS payer, coalesce(pl.name, pl.plan_key) AS plan, c.pattern_key,
@@ -451,6 +480,13 @@ export interface CaseLineView {
   readonly actionable: boolean;
   /** The line's stage now (its last stage event). */
   readonly stage: LineStage | null;
+  /**
+   * Whether its priced line is still its pricing in effect, under a rule release not withdrawn, with its contract
+   * version signed off and covering the service date (priced_line_pricing_check(); audit item #4): 'current', or the
+   * cause. A stale line is out of the actionable figure and keeps the packet from being written until it is written
+   * off or priced current again.
+   */
+  readonly pricingCheck: PricingCheckResult;
   readonly writtenOffReason: WriteOffReason | null;
   /** The "other" reason's words, for the roles that read PHI. */
   readonly writtenOffText: string | null;
@@ -480,6 +516,13 @@ export interface CaseEvent {
 
 export const CASE_LINES_PER_PAGE = 100;
 
+const PRICING_RESULTS: ReadonlySet<string> = new Set(PRICING_CHECK_RESULTS);
+
+/** The database's pricing check as read; anything it does not return reads as not current (fails closed). */
+function asPricingCheck(value: string | null): PricingCheckResult {
+  return value !== null && PRICING_RESULTS.has(value) ? (value as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT';
+}
+
 export interface CaseDetail {
   /** A page of the case's line schedule. */
   readonly lines: readonly CaseLineView[];
@@ -507,6 +550,7 @@ interface CaseLineRow {
   readonly window_passed: boolean;
   readonly actionable: boolean;
   readonly stage: LineStage | null;
+  readonly pricing_check: string | null;
   readonly written_off_reason: WriteOffReason | null;
   readonly written_off_text: string | null;
   readonly written_off_by: string | null;
@@ -537,6 +581,7 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
                   p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text, p.window_ends_on::text,
                   (p.window_ends_on IS NOT NULL AND p.window_ends_on < (now() AT TIME ZONE 'UTC')::date) AS window_passed,
                   cl.actionable, (SELECT s.stage FROM line_status s WHERE s.service_line_id = cl.service_line_id ORDER BY s.seq DESC LIMIT 1) AS stage,
+                  priced_line_pricing_check(cl.priced_line_id) AS pricing_check,
                   cl.written_off_reason, CASE WHEN $3 THEN cl.written_off_text END AS written_off_text, cl.written_off_by, cl.written_off_at,
                   CASE WHEN $3 THEN cl.reopen_reason END AS reopen_reason, cl.reopened_by, cl.reopened_at, CASE WHEN $3 THEN c.payer_claim_control_number END AS payer_claim_control_number
              FROM case_line cl
@@ -577,6 +622,7 @@ export async function caseDetail(scope: Scope, practiceId: string, caseId: strin
     windowPassed: row.window_passed,
     actionable: row.actionable,
     stage: row.stage,
+    pricingCheck: asPricingCheck(row.pricing_check),
     writtenOffReason: row.written_off_reason,
     writtenOffText: decrypt('case_line.written_off_text', row.written_off_text),
     writtenOffBy: person(row.written_off_by),

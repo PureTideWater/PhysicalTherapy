@@ -1,4 +1,4 @@
-import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
@@ -9,6 +9,7 @@ import { Pager } from '../../../../../components/remittances/display';
 import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
+import { REPORT_RELEASE_WITHDRAWN_TEXT, reportFailureText } from '../../../../../lib/reports/queries';
 import { reportPage } from '../../../../../lib/routes/reports';
 import { releaseReportFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
@@ -21,7 +22,10 @@ type Props = { readonly params: Promise<{ practiceId: string; reportId: string }
  * An audit report (PRD 4, Audit v0; PRD 12, the headline): the three headline numbers with flagged and
  * validated below, every total linked to its stage's section; its files with their SHA-256 (the PDF
  * for every reader of reports, the line CSV for the roles that export PHI, each download recorded);
- * the reviewer's attestation; and the release, refused until the attestation is signed.
+ * the reviewer's attestation; and the release, refused until the attestation is signed. A report that could not
+ * be generated says why in words (its rule release withdrawn since the request, its run replaced since, or the job's
+ * failure); a ready report whose rule release was withdrawn since it was generated (audit item #4) carries a banner,
+ * and its attestation and release are disabled with the reason (the database refuses both).
  */
 export default async function ReportPage(props: Props) {
   const page = await loadPage(reportPage, props);
@@ -51,9 +55,17 @@ export default async function ReportPage(props: Props) {
         </Alert>
       ) : null}
       {report.status === 'failed' ? (
-        <Alert variant="destructive" data-state="failed">
+        <Alert variant="destructive" data-state="failed" data-failure={report.failureCode ?? 'unknown'}>
           <AlertTitle>The report could not be generated</AlertTitle>
-          <AlertDescription>The report job failed three times ({report.failureCode ?? 'unknown'}) and the operator was alerted; generate a new report once it is fixed.</AlertDescription>
+          <AlertDescription>{reportFailureText(report.failureCode)}</AlertDescription>
+        </Alert>
+      ) : null}
+      {report.status === 'ready' && report.releaseWithdrawn ? (
+        <Alert variant="destructive" data-state="release-withdrawn">
+          <AlertTitle>Rule release withdrawn since this report was generated</AlertTitle>
+          <AlertDescription>
+            Its numbers rest on a rule release whose content was wrong. It is kept as it was generated, but {REPORT_RELEASE_WITHDRAWN_TEXT}.
+          </AlertDescription>
         </Alert>
       ) : null}
       {report.content === null ? null : (
@@ -95,13 +107,22 @@ export default async function ReportPage(props: Props) {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              {canReview && report.attestedAt === null ? (
+              {canReview && report.attestedAt === null && !report.releaseWithdrawn ? (
                 <Link className="text-sm underline" href={`${path}/review`}>
                   Open the reviewer checklist
                 </Link>
               ) : null}
               {canRelease && report.releasedAt === null ? (
-                report.attestedAt === null ? (
+                report.releaseWithdrawn ? (
+                  <div data-state="release-refused" data-reason="release_withdrawn">
+                    <Button type="button" disabled aria-describedby="release-withdrawn">
+                      Release the report
+                    </Button>
+                    <p id="release-withdrawn" className="pt-1 text-sm text-muted-foreground">
+                      Not released: {REPORT_RELEASE_WITHDRAWN_TEXT}.
+                    </p>
+                  </div>
+                ) : report.attestedAt === null ? (
                   <p className="text-sm text-muted-foreground" data-state="release-refused">
                     Release waits for the reviewer’s attestation.
                   </p>

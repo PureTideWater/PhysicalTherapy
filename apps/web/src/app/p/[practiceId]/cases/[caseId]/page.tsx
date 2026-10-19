@@ -10,6 +10,7 @@ import { Fact, Money, Pager } from '../../../../../components/remittances/displa
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { CaseStateBadge, Deadline, lineName, stageLabel, writeOffText } from '../../../../../components/triage/display';
 import { loadPage } from '../../../../../lib/http/next';
+import { PRICING_CAUSE_TEXT } from '../../../../../lib/packets/pricing';
 import { WRITE_OFF_CONSEQUENCE, casePage } from '../../../../../lib/routes/triage';
 import { NOTE_MAX_LENGTH } from '../../../../../lib/routes/workbench';
 import { assignFormAction, noteFormAction, reopenFormAction, writeOffFormAction } from './actions';
@@ -31,7 +32,10 @@ const PROOF_TEXT: Readonly<Record<string, string>> = { posted: 'posted in the pr
  * stages (actionable here, payer approved and recovered from the recovery ledger), deadline, pursuit
  * cost and owner; every line with its trace, struck through when written off (with its reason, kept
  * visible: WINDOW_PASSED when its window closed); its notes; its packet and dispute; and the timeline
- * of everything recorded on it.
+ * of everything recorded on it. A line whose pricing is no longer current (priced again since it joined, its rule
+ * release withdrawn, or its contract version no longer signed off or covering its date; audit item #4) is marked
+ * with the cause: it is out of the actionable figure, and the packet is written only once it is written off or
+ * priced current again, since nothing refreshes the case automatically yet.
  */
 export default async function CasePage(props: Props) {
   const page = await loadPage(casePage, props);
@@ -168,6 +172,15 @@ export default async function CasePage(props: Props) {
                 <span>Window ends {line.windowEndsOn ?? '—'}</span>
                 {line.stage === null ? null : <StatusChip tone={STATUS_TONES[line.stage]}>{stageLabel(line.stage)}</StatusChip>}
               </div>
+              {line.writtenOffReason !== null || line.pricingCheck === 'current' ? null : (
+                <p className="flex flex-wrap items-center gap-2 pt-1 text-sm" data-pricing-check={line.pricingCheck}>
+                  <StatusChip tone="danger">Pricing not current</StatusChip>
+                  <span>
+                    {PRICING_CAUSE_TEXT[line.pricingCheck]}. It is out of the actionable figure, and a packet is written, approved, exported and attested only on the pricing in effect. Nothing refreshes
+                    the case automatically yet: write this line off to send the packet without it, or wait.
+                  </span>
+                </p>
+              )}
               {line.writtenOffReason === null ? null : (
                 <p className="pt-1 text-sm" data-reason={line.writtenOffReason}>
                   {line.writtenOffReason === 'window_passed' && line.writtenOffBy === null ? 'WINDOW_PASSED: struck through by triage once its window closed; out of the actionable total.' : `Written off: ${writeOffText(line.writtenOffReason)}`}

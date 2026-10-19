@@ -21,14 +21,18 @@ import {
 import { type PricingTrace, parseTrace } from '@tp/pricing';
 import type { DeadlineVerification } from '@tp/triage';
 
-import { PRICED_IN_EFFECT } from '../price/in-effect';
+import type { PricingCheckCause } from '../price/pricing-check';
 import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
 
 /**
  * Reading a case and its approved records for a packet (PRD 12, The packet: "assembled from the
  * approved records only"), in the caller's scope. Every line is a case line not written off whose
- * priced line is still its pricing in effect (an accepted re-run that priced it again means the case is
- * judged again first); a contract pattern cites its signed-off version's verified rate record (its
+ * pricing is still current (audit item #4, the database's priced_line_pricing_check(): its priced line is
+ * still its pricing in effect, its rule release is not withdrawn, and its contract version is still signed off
+ * and covers its service date). A packet is written, approved, exported and attested only on the pricing in
+ * effect, and nothing refreshes a case automatically yet (PR 11 will): a case with a stale line is refused with
+ * the lines and the cause, and the remedy is to write those lines off on the case page or to wait. A contract
+ * pattern cites its signed-off version's verified rate record (its
  * document, page, quoted clause and page hash); a Medicare Advantage non-contracted pattern cites the
  * regulation the rules reference names. The figures are the database's; @tp/packets assembles them.
  *
@@ -105,7 +109,11 @@ interface LineRow {
   readonly priced_line_id: string;
   readonly pricing_run_id: string;
   readonly release_no: number;
-  readonly in_effect: boolean;
+  /** priced_line_pricing_check(): 'current', or why the line's pricing is no longer current. */
+  readonly pricing_check: string;
+  /** The line's place in the case's schedule as the case page numbers it ("Line 2 of 7"), and the case's line count. */
+  readonly position: number;
+  readonly total_lines: number;
   readonly expected_allowed_cents: string | null;
   readonly observed_allowed_cents: string;
   readonly variance_cents: string | null;
@@ -122,6 +130,28 @@ interface LineRow {
   readonly document_id: string;
   readonly document_sha256: string | null;
   readonly trace: unknown;
+}
+
+/** Why a case line's pricing is no longer current, in words (priced_line_pricing_check()'s causes). */
+const STALE_PRICING_WORDS: Readonly<Record<PricingCheckCause, string>> = {
+  PRICING_NOT_IN_EFFECT: 'priced again since it joined the case',
+  RELEASE_WITHDRAWN: 'its rule release was withdrawn since it was priced',
+  CONTRACT_VERSION_NOT_SIGNED_OFF: 'its contract version is no longer signed off',
+  CONTRACT_VERSION_NOT_IN_FORCE: 'its contract version no longer covers its service date',
+};
+
+/**
+ * The refusal of a case with lines whose pricing is no longer current: which lines (as the case page numbers
+ * them) and why, that a packet goes out only on the pricing in effect, and what to do, since nothing refreshes the
+ * case yet. Positions and codes' words only: no value, no identifier.
+ */
+function stalePricingMessage(stale: readonly LineRow[]): string {
+  const named = [...stale]
+    .sort((a, b) => a.position - b.position)
+    .map((row) => `line ${String(row.position)} of ${String(row.total_lines)} (${STALE_PRICING_WORDS[row.pricing_check in STALE_PRICING_WORDS ? (row.pricing_check as PricingCheckCause) : 'PRICING_NOT_IN_EFFECT']})`);
+  const lines = named.length === 1 ? (named[0] as string) : `${named.slice(0, -1).join(', ')} and ${named.at(-1) as string}`;
+  const them = stale.length === 1 ? 'it' : 'them';
+  return `${lines} ${stale.length === 1 ? 'is' : 'are'} no longer priced current; a packet is written, approved, exported and attested only on the pricing in effect, and nothing refreshes the case automatically yet: write ${them} off on the case page to send the packet without ${them}, or wait`;
 }
 
 /** A line's deadline as the loader derived it; a line it could not see is unverified (fails closed). */
@@ -161,9 +191,13 @@ async function caseLines(scope: PracticeScope<ScopeClient>, request: AssemblyReq
     async (client) =>
       (
         await client.query<LineRow>(
-          `WITH in_effect AS (${PRICED_IN_EFFECT('$1', `p.service_line_id IN (SELECT service_line_id FROM case_line WHERE case_id = $2)`)})
+          `WITH positions AS (
+             SELECT x.id, row_number() OVER (ORDER BY coalesce(xl.service_date, xc.service_from), xl.line_no, x.id)::integer AS position, count(*) OVER ()::integer AS total_lines
+               FROM case_line x JOIN service_line xl ON xl.id = x.service_line_id JOIN claim xc ON xc.id = xl.claim_id
+              WHERE x.case_id = $2 AND x.practice_id = $1
+           )
            SELECT cl.service_line_id, cl.practice_id, cl.priced_line_id, p.pricing_run_id, run.release_no,
-                  coalesce(e.id = cl.priced_line_id, false) AS in_effect,
+                  priced_line_pricing_check(cl.priced_line_id) AS pricing_check, pos.position, pos.total_lines,
                   p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text, p.window_ends_on::text,
                   sl.claim_id, coalesce(sl.service_date, c.service_from)::text AS service_date, sl.procedure_code, sl.modifiers, sl.units::text,
                   sl.paid_cents::text, c.patient_ref_id, c.received_on::text, r.bpr16_date::text AS paid_on, r.source_document_id AS document_id, d.sha256 AS document_sha256,
@@ -175,7 +209,7 @@ async function caseLines(scope: PracticeScope<ScopeClient>, request: AssemblyReq
              JOIN claim c ON c.id = sl.claim_id
              JOIN remittance r ON r.id = c.remittance_id
              LEFT JOIN source_document d ON d.id = r.source_document_id
-             LEFT JOIN in_effect e ON e.service_line_id = cl.service_line_id
+             JOIN positions pos ON pos.id = cl.id
             WHERE cl.case_id = $2 AND cl.practice_id = $1 AND cl.written_off_reason IS NULL
             ORDER BY cl.service_line_id`,
           [request.practiceId, request.caseId],
@@ -342,8 +376,9 @@ export async function loadAssembly(scope: PracticeScope<ScopeClient>, request: A
   if (rows.length === 0) {
     throw new PacketRefusedError('no_open_lines', 'the case has no line that is not written off');
   }
-  if (rows.some((row) => !row.in_effect)) {
-    throw new PacketRefusedError('pricing_changed', 'a line of the case was priced again since it joined; the case is judged again first');
+  const stale = rows.filter((row) => row.pricing_check !== 'current');
+  if (stale.length > 0) {
+    throw new PacketRefusedError('pricing_changed', stalePricingMessage(stale));
   }
   const traces = rows.map((row) => parseTrace(row.trace));
   const pricedLineIds = rows.map((row) => row.priced_line_id);

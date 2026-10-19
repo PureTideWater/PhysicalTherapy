@@ -6,9 +6,11 @@ import { ActionForm } from '../../../../../../../../components/action-form';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
 import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, Hash, LineSchedule } from '../../../../../../../../components/packets/display';
+import { PricingNowPanel } from '../../../../../../../../components/packets/pricing';
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
 import { loadPage } from '../../../../../../../../lib/http/next';
+import { PRICING_BLOCKED_TEXT } from '../../../../../../../../lib/packets/pricing';
 import { PACKET_ATTESTATION_TEXT } from '../../../../../../../../lib/packets/review';
 import { packetReviewPage } from '../../../../../../../../lib/routes/packets';
 import { attestPacketFormAction } from './actions';
@@ -25,8 +27,9 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
  * over their SHA-256. The attest button stays disabled, saying why, until both files are downloaded (the
  * owner's addition of 2026-10-18: the handler and the database refuse an attestation before it). The
  * attestation is the only record the reviewer writes; the database refuses one by anyone who drafted, wrote
- * or approved the packet, and a submission is logged only after it. Identifiers show as placeholders on
- * this screen.
+ * or approved the packet, and a submission is logged only after it. An export whose pricing is no longer
+ * current (audit item #4) shows its stale lines with their figures then and now, and the attest button is
+ * disabled with the reason. Identifiers show as placeholders on this screen.
  */
 export default async function PacketReviewPage(props: Props) {
   const page = await loadPage(packetReviewPage, props);
@@ -43,7 +46,9 @@ export default async function PacketReviewPage(props: Props) {
         ? 'not_current'
         : !review.atCaseLevel
           ? 'stale_level'
-          : review.deadlineNow === 'unverified'
+          : review.pricingNow.status !== 'current'
+            ? 'pricing_not_current'
+            : review.deadlineNow === 'unverified'
             ? 'deadline_unverified'
             : review.viewerTookPart
               ? 'took_part'
@@ -110,6 +115,7 @@ export default async function PacketReviewPage(props: Props) {
           </CardContent>
         )}
       </Card>
+      <PricingNowPanel pricing={review.pricingNow} />
       <Card role="region" aria-label="Deadline">
         <CardHeader>
           <CardTitle className="flex flex-wrap items-center gap-2">
@@ -156,6 +162,22 @@ export default async function PacketReviewPage(props: Props) {
                 ))}
               </ul>
               <p className="mt-2 text-sm">{PACKET_ATTESTATION_TEXT}</p>
+            </div>
+          ) : blocked === 'pricing_not_current' ? (
+            <div data-attestation="blocked" data-reason={blocked} className="flex flex-col gap-3">
+              <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+                {checklist.map((item) => (
+                  <li key={item.id}>{item.text}</li>
+                ))}
+              </ul>
+              <div>
+                <Button type="button" disabled aria-describedby="attest-pricing">
+                  Attest the export
+                </Button>
+                <p id="attest-pricing" className="pt-1 text-sm text-muted-foreground">
+                  Not ready to attest: {PRICING_BLOCKED_TEXT.attestation}. Pricing now, above, lists the lines and their figures then and now.
+                </p>
+              </div>
             </div>
           ) : blocked !== null ? (
             <Alert data-attestation="blocked" data-reason={blocked}>

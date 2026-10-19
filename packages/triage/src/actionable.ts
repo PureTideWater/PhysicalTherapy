@@ -18,12 +18,19 @@ import type { DeadlineStatus } from './deadline';
  *    the run): else CLAIM_REVERSED or CLAIM_SUPERSEDED;
  * 4. the contract version that priced it is signed off (a Medicare Advantage non-contracted line has
  *    no version: it priced from the public fee schedule): else VERSION_NOT_SIGNED_OFF, a version
- *    superseded by its correction since the run;
- * 5. it is not a per-visit line (PER_VISIT_REVIEW) and carries no NCCI procedure-to-procedure review
+ *    superseded by its correction since the run; and it still covers the line's service date (the
+ *    resolver's rule, effective_from <= date < effective_to): else VERSION_NOT_IN_FORCE, a version an
+ *    amendment closed before that date since the run (audit item #4: a back-dated amendment);
+ * 5. its run's rule release has not been withdrawn since it was priced (a withdrawal records that the
+ *    release's content was wrong): else RELEASE_WITHDRAWN, so a withdrawal drops the line out of the
+ *    actionable totals at once, though the case keeps its line until PR 11 refreshes it. Steps 4 and 5
+ *    are the database's priced_line_pricing_check() for a line on its pricing in effect (a database test
+ *    runs both);
+ * 6. it is not a per-visit line (PER_VISIT_REVIEW) and carries no NCCI procedure-to-procedure review
  *    flag (NCCI_REVIEW): until the specialist answers QUESTIONS Q44 (whether a visit's variance is
  *    judged per visit) and Q41 (whether a standing edit keeps a line from becoming actionable), such a
  *    line stays validated for a person's review and joins no case (docs/adr/0040);
- * 6. it has no open write-off: else WRITTEN_OFF.
+ * 7. it has no open write-off: else WRITTEN_OFF.
  *
  * A line with zero or negative variance is never validated: an overpayment is recorded on its priced
  * line and shown, and never becomes a case (PRC-15). A per-visit line is judged with its visit (PRD 11
@@ -42,6 +49,8 @@ export const NOT_ACTIONABLE_REASONS = [
   'CLAIM_REVERSED',
   'CLAIM_SUPERSEDED',
   'VERSION_NOT_SIGNED_OFF',
+  'VERSION_NOT_IN_FORCE',
+  'RELEASE_WITHDRAWN',
   'PER_VISIT_REVIEW',
   'NCCI_REVIEW',
   'WRITTEN_OFF',
@@ -62,6 +71,13 @@ export interface TriageFacts {
   readonly mappingKind: string | null;
   /** The status now of the contract version that priced it; null without one. */
   readonly contractVersionStatus: string | null;
+  /**
+   * Whether the contract version that priced it still covers its service date now (effective_from <= date <
+   * effective_to); true when it names no version.
+   */
+  readonly contractVersionCoversService: boolean;
+  /** Whether its run's rule release has been withdrawn since (a rule_release_withdrawal row of that release). */
+  readonly releaseWithdrawn: boolean;
   readonly writtenOff: boolean;
   /**
    * For a line of a per-visit visit, the visit's net variance (the sum of the variance of the visit's
@@ -128,6 +144,12 @@ export function judgeLine(facts: TriageFacts, lineMaterialityCents: Cents, asOf:
   }
   if (facts.mappingKind !== 'ma_noncontracted' && facts.contractVersionStatus !== 'signed_off') {
     reasons.push('VERSION_NOT_SIGNED_OFF');
+  }
+  if (facts.mappingKind !== 'ma_noncontracted' && !facts.contractVersionCoversService) {
+    reasons.push('VERSION_NOT_IN_FORCE');
+  }
+  if (facts.releaseWithdrawn) {
+    reasons.push('RELEASE_WITHDRAWN');
   }
   if (facts.visitVarianceCents !== null) {
     reasons.push('PER_VISIT_REVIEW');

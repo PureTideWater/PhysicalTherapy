@@ -40,6 +40,8 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   CLAIM_REVERSED: 'Claim reversed since it was priced',
   CLAIM_SUPERSEDED: 'Claim corrected since it was priced',
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
+  VERSION_NOT_IN_FORCE: 'Contract version no longer covers the service date (amended since it was priced)',
+  RELEASE_WITHDRAWN: 'Rule release withdrawn since it was priced',
   PER_VISIT_REVIEW: 'Per-visit line, judged with its visit: held for the specialist’s review',
   NCCI_REVIEW: 'An NCCI procedure-to-procedure edit stands: held for review',
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',

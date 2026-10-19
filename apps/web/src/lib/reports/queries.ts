@@ -46,7 +46,31 @@ export interface ReportSummary {
   readonly releasedAt: string | null;
   /** The headline as generated; null until the report is ready. */
   readonly headline: AuditReportContent['headline'] | null;
+  /**
+   * Whether its run's rule release was withdrawn since (its content was wrong; audit item #4): a queued report then
+   * fails as release_withdrawn, and a ready one is neither attested nor released (the database refuses both).
+   */
+  readonly releaseWithdrawn: boolean;
 }
+
+/**
+ * Why a report could not be generated, in words, by its failure code: the report job's own refusals (a run replaced
+ * since the request, a rule release withdrawn since) say what to do; anything else failed three times and the
+ * operator was alerted. Codes only reach the page, never a value.
+ */
+export function reportFailureText(code: string | null): string {
+  if (code === 'release_withdrawn') {
+    return 'Its pricing run’s rule release was withdrawn after the request, because the release’s content was wrong, so no report is built on it. Price the period again under the release in force, accept that re-run, then generate a new report on it.';
+  }
+  if (code === 'run_not_in_effect') {
+    return 'Its pricing run is no longer the run in effect for its period: a re-run was accepted since the request. Generate a new report on the run in effect.';
+  }
+  return `The report job failed three times (${code ?? 'unknown'}) and the operator was alerted; generate a new report once it is fixed.`;
+}
+
+/** Why a ready report on a rule release withdrawn since is neither attested nor released, with the remedy. */
+export const REPORT_RELEASE_WITHDRAWN_TEXT =
+  'this report’s rule release was withdrawn after it was generated, because the release’s content was wrong, so it is neither attested nor released; price the period again under the release in force, accept that re-run, then generate a new report on it';
 
 export interface ReportDetail extends ReportSummary {
   readonly content: AuditReportContent | null;
@@ -80,6 +104,7 @@ interface ReportRow {
   readonly released_by: string | null;
   readonly released_at: Date | null;
   readonly headline: AuditReportContent['headline'] | null;
+  readonly release_withdrawn: boolean;
   readonly content?: AuditReportContent | null;
   readonly attestation?: Attestation | null;
 }
@@ -87,7 +112,7 @@ interface ReportRow {
 const REPORTS = (withContent: boolean) => `
   SELECT a.id, a.practice_id, a.status, a.pricing_run_id, r.period_from::text, r.period_to::text, qu.email AS requested_by, a.created_at, a.generated_at,
          a.as_of::text, a.failure_code, a.pdf_sha256, a.csv_sha256, au.email AS attested_by, a.attested_at, lu.email AS released_by, a.released_at,
-         a.content -> 'headline' AS headline${withContent ? ', a.content, a.attestation' : ''}
+         a.content -> 'headline' AS headline, pricing_run_release_withdrawn(a.pricing_run_id) AS release_withdrawn${withContent ? ', a.content, a.attestation' : ''}
     FROM audit_report a
     JOIN pricing_run r ON r.id = a.pricing_run_id
     LEFT JOIN "user" qu ON qu.id = a.requested_by
@@ -116,6 +141,7 @@ function summary(row: ReportRow): ReportSummary {
     releasedBy: row.released_at === null ? null : (row.released_by ?? 'a member of the practice'),
     releasedAt: row.released_at?.toISOString() ?? null,
     headline: row.headline,
+    releaseWithdrawn: row.release_withdrawn,
   };
 }
 

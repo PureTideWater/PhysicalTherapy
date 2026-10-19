@@ -45,12 +45,17 @@ export const PRICING_CAUSE_TEXT: Readonly<Record<PricingCheckCause, string>> = {
 const REMEDY =
   'Nothing refreshes the case automatically yet: write the stale line off on the case page and write the packet again without it, or wait until the line is priced current again';
 
-/** Why a step is refused while the version's pricing is not current, with the remedy (the page shows the lines). */
+/**
+ * Why a step is refused while the version's pricing is not current, with the remedy (the page shows the lines).
+ * The approval and the export are sentences the builder shows beside a disabled button; the attestation and the
+ * writing of a version are refusals, which the forms show as "Refused: …".
+ */
 export const PRICING_BLOCKED_TEXT = {
-  approval: `This version cannot be approved: a line’s pricing is no longer current (see Pricing now). A packet is approved only on the pricing in effect. ${REMEDY}.`,
-  export: `This version cannot be exported: a line’s pricing is no longer current (see Pricing now). A packet is exported only on the pricing in effect. ${REMEDY}.`,
-  attestation: `This export cannot be attested: a line’s pricing is no longer current, so the files no longer show the pricing in effect. Ask the practice to write the stale line off on the case page and write, approve and export the packet again.`,
-  write: `A new version cannot be written while a line of the case is on pricing no longer current. ${REMEDY}.`,
+  approval: `This version cannot be approved: a line’s pricing is no longer current (see Pricing now), and a packet is approved only on the pricing in effect. ${REMEDY}.`,
+  export: `This version cannot be exported: a line’s pricing is no longer current (see Pricing now), and a packet is exported only on the pricing in effect. ${REMEDY}.`,
+  attestation:
+    'this export’s pricing is no longer current, so its files no longer show the pricing in effect and it is not attested; the practice writes the stale line off on the case page, then writes, approves and exports the packet again',
+  write: 'a line of the case is on pricing no longer current, and a packet is written only on the pricing in effect; nothing refreshes the case automatically yet: write the stale line off on the case page to send the packet without it, or wait',
 } as const;
 
 /** A sum of decimal integer cents (each already checked by the database), as decimal integer text. */

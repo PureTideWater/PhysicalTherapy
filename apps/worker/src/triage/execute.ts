@@ -125,6 +125,10 @@ export interface CandidateRow {
   readonly mapping_kind: string | null;
   readonly contract_version_id: string | null;
   readonly version_status: string | null;
+  /** Whether the version still covers the line's service date (true without a version). */
+  readonly version_covers_service: boolean;
+  /** Whether the run's rule release has a withdrawal. */
+  readonly release_withdrawn: boolean;
   readonly rate_record_id: string | null;
   readonly payer_id: string;
   readonly plan_id: string;
@@ -214,7 +218,11 @@ export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceI
              SELECT cs.service_line_id FROM current_stage cs WHERE cs.stage = 'validated'
            ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
-                  m.mapping_kind, p.contract_version_id, v.status AS version_status, p.rate_record_id, pl.payer_id, pl.id AS plan_id,
+                  m.mapping_kind, p.contract_version_id, v.status AS version_status,
+                  (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
+                     AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
+                  EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no) AS release_withdrawn,
+                  p.rate_record_id, pl.payer_id, pl.id AS plan_id,
                   (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
                   c.superseded_by_claim_id IS NOT NULL AS superseded,
                   false AS written_off,
@@ -283,6 +291,8 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
       claimSuperseded: row.superseded,
       mappingKind: row.mapping_kind,
       contractVersionStatus: row.version_status,
+      contractVersionCoversService: row.version_covers_service,
+      releaseWithdrawn: row.release_withdrawn,
       writtenOff: row.written_off,
       visitVarianceCents: row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents),
       reviewFlags: row.review_flags.map((flag) => flag.flag),
