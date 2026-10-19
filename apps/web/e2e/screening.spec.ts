@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 
 import { tagline } from '@paidwhole/brand/tokens';
 import { type Page, expect, test } from '@playwright/test';
@@ -7,24 +8,39 @@ import { cents, formatUsd } from '@tp/money';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
-import { CLEAN_ROWS, SCREENING_ZIP, SMALL_LEFT_OUT, SMALL_ROWS, dateOfServiceCsv, expireScreeningsOnce, memberIdCsv, outboxFor, priceScreeningsOnce, resultLinkIn, screeningCsv } from './screening';
+import {
+  CLEAN_ROWS,
+  SCREENING_HEADER,
+  SCREENING_ZIP,
+  SMALL_LEFT_OUT,
+  SMALL_ROWS,
+  dateOfServiceCsv,
+  expireScreeningsOnce,
+  memberIdCsv,
+  outboxFor,
+  priceScreeningsOnce,
+  resultLinkIn,
+  screeningRowsCsv,
+} from './screening';
 
 /**
  * The free screening in the browser (Change Order 001, CO-04; reconciliation-001, D11 and D18 to D21; test matrix
- * SCR-01, SCR-02, SCR-03, SCR-05 and SCR-06, the screens' side). A contract specialist approves the place-of-service
- * split in the console. A prospect, with no account, fills the form; a file with a Member ID column, and one with a
- * date-of-service column, are refused in the browser with the column named, and nothing is sent. The page states the
- * template's rules: each row at least 11 claim lines, and denied lines left out of every total. A SYNTHETIC file of
- * totals, built in memory, with two rows of fewer than 11 claim lines (SCR-07): the browser leaves those two out and
- * says how many rows, claim lines and dollars it left out, and sends the rest as its hash and rows (nothing of the two
- * in the request); the worker's sweep prices it (an operator pool on the
- * e2e database) and emails the link to the local outbox. The link opens the result: the Medicare figures under D19's
- * label and the fully reduced ones under theirs (the owner's rulings of 2026-10-18), the anomalies with the database's
- * standings (G01's 97110 within the range of the reduction across codes, 97140 an anomaly), the coverage and the
- * dollars that cannot be priced without a contract, the rows left out before sending as the browser counted them, the
- * database's own sums to the cent, with no owed, underpaid or
- * recovered and no tagline, accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the screening_converted event; once the screening is past its 30
- * days the link opens nothing, the expiry job deletes it, and the conversion's event remains. Synthetic data only.
+ * SCR-01, SCR-02, SCR-03 and SCR-05 to SCR-07, the screens' side). A contract specialist approves the
+ * place-of-service split in the console. A prospect, with no account, fills the form; a file with a Member ID
+ * column, and one with a date-of-service column, are refused in the browser with the column named, and nothing is
+ * sent. The page states the template's rules (each row at least 11 claim lines, and denied lines left out of every
+ * total and claim count), and the template it downloads carries them as note lines above its header, in plain ASCII.
+ * That template, filled with SYNTHETIC totals and its notes kept, with two rows of fewer than 11 claim lines
+ * (SCR-07): the browser leaves those two out and says how many rows, claim lines and dollars it left out, and sends
+ * the rest as its hash and rows (nothing of the two in the request); the worker's sweep prices it (an operator pool
+ * on the e2e database) and emails the link to the local outbox. The link opens the result: the Medicare figures
+ * under D19's label and the fully reduced ones under theirs (the owner's rulings of 2026-10-18), the anomalies with
+ * the database's standings (G01's 97110 within the range of the reduction across codes, 97140 an anomaly), the
+ * coverage and the dollars that cannot be priced without a contract, the rows left out before sending as the browser
+ * counted them, the database's own sums to the cent, with no owed, underpaid or recovered and no tagline,
+ * accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the
+ * screening_converted event; once the screening is past its 30 days the link opens nothing, the expiry job deletes
+ * it, and the conversion's event remains. Synthetic data only.
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
@@ -84,6 +100,7 @@ test('a specialist approves the split; a file with patient information is refuse
     }
   });
 
+  let template = Buffer.alloc(0);
   await test.step('a Member ID column, and a date-of-service column, are refused in the browser with the column named; nothing is sent (SCR-01)', async () => {
     await page.goto('/screening');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('A free screening of your allowed amounts');
@@ -94,7 +111,24 @@ test('a specialist approves the split; a file with patient information is refuse
     await expect(rules.locator('[data-rule="claim-floor"]')).toContainText('tells you how many rows, claim lines and dollars it left out');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('Leave denied lines out of every total');
     await expect(rules.locator('[data-rule="denied-lines"]')).toContainText('A denial is not a rate variance');
-    await expect(page.locator('[data-slot="template-hint"]')).toContainText('Each row sums at least 11 claim lines, and denied lines are left out of every total');
+    await expect(page.locator('[data-slot="template-hint"]')).toContainText(
+      'The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.',
+    );
+    // The template file states them too, as note lines above its header, in plain ASCII so a spreadsheet shows them as written.
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Download the column template' }).click();
+    const downloaded = await download;
+    expect(downloaded.suggestedFilename()).toBe('paidwhole-screening-template.csv');
+    template = await readFile(await downloaded.path());
+    const templateText = template.toString('utf8');
+    expect(templateText).toMatch(/^[\x20-\x7e\r\n]*$/);
+    expect(templateText).toContain('Each row sums at least 11 claim lines.');
+    expect(templateText).toContain('tells you how many rows, claim lines and dollars it left out');
+    expect(templateText).toContain('Leave denied lines out of every total and claim count');
+    expect(templateText).toContain('A denial is not a rate variance');
+    const lines = templateText.split('\r\n');
+    expect(lines.at(-2)).toBe(SCREENING_HEADER.join(','));
+    expect(lines.slice(0, -2).every((line) => line.startsWith('"# '))).toBe(true);
     await expectAccessible(page, 'the screening page');
     await fillProspect(page);
     // The file input has no name: no form submission carries the file.
@@ -114,8 +148,9 @@ test('a specialist approves the split; a file with patient information is refuse
     expect(uploads).toBe('0');
   });
 
-  const clean = screeningCsv([...CLEAN_ROWS, ...SMALL_ROWS]);
-  await test.step('a SYNTHETIC file is sent as its hash and rows of totals, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
+  // The downloaded template, its notes kept, filled with SYNTHETIC totals.
+  const clean = Buffer.concat([template, screeningRowsCsv([...CLEAN_ROWS, ...SMALL_ROWS])]);
+  await test.step('the template, filled and its notes kept, is sent as its hash and rows of totals, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: clean });
     await expect(page.locator('[data-state="file-ready"]')).toContainText(`${String(CLEAN_ROWS.length)} rows of totals`);
     const leftOut = page.locator('[data-state="left-out"]');

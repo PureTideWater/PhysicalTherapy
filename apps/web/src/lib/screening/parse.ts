@@ -6,8 +6,9 @@ import { FILE_MESSAGES, leftOutMessage, reasonMessages } from './messages';
  * The screening upload, read in the browser (Change Order 001, CO-04; reconciliation-001, D18 a: "the browser parses
  * the upload; the server checks the header names and the typed rows and stores no bytes"). The file never leaves the
  * browser. This module hashes its bytes (SHA-256, crypto.subtle), reads it as UTF-8 CSV or tab-separated text with
- * RFC 4180 quotes, checks the header and every row against the screening's format (@tp/worker/screening-format, the
- * same rules the server applies again), and gives either the problems, at most 20, patient information first, each
+ * RFC 4180 quotes (skipping the note lines above the header, which is how the template states its rules), checks the
+ * header and every row against the screening's format (@tp/worker/screening-format, the same rules the server applies
+ * again, its quarters dated by the server's clock), and gives either the problems, at most 20, patient information first, each
  * naming its column by position and header text and its row by number, or what the form sends: the hash, the header's
  * canonical column names in the file's order (never the text typed), the row count and the rows of totals in their
  * canonical form. A row of fewer than 11 claim lines is left out and never sent (it can be one patient's service
@@ -84,16 +85,43 @@ export type Table = { readonly ok: true; readonly delimiter: ',' | '\t'; readonl
 
 const BOM = '﻿';
 
-/** The delimiter the header line uses: a tab when it holds a tab outside quotes and no comma, else a comma. */
-export function delimiterOf(text: string): ',' | '\t' {
+/** Where the line starting at `start` ends: its first line break outside quotes, or the end of the text. */
+function lineEnd(text: string, start: number): number {
   let quoted = false;
-  let tabs = 0;
-  let commas = 0;
-  for (const char of text) {
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index];
     if (char === '"') {
       quoted = !quoted;
     } else if (!quoted && (char === '\n' || char === '\r')) {
-      break;
+      return index;
+    }
+  }
+  return text.length;
+}
+
+/** A note line as typed: its first cell, quoted or not, begins with # (the template's rules above its header). */
+const NOTE_LINE = /^[ \t]*"?[ \t]*#/;
+
+/** A line of no cell: nothing but spaces, delimiters and quotes. */
+const BLANK_LINE = /^[\s,"]*$/;
+
+/**
+ * The delimiter the header line uses: a tab when it holds a tab outside quotes and no comma, else a comma. The note
+ * lines and blank lines above the header are passed over, so a note's own commas never choose it.
+ */
+export function delimiterOf(text: string): ',' | '\t' {
+  let start = 0;
+  let end = lineEnd(text, start);
+  while (end < text.length && (NOTE_LINE.test(text.slice(start, end)) || BLANK_LINE.test(text.slice(start, end)))) {
+    start = text[end] === '\r' && text[end + 1] === '\n' ? end + 2 : end + 1;
+    end = lineEnd(text, start);
+  }
+  let quoted = false;
+  let tabs = 0;
+  let commas = 0;
+  for (const char of text.slice(start, end)) {
+    if (char === '"') {
+      quoted = !quoted;
     } else if (!quoted && char === '\t') {
       tabs += 1;
     } else if (!quoted && char === ',') {
@@ -104,9 +132,21 @@ export function delimiterOf(text: string): ',' | '\t' {
 }
 
 /**
+ * A note row above the header: its first cell begins with # and every other cell is blank, as the template's rules
+ * are written and as a spreadsheet saves them (padded with empty cells to the header's width). A header that begins
+ * with a # column ("#", then the columns) has other cells, so it is never a note and is checked as a header.
+ */
+export function isNoteRow(row: readonly string[]): boolean {
+  const [first = '', ...rest] = row;
+  return first.trimStart().startsWith('#') && rest.every((cell) => cell.trim() === '');
+}
+
+/**
  * The text's rows of cells (RFC 4180: a quoted cell may hold the delimiter, a line break or a doubled quote; CRLF or
- * LF; a byte-order mark dropped). A blank line, or one whose cells are all blank, is skipped. A quote never closed,
- * or text after a closing quote, refuses the file: it is never half-read.
+ * LF; a byte-order mark dropped). A blank line, or one whose cells are all blank, is skipped, and so is every note row
+ * above the header (isNoteRow: the template's rules), so the first row is the header. A note row below the header is
+ * read as a row and refused like any other. A quote never closed, or text after a closing quote, refuses the file: it
+ * is never half-read.
  */
 export function readTable(input: string): Table {
   const text = input.startsWith(BOM) ? input.slice(1) : input;
@@ -165,7 +205,8 @@ export function readTable(input: string): Table {
   if (field !== '' || closed || row.length > 0) {
     endRow();
   }
-  return { ok: true, delimiter, rows };
+  const header = rows.findIndex((cells) => !isNoteRow(cells));
+  return { ok: true, delimiter, rows: header === -1 ? [] : rows.slice(header) };
 }
 
 function refused(message: string): ScreeningParse {
@@ -200,6 +241,18 @@ export async function parseScreeningBytes(file: { readonly name: string; readonl
     return refusedFor(screened.reasons, screened.headers, screened.total, screened.leftOut);
   }
   return { ok: true, fileSha256: await sha256Hex(bytes), headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows, leftOut: screened.leftOut };
+}
+
+/**
+ * How far the server's clock is ahead of this browser's, in milliseconds, from the time the server gave when it built
+ * the page (ISO 8601) and this browser's clock then; zero when the server's time cannot be read. The page screens a
+ * file's quarters by the server's clock moved on by this offset, never by this computer's own: a computer whose clock
+ * is wrong neither refuses a quarter the server takes nor sends one the server refuses, so the server never refuses a
+ * row the page sent, whose number, once rows of fewer than 11 claim lines are left out, would not be the file's.
+ */
+export function clockOffset(serverTime: string, browserNow: number): number {
+  const server = Date.parse(serverTime);
+  return Number.isFinite(server) && Number.isFinite(browserNow) ? server - browserNow : 0;
 }
 
 /** Reads a chosen file in this browser and screens it; nothing is sent. `now` dates the current quarter. */

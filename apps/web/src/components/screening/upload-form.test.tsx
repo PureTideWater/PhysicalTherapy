@@ -15,7 +15,7 @@ import { ScreeningUploadForm } from './upload-form';
 const action = (state: ActionState): Promise<ActionState> => Promise.resolve(state);
 
 describe('the screening upload form', () => {
-  const html = renderToStaticMarkup(<ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} minClaimLines={11} />);
+  const html = renderToStaticMarkup(<ScreeningUploadForm action={action} states={[{ value: 'MN', label: 'MN' }]} maxRows={50_000} minClaimLines={11} serverTime="2026-10-18T12:00:00.000Z" />);
 
   it('reads the file in the browser: its input has no name, so no submission carries it', () => {
     const file = /<input[^>]*type="file"[^>]*>/.exec(html)?.[0] ?? '';
@@ -45,10 +45,11 @@ describe('the screening upload form', () => {
     expect(html.replace(/<[^>]+>/g, ' ')).not.toMatch(/\b(?:owed|under-?paid|recovered)\b/i);
   });
 
-  it('says, in plain words, that a row of fewer than 11 claim lines is left out and that denied lines stay out of every total', () => {
+  it('says, in plain words, that a row of fewer than 11 claim lines is left out, that denied lines stay out of every total, and that the template’s first lines say so', () => {
     const text = html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     expect(text).toContain('a row of fewer than 11 claim lines is left out, so that no row can describe one patient’s care');
-    expect(text).toContain('Each row sums at least 11 claim lines, and denied lines are left out of every total');
+    expect(text).toContain('The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.');
+    expect(text).toContain('this page skips them, so you can keep them');
     expect(html).toMatch(/aria-describedby="screening-template-rules"/);
   });
 });

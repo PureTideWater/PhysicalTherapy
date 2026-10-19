@@ -104,6 +104,13 @@ export interface ScreeningPageData {
   readonly products: readonly (typeof SCREENING_PAYER_PRODUCTS)[number][];
   readonly states: readonly string[];
   readonly limits: ScreeningLimits;
+  /**
+   * The server's clock as it built the page (ISO 8601, UTC). The browser dates a file's quarters by it, moved on by its
+   * own clock since, so the server never refuses as after the current quarter a row the page sent (whose number, once
+   * rows of fewer than 11 claim lines are left out, would not be the file's), and a wrong computer clock refuses
+   * nothing the server takes.
+   */
+  readonly serverTime: string;
 }
 
 async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
@@ -139,6 +146,7 @@ export const screeningPage = publicRoute({
       products: SCREENING_PAYER_PRODUCTS,
       states: SCREENING_STATES,
       limits: SCREENING_LIMITS,
+      serverTime: services.now().toISOString(),
     };
   },
 });

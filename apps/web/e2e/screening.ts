@@ -58,10 +58,15 @@ export const SMALL_ROWS: readonly ScreeningCsvRow[] = [
 /** What the browser counts of SMALL_ROWS, and the result shows: 2 rows, 11 claim lines, $436.84. */
 export const SMALL_LEFT_OUT = { rows: 2, claimLines: 11, allowedCents: 43_684n, allowed: '$436.84' } as const;
 
+/** Rows as CSV lines, each CRLF-terminated as a spreadsheet writes it, quoting a cell with a comma. */
+export function screeningRowsCsv(rows: readonly (readonly string[])[]): Buffer {
+  const cell = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+  return Buffer.from(rows.map((row) => `${row.map(cell).join(',')}\r\n`).join(''), 'utf8');
+}
+
 /** A CSV of the rows under a header, CRLF-terminated as a spreadsheet writes it, quoting a cell with a comma. */
 export function screeningCsv(rows: readonly (readonly string[])[], header: readonly string[] = SCREENING_HEADER): Buffer {
-  const cell = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
-  return Buffer.from([header, ...rows].map((row) => row.map(cell).join(',')).join('\r\n').concat('\r\n'), 'utf8');
+  return screeningRowsCsv([header, ...rows]);
 }
 
 /**

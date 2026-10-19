@@ -130,8 +130,12 @@ small-cell standard (CMS suppresses a count of 1 to 10), and it is one setting, 
   lines: it is never sent. A row left out is checked like any other first, so a day in its band still refuses the
   file and a row repeating another's key is still a repeated row. The page says how many rows, claim lines and
   dollars it left out (for example, "Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $436.84
-  allowed in your file. They are not sent, and no figure includes them"), and a file whose every row is left out is refused
-  with those numbers, since nothing is left to screen. The form sends the three numbers beside the rows it keeps.
+  allowed in your file. They are not sent, and no figure includes them"), and a file whose every row is left out is
+  refused with those numbers, since nothing is left to screen. The form sends the three numbers beside the rows it
+  keeps. The page dates a file's quarters by the server's clock (the page's `serverTime`, moved on by the browser's
+  own clock since), never the computer's own: the rows sent are numbered among themselves, so once small rows are
+  left out a row's number there is not its number in the file, and with both checks on one clock the server never
+  refuses a row the page sent (a computer whose clock is wrong also refuses no quarter the server takes).
 - The server (`decodeScreeningRows`) refuses a row of fewer than 11 claim lines that a request sent around the
   browser, by its row number ("Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11, so that
   no row can describe one patient's care: leave it out"), named with the patient information ahead of any other
@@ -143,11 +147,16 @@ small-cell standard (CMS suppresses a count of 1 to 10), and it is one setting, 
   writes it, and `format.test.ts` holds that CHECK and the upload's left-out CHECKs to the setting.
 
 The result shows the rows left out as the browser counted them ("Left out before sending": rows, claim lines and
-allowed in your file), apart from every other figure, when there are any. The template's rules and the upload page
-state the floor in plain words ("Each row sums at least 11 claim lines. A row of fewer could describe one patient's
-care, so this page leaves it out before anything is sent and tells you how many rows, claim lines and dollars it
-left out"). The template file is the header line alone, since any other line would be read as a row of totals, so
-its rules stand beside it on the page and in its column guide. Counsel confirms the number, and whether it counts
+allowed in your file), apart from every other figure, when there are any. The template file and the upload page
+state the floor in plain words ("Each row sums at least 11 claim lines. A row of fewer could describe the care of one
+patient, so your browser leaves it out before anything is sent, and the page tells you how many rows, claim lines and
+dollars it left out"), and the column guide says it beside the claim count. The template states it where a prospect
+fills it, in a spreadsheet away from the page: its rules come first, each a note line above the header (a first cell
+beginning with #), in plain ASCII so a spreadsheet that reads a CSV without a byte-order mark shows them as written.
+The page's reader skips a note row above the header, as written or as a spreadsheet saves it (padded with empty
+cells, as CSV or tab-separated text), and a note's own commas never choose the delimiter; a header that begins with a
+`#` column has other cells and is checked as a header, so a patient-information column beside it is still refused,
+and a note below the header is a row, refused by its number. Counsel confirms the number, and whether it counts
 claim lines or patients: a plan of care can give one patient 11 lines in a quarter, and a row of totals cannot say
 how many patients its lines are. If counsel says patients, a patient-count column is added to the format and the
 row (a new migration) and the floor moves to it.
@@ -155,9 +164,9 @@ row (a new migration) and the floor moves to it.
 **Denied lines out of every total (the founder's ruling of 2026-10-18 on the best-option audit's item 1, the
 template's part).** A denied line pays nothing for a reason that is not a rate (no authorization, a visit limit
 reached, a duplicate, timely filing, a service not covered), and a row of totals cannot say which of its lines were
-denied, so a denied line inside a row would read as a shortfall against Medicare. The template's rules and the
-upload page tell the prospect to leave denied lines out of every total, because a denial is not a rate variance;
-the column guide says so beside the allowed total and the claim count. Reading the payer's denial codes in the paid
+denied, so a denied line inside a row would read as a shortfall against Medicare. The template's note lines and the
+upload page tell the prospect to leave denied lines out of every total and claim count, because a denial is not a
+rate variance; the column guide says so beside the allowed total and the claim count. Reading the payer's denial codes in the paid
 audit's triage is PR 6d, not this pull request.
 
 **Each row priced by the unchanged engine, alone and as a later code of a visit, its figure before sequestration
@@ -239,6 +248,8 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
 | Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. |
 | Keep a row of fewer than 11 claim lines and hide it in the result | It would still be stored: one patient's service line in tables built as non-PHI, from a prospect with no BAA. |
+| Keep the template a header line alone, its rules only on the page | A prospect fills the template in a spreadsheet, away from the page; the floor and the denied-lines rule belong where the totals are typed. Note lines the reader skips put them there without a second file or format. |
+| Date the quarters by the computer's own clock | A wrong clock would refuse a quarter the server takes, or send one it refuses; and once small rows are left out, the server's row number would not be the file's. |
 | Refuse a whole file in the browser when a row is small | A practice's file of totals has many small cells (a rare code, a quarter's tail); refusing it would turn most prospects away for rows that are left out safely. The founder ruled to leave them out and say how much was left out. |
 | Count patients rather than claim lines | A row of totals has no patient count. Counsel decides; if counsel says patients, a patient-count column is added and the floor moves to it. |
 | Infer the product from payer names (D20 b), or price everything as MA non-contracted (D20 c) | A guess about a contract; MA contracted rows must never price as non-contracted. |
@@ -293,7 +304,10 @@ without a contract". The copy lint reads the screening paths, the worker's scree
   with a row of one claim line refused by its row number and storing nothing of the row (`routes.db.test.ts`), the
   CHECK refusing 1 and 10 and taking 11, and the left-out numbers held to what a browser could count
   (`packages/db/src/screening.db.test.ts`), the result's card (`result.test.tsx`) and the journey, which leaves two
-  small rows out of what it sends (`e2e/screening.spec.ts`).
+  small rows out of what it sends (`e2e/screening.spec.ts`). The template's note lines: their words, plain ASCII,
+  skipped as written and as a spreadsheet saves them, a `#` header still checked, a note below the header refused,
+  and the quarters dated by the server's clock (`parse.test.ts`, the page's `serverTime` in `routes.db.test.ts`); the
+  journey downloads the template, reads its rules, and sends it filled with its notes kept.
 
 ## Owner rulings (2026-10-18)
 
@@ -335,8 +349,8 @@ experience, privacy and compliance, never weighted by build effort):
    *Built:* the floor above, SCR-07.
 6. **Denied lines (audit item 1, the template's part).** The screening template and the upload page tell prospects
    to leave denied lines (zero-paid for authorization, visit limit, duplicate, timely filing, not covered) out of
-   their totals, because a denial is not a rate variance. *Built:* the template's rules and its column guide; the
-   triage change is PR 6d.
+   their totals, because a denial is not a rate variance. *Built:* the template's note lines, the page's rules and the
+   column guide; the triage change is PR 6d.
 
 What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
 sequestration, the comparison is put to the owner again); ZIP+4 localities, in PR 6b before launch; counsel's answer

@@ -18,10 +18,10 @@ export const metadata: Metadata = { title: 'Free screening' };
  * and the claim count, and no patient information. The browser reads the file and sends only its rows of totals; the
  * Medicare fee schedule at the practice's locality prices the Medicare rows, row by row, through the unchanged engine;
  * the result is emailed as a link that opens it for 30 days. Each row sums at least 11 claim lines (a smaller row is
- * left out before sending), and denied lines are left out of every total: the page states both rules in plain words
- * beside the template (the founder's rulings of 2026-10-18). The page shows the lockup without the tagline (D11), and
- * never says owed, underpaid or recovered. Screening opens once a rule release is in force and a contract specialist
- * has approved the place-of-service split.
+ * left out before sending), and denied lines are left out of every total and claim count: the template's note lines
+ * and the page beside it state both rules in plain words (the founder's rulings of 2026-10-18). The page shows the
+ * lockup without the tagline (D11), and never says owed, underpaid or recovered. Screening opens once a rule release
+ * is in force and a contract specialist has approved the place-of-service split.
  */
 export default async function ScreeningPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const data = await loadPublicPage(screeningPage, props);
@@ -61,6 +61,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             states={data.states.map((code) => ({ value: code, label: code }))}
             maxRows={data.limits.maxRows}
             minClaimLines={data.limits.minClaimLines}
+            serverTime={data.serverTime}
           />
         )}
         <Card>

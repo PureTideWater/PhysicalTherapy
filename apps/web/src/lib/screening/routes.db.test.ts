@@ -304,8 +304,14 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
 
   it('stores a clean upload, queues its pricing and says to check the email; the link opens the result, computed in SQL', async () => {
     const email = 'prospect.clean@clinic-clean.synthetic.test';
+    const before = Date.now();
     const page = await world.call(screeningPage);
-    expect(page).toMatchObject({ status: 'ok', data: { open: true, releaseNo: 900001, sent: false } });
+    expect(page).toMatchObject({ status: 'ok', data: { open: true, releaseNo: 900001, sent: false, limits: { minClaimLines: 11 } } });
+    // The page carries the server's clock, by which the browser dates the file's quarters (never the computer's own).
+    const serverTime = page.status === 'ok' ? page.data.serverTime : '';
+    expect(serverTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    expect(Date.parse(serverTime)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(serverTime)).toBeLessThanOrEqual(Date.now());
     const outcome = await submitted(submitInput({ contactEmail: email }));
     expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
     const run = (await world.owner.query<{ id: string }>('SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email])).rows[0];

@@ -5,8 +5,21 @@ import { decodeScreeningRows } from '@tp/worker/screening-format';
 import { describe, expect, it } from 'vitest';
 
 import { leftOutMessage, reasonMessage } from './messages';
-import { MAX_FILE_BYTES, type ScreeningParse, delimiterOf, fileProblem, looksLikeSpreadsheet, parseScreeningBytes, parseScreeningFile, readTable, sha256Hex, utf8Text } from './parse';
-import { screeningTemplateCsv } from './template';
+import {
+  MAX_FILE_BYTES,
+  type ScreeningParse,
+  clockOffset,
+  delimiterOf,
+  fileProblem,
+  isNoteRow,
+  looksLikeSpreadsheet,
+  parseScreeningBytes,
+  parseScreeningFile,
+  readTable,
+  sha256Hex,
+  utf8Text,
+} from './parse';
+import { TEMPLATE_NOTES, TEMPLATE_RULES, screeningTemplateCsv } from './template';
 
 /**
  * The screening upload as the browser reads it (CO-04; decision D18 a): the file's own checks, its text as a table,
@@ -121,6 +134,76 @@ describe('a clean file (CO-04)', () => {
   it('takes the template the page builds, once its rows are filled', async () => {
     const result = await parse(bytes(`${screeningTemplateCsv()}${ROW_A}\r\n`));
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('the template’s note lines: its rules in the file a prospect fills (the founder’s rulings of 2026-10-18)', () => {
+  it('states each rule in plain ASCII above the header, and the page reads the header under them', async () => {
+    const text = screeningTemplateCsv();
+    // Plain ASCII, so a spreadsheet that reads a CSV without a byte-order mark as Windows-1252 shows it as written.
+    expect(text).toMatch(/^[\x20-\x7e\r\n]*$/);
+    const lines = text.split('\r\n');
+    expect(lines.at(-1)).toBe('');
+    expect(lines.at(-2)).toBe(HEADER);
+    expect(lines.slice(0, -2)).toEqual(TEMPLATE_NOTES.map((note) => `"${note}"`));
+    expect(TEMPLATE_NOTES.slice(2)).toEqual(TEMPLATE_RULES.map((rule) => `# ${rule.text}`));
+    expect(text).toContain('Each row sums at least 11 claim lines.');
+    expect(text).toContain('tells you how many rows, claim lines and dollars it left out');
+    expect(text).toContain('Leave denied lines out of every total and claim count');
+    expect(text).toContain('a missing authorization, a visit limit, a duplicate, timely filing or a service not covered');
+    expect(text).toContain('A denial is not a rate variance');
+    expect(readTable(text)).toEqual({ ok: true, delimiter: ',', rows: [HEADER.split(',')] });
+    // The template alone has no rows; filled, it is taken with its notes kept.
+    expect(await messages(bytes(text))).toEqual([reasonMessage({ code: 'no_rows' })]);
+    expect(await parse(bytes(`${text}${ROW_A}\r\n`))).toMatchObject({ ok: true, rowCount: 1, rows: '97110\tGP\t1\t11\tma_noncontracted\t2026-Q1\t60000\t40' });
+  });
+
+  it('skips the notes as a spreadsheet saves them, padded with empty cells, as CSV or tab-separated text, with blank lines between', async () => {
+    const padded = TEMPLATE_NOTES.map((note) => `"${note}",,,,,,,`);
+    const asCsv = await parse(csv(...padded, ',,,,,,,', HEADER, ROW_A));
+    expect(asCsv).toMatchObject({ ok: true, rowCount: 1 });
+    // Saved as tab-separated text, a note keeps its commas unquoted: they never choose the delimiter.
+    const tsvHeader = HEADER.split(',').join('\t');
+    const tsvRow = '97110\tGP\t1\t11\tma_noncontracted\t2026-Q1\t600.00\t40';
+    const tsvNotes = TEMPLATE_NOTES.map((note) => `${note}\t\t\t\t\t\t\t`);
+    expect(delimiterOf([...tsvNotes, '', tsvHeader, tsvRow].join('\r\n'))).toBe('\t');
+    expect(delimiterOf([...TEMPLATE_NOTES, tsvHeader].join('\n'))).toBe('\t');
+    const asTsv = await parse(bytes(`\uFEFF${[...tsvNotes, '', tsvHeader, tsvRow].join('\r\n')}\r\n`), 'totals.tsv');
+    expect(asTsv.ok && asTsv.rows).toBe(asCsv.ok && asCsv.rows);
+  });
+
+  it('never takes a header or a row for a note: a header that begins with a # column is checked as a header, and a note below the header is a row', async () => {
+    expect(isNoteRow(['# a note', '', ' '])).toBe(true);
+    expect(isNoteRow(['  #'])).toBe(true);
+    expect(isNoteRow(['#', 'Member ID'])).toBe(false);
+    expect(isNoteRow(['# of claims', 'CPT'])).toBe(false);
+    expect(isNoteRow(['97110', '# a note'])).toBe(false);
+    // A row-number column named # beside a Member ID column: the header is read, and the patient information refused.
+    const numbered = await parse(csv(`#,Member ID,${HEADER}`, `1,SYNTHETIC-M1,${ROW_A}`));
+    expect(numbered.ok ? [] : numbered.reasons.map((reason) => reason.code)).toContain('phi_column');
+    // A note below the header is a row, refused by its number like any other.
+    expect(await parse(csv(HEADER, '# a note', ROW_A))).toMatchObject({ ok: false, reasons: [{ code: 'row_shape', row: 1 }] });
+    // A file of notes alone has no header.
+    expect(readTable('# one\n# two\n')).toEqual({ ok: true, delimiter: ',', rows: [] });
+  });
+});
+
+describe('the quarters dated by the server’s clock, never this computer’s', () => {
+  it('measures how far the server’s clock is ahead of this browser’s, and is zero when the server’s time cannot be read', () => {
+    expect(clockOffset('2026-10-18T12:00:00.000Z', Date.parse('2026-10-18T11:00:00Z'))).toBe(3_600_000);
+    expect(clockOffset('2026-10-18T12:00:00.000Z', Date.parse('2027-01-02T00:00:00Z'))).toBe(Date.parse('2026-10-18T12:00:00Z') - Date.parse('2027-01-02T00:00:00Z'));
+    expect(clockOffset('not a time', 5)).toBe(0);
+    expect(clockOffset('2026-10-18T12:00:00.000Z', Number.NaN)).toBe(0);
+  });
+
+  it('takes the current quarter on a computer whose clock is a year behind, and refuses the next on one a quarter ahead', async () => {
+    const content = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2026-Q4,440.00,11');
+    const at = (browserNow: number) => parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: content.length }, content, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
+    expect(await at(Date.parse('2025-10-18T12:00:00Z'))).toMatchObject({ ok: true, rowCount: 1 });
+    const ahead = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2027-Q1,440.00,11');
+    const browserNow = Date.parse('2027-01-15T12:00:00Z');
+    const refused = await parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: ahead.length }, ahead, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
+    expect(refused).toMatchObject({ ok: false, reasons: [{ code: 'band_in_future', row: 1, field: 'service_band' }] });
   });
 });
 

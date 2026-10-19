@@ -1,11 +1,11 @@
 'use client';
 
 import { Alert, AlertDescription, AlertTitle, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from '@tp/ui';
-import { type FormEvent, startTransition, useActionState, useRef, useState } from 'react';
+import { type FormEvent, startTransition, useActionState, useEffect, useRef, useState } from 'react';
 
 import type { ActionState } from '../../lib/http/next';
 import { FILE_MESSAGES, leftOutMessage } from '../../lib/screening/messages';
-import { type ScreeningParse, parseScreeningFile } from '../../lib/screening/parse';
+import { type ScreeningParse, clockOffset, parseScreeningFile } from '../../lib/screening/parse';
 import { TEMPLATE_FILE_NAME, screeningTemplateCsv } from '../../lib/screening/template';
 import { Field, SelectField } from '../field';
 
@@ -14,7 +14,9 @@ import { Field, SelectField } from '../field';
  * in the browser, and never sent: the file input has no name, so no form submission carries it. The browser hashes
  * its bytes, checks the header and every row against the screening's format, and refuses a file that holds patient
  * information (names, dates of birth, member IDs, dates of service or claim numbers), naming the column by its
- * position and header, before anything is sent. A row of fewer than 11 claim lines (the CMS small-cell standard) is
+ * position and header, before anything is sent. A file's quarters are dated by the server's clock (the page's
+ * serverTime, moved on by this browser's clock since), so a computer whose clock is wrong refuses no quarter the server
+ * takes and sends none it refuses. A row of fewer than 11 claim lines (the CMS small-cell standard) is
  * left out before sending, since it can be one patient's service line, and the form says how many rows, claim lines
  * and dollars it left out. A clean file goes to the server as its hash, its header's canonical column names, its row
  * count, its rows of totals in their canonical form and those three left-out numbers; the server checks them again. No
@@ -30,6 +32,8 @@ export interface ScreeningUploadFormProps {
   readonly maxRows: number;
   /** The fewest claim lines a row may sum; a smaller row is left out before sending. */
   readonly minClaimLines: number;
+  /** The server's clock when it built the page (ISO 8601): the file's quarters are dated by it, never this computer's. */
+  readonly serverTime: string;
 }
 
 /** The fields the server names in its refusals, as the form labels them. */
@@ -46,12 +50,17 @@ function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
 }
 
-export function ScreeningUploadForm({ action, states, maxRows, minClaimLines }: ScreeningUploadFormProps) {
+export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, serverTime }: ScreeningUploadFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const [parsed, setParsed] = useState<ScreeningParse | null>(null);
   const [reading, setReading] = useState(false);
   const [local, setLocal] = useState<readonly string[]>([]);
   const chosen = useRef<File | null>(null);
+  // How far the server's clock is ahead of this browser's, taken once the page is in this browser.
+  const offset = useRef(0);
+  useEffect(() => {
+    offset.current = clockOffset(serverTime, Date.now());
+  }, [serverTime]);
 
   const read = async (file: File | null): Promise<ScreeningParse | null> => {
     chosen.current = file;
@@ -62,7 +71,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines }: 
     }
     setReading(true);
     try {
-      const result = await parseScreeningFile(file);
+      const result = await parseScreeningFile(file, new Date(Date.now() + offset.current));
       // A later choice replaces this one; only the file still chosen is shown.
       if (chosen.current === file) {
         setParsed(result);
@@ -157,7 +166,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines }: 
               </Button>
             </div>
             <p id="screening-template-rules" className="text-xs text-muted-foreground" data-slot="template-hint">
-              The template is the header line alone. Each row sums at least {minClaimLines} claim lines, and denied lines are left out of every total: the rules are under “What the file holds”.
+              The template’s first lines state its rules: each row sums at least {minClaimLines} claim lines, and denied lines are left out of every total and claim count. They start with #, and this page skips them, so you can keep them.
             </p>
           </div>
           {reading ? <p className="text-sm text-muted-foreground" data-state="reading">Reading the file in this browser…</p> : null}
