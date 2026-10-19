@@ -14,8 +14,10 @@ import {
   citeDisputeWindow,
   createContract,
   createDraftVersion,
+  disputeWindowRuleSchema,
   signOffVersion,
   verifyDisputeWindow,
+  windowRuleComputed,
 } from '@tp/contracts';
 import { documentPages, readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
@@ -75,7 +77,8 @@ interface Inputs {
       readonly effective_from: string;
       readonly dispute_window_days: number;
       /** Where the contract states its window, which the specialist cites and verifies (D17 a). */
-      readonly dispute_window_evidence?: { readonly page: number; readonly quote: string };
+      /** Where the window is written, and the rule the quote states (best-option audit #5): its unit and what it counts from. */
+      readonly dispute_window_evidence?: { readonly page: number; readonly quote: string; readonly unit: string; readonly measured_from: string };
       readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];
     };
   }[];
@@ -363,8 +366,12 @@ async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['
     }
     const window = contract.dispute_window_evidence;
     if (window !== undefined) {
-      await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: window.page, quote: window.quote } });
-      expect(await verifyDisputeWindow(context, { practiceId, versionId })).toMatchObject({ verified: true });
+      const rule = disputeWindowRuleSchema.parse({ unit: window.unit, measuredFrom: window.measured_from });
+      await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: window.page, quote: window.quote }, rule });
+      // As the worksheet reads it: only a window counted the way the product computes it is verified; another is approved unverified.
+      if (windowRuleComputed(rule)) {
+        expect(await verifyDisputeWindow(context, { practiceId, versionId })).toMatchObject({ verified: true });
+      }
     }
     await approveVersion(context, { practiceId, versionId });
   });

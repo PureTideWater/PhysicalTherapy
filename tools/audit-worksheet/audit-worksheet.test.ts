@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { NOT_ACTIONABLE_REASONS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
@@ -11,8 +12,10 @@ import { repositoryRoot } from '../content-files';
  * The synthetic audit's independent worksheet is Python (standard library only) so that it shares no
  * code with packages/triage or the report job. `pnpm test` checks that the committed expected files
  * are what it computes from inputs.json now, isolated (-I) so nothing from the environment is
- * imported, that it refuses inputs whose windows would make the report depend on the triage date, and that a
- * contract window without its evidence leaves its lines' deadlines unverified (D17 a).
+ * imported, that it refuses inputs whose windows would make the report depend on the triage date, that a
+ * contract window without its evidence leaves its lines' deadlines unverified (D17 a), and that a window whose
+ * evidence states a rule the product does not compute (anything but calendar days after the remittance date) does
+ * too (best-option audit #5).
  */
 const WORKSHEET = 'tools/audit-worksheet/audit_worksheet.py';
 const AUDIT = path.join(repositoryRoot, 'fixtures/synthetic/audit/AUDIT-01');
@@ -62,6 +65,87 @@ describe('the synthetic audit worksheet', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('verifies a contract window only when its evidence states the rule the product computes: one counted from the date of service, or in business days, leaves its lines waiting (best-option audit #5)', () => {
+    type Inputs = { plans: { key: string; contract?: { dispute_window_evidence?: Record<string, unknown> } }[] };
+    const original = JSON.parse(readFileSync(path.join(AUDIT, 'inputs.json'), 'utf8')) as Inputs;
+    expect(original.plans.flatMap((plan) => (plan.contract?.dispute_window_evidence === undefined ? [] : [plan.contract.dispute_window_evidence]))).toEqual([
+      expect.objectContaining({ unit: 'calendar_days', measured_from: 'remittance_date' }),
+      expect.objectContaining({ unit: 'calendar_days', measured_from: 'remittance_date' }),
+    ]);
+    for (const rule of [
+      { unit: 'calendar_days', measured_from: 'date_of_service' },
+      { unit: 'business_days', measured_from: 'remittance_date' },
+      { unit: 'months', measured_from: 'payment_date' },
+    ]) {
+      const dir = mkdtempSync(path.join(tmpdir(), 'tp-audit-worksheet-'));
+      try {
+        const inputs = structuredClone(original);
+        for (const plan of inputs.plans) {
+          if (plan.contract?.dispute_window_evidence !== undefined) {
+            plan.contract.dispute_window_evidence = { ...plan.contract.dispute_window_evidence, ...rule };
+          }
+        }
+        writeFileSync(path.join(dir, 'inputs.json'), JSON.stringify(inputs));
+        const result = worksheet('write', dir);
+        expect(result.status, result.stderr).toBe(0);
+        const report = JSON.parse(readFileSync(path.join(dir, 'expected-report.json'), 'utf8')) as {
+          headline: Record<string, unknown>;
+          cases: unknown[];
+          validated: { lines: number; not_actionable: { reason: string; lines: number }[] };
+        };
+        // Priced and validated as before; no deadline is verified, so nothing is actionable.
+        expect(report.headline, JSON.stringify(rule)).toMatchObject({ actionable_cents: '0', actionable_lines: 0, validated_lines: 18 });
+        expect(report.cases).toEqual([]);
+        expect(report.validated.not_actionable.find((item) => item.reason === 'DEADLINE_UNVERIFIED')?.lines).toBe(report.validated.lines);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('refuses window evidence that names no unit or start from the fixed lists, and writes nothing then', () => {
+    for (const wrong of [{ unit: 'days' }, { measured_from: 'claim_date' }, { unit: undefined }]) {
+      const dir = mkdtempSync(path.join(tmpdir(), 'tp-audit-worksheet-'));
+      try {
+        const inputs = JSON.parse(readFileSync(path.join(AUDIT, 'inputs.json'), 'utf8')) as { plans: { contract?: { dispute_window_evidence?: Record<string, unknown> } }[] };
+        const evidence = inputs.plans[0]?.contract?.dispute_window_evidence;
+        if (evidence !== undefined && inputs.plans[0]?.contract !== undefined) {
+          inputs.plans[0].contract.dispute_window_evidence = { ...evidence, ...wrong };
+        }
+        writeFileSync(path.join(dir, 'inputs.json'), JSON.stringify(inputs));
+        const result = worksheet('write', dir);
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain('names its unit');
+        expect(existsSync(path.join(dir, 'expected-report.json'))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('lists the reasons a validated line waits in the report’s order, @tp/triage’s, with the case materiality last', () => {
+    const listed = spawnSync(
+      'python3',
+      [
+        '-I',
+        '-B',
+        '-c',
+        'import importlib.util, json, sys; spec = importlib.util.spec_from_file_location("worksheet", sys.argv[1]); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); print(json.dumps(module.NOT_ACTIONABLE_ORDER))',
+        WORKSHEET,
+      ],
+      { cwd: repositoryRoot, encoding: 'utf8' },
+    );
+    expect(listed.status, listed.stderr).toBe(0);
+    const order = JSON.parse(listed.stdout) as string[];
+    expect(order.at(-1)).toBe('BELOW_CASE_MATERIALITY');
+    expect(order).toEqual(expect.arrayContaining(['VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN']));
+    // Every reason the worksheet lists is triage's, in triage's order (the report's, report/content.ts).
+    const report = [...NOT_ACTIONABLE_REASONS, 'BELOW_CASE_MATERIALITY'];
+    expect(order.slice(0, -1).every((reason) => (NOT_ACTIONABLE_REASONS as readonly string[]).includes(reason))).toBe(true);
+    expect(report.filter((reason) => order.includes(reason))).toEqual(order);
+    expect(existsSync(path.join(repositoryRoot, 'tools/audit-worksheet/__pycache__'))).toBe(false);
   });
 
   it('refuses inputs whose window ends inside the stable range, and writes nothing then', () => {

@@ -9,6 +9,7 @@
  */
 export { type Judgement, NOT_ACTIONABLE_REASONS, type NotActionableReason, type TriageFacts, judgeLine, shortfallOf, windowOpen } from './actionable';
 export {
+  COMPUTED_CONTRACT_WINDOW,
   type ContractWindowEvidence,
   type ContractWindowFacts,
   DEADLINE_STATUSES,
@@ -20,7 +21,9 @@ export {
   type DeadlineTrace,
   type DeadlineUnverifiedCause,
   type DeadlineVerification,
+  MA_DISPUTE_ROUTE_CONFIRMED,
   type NextLevelDeadlineInput,
+  contractWindowRuleComputed,
   deadlineVerification,
   levelAtLeast,
   nextLevelDeadlineVerification,

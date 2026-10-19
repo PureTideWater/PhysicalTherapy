@@ -1,8 +1,9 @@
+import type { DisputeWindowRule } from '@tp/contracts';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardHeader, CardTitle } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { windowText } from '../../lib/contracts/display';
+import { WINDOW_RULE_NOT_COMPUTED_TEXT, windowRuleComparison, windowText } from '../../lib/contracts/display';
 import type { FieldReview, RecordReview, VersionReview } from '../../lib/contracts/review';
 import { utc } from '../format';
 import { Fact } from '../remittances/display';
@@ -80,6 +81,31 @@ export function VersionStateNotice({ review }: { readonly review: VersionReview 
 }
 
 /**
+ * The rule a cited window states beside the rule the product computes for its days (best-option audit #5): "Cited:
+ * ends 180 calendar days after the date of service", "Computed: ends 180 calendar days after the remittance date",
+ * and whether they are the same rule. Only a window whose cited rule is the computed one can be checked and verify
+ * its lines' deadlines; any other stays unverified (its lines wait), and its version can still be approved.
+ */
+export function DisputeWindowRuleText({ days, rule, id }: { readonly days: number; readonly rule: DisputeWindowRule | null; readonly id?: string }) {
+  const comparison = windowRuleComparison(days, rule);
+  return (
+    <span id={id} className="flex flex-col gap-0.5" data-window-rule={comparison.matches ? 'computed' : 'not_computed'}>
+      <span>
+        <span className="font-medium">Cited:</span> {comparison.cited ?? 'no unit or start is recorded with the citation'}
+      </span>
+      <span>
+        <span className="font-medium">Computed:</span> {comparison.computed}
+      </span>
+      {comparison.matches ? (
+        <span>The same rule: the product computes the window the contract states.</span>
+      ) : (
+        <span className="text-destructive">Not the same rule. {WINDOW_RULE_NOT_COMPUTED_TEXT}</span>
+      )}
+    </span>
+  );
+}
+
+/**
  * Whether the version's dispute window is cited and checked against its page (D17 a): only a checked window of a
  * signed-off version verifies its lines' deadlines; an uncited or unchecked window leaves them unverified, and its
  * lines not actionable. The check reads as a rate record's does, "Checked against", never "Verified", which the
@@ -96,13 +122,18 @@ export function DisputeWindowText({ review }: { readonly review: VersionReview }
   }
   const document = review.documents.find((candidate) => candidate.id === window.documentId);
   const where = `page ${String(window.page)}${document === undefined ? '' : ` of ${documentLabel(document)}`}`;
-  return window.verifiedAt === null ? (
-    <span data-window="unverified">
-      Cited on {where}, not checked yet: <q className="italic">{window.quote}</q>
-    </span>
-  ) : (
-    <span data-window="verified">
-      Checked against {where} by {window.verifiedBy ?? 'the contract specialist'}, {utc(window.verifiedAt)}: <q className="italic">{window.quote}</q>
+  return (
+    <span className="flex flex-col gap-1">
+      {window.verifiedAt === null ? (
+        <span data-window="unverified">
+          Cited on {where}, not checked yet: <q className="italic">{window.quote}</q>
+        </span>
+      ) : (
+        <span data-window="verified">
+          Checked against {where} by {window.verifiedBy ?? 'the contract specialist'}, {utc(window.verifiedAt)}: <q className="italic">{window.quote}</q>
+        </span>
+      )}
+      <DisputeWindowRuleText days={version.disputeWindowDays} rule={window.rule} />
     </span>
   );
 }

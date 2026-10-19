@@ -14,7 +14,8 @@ import { startLocalWorker } from './worker';
  * of its payer (fixtures CON-07 and CON-01) and tags the agreement to the payer; a platform
  * administrator opens a support grant for a contract specialist; the specialist abstracts the
  * agreement by hand (a quote not on the page is refused, the right one is marked on the cited page),
- * approves it field by field, cites the agreement's dispute window on its page and verifies it (D17 a),
+ * approves it field by field, cites the agreement's dispute window on its page with the rule its words state (a
+ * rule the product does not compute cannot be verified; best-option audit #5) and verifies it (D17 a),
  * and approves the version; the billing manager signs it off and maps the
  * payer's plan to it, whose lines then resolve to the contract's rate record; and a second version
  * whose window overlaps the first is refused with the rule shown. In the other group's practice, whose
@@ -128,15 +129,32 @@ test('a contract abstracted by hand, approved and signed off becomes the version
       await dates.getByRole('button', { name: "Save the version's dates" }).click();
       await expect(specialist.locator('[data-window="uncited"]')).toBeVisible();
       const window = specialist.getByRole('region', { name: "The contract's dispute window" });
-      await window.getByLabel('Page').fill('1');
-      await window.getByLabel('Quote').fill('Provider may dispute a payment within 365 days of the remittance date.');
-      await window.getByRole('button', { name: 'Cite the window' }).click();
+      // With the rule the quote states, chosen from the fixed lists (best-option audit #5); the form names the rule the product computes.
+      await expect(window).toContainText('The product computes this window as: it ends 120 calendar days after the remittance date.');
+      const cite = async (quote: string, start: string) => {
+        await window.getByLabel('Page').fill('1');
+        await window.getByLabel('Quote').fill(quote);
+        await window.getByLabel('Unit', { exact: true }).selectOption({ label: 'calendar days' });
+        await window.getByLabel('Counted from', { exact: true }).selectOption({ label: start });
+        await window.getByRole('button', { name: /^Cite the window/ }).click();
+      };
+      await cite('Provider may dispute a payment within 365 days of the remittance date.', 'the remittance date');
       await expect(refusal(specialist).filter({ hasText: 'Not done' })).toContainText('The quote is not on the cited page');
-      // The refused form is reset, as the rate record's is: the page and the quote are entered again.
-      await window.getByLabel('Page').fill('1');
-      await window.getByLabel('Quote').fill('Provider may dispute a payment within 120 days of the remittance date.');
-      await window.getByRole('button', { name: 'Cite the window' }).click();
+      // The refused form is reset, as the rate record's is: the page, the quote and the rule are entered again. Recorded as counted from
+      // the date of service, the window is shown beside the rule the product computes, and it cannot be verified.
+      await cite('Provider may dispute a payment within 120 days of the remittance date.', 'the date of service');
       await expect(specialist.locator('[data-window="unverified"]')).toBeVisible();
+      const rule = window.getByRole('group', { name: 'The cited rule and the computed rule' });
+      await expect(rule).toContainText('Cited: ends 120 calendar days after the date of service');
+      await expect(rule).toContainText('Computed: ends 120 calendar days after the remittance date');
+      await expect(rule.locator('[data-window-rule="not_computed"]')).toContainText('Not the same rule.');
+      const blocked = window.getByRole('button', { name: 'Verify the window against its page' });
+      await expect(blocked).toBeDisabled();
+      await expect(blocked).toHaveAccessibleDescription(/Not verifiable: the cited rule is not the one the product computes/);
+      await expect(specialist.locator('[data-window-approval="unverified"]')).toContainText('approved with its window unverified');
+      // Cited again as the quote states it: the computed rule, verified against the page before the version is approved.
+      await cite('Provider may dispute a payment within 120 days of the remittance date.', 'the remittance date');
+      await expect(rule.locator('[data-window-rule="computed"]')).toContainText('The same rule');
       await expect(specialist.getByRole('region', { name: 'Approve the version' })).toContainText('the dispute window is cited but not verified');
       await specialist.getByRole('button', { name: 'Verify the window against its page' }).click();
       await expect(specialist.locator('[data-window="verified"]')).toBeVisible();
@@ -153,6 +171,8 @@ test('a contract abstracted by hand, approved and signed off becomes the version
     await expect(page.locator('[data-notice="signed_off"]')).toBeVisible();
     await expect(page.locator('[data-state="pricing"]')).toContainText('2026-01-01 through 2026-12-31');
     await expect(page.locator('[data-window="verified"]')).toContainText('Provider may dispute a payment within 120 days of the remittance date.');
+    // The practice's version screen shows the cited rule beside the computed one, too.
+    await expect(page.locator('[data-window-rule="computed"]')).toContainText('Cited: ends 120 calendar days after the remittance date');
     await page.goto(`/p/${other}/mapping`);
     const plan = page.getByRole('table', { name: 'Payers and plans' }).getByRole('row').filter({ hasText: 'SYNPLAN-COMM-C' });
     await plan.getByRole('link', { name: 'CE:SYNPLAN-COMM-C' }).click();

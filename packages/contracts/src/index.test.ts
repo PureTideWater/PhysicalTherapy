@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { ADJUSTMENT_FLAGS, CONTRACT_VERSION_STATES, RATE_METHODS, TIMED_UNITS_RULES } from './index';
+import { ADJUSTMENT_FLAGS, COMPUTED_CONTRACT_WINDOW_RULE, CONTRACT_VERSION_STATES, DISPUTE_WINDOW_STARTS, DISPUTE_WINDOW_UNITS, RATE_METHODS, TIMED_UNITS_RULES } from './index';
 
 describe('@tp/contracts', () => {
   it('lists the rate methods of PRD section 9', () => {
@@ -16,6 +16,12 @@ describe('@tp/contracts', () => {
 
   it('lists the four Medicare adjustment flags', () => {
     expect(ADJUSTMENT_FLAGS).toEqual(['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration', 'apply_ncci']);
+  });
+
+  it('lists the dispute window’s units and starts, and computes one rule: calendar days after the remittance date (best-option audit #5)', () => {
+    expect(DISPUTE_WINDOW_UNITS).toEqual(['calendar_days', 'business_days', 'months']);
+    expect(DISPUTE_WINDOW_STARTS).toEqual(['date_of_service', 'remittance_date', 'payment_date', 'receipt_date']);
+    expect(COMPUTED_CONTRACT_WINDOW_RULE).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
   });
 
   it('lists the timed-units rules', () => {

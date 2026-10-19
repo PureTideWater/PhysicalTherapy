@@ -1,16 +1,17 @@
+import { COMPUTED_CONTRACT_WINDOW_RULE, windowRuleComputed, windowRuleText } from '@tp/contracts';
 import { QUESTION_TOPICS } from '@tp/db/runtime';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { ActionForm } from '../../../../../../components/action-form';
 import { QuestionList } from '../../../../../../components/contracts/display';
 import { documentLabel } from '../../../../../../components/contracts/forms';
-import { ReviewBody, VersionFacts, VersionStateNotice, reviewHref } from '../../../../../../components/contracts/review';
+import { DisputeWindowRuleText, ReviewBody, VersionFacts, VersionStateNotice, reviewHref } from '../../../../../../components/contracts/review';
 import { Field, SelectField } from '../../../../../../components/field';
 import { HandEntryNotice, ModelNoticeAlert, ProposalList } from '../../../../../../components/models/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
-import { TOPIC_NAMES } from '../../../../../../lib/contracts/display';
+import { DISPUTE_WINDOW_START_OPTIONS, DISPUTE_WINDOW_UNIT_OPTIONS, TOPIC_NAMES } from '../../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../../lib/http/next';
 import { abstractionVersionPage } from '../../../../../../lib/routes/abstraction';
 import {
@@ -289,8 +290,9 @@ export default async function AbstractionVersionPage(props: Props) {
             <CardHeader>
               <CardTitle>The contract’s dispute window</CardTitle>
               <CardDescription>
-                Cite the page where the contract states its dispute window, in its exact words, then verify it against the page yourself. A line’s deadline is verified only from a
-                verified window of a signed-off version; until then its lines are not actionable. Editing the days or the documents clears the verification.
+                Cite the page where the contract states its dispute window, in its exact words, with the unit the quote counts in and what it counts from, then verify it against
+                the page yourself. A line’s deadline is verified only from a verified window of a signed-off version whose rule is the one the product computes (calendar days
+                after the remittance date); until then its lines are not actionable. Editing the days, the unit, the start or the documents clears the verification.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
@@ -311,13 +313,43 @@ export default async function AbstractionVersionPage(props: Props) {
                     <textarea id="window-quote" name="quote" required maxLength={2000} rows={2} className="rounded-md border bg-background p-2 text-sm" defaultValue={version.disputeWindow?.quote} />
                     <p className="text-xs text-muted-foreground">The exact words on the page that state the {String(version.disputeWindowDays)}-day window.</p>
                   </div>
+                  <SelectField label="Unit" name="unit" id="window-unit" required options={DISPUTE_WINDOW_UNIT_OPTIONS} defaultValue={version.disputeWindow?.rule?.unit ?? ''} />
+                  <SelectField label="Counted from" name="measuredFrom" id="window-measured-from" required options={DISPUTE_WINDOW_START_OPTIONS} defaultValue={version.disputeWindow?.rule?.measuredFrom ?? ''} />
+                  <p className="text-xs text-muted-foreground md:col-span-2">
+                    As the quote states them: “within 90 days of the remittance” is calendar days from the remittance date; “within 180 days of the date of service” is calendar days
+                    from the date of service. Choose business days or months only when the quote says so. The product computes this window as: it{' '}
+                    {windowRuleText(version.disputeWindowDays, COMPUTED_CONTRACT_WINDOW_RULE)}. A window the quote counts another way is cited and approved as it is, but not
+                    verified.
+                  </p>
                 </ActionForm>
               )}
+              {version.disputeWindow === null || version.disputeWindowDays === null ? null : (
+                <div className="flex flex-col gap-1 text-sm" role="group" aria-label="The cited rule and the computed rule">
+                  <p>
+                    <span className="font-medium">Quote:</span> <q className="italic">{version.disputeWindow.quote}</q>
+                  </p>
+                  <DisputeWindowRuleText days={version.disputeWindowDays} rule={version.disputeWindow.rule} id="window-rule" />
+                </div>
+              )}
               {version.disputeWindow !== null && version.disputeWindow.verifiedAt === null ? (
-                <ActionForm action={verifyWindowFormAction} submit="Verify the window against its page">
-                  {hidden()}
-                  <input type="hidden" name="versionId" value={version.id} />
-                </ActionForm>
+                windowRuleComputed(version.disputeWindow.rule) ? (
+                  <ActionForm action={verifyWindowFormAction} submit="Verify the window against its page">
+                    {hidden()}
+                    <input type="hidden" name="versionId" value={version.id} />
+                  </ActionForm>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    <div>
+                      <Button type="button" disabled aria-describedby="window-verify-blocked">
+                        Verify the window against its page
+                      </Button>
+                    </div>
+                    <p id="window-verify-blocked" className="text-sm text-muted-foreground" data-window-verify="blocked">
+                      Not verifiable: the cited rule is not the one the product computes, so the window stays unverified and its lines wait for a verified deadline (the date
+                      shown counts from the remittance date and can be later than the contract’s own). The version can still be approved.
+                    </p>
+                  </div>
+                )
               ) : null}
             </CardContent>
           </Card>
@@ -325,20 +357,28 @@ export default async function AbstractionVersionPage(props: Props) {
             <CardHeader>
               <CardTitle>Approve version {version.versionNo}</CardTitle>
               <CardDescription>
-                Once every rate record is verified, a cited dispute window is verified, and every citation still resolves to its page, approve the version; the practice then signs it
-                off.
+                Once every rate record is verified, a cited dispute window counted the way the product computes it is verified, and every citation still resolves to its page,
+                approve the version; the practice then signs it off.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {review.records.length === 0 || review.unresolved > 0 ? (
                 <p className="text-sm text-destructive">Blocked: {review.records.length === 0 ? 'the version has no rate record yet.' : `${String(review.unresolved)} record(s) are not checked against the cited page yet or no longer resolve.`}</p>
-              ) : version.disputeWindow !== null && version.disputeWindow.verifiedAt === null ? (
+              ) : version.disputeWindow !== null && version.disputeWindow.verifiedAt === null && windowRuleComputed(version.disputeWindow.rule) ? (
                 <p className="text-sm text-destructive">Blocked: the dispute window is cited but not verified against its page yet.</p>
               ) : (
-                <ActionForm action={approveVersionFormAction} submit="Approve the version">
-                  {hidden()}
-                  <input type="hidden" name="versionId" value={version.id} />
-                </ActionForm>
+                <div className="flex flex-col gap-2">
+                  {version.disputeWindow !== null && version.disputeWindow.verifiedAt === null ? (
+                    <p className="text-sm" data-window-approval="unverified">
+                      The dispute window’s cited rule is not the one the product computes, so the version is approved with its window unverified: its lines wait for a verified
+                      deadline until the product computes that rule.
+                    </p>
+                  ) : null}
+                  <ActionForm action={approveVersionFormAction} submit="Approve the version">
+                    {hidden()}
+                    <input type="hidden" name="versionId" value={version.id} />
+                  </ActionForm>
+                </div>
               )}
             </CardContent>
           </Card>

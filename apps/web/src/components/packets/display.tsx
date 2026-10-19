@@ -1,6 +1,6 @@
 import type { LineDeadline, PacketContent, VerifierReport } from '@tp/packets';
-import type { DeadlineStatus } from '@tp/triage';
-import { Badge } from '@tp/ui';
+import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
+import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
 import Link from 'next/link';
 import { Fragment } from 'react';
 
@@ -8,7 +8,7 @@ import { Money } from '../remittances/display';
 import { StatusChip, type StatusTone } from '../status';
 import { METHOD_NAMES, ROUNDING_NAMES } from '../../lib/contracts/display';
 import { labelOf } from '../../lib/copy/words';
-import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
+import { DEADLINE_CAUSE_TEXT, DEADLINE_STATUS_TEXT, EVIDENCE_GAP_TEXT, EVIDENCE_KIND_TEXT, MA_ROUTE_NOTICE, SOURCE_KIND_TEXT, mismatchShown, mismatchText } from '../../lib/packets/view';
 
 /**
  * Display pieces of the packet builder (PRD 7, Packet builder; PRD 12, The packet): the citation, the
@@ -229,6 +229,13 @@ export function DeadlineSummary({ content, now }: { readonly content: PacketCont
           <span className="font-mono tabular-nums">{deadline.lines_verified}</span> of <span className="font-mono tabular-nums">{deadline.lines}</span> {deadline.lines === 1 ? 'line’s window' : 'lines’ windows'} verified.
         </span>
       </p>
+      {content.citation.kind === 'regulation' && !MA_DISPUTE_ROUTE_CONFIRMED ? (
+        // Best-option audit #5: no Medicare Advantage packet exports until the specialist confirms the route (golden QUESTIONS Q34).
+        <Alert variant="destructive" role="note" data-deadline-route="unconfirmed">
+          <AlertTitle>Medicare Advantage: not exported yet</AlertTitle>
+          <AlertDescription>{MA_ROUTE_NOTICE}</AlertDescription>
+        </Alert>
+      ) : null}
       {now !== deadline.status ? (
         <p data-deadline-changed="yes">
           Derived again now, the deadline is <DeadlineChip status={now} />: the export is held to that. Write a new version to state it.

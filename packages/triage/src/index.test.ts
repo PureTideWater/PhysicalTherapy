@@ -21,6 +21,14 @@ describe('@tp/triage', () => {
     expect(triage.DEFAULT_DEADLINE_LEVEL).toBe('L2');
   });
 
+  it('computes one contract window rule, calendar days after the remittance date, and no Medicare Advantage route until Q34 is answered (best-option audit #5)', () => {
+    expect(triage.COMPUTED_CONTRACT_WINDOW).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+    expect(triage.contractWindowRuleComputed({ unit: 'calendar_days', measuredFrom: 'date_of_service' })).toBe(false);
+    expect(triage.MA_DISPUTE_ROUTE_CONFIRMED).toBe(false);
+    expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('MA_ROUTE_UNCONFIRMED');
+    expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('CONTRACT_WINDOW_RULE_NOT_COMPUTED');
+  });
+
   it('defaults the materiality to $5 a line and $250 a case and the anomaly cohort to 30 lines (PRD 20)', () => {
     expect(triage.DEFAULT_TRIAGE_SETTINGS).toMatchObject({ lineMaterialityCents: 500n, caseMaterialityCents: 25000n, anomalyMinimumCohort: 30 });
   });

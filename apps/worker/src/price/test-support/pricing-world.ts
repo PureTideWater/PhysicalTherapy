@@ -67,6 +67,8 @@ export const SETTINGS = { place_of_service_settings: { '11': 'non_facility', '22
 export const quoteAt = (percentage: string) => `Every covered service is paid at ${percentage}% of the Medicare fee schedule`;
 /** Where the SYNTHETIC agreement states its dispute window (page 1), which the specialist cites and verifies (D17 a). */
 export const windowQuote = (days: number) => `Disputes are raised within ${String(days)} days of the remittance.`;
+/** The rule windowQuote() states, as the specialist records it with the citation (best-option audit #5): calendar days after the remittance date, the rule the product computes. */
+export const WINDOW_QUOTE_RULE = { unit: 'calendar_days', measuredFrom: 'remittance_date' } as const;
 const contractPages = (percentage: string, disputeWindowDays: number | null) => [
   ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', ...(disputeWindowDays === null ? [] : [windowQuote(disputeWindowDays)])],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', quoteAt(percentage)],
@@ -272,7 +274,7 @@ export class PricingWorld {
         await approveRateRecordField(context, { practiceId: target.practiceId, rateRecordId: id, field });
       }
       if (options.disputeWindowDays !== undefined && options.windowCited !== false) {
-        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote(options.disputeWindowDays) } });
+        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote(options.disputeWindowDays) }, rule: WINDOW_QUOTE_RULE });
         await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId });
       }
       await approveVersion(context, { practiceId: target.practiceId, versionId });

@@ -1189,7 +1189,7 @@ describe('CO-05: a version states its deadline and calculations as its inputs gi
 
 // Last in the file: it loads release 900005 (from then on the release in force) and withdraws it at its end.
 describe('a Medicare Advantage case’s next dispute level (the regulation’s reconsideration window, D17 a)', () => {
-  it('is verified only from a reconsideration record at L2 or above that gives the stored end, in SQL and in TypeScript alike', async () => {
+  it('is verified only from a reconsideration record at L2 or above that gives the stored end, and not before the specialist confirms the Medicare Advantage route (Q34), so no such packet is exported, in SQL and in TypeScript alike', async () => {
     const setup = await cas08('MA-next-level');
     const { practice } = setup;
     await w.superuser(`UPDATE "case" SET rate_record_id = NULL, pattern_key = pattern_key || '{"mapping_kind": "ma_noncontracted", "contract_version_id": null, "rate_record_id": null}' WHERE id = $1`, [setup.caseId]);
@@ -1220,12 +1220,14 @@ describe('a Medicare Advantage case’s next dispute level (the regulation’s r
     await approve(setup, setup.second, atL1.versionId, atL1.contentSha256);
     expect(await w.export(practice, atL1.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
 
-    // Release 900005 holds the same reconsideration window at L2: the record in force gives the stored end, so it is verified at L2, not at L3.
+    // Release 900005 holds the same reconsideration window at L2 and the record in force gives the stored end, but no Medicare Advantage
+    // deadline is verified until the contract specialist confirms which dispute route applies (golden QUESTIONS Q34; best-option audit #5):
+    // it waits for the route at L2, and is below the level at L3.
     await w.triage.pricing.loadDeadlineRelease();
-    expect(agree(await both())).toMatchObject({ sql: 'verified', ts: { cause: null, level: 'L2' } });
+    expect(agree(await both())).toMatchObject({ sql: 'unverified', ts: { cause: 'MA_ROUTE_UNCONFIRMED', level: 'L2', endsOn: reopened.nextWindowEndsOn } });
     expect(agree(await both('L3'))).toMatchObject({ sql: 'unverified', ts: { cause: 'RECORD_BELOW_LEVEL' } });
-    // The version written under 900001 stated the deadline unverified: stated again now it says verified, so it is not exported as it stands.
-    expect(await w.export(practice, atL1.versionId)).toEqual({ outcome: 'not_exportable', reason: 'inputs_differ' });
+    // The version written under 900001 is still refused for its deadline.
+    expect(await w.export(practice, atL1.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
 
     // An end another record gave (as one of 60 days would have, in a release in force when the denial was recorded and gone since): the
     // record in force now gives another end, so it is not the record the date came from, whatever its level (set as a migration would).
@@ -1235,12 +1237,23 @@ describe('a Medicare Advantage case’s next dispute level (the regulation’s r
     expect(agree(await both('L3'))).toMatchObject({ sql: 'unverified', ts: { cause: 'NEXT_LEVEL_DIFFERS' } });
     await w.superuser('UPDATE payer_response SET next_window_ends_on = $2 WHERE id = $1', [rows[0]?.id, reopened.nextWindowEndsOn]);
 
-    // Written now, the level-2 version's deadline is verified and it is exported.
+    // Written now, the level-2 version states its deadline unverified, waiting for the route; approved after the regulation's confirmation, it is
+    // refused in the job, in the handler and in SQL, so no Medicare Advantage packet is exported until the route is confirmed.
     const atL2 = await write(setup, practice.manager, { basedOn: atL1.versionId });
-    expect(atL2.content.format === 'tp-packet/2' ? atL2.content.deadline : null).toMatchObject({ basis: 'next_level_window', status: 'verified', causes: [], ends_on: reopened.nextWindowEndsOn });
+    expect(atL2.content.format === 'tp-packet/2' ? atL2.content.deadline : null).toMatchObject({ basis: 'next_level_window', status: 'unverified', causes: ['MA_ROUTE_UNCONFIRMED'], ends_on: reopened.nextWindowEndsOn });
     await confirm(atL2.versionId);
     await approve(setup, setup.second, atL2.versionId, atL2.contentSha256);
-    expect(await w.export(practice, atL2.versionId)).toMatchObject({ outcome: 'exported' });
+    expect(await w.export(practice, atL2.versionId)).toEqual({ outcome: 'not_exportable', reason: 'deadline_unverified' });
+    const queue = { send: () => Promise.resolve('queued') } as never;
+    expect((await refusal(w.as(practice, practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: practice.practiceId, versionId: atL2.versionId, requestId: 'r' })))).message).toBe(
+      'a packet version whose deadline is not verified is not exported',
+    );
+    const packetId = (await w.as(practice, practice.manager, (scope) => scope.client.query<{ packet_id: string }>('SELECT packet_id FROM packet_version WHERE id = $1', [atL2.versionId]))).rows[0]?.packet_id ?? '';
+    expect((await refusal(jobExport(setup, atL2.versionId, packetId))).message).toBe('a packet version whose deadline is not verified is not exported');
+    expect(await w.as(practice, practice.manager, (scope) => packetVersionOf(scope, w.keys, { practiceId: practice.practiceId, versionId: atL2.versionId, requestId: 'r' }))).toMatchObject({
+      exportSha256: null,
+      exportedAt: null,
+    });
 
     // 900005 withdrawn: 900001 is in force again, and its L1 record verifies nothing.
     await w.triage.pricing.withdraw(DEADLINE_RELEASE);

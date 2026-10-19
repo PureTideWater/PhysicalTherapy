@@ -1,8 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
-import { RATE_RECORD_FIELDS, approveRateRecordField, approveVersion, signOffVersion, supersedeVersion, verifyDisputeWindow } from '@tp/contracts';
+import {
+  COMPUTED_CONTRACT_WINDOW_RULE,
+  DISPUTE_WINDOW_STARTS,
+  DISPUTE_WINDOW_UNITS,
+  RATE_RECORD_FIELDS,
+  approveRateRecordField,
+  approveVersion,
+  signOffVersion,
+  supersedeVersion,
+  verifyDisputeWindow,
+  windowRuleComputed,
+} from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { type DeadlineMinimumLevel, type DeadlineStatus, packetDeadlineStatus } from '@tp/triage';
+import { COMPUTED_CONTRACT_WINDOW, type DeadlineMinimumLevel, type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED, contractWindowRuleComputed, packetDeadlineStatus } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DEADLINE_RELEASE, type Practice } from '../price/test-support/pricing-world';
@@ -13,9 +24,12 @@ import { TriageWorld } from './test-support/triage-world';
  * D17 (a) twice, on the same lines (reconciliation-001; docs/adr/0061): @tp/triage's deadlineVerification(), through
  * the worker's loader (lineDeadlines, nextLevelDeadline), against the database's priced_line_deadline_status(),
  * case_next_window_deadline_status() and packet_version_deadline_status() (migration 20261103090000), over lines the
- * price job priced: a contract whose window the specialist cited and verified, one whose window is uncited, a
- * version superseded since, and Medicare Advantage lines under release 900001 (its windows at L1) and 900005 (at L2),
- * and under 900005 once it is withdrawn (its records then verify nothing). Synthetic data only.
+ * price job priced: a contract whose window the specialist cited and verified, one whose window is uncited, one cited
+ * with a rule the product does not compute (from the date of service, or in business days; best-option audit #5), a
+ * version superseded since, and Medicare Advantage lines under release 900001 (its windows at L1) and 900005 (at L2,
+ * waiting for the specialist to confirm the Medicare Advantage dispute route, golden QUESTIONS Q34), and under 900005
+ * once it is withdrawn (its records then verify nothing). The rule the product computes and the route's confirmation
+ * are one value in SQL and in TypeScript. Synthetic data only.
  */
 
 let w: TriageWorld;
@@ -54,6 +68,34 @@ function agree(lines: Awaited<ReturnType<typeof both>>): void {
     expect(line.ts?.status, `${line.plan} ${line.id}`).toBe(line.sql);
   }
 }
+
+describe('the rule the product computes, and the Medicare Advantage route (best-option audit #5)', () => {
+  it('is one rule in SQL, in @tp/contracts and in @tp/triage, over every unit and start the lists name, and no route is confirmed in either', async () => {
+    const pairs = [...DISPUTE_WINDOW_UNITS.flatMap((unit) => DISPUTE_WINDOW_STARTS.map((measuredFrom) => [unit, measuredFrom] as const)), [null, 'remittance_date'], ['calendar_days', null], [null, null]] as const;
+    const practice = await w.practice('DEADLINE-RULE');
+    const seen = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => {
+      const { rows } = await scope.client.query<{ unit: string | null; measured_from: string | null; computed: boolean }>(
+        `SELECT p.unit, p.measured_from, contract_window_rule_computed(p.unit, p.measured_from) AS computed
+           FROM jsonb_to_recordset($1::jsonb) AS p(unit text, measured_from text)`,
+        [JSON.stringify(pairs.map(([unit, measuredFrom]) => ({ unit, measured_from: measuredFrom })))],
+      );
+      const route = await scope.client.query<{ confirmed: boolean }>('SELECT ma_dispute_route_confirmed() AS confirmed');
+      return { rows, confirmed: route.rows[0]?.confirmed };
+    });
+    expect(seen.rows).toHaveLength(pairs.length);
+    for (const row of seen.rows) {
+      const rule = row.unit === null || row.measured_from === null ? null : ({ unit: row.unit, measuredFrom: row.measured_from } as Parameters<typeof windowRuleComputed>[0]);
+      const label = `${String(row.unit)} ${String(row.measured_from)}`;
+      expect(row.computed, label).toBe(windowRuleComputed(rule));
+      expect(row.computed, label).toBe(rule !== null && contractWindowRuleComputed(rule));
+    }
+    expect(seen.rows.filter((row) => row.computed).map((row) => ({ unit: row.unit, measuredFrom: row.measured_from }))).toEqual([COMPUTED_CONTRACT_WINDOW_RULE]);
+    expect(COMPUTED_CONTRACT_WINDOW).toEqual(COMPUTED_CONTRACT_WINDOW_RULE);
+    // Golden QUESTIONS Q34 is unanswered: the database and @tp/triage both say so.
+    expect(seen.confirmed).toBe(false);
+    expect(seen.confirmed).toBe(MA_DISPUTE_ROUTE_CONFIRMED);
+  });
+});
 
 describe('a contract’s own window', () => {
   it('is verified on both sides when cited and verified, unverified when uncited, and unverified once its version is superseded', async () => {
@@ -125,6 +167,43 @@ describe('a contract’s own window', () => {
     expect(new Set(after.filter((line) => line.plan === 'CE:SYNPLAN-FIX-ONE').map((line) => `${String(line.ts?.status)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified CONTRACT_VERSION_NOT_SIGNED_OFF']));
   }, 120_000);
 
+  it('is unverified on both sides when cited with a rule the product does not compute, though its version is signed off with the same days (best-option audit #5)', async () => {
+    const practice = await w.practice('DEADLINE-RULE-NOT-COMPUTED');
+    await w.load(practice, 'CAS-03/remit.835');
+    // "within 3650 days of the date of service": cited and approved as the quote states it, never verified.
+    const fromService = await w.fixedContract(practice, { ...FIXED, windowRule: { unit: 'calendar_days', measuredFrom: 'date_of_service' } });
+    const inBusinessDays = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }], windowRule: { unit: 'business_days', measuredFrom: 'remittance_date' } });
+    const versions = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) => {
+      const { rows } = await scope.client.query<{ id: string; status: string; dispute_window_unit: string; dispute_window_measured_from: string; verified: boolean }>(
+        `SELECT id, status, dispute_window_unit, dispute_window_measured_from, dispute_window_verified_by IS NOT NULL AS verified
+           FROM contract_version WHERE id = ANY ($1::uuid[]) ORDER BY dispute_window_unit`,
+        [[fromService.versionId, inBusinessDays.versionId]],
+      );
+      return rows;
+    });
+    expect(versions.map((row) => [row.status, row.dispute_window_unit, row.dispute_window_measured_from, row.verified])).toEqual([
+      ['signed_off', 'business_days', 'remittance_date', false],
+      ['signed_off', 'calendar_days', 'date_of_service', false],
+    ]);
+    const runId = await w.pricedRun(practice, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: fromService.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: inBusinessDays.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    const lines = await both(practice, runId);
+    agree(lines);
+    // The trace still counts the version's days as calendar days after the remittance date (the engine is untouched until PR 6c), so the date
+    // it shows may be later than the contract's: the line waits for a verified deadline instead.
+    expect(new Set(lines.map((line) => `${String(line.ts?.status)} ${String(line.ts?.source)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified contract CONTRACT_WINDOW_RULE_NOT_COMPUTED']));
+    expect(new Set(lines.map((line) => line.sql))).toEqual(new Set(['unverified']));
+    agree(await both(practice, runId, 'L3'));
+    // Triage opens no case: every validated line waits with DEADLINE_UNVERIFIED.
+    expect(await w.triage(practice, runId)).toMatchObject({ outcome: 'triaged', summary: { validatedLines: 16, casesOpened: 0 } });
+  }, 120_000);
+
   it('reads a line it cannot see as unverified in SQL, and leaves it out of the loader’s map (fail closed)', async () => {
     const north = await w.practice('DEADLINE-NORTH');
     await w.load(north, 'CAS-03/remit.835');
@@ -159,7 +238,7 @@ describe('a contract’s own window', () => {
 });
 
 describe('a release window (Medicare Advantage non-contracted, Medicare redetermination)', () => {
-  it('is unverified under 900001’s L1 records, verified at L2 (not at L3) under 900005’s, and unverified once 900005 is withdrawn, on both sides', async () => {
+  it('is unverified under 900001’s L1 records, waits for the route under 900005’s L2 records (at L3 below the level), and unverified once 900005 is withdrawn, on both sides', async () => {
     const practice = await w.practice('DEADLINE-MA');
     await w.load(practice, 'MAP-05/remit.835');
     await w.pricing.mapped(practice, await w.pricing.planOf(practice, 'CE:SYNPLAN-MA-05'), 'ma_noncontracted', '2026-01-01');
@@ -174,7 +253,10 @@ describe('a release window (Medicare Advantage non-contracted, Medicare redeterm
     await w.pricing.execute(practice, secondRun);
     const second = await both(practice, secondRun);
     agree(second);
-    expect(new Set(second.map((line) => `${String(line.ts?.status)} ${String(line.ts?.level)}`))).toEqual(new Set(['verified L2']));
+    // At L2, as the export asks, the record is read at its level, but no Medicare Advantage deadline is verified until the
+    // specialist confirms the route (Q34): every line waits, in SQL and in TypeScript.
+    expect(new Set(second.map((line) => `${String(line.ts?.status)} ${String(line.ts?.level)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified L2 MA_ROUTE_UNCONFIRMED']));
+    expect(second.every((line) => line.sql === 'unverified')).toBe(true);
     const strict = await both(practice, secondRun, 'L3');
     agree(strict);
     expect(new Set(strict.map((line) => `${String(line.ts?.status)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified RECORD_BELOW_LEVEL']));

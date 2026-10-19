@@ -2,6 +2,7 @@ import type { MappingKind, Proposer, VersionStatus } from '@tp/db/runtime';
 
 import type { IsoDate } from './dates';
 import type { Citation, FieldApproval, RateRecordField, RateRecordTerms, RateWindows } from './terms';
+import type { DisputeWindowRule } from './window-rule';
 
 /**
  * The records agreement resolution reads, as loaded from the database (load.ts) or built in a test:
@@ -38,16 +39,20 @@ export interface ContractVersionRecord {
 }
 
 /**
- * A version's dispute window as the contract states it (migration 20261103090000; reconciliation-001 D17 a): the
- * citation of the page that says it (contract_version.dispute_window_evidence, in a rate record's form) and the
+ * A version's dispute window as the contract states it (migration 20261103090000; reconciliation-001 D17 a;
+ * best-option audit #5): the citation of the page that says it (contract_version.dispute_window_evidence, in a rate
+ * record's form), the rule the quote states (its unit and what it is counted from, window-rule.ts), and the
  * contract specialist who verified it, and when. Only a verified window of a signed-off version verifies its
- * lines' deadlines; the days themselves are the version's windows.dispute_window_days, as before.
+ * lines' deadlines, and only a window whose rule is the one the engine computes is verified; the days themselves
+ * are the version's windows.dispute_window_days, in the cited unit, as before.
  */
 export interface DisputeWindowRecord {
   readonly versionId: string;
   readonly days: number | null;
   /** Null while the window is uncited. */
   readonly citation: Citation | null;
+  /** The unit and the start the citation states; null exactly when the citation is (contract_version_window_rule_with_citation). */
+  readonly rule: DisputeWindowRule | null;
   /** Null until a contract specialist verifies the citation against its page; an edit of the window clears both. */
   readonly verifiedBy: string | null;
   readonly verifiedAt: string | null;

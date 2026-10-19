@@ -1,5 +1,7 @@
 import {
   ContractWorkflowError,
+  DISPUTE_WINDOW_STARTS,
+  DISPUTE_WINDOW_UNITS,
   RATE_RECORD_FIELDS,
   type WorkflowContext,
   addRateRecord,
@@ -206,7 +208,9 @@ export const updateVersionAction = practiceRoute({
 
 /**
  * Cites where the contract states its dispute window (D17 a): the document, page and exact words, checked against
- * the page before they are stored with the page's hash. A new citation clears the window's verification.
+ * the page before they are stored with the page's hash, and the rule the quote states (best-option audit #5): the
+ * unit it counts in and what it counts from, which the specialist chooses from the fixed lists (no default; nothing
+ * parses the quote). A new citation, or a new unit or start, clears the window's verification.
  */
 export const citeWindowAction = practiceRoute({
   id: 'practice.abstraction.cite_window',
@@ -215,7 +219,14 @@ export const citeWindowAction = practiceRoute({
   phi: true,
   permission: 'rate_record.edit',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({ versionId: opaqueId, documentId: opaqueId, page: z.coerce.number().int().min(1).max(999_999), quote: requiredText(2000) }),
+  input: z.object({
+    versionId: opaqueId,
+    documentId: opaqueId,
+    page: z.coerce.number().int().min(1).max(999_999),
+    quote: requiredText(2000),
+    unit: z.enum(DISPUTE_WINDOW_UNITS, 'choose the unit the quote counts in: calendar days, business days or months'),
+    measuredFrom: z.enum(DISPUTE_WINDOW_STARTS, 'choose what the quote counts from: the date of service, the remittance date, the payment date or the day the practice received it'),
+  }),
   audit: { action: 'contract_window_citation_requested', objectType: 'contract_version' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
     await citing(async () =>
@@ -223,19 +234,22 @@ export const citeWindowAction = practiceRoute({
         practiceId,
         versionId: input.versionId,
         citation: { documentId: input.documentId, page: input.page, quote: input.quote },
+        rule: { unit: input.unit, measuredFrom: input.measuredFrom },
       }),
     );
     return { objectId: input.versionId, redirect: versionPath(practiceId, input.versionId) };
   },
   sample: {
     params: (refs) => ({ practiceId: refs.practiceId }),
-    input: (refs) => ({ versionId: refs.draftVersionId, documentId: refs.contractDocumentId, page: '1', quote: SAMPLE_WINDOW_QUOTE }),
+    input: (refs) => ({ versionId: refs.draftVersionId, documentId: refs.contractDocumentId, page: '1', quote: SAMPLE_WINDOW_QUOTE, unit: 'calendar_days', measuredFrom: 'remittance_date' }),
   },
 });
 
 /**
  * The contract specialist verifies the cited window against its page (rate_record.approve, which packages/contracts
- * and the database check): verified only while the citation resolves; a person does it, never a model.
+ * and the database check): verified only while the citation resolves, and only when its cited rule is the one the
+ * product computes (calendar days after the remittance date; refused otherwise with the reason); a person does it,
+ * never a model.
  */
 export const verifyWindowAction = practiceRoute({
   id: 'practice.abstraction.verify_window',

@@ -1,4 +1,18 @@
-import { type EvidenceProblem, type RateMethod, type RateRecordField, type RateRecordTerms, addDays } from '@tp/contracts';
+import {
+  COMPUTED_CONTRACT_WINDOW_RULE,
+  DISPUTE_WINDOW_STARTS,
+  DISPUTE_WINDOW_START_TEXT,
+  DISPUTE_WINDOW_UNITS,
+  DISPUTE_WINDOW_UNIT_TEXT,
+  type DisputeWindowRule,
+  type EvidenceProblem,
+  type RateMethod,
+  type RateRecordField,
+  type RateRecordTerms,
+  addDays,
+  windowRuleComputed,
+  windowRuleText,
+} from '@tp/contracts';
 import type { MappingKind, QuestionTopic, VersionStatus } from '@tp/db/runtime';
 import { formatUsd } from '@tp/money';
 
@@ -66,6 +80,40 @@ export const EVIDENCE_PROBLEM_TEXT: Readonly<Record<EvidenceProblem, string>> = 
   quote_not_on_page: 'The quote is not on the cited page',
   hash_mismatch: 'The page has changed since it was cited',
 };
+
+/**
+ * The dispute window's unit and start as the abstraction form offers them (best-option audit #5): the fixed lists, in
+ * words, with an empty first choice so the specialist picks both from the quote; nothing is chosen for them.
+ */
+export const DISPUTE_WINDOW_UNIT_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: '', label: 'Choose the unit the quote counts in' },
+  ...DISPUTE_WINDOW_UNITS.map((unit) => ({ value: unit, label: DISPUTE_WINDOW_UNIT_TEXT[unit] })),
+];
+export const DISPUTE_WINDOW_START_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: '', label: 'Choose what the quote counts from' },
+  ...DISPUTE_WINDOW_STARTS.map((start) => ({ value: start, label: DISPUTE_WINDOW_START_TEXT[start] })),
+];
+
+/** A cited window's rule beside the one the product computes for its days, in words, and whether they are the same rule. */
+export interface WindowRuleComparison {
+  /** "ends 180 calendar days after the date of service", or null when the citation states no rule. */
+  readonly cited: string | null;
+  /** "ends 180 calendar days after the remittance date": how the product counts the version's days. */
+  readonly computed: string;
+  readonly matches: boolean;
+}
+
+export function windowRuleComparison(days: number, rule: DisputeWindowRule | null): WindowRuleComparison {
+  return { cited: rule === null ? null : windowRuleText(days, rule), computed: windowRuleText(days, COMPUTED_CONTRACT_WINDOW_RULE), matches: windowRuleComputed(rule) };
+}
+
+/**
+ * Why a cited window whose rule the product does not compute stays unverified (the Verify button's reason, and the
+ * version screens'): its lines wait, the date shown counts from the remittance date and can be later than the
+ * contract's, and the version can still be approved.
+ */
+export const WINDOW_RULE_NOT_COMPUTED_TEXT =
+  'The product counts a contract’s dispute window only as calendar days after the remittance date for now, so a window counted another way cannot be verified: it stays unverified and its lines wait for a verified deadline (the date shown counts from the remittance date and can be later than the contract’s own). The version can still be approved.';
 
 /** A window [from, to) with its last day: "2026-01-01 through 2026-12-31", or open-ended. */
 export function windowText(from: string, to: string | null): string {

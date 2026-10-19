@@ -304,7 +304,7 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
           await approveRateRecordField(context, { practiceId, rateRecordId, field });
         }
         // The window as the contract states it, cited on page 1 and verified, so the lines' deadlines are (D17 a).
-        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote } });
+        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote }, rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' } });
         await verifyDisputeWindow(context, { practiceId, versionId });
         await approveVersion(context, { practiceId, versionId });
       });

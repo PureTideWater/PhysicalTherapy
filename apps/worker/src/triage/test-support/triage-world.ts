@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  DISPUTE_WINDOW_START_TEXT,
+  type DisputeWindowRule,
   EvidenceResolver,
   RATE_RECORD_FIELDS,
   type WorkflowContext,
@@ -12,6 +14,7 @@ import {
   createDraftVersion,
   signOffVersion,
   verifyDisputeWindow,
+  windowRuleComputed,
 } from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
@@ -20,7 +23,7 @@ import { asOwner } from '@tp/db/testing';
 import { formatCents, parseCents } from '@tp/money';
 
 import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
-import { type Practice, PricingWorld, SETTINGS, windowQuote } from '../../price/test-support/pricing-world';
+import { type Practice, PricingWorld, SETTINGS, WINDOW_QUOTE_RULE, windowQuote } from '../../price/test-support/pricing-world';
 import { type ReportOutcome, type ReportServices, generateAuditReport } from '../../report/generate';
 import { ChromiumPdfRenderer, type PdfRenderer, chromiumInstalled } from '../../report/pdf';
 import { DocumentStore, collect } from '../../storage/documents';
@@ -46,6 +49,12 @@ export interface FixedContractOptions {
   readonly disputeWindowDays: number;
   /** Whether the specialist cites the window on its page and verifies it (true unless false): an uncited window leaves its lines' deadlines unverified (D17 a). */
   readonly windowCited?: boolean;
+  /**
+   * The rule the window's quote states (best-option audit #5): calendar days after the remittance date, the rule the
+   * product computes, unless named. A window cited with another rule is not verified: the version is approved with
+   * its window unverified, and its lines' deadlines stay unverified (CONTRACT_WINDOW_RULE_NOT_COMPUTED).
+   */
+  readonly windowRule?: DisputeWindowRule;
   /** An amount in cents per unit for each code. */
   readonly schedule: readonly { readonly code: string; readonly amountCents: string }[];
   readonly payerId?: string;
@@ -54,6 +63,9 @@ export interface FixedContractOptions {
 }
 
 const quoteFor = (code: string, amountCents: string) => `${code} is paid ${formatCents(parseCents(amountCents))} per unit`;
+/** The page's words for a window of `days` under `rule`: the pricing world's own quote for the computed rule. */
+const ruleQuote = (days: number, rule: DisputeWindowRule) =>
+  windowRuleComputed(rule) ? windowQuote(days) : `Disputes are raised within ${String(days)} ${rule.unit === 'business_days' ? 'business days' : rule.unit === 'months' ? 'months' : 'days'} of ${DISPUTE_WINDOW_START_TEXT[rule.measuredFrom]}.`;
 
 export class TriageWorld {
   private readonly contractDocuments = new Map<string, Uint8Array>();
@@ -128,11 +140,12 @@ export class TriageWorld {
   /** A signed-off version of a new contract with the payer whose exhibit quotes `quotes` and holds `records`. */
   private async contractWith(
     target: Practice,
-    options: { readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly payerId?: string; readonly windowCited?: boolean },
+    options: { readonly effectiveFrom: string; readonly disputeWindowDays: number; readonly payerId?: string; readonly windowCited?: boolean; readonly windowRule?: DisputeWindowRule },
     quotes: readonly string[],
     records: readonly { readonly terms: object; readonly quote: string }[],
   ): Promise<FixedContract> {
     const { owner } = this;
+    const windowRule = options.windowRule ?? WINDOW_QUOTE_RULE;
     const documentId = randomUUID();
     await asOwner(owner, [target.practiceId], () =>
       owner.query(
@@ -144,7 +157,7 @@ export class TriageWorld {
     this.contractDocuments.set(
       documentId,
       syntheticPdf([
-        ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote(options.disputeWindowDays)],
+        ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', ruleQuote(options.disputeWindowDays, windowRule)],
         ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...quotes],
       ]),
     );
@@ -171,8 +184,11 @@ export class TriageWorld {
         ids.push(rateRecordId);
       }
       if (options.windowCited !== false) {
-        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote(options.disputeWindowDays) } });
-        await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId });
+        await citeDisputeWindow(context, { practiceId: target.practiceId, versionId, citation: { documentId, page: 1, quote: ruleQuote(options.disputeWindowDays, windowRule) }, rule: windowRule });
+        // Only a window whose rule the product computes is verified; another is approved unverified.
+        if (windowRuleComputed(windowRule)) {
+          await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId });
+        }
       }
       await approveVersion(context, { practiceId: target.practiceId, versionId });
       return ids;

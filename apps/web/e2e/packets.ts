@@ -228,7 +228,7 @@ export async function citedAmendmentCase(practiceId: string, priorVersionId: str
           await approveRateRecordField(context, { practiceId, rateRecordId: record.id, field });
         }
       }
-      await citeDisputeWindow(context, { practiceId, versionId: amendment, citation: { documentId, page: 1, quote: WINDOW_QUOTE } });
+      await citeDisputeWindow(context, { practiceId, versionId: amendment, citation: { documentId, page: 1, quote: WINDOW_QUOTE }, rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' } });
       await verifyDisputeWindow(context, { practiceId, versionId: amendment });
       await approveVersion(context, { practiceId, versionId: amendment });
     });
