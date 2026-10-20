@@ -10,7 +10,7 @@ import { migrate } from '../migrate';
 import { type ScratchDatabase, createScratchDatabase } from '../testing';
 import { type GeneratedDomainModel, generateDomainModel } from './generate';
 import { DEFAULT_SOURCES } from './sources';
-import { SUMMARY_CATEGORIES, changeLine, documentChanges, renderSummary } from './summary';
+import { SUMMARY_CATEGORIES, changeLine, documentChanges, readDocument, renderSummary } from './summary';
 
 /**
  * "Changes since the last approved document" (docs/adr/0063) against the generator itself: a scratch database
@@ -38,10 +38,18 @@ ALTER TABLE gate_probe_code OWNER TO tp_owner;
 GRANT SELECT ON gate_probe_code TO tp_app;
 `;
 
+/** A view whose definition holds a line of three backticks, and a policy dropped: the reader keeps the fences in step. */
+const FENCE_DDL = `
+CREATE VIEW gate_probe_fence AS SELECT E'\\n\`\`\`\\n'::text AS x;
+ALTER VIEW gate_probe_fence OWNER TO tp_owner;
+DROP POLICY organization_owner ON organization;
+`;
+
 const databases: ScratchDatabase[] = [];
 const directories: string[] = [];
 let approved: GeneratedDomainModel | undefined;
 let changed: GeneratedDomainModel | undefined;
+let fenced: GeneratedDomainModel | undefined;
 
 beforeAll(async () => {
   const database = await createScratchDatabase(readDatabaseUrl());
@@ -63,7 +71,18 @@ beforeAll(async () => {
     await client.end();
   }
   changed = await generateDomainModel({ databaseUrl: database.url, areasPath, commit: '1111111', branch: 'probe' });
-}, 180_000);
+  areas.areas.find((a) => a.id === 'operations')?.tables.push('gate_probe_fence');
+  const fencedAreasPath = path.join(dir, 'areas-fenced.json');
+  writeFileSync(fencedAreasPath, JSON.stringify(areas));
+  const second = new pg.Client({ connectionString: database.url });
+  await second.connect();
+  try {
+    await second.query(FENCE_DDL);
+  } finally {
+    await second.end();
+  }
+  fenced = await generateDomainModel({ databaseUrl: database.url, areasPath: fencedAreasPath, commit: '2222222', branch: 'probe' });
+}, 240_000);
 
 afterAll(async () => {
   await Promise.all(databases.map((d) => d.drop()));
@@ -135,6 +154,20 @@ describe('the summary of a regenerated document', () => {
     const facts = changes.filter((c) => c.category !== 'cross-checks' && c.category !== 'other');
     expect(new Set(facts.map((c) => `${c.category} ${c.label}`)).size, facts.map(changeLine).join('\n')).toBe(facts.length);
     expect(shown('other')).toEqual([]);
+  });
+
+  it('reads a view whose definition holds a fence line whole, and still names the one policy dropped beside it', () => {
+    if (changed === undefined || fenced === undefined) throw new Error('the probe database was not migrated');
+    expect(fenced.text).toContain('\n````sql\nSELECT \'\n```\n\'::text AS x;\n````\n');
+    expect(readDocument(fenced.text).unclosedFence).toBe(false);
+    const changes = documentChanges(changed.text, fenced.text);
+    const shown = (category: string): string[] => changes.filter((c) => c.category === category).map(changeLine);
+    expect(shown('policies')).toEqual(['- removed `organization policy organization_owner`: `PERMISSIVE FOR ALL TO tp_owner; USING true; WITH CHECK true`']);
+    expect(shown('tables')).toEqual(expect.arrayContaining(['- added `view gate_probe_fence`', "- added `gate_probe_fence view definition`: `SELECT ' ⏎ ''' ⏎ '::text AS x;`"]));
+    // Nothing spurious: no line falls outside a category, and every change is the view's, its counts' or the policy's.
+    expect(shown('other')).toEqual([]);
+    expect(changes.length, changes.map(changeLine).join('\n')).toBeLessThan(20);
+    for (const change of changes) expect(`${change.label} ${change.before ?? ''} ${change.after ?? ''}`, changeLine(change)).toMatch(/gate_probe_fence|organization|totals|B\d+ organization|polic/);
   });
 
   it('lists row-level security, policies, the PHI registry and grants first, with both documents’ SHA-256', () => {

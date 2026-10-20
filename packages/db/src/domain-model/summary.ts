@@ -60,6 +60,8 @@ export interface DocumentReading {
   readonly facts: readonly DocumentFact[];
   /** Lines the document repeats from another line (the areas' table lists, Appendix A and B, the counts). */
   readonly folded: readonly string[];
+  /** A code block opened and never closed: its lines are kept, under "Other lines", but the reading is unreliable. */
+  readonly unclosedFence: boolean;
 }
 
 /** A cell or a line as plain text: links to their text, code marks and escapes taken out, line breaks as commas. */
@@ -146,24 +148,26 @@ export function readDocument(text: string): DocumentReading {
   let table: string | null = null;
   let block: Block = 'none';
   let divergence = '';
-  let fence: { readonly kind: string; readonly lines: string[] } | null = null;
+  /** An open code block: its fence (CommonMark: three or more backticks; it closes only at a fence as long or longer). */
+  let fence: { readonly marker: number; readonly kind: string; readonly lines: string[] } | null = null;
   let multiLine: Block | null = null;
   /** The PHI table's columns, read from its header (one per role with a privilege). */
   let phiColumns = 0;
 
   for (const line of comparableText(text).split('\n')) {
     if (fence !== null) {
-      if (line !== '```') {
+      const closing = /^(`{3,})[ \t]*$/.exec(line);
+      if (closing === null || (closing[1] ?? '').length < fence.marker) {
         fence.lines.push(line);
         continue;
       }
-      if (fence.kind === 'sql' && table !== null) add('tables', `view-definition:${table}`, `${table} view definition`, fence.lines.join('\n'));
-      else for (const inner of fence.lines) other(section, inner, section === 'Cross-checks' ? 'cross-checks' : 'other');
+      closeFence(fence);
       fence = null;
       continue;
     }
-    if (line.startsWith('```')) {
-      fence = { kind: line.slice(3), lines: [] };
+    const opening = /^(`{3,})([^`]*)$/.exec(line);
+    if (opening !== null) {
+      fence = { marker: (opening[1] ?? '').length, kind: (opening[2] ?? '').trim(), lines: [] };
       continue;
     }
     if (line.trim() === '') {
@@ -285,8 +289,16 @@ export function readDocument(text: string): DocumentReading {
     }
     other(section, line);
   }
+  // A block never closed: its lines are still facts, so nothing it holds goes unreported, and the reading says so.
+  const unclosedFence = fence !== null;
+  if (fence !== null) for (const inner of fence.lines) other(section, inner);
 
-  return { facts, folded };
+  return { facts, folded, unclosedFence };
+
+  function closeFence(block: { readonly kind: string; readonly lines: readonly string[] }): void {
+    if (block.kind === 'sql' && table !== null) add('tables', `view-definition:${table}`, `${table} view definition`, block.lines.join('\n'));
+    else for (const inner of block.lines) other(section, inner, section === 'Cross-checks' ? 'cross-checks' : 'other');
+  }
 
   function readTableLine(name: string, line: string): void {
     const header = BLOCK_HEADERS.find(([pattern]) => pattern.test(line));
@@ -530,13 +542,21 @@ export function renderSummary(input: SummaryInput): string {
   const { before, after, check } = input;
   const oldSha = documentSha256(before.text);
   const newSha = documentSha256(after.text);
-  const changes = documentChanges(before.text, after.text);
+  const beforeReading = readDocument(before.text);
+  const afterReading = readDocument(after.text);
+  const changes = readingChanges(beforeReading, afterReading);
   const out: string[] = [
     '## Changes since the last approved document',
     '',
     `- Last approved: \`docs/product/domain-model.md\` at \`${before.ref}\` (commit \`${before.commit.slice(0, 12)}\`), document SHA-256 \`${oldSha}\`: ${approvalState(before.text, check)}`,
     `- New: ${after.source}, document SHA-256 \`${newSha}\`: ${approvalState(after.text, check)}`,
   ];
+  const unclosed = [...(beforeReading.unclosedFence ? ['the last approved document'] : []), ...(afterReading.unclosedFence ? ['the new document'] : [])];
+  if (unclosed.length > 0) {
+    out.push(
+      `- **This summary could not read ${unclosed.join(' or ')} line by line**: a code block opens and never closes, so the lines after it are listed as they are, under "Other lines". Compare the two documents directly before approving.`,
+    );
+  }
   const counts = SUMMARY_CATEGORIES.map(([category, title]) => [title, changes.filter((c) => c.category === category).length] as const).filter(([, n]) => n > 0);
   if (changes.length > 0) {
     out.push(`- ${String(changes.length)} ${changes.length === 1 ? 'change' : 'changes'}: ${counts.map(([title, n]) => `${String(n)} in ${title.toLowerCase()}`).join(', ')}`);
@@ -545,7 +565,7 @@ export function renderSummary(input: SummaryInput): string {
     out.push('- No change: the two documents have the same text (the provenance and approval lines aside).', '');
     return out.join('\n');
   } else {
-    const folded = readDocument(after.text).folded.length;
+    const folded = afterReading.folded.length;
     out.push(
       `- **The texts differ, but only in lines this summary reads as repeats of others** (the areas' table lists, the counts, Appendix A and B; ${String(folded)} such lines): compare the two documents directly before approving.`,
     );

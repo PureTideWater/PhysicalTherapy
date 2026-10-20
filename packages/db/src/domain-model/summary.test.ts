@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { APPROVAL_PREFIX, approvalLineOf, awaitingApprovalLine, documentSha256, provenanceLine } from './approval';
 import { documentAtRef } from './history';
+import { fenceFor } from './render';
 import { DOMAIN_MODEL_DOCUMENT, DomainModelError } from './sources';
 import { type DocumentChange, SUMMARY_CATEGORIES, changeLine, contrast, documentChanges, readDocument, readingChanges, renderSummary } from './summary';
 
@@ -224,6 +225,33 @@ describe('documentChanges, on synthetic schema changes', () => {
     const summary = renderSummary({ before: { text: committed, ref: 'origin/main', commit: 'b'.repeat(40) }, after: { text: after, source: 'probe' }, check });
     expect(summary).toContain('**The texts differ, but only in lines this summary reads as repeats of others**');
     expect(summary).not.toContain('No change');
+  });
+
+  it('a view definition holding a fence line is fenced longer and read whole; a block never closed is said, not dropped', () => {
+    const block = /\n```sql\n([\s\S]*?)\n```\n/.exec(committed);
+    const definition = block?.[1] ?? '';
+    expect(definition).toContain('FROM organization o');
+    // CREATE VIEW ... AS SELECT E'\n```\n'::text: a line of the definition is a fence of three backticks.
+    const fenced = `${definition}\nUNION ALL SELECT '\n\`\`\`\n'::text`;
+    const fence = fenceFor(fenced);
+    expect(fence).toBe('````');
+    const after = edit(committed, block?.[0] ?? '', `\n${fence}sql\n${fenced}\n${fence}\n`);
+    const changes = documentChanges(committed, after);
+    expect(changes.map((c) => `${c.category} ${c.kind} ${c.label}`)).toEqual(['tables changed billing_standing view definition']);
+    expect(changes[0]?.after).toBe(fenced);
+    // The same text under a three-backtick fence, as the generator wrote it before: the definition's own line closes
+    // the block, and the generator's closing fence opens one that swallows every line up to the cross-checks.
+    const early = edit(committed, block?.[0] ?? '', `\n\`\`\`sql\n${fenced}\n\`\`\`\n`);
+    expect(documentChanges(committed, early).filter((c) => c.category === 'other').length).toBeGreaterThan(100);
+    // A block never closed (here the cross-checks' own) still reports its lines, and the summary says it could not
+    // read the document line by line.
+    const cross = /\n```text\n[\s\S]*?\n```\n/.exec(committed)?.[0] ?? '';
+    const open = edit(committed, cross, cross.replace(/```\n$/, ''));
+    expect(readDocument(open).unclosedFence).toBe(true);
+    expect(readDocument(committed).unclosedFence).toBe(false);
+    expect(documentChanges(committed, open).length).toBeGreaterThan(0);
+    const summary = renderSummary({ before: { text: committed, ref: 'origin/claude/build-platform', commit: 'b'.repeat(40) }, after: { text: open, source: 'probe' }, check });
+    expect(summary).toContain('**This summary could not read the new document line by line**');
   });
 
   it('reports a change to any line it does not fold (every 41st line of the document, edited)', () => {
