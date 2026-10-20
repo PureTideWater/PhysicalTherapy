@@ -10,7 +10,9 @@
  * worker's (the packet_export job); whether a version can be exported now is the one readiness the web's
  * export action, requestPacketExport() and the job all ask (exportReadiness(), audit item #26), and the
  * codes its refusals and failed tries are recorded with are PACKET_EXPORT_REFUSALS and
- * PACKET_EXPORT_FAILURES. Nothing here writes a ledger entry or a line stage.
+ * PACKET_EXPORT_FAILURES. The practice administrator sets the correspondence contact the payer's copy prints
+ * (setCorrespondenceContact()), and staff find a packet by the reference a payer quotes (packetVersionsByReference();
+ * audit item #37 part 1). Nothing here writes a ledger entry or a line stage.
  */
 export {
   type AcceptingResponse,
@@ -27,6 +29,7 @@ export {
   type LogSubmissionInput,
   type LoggedSubmission,
   NARRATIVE_MAX_LENGTH,
+  NARRATIVE_WITHHELD_IDENTIFIER,
   PACKET_ATTESTATION_ITEMS,
   type PacketAttestation,
   type PacketAttestationItem,
@@ -92,4 +95,8 @@ export {
 } from './readiness';
 export { MA_NONCONTRACTED_CITATION, PACKET_REFUSALS, type PacketRefusal, PacketRefusedError } from './records';
 export { PACKET_CSV_COLUMNS } from './csv';
+export { type PayerCopy } from './html';
+export { CorrespondenceContactRefused, practiceCorrespondenceContact, setCorrespondenceContact } from './correspondence';
+export { type PacketVersionByReference, packetVersionsByReference } from './by-reference';
+export { normalizePacketReference, packetReference } from '@tp/packets';
 export { type LetterPatient, otherPatientRecords } from './letter-records';

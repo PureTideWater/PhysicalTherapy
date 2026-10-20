@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { JobActorIsPersonError, type PracticeScope, type ScopeClient, readDatabaseUrl, withJobScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { addDays, nextDisputeWindow } from '@tp/packets';
+import { SYNTHETIC_CORRESPONDENCE_CONTACT, addDays, nextDisputeWindow } from '@tp/packets';
 import { type CaseDispute, deriveCaseState } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -14,10 +14,14 @@ import { nextLevelDeadline } from '../triage/deadline';
 import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
 import { PacketExportFileIntegrityError, downloadPacketExport, packetExportDownloads } from './downloads';
+import { setCorrespondenceContact } from './correspondence';
 import { PacketExportIntegrityError, exportPacketVersion } from './export';
 import { exportReadiness } from './readiness';
 import { PacketRefusedError } from './records';
 import {
+  EXPORT_REQUEST_REFUSALS,
+  NARRATIVE_WITHHELD_IDENTIFIER,
+  PACKET_ATTESTATION_ITEMS,
   PacketRuleError,
   acceptedPayerResponses,
   approvePacketVersion,
@@ -271,9 +275,11 @@ describe('CAS-11: identifiers in a draft', () => {
     const csv = (await w.stored(setup.practice, detail?.exportCsvKey ?? '')).toString('utf8');
     expect(csv).toContain('SYNCCNCAS080001');
     expect(csv).toContain('SYNCCNCAS080003');
+    // The payer's schedule (audit item #37 part 1, D3): no patient control number, trace or SHA-256 column.
     expect(csv.split('\r\n')[0]).toBe(
-      'row,payer_claim_control_number,patient_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,trace_ref,window_ends_on,deadline_status,deadline_source,calculation_method,unrounded,rounded,patient_share,trace_sha256',
+      'row,payer_claim_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,window_ends_on,calculation_method,unrounded,rounded,patient_share',
     );
+    expect(csv).not.toContain('SYNPCNCAS08');
     // The version itself still holds only placeholders.
     expect(detail?.content.lines.map((line) => line.claim_control_number)).toEqual(['{{claim_control_number:1}}', '{{claim_control_number:2}}', '{{claim_control_number:3}}']);
     expect(detail?.narrative).toContain('{{claim_control_number:1}}');
@@ -576,7 +582,7 @@ describe('D16: the reimbursement reviewer attests the export over its SHA-256', 
     ]);
     // A billing manager who approves packets does not attest: the service refuses, and Postgres in SQL.
     expect(await refusal(attest(setup.second, files))).toMatchObject({ name: 'PermissionDeniedError' });
-    const signed = (pdf: string, csv: string, checklist: readonly string[] = ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent']) =>
+    const signed = (pdf: string, csv: string, checklist: readonly string[] = [...PACKET_ATTESTATION_ITEMS]) =>
       JSON.stringify({ format: 'tp-attestation/1', checklist, pdf_sha256: pdf, csv_sha256: csv });
     const direct = (actorId: string, attestation: string) =>
       w.as(practice, actorId, (scope) => scope.client.query('UPDATE packet_version SET attested_by = $2, attestation = $3 WHERE id = $1', [version.versionId, actorId, attestation]));
@@ -606,7 +612,7 @@ describe('D16: the reimbursement reviewer attests the export over its SHA-256', 
 describe('D16: the reviewer attests only after downloading both files of that export (the owner’s addition of 2026-10-18; ADR 0061, F9)', () => {
   const SQL_WORDS = "a packet's export is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256";
   const signed = (files: { pdf: string; csv: string }) =>
-    JSON.stringify({ format: 'tp-attestation/1', checklist: ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent'], pdf_sha256: files.pdf, csv_sha256: files.csv });
+    JSON.stringify({ format: 'tp-attestation/1', checklist: [...PACKET_ATTESTATION_ITEMS], pdf_sha256: files.pdf, csv_sha256: files.csv });
 
   /** The attestation refused in the handler (the service the attest route runs) and, its check bypassed, in Postgres. */
   async function refusedInBothLayers(practice: Practice, reviewer: string, versionId: string, files: { pdf: string; csv: string }): Promise<void> {
@@ -1288,5 +1294,39 @@ describe('a Medicare Advantage case’s next dispute level (the regulation’s r
     const { rows: inForce } = await w.as(practice, practice.manager, (scope) => scope.client.query<{ release: number }>('SELECT current_rule_release() AS release'));
     expect(inForce[0]?.release).toBe(RELEASE);
     expect(agree(await both())).toMatchObject({ sql: 'unverified', ts: { cause: 'RECORD_BELOW_LEVEL', level: 'L1' } });
+  });
+});
+
+describe('audit item #37 part 1: what the payer’s copy may print, held at the write and at the request (the founder’s rulings of 2026-10-20)', () => {
+  it('refuses a narrative that names a row by its patient control number, writing nothing; the same narrative by its claim control number is written (Q2 (a))', async () => {
+    const setup = await cas08('PAYER-PCN');
+    const versions = async () => (await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query('SELECT 1 FROM packet_version WHERE practice_id = $1', [setup.practice.practiceId]))).rowCount;
+    const withheld = await refusal(write(setup, setup.practice.manager, { narrative: 'Claim {{patient_control_number:1}} was paid short of the contract [3].' }));
+    expect(withheld).toBeInstanceOf(PacketRefusedError);
+    expect(withheld).toMatchObject({ reason: 'narrative_withheld_identifier', message: NARRATIVE_WITHHELD_IDENTIFIER });
+    expect(await versions()).toBe(0);
+    const written = await write(setup, setup.practice.manager, { narrative: 'Claim {{claim_control_number:1}} was paid short of the contract [3].' });
+    expect(written.verifier.passed).toBe(true);
+    expect(await versions()).toBe(1);
+  });
+
+  it('refuses the export request with contact_missing and queues nothing until the practice administrator sets the contact, then queues it (D7)', async () => {
+    const practice = await w.practice('PAYER-NO-CONTACT', {}, { contact: false });
+    const setup = { practice, caseId: await w.caseOf(practice, 'CAS-08/remit.835', 'CE:SYNPLAN-FIX-ONE', MARCH), second: await w.person(practice, 'billing_manager') };
+    const version = await write(setup, practice.manager);
+    const readiness = () => w.as(practice, practice.manager, (scope) => exportReadiness(scope.client, { practiceId: practice.practiceId, versionId: version.versionId, asOf: w.today() }));
+    // Every reason that holds is given, the contact's after the others.
+    expect(await readiness()).toEqual({ outcome: 'refused', reasons: ['not_approved', 'contact_missing'] });
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    expect(await readiness()).toEqual({ outcome: 'refused', reasons: ['contact_missing'] });
+    const queued: unknown[] = [];
+    const queue = { send: (...args: unknown[]) => Promise.resolve(String(queued.push(args))) } as never;
+    const request = () => w.as(practice, practice.manager, (scope) => requestPacketExport(scope, queue, { practiceId: practice.practiceId, versionId: version.versionId, requestId: 'r' }));
+    expect((await refusal(request())).message).toBe(EXPORT_REQUEST_REFUSALS.contact_missing);
+    expect(queued).toHaveLength(0);
+    await w.as(practice, practice.world.adminUserId, (scope) => setCorrespondenceContact(scope, { practiceId: practice.practiceId, contact: SYNTHETIC_CORRESPONDENCE_CONTACT, requestId: 'test-contact' }));
+    expect(await readiness()).toEqual({ outcome: 'ready' });
+    await request();
+    expect(queued).toHaveLength(1);
   });
 });

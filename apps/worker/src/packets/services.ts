@@ -50,6 +50,13 @@ import { type SubmissionSent, packetVersionUnattestedReason, submissionSentOf } 
 /** The longest narrative a version holds. */
 export const NARRATIVE_MAX_LENGTH = 20_000;
 
+/** A placeholder of the patient control number, which the payer's copy does not print (Q2 (a)). */
+const WITHHELD_PLACEHOLDER = /\{\{patient_control_number:\d{1,6}\}\}/;
+
+/** The refusal of a narrative that names a row by its patient control number (fixed words). */
+export const NARRATIVE_WITHHELD_IDENTIFIER =
+  'a narrative names a row by its claim control number, patient or member ID; the patient control number is not printed for the payer';
+
 /** A rule the database holds refused the step: its sentence says which (fixed words, no value). */
 export class PacketRuleError extends Error {
   override readonly name = 'PacketRuleError';
@@ -114,6 +121,11 @@ export async function writePacketVersion(scope: PracticeScope<ScopeClient>, keys
   }
   const { content, identifiers, cipher } = await assembleVersion(scope, keys, input);
   const narrative = (input.narrative ?? draftNarrative(content)).normalize('NFKC');
+  // The payer's copy prints no patient control number (audit item #37 part 1, Q2 (a)); versions are immutable, so the
+  // write is the one place a narrative naming a row by it is held back.
+  if (WITHHELD_PLACEHOLDER.test(narrative)) {
+    throw new PacketRefusedError('narrative_withheld_identifier', NARRATIVE_WITHHELD_IDENTIFIER);
+  }
   const verifier = verifyNarrative(narrative, narrativeFacts(content), identifiers);
 
   const { client } = scope;
@@ -472,7 +484,7 @@ export const EXPORT_REQUEST_REFUSALS: Readonly<Record<ExportReadinessReason, str
  * What a reimbursement reviewer confirms over a packet's export before attesting it (D16), as codes:
  * the attestation holds these and the two SHA-256, never a word a person typed (the database refuses any).
  */
-export const PACKET_ATTESTATION_ITEMS = ['figures', 'deadline', 'calculation', 'identifiers', 'files', 'independent'] as const;
+export const PACKET_ATTESTATION_ITEMS = ['figures', 'deadline', 'calculation', 'identifiers', 'payer_copy', 'files', 'independent'] as const;
 export type PacketAttestationItem = (typeof PACKET_ATTESTATION_ITEMS)[number];
 
 /** The attestation over an export (tp-attestation/1, as audit_report's): its checklist's codes and the files' SHA-256. */

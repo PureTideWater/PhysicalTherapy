@@ -1,121 +1,309 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEADLINE_UNVERIFIED_CAUSES } from '@tp/triage';
-import { type PacketContentV1, insertIdentifiers } from '@tp/packets';
+import {
+  type PacketContent,
+  type PacketContentV1,
+  type PacketContentV2,
+  SYNTHETIC_CORRESPONDENCE_CONTACT,
+  assemblePacket,
+  correspondenceText,
+  draftNarrative,
+  fillPlaceholders,
+  insertIdentifiers,
+} from '@tp/packets';
+import { REGULATION, assemblyInput, contractCitation, line, promptPayRecord } from '@tp/packets/testing';
 
-import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
-import { GAP_CODES, deadlineText, gapText, packetHtml } from './html';
-import { approval, content, exported, identifiers } from './test-support/exported-packet';
-import { chromiumInstalled } from '../report/pdf';
+import { ChromiumPdfRenderer, chromiumInstalled } from '../report/pdf';
 import { amountsNotInMono } from '../report/test-support/figures';
+import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
+import { packetHtml } from './html';
+import { INTERNAL_RECORD, content, exported, identifiers, maximalContent, maximalExported, maximalIdentifiers, maximalNarrative, narrative, payerCopy } from './test-support/exported-packet';
+import { holdsLoosely, htmlText, narrativeBlock, outsideNarrative, payerCopyLeaks, printedPdfText } from './test-support/payer-copy';
+import { releaseText } from './words';
 
 /**
- * The export's documents (PRD 12, The packet; CAS-11, CAS-12, CAS-15; CO-05): the HTML the worker prints
- * to PDF and the CSV schedule, from a SYNTHETIC version with its identifiers inserted.
+ * The payer's copy of an export (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061; PRD 12,
+ * The packet; CAS-11, CAS-12, CAS-15, CAS-16; CO-05): the HTML the worker prints to PDF and the CSV schedule, from
+ * SYNTHETIC versions with their identifiers inserted. T1 to T9 of the design.
  */
 
-describe('packetHtml', () => {
-  const html = packetHtml(exported, approval);
+const PRACTICE = content.practice.name;
+const APPROVAL_LINE = `Approved for submission by ${PRACTICE} on 2026-05-02, reference SK6CS-K6CSK.`;
+const CONTACT_LINE = `Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`;
+const SECRETS = [INTERNAL_RECORD.drafter, INTERNAL_RECORD.approver, INTERNAL_RECORD.specialist, INTERNAL_RECORD.versionSha256];
+const scanOf = (packet: PacketContent, text: string, rows: typeof identifiers) => ({ content: packet, narrative: text, allowedEmail: SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? null, identifiers: rows, secrets: SECRETS });
+/** The phrases the interest and timeliness rulings keep off the payer's copy (Q3 (a), Q4 (a)). */
+const FORBIDDEN = [/cannot be computed/i, /can be computed/i, /in all/i, /not claimed/i, /filed within/i, /No dispute window/i];
 
-  it('holds the citation, the narrative with its identifiers, the schedule, the interest line apart, the evidence and the approval record', () => {
-    expect(html).toContain('97110 is paid 50.00 per unit');
-    expect(html).toContain('Claim SYNCCN0001 is the first [3].');
-    expect(html).toContain('SYNTHETIC, PATIENT &lt;ONE&gt;');
-    expect(html).toContain('Prompt-pay interest (its own line, not part of the variance)');
-    expect(html).toContain('Row 2: The remittance does not say when the payer received this claim');
-    expect(html).toContain(`SHA-256 ${'c'.repeat(64)}`);
-    expect(html).toContain('approved by approver@synthetic.test');
-    expect(html).not.toContain('Audit flag');
-    expect(html).not.toMatch(/\{\{[a-z_]+:\d+\}\}/);
-    expect(html).not.toMatch(/<script|https?:\/\//);
+const printedOf = (packet: PacketContent, text = draftNarrative(packet), rows = identifiers) => packetHtml(insertIdentifiers(packet, text, rows), payerCopy);
+/** Identifiers for every row of a SYNTHETIC version of up to three lines. */
+const rowsOf = (packet: PacketContent) => new Map([...maximalIdentifiers].filter(([row]) => row <= packet.lines.length));
+
+describe('packetHtml: the payer’s copy', () => {
+  const html = packetHtml(exported, payerCopy);
+  const maximal = packetHtml(maximalExported, payerCopy);
+
+  it('T1: holds no login, record ID, SHA-256, verification, audit flag, gap, specialist line, version number, footer or internal term, from a version with every internal field filled', () => {
+    expect(payerCopyLeaks(htmlText(maximal), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+    expect(payerCopyLeaks(htmlText(html), scanOf(content, narrative, identifiers))).toEqual([]);
+    for (const printed of [html, maximal]) {
+      expect(printed).not.toMatch(/<footer|data-deadline/);
+      expect(htmlText(printed)).not.toMatch(/Approval record|Audit flag|Evidence gaps|Version \d+, SHA|trace|SHA-256|specialist|verif/i);
+      expect(printed).not.toMatch(/\{\{[a-z_]+:\d+\}\}/);
+      expect(printed).not.toMatch(/<script|https?:\/\//);
+    }
+    // The scan finds what it is for: a login, a record ID and a hash put back are each a leak.
+    const planted = `${htmlText(maximal)} ${INTERNAL_RECORD.approver} ${maximalContent.lines[0]?.priced_line_id ?? ''} ${maximalContent.rule_releases[0]?.manifest_sha256 ?? ''} SYNPCN0002`;
+    expect(payerCopyLeaks(planted, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual(
+      expect.arrayContaining([`email:${INTERNAL_RECORD.approver}`, expect.stringMatching(/^uuid:/), expect.stringMatching(/^hex:/), 'secret:SYNPCN0002']),
+    );
   });
 
-  it('shows the audit flag of a single-user approval, and the specialist who confirmed a regulation', () => {
-    const alone = packetHtml(exported, { ...approval, approvedAlone: true, regulationConfirmedBy: 'specialist@synthetic.test' });
-    expect(alone).toContain('Audit flag: approved by the person who wrote it, in a practice with no second person to approve packets, at least 24 hours after it was written.');
-    expect(alone).toContain('confirmed by contract specialist specialist@synthetic.test');
+  it('T2: closes with the approval line, its reference, and the correspondence contact; the cover names the reference', () => {
+    expect(htmlText(html)).toContain(APPROVAL_LINE);
+    expect(htmlText(html)).toContain(CONTACT_LINE);
+    expect(html).toContain('<h2>Approval and correspondence</h2>');
+    expect(html).toContain('<p>Reference SK6CS-K6CSK</p>');
+    expect(html).toContain('<p class="meta">Dispute level 1; prepared 2026-05-01; reference SK6CS-K6CSK.</p>');
+    // The contact's email is the one email the copy prints.
+    expect(htmlText(html).match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/gi)).toEqual([SYNTHETIC_CORRESPONDENCE_CONTACT.email]);
+  });
+
+  it('T3: prints every marker a narrative may cite in its section: a contract and a regulation, interest computed, partly computed, not computed, and no rule on file', () => {
+    const received = [line(1, { receivedOn: '2026-03-02', paidOn: '2026-05-01' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-05-01' })];
+    const versions: Record<string, PacketContent> = {
+      'contract, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+      'contract, partly computed': content,
+      'contract, not computed': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } })),
+      'contract, no rule on file': assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } })),
+      'regulation, computed': assemblePacket(assemblyInput({ asOf: '2026-05-01', citation: REGULATION, contractDocuments: [], lines: received, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } })),
+      'regulation, no interest': assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] })),
+      maximal: maximalContent,
+    };
+    for (const [name, packet] of Object.entries(versions)) {
+      const printed = name === 'maximal' ? maximal : printedOf(packet, draftNarrative(packet), rowsOf(packet));
+      const evidence = printed.slice(printed.indexOf('<h2>Evidence</h2>'), printed.indexOf('<h2>Requested action</h2>'));
+      for (const source of packet.sources) {
+        const marker = `[${String(source.marker)}]`;
+        const where = {
+          citation: `<p>${marker} `,
+          rule_release: `<p>${marker} `,
+          line_schedule: `<caption>${marker} Line schedule`,
+          interest: `<h2>${marker} Prompt-pay interest`,
+          evidence: `<li>${marker} `,
+        }[source.kind];
+        expect(source.kind === 'evidence' ? evidence : printed, `${name}: ${marker}`).toContain(where);
+      }
+    }
+  });
+
+  it('T4: prints exactly the verified narrative, identifiers inserted, paragraph by paragraph, and the approval line, reference and contact only outside it', () => {
+    for (const [printed, text, rows] of [
+      [html, narrative, identifiers],
+      [maximal, maximalNarrative, maximalIdentifiers],
+    ] as const) {
+      const expected = fillPlaceholders(text, rows)
+        .split(/\n\s*\n/)
+        .map((paragraph) => paragraph.trim())
+        .filter((paragraph) => paragraph !== '');
+      expect(narrativeBlock(printed)).toEqual(expected);
+      const inside = narrativeBlock(printed).join('\n');
+      const outside = htmlText(outsideNarrative(printed));
+      for (const item of [APPROVAL_LINE, CONTACT_LINE, 'SK6CS-K6CSK', correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)]) {
+        expect(inside).not.toContain(item);
+        expect(outside).toContain(item);
+      }
+    }
+  });
+
+  it.skipIf(!chromiumInstalled())(
+    'T5: the printed PDF’s text and metadata hold none of it either, and no URL (skipped without Chromium)',
+    async () => {
+      const pdf = await new ChromiumPdfRenderer().render(maximal);
+      const { text, metadata } = await printedPdfText(pdf);
+      const printed = `${text}\n${Object.values(metadata).join('\n')}`;
+      expect(payerCopyLeaks(printed, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+      expect(printed).not.toMatch(/about:blank|https?:\/\//);
+      expect(metadata.Title).toBe(`Payment dispute | ${PRACTICE}`);
+      expect(holdsLoosely(text, APPROVAL_LINE)).toBe(true);
+      expect(holdsLoosely(text, CONTACT_LINE)).toBe(true);
+      for (const sentence of fillPlaceholders(maximalNarrative, maximalIdentifiers).split(/(?<=\.)\s+/)) {
+        expect(holdsLoosely(text, sentence), sentence).toBe(true);
+      }
+    },
+    60_000,
+  );
+
+  it('T5: is checked wherever the tests run in CI: Chromium is installed there', () => {
+    if (process.env.CI === 'true') {
+      expect(chromiumInstalled()).toBe(true);
+    }
   });
 
   it('is the practice’s own letter to its payer: its name leads the cover and the running header, and PaidWhole’s lockup and name are not on it', () => {
-    const name = exported.content.practice.name;
     const cover = html.slice(html.indexOf('<section class="cover"'), html.indexOf('<table class="pages"'));
-    expect(cover).toContain(`<div class="cover-top"><p class="firm">${name}</p></div>`);
+    expect(cover).toContain(`<div class="cover-top"><p class="firm">${PRACTICE}</p></div>`);
     // Named once on the cover, not again under the headline.
-    expect(cover.split(name)).toHaveLength(2);
-    expect(html).toContain(`<span class="title">${name} · Payment dispute</span>`);
-    expect(html).toContain(`<title>Payment dispute | ${name}</title>`);
+    expect(cover.split(PRACTICE)).toHaveLength(2);
+    expect(html).toContain(`<span class="title">${PRACTICE} · Payment dispute</span>`);
+    expect(html).toContain(`<title>Payment dispute | ${PRACTICE}</title>`);
     expect(html).not.toMatch(/PaidWhole/i);
     expect(html).not.toContain('data-verified');
+  });
+
+  it('holds the citation without its document ID or hashes, the schedule without the patient control number or a trace, and the evidence by its labels', () => {
+    expect(html).toContain('<p>[1] SYNTHETIC FIXED SCHEDULE AGREEMENT, version 1 (effective 2026-01-01), page 2:</p><blockquote>97110 is paid 50.00 per unit</blockquote>');
+    expect(html).toContain('<p>[2] Payment rules in effect for the service dates: release 900001</p>');
+    expect(html).toContain('Claim SYNCCN0001 is the first [3].');
+    expect(html).toContain('<td>=SYNTHETIC, PATIENT &lt;ONE&gt;</td>');
+    expect(html).toContain(
+      '<thead><tr><th scope="col">Row</th><th scope="col">Claim control number</th><th scope="col">Patient</th><th scope="col">Member ID</th><th scope="col">Service date</th><th scope="col">Code</th><th scope="col">Modifiers</th><th scope="col">Units</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">Variance</th></tr></thead>',
+    );
+    expect(html).toContain('<tr><td>Total</td><td></td><td></td><td></td><td></td><td></td><td></td><td>4</td><td>$200.00</td><td>$140.00</td><td>$60.00</td></tr>');
+    expect(html).toContain('<caption>[3] Line schedule: 2 lines on 2 claims</caption>');
+    expect(html).not.toContain('SYNPCN');
+    expect(html).not.toContain('Patient control number');
+    expect(html).toContain('<li>[5] Contract document cited at page 2 (contract version 1)</li>');
+    expect(html).toContain('<li>[6] 835 remittance paid 2026-04-08</li>');
+    expect(html).toContain('<li>[7] Payment rules in effect for the service dates: release 900001</li>');
+    expect(maximal).toContain('<p>[2] Payment rules in effect for the service dates: releases 900001 and 900002</p>');
+    expect(maximal).toContain('Payment rules in effect for the service dates: release 900002</li>');
   });
 
   it.skipIf(!chromiumInstalled())('sets every dollar figure in IBM Plex Mono, the narrative’s and the interest total’s included (skipped without Chromium)', async () => {
     expect(await amountsNotInMono(html)).toEqual([]);
   }, 60_000);
 
-  it('states the deadline the dispute is filed against, its status in words, its evidence, and each line’s window and calculation (tp-packet/2, CO-05)', () => {
-    expect(html).toContain('<p data-deadline="verified"><strong>The dispute is filed by 2036-04-05</strong>');
-    expect(html).toContain('deadline verified (2 of 2 lines’ windows verified)');
-    expect(html).toContain('a dispute window of 3650 days');
-    expect(html).toContain('<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote>');
-    expect(html).toContain('citation checked against its page 2026-01-02');
-    expect(html).toContain('Each line’s window and calculation, as its trace recorded it');
+  it('T7: states the dispute window’s dates only: the earliest line window at the first level, the level’s own window above it, its evidence, and never a timeliness claim', () => {
+    expect(html).toContain('<h2>Dispute window</h2><p><strong>The earliest dispute window among the listed lines ends on 2036-04-05.</strong></p>');
+    expect(html).toContain('<li>The contract’s dispute window: 3650 days (page 1):<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote></li>');
+    expect(maximal).toContain('<li>The Medicare dispute window in effect for the service dates (release 900002).</li>');
+    expect(html).toContain('<caption>Each line’s dispute window and how its expected amount is computed</caption>');
+    expect(html).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Window ends</th><th scope="col">Method</th><th scope="col">Steps</th><th scope="col">Rounding</th><th scope="col">Patient share</th></tr></thead>');
     // The trace's codes in words: the method, each step and the rounding rule.
-    expect(html).toContain('base $100.00');
-    expect(html).toContain('half up to the cent: $100.00 to $100.00');
-    expect(html).toContain('<td>Fixed schedule</td>');
+    expect(html).toContain('<tr><td>1</td><td>2036-04-05</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
     expect(html).not.toMatch(/FIXED_SCHEDULE|HALF_UP_CENT/);
-    expect(html).toContain('<td>$14.00</td>');
+    const level2 = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
+    expect(printedOf(level2, draftNarrative(level2), rowsOf(level2))).toContain('<p><strong>The window for dispute level 2 ends on 2026-12-01.</strong></p>');
+    for (const printed of [html, maximal, printedOf(level2, draftNarrative(level2), rowsOf(level2))]) {
+      for (const phrase of FORBIDDEN) {
+        expect(htmlText(printed)).not.toMatch(phrase);
+      }
+      expect(htmlText(printed)).not.toMatch(/verified|of \d+ lines’ windows/);
+    }
+    const unstated: PacketContentV2 = { ...content, deadline: { ...content.deadline, ends_on: null } };
+    expect(() => printedOf(unstated, narrative, identifiers)).toThrow(TypeError);
   });
 
-  it('counts one line’s window and one day in the singular', () => {
+  it('counts one line, one claim and one day in the singular', () => {
     const [first] = content.lines;
     const [window] = content.deadline.sources;
     if (first === undefined || window?.kind !== 'contract_window') {
       throw new Error('a line and its contract window expected');
     }
-    const one = { ...content, lines: [first], deadline: { ...content.deadline, lines: 1, lines_verified: 1, sources: [{ ...window, days: 1 }] } };
-    const printed = packetHtml(insertIdentifiers(one, exported.narrative, identifiers), approval);
-    expect(printed).toContain('(1 of 1 line’s window verified)');
-    expect(printed).toContain('a dispute window of 1 day,');
+    const one: PacketContentV2 = { ...content, pattern: { ...content.pattern, lines: 1, claims: 1 }, lines: [first], deadline: { ...content.deadline, lines: 1, lines_verified: 1, sources: [{ ...window, days: 1 }] } };
+    const printed = printedOf(one, exported.narrative, identifiers);
+    expect(printed).toContain('[3] Line schedule: 1 line on 1 claim');
+    expect(printed).toContain('The contract’s dispute window: 1 day (page 1):');
   });
 
-  it('prints an earlier tp-packet/1 version without a deadline section, and says why a deadline is not verified', () => {
+  it('T8: states interest only where code computed it: those lines, their total in the ruling’s words, the rule alone when none computed, and its own sentence when no rule is on file', () => {
+    // Row 1 computed, row 2 (its received date unknown) not: only row 1 is listed.
+    const interest = html.slice(html.indexOf('<h2>[4]'), html.indexOf('<h2>Evidence</h2>'));
+    expect(interest).toContain('<p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim, interest at 9% a year (release 900001).</p>');
+    expect(interest).toContain('<p>The rule does not apply to: self_funded_plans.</p>');
+    expect(interest).toContain('<caption>Interest by line</caption>');
+    expect(interest).toMatch(/<tbody><tr><td>1<\/td><td>2026-03-02<\/td>[^]*?<\/tr><\/tbody>/);
+    expect(interest.match(/<tr><td>\d+<\/td>/g)).toEqual(['<tr><td>1</td>']);
+    expect(htmlText(interest)).toContain('Interest stated in this request: $0.57');
+    const none = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
+    const noneHtml = printedOf(none, draftNarrative(none), rowsOf(none));
+    const noneSection = noneHtml.slice(noneHtml.indexOf('<h2>[4]'), noneHtml.indexOf('<h2>Evidence</h2>'));
+    expect(noneSection).toBe(
+      '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>State ZZ, SYNTHETIC statute ZZ 1-2-3: payment due 33 calendar days after the payer received the claim (release 900001).</p><p>The rule does not apply to: self_funded_plans.</p>\n',
+    );
+    const noRule = assemblePacket(assemblyInput({ interest: { state: 'ZZ', releaseNo: 900001, record: null } }));
+    const noRuleHtml = printedOf(noRule, draftNarrative(noRule), rowsOf(noRule));
+    expect(noRuleHtml.slice(noRuleHtml.indexOf('<h2>[4]'), noRuleHtml.indexOf('<h2>Evidence</h2>'))).toBe(
+      '<h2>[4] Prompt-pay interest (its own line, not part of the variance)</h2><p>Prompt-pay interest is not stated in this request.</p>\n',
+    );
+    for (const printed of [html, maximal, noneHtml, noRuleHtml]) {
+      // "not stated" is said only of the whole request when no rule is on file, never of a line or a date.
+      expect(htmlText(printed).replace('Prompt-pay interest is not stated in this request.', '')).not.toMatch(/not stated/i);
+      for (const phrase of FORBIDDEN) {
+        expect(htmlText(printed)).not.toMatch(phrase);
+      }
+    }
+    // The CSV's interest cell is empty for a line whose interest code did not compute (each row's patient name holds a
+    // comma, so the cells after it are one further along a plain split).
+    const rows = packetCsv(exported).split('\r\n');
+    expect(rows[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('0.57');
+    expect(rows[2]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('');
+    expect(rows[2]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('2036-04-05');
+  });
+
+  it('T9: [2] names the Medicare fee schedule only when the release supplied one', () => {
+    const percent = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PERCENT_OF_MEDICARE', parameters: { percentage: '110' } }) }));
+    const lesserOfPercent = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'PERCENT_OF_MEDICARE', percentage: '100' } } }) }));
+    const lesserOfFixed = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'LESSER_OF', parameters: { schedule: { method: 'FIXED_SCHEDULE', amount_cents: '5000' } } }) }));
+    const perVisit = assemblePacket(assemblyInput({ citation: contractCitation({ method: 'PER_VISIT', parameters: { amount_cents: '9000' } }) }));
+    const regulation = assemblePacket(assemblyInput({ citation: REGULATION, contractDocuments: [] }));
+    const schedule = 'Payment rules and the Medicare fee schedule in effect for the service dates: release 900001';
+    const rules = 'Payment rules in effect for the service dates: release 900001';
+    for (const packet of [regulation, percent, lesserOfPercent]) {
+      expect(releaseText(packet, [900001])).toBe(schedule);
+      const printed = printedOf(packet, draftNarrative(packet), rowsOf(packet));
+      expect(printed).toContain(`<p>[2] ${schedule}</p>`);
+      // The rule release's evidence item reads as [2] does.
+      expect(printed).toMatch(new RegExp(`<li>\\[\\d+\\] ${schedule}</li>`));
+    }
+    for (const packet of [content, lesserOfFixed, perVisit]) {
+      expect(releaseText(packet, [900001])).toBe(rules);
+      expect(printedOf(packet, draftNarrative(packet), rowsOf(packet))).toContain(`<p>[2] ${rules}</p>`);
+    }
+  });
+
+  it('prints an earlier tp-packet/1 version without a dispute window section', () => {
     const { deadline: _deadline, lines, ...rest } = content;
     const earlier: PacketContentV1 = { ...rest, format: 'tp-packet/1', lines: lines.map(({ deadline: _line, calculation: _calculation, ...item }) => item) };
-    const printed = packetHtml(insertIdentifiers(earlier, exported.narrative, identifiers), approval);
-    expect(printed).not.toContain('The dispute is filed by');
+    const printed = printedOf(earlier, exported.narrative, identifiers);
+    expect(printed).not.toContain('Dispute window');
     expect(printed).toContain('Line schedule');
-    for (const cause of DEADLINE_UNVERIFIED_CAUSES) {
-      expect(deadlineText({ status: 'unverified', cause })).toMatch(/^not verified: .{20,}/);
-    }
-    // Best-option audit #5: a contract window counted another way, and a Medicare Advantage line before the route is confirmed (Q34).
-    expect(deadlineText({ status: 'unverified', cause: 'CONTRACT_WINDOW_RULE_NOT_COMPUTED' })).toBe(
-      'not verified: the contract counts its window in a unit or from a date the product does not compute yet',
-    );
-    expect(deadlineText({ status: 'unverified', cause: 'MA_ROUTE_UNCONFIRMED' })).toBe(
-      'not verified: the contract specialist has not confirmed which dispute route applies to a Medicare Advantage non-contracted line',
-    );
-    expect(deadlineText({ status: 'verified', cause: null })).toBe('verified');
-    expect(deadlineText({ status: 'not_applicable', cause: null })).toBe('no window');
-  });
-
-  it('has a sentence for every evidence gap', () => {
-    for (const code of GAP_CODES) {
-      expect(gapText(code).length).toBeGreaterThan(10);
-    }
   });
 });
 
-describe('packetCsv', () => {
-  it('lists each line with its identifiers, amounts in dollars, its interest apart and its trace, formulas refused', () => {
-    const rows = packetCsv(exported).split('\r\n');
+describe('packetCsv: the payer’s schedule', () => {
+  it('T6: lists each line with its identifiers but the patient control number, amounts in dollars, interest apart, the window and the calculation in words, formulas refused, and nothing internal', () => {
+    const csv = packetCsv(exported);
+    const rows = csv.split('\r\n');
+    expect(PACKET_CSV_COLUMNS).toEqual([
+      'row',
+      'payer_claim_control_number',
+      'patient_name',
+      'member_id',
+      'service_date',
+      'procedure_code',
+      'modifiers',
+      'units',
+      'expected',
+      'observed',
+      'variance',
+      'paid',
+      'paid_on',
+      'received_on',
+      'interest',
+      'window_ends_on',
+      'calculation_method',
+      'unrounded',
+      'rounded',
+      'patient_share',
+    ]);
     expect(rows[0]).toBe(PACKET_CSV_COLUMNS.join(','));
-    expect(rows[1]).toBe(
-      `1,SYNCCN0001,'=SYNPCN0001,"SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,priced_line:30000000-0000-4000-8000-000000000001,2036-04-05,verified,contract,FIXED_SCHEDULE,100.00,100.00,14.00,${'a'.repeat(64)}`,
-    );
+    expect(rows[1]).toBe(`1,SYNCCN0001,"'=SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,2036-04-05,Fixed schedule,100.00,100.00,14.00`);
     expect(rows[2]).toContain(',not on the remittance,');
-    // Row 2's interest (its received date unknown) is empty, beside its trace.
-    expect(rows[2]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest'))).toBe('');
     expect(rows.at(-1)).toBe('');
+    expect(csv).not.toMatch(/SYNPCN|trace|sha256|deadline_status|deadline_source|FIXED_SCHEDULE/i);
+    expect(payerCopyLeaks(csv, scanOf(content, narrative, identifiers))).toEqual([]);
+    expect(payerCopyLeaks(packetCsv(maximalExported), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
   });
 });

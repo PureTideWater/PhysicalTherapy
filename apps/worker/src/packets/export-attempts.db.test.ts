@@ -244,6 +244,28 @@ describe('each refusal of the export job', () => {
     await refusedFor(setup, versionId, 'deadline_unverified');
   });
 
+  it('names the correspondence contact missing (audit item #37 part 1, D7, DB2): the job records it, returns without throwing so it is never retried, stores no file and leaves the version unexported', async () => {
+    const practice = await w.practice('attempt-no-contact', {}, { contact: false });
+    const setup: Setup = { practice, caseId: await w.caseOf(practice, 'CAS-08/remit.835', PLAN, MARCH), second: await w.person(practice, 'billing_manager') };
+    const versionId = await approved(setup);
+    await refusedFor(setup, versionId, 'contact_missing');
+    // The handler logs its code and returns: a refusal is not a failed try, so nothing is retried.
+    const logs: Record<string, unknown>[] = [];
+    await expect(packetExportHandler(w.services)({ practice_id: practice.practiceId, packet_version_id: versionId }, context(practice, false, logs))).resolves.toBeUndefined();
+    expect(logs).toEqual([expect.objectContaining({ msg: 'packet not exported', packet_version_id: versionId, error_code: 'PACKET_CORRESPONDENCE_CONTACT_MISSING' })]);
+    expect((await attemptEvents(setup, versionId)).map((event) => [event.action, event.purpose])).toEqual([
+      ['packet_export_refused', 'contact_missing'],
+      ['packet_export_refused', 'contact_missing'],
+    ]);
+    const { rows } = await w.as(practice, practice.manager, (scope) =>
+      scope.client.query<{ exported_at: Date | null; export_pdf_key: string | null; export_csv_key: string | null }>('SELECT exported_at, export_pdf_key, export_csv_key FROM packet_version WHERE id = $1', [versionId]),
+    );
+    expect(rows).toEqual([{ exported_at: null, export_pdf_key: null, export_csv_key: null }]);
+    // A stored value that is not a contact in its stored form refuses alike: it is never read as a default.
+    await w.superuser("UPDATE practice SET settings = settings || jsonb_build_object('correspondence_contact', jsonb_build_object('name', 'SYNTHETIC OFFICE')) WHERE id = $1", [practice.practiceId]);
+    await refusedFor(setup, versionId, 'contact_missing');
+  });
+
   it('names the verifier failing over what it would print', async () => {
     const setup = await cas08('attempt-verifier');
     const versionId = await approved(setup, 'The payer paid these lines short of the contract [3].');

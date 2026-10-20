@@ -60,6 +60,7 @@ export const PACKET_REFUSALS = [
   'stale_version',
   'version_not_found',
   'export_not_downloaded',
+  'narrative_withheld_identifier',
 ] as const;
 export type PacketRefusal = (typeof PACKET_REFUSALS)[number];
 

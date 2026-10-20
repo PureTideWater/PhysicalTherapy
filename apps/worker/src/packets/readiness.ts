@@ -3,6 +3,7 @@ import type { PacketContent } from '@tp/packets';
 import { type DeadlineStatus, packetDeadlineStatus } from '@tp/triage';
 
 import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
+import { contactStateOf } from './correspondence';
 import { statesItsInputs } from './records';
 
 /**
@@ -108,6 +109,8 @@ interface ReadinessRow {
   readonly next_window_passed: boolean;
   readonly pricing: string | null;
   readonly deadline_status: DeadlineStatus | null;
+  readonly contact_present: boolean | null;
+  readonly contact: unknown;
 }
 
 /**
@@ -135,8 +138,10 @@ export async function exportReadiness(client: ScopeClient, request: ExportReadin
                ORDER BY r.received_on DESC, r.created_at DESC, r.id DESC LIMIT 1
             ), false) AS next_window_passed,
             packet_version_pricing_check(v.content) AS pricing,
-            packet_version_deadline_status(p.case_id, v.content) AS deadline_status
+            packet_version_deadline_status(p.case_id, v.content) AS deadline_status,
+            pr.settings ? 'correspondence_contact' AS contact_present, pr.settings -> 'correspondence_contact' AS contact
        FROM packet_version v JOIN packet p ON p.id = v.packet_id JOIN "case" c ON c.id = p.case_id
+            LEFT JOIN practice pr ON pr.id = v.practice_id
       WHERE v.id = $1 AND v.practice_id = $2`,
     [request.versionId, request.practiceId, request.asOf],
   );
@@ -183,6 +188,11 @@ export async function exportReadiness(client: ScopeClient, request: ExportReadin
     if (version.content.format === 'tp-packet/2' && !(await statesItsInputs(client, request.practiceId, version.case_id, version.content))) {
       reasons.push('inputs_differ');
     }
+  }
+  // The correspondence contact the payer's copy prints (D7): anything but a contact in its stored form refuses, and a
+  // practice the caller cannot see reads as none.
+  if (contactStateOf(version.contact_present === true, version.contact).state !== 'set') {
+    reasons.push('contact_missing');
   }
   const [first, ...rest] = reasons;
   return first === undefined ? { outcome: 'ready' } : { outcome: 'refused', reasons: [first, ...rest] };

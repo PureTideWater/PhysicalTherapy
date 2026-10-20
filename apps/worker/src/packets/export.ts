@@ -2,12 +2,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, packetExportKey, recordAuditEvent } from '@tp/db/runtime';
-import { type PacketContent, type VerifierReport, insertIdentifiers, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { type PacketContent, type VerifierReport, insertIdentifiers, narrativeFacts, packetReference, verifyNarrative } from '@tp/packets';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
 import type { DocumentStore } from '../storage/documents';
 import { type TriageJobContext, todayUtc } from '../triage/execute';
+import { practiceCorrespondenceContact } from './correspondence';
 import { packetCsv } from './csv';
 import { packetHtml } from './html';
 import { scheduleIdentifiers } from './identifiers';
@@ -44,6 +45,13 @@ export { exportDeadlineStatus } from './readiness';
  * packet_export_failed on the last), written by the handler in a transaction of its own before the error is
  * rethrown, its purpose the failure's code. Codes and the version's ID only: no words, no patient data. The
  * packet page reads the latest (packet_version_export_attempt()). The logs keep the error code only.
+ *
+ * Audit item #37 part 1 (the founder's rulings of 2026-10-20; docs/adr/0061): the PDF and the CSV are the payer's
+ * copy (./html.ts, ./csv.ts). The job reads no login and no approver for them (D13): the version's approval date (its
+ * UTC calendar date), its reference (packetReference(approved_sha256), D5) and the practice's correspondence contact,
+ * read again here after the readiness and before any narrative is decrypted or identifier read; a contact that is
+ * not set by then (a concurrent change) refuses the export with contact_missing too (D7, step 3), recorded and never
+ * retried.
  */
 
 export interface PacketExportServices {
@@ -88,16 +96,11 @@ const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest(
 
 interface ExportRow {
   readonly packet_id: string;
-  readonly version_no: number;
   readonly content: PacketContent;
   readonly narrative: string;
-  readonly content_sha256: string;
   readonly verifier_report: VerifierReport;
   readonly approved_at: Date | null;
-  readonly approved_alone: boolean;
-  readonly drafted_by_email: string | null;
-  readonly approved_by_email: string | null;
-  readonly regulation_confirmed_by_email: string | null;
+  readonly approved_sha256: string | null;
 }
 
 /** The job's refusal of a version, as an audit event in the export's own transaction: the version and one code, nothing else. */
@@ -132,9 +135,8 @@ export async function exportPacketVersion(
       return { outcome: 'not_exportable', reason: readiness.reasons[0] };
     }
     const { rows } = await scope.client.query<ExportRow>(
-      `SELECT v.packet_id, v.version_no, v.content, v.narrative, v.content_sha256, v.verifier_report, v.approved_at, v.approved_alone,
-              people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email
-         FROM packet_version v, LATERAL packet_version_people(v.id) people
+      `SELECT v.packet_id, v.content, v.narrative, v.verifier_report, v.approved_at, v.approved_sha256
+         FROM packet_version v
         WHERE v.id = $1 AND v.practice_id = $2`,
       [versionId, practiceId],
     );
@@ -142,10 +144,16 @@ export async function exportPacketVersion(
     if (version === undefined) {
       return { outcome: 'missing' };
     }
-    if (version.approved_at === null) {
+    if (version.approved_at === null || version.approved_sha256 === null) {
       // The readiness read it approved in this transaction, and an approval is never taken back; this does not happen.
       await recordRefusal(scope, context, practiceId, versionId, 'not_approved');
       return { outcome: 'not_exportable', reason: 'not_approved' };
+    }
+    // The contact the payer's copy prints, read in this transaction before anything is decrypted (D7, step 3).
+    const contact = await practiceCorrespondenceContact(scope.client, practiceId);
+    if (contact.state !== 'set') {
+      await recordRefusal(scope, context, practiceId, versionId, 'contact_missing');
+      return { outcome: 'not_exportable', reason: 'contact_missing' };
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
@@ -157,15 +165,8 @@ export async function exportPacketVersion(
       return { outcome: 'not_exportable', reason: 'verifier_failed' };
     }
     const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
-    const html = packetHtml(exported, {
-      versionNo: version.version_no,
-      versionSha256: version.content_sha256,
-      draftedBy: version.drafted_by_email,
-      approvedBy: version.approved_by_email,
-      approvedAt: version.approved_at.toISOString(),
-      approvedAlone: version.approved_alone,
-      regulationConfirmedBy: version.regulation_confirmed_by_email,
-    });
+    // The payer's copy: the approval's UTC date, the reference its approved hash gives, the contact (D4 to D6, D13).
+    const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference: packetReference(version.approved_sha256), contact: contact.contact });
     let pdf: Uint8Array;
     try {
       pdf = await services.pdf.render(html);

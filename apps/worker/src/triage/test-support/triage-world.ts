@@ -21,6 +21,7 @@ import { syntheticPdf } from '@tp/contracts/testing';
 import { type KeyProvider, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { formatCents, parseCents } from '@tp/money';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 
 import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
 import { type Practice, PricingWorld, SETTINGS, WINDOW_QUOTE_RULE, windowQuote } from '../../price/test-support/pricing-world';
@@ -37,6 +38,11 @@ import { type TriageOutcome, executeTriage } from '../execute';
  * window cited on page 1 and verified by the specialist unless a test leaves it uncited (D17 a), and triage run
  * in the practice's job scope.
  */
+
+export interface PracticeOptions {
+  /** Whether the practice has the SYNTHETIC correspondence contact set (true unless false). */
+  readonly contact?: boolean;
+}
 
 export interface FixedContract {
   readonly contractId: string;
@@ -100,9 +106,13 @@ export class TriageWorld {
     return { documents: this.reports, keys: this.keys, pdf: this.pdf };
   }
 
-  /** A practice with the SYNTHETIC pricing settings and the given triage settings. */
-  practice(label: string, settings: object = {}): Promise<Practice> {
-    return this.pricing.practice(label, { ...SETTINGS, ...settings });
+  /**
+   * A practice with the SYNTHETIC pricing settings and the given triage settings, and the SYNTHETIC correspondence
+   * contact every payer's copy prints (audit item #37 part 1, D6), unless `contact: false` leaves it out (the export's
+   * refusal contact_missing, D7).
+   */
+  practice(label: string, settings: object = {}, options: PracticeOptions = {}): Promise<Practice> {
+    return this.pricing.practice(label, { ...SETTINGS, ...(options.contact === false ? {} : { [CORRESPONDENCE_CONTACT_KEY]: SYNTHETIC_CORRESPONDENCE_CONTACT }), ...settings });
   }
 
   /** Runs `run` as `actorId` in the practice's request scope, with a resolver over this world's contract documents. */

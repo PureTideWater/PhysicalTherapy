@@ -5,7 +5,7 @@ import { MemorySealedBytes } from '../../intake/test-support/memory-bytes';
 import type { Practice } from '../../price/test-support/pricing-world';
 import { DocumentStore, collect } from '../../storage/documents';
 import { todayUtc } from '../../triage/execute';
-import { TriageWorld } from '../../triage/test-support/triage-world';
+import { type PracticeOptions, TriageWorld } from '../../triage/test-support/triage-world';
 import { type PacketExportOutcome, type PacketExportServices, exportPacketVersion } from '../export';
 import type { PacketExportFile } from '../downloads';
 import { attestAsReviewer, downloadExportAs, grantedReviewer } from './reviewer';
@@ -60,9 +60,9 @@ export class PacketWorld {
     return { documents: this.exports, keys: this.keys, pdf: this.triage.pdf };
   }
 
-  /** A practice whose cases open at 10.00 (the CAS fixtures' patterns are small). */
-  practice(label: string, settings: object = {}): Promise<Practice> {
-    return this.triage.practice(label, { case_materiality_cents: '1000', ...settings });
+  /** A practice whose cases open at 10.00 (the CAS fixtures' patterns are small), with the SYNTHETIC correspondence contact unless `contact: false`. */
+  practice(label: string, settings: object = {}, options: PracticeOptions = {}): Promise<Practice> {
+    return this.triage.practice(label, { case_materiality_cents: '1000', ...settings }, options);
   }
 
   private readonly reviewers = new Map<string, string>();
@@ -157,9 +157,9 @@ export class PacketWorld {
     return { caseId, versionId: contract.versionId, opened };
   }
 
-  /** The export job's code, in the practice's job scope. */
-  export(target: Practice, versionId: string): Promise<PacketExportOutcome> {
-    return exportPacketVersion(this.triage.pricing.jobContext(target.practiceId), this.services, target.practiceId, versionId);
+  /** The export job's code, in the practice's job scope (with the world's services unless others are given, a recording renderer say). */
+  export(target: Practice, versionId: string, services: PacketExportServices = this.services): Promise<PacketExportOutcome> {
+    return exportPacketVersion(this.triage.pricing.jobContext(target.practiceId), services, target.practiceId, versionId);
   }
 
   /** A stored export file's plaintext. */
