@@ -250,6 +250,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'tools/release/scale.test.ts',
     'tools/test/workflows.test.ts',
     'apps/web/src/lib/screening/screening.large.db.test.ts',
+    'apps/web/src/lib/screening/result-page.large.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
   ]),
   'SCR-09': none(6, 'The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.', [
     'apps/worker/src/price/keyed-release.test.ts',
@@ -257,6 +259,33 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/screening/oracle-imports.test.ts',
     'apps/worker/src/screening/release-cache.db.test.ts',
   ]),
+  'SCR-10': none(6, 'A screening outcome is written by the database from the rows the tests submit in memory; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-11': none(6, 'A kept summary is frozen by the database from a screening the tests run in memory; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/labels.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-12': none(6, 'Attribution is a landing URL, a cookie and form fields the tests send; no file.', [
+    'apps/web/src/lib/http/attribution.test.ts',
+    'apps/web/src/proxy.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-13': none(6, 'The opened signal is a page script and a route the tests drive; no file.', [
+    'apps/web/src/components/screening/opened-signal.test.tsx',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-14': none(6, 'A replacement is two screenings the tests submit in memory; no file.', ['packages/db/src/screening.db.test.ts']),
   'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
   'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
     'apps/worker/src/worker.test.ts',

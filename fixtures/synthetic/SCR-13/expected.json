@@ -1,0 +1,21 @@
+{
+  "case": "SCR-13",
+  "module": "SCR",
+  "title": "A screening result opened by a person",
+  "assertion": "The page's GET records nothing; the signal goes once, after two visible seconds and a first interaction (focusin among them), and records the run's first open, the outcome's band and the summary's; it answers alike for any link; a conversion records the open when no signal came",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/web/src/components/screening/opened-signal.test.tsx",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The opened signal is a page script and a route the tests drive; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,22 @@
+{
+  "case": "SCR-10",
+  "module": "SCR",
+  "title": "A screening's counts-only outcome (audit #57; the founder's rulings of 2026-10-20)",
+  "assertion": "Written at submission, refusal, completion and failure by the database alone: stage, month, source, the channel computed from the medium and click kind, a listed campaign or other, bands of the row counts, whole-percent shares summing 97 to 100, the anomaly and dollar bands, the open band and the conversion; no name, email, ZIP, exact count, date or dollar figure; unlinked on expiry and replacement, then sealed; never deleted; two outcomes of a practice whose row differs by one claim line differ in no count",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/screening.db.test.ts",
+    "apps/worker/src/screening/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A screening outcome is written by the database from the rows the tests submit in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

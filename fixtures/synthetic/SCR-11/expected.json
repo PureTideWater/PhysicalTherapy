@@ -1,0 +1,23 @@
+{
+  "case": "SCR-11",
+  "module": "SCR",
+  "title": "A converted or consenting practice's kept summary",
+  "assertion": "Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/screening.db.test.ts",
+    "apps/worker/src/screening/screening.db.test.ts",
+    "apps/web/src/lib/screening/labels.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A kept summary is frozen by the database from a screening the tests run in memory; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

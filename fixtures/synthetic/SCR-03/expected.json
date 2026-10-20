@@ -2,7 +2,7 @@
   "case": "SCR-03",
   "module": "SCR",
   "title": "Screening 30 days after its upload",
-  "assertion": "Link refuses it; the expiry job deletes the run and its results; the conversion stays",
+  "assertion": "Link refuses it; the expiry job deletes the run and its results; the conversion stays, and so do the screening's counts-only outcome (unlinked) and a kept summary (SCR-10, SCR-11)",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [

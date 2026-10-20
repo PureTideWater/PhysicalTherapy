@@ -1,0 +1,24 @@
+{
+  "case": "SCR-12",
+  "module": "SCR",
+  "title": "Attribution on the screening and the audit request",
+  "assertion": "The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); both forms keep how the prospect heard of us (closed list, optional), the cookie's codes and click kind, and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/web/src/lib/http/attribution.test.ts",
+    "apps/web/src/proxy.test.ts",
+    "packages/db/src/screening.db.test.ts",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/src/lib/routes/onboarding-routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Attribution is a landing URL, a cookie and form fields the tests send; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
