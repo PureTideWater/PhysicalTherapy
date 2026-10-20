@@ -56,7 +56,7 @@ describe('packetHtml', () => {
     expect(html).toContain('<p data-deadline="verified"><strong>The dispute is filed by 2036-04-05</strong>');
     expect(html).toContain('deadline verified (2 of 2 lines’ windows verified)');
     expect(html).toContain('a dispute window of 3650 days');
-    expect(html).toContain('<blockquote>Disputes are raised within 3650 days of the remittance.</blockquote>');
+    expect(html).toContain('<blockquote>Disputes are raised within 3650 days of the payment date.</blockquote>');
     expect(html).toContain('citation checked against its page 2026-01-02');
     expect(html).toContain('Each line’s window and calculation, as its trace recorded it');
     // The trace's codes in words: the method, each step and the rounding rule.

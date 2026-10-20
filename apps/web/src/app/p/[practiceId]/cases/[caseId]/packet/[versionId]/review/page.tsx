@@ -140,7 +140,7 @@ export default async function PacketReviewPage(props: Props) {
           <CardTitle>Line schedule</CardTitle>
           <CardDescription>Identifiers show as placeholders here; the exported files carry them.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <CardContent className="flex min-w-0 flex-col gap-4">
           <LineSchedule content={content} practiceId={practiceId} />
           <CalculationTable content={content} />
         </CardContent>
@@ -150,7 +150,7 @@ export default async function PacketReviewPage(props: Props) {
           <CardTitle>Attestation</CardTitle>
           <CardDescription>
             {review.attestation === null ? 'Confirm every item. You attest over these files: ' : `Attested ${utc(review.attestation.at)}${review.attestation.byViewer ? ' by you' : ''} over these files: `}
-            <span className="font-mono text-xs">PDF {review.exportSha256 ?? '—'}</span>, <span className="font-mono text-xs">CSV {review.exportCsvSha256 ?? '—'}</span>.
+            PDF <Hash value={review.exportSha256} />, CSV <Hash value={review.exportCsvSha256} />.
           </CardDescription>
         </CardHeader>
         <CardContent>

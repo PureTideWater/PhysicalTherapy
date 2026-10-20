@@ -127,12 +127,12 @@ export interface ReportAnomaly {
 /**
  * What makes the deadlines of a report's DEADLINE_UNVERIFIED lines verified, by what holds them back (D17 a; audit item
  * #5): a contract window is cited and checked on a corrected version; a contract window cited with a rule the product
- * does not compute yet (business days, months, or counted from another date than the remittance) waits, since the
- * date the product would show may be later than the contract's; a contract silent on its window has its window
- * entered and cited there too, since the release's commercial default is never verified; a Medicare window needs a
- * rule release whose record is verified to L2; and a Medicare Advantage non-contracted window waits until the
- * contract specialist confirms which dispute route applies (golden QUESTIONS Q34). Each remedy that applies, in that
- * order, once.
+ * does not compute yet (business days, months, or counted from another date than the payment date) waits, and the
+ * report states no date for it, since the date the engine counts may be earlier or later than the contract's; a
+ * contract silent on its window has its window entered and cited there too, since the release's commercial default is
+ * never verified; a Medicare window needs a rule release whose record is verified to L2; and a Medicare Advantage
+ * non-contracted window waits for the product-wide answer on its dispute route (golden QUESTIONS Q34). Each remedy that
+ * applies, in that order, once.
  */
 export function deadlineRemedy(causes: readonly (DeadlineUnverifiedCause | null)[]): string {
   const contract = causes.some((cause) => cause === null || (cause.startsWith('CONTRACT_') && cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED') || cause === 'NEXT_LEVEL_UNCITED');
@@ -144,13 +144,15 @@ export function deadlineRemedy(causes: readonly (DeadlineUnverifiedCause | null)
     ...(contract ? ['For a contract window, have the contract specialist cite the contract’s dispute window on its page and check it on a corrected version, then sign the version off and price the lines again'] : []),
     ...(notComputed
       ? [
-          'For a contract window counted in business days or months, or from a date other than the remittance date, the product does not compute that rule yet, so the date it shows may be later than the contract’s: these lines wait until it does, and the contract’s own deadline is the one to keep',
+          'For a contract window counted in business days or months, or from a date other than the payment date, the product does not compute that rule yet, so it states no deadline for these lines (the date it would count may be earlier or later than the contract’s): keep the contract’s own deadline; these lines wait until the product computes that rule',
         ]
       : []),
     ...(silent ? ['For a contract silent on its window, the release’s default is never verified: have the contract specialist enter the window the contract states, cite it and check it on a corrected version'] : []),
     ...(release ? ['For a Medicare window, the lines are priced again under a rule release whose Medicare dispute windows a second reader verified to level L2'] : []),
     ...(route
-      ? ['For a Medicare Advantage non-contracted line, the deadline waits until the contract specialist confirms which dispute route applies (the plan’s own payment dispute policy or a reconsideration; golden QUESTIONS Q34): no such packet goes out until then']
+      ? [
+          'For a Medicare Advantage non-contracted line, the deadline waits for the product-wide answer on which dispute route applies (the plan’s own payment dispute policy or a Medicare redetermination; golden question Q34), which the contract specialist is answering and a later release of the product applies; nothing in this practice changes it, and no packet of such a line goes out until then: work the plan’s own dispute policy outside the product',
+        ]
       : []),
   ];
   return remedies.join('. ');
@@ -270,6 +272,8 @@ interface LineRow {
   readonly contract_version_id: string | null;
   readonly rate_record_id: string | null;
   readonly mapping_kind: string | null;
+  /** Whether the mapping it priced under is still the plan's mapping in force on its service date (payer_plan_mapping_in_force()). */
+  readonly mapping_in_force: boolean;
   readonly version_status: string | null;
   /** Whether the version still covers the line's service date (true without a version). */
   readonly version_covers_service: boolean;
@@ -356,6 +360,7 @@ async function runLines(scope: PracticeScope<ScopeClient>, input: GatherInput): 
            )
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
                   p.unpriced_reason, p.window_ends_on::text, p.contract_version_id, p.rate_record_id, m.mapping_kind, v.status AS version_status,
+                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
                   (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
                      AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
                   EXISTS (SELECT 1 FROM pricing_run r JOIN rule_release_withdrawal w ON w.release_no = r.release_no WHERE r.id = p.pricing_run_id) AS release_withdrawn,
@@ -466,6 +471,8 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   );
 
   const lines: ReportLine[] = rows.map((row) => {
+    // A contract window cited in a rule the engine does not compute yet has no end the report can state or judge.
+    const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
     const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
     const judged = judgeLine(
@@ -473,9 +480,11 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
         varianceCents: variance,
         windowEndsOn: row.window_ends_on,
         deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
+        windowRuleComputed,
         claimReversed: row.reversed,
         claimSuperseded: row.superseded,
         mappingKind: row.mapping_kind,
+        mappingInForce: row.mapping_in_force,
         contractVersionStatus: row.version_status,
         contractVersionCoversService: row.version_covers_service,
         releaseWithdrawn: row.release_withdrawn,
@@ -529,7 +538,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       validated_cents: status === 'with_visit' || validatedCents === null ? null : centsToString(validatedCents),
       visit_variance_cents: row.visit_variance_cents,
       unpriced_reason: row.unpriced_reason,
-      window_ends_on: row.window_ends_on,
+      window_ends_on: windowRuleComputed ? row.window_ends_on : null,
       stage: row.stage ?? '',
       status,
       reasons,
@@ -716,9 +725,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       reason: null,
       lines: maCases.reduce((total, item) => total + item.actionable_lines, 0),
       charge_cents: null,
-      detail: `${String(maCases.length)} Medicare Advantage non-contracted case(s) price from the public fee schedule under 42 CFR 422.214; their dispute deadline is not verified until the contract specialist confirms which dispute route applies (golden QUESTIONS Q34), so no packet of theirs is exported until then`,
+      detail: `${String(maCases.length)} Medicare Advantage non-contracted case(s) price from the public fee schedule under 42 CFR 422.214; their dispute deadline is not verified until the product-wide question of which dispute route applies is answered (golden question Q34), so no packet of theirs is exported until then`,
       remedy:
-        'The contract specialist confirms which dispute route Medicare Advantage non-contracted lines take (the plan’s own payment dispute policy or a reconsideration), and a reimbursement specialist confirms the regulation applies to each case, before a packet goes out',
+        'Which dispute route Medicare Advantage non-contracted lines take (the plan’s own payment dispute policy or a Medicare redetermination) is a product-wide question the contract specialist is answering, which a later release of the product applies; nothing in this practice changes it. Until then, work the plan’s own dispute policy outside the product; a reimbursement specialist also confirms the regulation applies to each case before a packet goes out',
     });
   }
   if (settings.pursuit === null) {

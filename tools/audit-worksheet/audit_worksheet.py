@@ -10,8 +10,9 @@ lines short of the mode by more than the threshold; an investigatory range); the
 validated to actionable on the triage date (per-line materiality, the window open on that date, and its
 deadline verified: a contract line's only when its contract states where its dispute window is written,
 the page and its words, which the specialist cites and verifies, reconciliation-001 D17 a, and only when
-the rule those words state is the one the product computes, calendar days after the remittance date: a
-window counted another way stays unverified until the engine computes it, best-option audit #5);
+the rule those words state is the one the product computes, calendar days after the payment date (BPR16): a
+window counted another way stays unverified until the engine computes it, and no end is stated or judged for it,
+best-option audit #5);
 cases by payer pattern at or above the case materiality; the pursuit-cost estimate from the
 practice's settings; and the headline of three numbers with flagged and validated below.
 
@@ -55,14 +56,15 @@ MODIFIERS = ["GP"]
 PLACE_OF_SERVICE = "11"
 BEHAVIOR = "BELOW_CONTRACT_RATE"  # a fixed schedule paid below its amount: no other behavior applies
 NOT_ACTIONABLE_ORDER = [
-    "BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "DEADLINE_UNVERIFIED", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "VERSION_NOT_SIGNED_OFF",
-    "VERSION_NOT_IN_FORCE", "RELEASE_WITHDRAWN", "BELOW_CASE_MATERIALITY",
+    "BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "DEADLINE_UNVERIFIED", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "MAPPING_NOT_IN_FORCE",
+    "VERSION_NOT_SIGNED_OFF", "VERSION_NOT_IN_FORCE", "RELEASE_WITHDRAWN", "BELOW_CASE_MATERIALITY",
 ]
 # A contract window's evidence names its unit and what it counts from, from these lists (best-option audit #5);
-# the product computes one rule, its days as calendar days after the remittance date (BPR16).
+# the product computes one rule, its days as calendar days after the payment date (BPR16, the check or EFT date;
+# remittance_date is the remittance advice's own date, which it does not count from yet).
 WINDOW_UNITS = ["calendar_days", "business_days", "months"]
 WINDOW_STARTS = ["date_of_service", "remittance_date", "payment_date", "receipt_date"]
-COMPUTED_WINDOW_RULE = ("calendar_days", "remittance_date")
+COMPUTED_WINDOW_RULE = ("calendar_days", "payment_date")
 
 
 class InputsError(Exception):
@@ -110,15 +112,27 @@ def read_inputs(directory):
     return inputs
 
 
-def window_verified(plan):
-    """Whether a contract plan's dispute window is verified: cited, with the rule the product computes."""
+def cited_rule(plan):
+    """The rule a contract plan's window evidence states, as (unit, start); None while the window is not cited."""
     evidence = plan["contract"].get("dispute_window_evidence")
     if evidence is None:
-        return False
+        return None
     unit, start = evidence.get("unit"), evidence.get("measured_from")
     if unit not in WINDOW_UNITS or start not in WINDOW_STARTS:
         raise InputsError(f"plan {plan['key']}: the window's evidence names its unit ({', '.join(WINDOW_UNITS)}) and what it counts from ({', '.join(WINDOW_STARTS)})")
-    return (unit, start) == COMPUTED_WINDOW_RULE
+    return (unit, start)
+
+
+def window_verified(plan):
+    """Whether a contract plan's dispute window is verified: cited, with the rule the product computes."""
+    return cited_rule(plan) == COMPUTED_WINDOW_RULE
+
+
+def window_judged(plan):
+    """Whether the window's end is judged: not for a window cited in a rule the product does not compute, whose
+    calendar-day end from the payment date is not the contract's (no end is stated for it, nor WINDOW_PASSED)."""
+    rule = cited_rule(plan)
+    return rule is None or rule == COMPUTED_WINDOW_RULE
 
 
 def expand_lines(inputs):
@@ -172,6 +186,9 @@ def compute(inputs):
         # A contract window is a verified deadline only when the contract says where it is written (D17 a), and
         # its words state the rule the product computes (best-option audit #5).
         line["deadline_verified"] = window_verified(plan)
+        if not window_judged(plan):
+            line["window"] = None
+            continue
         # The report must not depend on the triage date within the stable range.
         if stable_from <= line["window"] < stable_to:
             raise InputsError(f"{line['claim']}: its window ends inside the stable range")
@@ -222,7 +239,7 @@ def compute(inputs):
             continue
         if line["variance"] < line_materiality:
             line["reasons"].append("BELOW_LINE_MATERIALITY")
-        if line["window"] < judged_on:
+        if line["window"] is not None and line["window"] < judged_on:
             line["reasons"].append("WINDOW_PASSED")
         if not line["deadline_verified"]:
             line["reasons"].append("DEADLINE_UNVERIFIED")

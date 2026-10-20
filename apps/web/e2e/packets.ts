@@ -75,7 +75,7 @@ export async function openPacketCase(practiceId: string): Promise<string> {
 const PLAN = 'CE:SYNPLAN-FIX-ONE';
 const QUOTE = '97110 is paid $50.00 per unit';
 const WINDOW_DAYS = 3650;
-const WINDOW_QUOTE = `Disputes are raised within ${String(WINDOW_DAYS)} days of the remittance.`;
+const WINDOW_QUOTE = `Disputes are raised within ${String(WINDOW_DAYS)} days of the payment date.`;
 const PAGES = [
   ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', WINDOW_QUOTE],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', QUOTE],
@@ -228,7 +228,7 @@ export async function citedAmendmentCase(practiceId: string, priorVersionId: str
           await approveRateRecordField(context, { practiceId, rateRecordId: record.id, field });
         }
       }
-      await citeDisputeWindow(context, { practiceId, versionId: amendment, citation: { documentId, page: 1, quote: WINDOW_QUOTE }, rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' } });
+      await citeDisputeWindow(context, { practiceId, versionId: amendment, citation: { documentId, page: 1, quote: WINDOW_QUOTE }, rule: { unit: 'calendar_days', measuredFrom: 'payment_date' } });
       await verifyDisputeWindow(context, { practiceId, versionId: amendment });
       await approveVersion(context, { practiceId, versionId: amendment });
     });

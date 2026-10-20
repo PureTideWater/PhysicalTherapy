@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { type DataKey, type KeyProvider, type PracticeScope, type ScopeClient, readDatabaseUrl, recordAuditEvent, withJobScope } from '@tp/db';
+import { type DataKey, type KeyProvider, type PracticeScope, type ScopeClient, readDatabaseUrl, recordAuditEvent, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -129,6 +129,16 @@ function context(practice: Practice, lastAttempt: boolean, logs: Record<string, 
     lastAttempt,
   };
 }
+
+/** An audit event written straight into audit_event on the web's login by a service actor (a random ID) in the practice's scope. */
+const webService = (setup: Setup, action: string, purpose: string | null, versionId: string) =>
+  withPracticeScope(w.app, { actorId: randomUUID(), practiceIds: [setup.practice.practiceId] }, (scope) =>
+    scope.client.query(
+      `INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, purpose, request_id)
+       VALUES (app_actor_id(), 'service', $1, 'packet_version', $2, $3, $4, $5)`,
+      [action, versionId, setup.practice.practiceId, purpose, randomUUID()],
+    ),
+  );
 
 /** The latest attempt as the packet page reads it, as `actorId`. */
 const attempt = (setup: Setup, actorId: string, versionId: string) =>
@@ -359,6 +369,41 @@ describe('the events', () => {
     expect(await errorOf(job(event('packet_export_refused', 'case_changed', otherVersionId)))).toMatchObject({ code: '23514' });
     expect(await attemptEvents(setup, versionId)).toHaveLength(PACKET_EXPORT_REFUSALS.length + 2 * PACKET_EXPORT_FAILURES.length);
     expect(await attemptEvents(other, otherVersionId)).toEqual([]);
+    // A service actor on the web's login is not the job: only the worker's own login records an attempt (app_session_is_job()). Written
+    // as raw SQL, since recordAuditEvent() refuses a practice outside such an actor's scope before the database is asked.
+    expect(await errorOf(webService(setup, 'packet_export_refused', 'case_changed', versionId))).toMatchObject({
+      code: '42501',
+      message: "a packet export's refusal or failure is recorded by the export job on the worker's own login",
+    });
+  });
+
+  it('cannot hide a refusal behind a request: a request is a person’s who may export PHI, never the job’s, and the page counts only those', async () => {
+    const setup = await cas08('attempt-mask');
+    const versionId = await approved(setup);
+    const read = async () => (await attempt(setup, setup.practice.manager, versionId)).map((row) => ({ state: row.state, code: row.code }));
+    await requested(setup, versionId);
+    await exportPacketVersion(context(setup.practice, false), w.services, setup.practice.practiceId, versionId, { asOf: '2036-12-31' });
+    expect(await read()).toEqual([{ state: 'refused', code: 'window_passed' }]);
+    const request = (scope: PracticeScope<ScopeClient>) =>
+      recordAuditEvent(scope, { action: 'packet_export_requested', objectType: 'packet_version', objectId: versionId, practiceId: setup.practice.practiceId, requestId: randomUUID() });
+    // The job's login records no request, so it cannot turn its own refusal back into "in progress" (and then "failed").
+    expect(await errorOf(withJobScope(w.worker, { jobId: randomUUID(), practiceId: setup.practice.practiceId }, request))).toMatchObject({ code: '42501' });
+    // Nor does a service actor on the web's login, nor a person who drafts packets but does not export PHI.
+    expect(await errorOf(webService(setup, 'packet_export_requested', null, versionId))).toMatchObject({ code: '42501' });
+    const analyst = await w.person(setup.practice, 'analyst');
+    expect(await errorOf(w.as(setup.practice, analyst, request))).toMatchObject({ code: '42501' });
+    // Nor anyone of another version than a packet version of the event's practice.
+    expect(
+      await errorOf(
+        w.as(setup.practice, setup.practice.manager, (scope) =>
+          recordAuditEvent(scope, { action: 'packet_export_requested', objectType: 'case', objectId: setup.caseId, practiceId: setup.practice.practiceId, requestId: randomUUID() }),
+        ),
+      ),
+    ).toMatchObject({ code: '23514' });
+    expect(await read()).toEqual([{ state: 'refused', code: 'window_passed' }]);
+    // The billing manager asking again is a new attempt.
+    await requested(setup, versionId);
+    expect(await read()).toEqual([{ state: 'in_progress', code: null }]);
   });
 });
 

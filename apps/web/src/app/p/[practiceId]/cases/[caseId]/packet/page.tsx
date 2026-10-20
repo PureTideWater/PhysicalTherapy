@@ -17,8 +17,8 @@ import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
-import { ATTEMPT_REFRESH_MS, EXPORT_REFUSAL_TEXT, exportAttemptWords } from '../../../../../../lib/packets/export-attempts';
-import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
+import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
+import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
@@ -75,7 +75,7 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
         <ul className="mt-1 list-disc pl-5" aria-label="Why the export is blocked">
           {reasons.map((reason) => (
             <li key={reason} data-refusal={reason}>
-              {EXPORT_REFUSAL_TEXT[reason]}
+              {exportRefusalText(reason, { singleUser: version.singleUser })}
               {reason === 'deadline_unverified' && causes.length > 0 ? (
                 <ul className="mt-1 list-disc pl-5" aria-label="Why the deadline is not verified">
                   {causes.map((cause) => (
@@ -132,7 +132,11 @@ export default async function PacketPage(props: Props) {
           Packet: {item.payer}, {item.plan} <CaseStateBadge state={item.state} />
         </h1>
         <p className="text-base text-muted-foreground">
-          {item.behaviorText}. {stageLabel('actionable')}: <Money value={item.actionableNowCents} /> on {item.openLines} {item.openLines === 1 ? 'line' : 'lines'}, as of {asOf}.
+          {item.behaviorText}. {stageLabel('actionable')}: <Money value={item.actionableNowCents} /> on{' '}
+          {item.actionableNowLines === item.openLines
+            ? `${String(item.openLines)} ${item.openLines === 1 ? 'line' : 'lines'}`
+            : `${String(item.actionableNowLines)} of the ${String(item.openLines)} ${item.openLines === 1 ? 'line' : 'lines'} not written off (the rest are out of the figure: their pricing is no longer current, or they moved past actionable)`}
+          , as of {asOf}.
         </p>
       </div>
       {notice === null ? null : (
@@ -372,7 +376,7 @@ export default async function PacketPage(props: Props) {
                   <div className="flex flex-col gap-1">
                     <DisabledApprove describedBy="approval-drafter-reason" />
                     <p id="approval-drafter-reason" className="text-muted-foreground" data-approve-disabled="drafter">
-                      {DRAFTER_APPROVAL_TEXT}
+                      {builder.approvalRequest === null ? DRAFTER_APPROVAL_TEXT : DRAFTER_REQUESTED_TEXT}
                     </p>
                   </div>
                 ) : (
@@ -411,7 +415,8 @@ export default async function PacketPage(props: Props) {
                 </>
               ) : (
                 (() => {
-                  const attempt = exportAttemptWords(version.exportAttempt, utc);
+                  // A refusal whose reason no longer holds (the version is ready now) is told as the earlier request's, not with its fix.
+                  const attempt = exportAttemptWords(version.exportAttempt, utc, { cleared: version.exportReadiness.outcome === 'ready', singleUser: version.singleUser });
                   const status = attempt === null ? null : <ExportStatus words={attempt} checkAgainHref={`${casePath}/packet?version=${version.id}`} refreshMs={ATTEMPT_REFRESH_MS} />;
                   if (version.exportReadiness.outcome === 'refused') {
                     return (

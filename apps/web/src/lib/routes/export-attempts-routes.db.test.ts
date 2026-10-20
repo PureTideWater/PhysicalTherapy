@@ -169,7 +169,8 @@ async function runJob(setup: Setup, versionId: string, options: { readonly lastA
       {
         jobId,
         logger: createLogger({ sink: () => undefined }),
-        transaction: (work) => withJobScope(w.app, { jobId, practiceId: setup.practice.practiceId }, work),
+        // On the worker's own login, as the worker runs it: only that login records the job's attempts (docs/adr/0061).
+        transaction: (work) => withJobScope(w.pricing.worker, { jobId, practiceId: setup.practice.practiceId }, work),
         enqueue: () => Promise.resolve(null),
         lastAttempt: options.lastAttempt ?? false,
       },

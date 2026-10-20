@@ -65,13 +65,13 @@ const CONTRACT_PAGES = [
     'SYNTHETIC PROVIDER AGREEMENT',
     'Effective January 1, 2026. Compensation is set out in Exhibit A.',
     'Either party gives 90 days notice before an anniversary.',
-    'Disputes are raised within 30 days of the remittance.',
+    'Disputes are raised within 30 days of the payment date.',
   ],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', '97110 Therapeutic exercise $32.00 per unit', '97140 Manual therapy $30.50 per unit', '97530 Therapeutic activities at 110% of the Medicare fee schedule'],
 ];
 const QUOTE_97110 = '97110 Therapeutic exercise $32.00 per unit';
-const WINDOW_QUOTE = 'Disputes are raised within 30 days of the remittance.';
-/** A window counted from the date of service (best-option audit #5): never the remittance-date window the product computes. */
+const WINDOW_QUOTE = 'Disputes are raised within 30 days of the payment date.';
+/** A window counted from the date of service (best-option audit #5): never the payment-date window the product computes. */
 const SERVICE_WINDOW_QUOTE = 'Disputes are raised within 180 days of the date of service.';
 const QUOTE_97140 = '97140 Manual therapy $30.50 per unit';
 const FIXED_97110 = { scope: { codes: ['97110'] }, method: 'FIXED_SCHEDULE', parameters: { amount_cents: '3200' } };
@@ -386,7 +386,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
     expect(await approveAll(recordIds)).toEqual([true]);
     return { ...created, recordIds };
   }
-  /** Cites the window with the rule its quote states: calendar days after the remittance date unless named (best-option audit #5). */
+  /** Cites the window with the rule its quote states: calendar days after the payment date unless named (best-option audit #5). */
   const cite = (
     versionId: string,
     citation: { documentId: string; page: number; quote: string } | null = { documentId: contractDoc, page: 1, quote: WINDOW_QUOTE },
@@ -401,7 +401,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
     const cited = await versionRow(created.versionId);
     expect(cited).toMatchObject({ dispute_window_days: 30, dispute_window_verified_by: null, dispute_window_verified_at: null });
     expect(cited.dispute_window_evidence).toEqual({ document_id: contractDoc, page: 1, quote: WINDOW_QUOTE, hash: expect.stringMatching(/^[0-9a-f]{64}$/) as string });
-    expect(cited).toMatchObject({ dispute_window_unit: 'calendar_days', dispute_window_measured_from: 'remittance_date' });
+    expect(cited).toMatchObject({ dispute_window_unit: 'calendar_days', dispute_window_measured_from: 'payment_date' });
     // Cited, not verified: the service and the database refuse approval.
     expect(await errorOf(as(specialist, (context) => approveVersion(context, { practiceId: north.practiceId, versionId: created.versionId })))).toMatchObject({ reason: 'invalid', message: expect.stringMatching(/window is verified/) });
     await expect(asApp(specialist, "UPDATE contract_version SET status = 'approved', approved_by = $2, approved_at = now() WHERE id = $1", [created.versionId, specialist])).rejects.toThrow(/cited is approved once a contract specialist has verified/);
@@ -420,7 +420,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
       status: 'signed_off',
       dispute_window_evidence: cited.dispute_window_evidence,
       dispute_window_unit: 'calendar_days',
-      dispute_window_measured_from: 'remittance_date',
+      dispute_window_measured_from: 'payment_date',
       dispute_window_verified_by: specialist,
       dispute_window_verified_at: verified.dispute_window_verified_at,
     });
@@ -490,7 +490,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
 
   it('refuses a citation that does not resolve to its page, and verifies none whose evidence is not on one of the version’s documents', async () => {
     const created = await windowDraft('2063-01-01');
-    expect(await errorOf(cite(created.versionId, { documentId: contractDoc, page: 1, quote: 'Disputes are raised within 3650 days of the remittance.' }))).toMatchObject({ reason: 'invalid', evidenceProblem: expect.any(String) as string });
+    expect(await errorOf(cite(created.versionId, { documentId: contractDoc, page: 1, quote: 'Disputes are raised within 3650 days of the payment date.' }))).toMatchObject({ reason: 'invalid', evidenceProblem: expect.any(String) as string });
     expect(await errorOf(cite(created.versionId, { documentId: amendmentDoc, page: 1, quote: WINDOW_QUOTE }))).toMatchObject({ reason: 'invalid' });
     expect(await errorOf(cite(created.versionId, undefined, viewer))).toBeInstanceOf(PermissionDeniedError);
     expect((await versionRow(created.versionId)).dispute_window_evidence).toBeNull();
@@ -500,7 +500,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
       owner,
       [north.practiceId],
       () =>
-        owner.query("UPDATE contract_version SET dispute_window_evidence = $2, dispute_window_unit = 'calendar_days', dispute_window_measured_from = 'remittance_date' WHERE id = $1", [
+        owner.query("UPDATE contract_version SET dispute_window_evidence = $2, dispute_window_unit = 'calendar_days', dispute_window_measured_from = 'payment_date' WHERE id = $1", [
           created.versionId,
           JSON.stringify(stray),
         ]),
@@ -549,7 +549,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
       asApp(
         specialist,
         `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, dispute_window_days, dispute_window_evidence, dispute_window_unit, dispute_window_measured_from)
-         VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb, 'calendar_days', 'remittance_date')`,
+         VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb, 'calendar_days', 'payment_date')`,
         [north.practiceId, created.contractId, [contractDoc], JSON.stringify({ document_id: amendmentDoc, page: 1, quote: WINDOW_QUOTE, hash: 'c'.repeat(64) })],
       ),
     ).rejects.toThrow(/evidence is a document of its version/);
@@ -557,7 +557,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
     // refuses one from any role, the owner's included.
     const verifiedInsert = `INSERT INTO contract_version (practice_id, contract_id, version_no, source_document_ids, effective_from, dispute_window_days, dispute_window_evidence,
                                                           dispute_window_unit, dispute_window_measured_from, dispute_window_verified_by, dispute_window_verified_at)
-                            VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb, 'calendar_days', 'remittance_date', $5, now())`;
+                            VALUES ($1, $2, 9, $3::uuid[], '2099-01-01', 30, $4::jsonb, 'calendar_days', 'payment_date', $5, now())`;
     const values = [north.practiceId, created.contractId, [contractDoc], JSON.stringify({ document_id: contractDoc, page: 1, quote: WINDOW_QUOTE, hash: 'c'.repeat(64) }), specialist];
     await expect(asApp(specialist, verifiedInsert, values)).rejects.toMatchObject({ code: '42501' });
     await expect(asOwner(owner, [north.practiceId], () => owner.query(verifiedInsert, values), specialist)).rejects.toThrow(/written with its dispute window unverified/);
@@ -574,7 +574,7 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
       dispute_window_days: 30,
       dispute_window_evidence: evidence,
       dispute_window_unit: 'calendar_days',
-      dispute_window_measured_from: 'remittance_date',
+      dispute_window_measured_from: 'payment_date',
       dispute_window_verified_by: null,
       dispute_window_verified_at: null,
     });
@@ -622,11 +622,11 @@ describe('the contract’s own dispute window: cited, verified by a contract spe
     }
     const uncited = await windowDraft('2066-07-01');
     await expect(
-      asApp(specialist, "UPDATE contract_version SET dispute_window_unit = 'calendar_days', dispute_window_measured_from = 'remittance_date' WHERE id = $1", [uncited.versionId]),
+      asApp(specialist, "UPDATE contract_version SET dispute_window_unit = 'calendar_days', dispute_window_measured_from = 'payment_date' WHERE id = $1", [uncited.versionId]),
     ).rejects.toMatchObject({ code: '23514', constraint: 'contract_version_window_rule_with_citation' });
   });
 
-  it('never verifies “within 180 days of the date of service” as a remittance-date window: refused in the service and in Postgres, and the version is approved with it unverified (best-option audit #5)', async () => {
+  it('never verifies “within 180 days of the date of service” as a payment-date window: refused in the service and in Postgres, and the version is approved with it unverified (best-option audit #5)', async () => {
     const serviceDoc = await document('contract', [['SYNTHETIC PROVIDER AGREEMENT', 'Effective January 1, 2026. Compensation is set out in Exhibit A.', SERVICE_WINDOW_QUOTE]]);
     const created = await windowDraft('2067-01-01', 180, [contractDoc, serviceDoc]);
     const fromService = { unit: 'calendar_days', measuredFrom: 'date_of_service' } as const;

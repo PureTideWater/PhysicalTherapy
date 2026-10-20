@@ -9,7 +9,7 @@ import { Pager } from '../../../../../components/remittances/display';
 import { ShareLink } from '../../../../../components/share';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
-import { REPORT_RELEASE_WITHDRAWN_TEXT, reportFailureText } from '../../../../../lib/reports/queries';
+import { REPORT_RELEASE_WITHDRAWN_TEXT, reportFailureText, reportReleaseWithdrawnText } from '../../../../../lib/reports/queries';
 import { reportPage } from '../../../../../lib/routes/reports';
 import { releaseReportFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
@@ -61,11 +61,9 @@ export default async function ReportPage(props: Props) {
         </Alert>
       ) : null}
       {report.status === 'ready' && report.releaseWithdrawn ? (
-        <Alert variant="destructive" data-state="release-withdrawn">
+        <Alert variant="destructive" data-state="release-withdrawn" data-released={report.releasedAt === null ? 'no' : 'yes'}>
           <AlertTitle>Rule release withdrawn since this report was generated</AlertTitle>
-          <AlertDescription>
-            Its numbers rest on a rule release whose content was wrong. It is kept as it was generated, but {REPORT_RELEASE_WITHDRAWN_TEXT}.
-          </AlertDescription>
+          <AlertDescription>{reportReleaseWithdrawnText(report, utc)}</AlertDescription>
         </Alert>
       ) : null}
       {report.content === null ? null : (

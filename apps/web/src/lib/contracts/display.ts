@@ -98,7 +98,7 @@ export const DISPUTE_WINDOW_START_OPTIONS: readonly { readonly value: string; re
 export interface WindowRuleComparison {
   /** "ends 180 calendar days after the date of service", or null when the citation states no rule. */
   readonly cited: string | null;
-  /** "ends 180 calendar days after the remittance date": how the product counts the version's days. */
+  /** "ends 180 calendar days after the payment date": how the product counts the version's length. */
   readonly computed: string;
   readonly matches: boolean;
 }
@@ -109,11 +109,11 @@ export function windowRuleComparison(days: number, rule: DisputeWindowRule | nul
 
 /**
  * Why a cited window whose rule the product does not compute stays unverified (the Verify button's reason, and the
- * version screens'): its lines wait, the date shown counts from the remittance date and can be later than the
- * contract's, and the version can still be approved.
+ * version screens'): its lines wait, no deadline is stated for them (calendar days after the payment date may end
+ * earlier or later than the contract's), and the version can still be approved.
  */
 export const WINDOW_RULE_NOT_COMPUTED_TEXT =
-  'The product counts a contract’s dispute window only as calendar days after the remittance date for now, so a window counted another way cannot be verified: it stays unverified and its lines wait for a verified deadline (the date shown counts from the remittance date and can be later than the contract’s own). The version can still be approved.';
+  'The product counts a contract’s dispute window only as calendar days after the payment date for now, so a window counted another way cannot be verified: it stays unverified and its lines wait for a verified deadline, with no deadline stated for them (a date counted that way may be earlier or later than the contract’s own; keep the contract’s). The version can still be approved.';
 
 /** A window [from, to) with its last day: "2026-01-01 through 2026-12-31", or open-ended. */
 export function windowText(from: string, to: string | null): string {

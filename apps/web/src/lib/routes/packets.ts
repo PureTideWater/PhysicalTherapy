@@ -8,7 +8,7 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
-import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
+import { exportRefusalText } from '../packets/export-attempts';
 import { type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
 import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { type CaseSummary, caseOf } from '../triage/queries';
@@ -244,7 +244,7 @@ export const exportPacketAction = practiceRoute({
     const asOf = services.now().toISOString().slice(0, 10);
     const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId, asOf });
     if (outcome.outcome === 'refused') {
-      throw new InputError(outcome.reasons.map((reason) => ({ field: reason, message: EXPORT_REFUSAL_TEXT[reason] })));
+      throw new InputError(outcome.reasons.map((reason) => ({ field: reason, message: exportRefusalText(reason, { singleUser: outcome.singleUser }) })));
     }
     return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome.outcome === 'queued' ? 'export_requested' : 'exported'}` };
   },

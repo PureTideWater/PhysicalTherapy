@@ -22,8 +22,9 @@ describe('PACKET_CHECKLIST', () => {
 /**
  * Why a version whose pricing is no longer current is not approved, exported, attested or written (audit item #4;
  * docs/adr/0061), as the review and the builder say it: words for every cause the database names, and a remedy
- * that is honest about what happens next. Nothing re-judges or refreshes a case until PR 11, so no sentence
- * promises it; the remedy is the case page's write-off, or waiting.
+ * that is honest about what happens next. Nothing re-judges or refreshes a case until PR 11, and a stale line never
+ * becomes current again, so no sentence promises either or offers waiting: the remedy is the case page's write-off,
+ * then a new version written, approved and exported.
  */
 describe('the pricing check’s words', () => {
   it('name every cause the database returns, in words with no code, value or identifier', () => {
@@ -38,6 +39,11 @@ describe('the pricing check’s words', () => {
       expect(text, step).toMatch(/pricing (is )?no longer current|on pricing no longer current/);
       expect(text, step).toMatch(/write[s]? the stale line off on the case page/);
       expect(text, step).not.toMatch(/judged again|re-judg|is refreshed|will be refreshed|automatically refreshe/i);
+      // Waiting changes nothing: no case line becomes current again in this release.
+      expect(text, step).not.toMatch(/\bwait/i);
+    }
+    for (const [cause, text] of Object.entries(PRICING_CAUSE_TEXT)) {
+      expect(text, cause).not.toMatch(/\bwait/i);
     }
     // The builder's two say plainly that nothing refreshes the case yet; the attestation names what the practice does.
     expect(PRICING_BLOCKED_TEXT.approval).toMatch(/Nothing refreshes the case automatically yet/);

@@ -28,10 +28,11 @@ export type PacketExportFile = (typeof PACKET_EXPORT_FILES)[number];
  * Whether a packet version's pricing is still current (audit item #4; migration 20261103090000's
  * packet_version_pricing_check() and submission.pricing_check), in the CHECK's order: 'current', then each
  * cause from the most severe. A stale line's pricing is no longer in effect (an accepted re-run, a later first
- * run), its rule release was withdrawn, or its contract version is no longer signed off or no longer covers
- * the service date.
+ * run), its rule release was withdrawn, the plan mapping it priced under is no longer the plan's mapping in force
+ * on its service date (a correction since, MAP-03), or its contract version is no longer signed off or no longer
+ * covers the service date.
  */
-export const PRICING_CHECK_RESULTS = ['current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'] as const;
+export const PRICING_CHECK_RESULTS = ['current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'] as const;
 export type PricingCheckResult = (typeof PRICING_CHECK_RESULTS)[number];
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();

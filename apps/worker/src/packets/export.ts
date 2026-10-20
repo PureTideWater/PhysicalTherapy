@@ -206,6 +206,7 @@ export const EXPORT_REFUSALS = {
   case_changed: 'PACKET_CASE_CHANGED',
   not_case_level: 'PACKET_VERSION_NOT_CASE_LEVEL',
   window_passed: 'PACKET_WINDOW_PASSED',
+  next_window_passed: 'PACKET_NEXT_WINDOW_PASSED',
   pricing_not_current: 'PACKET_PRICING_NOT_CURRENT',
   deadline_unverified: 'PACKET_DEADLINE_UNVERIFIED',
   inputs_differ: 'PACKET_CONTENT_NOT_ITS_INPUTS',

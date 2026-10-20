@@ -6,12 +6,12 @@ import { type Page, expect, test } from '@playwright/test';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
 
-import { expectAccessible } from './a11y';
+import { atPhoneWidth, expectAccessible } from './a11y';
 import { attemptEvents, reopenLine, shownVersionId, writeOffFirstLine } from './export-attempts';
 import { registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
 import { queue } from './journeys';
 import { citedAmendmentCase, deadlinePractice, openPacketCase, packetPractice, uncitedWindowCase } from './packets';
-import { startLocalWorker } from './worker';
+import { holdExports, startLocalWorker } from './worker';
 
 /**
  * The packet builder and the submission log in the browser (PRD 5, J9; PRD 7, Packet builder and
@@ -22,7 +22,7 @@ import { startLocalWorker } from './worker';
  * a figure that is in no input record, sees the live check flag it and, once saved, approval blocked;
  * writes a passing version again and finds the Approve button disabled as its drafter, with the reason, next
  * to Request approval (the best-option audit's item #61); a second billing manager approves it and asks for
- * the export while no worker runs, and the builder shows it in progress; a line written off before the worker
+ * the export while the practice's exports are held, and the builder shows it in progress; a line written off before the worker
  * takes the job is refused at once with its fix, and the job's own refusal is shown with its reason and fix
  * and recorded as a coded event (item #26); the line reopened, the export is asked again, the builder's status
  * follows the worker by itself, and the worker prints the PDF and CSV with the identifiers inserted, each line's
@@ -93,7 +93,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     const deadline = page.getByRole('region', { name: 'Deadline' });
     await expect(deadline.locator('[data-deadline-summary="verified"]')).toBeVisible();
     await expect(deadline).toContainText('Deadline verified');
-    await expect(deadline.getByRole('list', { name: 'Deadline evidence' })).toContainText('Disputes are raised within 3650 days of the remittance.');
+    await expect(deadline.getByRole('list', { name: 'Deadline evidence' })).toContainText('Disputes are raised within 3650 days of the payment date.');
     await expect(page.getByRole('table', { name: 'Line schedule' }).locator('[data-deadline="verified"]')).toHaveCount(3);
     await expect(page.getByRole('table', { name: 'Calculations' }).locator('[data-calculation-row]')).toHaveCount(3);
     // Identifiers are placeholders on screen; the export inserts them.
@@ -103,6 +103,8 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await expect(page.locator('#prompt-pay-state')).toHaveCount(1);
     await expect(page.locator('#narrative')).toHaveCount(1);
     await expectAccessible(page, 'Packet builder, its first version');
+    // At a phone's width the page does not scroll sideways, and each wide table scrolls in a region a keyboard reaches (item #61).
+    await atPhoneWidth(page, 'Packet builder, its first version');
   });
 
   await test.step('a sentence with a figure in no input record is flagged as it is typed, and its version cannot be approved (CAS-08)', async () => {
@@ -140,6 +142,9 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     await page.getByRole('button', { name: 'Request approval' }).click();
     await expect(page.locator('[data-notice="requested"]')).toBeVisible();
     await expect(page.locator('[data-approval-request="yes"]')).toBeVisible();
+    // Asked: the form is gone, and the disabled button's reason says the request stands rather than pointing to it.
+    await expect(approval.getByRole('button', { name: 'Request approval' })).toHaveCount(0);
+    await expect(approval.getByRole('button', { name: 'Approve this version' })).toHaveAccessibleDescription('Approval is requested; a second person who approves packets approves it here.');
     await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="3"]')).toContainText('Passed');
     await expect(page.getByRole('table', { name: 'Versions' }).locator('[data-version="2"]')).toContainText('Failed');
   });
@@ -147,9 +152,12 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
   // A context of its own, so the accessibility check runs on the approver's page too.
   const approverContext = await browser.newContext();
   const approver = await approverContext.newPage();
+  // Another spec's worker may be running, and every worker takes any practice's export: the practice's exports are held
+  // until the line is written off, so the job finds the case changed whichever worker takes it.
+  const held = await holdExports(practiceId);
   try {
     await signInWithTotp(approver, 'packet-approver');
-    await test.step('a second billing manager approves it and asks for the export while no worker runs: the builder shows it in progress (CAS-11; item #26)', async () => {
+    await test.step('a second billing manager approves it and asks for the export while it is held: the builder shows it in progress (CAS-11; item #26)', async () => {
       await approver.goto(`${casePath}/packet`);
       const approval = approver.getByRole('region', { name: 'Approval' });
       await expect(approval.locator('[data-approval="ready"]')).toBeVisible();
@@ -175,6 +183,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       const exported = approver.getByRole('region', { name: 'Export', exact: true });
       await expect(exported.locator('[data-export="blocked"][data-reason="case_changed"]')).toContainText('The case changed since this version was written');
       await expect(exported.getByRole('button', { name: 'Export PDF and CSV' })).toHaveCount(0);
+      await held.release();
       await withWorker(async () => {
         await expect(async () => {
           await approver.goto(`${casePath}/packet`);
@@ -193,6 +202,11 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     const pdfSha256 = await test.step('the line reopened, the export is asked again; the builder follows the worker by itself until it prints the PDF and CSV and records their SHA-256 (CAS-11)', async () => {
       await reopenLine(approver, casePath, writtenOff);
       await approver.goto(`${casePath}/packet`);
+      // The refusal's reason no longer holds: it is told as the earlier request's, beside the Export button, with no fix to follow.
+      const earlier = approver.locator('[data-export-attempt="refused"][data-code="case_changed"]');
+      await expect(earlier).toContainText('An earlier request was refused');
+      await expect(earlier).toContainText('That no longer holds, so this version can be exported: export it again.');
+      await expect(earlier).not.toContainText('Write a new version');
       return withWorker(async () => {
         await approver.getByRole('button', { name: 'Export PDF and CSV' }).click();
         await expect(approver.locator('[data-notice="export_requested"]')).toBeVisible();
@@ -228,6 +242,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await reviewer.getByRole('table', { name: 'Exports waiting' }).getByRole('link').first().click();
         await expect(reviewer).toHaveURL(new RegExp(`${casePath}/packet/[0-9a-f-]{36}/review$`));
         await expect(reviewer.getByRole('region', { name: 'Deadline' }).locator('[data-deadline-summary="verified"]')).toBeVisible();
+        await atPhoneWidth(reviewer, 'Packet review');
         const exportFiles = reviewer.getByRole('region', { name: 'Export', exact: true });
         const attestation = reviewer.getByRole('region', { name: 'Attestation' });
         // The billing manager's downloads are not the reviewer's: the attest button is disabled and says why.
@@ -321,6 +336,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       assertNoPhi('url', approver.url(), { known: KNOWN });
     });
   } finally {
+    await held.release();
     await approverContext.close();
   }
 });

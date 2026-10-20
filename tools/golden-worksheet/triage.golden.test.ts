@@ -62,9 +62,13 @@ function candidates(id: string, deadlineStatus: DeadlineStatus = 'verified'): { 
         varianceCents: result.varianceCents,
         windowEndsOn: result.window.endsOn,
         deadlineStatus,
+        // Every golden window is judged as the engine counts it: no golden contract cites a rule the engine does not compute.
+        windowRuleComputed: true,
         claimReversed: false,
         claimSuperseded: false,
         mappingKind: result.terms.mappingKind,
+        // Each golden line prices under the one mapping of its plan, never corrected.
+        mappingInForce: true,
         contractVersionStatus: 'signed_off',
         // The golden lines' contract versions cover their own service dates, and no golden release is withdrawn.
         contractVersionCoversService: true,

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersion, signOffVersion, supersedeVersion, verifyDisputeWindow } from '@tp/contracts';
+import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersion, correctMapping, signOffVersion, supersedeVersion, verifyDisputeWindow } from '@tp/contracts';
 import { packetExportKey, readDatabaseUrl, withJobScope } from '@tp/db';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -16,7 +16,7 @@ import { FIXED_97110, PacketWorld } from './test-support/packet-world';
  * refused for it (the best-option audit's item #4, the founder's ruling of 2026-10-18; docs/adr/0061; migration
  * 20261103090000): for each way a line's pricing stops being current after the version was written (a re-run
  * accepted since, a correction that superseded its contract version, a back-dated amendment that closed it before
- * the line's date, a rule release withdrawn since), the approval is refused in SQL, the export in the request, the
+ * the line's date, a correction of the plan's mapping to another contract, a rule release withdrawn since), the approval is refused in SQL, the export in the request, the
  * job and the guard, the attestation in SQL, and writing a version again names the stale line and its cause; a
  * submission of an export already attested is logged and flagged with the cause. Each case is a practice of its own
  * (SYNTHETIC CAS-08 under the fixed 97110 contract, its window cited and verified), at the stage it is checked at.
@@ -40,6 +40,8 @@ interface Staged {
   readonly practice: Practice;
   readonly caseId: string;
   readonly runId: string;
+  readonly planId: string;
+  readonly mappingId: string;
   readonly contractVersionId: string;
   readonly versionId: string;
   readonly contentSha256: string;
@@ -53,7 +55,8 @@ async function staged(label: string, stage: Stage, releaseNo = RELEASE): Promise
   const practice = await w.practice(label);
   await w.triage.load(practice, 'CAS-08/remit.835');
   const contract = await w.triage.fixedContract(practice, FIXED_97110);
-  await w.triage.pricing.mapped(practice, await w.triage.pricing.planOf(practice, PLAN), 'contract', '2026-01-01', contract.versionId);
+  const planId = await w.triage.pricing.planOf(practice, PLAN);
+  const mappingId = await w.triage.pricing.mapped(practice, planId, 'contract', '2026-01-01', contract.versionId);
   const runId = await w.triage.pricing.createRun(practice, MARCH.from, MARCH.to, releaseNo);
   await w.triage.pricing.execute(practice, runId);
   const triaged = await w.triage.triage(practice, runId);
@@ -70,6 +73,8 @@ async function staged(label: string, stage: Stage, releaseNo = RELEASE): Promise
     practice,
     caseId,
     runId,
+    planId,
+    mappingId,
     contractVersionId: contract.versionId,
     versionId: version.versionId,
     contentSha256: version.contentSha256,
@@ -142,6 +147,7 @@ const submissionCheck = async (setup: Staged, submissionId: string) =>
 const CAUSE_WORDS: Readonly<Record<PricingCheckCause, RegExp>> = {
   PRICING_NOT_IN_EFFECT: /priced again since it joined the case/,
   RELEASE_WITHDRAWN: /its rule release was withdrawn since it was priced/,
+  MAPPING_NOT_IN_FORCE: /its plan’s mapping was corrected since it was priced/,
   CONTRACT_VERSION_NOT_SIGNED_OFF: /its contract version is no longer signed off/,
   CONTRACT_VERSION_NOT_IN_FORCE: /its contract version no longer covers its service date/,
 };
@@ -165,8 +171,11 @@ async function expectRefusedAtEveryStage(cases: Readonly<Record<Stage, Staged>>,
   expect(rewritten).toMatchObject({ reason: 'pricing_changed' });
   expect((rewritten as Error).message).toMatch(/^line 1 of \d+ \(/);
   expect((rewritten as Error).message).toMatch(CAUSE_WORDS[cause]);
-  expect((rewritten as Error).message).toMatch(/nothing refreshes the case automatically yet: write (it|them) off on the case page to send the packet without (it|them), or wait$/);
-  expect((rewritten as Error).message).not.toMatch(/judged again/);
+  expect((rewritten as Error).message).toMatch(
+    /refreshing a case on new pricing is not available yet: write (it|them) off on the case page \((it leaves|they leave) this dispute\), then write, approve and export the packet again without (it|them)$/,
+  );
+  // No step that never happens: nothing re-judges the case, and a stale line never becomes current again, so waiting is no remedy.
+  expect((rewritten as Error).message).not.toMatch(/judged again|\bwait/);
 
   // The export guard itself refuses the job's own UPDATE.
   const guard = await guarded(cases.approved);
@@ -310,6 +319,35 @@ describe('a back-dated amendment that closed the contract version before the lin
     }
     expect((await figures(cases.written)).map((line) => [line.check, line.now])).toEqual(cases.written.content.lines.map(() => ['CONTRACT_VERSION_NOT_IN_FORCE', null]));
     await expectRefusedAtEveryStage(cases, 'CONTRACT_VERSION_NOT_IN_FORCE');
+  }, 300_000);
+
+  it('refuses the export at the request and in the job before the guard', async () => {
+    await expectExportRefusedBeforeTheGuard(cases.approved);
+  }, 120_000);
+});
+
+describe('a correction of the plan’s mapping since the lines were priced (MAP-03)', () => {
+  let cases: Record<Stage, Staged>;
+  beforeAll(async () => {
+    cases = await everyStage('pricing-mapping');
+    for (const setup of Object.values(cases)) {
+      // The plan mapped from January to another contract that pays what the payer paid: under it nothing is owed.
+      const other = await w.triage.fixedContract(setup.practice, { ...FIXED_97110, schedule: [{ code: '97110', amountCents: '2800' }] });
+      await w.triage.as(setup.practice, setup.practice.manager, (context) =>
+        correctMapping(context, { practiceId: setup.practice.practiceId, planId: setup.planId, kind: 'contract', contractVersionId: other.versionId, effectiveFrom: '2026-01-01', supersedesId: setup.mappingId }),
+      );
+    }
+  }, 600_000);
+
+  it('refuses every step in the database and flags the submission, though the old contract version is still signed off and covers the lines', async () => {
+    for (const setup of Object.values(cases)) {
+      const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) =>
+        scope.client.query<{ status: string; effective_to: string | null }>('SELECT status, effective_to::text FROM contract_version WHERE id = $1', [setup.contractVersionId]),
+      );
+      expect(rows[0]).toEqual({ status: 'signed_off', effective_to: null });
+    }
+    expect((await figures(cases.written)).map((line) => [line.check, line.now])).toEqual(cases.written.content.lines.map(() => ['MAPPING_NOT_IN_FORCE', null]));
+    await expectRefusedAtEveryStage(cases, 'MAPPING_NOT_IN_FORCE');
   }, 300_000);
 
   it('refuses the export at the request and in the job before the guard', async () => {

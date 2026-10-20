@@ -30,8 +30,9 @@ import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
  * pricing is still current (audit item #4, the database's priced_line_pricing_check(): its priced line is
  * still its pricing in effect, its rule release is not withdrawn, and its contract version is still signed off
  * and covers its service date). A packet is written, approved, exported and attested only on the pricing in
- * effect, and nothing refreshes a case automatically yet (PR 11 will): a case with a stale line is refused with
- * the lines and the cause, and the remedy is to write those lines off on the case page or to wait. A contract
+ * effect, and nothing refreshes a case automatically yet (PR 11 will), nor does a stale line ever become current
+ * again: a case with a stale line is refused with the lines and the cause, and the remedy is to write those lines
+ * off on the case page, then write, approve and export the packet again. A contract
  * pattern cites its signed-off version's verified rate record (its
  * document, page, quoted clause and page hash); a Medicare Advantage non-contracted pattern cites the
  * regulation the rules reference names. The figures are the database's; @tp/packets assembles them.
@@ -136,6 +137,7 @@ interface LineRow {
 const STALE_PRICING_WORDS: Readonly<Record<PricingCheckCause, string>> = {
   PRICING_NOT_IN_EFFECT: 'priced again since it joined the case',
   RELEASE_WITHDRAWN: 'its rule release was withdrawn since it was priced',
+  MAPPING_NOT_IN_FORCE: 'its plan’s mapping was corrected since it was priced',
   CONTRACT_VERSION_NOT_SIGNED_OFF: 'its contract version is no longer signed off',
   CONTRACT_VERSION_NOT_IN_FORCE: 'its contract version no longer covers its service date',
 };
@@ -151,7 +153,7 @@ function stalePricingMessage(stale: readonly LineRow[]): string {
     .map((row) => `line ${String(row.position)} of ${String(row.total_lines)} (${STALE_PRICING_WORDS[row.pricing_check in STALE_PRICING_WORDS ? (row.pricing_check as PricingCheckCause) : 'PRICING_NOT_IN_EFFECT']})`);
   const lines = named.length === 1 ? (named[0] as string) : `${named.slice(0, -1).join(', ')} and ${named.at(-1) as string}`;
   const them = stale.length === 1 ? 'it' : 'them';
-  return `${lines} ${stale.length === 1 ? 'is' : 'are'} no longer priced current; a packet is written, approved, exported and attested only on the pricing in effect, and nothing refreshes the case automatically yet: write ${them} off on the case page to send the packet without ${them}, or wait`;
+  return `${lines} ${stale.length === 1 ? 'is' : 'are'} no longer priced current; a packet is written, approved, exported and attested only on the pricing in effect, and refreshing a case on new pricing is not available yet: write ${them} off on the case page (${stale.length === 1 ? 'it leaves' : 'they leave'} this dispute), then write, approve and export the packet again without ${them}`;
 }
 
 /** A line's deadline as the loader derived it; a line it could not see is unverified (fails closed). */

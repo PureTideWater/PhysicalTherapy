@@ -30,10 +30,10 @@ import type { DocumentStore } from '@tp/worker/documents';
  */
 
 /** Where the synthetic agreement states its dispute window (page 1), which the specialist cites and verifies (D17 a). */
-export const WINDOW_QUOTE = 'Disputes are raised within 3650 days of the remittance.';
+export const WINDOW_QUOTE = 'Disputes are raised within 3650 days of the payment date.';
 export const WINDOW_DAYS = 3650;
-/** The rule WINDOW_QUOTE states (best-option audit #5): calendar days after the remittance date, the rule the product computes. */
-export const WINDOW_RULE = { unit: 'calendar_days', measuredFrom: 'remittance_date' } as const;
+/** The rule WINDOW_QUOTE states (best-option audit #5): calendar days after the payment date (BPR16), the rule the product computes. */
+export const WINDOW_RULE = { unit: 'calendar_days', measuredFrom: 'payment_date' } as const;
 
 /** The synthetic agreement's pages: the first states its notice and dispute window, the second holds its fee schedule. */
 export const CONTRACT_PAGES: readonly (readonly string[])[] = [

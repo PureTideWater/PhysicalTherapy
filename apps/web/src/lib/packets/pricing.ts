@@ -7,12 +7,14 @@ import { type LinePricingNow, type PricingCheckCause, linePricingNow, packetPric
  * Whether a packet version's pricing is still current, as the builder, the review and the submissions pages
  * show it (audit item #4; docs/adr/0061; migration 20261103090000's packet_version_pricing_check()). A
  * version is approved, exported and attested only while every line still carries its service line's pricing in
- * effect, under a rule release not withdrawn, with its contract version signed off and covering the service
- * date; the database refuses each step otherwise, and these pages say so first with the figures then and now.
+ * effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version
+ * signed off and covering the service date; the database refuses each step otherwise, and these pages say so first
+ * with the figures then and now.
  *
  * The "now" figures are the service line's pricing in effect (service_line_priced_in_effect()), never
- * recomputed here. Nothing refreshes a case automatically yet (that is PR 11): the remedy is to write the stale
- * line off on the case page and write the packet again without it, or to wait. Cents are decimal integer text.
+ * recomputed here. Nothing refreshes a case automatically yet (that is PR 11), and a stale line never becomes
+ * current again, so waiting changes nothing: the one step available is to write the stale line off on the case page
+ * (it leaves this dispute), then write, approve and export the packet again. Cents are decimal integer text.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -38,12 +40,13 @@ export interface PricingNowView {
 export const PRICING_CAUSE_TEXT: Readonly<Record<PricingCheckCause, string>> = {
   PRICING_NOT_IN_EFFECT: 'Priced again since it joined the case (an accepted re-run, or a later run of its period): this version no longer carries its pricing in effect',
   RELEASE_WITHDRAWN: 'Its rule release was withdrawn since it was priced, because the release’s content was wrong',
+  MAPPING_NOT_IN_FORCE: 'Its plan’s mapping was corrected since it was priced: a correction now maps the plan to another contract or agreement on its service date',
   CONTRACT_VERSION_NOT_SIGNED_OFF: 'Its contract version is no longer signed off: a correction replaced it since it was priced',
   CONTRACT_VERSION_NOT_IN_FORCE: 'Its contract version no longer covers the service date: an amendment since closed it before that date',
 };
 
 const REMEDY =
-  'Nothing refreshes the case automatically yet: write the stale line off on the case page and write the packet again without it, or wait until the line is priced current again';
+  'Nothing refreshes the case automatically yet, and refreshing a case on new pricing is not available yet: write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet again without it';
 
 /**
  * Why a step is refused while the version's pricing is not current, with the remedy (the page shows the lines).
@@ -55,7 +58,8 @@ export const PRICING_BLOCKED_TEXT = {
   export: `This version cannot be exported: a line’s pricing is no longer current (see Pricing now), and a packet is exported only on the pricing in effect. ${REMEDY}.`,
   attestation:
     'this export’s pricing is no longer current, so its files no longer show the pricing in effect and it is not attested; the practice writes the stale line off on the case page, then writes, approves and exports the packet again',
-  write: 'a line of the case is on pricing no longer current, and a packet is written only on the pricing in effect; nothing refreshes the case automatically yet: write the stale line off on the case page to send the packet without it, or wait',
+  write:
+    'a line of the case is on pricing no longer current, and a packet is written only on the pricing in effect; nothing refreshes the case automatically yet: write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet again without it',
 } as const;
 
 /** A sum of decimal integer cents (each already checked by the database), as decimal integer text. */

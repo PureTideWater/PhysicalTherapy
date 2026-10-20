@@ -2,9 +2,9 @@ import { PACKET_EXPORT_FAILURES, PACKET_EXPORT_REFUSALS } from '@tp/worker/packe
 import { describe, expect, it } from 'vitest';
 
 import { type ApprovalFacts, type ApprovalViewer, BLOCKED_REASONS, SINGLE_USER_DELAY_MS, approvalState, waitText } from './approval';
-import { EXPORT_FAILURE_TEXT, EXPORT_REFUSAL_TEXT, type ExportAttempt, exportAttemptWords } from './export-attempts';
+import { EXPORT_FAILURE_TEXT, EXPORT_REFUSAL_TEXT, type ExportAttempt, NOT_APPROVED_ALONE_TEXT, exportAttemptWords, exportRefusalText } from './export-attempts';
 import { PRICING_BLOCKED_TEXT } from './pricing';
-import { BLOCKED_TEXT, DEADLINE_NOT_EXPORTABLE, DRAFTER_APPROVAL_TEXT } from './queries';
+import { BLOCKED_TEXT, DEADLINE_NOT_EXPORTABLE, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT } from './queries';
 
 /**
  * The approval panel says ahead what the database will answer (PRD 12, Approval; test matrix CAS-08,
@@ -84,8 +84,11 @@ describe('the approval panel’s words', () => {
     expect(BLOCKED_TEXT.pricing_not_current).toBe(PRICING_BLOCKED_TEXT.approval);
   });
 
-  it('tells the drafter who approves and how to ask (CAS-09; audit item #61)', () => {
+  it('tells the drafter who approves and how to ask, and once asked, that the request stands (CAS-09; audit item #61)', () => {
     expect(DRAFTER_APPROVAL_TEXT).toBe('A second person who approves packets approves it; ask with Request approval.');
+    // The Request approval form is gone once asked: the words no longer point to it.
+    expect(DRAFTER_REQUESTED_TEXT).toBe('Approval is requested; a second person who approves packets approves it here.');
+    expect(DRAFTER_REQUESTED_TEXT).not.toMatch(/Request approval/);
   });
 });
 
@@ -111,6 +114,14 @@ describe('the export’s words (audit item #26)', () => {
     }
     expect(EXPORT_REFUSAL_TEXT.pricing_not_current).toBe(PRICING_BLOCKED_TEXT.export);
     expect(EXPORT_REFUSAL_TEXT.deadline_unverified).toBe(DEADLINE_NOT_EXPORTABLE);
+    // Above the first level, a passed window is the next level's: never a reason to write the case's lines off.
+    expect(EXPORT_REFUSAL_TEXT.next_window_passed).toMatch(/^The next dispute level’s window/);
+    expect(EXPORT_REFUSAL_TEXT.next_window_passed).toMatch(/Do not write the lines off/);
+    // In a single-user practice the writer approves alone after the delay, so "a second person" is not the step.
+    expect(exportRefusalText('not_approved', { singleUser: false })).toBe(EXPORT_REFUSAL_TEXT.not_approved);
+    expect(exportRefusalText('not_approved', { singleUser: true })).toBe(NOT_APPROVED_ALONE_TEXT);
+    expect(NOT_APPROVED_ALONE_TEXT).not.toMatch(/second person/);
+    expect(exportRefusalText('case_changed', { singleUser: true })).toBe(EXPORT_REFUSAL_TEXT.case_changed);
   });
 
   it('has a sentence for every code a failed try names, and for a request with no result', () => {
@@ -147,6 +158,17 @@ describe('the export’s words (audit item #26)', () => {
     const refused: ExportAttempt = { state: 'refused', requestedAt: REQUESTED, at: ANSWERED, code: 'case_changed' };
     expect(exportAttemptWords(refused, time)).toMatchObject({ state: 'refused', code: 'case_changed', tone: 'danger', title: 'Export refused', live: false });
     expect(exportAttemptWords(refused, time)?.text).toBe(`The export job refused this version at [${ANSWERED}] and printed nothing. ${EXPORT_REFUSAL_TEXT.case_changed}`);
+    // Once the version is ready to export again, the refusal is told as the earlier request's, without its fix.
+    expect(exportAttemptWords(refused, time, { cleared: true })).toEqual({
+      state: 'refused',
+      code: 'case_changed',
+      tone: 'info',
+      title: 'An earlier request was refused',
+      text: `The request at [${REQUESTED}] was refused: the case had changed. That no longer holds, so this version can be exported: export it again.`,
+      live: false,
+    });
+    // A verifier failure keeps its fix: the version is written again whatever readiness says.
+    expect(exportAttemptWords({ ...refused, code: 'verifier_failed' }, time, { cleared: true })).toMatchObject({ tone: 'danger', title: 'Export refused' });
     expect(exportAttemptWords({ state: 'failed', requestedAt: REQUESTED, at: ANSWERED, code: 'store_failed' }, time)).toMatchObject({
       title: 'Export failed',
       live: false,

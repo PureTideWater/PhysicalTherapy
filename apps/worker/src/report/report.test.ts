@@ -246,8 +246,9 @@ describe('the deadline gap’s remedy (D17 a)', () => {
   });
 
   it('says a window cited with a rule the product does not compute yet waits, and a Medicare Advantage line waits for the route (audit item #5, Q34)', () => {
-    const NOT_COMPUTED = /the product does not compute that rule yet, so the date it shows may be later than the contract’s: these lines wait/;
-    const ROUTE = /For a Medicare Advantage non-contracted line, the deadline waits until the contract specialist confirms which dispute route applies .*Q34/;
+    const NOT_COMPUTED = /the product does not compute that rule yet, so it states no deadline for these lines \(the date it would count may be earlier or later than the contract’s\): keep the contract’s own deadline; these lines wait/;
+    // The route is a product-wide question, with no step in the practice: never "the specialist confirms it" as a step to take.
+    const ROUTE = /For a Medicare Advantage non-contracted line, the deadline waits for the product-wide answer on which dispute route applies .*Q34.*nothing in this practice changes it/;
     // Citing it again on a corrected version does not help: it is not the generic contract remedy.
     expect(deadlineRemedy(['CONTRACT_WINDOW_RULE_NOT_COMPUTED'])).toMatch(NOT_COMPUTED);
     expect(deadlineRemedy(['CONTRACT_WINDOW_RULE_NOT_COMPUTED'])).not.toMatch(CONTRACT);
@@ -260,8 +261,9 @@ describe('the deadline gap’s remedy (D17 a)', () => {
 });
 
 describe('the reasons a withdrawal or an amendment takes a line out of the totals, in words (audit item #4)', () => {
-  it('names a version that no longer covers the date and a withdrawn release', () => {
+  it('names a version that no longer covers the date, a mapping corrected since and a withdrawn release', () => {
     expect(reasonText('VERSION_NOT_IN_FORCE')).toBe('Contract version no longer covers the service date (amended since it was priced)');
+    expect(reasonText('MAPPING_NOT_IN_FORCE')).toBe('Plan mapping corrected since it was priced (another agreement applies on the service date)');
     expect(reasonText('RELEASE_WITHDRAWN')).toBe('Rule release withdrawn since it was priced');
   });
 });

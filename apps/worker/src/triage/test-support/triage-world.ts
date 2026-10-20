@@ -50,7 +50,7 @@ export interface FixedContractOptions {
   /** Whether the specialist cites the window on its page and verifies it (true unless false): an uncited window leaves its lines' deadlines unverified (D17 a). */
   readonly windowCited?: boolean;
   /**
-   * The rule the window's quote states (best-option audit #5): calendar days after the remittance date, the rule the
+   * The rule the window's quote states (best-option audit #5): calendar days after the payment date, the rule the
    * product computes, unless named. A window cited with another rule is not verified: the version is approved with
    * its window unverified, and its lines' deadlines stay unverified (CONTRACT_WINDOW_RULE_NOT_COMPUTED).
    */

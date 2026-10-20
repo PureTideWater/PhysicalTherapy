@@ -8,9 +8,11 @@ const facts = (overrides: Partial<TriageFacts> = {}): TriageFacts => ({
   varianceCents: 3000n as Cents,
   windowEndsOn: '2026-12-31',
   deadlineStatus: 'verified',
+  windowRuleComputed: true,
   claimReversed: false,
   claimSuperseded: false,
   mappingKind: 'contract',
+  mappingInForce: true,
   contractVersionStatus: 'signed_off',
   contractVersionCoversService: true,
   releaseWithdrawn: false,
@@ -53,6 +55,21 @@ describe('from validated to actionable (PRD 12)', () => {
     expect(NOT_ACTIONABLE_REASONS.slice(1, 4)).toEqual(['WINDOW_PASSED', 'NO_WINDOW', 'DEADLINE_UNVERIFIED']);
   });
 
+  it('judges no window end the engine counts by another rule than the contract cites: no WINDOW_PASSED or NO_WINDOW, only DEADLINE_UNVERIFIED (audit item #5)', () => {
+    // A window cited in months or business days, priced by the engine as calendar days (CONTRACT_WINDOW_RULE_NOT_COMPUTED): its end is not the contract's.
+    const notComputed = facts({ deadlineStatus: 'unverified', windowRuleComputed: false, windowEndsOn: '2026-04-14' });
+    expect(judgeLine(notComputed, FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['DEADLINE_UNVERIFIED'], validatedCents: 3000n });
+    expect(judgeLine({ ...notComputed, windowEndsOn: null }, FIVE, AS_OF).reasons).toEqual(['DEADLINE_UNVERIFIED']);
+    // A computed window still says WINDOW_PASSED when it closed.
+    expect(judgeLine(facts({ deadlineStatus: 'unverified', windowEndsOn: '2026-04-14' }), FIVE, AS_OF).reasons).toEqual(['WINDOW_PASSED', 'DEADLINE_UNVERIFIED']);
+  });
+
+  it('takes a line out of the actionable totals once its plan’s mapping is corrected, for a contract and a Medicare Advantage non-contracted line alike (MAP-03, audit item #4)', () => {
+    expect(judgeLine(facts({ mappingInForce: false }), FIVE, AS_OF)).toEqual({ validated: true, actionable: false, reasons: ['MAPPING_NOT_IN_FORCE'], validatedCents: 3000n });
+    expect(judgeLine(facts({ mappingKind: 'ma_noncontracted', contractVersionStatus: null, mappingInForce: false }), FIVE, AS_OF).reasons).toEqual(['MAPPING_NOT_IN_FORCE']);
+    expect(judgeLine(facts({ mappingInForce: false, contractVersionStatus: 'superseded' }), FIVE, AS_OF).reasons).toEqual(['MAPPING_NOT_IN_FORCE', 'VERSION_NOT_SIGNED_OFF']);
+  });
+
   it('refuses reversed and superseded claims and versions no longer signed off; Medicare Advantage lines need no version', () => {
     expect(judgeLine(facts({ claimReversed: true }), FIVE, AS_OF).reasons).toEqual(['CLAIM_REVERSED']);
     expect(judgeLine(facts({ claimSuperseded: true }), FIVE, AS_OF).reasons).toEqual(['CLAIM_SUPERSEDED']);
@@ -79,6 +96,7 @@ describe('from validated to actionable (PRD 12)', () => {
       'DEADLINE_UNVERIFIED',
       'CLAIM_REVERSED',
       'CLAIM_SUPERSEDED',
+      'MAPPING_NOT_IN_FORCE',
       'VERSION_NOT_SIGNED_OFF',
       'VERSION_NOT_IN_FORCE',
       'RELEASE_WITHDRAWN',
@@ -129,7 +147,9 @@ describe('from validated to actionable (PRD 12)', () => {
         fc.constantFrom<TriageFacts['deadlineStatus']>('verified', 'unverified'),
         fc.boolean(),
         fc.boolean(),
-        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus, covers, withdrawn) => {
+        fc.boolean(),
+        fc.boolean(),
+        (variance, window, reversed, superseded, status, writtenOff, deadlineStatus, covers, withdrawn, mapped, computed) => {
           const judged = judgeLine(
             facts({
               varianceCents: variance as Cents,
@@ -140,6 +160,8 @@ describe('from validated to actionable (PRD 12)', () => {
               contractVersionStatus: status,
               contractVersionCoversService: covers,
               releaseWithdrawn: withdrawn,
+              mappingInForce: mapped,
+              windowRuleComputed: computed || deadlineStatus === 'verified',
               writtenOff,
             }),
             FIVE,
@@ -150,6 +172,9 @@ describe('from validated to actionable (PRD 12)', () => {
           expect(judged.reasons).toEqual(NOT_ACTIONABLE_REASONS.filter((reason) => judged.reasons.includes(reason)));
           expect(judged.reasons.includes('BELOW_LINE_MATERIALITY')).toBe(variance < 500n);
           expect(judged.actionable && (window === null || window < AS_OF)).toBe(false);
+          // A window the engine counts by another rule than the contract's is never judged passed or missing.
+          expect(judged.reasons.includes('WINDOW_PASSED') || judged.reasons.includes('NO_WINDOW')).toBe((computed || deadlineStatus === 'verified') && (window === null || window < AS_OF));
+          expect(judged.reasons.includes('MAPPING_NOT_IN_FORCE')).toBe(!mapped);
           expect(judged.reasons.includes('DEADLINE_UNVERIFIED')).toBe(deadlineStatus === 'unverified');
           expect(judged.reasons.includes('VERSION_NOT_IN_FORCE')).toBe(!covers);
           expect(judged.reasons.includes('RELEASE_WITHDRAWN')).toBe(withdrawn);

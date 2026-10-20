@@ -3,6 +3,7 @@ import type { LinePricingNow } from '@tp/worker/pricing';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { StatusChip } from '../status';
 import { unpricedReasonText } from '../../lib/contracts/remedies';
 import { PRICING_CAUSE_TEXT, type PricingNowView, type PricingTotals } from '../../lib/packets/pricing';
@@ -12,7 +13,8 @@ import { PRICING_CAUSE_TEXT, type PricingNowView, type PricingTotals } from '../
  * line's expected amount and variance as the version states them and as the pricing in effect gives them now,
  * with the version's totals then and now. A server component; it shows nothing while the version is current.
  * The figures are the database's, never recomputed; a line not priced again yet, or no longer priced, says so.
- * Nothing refreshes a case automatically yet, so the remedy is the case page's write-off, or waiting.
+ * Nothing refreshes a case automatically yet and a stale line never becomes current again, so the one remedy is the
+ * case page's write-off, then a new version written, approved and exported.
  *
  * On the submissions page (`sent`), the version already went to the payer: the submission was logged as it
  * happened and flagged, never refused, and the panel shows what was sent beside the pricing in effect now. Its
@@ -70,12 +72,13 @@ export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }
             </AlertDescription>
           ) : (
             <AlertDescription>
-              Nothing refreshes the case automatically yet. To send the packet without the stale {one ? 'line' : 'lines'}, write {one ? 'it' : 'them'} off on the case page and write the packet again;
-              otherwise wait until {one ? 'it is' : 'they are'} priced current again. Until then this version is not approved, exported or attested.
+              Nothing refreshes the case automatically yet, and refreshing a case on new pricing is not available yet. Write the stale {one ? 'line' : 'lines'} off on the case page (
+              {one ? 'it leaves' : 'they leave'} this dispute), then write, approve and export the packet again without {one ? 'it' : 'them'}. This version is not approved, exported or
+              attested.
             </AlertDescription>
           )}
         </Alert>
-        <div className="overflow-x-auto">
+        <ScrollTable label="Lines not on current pricing">
           <table className="w-full text-sm" aria-label="Lines not on current pricing">
             <thead>
               <tr className="border-b text-left align-bottom">
@@ -127,7 +130,7 @@ export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }
               </tr>
             </tfoot>
           </table>
-        </div>
+        </ScrollTable>
       </CardContent>
     </Card>
   );

@@ -18,11 +18,15 @@ import { statesItsInputs } from './records';
  * 4. case_changed: the version no longer asks for exactly its case's lines (packet_version_matches_case), or
  *    the case was closed written off;
  * 5. not_case_level: the version was written at an earlier dispute level than the case's now;
- * 6. window_passed: a line's dispute window (priced_line.window_ends_on) ended before the day;
- * 7. pricing_not_current: packet_version_pricing_check() is not 'current' (audit item #4);
- * 8. deadline_unverified: the database (packet_version_deadline_status()) or @tp/triage, deriving the deadline
+ * 6. window_passed: at the first dispute level, a line's dispute window (priced_line.window_ends_on) ended before
+ *    the day;
+ * 7. next_window_passed: above the first level, the next level's window that the reopening denial gave
+ *    (payer_response.next_window_ends_on, the deadline of the version's own level) ended before the day; the lines'
+ *    first-level windows are not this level's deadline, and a line in such a case is not written off for them;
+ * 8. pricing_not_current: packet_version_pricing_check() is not 'current' (audit item #4);
+ * 9. deadline_unverified: the database (packet_version_deadline_status()) or @tp/triage, deriving the deadline
  *    again now, says unverified;
- * 9. inputs_differ: the version does not state its deadlines and calculations as its inputs give them now.
+ * 10. inputs_differ: the version does not state its deadlines and calculations as its inputs give them now.
  *
  * A tp-packet/1 version states neither a deadline nor calculations, so 'outdated' stands for the last two (it is
  * written again either way). The verifier is not run here: it runs only in the job, over exactly what it prints
@@ -38,6 +42,7 @@ export const PACKET_EXPORT_REFUSALS = [
   'case_changed',
   'not_case_level',
   'window_passed',
+  'next_window_passed',
   'pricing_not_current',
   'deadline_unverified',
   'inputs_differ',
@@ -93,7 +98,9 @@ interface ReadinessRow {
   readonly matches: boolean;
   readonly case_closed: boolean;
   readonly at_case_level: boolean;
+  readonly dispute_level: number;
   readonly window_passed: boolean;
+  readonly next_window_passed: boolean;
   readonly pricing: string | null;
   readonly deadline_status: DeadlineStatus | null;
 }
@@ -110,11 +117,18 @@ export async function exportReadiness(client: ScopeClient, request: ExportReadin
             packet_version_matches_case(p.case_id, v.content) AS matches,
             c.state = 'closed_written_off' AS case_closed,
             v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level,
+            v.dispute_level,
             EXISTS (
               SELECT 1 FROM jsonb_array_elements(v.content -> 'lines') l
                 JOIN priced_line pl ON pl.id = (l ->> 'priced_line_id')::uuid AND pl.practice_id = v.practice_id
                WHERE pl.window_ends_on < $3::date
             ) AS window_passed,
+            coalesce((
+              SELECT r.next_window_ends_on < $3::date
+                FROM payer_response r JOIN submission s ON s.id = r.submission_id
+               WHERE s.case_id = p.case_id AND s.practice_id = v.practice_id AND r.reopens_case
+               ORDER BY r.received_on DESC, r.created_at DESC, r.id DESC LIMIT 1
+            ), false) AS next_window_passed,
             packet_version_pricing_check(v.content) AS pricing,
             packet_version_deadline_status(p.case_id, v.content) AS deadline_status
        FROM packet_version v JOIN packet p ON p.id = v.packet_id JOIN "case" c ON c.id = p.case_id
@@ -145,8 +159,9 @@ export async function exportReadiness(client: ScopeClient, request: ExportReadin
   if (!version.at_case_level) {
     reasons.push('not_case_level');
   }
-  if (version.window_passed) {
-    reasons.push('window_passed');
+  // The deadline of the version's own level: the lines' windows at the first, the next level's window above it.
+  if (version.dispute_level === 1 ? version.window_passed : version.next_window_passed) {
+    reasons.push(version.dispute_level === 1 ? 'window_passed' : 'next_window_passed');
   }
   // A value the database does not return fails closed.
   if (version.pricing !== 'current') {

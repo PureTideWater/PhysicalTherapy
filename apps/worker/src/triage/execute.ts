@@ -123,6 +123,8 @@ export interface CandidateRow {
   readonly window_ends_on: string | null;
   readonly trace: unknown;
   readonly mapping_kind: string | null;
+  /** Whether the mapping it priced under is still the plan's mapping in force on its service date (payer_plan_mapping_in_force()). */
+  readonly mapping_in_force: boolean;
   readonly contract_version_id: string | null;
   readonly version_status: string | null;
   /** Whether the version still covers the line's service date (true without a version). */
@@ -219,6 +221,7 @@ export async function candidateRows(scope: PracticeScope<ScopeClient>, practiceI
            ), in_effect AS (${PRICED_IN_EFFECT('$1', 'p.service_line_id IN (SELECT service_line_id FROM wanted)')})
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, r.release_no, p.variance_cents::text, p.window_ends_on::text, p.trace,
                   m.mapping_kind, p.contract_version_id, v.status AS version_status,
+                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
                   (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
                      AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
                   EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no) AS release_withdrawn,
@@ -287,9 +290,11 @@ export async function candidateLines(client: ScopeClient, rows: readonly Candida
       varianceCents: parseCents(row.variance_cents),
       windowEndsOn: row.window_ends_on,
       deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
+      windowRuleComputed: deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED',
       claimReversed: row.reversed,
       claimSuperseded: row.superseded,
       mappingKind: row.mapping_kind,
+      mappingInForce: row.mapping_in_force,
       contractVersionStatus: row.version_status,
       contractVersionCoversService: row.version_covers_service,
       releaseWithdrawn: row.release_withdrawn,

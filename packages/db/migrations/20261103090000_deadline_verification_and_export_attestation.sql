@@ -7,7 +7,7 @@
 -- A deadline is verified only from a source a person signed off (D17 a): for a contract line, the signed-off
 -- version's own dispute window with its page, quote and hash, the unit and the start the quote states, verified
 -- by a contract specialist, and only when that rule is the one the product computes (calendar days after the
--- remittance date; audit item #5); for a Medicare Advantage non-contracted line, the rule release's dispute-window
+-- payment date, BPR16; audit item #5); for a Medicare Advantage non-contracted line, the rule release's dispute-window
 -- record at L2 or higher (L3 for E3) once the specialist has confirmed the Medicare Advantage dispute route
 -- (golden QUESTIONS Q34; until then no such deadline is verified). A release's commercial_default is never
 -- verified. The status is derived from each line's stored trace (steps.window), so the engine is untouched. No
@@ -16,8 +16,9 @@
 -- - contract_version: the window's evidence, additively and in rate_record's form. dispute_window_evidence
 --   {document_id, page, quote, hash} (null by default: every existing version's lines stay DEADLINE_UNVERIFIED
 --   until a corrected version carries it), its unit (dispute_window_unit: calendar_days, business_days, months)
---   and what it runs from (dispute_window_measured_from: date_of_service, remittance_date, payment_date,
---   receipt_date), both exactly with a citation, with the specialist who verified it and when
+--   and what it runs from (dispute_window_measured_from: date_of_service; remittance_date, the remittance advice's
+--   own date, the 835's DTM*405 production date or the date printed on a paper RA; payment_date, BPR16, the check's
+--   issue date or the EFT's effective date, the Remittances screen's Payment date; receipt_date), both exactly with a citation, with the specialist who verified it and when
 --   (dispute_window_verified_by and _at, named like rate_record.verified_by and verified_at).
 --   contract_version_rules() is 20261016160000's body with the evidence, unit and start among the terms and the
 --   verification among what approval, sign-off and retirement never change, so all are frozen from approval
@@ -42,9 +43,11 @@
 --   record in force that gives exactly its stored end (case_next_dispute_window()).
 -- - Whether a version's pricing is still current (audit item #4), one check: service_line_priced_in_effect() is
 --   a service line's priced line in the run in effect that took effect last (PRICED_IN_EFFECT's rule),
+--   payer_plan_mapping_in_force() a plan's mapping in force on a date (@tp/contracts mappingInForce()),
 --   priced_line_pricing_check() a line's 'current' or first cause (PRICING_NOT_IN_EFFECT, RELEASE_WITHDRAWN,
---   CONTRACT_VERSION_NOT_SIGNED_OFF, CONTRACT_VERSION_NOT_IN_FORCE), packet_version_pricing_check() a version's
---   (the most severe across its lines; malformed lines fail closed). Approval (packet_version_approval_pricing),
+--   MAPPING_NOT_IN_FORCE, CONTRACT_VERSION_NOT_SIGNED_OFF, CONTRACT_VERSION_NOT_IN_FORCE), packet_version_pricing_check()
+--   a version's (the most severe across its lines; malformed lines fail closed), each step's read of it serialized
+--   with the writes that make pricing stale (pricing_current_read_lock(), pricing_current_change_lock()). Approval (packet_version_approval_pricing),
 --   the export guard and the attestation refuse a version that is not current; a submission is never refused
 --   for it (it records what already happened outside the product) and records the result in
 --   submission.pricing_check, which the database writes. An audit report is neither requested, generated,
@@ -94,17 +97,24 @@
 -- packet_version_rules (for a job actor), deadline_verification_status and submission.pricing_check never. The
 -- guard reads rows that cannot change underneath it, or that fail it closed when they change: priced_line,
 -- rule_record and payer_response are immutable, a contract window is frozen from approval, a withdrawal, an
--- accepted re-run or a reopening denial only adds a row or moves a run out of effect (which fails the pricing or
--- the deadline closed, or moves the case's level), a contract version only leaves sign-off or closes its window
--- (which fails the pricing closed), and the version's status is read at export.
+-- accepted re-run, a mapping correction or a reopening denial only adds a row or moves a run out of effect (which
+-- fails the pricing or the deadline closed, or moves the case's level), a contract version only leaves sign-off or
+-- closes its window (which fails the pricing closed), and the version's status is read at export. A change made
+-- by a transaction still open while the guard, the approval, the attestation or the submission's flag reads the
+-- pricing is not visible to it under READ COMMITTED, so those reads are serialized with the writes that make
+-- pricing stale (pricing_current_read_lock() shared, pricing_current_change_lock() exclusive): the step that
+-- waited reads the change once committed, and the change that waited commits after a step that was current.
 --
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: nullable columns and a generated one
 -- (adding it rewrites the small packet_version table under a brief ACCESS EXCLUSIVE lock; every existing row is
 -- tp-packet/1 and becomes 'unverified', so nothing is backfilled), CHECKs every existing row meets (no version
 -- has a cited window yet, and submission.pricing_check is null on every existing row), new functions and
--- triggers (two on audit_event, firing only for the two download actions and the three export-attempt actions,
--- which no earlier row carries; one on submission, setting only the new column; one on packet_version, refusing
--- only an approval of a version whose pricing is not current); replaced: packet_content_valid() and
+-- triggers (three on audit_event, firing only for the two download actions, the three export-attempt actions,
+-- which no earlier row carries, and an export request, which only a person's export route records; one on
+-- submission, setting only the new column; one on packet_version, refusing only an approval of a version whose
+-- pricing is not current; one each on pricing_run, contract_version, payer_plan_mapping and
+-- rule_release_withdrawal, taking only an advisory lock before an acceptance, a completion, a supersession or a
+-- closed window, a correction and a withdrawal); replaced: packet_content_valid() and
 -- contract_version_rules() with their signatures, accepting tp-packet/1 and a version with no window citation as
 -- before, practice_export_history() and practice_export_count() with their signatures, listing what they listed
 -- and the two download actions, and audit_report_belongs() and audit_report_rules() with their signatures,
@@ -115,12 +125,13 @@
 -- fails a report on a withdrawn release when it makes it ready (the new image fails it as release_withdrawn
 -- first), its downloads are recorded as packet_export_downloaded, which no attestation counts (the reviewer
 -- downloads again under the new image), its export job writes no attempt events (its refusals show as in
--- progress, then as failed with no result after an hour), its contract screens cite a window without its unit
+-- progress, then as failed with no result after an hour; on the application login the new image's job could not
+-- write them either), its export route records its requests in the person's name as before, its contract screens cite a window without its unit
 -- and start, which the new CHECK refuses (the specialist cites again under the new image), its worker still
 -- connects as the application login until its task is replaced by one on the worker's own (the deploy job
--- creates that login after the migrations), and its triage, which does not know DEADLINE_UNVERIFIED,
--- RELEASE_WITHDRAWN or VERSION_NOT_IN_FORCE, may open cases whose export the guard refuses: each is the approved
--- outcome. Deploy order: migrate first (docs/adr/0049).
+-- creates that login after the migrations), and its triage, which does not know
+-- DEADLINE_UNVERIFIED, RELEASE_WITHDRAWN, VERSION_NOT_IN_FORCE or MAPPING_NOT_IN_FORCE, may open cases whose
+-- export the guard refuses: each is the approved outcome. Deploy order: migrate first (docs/adr/0049).
 
 -- ---------------------------------------------------------------------------------------------------
 -- contract_version: the dispute window's evidence and its verification
@@ -128,12 +139,16 @@
 
 -- Whether the product computes a contract window cited with this unit and start (audit item #5): what
 -- @tp/pricing's windows.ts computes for a contract window, its dispute_window_days counted as calendar days
--- after the remittance date (BPR16). @tp/contracts COMPUTED_CONTRACT_WINDOW_RULE and @tp/triage
+-- after the payment date on the remittance (BPR16: the check's issue date or the EFT's effective date, the
+-- Remittances screen's Payment date), which the engine's trace labels measured_from 'remittance_date' and
+-- from_date. A window counted from the remittance advice's own date (the 835's DTM*405 production date, or the
+-- date printed on a paper RA), usually a day or more before BPR16, is not computed: verifying it would show an
+-- end later than the contract's. @tp/contracts COMPUTED_CONTRACT_WINDOW_RULE and @tp/triage
 -- COMPUTED_CONTRACT_WINDOW hold the same literal (a database test compares them over every unit and start).
 -- PR 6c, which computes the window from the cited unit and start, widens this body.
 CREATE FUNCTION contract_window_rule_computed(unit text, measured_from text) RETURNS boolean
 LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT coalesce(unit = 'calendar_days' AND measured_from = 'remittance_date', false)
+  SELECT coalesce(unit = 'calendar_days' AND measured_from = 'payment_date', false)
 $$;
 
 -- Whether the contract specialist has confirmed which dispute route a Medicare Advantage non-contracted line
@@ -287,7 +302,7 @@ BEGIN
           END IF;
           -- window: verified only when the cited unit and start are what the product computes (audit item #5).
           IF NOT contract_window_rule_computed(NEW.dispute_window_unit, NEW.dispute_window_measured_from) THEN
-            RAISE EXCEPTION 'a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the remittance date' USING ERRCODE = 'check_violation';
+            RAISE EXCEPTION 'a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the payment date (BPR16)' USING ERRCODE = 'check_violation';
           END IF;
           IF NOT ((NEW.dispute_window_evidence ->> 'document_id')::uuid = ANY (NEW.source_document_ids)) THEN
             RAISE EXCEPTION 'a dispute window''s evidence is a document of its version' USING ERRCODE = 'check_violation';
@@ -452,8 +467,9 @@ ALTER TABLE packet_version
 -- that was not withdrawn (a withdrawal says its content was wrong), once the specialist has confirmed the Medicare
 -- Advantage dispute route (ma_dispute_route_confirmed(), Q34), never for a commercial_default; verified for a
 -- contract window when the version the trace names is signed off with its window verified over complete evidence,
--- its cited rule the one the product computes (calendar days after the remittance date) and the trace's window
--- that rule (the trace's length in days, from the remittance date); unverified otherwise, and for a line the
+-- its cited rule the one the product computes (calendar days after the payment date, BPR16) and the trace's window
+-- that rule (the trace's length in days, from what the engine labels the remittance date: BPR16, the payment
+-- date); unverified otherwise, and for a line the
 -- caller cannot see.
 CREATE FUNCTION priced_line_deadline_status(target uuid, minimum_level text DEFAULT 'L2') RETURNS text
 LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
@@ -497,6 +513,7 @@ BEGIN
          AND v.dispute_window_verified_by IS NOT NULL AND rate_record_evidence_complete(v.dispute_window_evidence)
          AND contract_window_rule_computed(v.dispute_window_unit, v.dispute_window_measured_from)
          AND v.dispute_window_days = (window_step ->> 'length')::integer AND window_step ->> 'unit' = 'days'
+         -- The engine's label for a contract window counted from BPR16, the payment date (packages/pricing/src/windows.ts).
          AND window_step ->> 'measured_from' = 'remittance_date'
     ) THEN 'verified' ELSE 'unverified' END;
   END IF;
@@ -590,22 +607,46 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_te
    LIMIT 1
 $$;
 
+-- A plan's mapping in force on a date, as @tp/contracts mappingInForce() reads it (resolver.ts; MAP-02, MAP-03): of
+-- the plan's mappings whose window covers the date, the one no covering mapping supersedes, directly or through the
+-- mappings it corrects. Null when none covers the date, when the database's invariants are broken (more than one
+-- would be in force), or for a plan the caller cannot see (SECURITY INVOKER: fails closed). A database test compares
+-- it with mappingInForce() over corrections and their chains.
+CREATE FUNCTION payer_plan_mapping_in_force(target_plan uuid, on_date date) RETURNS uuid
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
+  WITH RECURSIVE covering AS (
+    SELECT m.id, m.supersedes_id
+      FROM payer_plan_mapping m
+     WHERE m.plan_id = target_plan AND m.effective_from <= on_date AND (m.effective_to IS NULL OR on_date < m.effective_to)
+  ), superseded (id) AS (
+    SELECT c.supersedes_id FROM covering c WHERE c.supersedes_id IS NOT NULL
+    UNION
+    SELECT m.supersedes_id FROM payer_plan_mapping m JOIN superseded s ON m.id = s.id WHERE m.plan_id = target_plan AND m.supersedes_id IS NOT NULL
+  )
+  SELECT CASE WHEN count(*) = 1 THEN (array_agg(c.id))[1] END
+    FROM covering c
+   WHERE c.id NOT IN (SELECT s.id FROM superseded s)
+$$;
+
 -- Whether a priced line is still its service line's current pricing: 'current', or the first cause that holds,
 -- in this order. PRICING_NOT_IN_EFFECT: another run's line is in effect now (an accepted re-run, a later first
 -- run of the period), no run in effect prices it, or the caller cannot see it (fail closed). RELEASE_WITHDRAWN:
--- its run's rule release has a rule_release_withdrawal row (its content was wrong). For a contract line:
--- CONTRACT_VERSION_NOT_SIGNED_OFF when the version that priced it is no longer signed off (a correction
--- superseded it) or the caller cannot see it; CONTRACT_VERSION_NOT_IN_FORCE when it is signed off but no longer
--- covers the line's service date (a back-dated amendment closed it), by the resolver's windowCovers rule:
--- effective_from <= service date < effective_to. A Medicare Advantage non-contracted line names no version.
--- Under the caller's policies (SECURITY INVOKER).
+-- its run's rule release has a rule_release_withdrawal row (its content was wrong). MAPPING_NOT_IN_FORCE: the
+-- plan mapping it priced under is no longer the plan's mapping in force on its service date
+-- (payer_plan_mapping_in_force(): a correction covering that date supersedes it, to another contract, to Medicare
+-- Advantage non-contracted or to no agreement, MAP-03), or it names none; this holds for a Medicare Advantage
+-- non-contracted line too. For a contract line: CONTRACT_VERSION_NOT_SIGNED_OFF when the version that priced it is
+-- no longer signed off (a correction superseded it) or the caller cannot see it; CONTRACT_VERSION_NOT_IN_FORCE when
+-- it is signed off but no longer covers the line's service date (a back-dated amendment closed it), by the
+-- resolver's windowCovers rule: effective_from <= service date < effective_to. A Medicare Advantage non-contracted
+-- line names no version. Under the caller's policies (SECURITY INVOKER).
 CREATE FUNCTION priced_line_pricing_check(target uuid) RETURNS text
 LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   line record;
   version record;
 BEGIN
-  SELECT p.service_line_id, p.contract_version_id, r.release_no, coalesce(s.service_date, c.service_from) AS service_on
+  SELECT p.service_line_id, p.mapping_id, p.contract_version_id, r.release_no, s.payer_plan_key AS plan_id, coalesce(s.service_date, c.service_from) AS service_on
     INTO line
     FROM priced_line p
     JOIN pricing_run r ON r.id = p.pricing_run_id
@@ -617,6 +658,9 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = line.release_no) THEN
     RETURN 'RELEASE_WITHDRAWN';
+  END IF;
+  IF line.mapping_id IS NULL OR line.service_on IS NULL OR payer_plan_mapping_in_force(line.plan_id, line.service_on) IS DISTINCT FROM line.mapping_id THEN
+    RETURN 'MAPPING_NOT_IN_FORCE';
   END IF;
   IF line.contract_version_id IS NOT NULL THEN
     SELECT v.status, v.effective_from, v.effective_to INTO version FROM contract_version v WHERE v.id = line.contract_version_id;
@@ -640,7 +684,7 @@ $$;
 CREATE FUNCTION packet_version_pricing_check(content jsonb) RETURNS text
 LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
-  causes CONSTANT text[] := ARRAY['PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'];
+  causes CONSTANT text[] := ARRAY['PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'];
   worst integer;
 BEGIN
   IF jsonb_typeof(content -> 'lines') IS DISTINCT FROM 'array' THEN
@@ -666,12 +710,58 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_te
   SELECT EXISTS (SELECT 1 FROM pricing_run r JOIN rule_release_withdrawal w ON w.release_no = r.release_no WHERE r.id = run)
 $$;
 
+-- The one check serialized against the writes that make pricing stale. Every step that asks whether a version's
+-- pricing is current before it lets the version move (approval, the export guard, the attestation) and the
+-- submission's flag takes these two locks shared in a statement of its own right before the check; every write that
+-- can make a priced line stale takes the matching one exclusively before it changes its row
+-- (pricing_current_change_lock: a pricing run accepted or completed, a signed-off contract version superseded or its
+-- window closed, a mapping corrected, all of the practice; a rule release withdrawn, for every practice). Under READ
+-- COMMITTED each later statement of the step's trigger takes a new snapshot, so a check that waited for a change
+-- sees it committed and refuses, and a change that waited commits after a step that was current when it was made.
+-- The shared side never waits on a row the writers lock, and the writers touch no packet version, so the two never
+-- wait on each other in a cycle.
+CREATE FUNCTION pricing_current_read_lock(target_practice uuid) RETURNS void LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended('pricing_current:' || target_practice::text, 0));
+  PERFORM pg_advisory_xact_lock_shared(hashtextextended('pricing_current:withdrawal', 0));
+END;
+$$;
+
+CREATE FUNCTION pricing_current_change_lock() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'rule_release_withdrawal' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('pricing_current:withdrawal', 0));
+  ELSE
+    PERFORM pg_advisory_xact_lock(hashtextextended('pricing_current:' || NEW.practice_id::text, 0));
+  END IF;
+  RETURN NEW;
+END;
+$$;
+-- A re-run accepted, or a run completed (a later first run of a period takes an earlier one out of effect).
+CREATE TRIGGER pricing_run_pricing_current_lock BEFORE UPDATE ON pricing_run FOR EACH ROW
+  WHEN (NEW.accepted_at IS DISTINCT FROM OLD.accepted_at OR (NEW.status = 'complete' AND OLD.status IS DISTINCT FROM 'complete'))
+  EXECUTE FUNCTION pricing_current_change_lock();
+-- A signed-off version superseded by a correction's sign-off, or its window closed by an amendment's.
+CREATE TRIGGER contract_version_pricing_current_lock BEFORE UPDATE ON contract_version FOR EACH ROW
+  WHEN ((OLD.status = 'signed_off' AND NEW.status IS DISTINCT FROM OLD.status) OR NEW.effective_to IS DISTINCT FROM OLD.effective_to)
+  EXECUTE FUNCTION pricing_current_change_lock();
+-- A mapping correction (MAP-03): only a mapping that supersedes another takes one out of force.
+CREATE TRIGGER payer_plan_mapping_pricing_current_lock BEFORE INSERT ON payer_plan_mapping FOR EACH ROW
+  WHEN (NEW.supersedes_id IS NOT NULL)
+  EXECUTE FUNCTION pricing_current_change_lock();
+-- A rule release withdrawn (its content was wrong): every practice's pricing under it.
+CREATE TRIGGER rule_release_withdrawal_pricing_current_lock BEFORE INSERT ON rule_release_withdrawal FOR EACH ROW
+  EXECUTE FUNCTION pricing_current_change_lock();
+
 -- Approval only while the version's pricing is current (packet_version_rules, which this does not replace,
 -- holds the rest of approval). It fires first by name, so a stale version is refused for that before anything else.
 CREATE FUNCTION packet_version_approval_pricing() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+  IF OLD.approved_by IS NULL AND NEW.approved_by IS NOT NULL THEN
+    PERFORM pricing_current_read_lock(NEW.practice_id);
+  END IF;
   IF OLD.approved_by IS NULL AND NEW.approved_by IS NOT NULL AND packet_version_pricing_check(NEW.content) IS DISTINCT FROM 'current' THEN
-    RAISE EXCEPTION 'a packet version is approved only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date' USING ERRCODE = 'check_violation';
+    RAISE EXCEPTION 'a packet version is approved only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date' USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END;
@@ -883,9 +973,11 @@ BEGIN
       RAISE EXCEPTION 'only a version of the case''s dispute level is exported; write the packet again at this level' USING ERRCODE = 'check_violation';
     END IF;
     -- Its pricing is still current (audit item #4): every line on the pricing in effect, its release not
-    -- withdrawn, its contract version signed off and covering the service date.
+    -- withdrawn, the plan's mapping in force, its contract version signed off and covering the service date;
+    -- read after the lock that orders it with the writes that make pricing stale.
+    PERFORM pricing_current_read_lock(NEW.practice_id);
     IF packet_version_pricing_check(NEW.content) IS DISTINCT FROM 'current' THEN
-      RAISE EXCEPTION 'a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date' USING ERRCODE = 'check_violation';
+      RAISE EXCEPTION 'a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date' USING ERRCODE = 'check_violation';
     END IF;
     IF packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
       RAISE EXCEPTION 'a packet version whose deadline is not verified is not exported' USING ERRCODE = 'check_violation';
@@ -1032,6 +1124,7 @@ BEGIN
     IF (NEW.content ->> 'dispute_level')::integer IS DISTINCT FROM 1 + case_reopened_levels(the_case) THEN
       RAISE EXCEPTION 'only a version of the case''s dispute level is attested' USING ERRCODE = 'check_violation';
     END IF;
+    PERFORM pricing_current_read_lock(NEW.practice_id);
     IF packet_version_pricing_check(NEW.content) IS DISTINCT FROM 'current' THEN
       RAISE EXCEPTION 'a packet version whose pricing is no longer current is not attested' USING ERRCODE = 'check_violation';
     END IF;
@@ -1075,10 +1168,11 @@ CREATE TRIGGER submission_needs_attested_export AFTER INSERT ON submission FOR E
 -- overwriting whatever an INSERT gave; the application role has no grant on it.
 ALTER TABLE submission
   ADD COLUMN pricing_check text CONSTRAINT submission_pricing_check_check
-    CHECK (pricing_check IN ('current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'));
+    CHECK (pricing_check IN ('current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'));
 
 CREATE FUNCTION submission_pricing_check() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
+  PERFORM pricing_current_read_lock(NEW.practice_id);
   NEW.pricing_check := packet_version_pricing_check((SELECT v.content FROM packet_version v WHERE v.id = NEW.packet_version_id AND v.practice_id = NEW.practice_id));
   RETURN NEW;
 END;
@@ -1192,7 +1286,7 @@ $$;
 -- database test compares them).
 CREATE FUNCTION packet_export_refusal_codes() RETURNS text[]
 LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT ARRAY['not_approved', 'not_current', 'outdated', 'case_changed', 'not_case_level', 'window_passed', 'pricing_not_current', 'deadline_unverified', 'inputs_differ', 'verifier_failed']
+  SELECT ARRAY['not_approved', 'not_current', 'outdated', 'case_changed', 'not_case_level', 'window_passed', 'next_window_passed', 'pricing_not_current', 'deadline_unverified', 'inputs_differ', 'verifier_failed']
 $$;
 
 CREATE FUNCTION packet_export_failure_codes() RETURNS text[]
@@ -1201,13 +1295,16 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_te
 $$;
 
 -- An export job's refusal (packet_export_refused), a failed try another follows (packet_export_attempt_failed) or
--- its last failed try (packet_export_failed): written by the job (a service actor, never a person), of a packet
--- version of the event's practice, with one of its codes as the purpose and nothing else (no words, no patient
--- data). Every role meets it, the owner included.
+-- its last failed try (packet_export_failed): written by the job on the worker's own login (app_session_is_job(),
+-- as a service actor, never a person), of a packet version of the event's practice, with one of its codes as the
+-- purpose and nothing else (no words, no patient data). Every role meets it, the owner included.
 CREATE FUNCTION audit_event_packet_export_attempt() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF app_actor_is_person() OR NEW.actor_kind IS DISTINCT FROM 'service' THEN
     RAISE EXCEPTION 'a packet export''s refusal or failure is recorded by the export job, never in a person''s name' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NOT app_session_is_job() THEN
+    RAISE EXCEPTION 'a packet export''s refusal or failure is recorded by the export job on the worker''s own login' USING ERRCODE = 'insufficient_privilege';
   END IF;
   IF NEW.object_type IS DISTINCT FROM 'packet_version' OR NEW.practice_id IS NULL
      OR NOT EXISTS (SELECT 1 FROM packet_version v WHERE v.id = NEW.object_id AND v.practice_id = NEW.practice_id) THEN
@@ -1223,8 +1320,33 @@ CREATE TRIGGER audit_event_packet_export_attempt BEFORE INSERT ON audit_event FO
   WHEN (NEW.action IN ('packet_export_refused', 'packet_export_attempt_failed', 'packet_export_failed'))
   EXECUTE FUNCTION audit_event_packet_export_attempt();
 
+-- A request for a packet version's export (packet_export_requested, which the export route records once it has queued
+-- the job or found the version exported): a person's, in their own name, on a connection that is not the worker's,
+-- who may export PHI in the event's practice (phi.export), of a packet version of that practice in the caller's
+-- scope. So the job's login, which records the attempts, cannot record a request that would mask its own refusal on
+-- the packet page (packet_version_export_attempt() counts a person's requests only). Every role meets it.
+CREATE FUNCTION audit_event_packet_export_requested() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_session_is_job() OR NOT app_actor_is_person() OR NEW.actor_kind IS DISTINCT FROM 'user' OR NEW.actor_id IS DISTINCT FROM app_actor_id() THEN
+    RAISE EXCEPTION 'a packet export is requested by a person, in their own name, never on the worker''s login' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.practice_id IS NULL OR NOT practice_in_scope(NEW.practice_id) OR NOT coalesce(app_actor_permitted(NEW.practice_id, 'phi.export'), false) THEN
+    RAISE EXCEPTION 'a packet export is requested by a person who may export PHI in its practice' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.object_type IS DISTINCT FROM 'packet_version'
+     OR NOT EXISTS (SELECT 1 FROM packet_version v WHERE v.id = NEW.object_id AND v.practice_id = NEW.practice_id) THEN
+    RAISE EXCEPTION 'a packet export is requested of a packet version of its practice' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER audit_event_packet_export_requested BEFORE INSERT ON audit_event FOR EACH ROW
+  WHEN (NEW.action = 'packet_export_requested')
+  EXECUTE FUNCTION audit_event_packet_export_requested();
+
 -- The latest export attempt of a packet version, for its packet page: 'exported' once exported (at its export);
--- 'none' when nobody asked; 'in_progress' after the latest request with nothing from the job since; 'retrying',
+-- 'none' when nobody asked (a request is a person's: audit_event_packet_export_requested); 'in_progress' after the
+-- latest request with nothing from the job since; 'retrying',
 -- 'refused' or 'failed' with the code of the job's newest event since that request. One row for a version in the
 -- caller's scope whose actor drafts packets or exports PHI in its practice, none otherwise. Definer's rights over
 -- the audit log, whose own policy admits the practice's administrators alone; the caller's scope is kept.
@@ -1239,7 +1361,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
   ), request AS (
     SELECT max(e.at) AS at
       FROM version v JOIN audit_event e ON e.object_type = 'packet_version' AND e.object_id = v.id AND e.practice_id = v.practice_id
-     WHERE e.action = 'packet_export_requested'
+     WHERE e.action = 'packet_export_requested' AND e.actor_kind = 'user'
   ), outcome AS (
     SELECT e.action, e.purpose, e.at
       FROM version v
@@ -1271,16 +1393,19 @@ GRANT UPDATE (export_verifier_report, attested_by, attestation) ON packet_versio
 
 REVOKE ALL ON FUNCTION contract_window_rule_computed(text, text), ma_dispute_route_confirmed(),
   priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
-  service_line_priced_in_effect(uuid), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid), packet_version_approval_pricing(),
+  service_line_priced_in_effect(uuid), payer_plan_mapping_in_force(uuid, date), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid),
+  pricing_current_read_lock(uuid), pricing_current_change_lock(), packet_version_approval_pricing(), audit_event_packet_export_requested(),
   priced_line_calculation(jsonb), packet_version_deadline_stated(), packet_version_export_guard(), packet_version_attestation_rules(), submission_needs_attested_export(),
   submission_pricing_check(), app_session_is_job(), audit_event_packet_download(), packet_export_downloads_of_actor(uuid),
   packet_export_refusal_codes(), packet_export_failure_codes(), audit_event_packet_export_attempt(), packet_version_export_attempt(uuid) FROM PUBLIC;
 -- Called by the triggers, which run as the application role, and by the export job and the screens (the review
 -- reads the viewer's own downloads; the attestation service asks before it attests; the builder, the export
--- request and the job ask whether a version's pricing is current; the packet page reads the latest attempt; the
--- contract window's CHECK and the deadline's derivation ask whether a window's rule is computed and the route confirmed).
+-- request and the job ask whether a version's pricing is current, and triage whether a line's mapping is still in
+-- force; the triggers that read the pricing take its lock; the packet page reads the latest attempt; the contract
+-- window's CHECK and the deadline's derivation ask whether a window's rule is computed and the route confirmed).
 GRANT EXECUTE ON FUNCTION contract_window_rule_computed(text, text), ma_dispute_route_confirmed(),
   priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
-  service_line_priced_in_effect(uuid), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid),
+  service_line_priced_in_effect(uuid), payer_plan_mapping_in_force(uuid, date), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid),
+  pricing_current_read_lock(uuid),
   priced_line_calculation(jsonb), app_session_is_job(), packet_export_downloads_of_actor(uuid),
   packet_export_refusal_codes(), packet_export_failure_codes(), packet_version_export_attempt(uuid) TO tp_app;

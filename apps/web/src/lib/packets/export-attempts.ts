@@ -36,6 +36,8 @@ export const EXPORT_REFUSAL_TEXT: Readonly<Record<PacketExportRefusal, string>> 
   not_case_level: STALE_LEVEL_NOT_EXPORTABLE,
   window_passed:
     'A line’s dispute window has ended, so the packet is not exported with it. Write the line off on the case page (the daily check writes such a line off too), then write a new version of the packet without it and approve it.',
+  next_window_passed:
+    'The next dispute level’s window, which the payer’s denial gave when it reopened the case, has ended, so this level’s packet is not exported. Do not write the lines off for it: their first-level windows are not this level’s deadline. Record what the payer decides, or ask support how to proceed with this level.',
   pricing_not_current: PRICING_BLOCKED_TEXT.export,
   deadline_unverified: DEADLINE_NOT_EXPORTABLE,
   inputs_differ:
@@ -132,9 +134,11 @@ export interface ExportAttemptWords {
 
 /**
  * The words for an attempt, with times as `time` formats them; null for none and for an exported version (the
- * page shows the export itself).
+ * page shows the export itself). `cleared`: the version is ready to export now, so a refusal for a readiness reason
+ * no longer holds and is told as the earlier request's, with no fix to follow (a verifier failure always keeps its
+ * fix: the version is written again).
  */
-export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) => string): ExportAttemptWords | null {
+export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) => string, options: { readonly cleared?: boolean; readonly singleUser?: boolean } = {}): ExportAttemptWords | null {
   switch (attempt.state) {
     case 'none':
     case 'exported':
@@ -158,12 +162,22 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
         live: true,
       };
     case 'refused':
+      if (options.cleared === true && attempt.code !== 'verifier_failed') {
+        return {
+          state: 'refused',
+          code: attempt.code,
+          tone: 'info',
+          title: 'An earlier request was refused',
+          text: `The request at ${time(attempt.requestedAt)} was refused: ${REFUSAL_SUMMARY[attempt.code]}. That no longer holds, so this version can be exported: export it again.`,
+          live: false,
+        };
+      }
       return {
         state: 'refused',
         code: attempt.code,
         tone: 'danger',
         title: 'Export refused',
-        text: `The export job refused this version at ${time(attempt.at)} and printed nothing. ${EXPORT_REFUSAL_TEXT[attempt.code]}`,
+        text: `The export job refused this version at ${time(attempt.at)} and printed nothing. ${exportRefusalText(attempt.code, { singleUser: options.singleUser ?? false })}`,
         live: false,
       };
     case 'failed':
@@ -181,7 +195,31 @@ export function exportAttemptWords(attempt: ExportAttempt, time: (iso: string) =
   }
 }
 
-/** Every reason an export request is refused for, each with its fix, as the export action and the packet page list them. */
-export function refusalList(reasons: readonly ExportReadinessReason[]): readonly { readonly reason: ExportReadinessReason; readonly text: string }[] {
-  return reasons.map((reason) => ({ reason, text: EXPORT_REFUSAL_TEXT[reason] }));
+/** not_approved in a single-user practice: no one else approves packets, so the drafter approves alone after the 24-hour delay. */
+export const NOT_APPROVED_ALONE_TEXT =
+  'This version is not approved yet. No one else in the practice approves packets, so the person who wrote it approves it alone under Approval above once the 24-hour delay is over (the approval carries the single-user flag); then export it.';
+
+/** A refusal's words for the practice it is in: not_approved names who approves (a second person, or the writer alone in a single-user practice). */
+export function exportRefusalText(reason: PacketExportRefusal, options: { readonly singleUser: boolean }): string {
+  return reason === 'not_approved' && options.singleUser ? NOT_APPROVED_ALONE_TEXT : EXPORT_REFUSAL_TEXT[reason];
 }
+
+/** Every reason an export request is refused for, each with its fix, as the export action and the packet page list them. */
+export function refusalList(reasons: readonly ExportReadinessReason[], options: { readonly singleUser: boolean } = { singleUser: false }): readonly { readonly reason: ExportReadinessReason; readonly text: string }[] {
+  return reasons.map((reason) => ({ reason, text: exportRefusalText(reason, options) }));
+}
+
+/** What an earlier refusal was, in a few words, for a request whose reason no longer holds. */
+const REFUSAL_SUMMARY: Readonly<Record<PacketExportRefusal, string>> = {
+  not_approved: 'the version was not approved',
+  not_current: 'a later version had been written',
+  outdated: 'the version stated no deadline',
+  case_changed: 'the case had changed',
+  not_case_level: 'the version was of an earlier dispute level',
+  window_passed: 'a line’s dispute window had ended',
+  next_window_passed: 'the next dispute level’s window had ended',
+  pricing_not_current: 'a line’s pricing was no longer current',
+  deadline_unverified: 'the deadline was not verified',
+  inputs_differ: 'the version no longer stated its inputs',
+  verifier_failed: 'the verifier failed what the export printed',
+};

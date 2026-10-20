@@ -54,8 +54,9 @@ its release number and SHA-256) and the contract version as it stands now. It re
   audit's item #5, a record below the level says RECORD_BELOW_LEVEL first, and one at the level verifies nothing
   until the specialist confirms the Medicare Advantage dispute route (MA_ROUTE_UNCONFIRMED; golden QUESTIONS Q34);
 - a contract window is verified when the version is signed off, its window cited with complete evidence, a unit and
-  a start that are the rule the product computes (calendar days after the remittance date; item #5), verified by a
-  contract specialist, and its days the trace's length in days from the remittance date (otherwise
+  a start that are the rule the product computes (calendar days after the payment date, BPR16, which the engine's
+  trace labels `remittance_date`; item #5), verified by a contract specialist, and its days the trace's length in
+  days from that date (otherwise
   CONTRACT_WINDOW_UNCITED, CONTRACT_WINDOW_RULE_NOT_COMPUTED, CONTRACT_WINDOW_UNVERIFIED,
   CONTRACT_VERSION_NOT_SIGNED_OFF or CONTRACT_WINDOW_DIFFERS, in that order);
 - after a reopened denial (dispute level 2 and above) the deadline is the next window's
@@ -160,7 +161,9 @@ guard: `tp_owner` owns the tables, triggers and functions,
 `session_replication_role`; its column grants are all it writes (`exported_at` only through
 `packet_version_rules()` for a job actor; `deadline_verification_status` never); and the guard reads rows that
 cannot change underneath it (`priced_line` and `rule_record` are immutable, a contract window is frozen from
-approval, and the version's status is read at export).
+approval, and the version's status is read at export), its read of the pricing serialized with every write that can
+make it stale (item #4 below), since a write still open in another transaction is invisible to it under READ
+COMMITTED.
 
 **The attestation (D16 a and c), audit_report's pattern.** Once exported, a reimbursement reviewer (the founder in
 v0) attests once, in their own name, under a four-hour support grant: `audit_finding.validate`, which only the
@@ -268,15 +271,32 @@ The database now holds one rule:
   them through a first run, a re-run nobody accepted, an accepted re-run and a later first run of the period).
 - `priced_line_pricing_check(priced line)`: `current`, or the first cause that holds, in this order:
   PRICING_NOT_IN_EFFECT (another line is in effect, none is, or the caller cannot see it), RELEASE_WITHDRAWN (a
-  `rule_release_withdrawal` row for its run's release), CONTRACT_VERSION_NOT_SIGNED_OFF (its version is no longer
+  `rule_release_withdrawal` row for its run's release), MAPPING_NOT_IN_FORCE (the plan mapping the line priced under
+  is no longer the plan's mapping in force on its service date, `payer_plan_mapping_in_force(plan, date)`, exactly
+  `@tp/contracts` `mappingInForce()`: a correction covering that date supersedes it, directly or through the mappings
+  it corrects, to another contract, to Medicare Advantage non-contracted or to no agreement, MAP-03; or it names
+  none; for a Medicare Advantage non-contracted line too), CONTRACT_VERSION_NOT_SIGNED_OFF (its version is no longer
   signed off, or the caller cannot see it) and CONTRACT_VERSION_NOT_IN_FORCE (signed off but no longer covering the
   service date by the resolver's `windowCovers` rule, `effective_from <= date < effective_to`, the date being the
   line's service date or its claim's start). A Medicare Advantage non-contracted line names no version and skips the
-  last two.
+  last two. (Review found the mapping missing: a correction of which contract a plan maps to left a stale figure
+  current through every step; it is the third cause now.)
 - `packet_version_pricing_check(content)`: `current` when every `content.lines[].priced_line_id` is, else the most
   severe cause across them; a lines value that is not an array or a malformed ID fails closed
   (PRICING_NOT_IN_EFFECT). `pricing_run_release_withdrawn(run)` answers the audit report's question. All four are
   STABLE, SECURITY INVOKER, `search_path` pinned, EXECUTE to `tp_app` only.
+
+The read is serialized with the writes that make pricing stale (review reproduced a stale export and a stale
+attestation by holding an acceptance, and a withdrawal, open across them). The approval, the export guard, the
+attestation and the submission's flag take `pricing_current_read_lock(practice)` (two transaction-level advisory
+locks, shared: the practice's and every practice's withdrawal key) in a statement of their own right before the check;
+`pricing_current_change_lock()` (BEFORE triggers, `REVOKE ALL FROM PUBLIC`) takes the matching one exclusively on a
+`pricing_run` whose `accepted_at` changes or that completes, a `contract_version` that leaves sign-off or whose
+`effective_to` changes (the supersede and the close inside a successor's sign-off), a `payer_plan_mapping` correction
+and a `rule_release_withdrawal`. Under READ COMMITTED each later statement of a trigger takes a new snapshot, so a
+step that waited reads the change once committed and refuses (or flags), and a change that waited commits after a
+step that was current when it was made. The shared side never waits on a row the writers lock and the writers touch no
+packet version, so there is no lock cycle.
 
 It is enforced wherever a packet moves. Approval: `packet_version_approval_pricing` (BEFORE UPDATE, first by name; it
 does not replace `packet_version_rules`) refuses "a packet version is approved only while its pricing is current",
@@ -306,10 +326,14 @@ attestation and the release of a ready one (failing a queued one stays allowed);
 with the remedy, and the report pages say why in words, with a banner on a ready report and its attest and release
 disabled with the reason.
 
-What the person reads is honest about what happens next. Nothing refreshes a case automatically yet (PR 11 does), so
-no sentence promises that the case is judged again: the refusal names the lines and why, says that a packet is
-written, approved, exported and attested only on the pricing in effect, and gives the remedy, to write the stale line
-off on the case page to send the packet without it, or to wait. The builder, the review and the submissions pages show
+What the person reads is honest about what happens next. Nothing refreshes a case automatically yet (PR 11 does), and
+a case line never becomes current again (its priced line is fixed, and triage never adds a line already in a case), so
+no sentence promises that the case is judged again or offers waiting: the refusal names the lines and why, says that a
+packet is written, approved, exported and attested only on the pricing in effect, and gives the one step available, to
+write the stale line off on the case page (it leaves the dispute) and write, approve and export the packet again
+without it. (As first built the remedy also offered "or wait", a step that never works; review removed it.) Writing a
+version again is never answered "nothing changed" while its pricing is not current: the write goes through to the
+refusal that names the stale lines. The builder, the review and the submissions pages show
 "Pricing now" (`PricingNowPanel`, from `pricingNow()` over `@tp/worker/pricing` `linePricingNow()`, an audited read
 with purpose `packet_build`): each stale line's row, cause, expected amount and variance then and now, and the
 version's totals then and now. "Now" is the line's pricing in effect from `service_line_priced_in_effect()`, never
@@ -320,14 +344,18 @@ has no figure now. Cents are decimal integer text.
 *Item #5: a contract window's unit and start, and the rule the product computes.* A contract window could only mean
 "N calendar days from the payment date", so "within 180 days of the date of service" was verified with a deadline
 weeks too late. `contract_version` gains `dispute_window_unit` (`calendar_days`, `business_days`, `months`) and
-`dispute_window_measured_from` (`date_of_service`, `remittance_date`, `payment_date`, `receipt_date`), each held to
-its list by a CHECK and present exactly with a citation (`contract_version_window_rule_with_citation`); the length
-stays `dispute_window_days`, in the cited unit as the quote gives it. The specialist chooses both from the quote on
+`dispute_window_measured_from` (`date_of_service`; `remittance_date`, the remittance advice's own date: the 835's
+DTM*405 production date or the date printed on a paper remittance; `payment_date`, BPR16: the check's issue date or
+the EFT's effective date, the Remittances screen's Payment date; `receipt_date`), each held to its list by a CHECK
+and present exactly with a citation (`contract_version_window_rule_with_citation`); the length stays
+`dispute_window_days`, in the cited unit as the quote gives it. The specialist chooses both from the quote on
 the abstraction screen (two required selects with no default; nothing parses the quote), and they are terms like the
 others: frozen from approval, and an edit clears the verification. `contract_window_rule_computed(unit, start)` is
-what `@tp/pricing`'s `windows.ts` computes for a contract window, its days as calendar days after the remittance date
-(BPR16); `@tp/contracts` `COMPUTED_CONTRACT_WINDOW_RULE` and `@tp/triage` `COMPUTED_CONTRACT_WINDOW` hold the same
-literal, which `apps/worker/src/triage/deadline.db.test.ts` compares over every unit and start. A window is verified
+what `@tp/pricing`'s `windows.ts` computes for a contract window, its days as calendar days after BPR16, which is the
+payment date (as first built the rule was named the remittance date, which made "within 30 days of the remittance
+advice" verify with an end counted from the later payment date, and refused the quote the engine computes exactly;
+review found it). `@tp/contracts` `COMPUTED_CONTRACT_WINDOW_RULE` and `@tp/triage` `COMPUTED_CONTRACT_WINDOW` hold the
+same literal (`calendar_days`, `payment_date`), the derivation still reading the trace's own label for that start, which `apps/worker/src/triage/deadline.db.test.ts` compares over every unit and start. A window is verified
 only for that rule: `verifyDisputeWindow()` refuses another (`ContractWorkflowError` `invalid`, field
 `disputeWindowRule`), `contract_version_rules()` refuses the first verification of a draft or proposed version
 otherwise, and the CHECK `contract_version_window_verified_as_computed` holds every verified row to it. A cited window
@@ -335,22 +363,35 @@ whose rule the product does not compute yet is approved unverified (`approveVers
 `contract_version_rules()` let it through), so its lines stay DEADLINE_UNVERIFIED with
 CONTRACT_WINDOW_RULE_NOT_COMPUTED rather than show a date that may be later than the contract's. The derivation
 (`priced_line_deadline_status()` and `deadlineVerification()`) asks for the computed rule and a trace counted from the
-remittance date (else CONTRACT_WINDOW_DIFFERS). The abstraction screen and the practice's version screen show the
-cited rule beside the computed one ("ends 90 calendar days after the remittance date") and whether they match; when
-they do not, Verify is disabled with the reason and approval stays open. Medicare Advantage non-contracted deadlines
+engine's start (else CONTRACT_WINDOW_DIFFERS). A window counted from the remittance advice's own date stays
+unverified until PR 6c computes from `remittance.production_date`. The abstraction screen and the practice's version
+screen show the cited rule beside the computed one ("ends 90 calendar days after the payment date") and whether they
+match, the form defines each start, and the window's length is labelled and printed in the unit the quote states
+("ends 6 months after the payment date", never "a 6-day window"); when they do not match, Verify is disabled with the
+reason and approval stays open. While a window's rule is not computed, nothing is judged or stated from the end the
+engine counts (calendar days, which may be earlier or later than the contract's): `TriageFacts.windowRuleComputed` is
+false for CONTRACT_WINDOW_RULE_NOT_COMPUTED, so `judgeLine()` says neither WINDOW_PASSED nor NO_WINDOW (only
+DEADLINE_UNVERIFIED), the report counts no such line as window-passed and leaves its `window_ends_on` empty (the audit
+worksheet does the same), and its remedy says to keep the contract's own deadline. Medicare Advantage non-contracted deadlines
 stay unverified until the specialist confirms the dispute route (golden QUESTIONS Q34): `ma_dispute_route_confirmed()`
 returns false (a later migration replaces it), so no release window or reconsideration record verifies anything
-(MA_ROUTE_UNCONFIRMED, exported by `@tp/triage` as `MA_DISPUTE_ROUTE_CONFIRMED`), no Medicare Advantage packet is
-exported until then, and its actionable totals drop; the packet's deadline, the Cases page and the specialist's
-regulations page say so with the reason. Lines under releases 900001 to 900004 keep RECORD_BELOW_LEVEL; 900005's L2
+(MA_ROUTE_UNCONFIRMED, exported by `@tp/triage` as `MA_DISPUTE_ROUTE_CONFIRMED`), no packet of a Medicare Advantage
+non-contracted line is exported until then (a Medicare Advantage plan mapped to a contract is not held), and those
+actionable totals drop; the packet's deadline, the Cases page and the specialist's regulations page say so with the
+reason, and that the route is a product-wide question (golden question Q34) that the contract specialist is answering
+and a later release of the product applies, with no step in a practice: until then the plan's own dispute policy is
+worked outside the product. Lines under releases 900001 to 900004 keep RECORD_BELOW_LEVEL; 900005's L2
 lines wait for the route. The engine's own window computation from the cited unit and start is PR 6c's freeze
 exception, which widens `contract_window_rule_computed()`.
 
 *Item #26: what the export job refused or failed, said at once and shown on the packet page.* `exportReadiness()`
 (`apps/worker/src/packets/readiness.ts`) checks before anything is queued, and the job checks it again, giving every
 reason that holds in this order: not_approved, not_current, outdated (tp-packet/1), case_changed (the version no
-longer matches its case, or the case closed), not_case_level, window_passed (a line's `window_ends_on` before the
-day), pricing_not_current, deadline_unverified and inputs_differ. The web's export action refuses at once and lists
+longer matches its case, or the case closed), not_case_level, window_passed (at the first dispute level, a line's
+`window_ends_on` before the day), next_window_passed (above it, the window the reopening denial gave,
+`payer_response.next_window_ends_on`, before the day: the deadline of the version's own level, whose words never
+advise writing the lines off; as first built a level-2 export was judged by its lines' first-level windows),
+pricing_not_current, deadline_unverified and inputs_differ. The web's export action refuses at once and lists
 each reason with its fix, and the Export button shows only for a ready version. Every refusal or failure of the job is
 an audit event of the version whose purpose is one code and which carries no words and no patient data:
 `packet_export_refused` (the first readiness reason, or verifier_failed), written by the job in its own transaction,
@@ -358,21 +399,32 @@ and `packet_export_attempt_failed` (another try follows) or `packet_export_faile
 handler's catch in a new transaction before the error is rethrown, with store_mismatch, render_failed, store_failed,
 database_refused (23514 or 42501) or unexpected. `packet_export_refusal_codes()` and `packet_export_failure_codes()`
 hold the lists the TypeScript exports, and `audit_event_packet_export_attempt` (BEFORE INSERT, for those three actions
-only) refuses one in a person's name, of anything but a packet version of the event's practice, or with another
-code. `packet_version_export_attempt()` (SECURITY DEFINER, the caller's scope kept, a row only for a person who drafts
+only) refuses one in a person's name, on any login but the worker's own (`app_session_is_job()`), of anything but a
+packet version of the event's practice, or with another code. A request (`packet_export_requested`, which the export
+route records) is a person's: `audit_event_packet_export_requested` refuses one on the worker's login, for a non-person
+actor or for anyone who may not export PHI in the practice, so the job cannot write a request that turns its own
+refusal back into "in progress" (review reproduced that mask); `packet_version_export_attempt()` counts a person's
+requests only. `packet_version_export_attempt()` (SECURITY DEFINER, the caller's scope kept, a row only for a person who drafts
 packets or exports PHI in the practice) reads the latest attempt since the latest request: none, in progress, retrying,
 refused or failed with its code, or exported. The packet page shows it: in progress as a live status refreshed about
 every five seconds with a "Check again" link (and, after an hour with no result, as failed with `no_result`);
-retrying; refused with the reason and its fix; failed (nothing was stored, ask again, the operator was alerted). The
-logs keep the error code only.
+retrying; refused with the reason and its fix, or, once the version is ready again (its reason no longer holds, a
+verifier failure excepted), as the earlier request's refusal with no fix to follow; failed (nothing was stored, ask
+again, the operator was alerted). Where no one but the writer approves packets, the not_approved fix names the
+single-user path (the writer approves alone after the 24-hour delay). The logs keep the error code only.
 
 *Item #61: the packet builder's page.* The drafter sees an Approve button disabled with the reason ("a second person
-who approves packets approves it; ask with Request approval") next to Request approval, and no working Approve form;
+who approves packets approves it; ask with Request approval", and once asked, with the form gone, "approval is
+requested; a second person who approves packets approves it here") next to Request approval, and no working Approve form;
 a blocked or waiting version shows the button disabled with its blocked text. A version is written through one form
 (`components/packets/version-form.tsx`) holding the request keys, the hidden fields, the prompt-pay select, the
 attachment checkboxes and the narrative once, with unique IDs, and submit buttons named `intent` (`save`,
 `code_draft`, and `model_draft` only when the model may draft) that one server action routes, so no choice (the
-prompt-pay interest line among them) is dropped by another button. The accessibility gate over every screen is PR 7's.
+prompt-pay interest line among them) is dropped by another button. The builder's header counts the lines its
+actionable figure is over (`ACTIONABLE_NOW_LINES`, the figure's own predicate). Each wide table of the builder, the
+review and the submissions pages scrolls in a named region a keyboard reaches (`ScrollTable`, axe's
+scrollable-region-focusable), and the review and the abstraction pages do not scroll sideways at 390 px (the packets
+and contracts journeys check it). The accessibility gate over every screen is PR 7's.
 
 *What the builders built differently from the brief, as reported.* The pricing check (#4): `PricingNowPanel` takes
 an optional `sent` flag and `label`, so the submissions page can show what a flagged submission sent beside the
@@ -384,21 +436,23 @@ pull request's builders do not edit, so the rows for these cases are added with 
 them are named under Consequences). The window (#5): `@tp/contracts` also exports `windowRuleEndsOn()`, the end each
 unit and start gives for the screens (business days Monday to Friday with no holiday list, so the end shown is never
 later than the contract's; months clamped to a shorter month's last day), which nothing prices with;
-CONTRACT_WINDOW_DIFFERS also holds when the trace is not counted from the remittance date; and the specialist's
+CONTRACT_WINDOW_DIFFERS also holds when the trace is not counted from the engine's own start (BPR16); and the specialist's
 regulations page says why no Medicare Advantage deadline is verified yet.
 
 **Safe with the previous image running: yes.** Every column is nullable or generated (adding the generated column
 rewrites the small `packet_version` table under a brief ACCESS EXCLUSIVE lock; every existing row is tp-packet/1 and
 becomes `unverified`), the CHECKs hold every existing row (no version has a cited window yet, and no submission has a
-`pricing_check`), the functions and triggers are new, and the replaced ones keep their signatures and accept
+`pricing_check`), the functions and triggers are new (those on `pricing_run`, `contract_version`, `payer_plan_mapping`
+and `rule_release_withdrawal` take only an advisory lock), and the replaced ones keep their signatures and accept
 tp-packet/1, a version with no window citation and a report of a release not withdrawn as before. For the previous
 image, its tp-packet/1 versions are written and approved but their export is refused, its submissions of unattested
 exports are refused and those it logs are flagged by the database, its approvals and exports of a version whose
 pricing is not current are refused, its report job fails a report on a withdrawn release when it makes it ready, its
 export job writes no attempt events (a refusal shows as in progress, then as failed with no result after an hour), its
+export route records its requests in the person's name as before, its
 contract screens cite a window without its unit and start, which the new CHECK refuses (the specialist cites again
-under the new image), and its triage, which knows neither DEADLINE_UNVERIFIED, RELEASE_WITHDRAWN nor
-VERSION_NOT_IN_FORCE, may open cases whose export the guard refuses: each is the approved outcome. Deploy order:
+under the new image), and its triage, which knows neither DEADLINE_UNVERIFIED, RELEASE_WITHDRAWN,
+VERSION_NOT_IN_FORCE nor MAPPING_NOT_IN_FORCE, may open cases whose export the guard refuses: each is the approved outcome. Deploy order:
 migrate first (ADR 0049).
 
 ## Alternatives considered
@@ -426,6 +480,9 @@ migrate first (ADR 0049).
 | Read the window's unit and start out of the quote (item #5) | A guessed parse would decide a dollar-bearing date; the specialist chooses both from fixed lists against the quote, and the screen shows the computed rule beside it. |
 | Compute business-day, month or date-of-service windows now | It changes the engine's window calculation, PR 6c's freeze exception; until then such a window stays unverified and its lines wait rather than show a later date. |
 | Verify Medicare Advantage deadlines from the L2 redetermination record | Q34 asks whether that route applies at all (MA payment disputes run through each plan's own policy), so a date from it could be wrong; `ma_dispute_route_confirmed()` stays false until the specialist confirms the route. |
+| Keep "the remittance date" meaning BPR16 and define it so on the screen (item #5) | The lists would offer one date under two names, the payment date unverifiable while the remittance date verified the same BPR16; and contracts that count from the remittance advice's own date would verify with an end counted from the later payment. Naming BPR16 the payment date keeps every verified end no later than the contract's. The founder may rule otherwise (Review fixes). |
+| Serializable isolation for the steps that read the pricing (item #4) | A serialization failure surfaces as a retry the steps do not make, and every writer would need it too; two advisory locks taken in the triggers order exactly the writes that matter and nothing else. |
+| Leave a mapping correction to the same contract current (item #4) | A correction says the mapping the line's trace names was wrong; the pricing in effect under the corrected mapping is not computed until a re-run, so the check holds the line as not current, as a correction of the contract version does. |
 | An export attempts table (item #26) | The audit log already records each request; three coded actions and one trigger give every refusal and failure a durable, PHI-free record now. The optional table is PR 8's. |
 
 ## Consequences
@@ -492,18 +549,24 @@ migrate first (ADR 0049).
   before the route runs and recording nothing; the attest route refused until both review downloads) and
   `apps/web/e2e/packets.spec.ts` (the disabled button and its reason, both downloads, then the attestation, with the
   end-to-end worker on its own login).
-- Item #4: once a re-run is accepted, a release withdrawn, a contract version corrected or an amendment back-dated
-  before a line's date, that line leaves the actionable figures at once (the Cases list, the case page, the dashboard
+- Item #4: once a re-run is accepted, a release withdrawn, a plan's mapping corrected, a contract version corrected or
+  an amendment back-dated before a line's date, that line leaves the actionable figures at once (the Cases list, the case page, the dashboard
   and the audit report's triage), while the case keeps it and its stored total until PR 11 refreshes the case; its
   packet is neither written again, approved, exported nor attested, and the pages name the line, its cause and its
   figures then and now. A submission already sent is logged and flagged (`submission.pricing_check`). No audit report
-  is requested, generated, attested or released on a withdrawn release.
-- Item #5: a window cited in business days or months, or counted from the date of service, the payment or its
-  receipt, is approved unverified and its lines wait (CONTRACT_WINDOW_RULE_NOT_COMPUTED) until PR 6c computes it. No
+  is requested, generated, attested or released on a withdrawn release. An acceptance, a completion, a version's
+  supersession or closed window, a mapping correction or a withdrawal waits for an approval, an export, an
+  attestation or a submission of the same practice in progress (a withdrawal, of any practice), and they for it.
+- Item #5: a window cited in business days or months, or counted from the date of service, the remittance advice's
+  own date or its receipt, is approved unverified and its lines wait (CONTRACT_WINDOW_RULE_NOT_COMPUTED) until PR 6c
+  computes it, with no end stated or judged for them. Most contracts word their window "of the remittance date"; such a
+  window stays unverified until PR 6c, and only one counted from the payment (the check or EFT date) verifies now. No
   Medicare Advantage non-contracted deadline is verified and no such packet is exported until Q34 is answered, so
   Medicare Advantage actionable totals drop to zero until then; the screens say why.
-- Item #26: every refusal or failure of the export job is an audit event with a code and no patient data, and the
-  packet page shows the latest attempt; a request that readiness refuses is refused before anything is queued.
+- Item #26: every refusal or failure of the export job is an audit event with a code and no patient data, written
+  only on the worker's own login, and the packet page shows the latest attempt since a person's latest request; a
+  request that readiness refuses is refused before anything is queued. The web's route tests run the export job on
+  the worker's login, as the worker's do.
 - Item #61: the drafter never sees a working Approve button, and the builder's choices are one form's.
 - The checks for the items: `packages/db/src/pricing-check.db.test.ts` (the CHECK lists equal the TypeScript lists,
   no grant on `submission.pricing_check`, EXECUTE to `tp_app` only, content that names nothing fails closed),
@@ -521,7 +584,13 @@ migrate first (ADR 0049).
   `apps/worker/src/triage/deadline.db.test.ts`, `apps/worker/src/packets/packets.db.test.ts`,
   `tools/audit-worksheet` and `apps/web/e2e/contracts.spec.ts`; for items #26 and #61,
   `apps/worker/src/packets/export-attempts.db.test.ts`, `apps/web/src/lib/routes/export-attempts-routes.db.test.ts` and
-  `apps/web/e2e/packets.spec.ts`.
+  `apps/web/e2e/packets.spec.ts`. The review fixes add `apps/worker/src/packets/pricing-race.db.test.ts` (an
+  acceptance, a correction's sign-off, a mapping correction and a withdrawal held open across the export job, the
+  attestation and a submission: each step waits, then refuses or flags), the mapping correction in
+  `pricing-current.db.test.ts` and in the triage equivalence, `payer_plan_mapping_in_force()` against
+  `mappingInForce()` in `apps/worker/src/price/pricing-check.db.test.ts`, the forged request and the web-login refusal
+  in `export-attempts.db.test.ts`, the level-2 window in `packets.db.test.ts`, the months and business-days windows in
+  `report.db.test.ts` and `deadline.db.test.ts`, and the phone-width checks in the packets and contracts journeys.
 - `docs/product/domain-model.md` is regenerated at this migration and waits for the founder's approval (CO-02). The
   founder approved the schema as first summarised on 2026-10-18; the downloads and the job role (`tp_job`,
   `app_session_is_job()`), and the audit items' columns, checks, functions and triggers (the window's unit and start,
@@ -545,6 +614,32 @@ the line's facts, widening `contract_window_rule_computed()`, and the specialist
 `ma_dispute_route_confirmed()` (item #5); PR 8 cites each plan's dispute policy on the Medicare Advantage mapping and
 may add an export attempts table (items #5 and #26); and PR 7 runs the accessibility check after every page and form
 (item #61).
+
+## Review fixes (2026-10-20)
+
+Review of the folded-in items found, and this pull request fixes: the mapping cause (item #4); the pricing check's
+race with the writes that make pricing stale (item #4); the computed window's start named for what BPR16 is, the
+payment date (item #5, two reviewers); no end judged or stated for a window the engine counts by another rule than the
+contract's, and its length labelled in its own unit (item #5); a later level's export judged by the next level's
+window (item #26); the export attempt channel closed to the job's own requests and to the web's login (item #26);
+"or wait" removed from every remedy (item #4); the submissions page's waiting line for an export that will never be
+attested; "Medicare Advantage non-contracted" in every sentence about the route, and the route named a product-wide
+question; the drafter's text once approval is requested and the single-user not_approved text; an earlier refusal
+whose reason no longer holds; the write that said "nothing changed" on stale pricing; the builder's line count; the
+focusable table scrollers and the review page's width at 390 px; and the withdrawn-release banner of an attested or
+released report.
+
+Open for the founder:
+
+- **A stale export already sent before its attestation.** If a release is withdrawn, a re-run accepted or a mapping
+  or version corrected after the export but before the attestation, the attestation is refused for good and so is the
+  submission, which needs an attested export. If the downloaded export already went to the payer, the dispute cannot
+  be logged; the submissions page now says the export will not be attested and not to send it, and to tell support if
+  it went. How such a submission is logged and flagged (an unattested submission record, or the attestation of a
+  stale export with its own flag) is the founder's call; nothing logs it now.
+- **What "the remittance date" means.** The build names BPR16 the payment date and treats the remittance date as the
+  advice's own date, which nothing verifies until PR 6c; the founder may instead rule that "the remittance date" means
+  BPR16, in which case the lists stop offering both and the screen says which date is counted.
 
 ## Owner rulings (2026-10-18)
 

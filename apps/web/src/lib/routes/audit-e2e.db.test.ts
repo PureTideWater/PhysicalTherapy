@@ -340,7 +340,7 @@ async function signedOffContract(contract: NonNullable<Inputs['plans'][number]['
   contractPdfs.set(
     documentId,
     syntheticPdf([
-      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', `Disputes are raised within ${String(contract.dispute_window_days)} days of the remittance.`],
+      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', `Disputes are raised within ${String(contract.dispute_window_days)} days of the payment date.`],
       ['SYNTHETIC EXHIBIT A FEE SCHEDULE', ...contract.schedule.map((rate) => quoteFor(rate.code, rate.amount_cents))],
     ]),
   );

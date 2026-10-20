@@ -275,7 +275,7 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
       }),
     );
     const disputeWindowDays = options.disputeWindowDays ?? 3650;
-    const windowQuote = `Disputes are raised within ${String(disputeWindowDays)} days of the remittance.`;
+    const windowQuote = `Disputes are raised within ${String(disputeWindowDays)} days of the payment date.`;
     const pdf = syntheticPdf([
       ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote],
       ['SYNTHETIC EXHIBIT A FEE SCHEDULE', QUOTE],
@@ -304,7 +304,7 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
           await approveRateRecordField(context, { practiceId, rateRecordId, field });
         }
         // The window as the contract states it, cited on page 1 and verified, so the lines' deadlines are (D17 a).
-        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote }, rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' } });
+        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote }, rule: { unit: 'calendar_days', measuredFrom: 'payment_date' } });
         await verifyDisputeWindow(context, { practiceId, versionId });
         await approveVersion(context, { practiceId, versionId });
       });

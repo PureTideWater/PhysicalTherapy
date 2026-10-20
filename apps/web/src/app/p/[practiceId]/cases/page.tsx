@@ -99,9 +99,10 @@ export default async function CasesPage(props: Props) {
             {deadlineUnverified.lines === 0 ? null : (
               <p className="pb-3 text-sm" data-waiting="deadline_unverified">
                 {deadlineUnverified.lines} validated {deadlineUnverified.lines === 1 ? 'line waits' : 'lines wait'} for a verified deadline (<Money value={deadlineUnverified.validatedCents} />, DEADLINE_UNVERIFIED): their contract’s dispute window is not
-                cited and verified on its page yet, or is counted in business days, in months or from a date other than the remittance date, which the product does not compute yet; or
-                they are Medicare Advantage non-contracted lines, whose deadline is not verified until the contract specialist confirms which dispute route applies to them, so no
-                Medicare Advantage packet is exported until then. They join no case until the deadline is verified.
+                cited and verified on its page yet, or is counted in business days, in months or from a date other than the payment date, which the product does not compute yet; or
+                they are Medicare Advantage non-contracted lines, whose deadline is not verified until the product applies the answer to which dispute route they take (golden
+                question Q34, a product-wide question the contract specialist is answering), so no packet of a Medicare Advantage non-contracted line is exported until then. A
+                Medicare Advantage plan mapped to a contract is not held: its contract’s window is cited and verified like any other. They join no case until the deadline is verified.
               </p>
             )}
             {waiting.length === 0 ? (

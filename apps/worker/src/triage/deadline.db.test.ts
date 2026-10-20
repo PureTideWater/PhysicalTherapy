@@ -13,11 +13,13 @@ import {
   windowRuleComputed,
 } from '@tp/contracts';
 import { readDatabaseUrl, withPracticeScope } from '@tp/db';
-import { COMPUTED_CONTRACT_WINDOW, type DeadlineMinimumLevel, type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED, contractWindowRuleComputed, packetDeadlineStatus } from '@tp/triage';
+import { parseCents } from '@tp/money';
+import { COMPUTED_CONTRACT_WINDOW, type DeadlineMinimumLevel, type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED, contractWindowRuleComputed, judgeLine, packetDeadlineStatus } from '@tp/triage';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DEADLINE_RELEASE, type Practice } from '../price/test-support/pricing-world';
 import { lineDeadlines, nextLevelDeadline } from './deadline';
+import { candidateLines, candidateRows } from './execute';
 import { TriageWorld } from './test-support/triage-world';
 
 /**
@@ -195,11 +197,20 @@ describe('a contract’s own window', () => {
     });
     const lines = await both(practice, runId);
     agree(lines);
-    // The trace still counts the version's days as calendar days after the remittance date (the engine is untouched until PR 6c), so the date
-    // it shows may be later than the contract's: the line waits for a verified deadline instead.
+    // The trace still counts the version's length as calendar days after the payment date (the engine is untouched until PR 6c), so the
+    // date it counts may be earlier or later than the contract's: the line waits for a verified deadline instead.
     expect(new Set(lines.map((line) => `${String(line.ts?.status)} ${String(line.ts?.source)} ${String(line.ts?.cause)}`))).toEqual(new Set(['unverified contract CONTRACT_WINDOW_RULE_NOT_COMPUTED']));
     expect(new Set(lines.map((line) => line.sql))).toEqual(new Set(['unverified']));
     agree(await both(practice, runId, 'L3'));
+    // Triage reads that the engine's end is not the contract's: on a day after it, no line is judged WINDOW_PASSED (or NO_WINDOW).
+    const candidates = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) =>
+      candidateLines(scope.client, await candidateRows(scope, practice.practiceId, runId, `test-${randomUUID()}`)),
+    );
+    expect(candidates.length).toBe(16);
+    for (const line of candidates) {
+      expect(line.windowRuleComputed).toBe(false);
+      expect(judgeLine(line, parseCents('500'), '2099-01-01').reasons).toEqual(['DEADLINE_UNVERIFIED']);
+    }
     // Triage opens no case: every validated line waits with DEADLINE_UNVERIFIED.
     expect(await w.triage(practice, runId)).toMatchObject({ outcome: 'triaged', summary: { validatedLines: 16, casesOpened: 0 } });
   }, 120_000);

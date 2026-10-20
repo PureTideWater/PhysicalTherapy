@@ -26,8 +26,8 @@ import {
  * own (@tp/pricing under SYNTHETIC releases 900001 and 900003): a Medicare Advantage non-contracted line (Medicare
  * redetermination from the release), a contract line silent on its window (900003's commercial_default) and a
  * contract line with its own 30-day window; the properties vary the window step and the facts beside it. A contract
- * window is verified only when its cited rule is the one the engine computes (calendar days after the remittance
- * date), and no Medicare Advantage window is verified until the specialist confirms the route (Q34; best-option
+ * window is verified only when its cited rule is the one the engine computes (calendar days after the payment
+ * date, BPR16), and no Medicare Advantage window is verified until the specialist confirms the route (Q34; best-option
  * audit #5).
  */
 
@@ -39,10 +39,10 @@ const DOCUMENT_ID = '0b9a7c55-5f0e-4d43-8d2c-6a1f00000001';
 const EVIDENCE = {
   documentId: DOCUMENT_ID,
   page: 1,
-  quote: 'Disputes are raised within 30 days of the remittance.',
+  quote: 'Disputes are raised within 30 days of the payment date.',
   hash: 'a'.repeat(64),
   unit: 'calendar_days',
-  measuredFrom: 'remittance_date',
+  measuredFrom: 'payment_date',
 };
 const UNITS = ['calendar_days', 'business_days', 'months'] as const;
 const STARTS = ['date_of_service', 'remittance_date', 'payment_date', 'receipt_date'] as const;
@@ -134,7 +134,7 @@ describe('deadlineVerification (D17 a)', () => {
     expect(deadlineVerification({ trace: SILENT_CONTRACT_TRACE, recordLevel: 'L3', releaseWithdrawn: false, contractWindow: null }).status).toBe('unverified');
   });
 
-  it('verifies a contract window only from a signed-off version whose window is cited with the computed rule, verified and the trace’s length in days from the remittance date', () => {
+  it('verifies a contract window only from a signed-off version whose window is cited with the computed rule, verified and the trace’s length in days from the engine’s start (BPR16, labelled remittance_date)', () => {
     const facts = fc.record({
       contractVersionId: fc.constantFrom(VERSION_ID, 'cv-synth-other'),
       status: fc.constantFrom('signed_off', 'approved', 'superseded', 'draft'),
@@ -172,7 +172,7 @@ describe('deadlineVerification (D17 a)', () => {
           const cited = contractWindow !== null && contractWindow.contractVersionId === VERSION_ID && contractWindow.evidence !== null && windowEvidenceComplete(contractWindow.evidence);
           const expectedCause = !cited
             ? 'CONTRACT_WINDOW_UNCITED'
-            : contractWindow.evidence?.unit !== 'calendar_days' || contractWindow.evidence.measuredFrom !== 'remittance_date'
+            : contractWindow.evidence?.unit !== 'calendar_days' || contractWindow.evidence.measuredFrom !== 'payment_date'
               ? 'CONTRACT_WINDOW_RULE_NOT_COMPUTED'
               : contractWindow.verifiedBy === null
                 ? 'CONTRACT_WINDOW_UNVERIFIED'
@@ -187,7 +187,7 @@ describe('deadlineVerification (D17 a)', () => {
     );
   });
 
-  it('never verifies “within 180 days of the date of service” as a remittance-date window, though a specialist verified it and the days match', () => {
+  it('never verifies “within 180 days of the date of service” as a payment-date window, though a specialist verified it and the days match', () => {
     const trace = withWindow(CONTRACT_TRACE, { ...(CONTRACT_TRACE.steps.window as TraceWindow), length: 180 });
     const fromService = signedOff({ disputeWindowDays: 180, evidence: { ...EVIDENCE, quote: 'within 180 days of the date of service', measuredFrom: 'date_of_service' } });
     expect(deadlineVerification({ trace, recordLevel: null, releaseWithdrawn: false, contractWindow: fromService })).toMatchObject({ status: 'unverified', cause: 'CONTRACT_WINDOW_RULE_NOT_COMPUTED' });
@@ -196,11 +196,11 @@ describe('deadlineVerification (D17 a)', () => {
     expect(deadlineVerification({ trace, recordLevel: null, releaseWithdrawn: false, contractWindow: signedOff({ disputeWindowDays: 180 }) })).toMatchObject({ status: 'verified', cause: null });
   });
 
-  it('computes exactly one rule, the engine’s: calendar days after the remittance date', () => {
-    expect(COMPUTED_CONTRACT_WINDOW).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+  it('computes exactly one rule, the engine’s: calendar days after the payment date (BPR16, which the trace labels remittance_date)', () => {
+    expect(COMPUTED_CONTRACT_WINDOW).toEqual({ unit: 'calendar_days', measuredFrom: 'payment_date' });
     for (const unit of UNITS) {
       for (const measuredFrom of STARTS) {
-        expect(contractWindowRuleComputed({ unit, measuredFrom })).toBe(unit === 'calendar_days' && measuredFrom === 'remittance_date');
+        expect(contractWindowRuleComputed({ unit, measuredFrom })).toBe(unit === 'calendar_days' && measuredFrom === 'payment_date');
       }
     }
   });

@@ -18,10 +18,10 @@ describe('@tp/contracts', () => {
     expect(ADJUSTMENT_FLAGS).toEqual(['apply_mppr', 'apply_assistant_reduction', 'apply_sequestration', 'apply_ncci']);
   });
 
-  it('lists the dispute window’s units and starts, and computes one rule: calendar days after the remittance date (best-option audit #5)', () => {
+  it('lists the dispute window’s units and starts, and computes one rule: calendar days after the payment date (best-option audit #5)', () => {
     expect(DISPUTE_WINDOW_UNITS).toEqual(['calendar_days', 'business_days', 'months']);
     expect(DISPUTE_WINDOW_STARTS).toEqual(['date_of_service', 'remittance_date', 'payment_date', 'receipt_date']);
-    expect(COMPUTED_CONTRACT_WINDOW_RULE).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+    expect(COMPUTED_CONTRACT_WINDOW_RULE).toEqual({ unit: 'calendar_days', measuredFrom: 'payment_date' });
   });
 
   it('lists the timed-units rules', () => {

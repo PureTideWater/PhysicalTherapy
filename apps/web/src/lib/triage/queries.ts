@@ -308,6 +308,8 @@ export interface CaseSummary {
   readonly actionableCents: string;
   /** Stage three now: the part of it whose lines are still actionable (none moved on to payer approved or recovered). */
   readonly actionableNowCents: string;
+  /** How many lines that figure is over (ACTIONABLE_NOW_LINES): the lines not written off, still actionable, on current pricing. */
+  readonly actionableNowLines: number;
   readonly writtenOffCents: string;
   readonly deadlineOn: string | null;
   readonly deadline: DeadlineState;
@@ -332,6 +334,7 @@ interface CaseRow {
   readonly open_lines: string;
   readonly actionable_cents: string;
   readonly actionable_now_cents: string;
+  readonly actionable_now_lines: string;
   readonly written_off_cents: string;
   readonly deadline_on: string | null;
   readonly materiality_cents: string;
@@ -353,11 +356,17 @@ export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.varianc
       AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
       AND priced_line_pricing_check(x.priced_line_id) = 'current')`;
 
+/** How many lines ACTIONABLE_NOW sums: the same predicate, counted (the packet builder's "on N of M lines"). */
+export const ACTIONABLE_NOW_LINES = (alias: string) => `(SELECT count(*) FROM case_line x
+    WHERE x.case_id = ${alias}.id AND x.written_off_reason IS NULL
+      AND (SELECT s.stage FROM line_status s WHERE s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) = 'actionable'
+      AND priced_line_pricing_check(x.priced_line_id) = 'current')`;
+
 const CASES = `
   SELECT c.id, c.practice_id, c.state, py.name_raw AS payer, coalesce(pl.name, pl.plan_key) AS plan, c.pattern_key,
          (SELECT count(*) FROM case_line x WHERE x.case_id = c.id)::text AS lines,
          (SELECT count(*) FROM case_line x WHERE x.case_id = c.id AND x.written_off_reason IS NULL)::text AS open_lines,
-         c.actionable_cents::text, ${ACTIONABLE_NOW('c')}::text AS actionable_now_cents,
+         c.actionable_cents::text, ${ACTIONABLE_NOW('c')}::text AS actionable_now_cents, ${ACTIONABLE_NOW_LINES('c')}::text AS actionable_now_lines,
          (SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id WHERE x.case_id = c.id AND x.written_off_reason IS NOT NULL)::text AS written_off_cents,
          c.deadline_on::text, c.materiality_cents::text, c.pursuit_cost_cents::text, c.owner_user_id, c.opened_at, c.closed_at
     FROM "case" c
@@ -378,6 +387,7 @@ function caseSummary(row: CaseRow, asOf: string, emails: ReadonlyMap<string, str
     openLines: Number.parseInt(row.open_lines, 10),
     actionableCents: row.actionable_cents,
     actionableNowCents: row.actionable_now_cents,
+    actionableNowLines: Number.parseInt(row.actionable_now_lines, 10),
     writtenOffCents: row.written_off_cents,
     deadlineOn: row.deadline_on,
     deadline: deadlineState(row.deadline_on, asOf),

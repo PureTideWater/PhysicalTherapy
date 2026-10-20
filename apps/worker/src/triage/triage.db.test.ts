@@ -349,8 +349,13 @@ describe('every line is judged from its pricing in effect (PRD 5, J6 and J17; do
     await manager((scope) => acceptRun(scope, { practiceId: practice.practiceId, pricingRunId: rerun.pricingRunId }));
     expect(await rows(practice, 'SELECT variance_cents::text FROM priced_line WHERE pricing_run_id = $1', [rerun.pricingRunId])).toEqual([{ variance_cents: '0' }]);
     expect(summary(await w.triage(practice, rerun.pricingRunId))).toMatchObject({ validatedLines: 0, casesOpened: 0, linesAdded: 0 });
-    // The 17th's line alone (20.00) is below the case materiality: no case, and the 16th's old pricing is not added to it.
-    expect(summary(await w.triage(practice, seventeenth))).toMatchObject({ validatedLines: 1, casesOpened: 0, linesAdded: 0, heldPatterns: 1 });
+    // The 17th's line was priced under the mapping since corrected and not priced again: validated, it waits with
+    // MAPPING_NOT_IN_FORCE (audit item #4) rather than being held as a pattern, and the 16th's old pricing is not added to anything.
+    expect(summary(await w.triage(practice, seventeenth))).toMatchObject({ validatedLines: 1, casesOpened: 0, linesAdded: 0, heldPatterns: 0 });
+    const seventeenthLines = await withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, async (scope) =>
+      candidateLines(scope.client, await candidateRows(scope, practice.practiceId, seventeenth, `test-${randomUUID()}`)),
+    );
+    expect(seventeenthLines.map((line) => judgeLine(line, parseCents('500'), todayUtc()).reasons)).toEqual([['MAPPING_NOT_IN_FORCE']]);
     expect(await cases(practice)).toEqual([]);
     // The replaced run is never triaged again.
     expect((await w.triage(practice, sixteenth)).outcome).toBe('not_in_effect');
@@ -397,7 +402,7 @@ describe('per-visit lines are judged with their visit (PRD 11 step 2; QUESTIONS 
     // The database's shortfall is @tp/triage's judgement of the same line.
     for (const line of lines) {
       const judged = judgeLine(
-        { varianceCents: parseCents(line.variance_cents), visitVarianceCents: line.visit === null ? null : parseCents(line.visit), reviewFlags: line.flags.map((flag) => flag.flag), windowEndsOn: '2036-01-01', deadlineStatus: 'verified', claimReversed: false, claimSuperseded: false, mappingKind: 'contract', contractVersionStatus: 'signed_off', contractVersionCoversService: true, releaseWithdrawn: false, writtenOff: false },
+        { varianceCents: parseCents(line.variance_cents), visitVarianceCents: line.visit === null ? null : parseCents(line.visit), reviewFlags: line.flags.map((flag) => flag.flag), windowEndsOn: '2036-01-01', deadlineStatus: 'verified', windowRuleComputed: true, claimReversed: false, claimSuperseded: false, mappingKind: 'contract', mappingInForce: true, contractVersionStatus: 'signed_off', contractVersionCoversService: true, releaseWithdrawn: false, writtenOff: false },
         parseCents('500'),
         '2026-06-01',
       );
@@ -519,7 +524,7 @@ describe('an NCCI procedure-to-procedure flag holds a line for review (PRD 2 poi
 });
 
 /** The triage reasons that say a line's pricing is no longer current, as @tp/triage names them (audit item #4). */
-const PRICING_REASONS = ['VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN'] as const;
+const PRICING_REASONS = ['MAPPING_NOT_IN_FORCE', 'VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN'] as const;
 
 /** A contract version's successor (a correction, or an amendment from `amendFrom`), verified by the specialist and signed off: the prior version is superseded, or closed at `amendFrom`. */
 async function signedSuccessor(target: Practice, versionId: string, amendFrom: string | null): Promise<string> {
@@ -567,11 +572,12 @@ function expectAgreement(judged: Awaited<ReturnType<typeof judgedBeside>>): void
   }
   const CAUSE_OF: Readonly<Record<string, string>> = {
     RELEASE_WITHDRAWN: 'RELEASE_WITHDRAWN',
+    MAPPING_NOT_IN_FORCE: 'MAPPING_NOT_IN_FORCE',
     VERSION_NOT_SIGNED_OFF: 'CONTRACT_VERSION_NOT_SIGNED_OFF',
     VERSION_NOT_IN_FORCE: 'CONTRACT_VERSION_NOT_IN_FORCE',
   };
-  // The database names the first cause in its own order: a withdrawal before the version, sign-off before cover.
-  const ORDER = ['RELEASE_WITHDRAWN', 'VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE'];
+  // The database names the first cause in its own order: a withdrawal, then the mapping, then the version, sign-off before cover.
+  const ORDER = ['RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE'];
   for (const line of judged.filter((item) => item.reasons.length > 0)) {
     const first = ORDER.find((reason) => line.reasons.includes(reason)) as string;
     expect(line.check, JSON.stringify(line)).toBe(CAUSE_OF[first]);
@@ -635,9 +641,11 @@ describe('whether a line’s pricing is still current, in triage and in the data
           reviewFlags: [],
           windowEndsOn: '2036-01-01',
           deadlineStatus: 'verified',
+          windowRuleComputed: true,
           claimReversed: false,
           claimSuperseded: false,
           mappingKind: line.mapping_kind,
+          mappingInForce: true,
           contractVersionStatus: null,
           contractVersionCoversService: true,
           releaseWithdrawn: false,
@@ -648,6 +656,54 @@ describe('whether a line’s pricing is still current, in triage and in the data
       );
       expect(judged.reasons).toEqual([]);
     }
+  }, 180_000);
+
+  it('agrees line by line through a correction of the plan’s mapping (MAP-03): to another contract, to Medicare Advantage non-contracted, and from a later date only', async () => {
+    const practice = await w.practice('pricing current: mapping correction');
+    await w.load(practice, 'CAS-03/remit.835');
+    const one = await w.fixedContract(practice, FIXED);
+    const two = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }] });
+    const run = await w.pricedRun(practice, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: one.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: two.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    expectAgreement(await judgedBeside(practice, run));
+    const planOne = await w.pricing.planOf(practice, 'CE:SYNPLAN-FIX-ONE');
+    const planTwo = await w.pricing.planOf(practice, 'CE:SYNPLAN-FIX-TWO');
+    const mappingOne = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [planOne]);
+    const mappingTwo = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1', [planTwo]);
+    // A correction from April onwards supersedes the second plan's mapping, but not on its March lines: they stay current.
+    await w.as(practice, practice.manager, (context) =>
+      correctMapping(context, { practiceId: practice.practiceId, planId: planTwo, kind: 'ma_noncontracted', effectiveFrom: '2026-04-01', supersedesId: mappingTwo.id }),
+    );
+    const afterLater = await judgedBeside(practice, run);
+    expectAgreement(afterLater);
+    expect(afterLater.every((line) => line.check === 'current')).toBe(true);
+    // The first plan corrected from January to another contract: its lines' mapping is no longer in force on their dates, though
+    // their contract version is still signed off and covers them.
+    const other = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97110', amountCents: '2800' }] });
+    await w.as(practice, practice.manager, (context) =>
+      correctMapping(context, { practiceId: practice.practiceId, planId: planOne, kind: 'contract', contractVersionId: other.versionId, effectiveFrom: '2026-01-01', supersedesId: mappingOne.id }),
+    );
+    const afterCorrection = await judgedBeside(practice, run);
+    expectAgreement(afterCorrection);
+    expect(new Set(afterCorrection.map((line) => line.check))).toEqual(new Set(['current', 'MAPPING_NOT_IN_FORCE']));
+    expect(afterCorrection.filter((line) => line.check === 'MAPPING_NOT_IN_FORCE').every((line) => line.reasons.join() === 'MAPPING_NOT_IN_FORCE')).toBe(true);
+    // The second plan corrected again from January, to Medicare Advantage non-contracted, through the April correction it supersedes.
+    const april = await w.pricing.one<{ id: string }>('SELECT id FROM payer_plan_mapping WHERE plan_id = $1 AND supersedes_id IS NOT NULL', [planTwo]);
+    await w.as(practice, practice.manager, (context) =>
+      correctMapping(context, { practiceId: practice.practiceId, planId: planTwo, kind: 'ma_noncontracted', effectiveFrom: '2026-01-01', supersedesId: april.id }),
+    );
+    const afterChain = await judgedBeside(practice, run);
+    expectAgreement(afterChain);
+    expect(afterChain.map((line) => line.check)).toEqual(afterChain.map(() => 'MAPPING_NOT_IN_FORCE'));
+    // Triaged now, neither pattern opens a case: every line waits with its reason.
+    expect(summary(await w.triage(practice, run))).toMatchObject({ validatedLines: 16, casesOpened: 0, linesAdded: 0 });
+    expect(await cases(practice)).toEqual([]);
   }, 180_000);
 
   // Last: the release in force is global, and a withdrawal is permanent.

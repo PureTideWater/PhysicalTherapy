@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Fragment } from 'react';
 
 import { Money } from '../remittances/display';
+import { ScrollTable } from '../scroll-table';
 import { StatusChip, type StatusTone } from '../status';
 import { METHOD_NAMES, ROUNDING_NAMES } from '../../lib/contracts/display';
 import { labelOf } from '../../lib/copy/words';
@@ -145,7 +146,7 @@ function Placeholder({ value }: { readonly value: string }) {
  */
 export function LineSchedule({ content, practiceId }: { readonly content: PacketContent; readonly practiceId: string }) {
   return (
-    <div className="overflow-x-auto">
+    <ScrollTable label="Line schedule">
       <table className="w-full text-sm" aria-label="Line schedule">
         <thead>
           <tr className="border-b text-left align-bottom">
@@ -200,7 +201,7 @@ export function LineSchedule({ content, practiceId }: { readonly content: Packet
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 
@@ -280,7 +281,7 @@ export function CalculationTable({ content }: { readonly content: PacketContent 
     return null;
   }
   return (
-    <div className="overflow-x-auto">
+    <ScrollTable label="Calculations">
       <table className="w-full text-sm" aria-label="Calculations">
         <thead>
           <tr className="border-b text-left align-bottom">
@@ -326,7 +327,7 @@ export function CalculationTable({ content }: { readonly content: PacketContent 
           ))}
         </tbody>
       </table>
-    </div>
+    </ScrollTable>
   );
 }
 

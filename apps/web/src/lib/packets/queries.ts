@@ -104,6 +104,8 @@ export interface VersionView {
   readonly exportReadiness: ExportReadiness;
   /** The latest attempt at its export since the latest request (audit item #26). */
   readonly exportAttempt: ExportAttempt;
+  /** No one but the version's writer approves packets in the practice (a single-user practice for packets). */
+  readonly singleUser: boolean;
 }
 
 export interface ApprovalRequest {
@@ -198,6 +200,8 @@ interface VersionChecks {
   readonly pricingNow: PricingNowView;
   readonly exportReadiness: ExportReadiness;
   readonly exportAttempt: ExportAttempt;
+  /** No one but the version's writer approves packets in the practice: the writer approves alone after the 24-hour delay. */
+  readonly singleUser: boolean;
 }
 
 function versionView(detail: PacketVersionDetail, writtenBy: string | null, attestedBy: string | null, checks: VersionChecks): VersionView {
@@ -258,8 +262,10 @@ export async function builderView(
   );
   const emails = await peopleEmails(scope, input.practiceId, [...rows.flatMap((row) => [row.drafted_by, row.approved_by]), ...requests.map((row) => row.created_by)]);
   const person = (id: string | null) => (id === null ? null : (emails.get(id) ?? 'a former member of the practice'));
-  const { rows: facts } = await scope.client.query<{ matches: boolean; others: boolean }>(
-    'SELECT packet_version_matches_case($1, v.content) AS matches, practice_has_other_packet_approver($2, app_actor_id()) AS others FROM packet_version v WHERE v.id = $3',
+  const { rows: facts } = await scope.client.query<{ matches: boolean; others: boolean; writer_alone: boolean }>(
+    `SELECT packet_version_matches_case($1, v.content) AS matches, practice_has_other_packet_approver($2, app_actor_id()) AS others,
+            NOT practice_has_other_packet_approver($2, v.drafted_by) AS writer_alone
+       FROM packet_version v WHERE v.id = $3`,
     [input.caseId, input.practiceId, shown.id],
   );
   const pricing = await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId });
@@ -312,6 +318,7 @@ export async function builderView(
       pricingNow: pricing,
       exportReadiness: readiness,
       exportAttempt: await exportAttempt(scope, shown.id, input.now),
+      singleUser: facts[0]?.writer_alone ?? false,
     }),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
@@ -335,7 +342,9 @@ const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.l
 /**
  * Writes a version (CAS-13: an edit is a new version, which clears the packet's approval), unless the
  * packet's current version already holds exactly what is asked (the same words, the same prompt-pay
- * state and attachments, its lines still the case's): then nothing is written and that version stands.
+ * state and attachments, its lines still the case's, and its pricing still current): then nothing is written and
+ * that version stands. A version whose pricing is no longer current is never "unchanged": the write goes through,
+ * so loadAssembly() refuses it naming the stale lines and the remedy (audit item #4).
  */
 export async function writeVersionOnce(scope: Scope, services: Pick<Services, 'keys'>, input: WriteRequest): Promise<{ readonly versionId: string; readonly written: boolean }> {
   const found = await packetOfCase(scope, { practiceId: input.practiceId, caseId: input.caseId });
@@ -345,10 +354,14 @@ export async function writeVersionOnce(scope: Scope, services: Pick<Services, 'k
   if (found.currentVersionId !== null) {
     const current = await packetVersionOf(scope, services.keys, { practiceId: input.practiceId, versionId: found.currentVersionId, requestId: input.requestId, purpose: 'packet_build' });
     if (current !== undefined) {
-      const { rows } = await scope.client.query<{ matches: boolean }>('SELECT packet_version_matches_case($1, $2::jsonb) AS matches', [input.caseId, JSON.stringify(current.content)]);
+      const { rows } = await scope.client.query<{ matches: boolean; pricing: string | null }>(
+        'SELECT packet_version_matches_case($1, $2::jsonb) AS matches, packet_version_pricing_check($2::jsonb) AS pricing',
+        [input.caseId, JSON.stringify(current.content)],
+      );
       const wanted = input.narrative ?? draftNarrative(current.content);
       if (
         rows[0]?.matches === true &&
+        rows[0].pricing === 'current' &&
         wanted === current.narrative &&
         (current.content.interest?.state ?? null) === input.promptPayState &&
         sameSet(attachedOf(current.content), input.attachedDocumentIds)
@@ -412,6 +425,9 @@ export const BLOCKED_TEXT: Readonly<Record<BlockedReason, string>> = {
 /** Why the drafter's Approve button is disabled (CAS-09; audit item #61): someone else approves, and the drafter asks them. */
 export const DRAFTER_APPROVAL_TEXT = 'A second person who approves packets approves it; ask with Request approval.';
 
+/** The same, once the drafter has asked (the Request approval form is gone then): the request stands, and the approver approves here. */
+export const DRAFTER_REQUESTED_TEXT = 'Approval is requested; a second person who approves packets approves it here.';
+
 /** The person who attested an export, by email; null when they are no longer a user. */
 async function attesterEmail(scope: Scope, userId: string | null): Promise<string | null> {
   if (userId === null) {
@@ -425,7 +441,8 @@ async function attesterEmail(scope: Scope, userId: string | null): Promise<strin
 export type ExportRequestOutcome =
   | { readonly outcome: 'queued' }
   | { readonly outcome: 'exported' }
-  | { readonly outcome: 'refused'; readonly reasons: readonly [ExportReadinessReason, ...ExportReadinessReason[]] };
+  /** singleUser: no one but the version's writer approves packets in the practice (the not_approved words say who approves). */
+  | { readonly outcome: 'refused'; readonly reasons: readonly [ExportReadinessReason, ...ExportReadinessReason[]]; readonly singleUser: boolean };
 
 /**
  * Asks the worker to print a version's export (the packet_export job: the PDF and the CSV schedule, the
@@ -445,6 +462,13 @@ export async function requestExportOnce(
   const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: input.versionId, asOf: input.asOf });
   if (readiness === undefined) {
     throw new NotFoundError();
+  }
+  if (readiness.outcome === 'refused') {
+    const { rows } = await scope.client.query<{ alone: boolean }>(
+      'SELECT NOT practice_has_other_packet_approver($1, v.drafted_by) AS alone FROM packet_version v WHERE v.id = $2 AND v.practice_id = $1',
+      [input.practiceId, input.versionId],
+    );
+    return { ...readiness, singleUser: rows[0]?.alone ?? false };
   }
   if (readiness.outcome !== 'ready') {
     return readiness;

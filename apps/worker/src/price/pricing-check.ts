@@ -4,14 +4,16 @@ import { PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, typ
  * Whether a packet version's pricing is still current (audit item #4; migration 20261103090000,
  * packet_version_pricing_check()): every line still carries its service line's pricing in effect
  * (service_line_priced_in_effect(), the same rule as PRICED_IN_EFFECT: a complete first run or an accepted
- * re-run, the run of its period that took effect last), its rule release is not withdrawn, and its contract
- * version is still signed off and covers the service date (a back-dated amendment closes it). The database
+ * re-run, the run of its period that took effect last), its rule release is not withdrawn, the plan mapping it
+ * priced under is still the plan's mapping in force on its service date (a correction supersedes it, MAP-03), and
+ * its contract version is still signed off and covers the service date (a back-dated amendment closes it). The database
  * holds the one rule, and approval, the export guard and the attestation refuse in SQL; the builder, the export
  * request, the export job and the attestation service ask it first through here, so they say no with the reason
  * before the database does. A submission is never refused for it: the database records the result on it.
  *
- * Nothing here refreshes a case: accepting a re-run or withdrawing a release leaves the case's lines on the
- * pricing they joined with until PR 11; a stale line is written off on the case page, or the case waits.
+ * Nothing here refreshes a case: accepting a re-run, withdrawing a release or correcting a mapping leaves the case's
+ * lines on the pricing they joined with until PR 11, and a stale line never becomes current again; it is written off
+ * on the case page, and the packet is written, approved and exported again without it.
  */
 
 /** Each cause a version's pricing is not current, from the most severe (the database's order). */

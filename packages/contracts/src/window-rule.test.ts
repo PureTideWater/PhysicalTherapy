@@ -53,15 +53,17 @@ describe('the lists', () => {
 });
 
 describe('the computed rule', () => {
-  it('is calendar days after the remittance date, and only that rule is computed', () => {
-    expect(COMPUTED_CONTRACT_WINDOW_RULE).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+  it('is calendar days after the payment date (BPR16, the engine’s start), and only that rule is computed', () => {
+    expect(COMPUTED_CONTRACT_WINDOW_RULE).toEqual({ unit: 'calendar_days', measuredFrom: 'payment_date' });
+    // The remittance advice's own date is another start, usually a day or more before the payment: never the computed one.
+    expect(windowRuleComputed({ unit: 'calendar_days', measuredFrom: 'remittance_date' })).toBe(false);
     expect(Object.isFrozen(COMPUTED_CONTRACT_WINDOW_RULE)).toBe(true);
     expect(rules.filter(windowRuleComputed)).toEqual([COMPUTED_CONTRACT_WINDOW_RULE]);
     expect(windowRuleComputed(null)).toBe(false);
   });
 
   it('says the rule in words', () => {
-    expect(windowRuleText(90, COMPUTED_CONTRACT_WINDOW_RULE)).toBe('ends 90 calendar days after the remittance date');
+    expect(windowRuleText(90, COMPUTED_CONTRACT_WINDOW_RULE)).toBe('ends 90 calendar days after the payment date');
     expect(windowRuleText(180, { unit: 'calendar_days', measuredFrom: 'date_of_service' })).toBe('ends 180 calendar days after the date of service');
     expect(windowRuleText(1, { unit: 'business_days', measuredFrom: 'payment_date' })).toBe('ends 1 business day after the payment date');
     expect(windowRuleText(6, { unit: 'months', measuredFrom: 'receipt_date' })).toBe('ends 6 months after the day the practice received the remittance or payment');
@@ -69,19 +71,21 @@ describe('the computed rule', () => {
   });
 
   it('tells two rules apart', () => {
-    expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'calendar_days', measuredFrom: 'remittance_date' })).toBe(true);
+    expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'calendar_days', measuredFrom: 'payment_date' })).toBe(true);
+    expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'calendar_days', measuredFrom: 'remittance_date' })).toBe(false);
     expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'calendar_days', measuredFrom: 'date_of_service' })).toBe(false);
-    expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'business_days', measuredFrom: 'remittance_date' })).toBe(false);
+    expect(sameWindowRule(COMPUTED_CONTRACT_WINDOW_RULE, { unit: 'business_days', measuredFrom: 'payment_date' })).toBe(false);
     expect(sameWindowRule(null, COMPUTED_CONTRACT_WINDOW_RULE)).toBe(false);
   });
 });
 
 describe('the end a rule gives', () => {
-  it('counts from the start the rule names: "within 180 days of the date of service" ends 29 days before the remittance-date window', () => {
+  it('counts from the start the rule names: "within 180 days of the date of service" ends 31 days before the payment-date window', () => {
     const ends = Object.fromEntries(DISPUTE_WINDOW_STARTS.map((measuredFrom) => [measuredFrom, windowRuleEndsOn(180, { unit: 'calendar_days', measuredFrom }, LINE)]));
     expect(ends).toEqual({ date_of_service: '2026-08-29', remittance_date: '2026-09-27', payment_date: '2026-09-29', receipt_date: '2026-10-03' });
-    // The engine's own end for this window (180 calendar days after the remittance date) is the later date.
-    expect(windowRuleEndsOn(180, COMPUTED_CONTRACT_WINDOW_RULE, LINE)).toBe(addDays(LINE.remittanceDate ?? '', 180));
+    // The engine's own end for this window (180 calendar days after the payment date, BPR16) is later than the remittance advice's.
+    expect(windowRuleEndsOn(180, COMPUTED_CONTRACT_WINDOW_RULE, LINE)).toBe(addDays(LINE.paymentDate ?? '', 180));
+    expect((windowRuleEndsOn(180, COMPUTED_CONTRACT_WINDOW_RULE, LINE) ?? '') > (ends.remittance_date ?? '')).toBe(true);
     // A start the line does not carry gives no end.
     for (const rule of rules) {
       const end = windowRuleEndsOn(30, rule, from('2026-03-31', 'receiptDate'));
@@ -141,7 +145,7 @@ describe('the end a rule gives', () => {
     const date = fc.date({ min: new Date('2000-01-01T00:00:00Z'), max: new Date('2099-12-31T00:00:00Z'), noInvalidDate: true }).map((value) => value.toISOString().slice(0, 10));
     fc.assert(
       fc.property(date, fc.integer({ min: 1, max: 400 }), (start, length) => {
-        expect(windowRuleEndsOn(length, COMPUTED_CONTRACT_WINDOW_RULE, from(start))).toBe(addDays(start, length));
+        expect(windowRuleEndsOn(length, COMPUTED_CONTRACT_WINDOW_RULE, from(start, 'paymentDate'))).toBe(addDays(start, length));
         const business = windowRuleEndsOn(length, { unit: 'business_days', measuredFrom: 'remittance_date' }, from(start)) ?? '';
         expect([0, 6]).not.toContain(weekday(business));
         let counted = 0;

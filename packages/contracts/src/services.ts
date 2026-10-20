@@ -739,7 +739,7 @@ export interface WindowVerificationResult {
 /**
  * The specialist verifies the cited window against its page (PRD 7: the specialist verifies each field against
  * the cited page): verified only when the rule it cites is the rule the engine computes (its days as calendar days
- * after the remittance date; refused otherwise, so a window counted another way never carries a date later than
+ * after the payment date (BPR16); refused otherwise, so a window counted another way never carries a date later than
  * the contract's) and the citation still resolves to its page, in the specialist's own name, now. A window already
  * verified stays as it was verified; an edit of the window clears the verification.
  */
@@ -755,12 +755,12 @@ export async function verifyDisputeWindow(context: WorkflowContext, input: z.inp
   if (window.verifiedBy === null && !windowRuleComputed(window.rule)) {
     throw new ContractWorkflowError(
       'invalid',
-      'a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the remittance date',
+      'a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the payment date (BPR16)',
       [
         {
           field: 'disputeWindowRule',
           message:
-            'the cited rule is not the one the product computes yet (calendar days after the remittance date), so the window stays unverified and its lines wait for a verified deadline; the version can still be approved',
+            'the cited rule is not the one the product computes yet (calendar days after the payment date), so the window stays unverified and its lines wait for a verified deadline; the version can still be approved',
         },
       ],
     );

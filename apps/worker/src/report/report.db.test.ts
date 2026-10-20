@@ -263,6 +263,38 @@ describe('generating an audit report (PRD 4, Audit v0)', () => {
     );
   }, 120_000);
 
+  it('states and judges no window end for a window cited in months or business days, which the product does not compute: DEADLINE_UNVERIFIED alone, never WINDOW_PASSED (best-option audit #5)', async () => {
+    const practice = await w.practice('report CAS-03 months');
+    await w.load(practice, 'CAS-03/remit.835');
+    // "within 6 months of the payment date" and "within 10 business days of the payment date": the engine (untouched until PR 6c)
+    // counts the length as calendar days, so its end, long passed, is not the contract's (October for the months window).
+    const months = await w.fixedContract(practice, { ...FIXED, disputeWindowDays: 6, windowRule: { unit: 'months', measuredFrom: 'payment_date' } });
+    const business = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }], disputeWindowDays: 10, windowRule: { unit: 'business_days', measuredFrom: 'payment_date' } });
+    const runId = await w.pricedRun(practice, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: months.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: business.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    const engine = await inScope<{ passed: boolean }>(practice, practice.manager, 'SELECT bool_and(window_ends_on < $2::date) AS passed FROM priced_line WHERE pricing_run_id = $1', [runId, todayUtc()]);
+    expect(engine[0]?.passed).toBe(true);
+    const id = await w.requestReport(practice, runId);
+    expect((await w.generate(practice, id)).outcome).toBe('ready');
+    const row = await report(practice, id);
+    const content = row.content as AuditReportContent;
+    expect(content.headline).toMatchObject({ actionable_cents: '0', actionable_lines: 0, validated_lines: 16 });
+    expect(content.validated.not_actionable.map((item) => item.reason)).toEqual(['DEADLINE_UNVERIFIED']);
+    const gap = content.evidence_gaps.find((item) => item.kind === 'deadline_unverified');
+    expect(gap?.remedy).toMatch(/does not compute that rule yet, so it states no deadline for these lines \(the date it would count may be earlier or later than the contract’s\): keep the contract’s own deadline/);
+    const [, ...lines] = csvRows(await w.stored(practice, row.csv_key ?? ''));
+    const column = (name: (typeof CSV_COLUMNS)[number]) => CSV_COLUMNS.indexOf(name);
+    expect(new Set(lines.map((line) => `${String(line[column('window_ends_on')])}|${String(line[column('counted_as')])} ${String(line[column('reasons')])}`))).toEqual(
+      new Set(['|not_actionable DEADLINE_UNVERIFIED']),
+    );
+  }, 120_000);
+
   it('keeps a report’s numbers when a line is reopened after it (CAS-07)', async () => {
     const { practice, runId } = await cas03('report CAS-07');
     // Triage, then write a line of plan one off before the first report.

@@ -189,7 +189,7 @@ async function exportedCase(label: string, releaseNo = RELEASE): Promise<Exporte
   const jobId = randomUUID();
   await packetExportHandler({ documents, keys: w.keys, pdf: w.pdf })(
     { practice_id: practice.practiceId, packet_version_id: version.versionId },
-    { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.app, { jobId, practiceId: practice.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
+    { jobId, logger: createLogger({ sink: () => undefined }), transaction: (work) => withJobScope(w.pricing.worker, { jobId, practiceId: practice.practiceId }, work), enqueue: () => Promise.resolve(null), lastAttempt: false },
   );
   const hashes = (
     await asOwner(w.owner, [practice.practiceId], () =>

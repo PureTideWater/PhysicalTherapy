@@ -15,9 +15,10 @@ import { VERIFICATION_LEVELS, type VerificationLevel } from '@tp/rules';
  * - a contract window: the version the trace names is signed off, its dispute window cited with a document, a
  *   page, a quote and a hash (contract_version.dispute_window_evidence) and the rule the quote states (its unit and
  *   what it is counted from), that rule the one the engine computes (COMPUTED_CONTRACT_WINDOW: calendar days after
- *   the remittance date), verified by a contract specialist, and its days are the trace's length, in days from the
- *   remittance date. A window counted another way (business days, months, or from the date of service) stays
- *   unverified until PR 6c computes it, so a verified date is never later than the contract's.
+ *   the payment date, BPR16), verified by a contract specialist, and its days are the trace's length, in days from
+ *   what the engine's trace labels the remittance date (BPR16, the payment date). A window counted another way
+ *   (business days, months, or from the date of service, the remittance advice's own date or the day it was
+ *   received) stays unverified until PR 6c computes it, so a verified date is never later than the contract's.
  *
  * Derived from the stored trace (steps.window and agreement.contract_version_id) and the facts the worker reads
  * beside it (apps/worker/src/triage/deadline.ts): the release record's level, whether its release was withdrawn,
@@ -45,7 +46,7 @@ export const DEADLINE_UNVERIFIED_CAUSES = [
   'MA_ROUTE_UNCONFIRMED',
   /** The contract version's window carries no complete citation (document, page, quote and hash). */
   'CONTRACT_WINDOW_UNCITED',
-  /** Cited with a rule (unit and start) the engine does not compute yet (PR 6c): the date shown counts calendar days from the remittance date. */
+  /** Cited with a rule (unit and start) the engine does not compute yet (PR 6c): the engine's date counts calendar days from the payment date, so it is not the contract's and is not judged. */
   'CONTRACT_WINDOW_RULE_NOT_COMPUTED',
   /** Cited, but no contract specialist has verified it. */
   'CONTRACT_WINDOW_UNVERIFIED',
@@ -75,11 +76,11 @@ export const MA_DISPUTE_ROUTE_CONFIRMED: boolean = false;
 
 /**
  * The one contract window rule the engine computes (packages/pricing/src/windows.ts): the version's days counted as
- * calendar days after the remittance date (BPR16). @tp/contracts holds the same literal (COMPUTED_CONTRACT_WINDOW_RULE)
- * and the database the same test (contract_window_rule_computed()); triage depends on neither, and a database test
- * holds the three together. PR 6c widens all three.
+ * calendar days after the payment date (BPR16: the check's issue date or the EFT's effective date). @tp/contracts holds
+ * the same literal (COMPUTED_CONTRACT_WINDOW_RULE) and the database the same test (contract_window_rule_computed());
+ * triage depends on neither, and a database test holds the three together. PR 6c widens all three.
  */
-export const COMPUTED_CONTRACT_WINDOW: { readonly unit: string; readonly measuredFrom: string } = Object.freeze({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+export const COMPUTED_CONTRACT_WINDOW: { readonly unit: string; readonly measuredFrom: string } = Object.freeze({ unit: 'calendar_days', measuredFrom: 'payment_date' });
 
 /**
  * Where the contract states its window: contract_version.dispute_window_evidence, as a rate record cites its terms,
@@ -93,7 +94,7 @@ export interface ContractWindowEvidence {
   readonly hash: string;
   /** calendar_days, business_days or months, as the quote counts the days. */
   readonly unit: string;
-  /** date_of_service, remittance_date, payment_date or receipt_date, as the quote names its start. */
+  /** date_of_service, remittance_date (the advice's own date), payment_date (BPR16) or receipt_date, as the quote names its start. */
   readonly measuredFrom: string;
 }
 
@@ -214,6 +215,7 @@ export function deadlineVerification(input: DeadlineInput): DeadlineVerification
   if (facts.status !== 'signed_off') {
     return unverified('CONTRACT_VERSION_NOT_SIGNED_OFF');
   }
+  // The engine labels a contract window counted from BPR16, the payment date, measured_from 'remittance_date' (windows.ts).
   if (window.unit !== 'days' || window.measured_from !== 'remittance_date' || facts.disputeWindowDays === null || facts.disputeWindowDays !== window.length) {
     return unverified('CONTRACT_WINDOW_DIFFERS');
   }

@@ -39,6 +39,7 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   DEADLINE_UNVERIFIED: 'Deadline not verified',
   CLAIM_REVERSED: 'Claim reversed since it was priced',
   CLAIM_SUPERSEDED: 'Claim corrected since it was priced',
+  MAPPING_NOT_IN_FORCE: 'Plan mapping corrected since it was priced (another agreement applies on the service date)',
   VERSION_NOT_SIGNED_OFF: 'Contract version corrected since it was priced',
   VERSION_NOT_IN_FORCE: 'Contract version no longer covers the service date (amended since it was priced)',
   RELEASE_WITHDRAWN: 'Rule release withdrawn since it was priced',

@@ -15,6 +15,7 @@ import { DocumentStore, type WrittenDocument } from '../storage/documents';
 import { MemorySealedBytes } from '../intake/test-support/memory-bytes';
 import { PacketExportFileIntegrityError, downloadPacketExport, packetExportDownloads } from './downloads';
 import { PacketExportIntegrityError, exportPacketVersion } from './export';
+import { exportReadiness } from './readiness';
 import { PacketRefusedError } from './records';
 import {
   PacketRuleError,
@@ -954,6 +955,33 @@ describe('submissions, payer responses and the case states they derive (PRD 8; P
     expect((await refusal(jobExport(setup, second.versionId, second.packetId))).message).toBe('a packet version whose deadline is not verified is not exported');
     expect((await refusal(submit(setup, second.versionId))).message).toBe('a packet is submitted once it is exported');
     expect((await caseState(setup)).state).toBe('awaiting_response');
+  });
+
+  it('judges a later level’s export by the window the reopening denial gave, never by the lines’ first-level windows (readiness)', async () => {
+    const setup = await cas08('second-level-window');
+    // An appeal level longer than the lines' own windows (ten years from the payment date), so the first-level windows end first.
+    const { rows } = await w.as(setup.practice, setup.practice.manager, (scope) => scope.client.query<{ version: string }>("SELECT pattern_key ->> 'contract_version_id' AS version FROM \"case\" WHERE id = $1", [setup.caseId]));
+    await w.superuser(`UPDATE contract_version SET appeal_levels = '[{"level": 1, "days": 4000}]' WHERE id = $1`, [rows[0]?.version]);
+    const first = await exported(setup);
+    const logged = await submit(setup, first.versionId);
+    const reopened = await respond(setup, logged.submissionId, { kind: 'denied', denialCategory: 'bundling', reopensCase: true, documentId: await documentOf(setup.practice) });
+    const next = reopened.nextWindowEndsOn ?? '';
+    const second = await write(setup, setup.practice.manager, { basedOn: first.versionId });
+    expect(second.content.dispute_level).toBe(2);
+    await approve(setup, setup.second, second.versionId, second.contentSha256);
+    const lineEnds = (await w.as(setup.practice, setup.practice.manager, (scope) =>
+      scope.client.query<{ ends: string }>('SELECT max(window_ends_on)::text AS ends FROM priced_line WHERE id = ANY ($1::uuid[])', [second.content.lines.map((line) => line.priced_line_id)]),
+    )).rows[0]?.ends ?? '';
+    expect(lineEnds < next).toBe(true);
+    const reasons = async (asOf: string) => {
+      const readiness = await w.as(setup.practice, setup.practice.manager, (scope) => exportReadiness(scope.client, { practiceId: setup.practice.practiceId, versionId: second.versionId, asOf }));
+      return readiness?.outcome === 'refused' ? readiness.reasons : [];
+    };
+    // After every line's first-level window, before the next level's: no window has passed for this level (its deadline is the
+    // contract's appeal level, which cites no evidence, so it is unverified).
+    expect(await reasons(addDays(lineEnds, 1))).toEqual(['deadline_unverified']);
+    // After the next level's window: that is this level's passed window, said as the next level's, never as a line's.
+    expect(await reasons(addDays(next, 1))).toEqual(['next_window_passed', 'deadline_unverified']);
   });
 
   it('closes written off when every line is, and takes no new version or submission then', async () => {

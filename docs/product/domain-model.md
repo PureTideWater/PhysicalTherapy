@@ -2,12 +2,12 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `a81e4db33ac326dfe56932f26e7cd6bbe1e5c708` on branch `co-001/pr-05-packet-deadline` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `2a075057997840676328015db5eca6a6fa911131` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 263 (112 SECURITY DEFINER); triggers: 220, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 267 (112 SECURITY DEFINER); triggers: 225, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
 - Divergences from the Data dictionary: 23 to approve, 31 tables and 146 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
@@ -66,7 +66,7 @@
 | [`agreement`](#table-agreement) | Tenancy and access | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 4 | 1 | SELECT, INSERT(cols) | - | - |
 | [`agreement_event`](#table-agreement-event) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`anomaly`](#table-anomaly) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 4 | SELECT, INSERT(cols) | - | SELECT |
+| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 5 | SELECT, INSERT(cols) | - | SELECT |
 | [`audit_report`](#table-audit-report) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 3 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`audit_report_download`](#table-audit-report-download) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 4 | SELECT, INSERT(cols) | - | - |
 | [`billing_event`](#table-billing-event) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | SELECT, INSERT, UPDATE | - |
@@ -79,7 +79,7 @@
 | [`contract`](#table-contract) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`contract_calendar_event`](#table-contract-calendar-event) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
 | [`contract_question`](#table-contract-question) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`contract_version`](#table-contract-version) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
+| [`contract_version`](#table-contract-version) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 4 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`digest`](#table-digest) | Operations | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`eft_row`](#table-eft-row) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols) | - | - |
 | [`eval_example`](#table-eval-example) | Model gateway | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | SELECT, INSERT(cols) |
@@ -104,14 +104,14 @@
 | [`parse_report`](#table-parse-report) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`patient_ref`](#table-patient-ref) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`payer`](#table-payer) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 1 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`payer_plan_mapping`](#table-payer-plan-mapping) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
+| [`payer_plan_mapping`](#table-payer-plan-mapping) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 3 | SELECT, INSERT(cols) | - | - |
 | [`payer_response`](#table-payer-response) | Packets | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
 | [`phi_table_registry`](#table-phi-table-registry) | Tenancy and access | global (no practice_id, no RLS) | - | no | no | 0 | 1 | SELECT | - | - |
 | [`plan`](#table-plan) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`posting_row`](#table-posting-row) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols) | - | - |
 | [`practice`](#table-practice) | Tenancy and access | PHI (registered) | id (the tenant key) | yes | yes | 4 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`priced_line`](#table-priced-line) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols) | - | - |
-| [`pricing_run`](#table-pricing-run) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 4 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
+| [`pricing_run`](#table-pricing-run) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, UPDATE(cols) | - | - |
 | [`provider_adjustment`](#table-provider-adjustment) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 0 | - | - | - |
@@ -123,7 +123,7 @@
 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | - | no | no | 0 | 1 | SELECT | - | - |
 | [`rule_record`](#table-rule-record) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 2 | SELECT | - | - |
 | [`rule_release`](#table-rule-release) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 2 | SELECT | - | - |
-| [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 2 | SELECT | - | - |
+| [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 3 | SELECT | - | - |
 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | - | no | no | 0 | 0 | - | - | - |
 | [`service_line`](#table-service-line) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`source_document`](#table-source-document) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
@@ -1571,7 +1571,7 @@ Maintains `updated_at`: `plan_updated_at`.
 - Class: PHI (registered); registry policy `payer_plan_mapping_tenant`, registered by `20261016160000_contracts_and_mapping`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Payers, contracts and rates (PHI-adjacent; confidential): Plan to agreement
-- Created by `20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028)
+- Created by `20261016160000_contracts_and_mapping` (ADR 0013, ADR 0017, ADR 0019, ADR 0028); its DDL, policies or trigger functions changed by `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`contract_version_id`, `effective_from`, `effective_to`, `id`, `mapped_by`, `mapping_kind`, `plan_id`, `practice_id`, `supersedes_id`)
@@ -1616,6 +1616,7 @@ Invariants enforced by constraints:
 - `payer_plan_mapping_window`: `CHECK (effective_to IS NULL OR effective_to > effective_from)`
 
 Invariants enforced by triggers:
+- `payer_plan_mapping_pricing_current_lock`: `BEFORE INSERT ON payer_plan_mapping FOR EACH ROW WHEN (new.supersedes_id IS NOT NULL) EXECUTE FUNCTION pricing_current_change_lock()`
 - `payer_plan_mapping_rules`: `BEFORE INSERT OR UPDATE ON payer_plan_mapping FOR EACH ROW EXECUTE FUNCTION payer_plan_mapping_rules()`
   - "a mapping never changes; correct it with a new mapping that supersedes it"
   - "a mapping maps a plan of the same practice"
@@ -1759,6 +1760,7 @@ Invariants enforced by constraints:
 - `contract_version_windows_never_overlap` (exclusion): `EXCLUDE USING gist (uuid_half(contract_id, true) WITH &&, uuid_half(contract_id, false) WITH &&, daterange(effective_from, effective_to, '[)'::text) WITH &&) WHERE (status = 'signed_off'::text OR supersedes_id IS NULL AND (status = ANY (ARRAY['draft'::text, 'proposed'::text, 'approved'::text])))`
 
 Invariants enforced by triggers:
+- `contract_version_pricing_current_lock`: `BEFORE UPDATE ON contract_version FOR EACH ROW WHEN (old.status = 'signed_off'::text AND new.status IS DISTINCT FROM old.status OR new.effective_to IS DISTINCT FROM old.effective_to) EXECUTE FUNCTION pricing_current_change_lock()`
 - `contract_version_retired_by_signed_successor`: `AFTER UPDATE ON contract_version DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ((old.status = ANY (ARRAY['approved'::text, 'signed_off'::text])) AND (new.status = 'superseded'::text OR new.effective_to IS DISTINCT FROM old.effective_to)) EXECUTE FUNCTION contract_version_retired_by_signed_successor()`
   - "a contract version is closed or superseded only by the sign-off of its successor"
 - `contract_version_rules`: `BEFORE INSERT OR UPDATE ON contract_version FOR EACH ROW EXECUTE FUNCTION contract_version_rules()`
@@ -1781,7 +1783,7 @@ Invariants enforced by triggers:
   - "a dispute window's verification records the verifying specialist and the time"
   - "a dispute window is verified as it stands; edit it first, then verify it"
   - "a dispute window cannot be verified without evidence naming a document, a page, a quote and a hash"
-  - "a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the remittance date"
+  - "a dispute window is verified only when the rule it cites is the rule the product computes: its days counted as calendar days after the payment date (BPR16)"
   - "a dispute window's verification is recorded once"
   - "a version's documents are clean contract, exhibit or payer-letter documents of its practice, each named once"
   - "only a practice administrator or billing manager signs off a contract version"
@@ -2099,7 +2101,7 @@ Invariants enforced by triggers:
 - Class: global (no practice_id, no RLS)
 - Row-level security: not enabled; 0 policies; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261019150000_reruns_and_release_withdrawal` (ADR 0037)
+- Created by `20261019150000_reruns_and_release_withdrawal` (ADR 0037); its DDL, policies or trigger functions changed by `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `release_no`
 - Privileges: `tp_app` SELECT
 
@@ -2127,6 +2129,7 @@ Invariants enforced by constraints:
 Invariants enforced by triggers:
 - `rule_release_withdrawal_no_truncate`: `BEFORE TRUNCATE ON rule_release_withdrawal FOR EACH STATEMENT EXECUTE FUNCTION rule_content_no_truncate()`
   - "% cannot be truncated: rule releases are immutable"
+- `rule_release_withdrawal_pricing_current_lock`: `BEFORE INSERT ON rule_release_withdrawal FOR EACH ROW EXECUTE FUNCTION pricing_current_change_lock()`
 - `rule_release_withdrawal_rules`: `BEFORE INSERT OR DELETE OR UPDATE ON rule_release_withdrawal FOR EACH ROW EXECUTE FUNCTION rule_release_withdrawal_rules()`
   - "a rule release withdrawal never changes; a correction is a new release"
   - "only the rule release in force is withdrawn"
@@ -2159,7 +2162,7 @@ Pricing runs and their immutable priced lines, anomaly cohorts, the stage of eac
 - Class: PHI (registered); registry policy `pricing_run_tenant`, registered by `20261018090000_pricing_runs`, qualifies: yes
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): A run
-- Created by `20261018090000_pricing_runs` (ADR 0029, ADR 0035); its DDL, policies or trigger functions changed by `20261019150000_reruns_and_release_withdrawal`, `20261020090000_monitoring_digests_notifications`, `20261022090000_review_guards_visit_shortfalls_and_practice_settings`, `20261029150000_billing`
+- Created by `20261018090000_pricing_runs` (ADR 0029, ADR 0035); its DDL, policies or trigger functions changed by `20261019150000_reruns_and_release_withdrawal`, `20261020090000_monitoring_digests_notifications`, `20261022090000_review_guards_visit_shortfalls_and_practice_settings`, `20261029150000_billing`, `20261103090000_deadline_verification_and_export_attestation`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`created_by`, `created_by_job_id`, `engine_version`, `id`, `lines_loaded_by`, `period_from`, `period_to`, `practice_id`, `release_no`, `rerun_of_id`)
@@ -2231,6 +2234,7 @@ Invariants enforced by constraints:
 Invariants enforced by triggers:
 - `pricing_run_no_truncate`: `BEFORE TRUNCATE ON pricing_run FOR EACH STATEMENT EXECUTE FUNCTION pricing_no_truncate()`
   - "% cannot be truncated: pricing runs and their lines are kept as they were priced"
+- `pricing_run_pricing_current_lock`: `BEFORE UPDATE ON pricing_run FOR EACH ROW WHEN (new.accepted_at IS DISTINCT FROM old.accepted_at OR new.status = 'complete'::text AND old.status IS DISTINCT FROM 'complete'::text) EXECUTE FUNCTION pricing_current_change_lock()`
 - `pricing_run_refused_while_suspended`: `BEFORE INSERT ON pricing_run FOR EACH ROW EXECUTE FUNCTION refuse_new_work_while_suspended()`
   - "%"
 - `pricing_run_rules`: `BEFORE INSERT OR DELETE OR UPDATE ON pricing_run FOR EACH ROW EXECUTE FUNCTION pricing_run_rules()`
@@ -3091,7 +3095,7 @@ Invariants enforced by constraints:
 
 Invariants enforced by triggers:
 - `packet_version_approval_pricing`: `BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_approval_pricing()`
-  - "a packet version is approved only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date"
+  - "a packet version is approved only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date"
 - `packet_version_attestation_rules`: `BEFORE INSERT OR UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_attestation_rules()`
   - "a packet version is written unexported and unattested"
   - "a packet version's export is attested once"
@@ -3124,7 +3128,7 @@ Invariants enforced by triggers:
   - "a packet version names exactly the evidence its lines' windows rest on, each once"
 - `packet_version_export_guard`: `BEFORE UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_export_guard()`
   - "only a version of the case's dispute level is exported; write the packet again at this level"
-  - "a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date"
+  - "a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date"
   - "a packet version whose deadline is not verified is not exported"
   - "a packet version is exported with the verifier's passing report over the narrative it rendered"
   - "an export's verifier report is written with the export, once"
@@ -3183,7 +3187,7 @@ Maintains `updated_at`: `packet_version_updated_at`.
 | 12 | `dispute_level` | `integer` | NOT NULL | `1` |  | `20261023090000` | not in the dictionary |
 | 13 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
 | 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
-| 15 | `pricing_check` | `text` | null |  |  | `20261103090000` | one of current, PRICING_NOT_IN_EFFECT, RELEASE_WITHDRAWN, CONTRACT_VERSION_NOT_SIGNED_OFF, CONTRACT_VERSION_NOT_IN_FORCE; not in the dictionary |
+| 15 | `pricing_check` | `text` | null |  |  | `20261103090000` | one of current, PRICING_NOT_IN_EFFECT, RELEASE_WITHDRAWN, MAPPING_NOT_IN_FORCE, CONTRACT_VERSION_NOT_SIGNED_OFF, CONTRACT_VERSION_NOT_IN_FORCE; not in the dictionary |
 
 Keys:
 - Primary: (id)
@@ -3209,7 +3213,7 @@ Invariants enforced by constraints:
 - `submission_export_csv_sha256_check`: `CHECK (export_csv_sha256 ~ '^[0-9a-f]{64}$'::text)`
 - `submission_export_sha256_check`: `CHECK (export_sha256 ~ '^[0-9a-f]{64}$'::text)`
 - `submission_follow_up_after`: `CHECK (follow_up_on >= submitted_on)`
-- `submission_pricing_check_check`: `CHECK (pricing_check = ANY (ARRAY['current'::text, 'PRICING_NOT_IN_EFFECT'::text, 'RELEASE_WITHDRAWN'::text, 'CONTRACT_VERSION_NOT_SIGNED_OFF'::text, 'CONTRACT_VERSION_NOT_IN_FORCE'::text]))`
+- `submission_pricing_check_check`: `CHECK (pricing_check = ANY (ARRAY['current'::text, 'PRICING_NOT_IN_EFFECT'::text, 'RELEASE_WITHDRAWN'::text, 'MAPPING_NOT_IN_FORCE'::text, 'CONTRACT_VERSION_NOT_SIGNED_OFF'::text, 'CONTRACT_VERSION_NOT_IN_FORCE'::text]))`
 - `submission_reference_check`: `CHECK (reference ~ '^enc:v1:[A-Za-z0-9_-]+$'::text)`
 
 Invariants enforced by triggers:
@@ -4659,8 +4663,13 @@ Invariants enforced by triggers:
   - "a packet export's download is of an exported packet version of its practice, as a line-level export"
 - `audit_event_packet_export_attempt`: `BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.action = ANY (ARRAY['packet_export_refused'::text, 'packet_export_attempt_failed'::text, 'packet_export_failed'::text])) EXECUTE FUNCTION audit_event_packet_export_attempt()`
   - "a packet export's refusal or failure is recorded by the export job, never in a person's name"
+  - "a packet export's refusal or failure is recorded by the export job on the worker's own login"
   - "a packet export's refusal or failure is of a packet version of its practice"
   - "a packet export's refusal or failure names one of its codes"
+- `audit_event_packet_export_requested`: `BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'packet_export_requested'::text) EXECUTE FUNCTION audit_event_packet_export_requested()`
+  - "a packet export is requested by a person, in their own name, never on the worker's login"
+  - "a packet export is requested by a person who may export PHI in its practice"
+  - "a packet export is requested of a packet version of its practice"
 
 ### Table `job_run`
 
@@ -5532,7 +5541,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `report_document.status` | `queued`, `ready`, `failed` |
 | `packet_version.deadline_verification_status` | `verified`, `unverified`, `not_applicable` |
 | `submission.channel` | `payer_portal`, `fax`, `mail`, `provider_relations_email` |
-| `submission.pricing_check` | `current`, `PRICING_NOT_IN_EFFECT`, `RELEASE_WITHDRAWN`, `CONTRACT_VERSION_NOT_SIGNED_OFF`, `CONTRACT_VERSION_NOT_IN_FORCE` |
+| `submission.pricing_check` | `current`, `PRICING_NOT_IN_EFFECT`, `RELEASE_WITHDRAWN`, `MAPPING_NOT_IN_FORCE`, `CONTRACT_VERSION_NOT_SIGNED_OFF`, `CONTRACT_VERSION_NOT_IN_FORCE` |
 | `payer_response.kind` | `accepted`, `partial`, `denied`, `info_requested`, `reprocessed_no_change` |
 | `payer_response.denial_category` | `authorization`, `visit_limit`, `modifier`, `medical_necessity`, `timely_filing`, `bundling`, `other` |
 | `ledger_entry.stage` | `approved`, `posted`, `deposited`, `recouped`, `reversed`, `adjusted`, `interest` |
@@ -5626,7 +5635,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `assert_membership_fits_user(uuid,uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e9b1e3a862e37508` |
 | `assert_organization_keeps_administrator(uuid)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `16bb83822a4c4c15` |
 | `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d9ff171f092c4f1` |
-| `audit_event_packet_export_attempt()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2758ec83ca598a30` |
+| `audit_event_packet_export_attempt()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `980bc6bb1ce69ba4` |
+| `audit_event_packet_export_requested()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `41846c4e697780b0` |
 | `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3e46c1342db1a9db` |
 | `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
 | `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dcc9fa8b0d88cd5c` |
@@ -5667,8 +5677,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `contract_version_documents_ok(contract_version)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fa43e7f02e96754b` |
 | `contract_version_retired_by(contract_version,contract_version,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d28cf1aa50ff68a3` |
 | `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d19fbe631239fef` |
-| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b675ec7b6948b7e8` |
-| `contract_window_rule_computed(text,text)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `5f5e7a8947a39fd9` |
+| `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `84ee4071d9947f3d` |
+| `contract_window_rule_computed(text,text)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bb55ce276d1c3288` |
 | `current_rule_release()` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `888c946804c94d4f` |
 | `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1f6b0bde64fc4a4b` |
 | `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  | `97a340475b983d2f` |
@@ -5734,25 +5744,26 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `619ece8c25a26b04` |
 | `packet_export_downloads_of_actor(uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc26a79c8d0152e2` |
 | `packet_export_failure_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fb4f86f1d8355c05` |
-| `packet_export_refusal_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3da7ca14e2c0f29a` |
+| `packet_export_refusal_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `260d9b7102648366` |
 | `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
 | `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
-| `packet_version_approval_pricing()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3023886ff1542047` |
-| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e57b0749eb462738` |
+| `packet_version_approval_pricing()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0513475dbcaa671` |
+| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f2dc90599c92a784` |
 | `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
 | `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
 | `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
 | `packet_version_deadline_stated()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6c614d04965a83e4` |
 | `packet_version_deadline_status(uuid,jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1341aa1b7f092b15` |
-| `packet_version_export_attempt(uuid)` | `TABLE(state text, code text, requested_at timestamp with time zone, at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `922ae0e33665c27c` |
-| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b7698d0d74d0b75b` |
+| `packet_version_export_attempt(uuid)` | `TABLE(state text, code text, requested_at timestamp with time zone, at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4a69c934296ccd37` |
+| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `db4a988fd2a8f926` |
 | `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b119012e56d45e9c` |
 | `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
-| `packet_version_pricing_check(jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fb7bb30f428fbb62` |
+| `packet_version_pricing_check(jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc57d582efc46783` |
 | `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d6f5841a2aadbeea` |
 | `packets_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0444f4a36978439f` |
 | `packets_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d55baaa259f73fa7` |
 | `parse_report_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `377d9e5cdfe2b80c` |
+| `payer_plan_mapping_in_force(uuid,date)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `80a161b250f57333` |
 | `payer_plan_mapping_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06a465c2d5277fc6` |
 | `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2031d828767ceebd` |
 | `payer_response_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b3c23aa01144ad5c` |
@@ -5783,12 +5794,14 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `practice_set_pursuit(uuid,text,integer,integer)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8ba449fb1c3926ee` |
 | `practice_setting_keys()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `43b5d4392b24804a` |
 | `priced_line_calculation(jsonb)` | `jsonb` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c6d660b35b41b796` |
-| `priced_line_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `624dccc810271cc8` |
+| `priced_line_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `789fac53eeaccf36` |
 | `priced_line_immutable()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4d2d626ed295e33c` |
-| `priced_line_pricing_check(uuid)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e1f14faa80fab3a1` |
+| `priced_line_pricing_check(uuid)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a42d8a0f7b9a9f73` |
 | `priced_line_rows_belong()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0c2beafb3c63d2f3` |
 | `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1980a29c53080675` |
 | `priced_line_visit_variance_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ff2bbd148b2eb4ad` |
+| `pricing_current_change_lock()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `98a437bbce011d67` |
+| `pricing_current_read_lock(uuid)` | `void` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2f28dedb65c6c558` |
 | `pricing_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `66bbf3bfbb28631b` |
 | `pricing_run_changed_lines(uuid,uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `5ddaf57baabe280e` |
 | `pricing_run_in_effect(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `886a648f977b072d` |
@@ -5837,7 +5850,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `744c87f0a23fd1c1` |
 | `submission_latest_response(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9a044fc6cae7cf96` |
 | `submission_needs_attested_export()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `75d65919587f1492` |
-| `submission_pricing_check()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a83d8a87671d71ad` |
+| `submission_pricing_check()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `451fadea7f142344` |
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
@@ -5914,7 +5927,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `441f67becbc2f67d4bbe2b1b532e86a99d0b580e2db41e83a2540fe204236965` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `195d92ff4dcfd3e99f807000bc3fed45bad59825dbbb33881c0ed43cd7a3b650` |
 
 ## Cross-checks
 
@@ -5932,4 +5945,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `6e1240f528c6ed972bd3fc497761eacf92d5ee5780815e0db4049ed5f31a3ad7`
+Approved by: ________  Date: ________  Document SHA-256: `372fa545c9d183e690389a06a94fb05002597d5f54fa42f2347296df05d2a1bc`

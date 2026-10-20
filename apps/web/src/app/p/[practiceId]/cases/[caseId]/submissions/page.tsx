@@ -108,7 +108,7 @@ export default async function SubmissionsPage(props: Props) {
               <p className="text-sm">
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
               </p>
-              {submittable.attestedAt !== null && submittable.pricing.status !== 'current' ? (
+              {submittable.pricing.status === 'current' ? null : submittable.attestedAt !== null ? (
                 <Alert variant="destructive" data-pricing-check={submittable.pricing.status}>
                   <AlertTitle>This export’s pricing is no longer current</AlertTitle>
                   <AlertDescription>
@@ -116,11 +116,22 @@ export default async function SubmissionsPage(props: Props) {
                     sent it yet, do not: write the stale line off on the case page and write, approve and export the packet again.
                   </AlertDescription>
                 </Alert>
-              ) : null}
+              ) : (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status} data-attestation="refused">
+                  <AlertTitle>This export will not be attested: its pricing is no longer current</AlertTitle>
+                  <AlertDescription>
+                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. The reimbursement reviewer cannot attest an export whose pricing is no longer current, and a submission is logged only of an
+                    attested export, so this one is never logged. Do not send it: write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet
+                    again. If it already went to the payer, tell support: a submission of an export that was never attested cannot be logged yet.
+                  </AlertDescription>
+                </Alert>
+              )}
               {submittable.attestedAt === null ? (
-                <p className="text-sm" data-attestation="waiting">
-                  Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
-                </p>
+                submittable.pricing.status === 'current' ? (
+                  <p className="text-sm" data-attestation="waiting">
+                    Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
+                  </p>
+                ) : null
               ) : (
                 <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
                   <FormKeys />

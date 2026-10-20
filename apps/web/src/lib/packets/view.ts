@@ -99,17 +99,20 @@ export const DEADLINE_STATUS_TEXT: Readonly<Record<DeadlineStatus, string>> = {
 
 /**
  * Why a Medicare Advantage non-contracted packet is not exported now (best-option audit #5; golden QUESTIONS Q34),
- * shown on the packet's deadline whenever its citation is the regulation's, whatever its window record's level.
+ * shown on the packet's deadline whenever its citation is the regulation's, whatever its window record's level. The
+ * route is a product-wide question with no step in a practice: the contract specialist is answering it, and a later
+ * release of the product applies the answer (ma_dispute_route_confirmed()). A Medicare Advantage plan mapped to a
+ * contract is not held: its contract's own window is cited and verified as any contract's.
  */
 export const MA_ROUTE_NOTICE =
-  'Medicare Advantage packets are not exported until the contract specialist confirms which dispute route applies to a Medicare Advantage non-contracted line: the plan’s own payment dispute policy, or a Medicare redetermination. Until then this packet’s deadline is not verified, even where its Medicare window record is verified to level L2.';
+  'No packet of a Medicare Advantage non-contracted line is exported yet. Which dispute route such a line takes (the plan’s own payment dispute policy, or a Medicare redetermination) is a product-wide question (golden question Q34) that the contract specialist is answering; a later release of the product applies the answer, and nothing in this practice changes it. Until then this packet’s deadline is not verified, even where its Medicare window record is verified to level L2: work the plan’s own dispute policy outside the product.';
 
 /**
  * Why a deadline is not verified (D17; best-option audit #5), in words a billing manager can act on: what is
  * missing and who supplies it. A deadline is verified only from evidence a person signed off: a contract version's
  * own window with its page, quote and hash, counted the way the product computes it (calendar days after the
- * remittance date), or a Medicare window record verified to L2 once the contract specialist has confirmed the
- * Medicare Advantage dispute route. A signed-off version never changes, so evidence added later is on a corrected
+ * payment date, BPR16), or a Medicare window record verified to L2 once the product applies the answer on the
+ * Medicare Advantage dispute route (Q34). A signed-off version never changes, so evidence added later is on a corrected
  * or amended version, and lines priced under it carry it. Nothing here promises that a line priced before is
  * priced again: nothing refreshes a case's lines automatically yet.
  */
@@ -123,14 +126,14 @@ export const DEADLINE_CAUSE_TEXT: Readonly<Record<DeadlineUnverifiedCause, strin
   RECORD_BELOW_LEVEL:
     'The Medicare window record these lines were priced with is not verified to level L2 in their rule release, so their deadline is not verified and their packet is not exported. These lines keep that pricing until they are priced again.',
   MA_ROUTE_UNCONFIRMED:
-    'These are Medicare Advantage non-contracted lines. The contract specialist has not yet confirmed which dispute route applies to them (the plan’s own payment dispute policy, or a Medicare redetermination), so no Medicare Advantage deadline is verified and no Medicare Advantage packet is exported until the specialist confirms it.',
+    'These are Medicare Advantage non-contracted lines. Which dispute route they take (the plan’s own payment dispute policy, or a Medicare redetermination) is a product-wide question (golden question Q34) that the contract specialist is answering; a later release of the product applies the answer, and nothing in this practice changes it. Until then no Medicare Advantage non-contracted deadline is verified and no packet of such a line is exported: work the plan’s own dispute policy outside the product.',
   CONTRACT_WINDOW_UNCITED:
     'The contract version these lines were priced under states a dispute window but cites no page, quote and hash for it. Ask the contract specialist to cite and verify the window on an amended or corrected version; lines priced under it once a billing manager signs it off have a verified deadline.',
   CONTRACT_WINDOW_RULE_NOT_COMPUTED:
-    'The contract counts its dispute window in business days or months, or from a date other than the remittance date, and the product computes a contract window only as calendar days after the remittance date for now. The date shown is counted that way, so it can differ from the contract’s own deadline and can be later than it: it is not verified and the packet is not exported. Work to the contract’s own words until the product computes that rule.',
+    'The contract counts its dispute window in business days or months, or from a date other than the payment date, and the product computes a contract window only as calendar days after the payment date for now. A date counted that way is not the contract’s own deadline and may be earlier or later than it, so the product states none: it is not verified and the packet is not exported. Keep the contract’s own deadline, from its words, until the product computes that rule.',
   CONTRACT_WINDOW_UNVERIFIED: 'The contract window is cited, but no specialist verified the citation. Ask the contract specialist to verify it before the version is approved and signed off.',
   CONTRACT_VERSION_NOT_SIGNED_OFF: 'The contract version these lines were priced under is no longer signed off (a corrected version replaced it), so their deadline is not verified. Lines priced under the signed-off version in force have their own deadline.',
-  CONTRACT_WINDOW_DIFFERS: 'The window these lines were priced with is not the length the contract version cites, or not counted in days from the remittance date, so their deadline is not verified. Ask the contract specialist to check the version’s window against its page.',
+  CONTRACT_WINDOW_DIFFERS: 'The window these lines were priced with is not the length the contract version cites, or not counted in days from the payment date, so their deadline is not verified. Ask the contract specialist to check the version’s window against its page.',
   NEXT_LEVEL_UNCITED: 'The next dispute level’s window is the contract’s appeal level, which cites no page, quote or hash, so this level’s deadline cannot be verified and its packet is not exported.',
   NEXT_LEVEL_DIFFERS:
     'The next dispute level’s date was computed from a Medicare reconsideration record that is no longer the one in force: the record in force now gives another date, so this deadline is not verified and its packet is not exported.',

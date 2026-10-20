@@ -15,7 +15,7 @@ import { repositoryRoot } from '../content-files';
  * are what it computes from inputs.json now, isolated (-I) so nothing from the environment is
  * imported, that it refuses inputs whose windows would make the report depend on the triage date, that a
  * contract window without its evidence leaves its lines' deadlines unverified (D17 a), and that a window whose
- * evidence states a rule the product does not compute (anything but calendar days after the remittance date) does
+ * evidence states a rule the product does not compute (anything but calendar days after the payment date) does
  * too (best-option audit #5).
  */
 const WORKSHEET = 'tools/audit-worksheet/audit_worksheet.py';
@@ -90,10 +90,12 @@ describe('the synthetic audit worksheet', () => {
     type Inputs = { plans: { key: string; contract?: { dispute_window_evidence?: Record<string, unknown> } }[] };
     const original = JSON.parse(readFileSync(path.join(AUDIT, 'inputs.json'), 'utf8')) as Inputs;
     expect(original.plans.flatMap((plan) => (plan.contract?.dispute_window_evidence === undefined ? [] : [plan.contract.dispute_window_evidence]))).toEqual([
-      expect.objectContaining({ unit: 'calendar_days', measured_from: 'remittance_date' }),
-      expect.objectContaining({ unit: 'calendar_days', measured_from: 'remittance_date' }),
+      expect.objectContaining({ unit: 'calendar_days', measured_from: 'payment_date' }),
+      expect.objectContaining({ unit: 'calendar_days', measured_from: 'payment_date' }),
     ]);
     for (const rule of [
+      // The remittance advice's own date, usually a day or more before the payment date the product counts from.
+      { unit: 'calendar_days', measured_from: 'remittance_date' },
       { unit: 'calendar_days', measured_from: 'date_of_service' },
       { unit: 'business_days', measured_from: 'remittance_date' },
       { unit: 'months', measured_from: 'payment_date' },
@@ -118,6 +120,12 @@ describe('the synthetic audit worksheet', () => {
         expect(report.headline, JSON.stringify(rule)).toMatchObject({ actionable_cents: '0', actionable_lines: 0, validated_lines: 18 });
         expect(report.cases).toEqual([]);
         expect(report.validated.not_actionable.find((item) => item.reason === 'DEADLINE_UNVERIFIED')?.lines).toBe(report.validated.lines);
+        // The product does not compute such a window's end, so no line is said to have passed it (the 30-day plan's lines included).
+        expect(report.validated.not_actionable.find((item) => item.reason === 'WINDOW_PASSED')).toBeUndefined();
+        // Nor is the end the engine counts stated for them: their window_ends_on is empty (the service dates are March's, the window's May).
+        const csv = readFileSync(path.join(dir, 'expected-lines.csv'), 'utf8').split('\r\n').filter((row) => row.includes('CE:SYNPLAN-AUD-SHORT'));
+        expect(csv.length).toBeGreaterThan(0);
+        expect(csv.filter((row) => row.includes(',2026-05-'))).toEqual([]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -155,7 +163,7 @@ describe('the synthetic audit worksheet', () => {
   it('lists the reasons a validated line waits in the report’s order, @tp/triage’s, with the case materiality last', () => {
     const [order] = worksheetConstants('NOT_ACTIONABLE_ORDER') as [string[]];
     expect(order.at(-1)).toBe('BELOW_CASE_MATERIALITY');
-    expect(order).toEqual(expect.arrayContaining(['VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN']));
+    expect(order).toEqual(expect.arrayContaining(['MAPPING_NOT_IN_FORCE', 'VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN']));
     // Every reason the worksheet lists is triage's, in triage's order (the report's, report/content.ts).
     const report = [...NOT_ACTIONABLE_REASONS, 'BELOW_CASE_MATERIALITY'];
     expect(order.slice(0, -1).every((reason) => (NOT_ACTIONABLE_REASONS as readonly string[]).includes(reason))).toBe(true);

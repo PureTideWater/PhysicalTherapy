@@ -6,12 +6,16 @@ import { type IsoDate, addDays, isIsoDate } from './dates';
 /**
  * The rule a contract's dispute window states (best-option audit #5, PR 5 before merge; docs/adr/0061): the window's
  * length is contract_version.dispute_window_days, in the unit the quote gives it (calendar days, business days or
- * months), counted from the date the quote names (the date of service, the remittance date, the payment date or the
- * day the practice received the remittance or payment). The contract specialist chooses the unit and the start
- * from these fixed lists as the quote states them; nothing parses the quote and there is no default.
+ * months), counted from the date the quote names (the date of service; the remittance date, the remittance advice's
+ * own date: the 835's DTM*405 production date, or the date printed on a paper RA; the payment date, BPR16: the check's
+ * issue date or the EFT's effective date, the Remittances screen's Payment date; or the day the practice received the
+ * remittance or payment). The contract specialist chooses the unit and the start from these fixed lists as the quote
+ * states them; nothing parses the quote and there is no default.
  *
  * The engine computes a contract window one way only (packages/pricing/src/windows.ts): dispute_window_days
- * calendar days after the remittance date, BPR16. A window is verified only when the rule it cites is that rule
+ * calendar days after BPR16, the payment date (its trace labels that start 'remittance_date'). A window counted from
+ * the remittance advice's own date is not that rule: the advice is usually dated a day or more before the payment, so
+ * an end counted from BPR16 would be later than the contract's. A window is verified only when the rule it cites is that rule
  * (verifyDisputeWindow(), and contract_version_rules() and contract_version_window_verified_as_computed in the
  * database, through contract_window_rule_computed()); any other rule stays unverified, so its lines wait rather
  * than carry a date that can be later than the contract's. PR 6c computes the cited rule in the engine and widens
@@ -42,6 +46,14 @@ export const DISPUTE_WINDOW_START_TEXT: Readonly<Record<DisputeWindowStart, stri
   receipt_date: 'the day the practice received the remittance or payment',
 };
 
+/** What each start is, for the specialist choosing it against the quote: which date of the remittance it counts from. */
+export const DISPUTE_WINDOW_START_DEFINITION: Readonly<Record<DisputeWindowStart, string>> = {
+  date_of_service: 'the date the service was given',
+  remittance_date: 'the remittance advice’s own date: the 835’s production date, or the date printed on a paper remittance',
+  payment_date: 'the payment date on the remittance: the check’s issue date or the EFT’s effective date (BPR16, the Remittances screen’s Payment date)',
+  receipt_date: 'the day the practice received the remittance or payment',
+};
+
 /** What a cited window counts in, and from. */
 export interface DisputeWindowRule {
   readonly unit: DisputeWindowUnit;
@@ -54,18 +66,19 @@ export const disputeWindowRuleSchema = z.strictObject({
 });
 
 /**
- * The one contract window rule the engine computes today: its days counted as calendar days after the remittance
- * date (BPR16). @tp/triage holds the same literal (COMPUTED_CONTRACT_WINDOW), and the database's
- * contract_window_rule_computed() the same test; a test holds the three together.
+ * The one contract window rule the engine computes today: its days counted as calendar days after the payment date
+ * (BPR16, the check's issue date or the EFT's effective date). @tp/triage holds the same literal
+ * (COMPUTED_CONTRACT_WINDOW), and the database's contract_window_rule_computed() the same test; a test holds the three
+ * together.
  */
-export const COMPUTED_CONTRACT_WINDOW_RULE: DisputeWindowRule = Object.freeze({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+export const COMPUTED_CONTRACT_WINDOW_RULE: DisputeWindowRule = Object.freeze({ unit: 'calendar_days', measuredFrom: 'payment_date' });
 
 /** Whether a cited rule is the rule the engine computes, as contract_window_rule_computed() reads it (null: no rule, never computed). */
 export function windowRuleComputed(rule: DisputeWindowRule | null): boolean {
   return rule !== null && rule.unit === COMPUTED_CONTRACT_WINDOW_RULE.unit && rule.measuredFrom === COMPUTED_CONTRACT_WINDOW_RULE.measuredFrom;
 }
 
-/** A window's rule in words: "ends 90 calendar days after the remittance date". */
+/** A window's rule in words: "ends 90 calendar days after the payment date". */
 export function windowRuleText(length: number, rule: DisputeWindowRule): string {
   const unit = length === 1 ? UNIT_TEXT_ONE[rule.unit] : DISPUTE_WINDOW_UNIT_TEXT[rule.unit];
   return `ends ${String(length)} ${unit} after ${DISPUTE_WINDOW_START_TEXT[rule.measuredFrom]}`;

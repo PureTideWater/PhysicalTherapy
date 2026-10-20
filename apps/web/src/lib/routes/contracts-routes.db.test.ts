@@ -396,9 +396,10 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
     expect(review.records[0]?.verifiedBy).toBe('the contract specialist');
     // The specialist reads the window from the contract: it continues until amended.
     ok(await call(updateVersionAction, specialist, P(), { versionId, effectiveFrom: '2026-01-01', lastDay: '', timelyFilingDays: '180', disputeWindowDays: '120', noticeDays: '90' }));
-    // The dispute window as the contract states it (D17 a): cited from its page in the contract's own words, then
-    // verified by the specialist; a quote that is not on the page is refused, and approval waits for the verification.
-    // With the rule the quote states (best-option audit #5): the unit it counts in and what it counts from, chosen from the fixed lists.
+    // The dispute window as the contract states it (D17 a): cited from its page in the contract's own words; a quote that is not on
+    // the page is refused. With the rule the quote states (best-option audit #5): the unit it counts in and what it counts from, chosen
+    // from the fixed lists. Verifying a window the product computes, through the route, is route-tests' (the world's agreement counts
+    // from the payment date).
     const window = { versionId, documentId: contractDoc, page: '1', quote: 'Provider may dispute a payment within 120 days of the remittance date.', unit: 'calendar_days', measuredFrom: 'remittance_date' };
     expect(refusedWith(await call(citeWindowAction, specialist, P(), { ...window, quote: 'Provider may dispute a payment within 365 days of the remittance date.' }))).toMatch(/The quote is not on the cited page/);
     const { unit: _unit, ...withoutUnit } = window;
@@ -419,9 +420,11 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
       verifiedBy: null,
       verifiedAt: null,
     });
-    expect(refusedWith(await call(verifyWindowAction, specialist, P(), { versionId }))).toMatch(/not the one the product computes yet \(calendar days after the remittance date\)/);
+    expect(refusedWith(await call(verifyWindowAction, specialist, P(), { versionId }))).toMatch(/not the one the product computes yet \(calendar days after the payment date\)/);
     expect(ok(await call(abstractionVersionPage, specialist, { ...P(), versionId })).review.version.disputeWindow).toMatchObject({ rule: { measuredFrom: 'date_of_service' }, verifiedAt: null });
-    // Cited again as the quote states it: the rule the product computes, which approval waits on until it is verified.
+    // Cited again as the quote states it: counted from the remittance date, the remittance advice's own date, which the product does
+    // not compute yet (it counts from the payment date, BPR16, usually a day or more later): still never verified, so no deadline
+    // later than the contract's is verified, and the version is approved with its window unverified.
     ok(await call(citeWindowAction, specialist, P(), window));
     expect(ok(await call(versionPage, viewer, { ...P(), versionId })).review.version.disputeWindow).toEqual({
       documentId: contractDoc,
@@ -431,16 +434,10 @@ describe('contracts: upload, tag, abstract by hand, approve, sign off, map (J5, 
       verifiedBy: null,
       verifiedAt: null,
     });
-    expect(refusedWith(await call(approveVersionAction, specialist, P(), { versionId }))).toMatch(/cited but not verified against its page/);
+    expect(refusedWith(await call(verifyWindowAction, specialist, P(), { versionId }))).toMatch(/not the one the product computes yet \(calendar days after the payment date\)/);
     expect((await call(verifyWindowAction, manager, P(), { versionId })).status).toBe('forbidden');
-    ok(await call(verifyWindowAction, specialist, P(), { versionId }));
-    expect(ok(await call(versionPage, viewer, { ...P(), versionId })).review.version.disputeWindow).toMatchObject({
-      page: 1,
-      rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' },
-      verifiedBy: 'the contract specialist',
-      verifiedAt: expect.any(String) as string,
-    });
     ok(await call(approveVersionAction, specialist, P(), { versionId }));
+    expect(ok(await call(versionPage, viewer, { ...P(), versionId })).review.version.disputeWindow).toMatchObject({ rule: { unit: 'calendar_days', measuredFrom: 'remittance_date' }, verifiedBy: null });
     // CON-03: an approved version never changes.
     expect(refusedWith(await call(updateVersionAction, specialist, P(), { versionId, effectiveFrom: '2026-02-01' }))).toMatch(/never changes/);
     expect(refusedWith(await call(removeRateRecordAction, specialist, P(), { rateRecordId, versionId }))).toMatch(/never changes/);

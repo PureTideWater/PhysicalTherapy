@@ -1,4 +1,4 @@
-import type { DisputeWindowRule } from '@tp/contracts';
+import { type DisputeWindowRule, windowRuleText } from '@tp/contracts';
 import { Alert, AlertDescription, AlertTitle, Badge, Card, CardContent, CardHeader, CardTitle } from '@tp/ui';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -29,7 +29,11 @@ function windowsText(review: VersionReview): string {
   const { version } = review;
   const parts = [
     version.timelyFilingDays === null ? 'timely filing: the contract is silent' : `timely filing ${String(version.timelyFilingDays)} days`,
-    version.disputeWindowDays === null ? 'dispute window: silent' : `dispute window ${String(version.disputeWindowDays)} days`,
+    version.disputeWindowDays === null
+      ? 'dispute window: silent'
+      : version.disputeWindow?.rule === null || version.disputeWindow?.rule === undefined
+        ? `dispute window of ${String(version.disputeWindowDays)}, its unit and start not cited yet`
+        : `dispute window: it ${windowRuleText(version.disputeWindowDays, version.disputeWindow.rule)}`,
     version.noticeDays === null ? 'no notice period' : `notice ${String(version.noticeDays)} days before an anniversary`,
   ];
   if (version.appealLevels.length > 0) {
@@ -82,7 +86,7 @@ export function VersionStateNotice({ review }: { readonly review: VersionReview 
 
 /**
  * The rule a cited window states beside the rule the product computes for its days (best-option audit #5): "Cited:
- * ends 180 calendar days after the date of service", "Computed: ends 180 calendar days after the remittance date",
+ * ends 180 calendar days after the date of service", "Computed: ends 180 calendar days after the payment date",
  * and whether they are the same rule. Only a window whose cited rule is the computed one can be checked and verify
  * its lines' deadlines; any other stays unverified (its lines wait), and its version can still be approved.
  */

@@ -66,7 +66,9 @@ export type DisputeWindowUnit = (typeof DISPUTE_WINDOW_UNITS)[number];
 
 /**
  * What a contract's dispute window runs from, as its quote states it (contract_version.dispute_window_measured_from,
- * audit item #5), in the CHECK's order.
+ * audit item #5), in the CHECK's order: the date of service; the remittance date, the remittance advice's own date
+ * (the 835's DTM*405 production date, or the date printed on a paper RA); the payment date, BPR16 (the check's issue
+ * date or the EFT's effective date, the Remittances screen's Payment date); and the day the practice received it.
  */
 export const DISPUTE_WINDOW_STARTS = ['date_of_service', 'remittance_date', 'payment_date', 'receipt_date'] as const;
 export type DisputeWindowStart = (typeof DISPUTE_WINDOW_STARTS)[number];
@@ -117,7 +119,7 @@ export const contractVersion = pgTable(
     /**
      * The cited window's unit and what it runs from, as its quote states them (audit item #5): set exactly with
      * the evidence, frozen with it from approval. The window is verified only while they are the rule the
-     * product computes (contract_window_rule_computed(): calendar days after the remittance date).
+     * product computes (contract_window_rule_computed(): calendar days after the payment date, BPR16).
      */
     disputeWindowUnit: text('dispute_window_unit', { enum: DISPUTE_WINDOW_UNITS }),
     disputeWindowMeasuredFrom: text('dispute_window_measured_from', { enum: DISPUTE_WINDOW_STARTS }),

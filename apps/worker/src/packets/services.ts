@@ -447,7 +447,7 @@ export const NOT_CASE_LEVEL = 'only a version of the case\'s dispute level is ex
 
 /** The refusal of an export whose pricing is no longer current (audit item #4; the database's words, packet_version_export_guard). */
 export const PRICING_NOT_CURRENT =
-  'a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date';
+  'a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date';
 
 /**
  * Why requestPacketExport() queues nothing, by the first reason exportReadiness() gives: the database's own
@@ -460,6 +460,7 @@ export const EXPORT_REQUEST_REFUSALS: Readonly<Record<ExportReadinessReason, str
   case_changed: 'a packet version is exported only while it asks for exactly its case\'s lines and the case is not closed; write the packet again',
   not_case_level: NOT_CASE_LEVEL,
   window_passed: 'a packet version is not exported once a line\'s dispute window has passed; write the line off and write the packet again without it',
+  next_window_passed: 'a packet version of a later dispute level is not exported once the window the reopening denial gave for that level has ended',
   pricing_not_current: PRICING_NOT_CURRENT,
   deadline_unverified: DEADLINE_NOT_VERIFIED,
   inputs_differ: 'a packet version is exported only while it states its deadlines and calculations as its inputs give them now; write the packet again',

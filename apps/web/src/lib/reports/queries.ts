@@ -72,6 +72,21 @@ export function reportFailureText(code: string | null): string {
 export const REPORT_RELEASE_WITHDRAWN_TEXT =
   'this report’s rule release was withdrawn after it was generated, because the release’s content was wrong, so it is neither attested nor released; price the period again under the release in force, accept that re-run, then generate a new report on it';
 
+/**
+ * The withdrawn-release banner's words for a report as it stands (`at` formats a time): one attested or released
+ * before the withdrawal is not "neither attested nor released", and a released one already reached its recipients,
+ * who are told.
+ */
+export function reportReleaseWithdrawnText(report: { readonly attestedAt: string | null; readonly releasedAt: string | null }, at: (iso: string) => string): string {
+  if (report.releasedAt !== null) {
+    return `Released ${at(report.releasedAt)}, before its rule release was withdrawn: its numbers rest on content that was wrong. Tell its recipients that it is withdrawn, then price the period again under the release in force, accept that re-run and generate a new report on it.`;
+  }
+  if (report.attestedAt !== null) {
+    return `Attested ${at(report.attestedAt)}, before its rule release was withdrawn: its numbers rest on content that was wrong, so it is not released. Price the period again under the release in force, accept that re-run, then generate a new report on it.`;
+  }
+  return `Its numbers rest on a rule release whose content was wrong. It is kept as it was generated, but ${REPORT_RELEASE_WITHDRAWN_TEXT}.`;
+}
+
 export interface ReportDetail extends ReportSummary {
   readonly content: AuditReportContent | null;
   readonly attestation: Attestation | null;

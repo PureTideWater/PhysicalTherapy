@@ -33,7 +33,7 @@ export interface AuditContract {
    * Where the contract states its dispute window (D17 a): the page and its exact words, which the specialist cites
    * and verifies, with the rule the words state (best-option audit #5): the unit they count in and what they count
    * from, from the fixed lists. Without it the contract's lines have no verified deadline and are not actionable;
-   * with a rule the product does not compute (anything but calendar days from the remittance date) neither.
+   * with a rule the product does not compute (anything but calendar days from the payment date, BPR16) neither.
    */
   readonly dispute_window_evidence?: { readonly page: number; readonly quote: string; readonly unit: AuditWindowUnit; readonly measured_from: AuditWindowStart };
   readonly schedule: readonly { readonly code: string; readonly amount_cents: string }[];

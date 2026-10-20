@@ -21,9 +21,10 @@ describe('@tp/triage', () => {
     expect(triage.DEFAULT_DEADLINE_LEVEL).toBe('L2');
   });
 
-  it('computes one contract window rule, calendar days after the remittance date, and no Medicare Advantage route until Q34 is answered (best-option audit #5)', () => {
-    expect(triage.COMPUTED_CONTRACT_WINDOW).toEqual({ unit: 'calendar_days', measuredFrom: 'remittance_date' });
+  it('computes one contract window rule, calendar days after the payment date, and no Medicare Advantage route until Q34 is answered (best-option audit #5)', () => {
+    expect(triage.COMPUTED_CONTRACT_WINDOW).toEqual({ unit: 'calendar_days', measuredFrom: 'payment_date' });
     expect(triage.contractWindowRuleComputed({ unit: 'calendar_days', measuredFrom: 'date_of_service' })).toBe(false);
+    expect(triage.contractWindowRuleComputed({ unit: 'calendar_days', measuredFrom: 'remittance_date' })).toBe(false);
     expect(triage.MA_DISPUTE_ROUTE_CONFIRMED).toBe(false);
     expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('MA_ROUTE_UNCONFIRMED');
     expect(triage.DEADLINE_UNVERIFIED_CAUSES).toContain('CONTRACT_WINDOW_RULE_NOT_COMPUTED');
