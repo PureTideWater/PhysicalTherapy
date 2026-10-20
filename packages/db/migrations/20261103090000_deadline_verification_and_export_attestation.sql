@@ -634,7 +634,8 @@ $$;
 -- Whether a packet version's pricing is still current: 'current' when every content.lines[].priced_line_id is
 -- (priced_line_pricing_check()), otherwise the most severe cause across its lines, in that function's order. A
 -- lines value that is not an array, or a line without a well-formed priced_line_id, fails closed
--- (PRICING_NOT_IN_EFFECT); no line is 'current'. Approval, the export guard and the attestation refuse a version
+-- (PRICING_NOT_IN_EFFECT); an empty list of lines is 'current' (it names no stale pricing; the packet's writer
+-- refuses a case with no open line). Approval, the export guard and the attestation refuse a version
 -- that is not current, and a submission records it (submission.pricing_check).
 CREATE FUNCTION packet_version_pricing_check(content jsonb) RETURNS text
 LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$

@@ -9,9 +9,9 @@ import { parseCents } from '@tp/money';
 
 import { monitorHandler } from '../monitor/job';
 import { acceptRun, createRerun } from '../price/rerun';
-import { type Practice, RELEASE } from '../price/test-support/pricing-world';
-import { correctMapping } from '@tp/contracts';
-import { type TriageOutcome, todayUtc } from './execute';
+import { type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
+import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersion, correctMapping, signOffVersion, supersedeVersion, verifyDisputeWindow } from '@tp/contracts';
+import { type TriageOutcome, candidateLines, candidateRows, todayUtc } from './execute';
 import { TriageWorld } from './test-support/triage-world';
 
 /**
@@ -516,4 +516,164 @@ describe('an NCCI procedure-to-procedure flag holds a line for review (PRD 2 poi
       { stage: 'validated', lines: '1' },
     ]);
   });
+});
+
+/** The triage reasons that say a line's pricing is no longer current, as @tp/triage names them (audit item #4). */
+const PRICING_REASONS = ['VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN'] as const;
+
+/** A contract version's successor (a correction, or an amendment from `amendFrom`), verified by the specialist and signed off: the prior version is superseded, or closed at `amendFrom`. */
+async function signedSuccessor(target: Practice, versionId: string, amendFrom: string | null): Promise<string> {
+  const successor = await w.as(target, w.pricing.specialist, async (context) => {
+    const created =
+      amendFrom === null ? await supersedeVersion(context, { practiceId: target.practiceId, versionId }) : await amendVersion(context, { practiceId: target.practiceId, versionId, effectiveFrom: amendFrom });
+    const { rows: records } = await context.scope.client.query<{ id: string }>('SELECT id FROM rate_record WHERE contract_version_id = $1', [created.versionId]);
+    for (const record of records) {
+      for (const field of RATE_RECORD_FIELDS) {
+        await approveRateRecordField(context, { practiceId: target.practiceId, rateRecordId: record.id, field });
+      }
+    }
+    await verifyDisputeWindow(context, { practiceId: target.practiceId, versionId: created.versionId });
+    await approveVersion(context, { practiceId: target.practiceId, versionId: created.versionId });
+    return created.versionId;
+  });
+  await w.as(target, target.manager, (context) => signOffVersion(context, { practiceId: target.practiceId, versionId: successor }));
+  return successor;
+}
+
+/**
+ * Every candidate line of the run as triage judges it (its pricing reasons, in @tp/triage's order) beside the
+ * database's priced_line_pricing_check() of the same priced line, in the billing manager's scope.
+ */
+async function judgedBeside(target: Practice, runId: string): Promise<readonly { readonly mapping: string | null; readonly reasons: readonly string[]; readonly check: string | undefined }[]> {
+  return withPracticeScope(w.app, { actorId: target.manager, practiceIds: [target.practiceId] }, async (scope) => {
+    const lines = await candidateLines(scope.client, await candidateRows(scope, target.practiceId, runId, `test-${randomUUID()}`));
+    const { rows: checks } = await scope.client.query<{ id: string; check: string }>('SELECT t.id::text, priced_line_pricing_check(t.id) AS check FROM unnest($1::uuid[]) AS t (id)', [
+      lines.map((line) => line.pricedLineId),
+    ]);
+    const byLine = new Map(checks.map((row) => [row.id, row.check]));
+    return lines.map((line) => ({
+      mapping: line.mappingKind,
+      reasons: judgeLine(line, parseCents('1'), todayUtc()).reasons.filter((reason) => (PRICING_REASONS as readonly string[]).includes(reason)),
+      check: byLine.get(line.pricedLineId),
+    }));
+  });
+}
+
+/** For lines on their pricing in effect, the database's verdict is 'current' exactly when triage names none of the pricing reasons, and each cause is its reason. */
+function expectAgreement(judged: Awaited<ReturnType<typeof judgedBeside>>): void {
+  expect(judged.length).toBeGreaterThan(0);
+  for (const line of judged) {
+    expect(line.check === 'current', JSON.stringify(line)).toBe(line.reasons.length === 0);
+  }
+  const CAUSE_OF: Readonly<Record<string, string>> = {
+    RELEASE_WITHDRAWN: 'RELEASE_WITHDRAWN',
+    VERSION_NOT_SIGNED_OFF: 'CONTRACT_VERSION_NOT_SIGNED_OFF',
+    VERSION_NOT_IN_FORCE: 'CONTRACT_VERSION_NOT_IN_FORCE',
+  };
+  // The database names the first cause in its own order: a withdrawal before the version, sign-off before cover.
+  const ORDER = ['RELEASE_WITHDRAWN', 'VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE'];
+  for (const line of judged.filter((item) => item.reasons.length > 0)) {
+    const first = ORDER.find((reason) => line.reasons.includes(reason)) as string;
+    expect(line.check, JSON.stringify(line)).toBe(CAUSE_OF[first]);
+  }
+}
+
+describe('whether a line’s pricing is still current, in triage and in the database (audit item #4; docs/adr/0061)', () => {
+  it('agrees line by line through a correction that superseded the version and a back-dated amendment that closed it, and for Medicare Advantage lines', async () => {
+    // A correction: the March lines' version superseded since the run.
+    const corrected = await w.practice('pricing current: correction');
+    await w.load(corrected, 'CAS-03/remit.835');
+    const one = await w.fixedContract(corrected, FIXED);
+    const two = await w.fixedContract(corrected, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }] });
+    const run = await w.pricedRun(corrected, {
+      plans: [
+        { key: 'CE:SYNPLAN-FIX-ONE', versionId: one.versionId },
+        { key: 'CE:SYNPLAN-FIX-TWO', versionId: two.versionId },
+      ],
+      from: '2026-03-01',
+      to: '2026-03-31',
+    });
+    const before = await judgedBeside(corrected, run);
+    expectAgreement(before);
+    expect(before.every((line) => line.check === 'current')).toBe(true);
+    await signedSuccessor(corrected, one.versionId, null);
+    const afterCorrection = await judgedBeside(corrected, run);
+    expectAgreement(afterCorrection);
+    expect(new Set(afterCorrection.map((line) => line.check))).toEqual(new Set(['current', 'CONTRACT_VERSION_NOT_SIGNED_OFF']));
+
+    // A back-dated amendment: the second version is still signed off, but closed at February 1, before its March lines.
+    await signedSuccessor(corrected, two.versionId, '2026-02-01');
+    const afterAmendment = await judgedBeside(corrected, run);
+    expectAgreement(afterAmendment);
+    expect(new Set(afterAmendment.map((line) => line.check))).toEqual(new Set(['CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE']));
+    expect(afterAmendment.filter((line) => line.check === 'CONTRACT_VERSION_NOT_IN_FORCE').every((line) => line.reasons.join() === 'VERSION_NOT_IN_FORCE')).toBe(true);
+    // Triaged now, neither pattern opens a case: every line waits with its reason.
+    expect(summary(await w.triage(corrected, run))).toMatchObject({ validatedLines: 16, casesOpened: 0, linesAdded: 0 });
+    expect(await cases(corrected)).toEqual([]);
+
+    // A Medicare Advantage non-contracted line names no contract version: only a withdrawal could make it stale. (The
+    // SYNTHETIC locality's MA lines are all paid at or above the fee schedule, so none is a candidate: the same facts
+    // triage would read are judged here from the priced lines themselves.)
+    const ma = await w.practice('pricing current: Medicare Advantage');
+    await w.load(ma, 'PRC-19/remit.835');
+    await w.pricing.mapped(ma, await w.pricing.planOf(ma, 'CE:SYNPLAN-MA-NC'), 'ma_noncontracted', '2026-01-01');
+    const maRun = await w.pricing.createRun(ma, '2026-02-01', '2026-02-28');
+    await w.pricing.execute(ma, maRun);
+    const maLines = await rows<{ mapping_kind: string; contract_version_id: string | null; check: string }>(
+      ma,
+      `SELECT m.mapping_kind, p.contract_version_id, priced_line_pricing_check(p.id) AS check
+         FROM priced_line p JOIN payer_plan_mapping m ON m.id = p.mapping_id WHERE p.pricing_run_id = $1`,
+      [maRun],
+    );
+    expect(maLines.length).toBeGreaterThan(0);
+    for (const line of maLines) {
+      expect(line).toEqual({ mapping_kind: 'ma_noncontracted', contract_version_id: null, check: 'current' });
+      const judged = judgeLine(
+        {
+          varianceCents: parseCents('1000'),
+          visitVarianceCents: null,
+          reviewFlags: [],
+          windowEndsOn: '2036-01-01',
+          deadlineStatus: 'verified',
+          claimReversed: false,
+          claimSuperseded: false,
+          mappingKind: line.mapping_kind,
+          contractVersionStatus: null,
+          contractVersionCoversService: true,
+          releaseWithdrawn: false,
+          writtenOff: false,
+        },
+        parseCents('1'),
+        todayUtc(),
+      );
+      expect(judged.reasons).toEqual([]);
+    }
+  }, 180_000);
+
+  // Last: the release in force is global, and a withdrawal is permanent.
+  it('drops every line of a run whose rule release was withdrawn since out of the cases (RELEASE_WITHDRAWN), on both sides', async () => {
+    await w.pricing.loadRerunRelease();
+    const practice = await w.practice('pricing current: withdrawn');
+    await w.load(practice, 'CAS-03/remit.835');
+    const one = await w.fixedContract(practice, FIXED);
+    const two = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }] });
+    for (const [key, versionId] of [
+      ['CE:SYNPLAN-FIX-ONE', one.versionId],
+      ['CE:SYNPLAN-FIX-TWO', two.versionId],
+    ] as const) {
+      await w.pricing.mapped(practice, await w.pricing.planOf(practice, key), 'contract', '2026-01-01', versionId);
+    }
+    const run = await w.pricing.createRun(practice, '2026-03-01', '2026-03-31', RERUN_RELEASE);
+    await w.pricing.execute(practice, run);
+    expectAgreement(await judgedBeside(practice, run));
+
+    await w.pricing.withdraw(RERUN_RELEASE, 'SYNTHETIC: release 2 content was wrong');
+    const withdrawn = await judgedBeside(practice, run);
+    expectAgreement(withdrawn);
+    expect(withdrawn.map((line) => [line.check, line.reasons.join()])).toEqual(withdrawn.map(() => ['RELEASE_WITHDRAWN', 'RELEASE_WITHDRAWN']));
+    // The run is still the run in effect, so triage runs: every line validated, none actionable, no case.
+    expect(summary(await w.triage(practice, run))).toMatchObject({ validatedLines: 16, casesOpened: 0, linesAdded: 0 });
+    expect(await cases(practice)).toEqual([]);
+    expect(await stages(practice)).toEqual([{ stage: 'validated', lines: '16' }]);
+  }, 180_000);
 });

@@ -32,8 +32,17 @@ function NowFigure({ line, figure }: { readonly line: LinePricingNow; readonly f
   return <Money value={line.now[figure]} />;
 }
 
-function TotalNow({ now, figure }: { readonly now: PricingTotals | null; readonly figure: keyof PricingTotals }) {
-  return now === null ? <span className="text-fg-muted">{NOT_PRICED_AGAIN}</span> : <Money value={now[figure]} />;
+/**
+ * The version's total now, or why none can be stated: a stale line not priced again yet, or one whose pricing in
+ * effect is unpriced (no figure to add).
+ */
+function TotalNow({ pricing, figure }: { readonly pricing: PricingNowView; readonly figure: keyof PricingTotals }) {
+  const { now } = pricing.totals;
+  if (now !== null) {
+    return <Money value={now[figure]} />;
+  }
+  const waiting = pricing.lines.some((line) => line.now === null);
+  return <span className="text-fg-muted">{waiting ? NOT_PRICED_AGAIN : 'Not stated: a line is no longer priced'}</span>;
 }
 
 export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }: { readonly pricing: PricingNowView; readonly sent?: boolean; readonly label?: string }) {
@@ -107,13 +116,13 @@ export function PricingNowPanel({ pricing, sent = false, label = 'Pricing now' }
                   <Money value={pricing.totals.was.expectedCents} />
                 </td>
                 <td className="py-1 pr-3 text-right" data-figure="expected-total-now">
-                  <TotalNow now={pricing.totals.now} figure="expectedCents" />
+                  <TotalNow pricing={pricing} figure="expectedCents" />
                 </td>
                 <td className="py-1 pr-3 text-right">
                   <Money value={pricing.totals.was.varianceCents} />
                 </td>
                 <td className="py-1 text-right" data-figure="variance-total-now">
-                  <TotalNow now={pricing.totals.now} figure="varianceCents" />
+                  <TotalNow pricing={pricing} figure="varianceCents" />
                 </td>
               </tr>
             </tfoot>

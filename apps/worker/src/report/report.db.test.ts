@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { acceptRun, createRerun } from '../price/rerun';
-import { type Practice, RELEASE } from '../price/test-support/pricing-world';
+import { type Practice, RELEASE, RERUN_RELEASE } from '../price/test-support/pricing-world';
 import { todayUtc } from '../triage/execute';
 import { TriageWorld } from '../triage/test-support/triage-world';
 import type { AuditReportContent } from './content';
@@ -454,5 +454,81 @@ describe('the run triage and an audit report read (docs/adr/0037: a re-run is in
     expect(runs).toHaveLength(3);
     expect(runs.filter((run) => run.database !== run.application)).toEqual([]);
     expect(runs.filter((run) => run.database)).toHaveLength(1);
+  }, 180_000);
+});
+
+// Last: the release in force is global, and a withdrawal is permanent.
+describe('no audit report is built on a withdrawn rule release (audit item #4; docs/adr/0061)', () => {
+  it('refuses the request, fails a queued report as release_withdrawn at once without a retry, and refuses a ready one’s attestation and an attested one’s release', async () => {
+    await w.pricing.loadRerunRelease();
+    const practice = await w.practice('report withdrawn release');
+    await w.load(practice, 'CAS-03/remit.835');
+    const one = await w.fixedContract(practice, FIXED);
+    const two = await w.fixedContract(practice, { ...FIXED, schedule: [{ code: '97530', amountCents: '5200' }] });
+    for (const [key, versionId] of [
+      ['CE:SYNPLAN-FIX-ONE', one.versionId],
+      ['CE:SYNPLAN-FIX-TWO', two.versionId],
+    ] as const) {
+      await w.pricing.mapped(practice, await w.pricing.planOf(practice, key), 'contract', '2026-01-01', versionId);
+    }
+    const runId = await w.pricing.createRun(practice, '2026-03-01', '2026-03-31', RERUN_RELEASE);
+    await w.pricing.execute(practice, runId);
+    const internal = await createOrganization(w.owner, 'internal', 'withdrawn review');
+    const reviewer = await createUser(w.owner, { hardwareKeyRequired: true });
+    await addMembership(w.owner, internal, reviewer, 'reviewer');
+    await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query(`INSERT INTO support_grant (practice_id, user_id, ticket, reason, expires_at) VALUES ($1, $2, 'RV-2', 'SYNTHETIC AUDIT REVIEW', now() + interval '4 hours')`, [practice.practiceId, reviewer]),
+    );
+    const signed = async (id: string) => {
+      const files = await report(practice, id);
+      return JSON.stringify({ format: 'tp-attestation/1', checklist: ['coverage', 'anomalies', 'validated', 'actionable', 'gaps', 'independent'], pdf_sha256: files.pdf_sha256, csv_sha256: files.csv_sha256 });
+    };
+    const attest = async (id: string) => inScope(practice, reviewer, 'UPDATE audit_report SET attested_by = $2, attestation = $3 WHERE id = $1', [id, reviewer, await signed(id)]);
+    const release = (id: string) => inScope(practice, practice.manager, 'UPDATE audit_report SET released_by = $2 WHERE id = $1', [id, practice.manager]);
+    const withdrawn = async () => (await inScope<{ withdrawn: boolean }>(practice, practice.manager, 'SELECT pricing_run_release_withdrawn($1) AS withdrawn', [runId]))[0]?.withdrawn;
+
+    // Before the withdrawal: a report generated and attested, one generated and not, and two left queued.
+    const attested = await w.requestReport(practice, runId);
+    expect((await w.generate(practice, attested)).outcome).toBe('ready');
+    await attest(attested);
+    const ready = await w.requestReport(practice, runId);
+    expect((await w.generate(practice, ready)).outcome).toBe('ready');
+    const queued = await w.requestReport(practice, runId);
+    const queuedForSql = await w.requestReport(practice, runId);
+    expect(await withdrawn()).toBe(false);
+
+    // Release 900004's content was wrong: withdrawn. The run stays the run in effect for March, but no report rests on it.
+    await w.pricing.withdraw(RERUN_RELEASE, 'SYNTHETIC: release 2 content was wrong');
+    expect(await withdrawn()).toBe(true);
+    expect((await inScope<{ in_effect: boolean }>(practice, practice.manager, 'SELECT pricing_run_in_effect($1) AS in_effect', [runId]))[0]?.in_effect).toBe(true);
+
+    // The request: refused by the database.
+    await expect(w.requestReport(practice, runId)).rejects.toThrow(/^an audit report is not built on a withdrawn rule release/);
+
+    // A queued report: the job fails it as release_withdrawn at once, on its first attempt (not its last), and stores nothing.
+    const logs: Record<string, unknown>[] = [];
+    await auditReportHandler(w.services)({ practice_id: practice.practiceId, audit_report_id: queued }, w.pricing.jobContext(practice.practiceId, logs, false));
+    expect(await report(practice, queued)).toMatchObject({ status: 'failed', failure_code: 'release_withdrawn', content: null, pdf_key: null, csv_key: null });
+    expect(logs.map((line) => line['error_code'])).toContain('AUDIT_REPORT_RELEASE_WITHDRAWN');
+    expect(await w.generate(practice, queued)).toEqual({ outcome: 'already_finished', status: 'failed' });
+
+    // The database's own check, should a job make a queued report ready on the withdrawn release; failing it stays allowed.
+    const makeReady = (scope: Parameters<Parameters<typeof withJobScope>[2]>[0]) =>
+      scope.client.query(
+        `UPDATE audit_report SET status = 'ready', as_of = '2026-10-15', content = '{}', pdf_key = $3, pdf_sha256 = $4, csv_key = $5, csv_sha256 = $4 WHERE id = $1 AND practice_id = $2`,
+        [queuedForSql, practice.practiceId, `practices/${practice.practiceId}/reports/${queuedForSql}/${randomUUID()}.pdf`, '0'.repeat(64), `practices/${practice.practiceId}/reports/${queuedForSql}/${randomUUID()}.csv`],
+      );
+    await expect(withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, makeReady)).rejects.toThrow(/^an audit report is not built on a withdrawn rule release/);
+    expect((await report(practice, queuedForSql)).status).toBe('queued');
+    await withJobScope(w.app, { jobId: randomUUID(), practiceId: practice.practiceId }, (scope) =>
+      scope.client.query("UPDATE audit_report SET status = 'failed', failure_code = 'release_withdrawn' WHERE id = $1 AND practice_id = $2", [queuedForSql, practice.practiceId]),
+    );
+    expect(await report(practice, queuedForSql)).toMatchObject({ status: 'failed', failure_code: 'release_withdrawn' });
+
+    // A ready report: kept as it was generated, but not attested; an attested one is not released.
+    await expect(attest(ready)).rejects.toThrow(/^an audit report whose rule release was withdrawn since it was generated is not attested/);
+    expect((await report(practice, ready)).attested_by).toBeNull();
+    await expect(release(attested)).rejects.toThrow(/^an audit report whose rule release was withdrawn since it was generated is not released/);
+    expect(await report(practice, attested)).toMatchObject({ attested_by: reviewer, released_by: null });
   }, 180_000);
 });
