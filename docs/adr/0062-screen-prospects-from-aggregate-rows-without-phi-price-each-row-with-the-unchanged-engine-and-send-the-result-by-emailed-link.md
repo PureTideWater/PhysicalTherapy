@@ -658,10 +658,16 @@ The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to ev
     declared consumer to "enforced".
 
 The first local run (the process runtime of `tools/screening-capacity/containers.ts`, on a shared 4-CPU machine, its
-Postgres unlimited) is recorded in the PR 6 approval summary with the load average beside its times; it is not a
-measurement under production's limits. The first CI run's URL and figures are cited here once it runs.
+Postgres unlimited; 2026-10-20, images at 1d8acd0) is recorded in the PR 6 approval summary with the load average
+beside its times; it is not a measurement under production's limits. Every stored row equalled the oracle's for both
+shapes, and no task met its memory limit while pricing. It found one failure PR 6 controls: the result page renders
+every product-and-code group (`screening_result_groups()` has no limit), and a worst-shape result's 20,507 groups
+exhaust the web task's JavaScript heap (Node sizes it from the task's 512 MiB, about 256 MB), so the page does not
+open and the task exits; the practice shape's 72 groups open. The first CI run's URL and figures are cited here once
+it runs.
 
-What stays open: staging's runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
+What stays open: the result page at the worst shape (above), which PR 6 fixes before it merges; staging's
+runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
 cap and the honest message), sized from these measurements and decisions 14 and 15; the choice of a cache for keyed
 records, from the keyed read's measured seconds (PR 6b); the weekly schedule, which fires once the default branch
 carries workflows (audit #54); a larger runner once the Team organization exists; #31's check of the scale release's

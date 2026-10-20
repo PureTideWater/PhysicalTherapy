@@ -209,6 +209,8 @@ function readOutbox(dir: string, seen: Map<string, Mail>): void {
 }
 
 const RESULT_LINK = /https?:\/\/[^\s]+\/screening\/results\/[a-z]{32}/;
+/** How long the harness waits for a result page; one that takes longer counts as not opening. */
+const RESULT_PAGE_MS = 60_000;
 
 interface Prepared {
   readonly upload: UploadSpec;
@@ -247,6 +249,7 @@ interface Context {
   readonly browser: Browser;
   readonly owner: pg.Client;
   readonly outbox: string;
+  readonly web: ServiceSpec;
   readonly platform: ServiceSpec;
 }
 
@@ -279,7 +282,14 @@ const clientAddress = (scenario: number, upload: number) => `198.51.100.${String
 
 async function runScenario(spec: ScenarioSpec, index: number, context: Context, limits: { readonly web: number; readonly platform: number }): Promise<{ readonly measure: ScenarioMeasure; readonly runs: Map<string, string> }> {
   const { runtime, browser, owner } = context;
-  if (spec.freshPlatform) {
+  // A service that exited in an earlier scenario (counted there) is started again, as production's service would
+  // start a new task, so one failure does not leave the later scenarios unmeasured.
+  if (!(await runtime.status('web')).running) {
+    say(`${spec.id}: web had exited; starting it again`);
+    await runtime.startService(context.web);
+    await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
+  }
+  if (spec.freshPlatform || !(await runtime.status('platform')).running) {
     say(`${spec.id}: a fresh platform container`);
     await runtime.stopService('platform');
     await startPlatform(runtime, context.platform);
@@ -376,6 +386,16 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     }
     await sleep(250);
   }
+  // Each emailed link opened from the harness, as the prospect's mail client would (the link is never written
+  // anywhere), while memory is still sampled, and before the containers are read, so a service the page brings down
+  // counts in this scenario.
+  const resultStatuses = new Map<string, number | null>();
+  for (const entry of prepared) {
+    if (entry.link !== null) {
+      const response = await fetch(entry.link.replace(/^https?:\/\/[^/]+/, runtime.webOrigin), { headers: { 'X-Forwarded-For': '198.51.100.250' }, signal: AbortSignal.timeout(RESULT_PAGE_MS) }).catch(() => null);
+      resultStatuses.set(entry.upload.id, response?.status ?? null);
+    }
+  }
   sampling = false;
   await sampler;
   const containers = [await readContainer(runtime, 'web', limits.web, samples.web, false), await readContainer(runtime, 'platform', limits.platform, samples.platform, false)];
@@ -388,11 +408,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       runs.set(entry.upload.id, facts.id);
     }
     const lines = facts === null ? undefined : phases.get(facts.id);
-    let resultStatus: number | null = null;
-    if (entry.link !== null) {
-      // Opened from the harness, as the prospect's mail client would; the link is never written anywhere.
-      resultStatus = (await fetch(entry.link.replace(/^https?:\/\/[^/]+/, runtime.webOrigin), { headers: { 'X-Forwarded-For': '198.51.100.250' } }).catch(() => null))?.status ?? null;
-    }
+    const resultStatus = resultStatuses.get(entry.upload.id) ?? null;
     const phaseLog = phaseLines(await runtime.logs('platform')).filter((line) => line.runId === facts?.id);
     const firstPhase = phaseLog[0] === undefined ? null : Date.parse(phaseLog[0].at);
     uploads.push({
@@ -445,7 +461,9 @@ async function main(): Promise<number> {
   let applied: AppliedLimits = { containers: [], ioMax: null, roundTripMedianMs: null };
   let release = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0 };
   let aborted: string | null = null;
-  const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
+  // The commit measured: the images' checkout for the process runtime (built outside this one), else this checkout.
+  const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
+  const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
   const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? 'unknown';
   say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity}; runtime ${opts.runtime}`);
   let browser: Browser | null = null;
@@ -494,7 +512,7 @@ async function main(): Promise<number> {
     const runIds = new Map<string, string>();
     for (const [index, spec] of all.entries()) {
       say(`${spec.id}: ${spec.what}`);
-      const { measure, runs } = await runScenario(spec, index, { runtime, browser, owner, outbox: hostDirs.outbox, platform }, { web: limits.web.memoryMiB, platform: limits.platform.memoryMiB });
+      const { measure, runs } = await runScenario(spec, index, { runtime, browser, owner, outbox: hostDirs.outbox, web, platform }, { web: limits.web.memoryMiB, platform: limits.platform.memoryMiB });
       scenarioMeasures.push(measure);
       for (const [upload, run] of runs) {
         runIds.set(upload, run);

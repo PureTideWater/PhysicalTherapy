@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -389,15 +389,23 @@ export class ProcessRuntime implements Runtime {
     // The shell joins the cgroups before it becomes the service, so nothing runs outside the limits.
     const child = spawn('sh', ['-c', `${join} && exec ${command}`], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const entry = { child, lines: [] as string[], exited: false };
+    // The service's output beside the data directory, as `docker logs` keeps a container's: IDs, codes and numbers
+    // only (the services' logger allowlist), synthetic data, never uploaded with the report.
+    const logFile = path.join(path.dirname(this.dataDir.host), 'logs', `${spec.name}.log`);
+    mkdirSync(path.dirname(logFile), { recursive: true });
     let partial = '';
     child.stdout.on('data', (chunk: Buffer) => {
+      appendFileSync(logFile, chunk);
       const text = partial + chunk.toString('utf8');
       const parts = text.split('\n');
       partial = parts.pop() ?? '';
       entry.lines.push(...parts);
     });
-    child.stderr.on('data', () => undefined);
-    child.on('exit', () => {
+    child.stderr.on('data', (chunk: Buffer) => {
+      appendFileSync(logFile, chunk);
+    });
+    child.on('exit', (code, signal) => {
+      appendFileSync(logFile, `[harness] ${spec.name} exited: code ${String(code)}, signal ${String(signal)}\n`);
       entry.exited = true;
     });
     this.children.set(spec.name, entry);

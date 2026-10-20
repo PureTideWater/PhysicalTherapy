@@ -50,7 +50,10 @@ when it is red. Synthetic data only: the release and the uploads are generated, 
    root's device, and `docker inspect` of the named container. Run again once fixed.
 3. `OOM kill`, `restart or exit`, `memory above 90%`: the screening does not fit its task. This is a defect of the
    screening or of the consumer's size: reproduce with the same shape (`--scenarios S1`), read the phases' record
-   counts, and fix before merging. PR 6b's consumer is sized from these figures.
+   counts, and fix before merging. PR 6b's consumer is sized from these figures. `restart or exit` with "JavaScript
+   heap out of memory" in the service's log is Node's heap limit, which it sets from the task's memory (about half of
+   512 MiB), reached before the cgroup's: no OOM kill is counted. A service that exited is started again before the
+   next scenario, so the later scenarios are still measured.
 4. `row count`, `rows still pending`, `ENGINE_ERROR rows`, `stalled`, `not emailed`, `result link did not open`: the
    result is wrong or unfinished. Read the platform's log in the job (IDs and codes only) for the run's `error_code`;
    `RELEASE_READ_OUTSIDE_FETCH` means a lookup outside the keys the run fetched, a defect of the key set or the engine's
@@ -73,6 +76,6 @@ when it is red. Synthetic data only: the release and the uploads are generated, 
   `apps/web/scripts/start-standalone.sh` does), lay them out as the images do (a directory with `worker`, holding `dist`
   and `migrations`, and `web`, the standalone server), and run
   `pnpm screening:capacity --runtime process --images <dir> --admin-url <superuser URL> --database tp_capacity --out <dir>`.
-  The web and platform processes run in cgroups at production's limits; Postgres is the server named, unlimited and
-  warm, so the run reports its limits as not applied and never passes. Its times are indications, with the load average
-  beside them.
+  The web and platform processes run in cgroups at production's limits, their output in `<out>/logs`; Postgres is the
+  server named, unlimited and warm, so the run reports its limits as not applied and never passes. Its times are
+  indications, with the load average beside them.
