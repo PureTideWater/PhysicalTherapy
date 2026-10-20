@@ -131,3 +131,8 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 - All four runs stopped on the weekly limit (resets 2026-10-20 14:00 UTC): governance (two reviews, fix, verify left), PR 5 audit fixes (three builders' remainder, three reviews, verify), audit 2 (15 checks plus merge of 122), PR 6 audit fixes (build).
 - Uncommitted edits saved: salvage/co-001-pr-05-packet-deadline-wip (e8ac527, on top of 85579f6), salvage/co-001-pr-06-free-screening-wip (eae2ad9, on top of 1bc9426). Governance had none.
 - One resume is scheduled for 2026-10-20 14:10 UTC (trig_01Uz1MHApXbEYtc9P5y48ZMZ). No other check-ins are armed.
+
+## Resume of 2026-10-20 14:20 UTC (weekly reset)
+- The extra-credit run of 2026-10-19 01:38 got further before the limit: PR 5 has the migration (85579f6), the #4 pricing-current work (b9fe863) and the #5 window work (0dd211d) committed, plus three untracked db tests (saved at salvage 345c594); PR 6's A5 and A6 are committed (a4ce0d7, 9b7f1b6); governance's two reviews finished; audit 2 is at 117 of 122.
+- No codex/* branches exist. claude/build-platform (fe470c1) and main (8d7acce) are unchanged. Five Dependabot branches target claude/build-platform, as #18 set up.
+- All four runs resumed at 14:20 UTC with resumeFromRunId on their full designs.
