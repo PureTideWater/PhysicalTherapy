@@ -145,3 +145,14 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 - **Approvals:** every PR requires the founder's GitHub approval before merge (replaces D4 (a)) once the build agent has its own GitHub account (governance guide step 3); ADR 0063 goes from zero to one required approval. Until then D4 (a) continues.
 - CI runner pin: PR #24 merged into claude/build-platform as 262d37d (audit #19; workflow wf_a441e4f6-922). Governance must pin approval-of-record.yml and resolve 4 hunks in ci.yml and supply-chain.yml when it merges the build branch. Dependabot #23 (Playwright 1.64.1) waits for the CI PR that moves to 26.04. GitHub runner-images issue #14748 confirms ubuntu-latest moves to 26.04 from 2026-10-19 to 2026-11-19.
 - Governance round 1 verified at 19a47f6 (2 reviews, 18 findings, 16 real and fixed; fresh clone green). Round 2 running (wf_8e7d9b51-fa7): merge 262d37d, pin approval-of-record.yml, the 2026-10-20 rulings (one required approval once the agent has its own identity; the build merges after the founder approves), audit #20 (b) policy, controls map and PR template, (c) launch switch, (d) Team-plan organization move before PR 7, (e) pre-push hook, (f) security.txt and disclosure page; then 2 reviews, fix, verify. Then open the governance PR.
+
+## Founder ruling of 2026-10-20 ~18:30 UTC: the efficient pipeline (no quality given up)
+Applies from the next round of every PR. Every stage stays: design, independent builders, at least two adversarial reviews, a fix round, a fresh-clone verification, GitHub CI.
+1. **Design first.** A setup agent writes the PR's design contract from its audit items and rulings; one reviewer checks the contract before any builder starts; founder questions go up front, in one batch.
+2. **Builders check what they touch.** `pnpm typecheck` (whole repo), lint and the tests of the packages they changed. No full test:db or e2e at build time.
+3. **Draft PR at once.** When the builders have pushed, open the PR as a draft into claude/build-platform and subscribe, so GitHub CI (the full suite: typecheck, lint, unit, golden, oracle, db, e2e, build) runs while the reviewers work.
+4. **Fix round runs the full local suite once**, then pushes.
+5. **Fresh-clone verification reads CI.** Launch it after CI on the fix head finishes (the PR event wakes the session). It clones fresh, checks scope, makes the PR's proofs, writes the approval summary, and reads CI's result for that head instead of rerunning the identical suite. Red CI goes back to a fix round.
+6. **At most two heavy workflows at once** on this 4-CPU machine.
+7. **Short agent reports:** every check with its result, every finding with its disposition, every open item; narrative short, full logs on disk.
+8. **Fresh session** once PR 5 and PR 6 have merged and nothing is running: bring this file fully up to date, check it against the conversation, then the founder starts a new session from it.
