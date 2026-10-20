@@ -136,3 +136,11 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 - The extra-credit run of 2026-10-19 01:38 got further before the limit: PR 5 has the migration (85579f6), the #4 pricing-current work (b9fe863) and the #5 window work (0dd211d) committed, plus three untracked db tests (saved at salvage 345c594); PR 6's A5 and A6 are committed (a4ce0d7, 9b7f1b6); governance's two reviews finished; audit 2 is at 117 of 122.
 - No codex/* branches exist. claude/build-platform (fe470c1) and main (8d7acce) are unchanged. Five Dependabot branches target claude/build-platform, as #18 set up.
 - All four runs resumed at 14:20 UTC with resumeFromRunId on their full designs.
+
+## Founder rulings of 2026-10-20 ~15:10 UTC (combined audit)
+- Combined audit published: https://claude.ai/artifact/AZsQjBeEUXqs5UcPYWPt4g (source scratchpad/best-option-audit/combined-report.{md,json}; page built by scratchpad/audit-page/build.py). 138 upgrades: 18 critical, 83 high, 33 medium, 4 low; 19 freeze exceptions; 4,750-7,590 added plan hours.
+- **Adopt all of it.** The 19 freeze exceptions are granted; the ruling changes the report lists are accepted as it recommends; new PRs land where the report places them; the running costs are accepted (AWS Network Firewall about $580 a month, Cognito Plus per user, screening consumer about $18 a month, PDF service minimums, GitHub Team organization, AWS backup account and log retention, hosted status page). No success fee as a build item. Every schema change still needs the founder's SHA-256 approval.
+- **Schedule:** keep the full list and move the gate dates; quality first.
+- **PR 5 and PR 6:** fold in now, before merge: #37 part 1 (the packet a payer's examiner receives, 4-8 h) into PR 5; #53 (the screening's 60-second promise: test and cache) and #57 (screening result columns, while its migration awaits approval) into PR 6.
+- **Approvals:** every PR requires the founder's GitHub approval before merge (replaces D4 (a)) once the build agent has its own GitHub account (governance guide step 3); ADR 0063 goes from zero to one required approval. Until then D4 (a) continues.
+- Today: CI runner pin PR (co-001/ci-pin-runner, workflow wf_a441e4f6-922; audit #19). GitHub runner-images issue #14748 confirms ubuntu-latest moves to 26.04 from 2026-10-19 to 2026-11-19.
