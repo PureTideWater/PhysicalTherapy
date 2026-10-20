@@ -1,0 +1,27 @@
+{
+  "case": "SCR-08",
+  "module": "SCR",
+  "title": "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16)",
+  "assertion": "The production images at production's task sizes, Postgres at db.t4g.medium's size or the runner's share with gp3's baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once with a small one behind them; fails on an OOM kill, a restart, anonymous memory above 90% of a limit, a limit not applied, a runner too small, a wrong, unfinished or stalled result, or an oracle mismatch; the time to email reported as \"open, PR 6b\" until environments.ts declares the screening's consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "tools/screening-capacity/limits.test.ts",
+    "tools/screening-capacity/env.test.ts",
+    "tools/screening-capacity/report.test.ts",
+    "tools/screening-capacity/measure.test.ts",
+    "packages/synth/src/release/scale.test.ts",
+    "packages/synth/src/screening/uploads.test.ts",
+    "tools/release/scale.test.ts",
+    "tools/test/workflows.test.ts",
+    "apps/web/src/lib/screening/screening.large.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The capacity test builds its SYNTHETIC scale release and uploads outside the repository when it runs; no file is committed.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

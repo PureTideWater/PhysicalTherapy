@@ -240,6 +240,23 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
   ]),
+  'SCR-08': none(6, 'The capacity test builds its SYNTHETIC scale release and uploads outside the repository when it runs; no file is committed.', [
+    'tools/screening-capacity/limits.test.ts',
+    'tools/screening-capacity/env.test.ts',
+    'tools/screening-capacity/report.test.ts',
+    'tools/screening-capacity/measure.test.ts',
+    'packages/synth/src/release/scale.test.ts',
+    'packages/synth/src/screening/uploads.test.ts',
+    'tools/release/scale.test.ts',
+    'tools/test/workflows.test.ts',
+    'apps/web/src/lib/screening/screening.large.db.test.ts',
+  ]),
+  'SCR-09': none(6, 'The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.', [
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/screening/adapter.test.ts',
+    'apps/worker/src/screening/oracle-imports.test.ts',
+    'apps/worker/src/screening/release-cache.db.test.ts',
+  ]),
   'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
   'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
     'apps/worker/src/worker.test.ts',

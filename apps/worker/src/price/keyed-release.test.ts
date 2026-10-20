@@ -52,8 +52,9 @@ describe('keyedRelease', () => {
     for (const type of KEYED_RECORD_TYPES) {
       const found = view.inForce(type, PRESENT[type], '2026-02-01');
       expect(found, type).not.toBeNull();
-      // Named by the run's stored hash, as indexStoredRelease names it.
-      expect(found === null ? null : view.ref(found).sha256.startsWith('run:'), type).toBe(true);
+      // Named by the run's stored hash, as indexStoredRelease names it. (RuleRecordOf over a union of types is not
+      // RuleRecord's union of each type, so the record found is named as the view's ref takes it.)
+      expect(found === null ? null : view.ref(found as RuleRecord).sha256.startsWith('run:'), type).toBe(true);
       expect(view.latestInYear(type, PRESENT[type], 2026), type).not.toBeNull();
     }
     const factor = view.inForce('conversion_factor', { applicability: 'non_qualifying_apm' }, '2026-02-01');

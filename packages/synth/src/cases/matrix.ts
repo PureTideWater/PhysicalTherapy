@@ -141,6 +141,18 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     assertion:
       "Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the row count and coded reasons, no hash; refused by the database's CHECK; 11 claim lines taken; the hash kept is the database's, of the rows accepted, never the file's; a later screening of the same practice replaces the earlier, so a row of 12 claim lines and the same row at 11 are never held together",
   },
+  {
+    id: 'SCR-08',
+    title: "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16)",
+    assertion:
+      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once with a small one behind them; fails on an OOM kill, a restart, anonymous memory above 90% of a limit, a limit not applied, a runner too small, a wrong, unfinished or stalled result, or an oracle mismatch; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
+  },
+  {
+    id: 'SCR-09',
+    title: 'The release read by key (audit #53 part 2)',
+    assertion:
+      "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; a lookup outside the keys fetched, a row outside the key set or codes priced unequal to it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR",
+  },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },
   { id: 'JOB-03', title: 'Digest', assertion: 'Counts and totals only; no PHI column referenced' },

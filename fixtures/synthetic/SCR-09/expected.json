@@ -1,0 +1,22 @@
+{
+  "case": "SCR-09",
+  "module": "SCR",
+  "title": "The release read by key (audit #53 part 2)",
+  "assertion": "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; a lookup outside the keys fetched, a row outside the key set or codes priced unequal to it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/price/keyed-release.test.ts",
+    "apps/worker/src/screening/adapter.test.ts",
+    "apps/worker/src/screening/oracle-imports.test.ts",
+    "apps/worker/src/screening/release-cache.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
