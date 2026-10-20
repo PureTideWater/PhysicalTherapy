@@ -149,3 +149,42 @@ export function assemblyInput(overrides: Partial<AssemblyInput> = {}): AssemblyI
     ...overrides,
   };
 }
+
+/**
+ * The internal terms the payer's copy never prints outside its narrative and its quoted clauses, and a draft never
+ * writes (audit item #37 part 1, T1, T5, T6 and T10; docs/adr/0061): the record's own vocabulary (hashes, traces,
+ * verification, the audit flag, evidence gaps, the specialist line, releases as records), the vendor's name, and the
+ * interest and timeliness wording the founder ruled out on 2026-10-20 (Q3 (a), Q4 (a)).
+ */
+export const PAYER_COPY_INTERNAL_TERMS: readonly RegExp[] = [
+  /SHA-256/i,
+  /hash/i,
+  /trace/i,
+  /verif/i,
+  /audit/i,
+  /evidence gap/i,
+  /computed by code/i,
+  /specialist/i,
+  /PaidWhole/i,
+  /tp-packet/i,
+  /priced line/i,
+  /pricing run/i,
+  /rule release/i,
+  /manifest/i,
+  /placeholder/i,
+  /approved alone/i,
+  /written by/i,
+  /Approval record/i,
+  /level L\d/i,
+  /\bL[1-3]\b/,
+  /\bc(?:an|ould) ?not be computed\b/i,
+  /can be computed/i,
+  /not claimed/i,
+  /filed within/i,
+  /Version \d+, SHA/i,
+];
+
+/** The internal terms `text` holds, by their patterns' source. */
+export function internalTermsIn(text: string): string[] {
+  return PAYER_COPY_INTERNAL_TERMS.filter((term) => term.test(text)).map((term) => term.source);
+}

@@ -175,7 +175,7 @@ function referenceNarrative(terms: Terms, sums: Totals, payer: string, interest:
   const regulation = terms.method === 'MA_NONCONTRACTED';
   const opening = [requirement(terms, payer, style)];
   if (regulation) {
-    opening.push(`Rule release ${String(RULE_RELEASE)} sets that amount [2].`);
+    opening.push(`The Medicare fee schedule in effect for those service dates (release ${String(RULE_RELEASE)}) sets that amount [2].`);
   }
   const basis = regulation ? 'At the Original Medicare amount' : 'At the contract rate';
   let body: string[];
@@ -200,10 +200,10 @@ function referenceNarrative(terms: Terms, sums: Totals, payer: string, interest:
       ];
   }
   const closing: string[] = [];
+  // As @tp/packets draftNarrative() (audit item #37 part 1, D9; the founder's ruling of 2026-10-20, Q4 (a)): nothing is
+  // said of interest no line computed.
   if (interest === 'computed') {
     closing.push('Prompt-pay interest under the state rule is stated as its own line and is not part of the shortfall [4].');
-  } else if (interest === 'not_computed') {
-    closing.push('Prompt-pay interest under the state rule could not be computed from the records on file [4].');
   }
   if (style === 0) {
     return [[...opening, ...body, ...closing].join(' ')];
