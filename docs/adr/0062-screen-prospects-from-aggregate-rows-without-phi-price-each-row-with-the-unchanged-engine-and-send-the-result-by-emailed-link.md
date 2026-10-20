@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-18
-- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001)
+- **Deciders:** the owner (D11 option a and D18 to D21 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17; the four rulings of 2026-10-18 below, by the founder, Tyler Williams, and the founder's approval of 2026-10-18 after the best-option audit, items 6 and 1, with the ruling of 11:47 UTC that supersedes ruling 3); the build (PR 6 of Change Order 001) and its review of 2026-10-20
 - **PRD sections:** 2 (what a screening must never claim), 5 (J1, the audit request), 7 (public pages), 8 (Invariants), 11 (the engine, Medicare Advantage non-contracted pricing), 15 (Request path; links only in email), 16 (Tenant isolation; logging discipline); Change Order 001, CO-04, CO-09 (SCR-01 to SCR-06, SEC-17; SCR-07 added by the founder's ruling), CO-11 and CO-12; ADRs 0014, 0019, 0029, 0034, 0038 and 0053
 
 ## Context
@@ -49,13 +49,16 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   is refused (`screening_zip_plus_four`, "a free screening cannot price one yet") rather than asked for four digits
   nothing could use. This pull request keeps the refusal until PR 6b lands: the founder's ruling of 11:47 UTC on
   2026-10-18 supersedes ruling 3 and has ZIP+4 localities fixed before launch there (see Owner rulings).
-- `screening_upload`: the file's SHA-256, its row count, accepted or rejected, and the rejection reasons, which
+- `screening_upload`: its row count, accepted or rejected, and the rejection reasons, which
   `screening_rejections_valid()` holds to at most 20 objects of a code, a column position, a row, a first row, a
-  field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored. On an accepted
-  upload, three numbers of the rows of fewer than 11 claim lines the browser left out (`left_out_rows`,
-  `left_out_claim_lines`, `left_out_allowed_cents`): never which rows. Their CHECKs hold them to what a browser could
-  have counted (each row left out 1 to 10 claim lines, at most $25,000.00 a claim line, no more than 50,000 rows sent
-  and left out together) and to zero on a rejected upload.
+  field and a PHI kind: never a header's text or a cell's value. No byte of the file is stored, and no hash of it.
+  An accepted upload keeps `rows_sha256`, the SHA-256 of its rows as the server accepted them, in their canonical
+  form (`encodeScreeningRows`), which `submit_screening()` computes from the rows it stores and never takes from the
+  caller; a refused upload keeps none (`screening_upload_rows_hashed`). On an accepted upload, three numbers of the
+  rows of fewer than 11 claim lines the browser left out (`left_out_rows`, `left_out_claim_lines`,
+  `left_out_allowed_cents`): never which rows. Their CHECKs hold them to what a browser could have counted (each row
+  left out 1 to 10 claim lines, at most $25,000.00 a claim line, no more than 50,000 rows sent and left out together)
+  and to zero on a rejected upload.
 - `screening_place_of_service_split`: the platform's default facility or non-facility setting per place of
   service, approved by a contract specialist (`rate_record.approve`, the existing permission; the matrix is
   frozen until PR 14), append-only, the latest approval in force. A fifth table beside CO-12's four, because the
@@ -81,11 +84,13 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   allowed amount a claim line (so an identifier typed under the allowed total is refused, never kept as dollars).
 
 Every row but the split expires 30 days after its upload: the reads refuse a run from its `expires_at` on, a delete
-before then is refused (`screening_kept_until_expiry`), and the `screening_expiry` job deletes prospect, upload, run
-and rows together, each prospect an audit event (`screening_expired`).
+before then is refused (`screening_kept_until_expiry`) unless a later screening of the same practice has replaced it
+(below), and the `screening_expiry` job deletes prospect, upload, run and rows together, each prospect an audit
+event (`screening_expired`).
 
 The application role calls `screening_status()`, `screening_zip_status()` (an invoker function over the global
-`locality_map`), `submit_screening()` (prospect, upload, run and every row in one call, `screening_submitted`),
+`locality_map`), `submit_screening()` (prospect, upload with the hash of its rows, run and every row in one call,
+`screening_submitted`, deleting any earlier screening of the same practice, `screening_replaced`),
 `reject_screening_upload()` (`screening_rejected`; like the submission, it records nothing while screening is
 closed), the four reads by token hash (`screening_result_summary`, which also says whether the run's release has
 since been withdrawn, `_groups`, `_coverage`, `_rows`, every figure a bigint sum in SQL), `convert_screening()` (a
@@ -113,12 +118,12 @@ responsibility" are left out), and a header whose normalizing would throw letter
 the row rules (calendar quarters only; a day in a band, in any spelling a spreadsheet writes, is a date-of-service
 column; dollars through `parseAmount`, at most $25,000.00 a claim line; a real code's shape) and the canonical rows
 the form sends. Reasons are kept 20 at most, patient information first, so its column is named however many other
-problems a file has, with how many there were. The page reads the file locally, hashes it, and sends the hash, the
-header's canonical column names (never the text typed), the row count and the canonical rows to a server action;
-the file input has no name. The server checks the form's fields, the header names and every row again; a refusal is
-recorded by hash, count and coded reasons, and its messages name a column by position and kind ("Column 4 holds
-member IDs; remove it and upload again"), never a header or a cell, and tell a person to remove a column that is not
-one of the eight, never to rename it.
+problems a file has, with how many there were. The page reads the file locally and sends the header's canonical
+column names (never the text typed), the row count and the canonical rows to a server action, and never a hash of
+the file, which would cover the rows it leaves out; the file input has no name. The server checks the form's fields,
+the header names and every row again; a refusal is recorded by count and coded reasons alone, and its messages name
+a column by position and kind ("Column 4 holds member IDs; remove it and upload again"), never a header or a cell,
+and tell a person to remove a column that is not one of the eight, never to rename it.
 
 **At least 11 claim lines a row (the founder's ruling of 2026-10-18 on the best-option audit's item 6).** A row of
 fewer, with its quarter beside the practice's name and ZIP, can be one patient's service line, which is not
@@ -138,30 +143,58 @@ small-cell standard (CMS suppresses a count of 1 to 10), and it is one setting, 
   refuses a row the page sent (a computer whose clock is wrong also refuses no quarter the server takes).
 - The server (`decodeScreeningRows`) refuses a row of fewer than 11 claim lines that a request sent around the
   browser, by its row number ("Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11 claim
-  lines, so that no row can describe one patient's care: leave it out"), named with the patient information ahead of
-  any other problem. The refusal is recorded as any other is, by the file's hash, the row count and the coded reasons,
-  here `too_few_claim_lines` with the row and the field `claim_count` alone: nothing of the row's code, claim count,
-  quarter or dollars is stored or logged. It takes the browser's three numbers only when they are ones the browser
-  could have counted beside the rows sent (`leftOutPlausible`), and records nothing otherwise; blank is none.
+  lines, because a row of fewer can describe one patient's care: leave it out"), named with the patient information
+  ahead of any other problem. The refusal is recorded as any other is, by the row count and the coded reasons, here
+  `too_few_claim_lines` with the row and the field `claim_count` alone, and no hash: the rows refused hold the small
+  row, so a hash of them, keyed or not, would be derived from it. Nothing of the row's code, claim count, quarter or
+  dollars is stored or logged. It takes the browser's three numbers only when they are ones the browser could have
+  counted beside the rows sent (`leftOutPlausible`), and records nothing otherwise; blank is none.
 - The database refuses a stored row of fewer (`screening_result_claim_count`, `BETWEEN 11 AND 100000`), whoever
   writes it, and `format.test.ts` holds that CHECK and the upload's left-out CHECKs to the setting.
 
 The result shows the rows left out as the browser counted them ("Left out before sending": rows, claim lines and
-allowed in your file), apart from every other figure, when there are any. The three numbers are sums over every row
-left out, with no code, modifier, units, place of service, payer product or quarter beside them, so none of them can
-describe one patient's care. The template file and the upload page state the floor in plain words ("Each row sums at
-least 11 claim lines. A row of fewer could describe the care of one patient, so your browser leaves it out before
-anything is sent, and the page tells you how many rows, claim lines and dollars it left out"), and the column guide
-says it beside the claim count. The template states it where a prospect fills it, in a spreadsheet away from the
-page: its rules come first, each a note line above the header (a first cell beginning with #), in plain ASCII so a
-spreadsheet that reads a CSV without a byte-order mark shows them as written. The page's reader skips a note row
-above the header, as written or as a spreadsheet saves it (padded with empty cells, as CSV or tab-separated text),
-and a note's own commas never choose the delimiter; a header that begins with a `#` column has other cells and is
-checked as a header, so a patient-information column beside it is still refused, and a note below the header is a
-row, refused by its number. Counsel confirms the number, and whether it counts claim lines or patients: a plan of
-care can give one patient 11 lines in a quarter, and a row of totals cannot say how many patients its lines are. If
-counsel says patients, a patient-count column is added to the format and the row (a new migration) and the floor
-moves to it.
+allowed in your file), apart from every other figure, when there are any. The three numbers are sums over the rows
+left out, with no code, modifier, units, place of service, payer product or quarter beside them, so no service line
+can be read from them. They are not nothing, though: when one row of one claim line is left out, they are that line's
+count and allowed amount, stored beside the practice's name and ZIP and shown on the result, without its key. That is
+why no hash of the file is kept (the review of 2026-10-20 found that the file's hash, with no key, beside the rows
+kept and these sums, let a left-out row be found by trial in seconds), and why the page, the refusals and the result
+state the risk the floor answers ("because a row of fewer can describe one patient's care"), never that no row can
+describe one patient: a row of 11 or more lines can. The template file and the upload page state the floor in plain
+words ("Each row sums at least 11 claim lines. A row of fewer could describe the care of one patient, so your browser
+leaves it out before anything is sent, and the page tells you how many rows, claim lines and dollars it left out"),
+and the column guide says it beside the claim count. The template states it where a prospect fills it, in a
+spreadsheet away from the page: its rules come first, each a note line above the header (a first cell beginning with
+#), in plain ASCII so a spreadsheet that reads a CSV without a byte-order mark shows them as written. The page's
+reader skips a note row above the header, as written or as a spreadsheet saves it (padded with empty cells, as CSV or
+tab-separated text), and a note's own commas never choose the delimiter; a header that begins with a `#` column has
+other cells and is checked as a header, so a patient-information column beside it is still refused, and a note below
+the header is a row, refused by its number. Counsel confirms the number, and whether it counts claim lines or
+patients: a plan of care can give one patient 11 lines in a quarter, and a row of totals cannot say how many patients
+its lines are. If counsel says patients, a patient-count column is added to the format and the row (a new migration)
+and the floor moves to it. Counsel also confirms what the floor's own rows do not settle: whether the result may show
+a left-out total of fewer than 11 claim lines as counted, or should say "fewer than 11 claim lines" instead (the
+founder's ruling has the result say what was left out, so it shows the count until counsel answers); and whether one
+screening a practice at a time (below) is the right scope for the rule against deriving a small cell by subtraction.
+
+**One accepted screening a practice, so no small cell is derived by subtraction (the review of 2026-10-20, under the
+founder's ruling on the audit's item 6).** The CMS cell-size suppression policy the ruling cites forbids a cell of
+1 to 10 shown directly and one derived from others by subtraction or any other formula. Each row of a screening sums
+at least 11 claim lines, but two screenings of one practice held at once could be subtracted: a row of 12 claim
+lines in one and the same row at 11 in the next (a prospect uploading again after taking denied lines out, as the
+template now asks, or after a late claim) give one claim line with its code, modifiers, units, place of service,
+product, quarter and dollars, and a row left out of the first (its count and dollars in that upload's sums) that
+reaches 11 in the next gives the same. So a practice keeps one accepted screening at a time: `submit_screening()`
+deletes any earlier accepted screening of the same practice, prospect, upload, run and rows, each an audit event
+(`screening_replaced`), in the call that stores the new one. The same practice is the same ZIP and practice name
+(compared in lower case with each run of white space as one space, `screening_practice_key()`), or the same contact
+address. Two submissions of one practice at once take the same advisory locks in one order, so the later waits for
+the earlier, sees it and replaces it. `screening_kept_until_expiry` lets an unexpired screening go only when another
+accepted screening of the same practice exists (`screening_replaced()`), and a row deleted with its prospect or
+upload goes with it. A refused upload holds no row: it replaces nothing and is not replaced. The upload page, the
+result, the email and the page a closed link opens say that a later screening for the same practice, or from the
+same address, replaces the earlier one, whose link then stops opening it. A practice that screens again under
+another name and from another address is not matched; that, with the rule's scope, is in counsel's question above.
 
 **Denied lines out of every total (the founder's ruling of 2026-10-18 on the best-option audit's item 1, the
 template's part).** A denied line pays nothing for a reason that is not a rate (no authorization, a visit limit
@@ -250,7 +283,11 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
 | Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. |
 | Keep a row of fewer than 11 claim lines and hide it in the result | It would still be stored: one patient's service line in tables built as non-PHI, from a prospect with no BAA. |
-| Say what was left out in the browser alone, storing nothing of it | The result, opened later from the emailed link, could not say that its figures leave rows out, and its totals would not match the prospect's file. Three sums with no code or quarter beside them describe no one. |
+| Say what was left out in the browser alone, storing nothing of it | The result, opened later from the emailed link, could not say that its figures leave rows out, and its totals would not match the prospect's file. Three sums with no code or quarter beside them name no service line (with one row left out they are its count and dollars, which counsel confirms). |
+| Hash the file in the browser and keep that hash (what PR 6 first did) | The file holds the rows left out, so its hash, with no key, beside the rows kept and the left-out sums, let a left-out row be found by trial in seconds (the review of 2026-10-20). The hash kept is the database's own, of the rows it stores, which says nothing they do not. |
+| Keep a refused upload's hash, or an HMAC of it under a server key | The rows refused can hold the very row the floor withholds, and a code derived from them is derived from that line, keyed or not (45 CFR 164.514(c)). A refusal keeps its count and coded reasons alone. |
+| Refuse a new upload whose row differs by 1 to 10 claim lines from the same row held | It cannot see the rows left out of the earlier upload, it tells the prospect something of what is held, and the prospect cannot fix the file; replacing the earlier screening needs no comparison at all. |
+| Replace by the rate limit's account (a business address's domain) | A billing firm or a health system screens many practices from one domain, and their screenings are different practices' data, which no subtraction joins. The same address, or the same practice name and ZIP, is the practice. |
 | Keep the template a header line alone, its rules only on the page | A prospect fills the template in a spreadsheet, away from the page; the floor and the denied-lines rule belong where the totals are typed. Note lines the reader skips put them there without a second file or format. |
 | Date the quarters by the computer's own clock | A wrong clock would refuse a quarter the server takes, or send one it refuses; and once small rows are left out, the server's row number would not be the file's. |
 | Refuse a whole file in the browser when a row is small | A practice's file of totals has many small cells (a rare code, a quarter's tail); refusing it would turn most prospects away for rows that are left out safely. The founder ruled to leave them out and say how much was left out. |
@@ -282,11 +319,16 @@ without a contract". The copy lint reads the screening paths, the worker's scree
   `locality_map` requires it" is not met by this pull request. The founder's ruling of 11:47 UTC on 2026-10-18
   supersedes ruling 3: PR 6b meets it before launch, and the refusal stays in this pull request's code until PR 6b
   lands.
-- A row of fewer than 11 claim lines is never sent, stored or priced (the founder's ruling on the audit's item 6):
-  the browser leaves it out and counts it, the server refuses one sent around the browser by its row number, and the
-  database refuses one stored. A practice whose rows are mostly small sees much of its file left out, with the rows,
-  claim lines and dollars left out said in the browser and on the result. Whether 11 counts lines or patients waits
-  for counsel; until then a row of 11 or more lines can still be one patient's plan of care.
+- A row of fewer than 11 claim lines is never sent by the page, stored or priced (the founder's ruling on the
+  audit's item 6): the browser leaves it out and counts it, the server refuses one sent around the browser by its
+  row number, and the database refuses one stored. A practice whose rows are mostly small sees much of its file left
+  out, with the rows, claim lines and dollars left out said in the browser and on the result. Whether 11 counts
+  lines or patients waits for counsel; until then a row of 11 or more lines can still be one patient's plan of care.
+- A practice has one screening at a time: a later one for the same practice name and ZIP, or from the same address,
+  replaces the earlier, whose link stops opening it, and the upload page, the result and the email say so before it
+  happens. A billing firm that screens several practices from one address keeps one of them open at a time. The hash
+  kept covers the rows the server accepted, so it says nothing the stored rows do not; two files differing only in a
+  row left out store the same hash.
 - The template and the upload page tell the prospect to leave denied lines out of every total (the founder's ruling
   on the audit's item 1); a file that keeps them shows them as a difference below the Medicare figure, which the
   screening cannot tell from a rate variance. The paid audit's triage of denials is PR 6d.
@@ -298,19 +340,26 @@ without a contract". The copy lint reads the screening paths, the worker's scree
   (`apps/worker/src/screening/*.test.ts`, `apps/web/src/lib/screening/routes.db.test.ts`,
   `screening.large.db.test.ts`, `apps/web/src/components/screening/result.test.tsx`, the copy lint and the screening
   journey). The rulings in particular: G01's 97110 and 97140 as SYNTHETIC rows, between their two figures (within
-  the range) and more than $5 a line below the fully reduced one (an anomaly), 97161 with one figure, a row allowed in
-  full at the figure before sequestration with no difference (`adapter.test.ts`, `screening.db.test.ts`); a ZIP
+  the range) and more than $5 a line below the fully reduced one (an anomaly), 97161 with one figure, a row allowed
+  in full at the figure before sequestration with no difference (`adapter.test.ts`, `screening.db.test.ts`); a ZIP
   needing its ZIP+4 refused (`routes.db.test.ts`, `screening.db.test.ts`); a result under a withdrawn release
-  converted with its notice (`routes.db.test.ts`, `screening.db.test.ts`). The floor, SCR-07: 10 claim lines left out
-  and 11 kept in the browser, with the rows, claim lines and dollars left out counted to the cent (`format.test.ts`,
-  `parse.test.ts`), refused at 10 and taken at 11 by the server's decode and route, a direct POST around the browser
-  with a row of one claim line refused by its row number and storing nothing of the row (`routes.db.test.ts`), the
-  CHECK refusing 1 and 10 and taking 11, and the left-out numbers held to what a browser could count
-  (`packages/db/src/screening.db.test.ts`), the result's card (`result.test.tsx`) and the journey, which leaves two
-  small rows out of what it sends (`e2e/screening.spec.ts`). The template's note lines: their words, plain ASCII,
-  skipped as written and as a spreadsheet saves them, a `#` header still checked, a note below the header refused,
-  and the quarters dated by the server's clock (`parse.test.ts`, the page's `serverTime` in `routes.db.test.ts`); the
-  journey downloads the template, reads its rules, and sends it filled with its notes kept.
+  converted with its notice (`routes.db.test.ts`, `screening.db.test.ts`). The floor, SCR-07: 10 claim lines left
+  out and 11 kept in the browser, with the rows, claim lines and dollars left out counted to the cent
+  (`format.test.ts`, `parse.test.ts`), refused at 10 and taken at 11 by the server's decode and route, a direct POST
+  around the browser with a row of one claim line refused by its row number and storing nothing of the row
+  (`routes.db.test.ts`), the CHECK refusing 1 and 10 and taking 11, and the left-out numbers held to what a browser
+  could count (`packages/db/src/screening.db.test.ts`), the result's card (`result.test.tsx`) and the journey, which
+  leaves two small rows out of what it sends (`e2e/screening.spec.ts`). The template's note lines: their words,
+  plain ASCII, skipped as written and as a spreadsheet saves them, a `#` header still checked, a note below the
+  header refused, and the quarters dated by the server's clock (`parse.test.ts`, the page's `serverTime` in
+  `routes.db.test.ts`); the journey downloads the template, reads its rules, and sends it filled with its notes
+  kept. The hash: the database's own over the rows stored, equal to `encodeScreeningRows` of the rows sent, none on
+  a refusal, a hash a request sends never kept, and two files differing only in a row left out storing the same one
+  (`packages/db/src/screening.db.test.ts`, `routes.db.test.ts`, `parse.test.ts`, the journey). One screening a
+  practice: a row of 12 claim lines and the same row at 11 never held together, the earlier link not found, a
+  screening replaced from the same address and one whose row was left out, another practice's kept, a refused upload
+  replacing nothing, two submissions at once leaving one, and a replaced run never priced or emailed
+  (`packages/db/src/screening.db.test.ts`, `routes.db.test.ts`, `apps/worker/src/screening/screening.db.test.ts`).
 
 ## Owner rulings (2026-10-18)
 
@@ -349,7 +398,9 @@ experience, privacy and compliance, never weighted by build effort):
    lines and dollars it left out, and the result says so too; a request around the browser is refused with the row
    numbers, and nothing about the refused rows is stored but what the rejection reasons allow; the template and the
    upload page state the floor in plain words; counsel confirms the number and whether it counts lines or patients.
-   *Built:* the floor above, SCR-07.
+   *Built:* the floor above, SCR-07; after the review of 2026-10-20, no hash of the file or of a refused upload, and
+   one accepted screening a practice at a time, so that no small cell is derived by subtraction (see One accepted
+   screening a practice).
 6. **Denied lines (audit item 1, the template's part).** The screening template and the upload page tell prospects
    to leave denied lines (zero-paid for authorization, visit limit, duplicate, timely filing, not covered) out of
    their totals, because a denial is not a rate variance. *Built:* the template's note lines, the page's rules and the
@@ -357,12 +408,14 @@ experience, privacy and compliance, never weighted by build effort):
 
 What stays open: the specialist's answer to Q21 (should a payer's allowed amount turn out to be reported after
 sequestration, the comparison is put to the owner again); ZIP+4 localities, in PR 6b before launch; counsel's answer
-on the floor (the number, and lines or patients); and visit-level aggregates (see Revisit when).
+on the floor (the number; lines or patients; whether a left-out total under 11 claim lines may be shown as counted;
+and the scope of one screening a practice); and visit-level aggregates (see Revisit when).
 
 ## Revisit when
 
 Release 1 is published (screening opens); PR 6b lands (ZIP+4 localities: the refusal here is replaced); counsel
-answers on the floor (the number, and whether it counts claim lines or patients); the reimbursement specialist
+answers on the floor (the number, whether it counts claim lines or patients, the left-out totals and the scope of one
+screening a practice); the reimbursement specialist
 answers Q21 (the owner's ruling 2: which figure a payer's allowed amount is compared with); prospects ask for
 visit-level aggregates (the reduction across codes); or the permission matrix gains a dedicated permission for
 platform pricing defaults (PR 14).
