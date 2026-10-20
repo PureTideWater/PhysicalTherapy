@@ -200,9 +200,22 @@ export async function recordRows(client: OperatorClient, runId: string, outcomes
   return (rows[0] as { recorded: number } | undefined)?.recorded ?? 0;
 }
 
-/** Completes a run with its token's hash; where its email goes, or null when it was complete already. */
-export async function completeRun(client: OperatorClient, runId: string, tokenSha256: string, engine: string, requestId: string): Promise<{ readonly contactEmail: string; readonly rowCount: number } | null> {
-  const { rows } = await client.query('SELECT contact_email, row_count FROM operator_screening_complete($1, $2, $3, $4)', [runId, tokenSha256, engine, requestId]);
+/**
+ * Completes a run with its token's hash; where its email goes, or null when it was complete already. The database
+ * writes the run's counts-only outcome and replaces the practice's earlier kept summaries in the same transaction, and
+ * keeps this run's summary when a request is carried over or the prospect consented. A consent summary needs the
+ * SHA-256 of its withdrawal link's token, which PR 6e's consent capture makes; until then no prospect consents and
+ * none is passed.
+ */
+export async function completeRun(
+  client: OperatorClient,
+  runId: string,
+  tokenSha256: string,
+  engine: string,
+  requestId: string,
+  withdrawalTokenSha256: string | null = null,
+): Promise<{ readonly contactEmail: string; readonly rowCount: number } | null> {
+  const { rows } = await client.query('SELECT contact_email, row_count FROM operator_screening_complete($1, $2, $3, $4, $5)', [runId, tokenSha256, withdrawalTokenSha256, engine, requestId]);
   const row = rows[0] as { contact_email: string; row_count: number } | undefined;
   return row === undefined ? null : { contactEmail: row.contact_email, rowCount: row.row_count };
 }
@@ -214,9 +227,9 @@ export async function failRun(client: OperatorClient, runId: string, failureCode
   return row === undefined ? null : { contactEmail: row.contact_email };
 }
 
-/** Deletes up to `atMost` expired screenings. */
-export async function expireBatch(client: OperatorClient, atMost: number, requestId: string): Promise<{ readonly prospects: number; readonly runs: number }> {
-  const { rows } = await client.query('SELECT prospects, runs FROM operator_screening_expire($1, $2)', [atMost, requestId]);
-  const row = rows[0] as { prospects: number; runs: number } | undefined;
-  return { prospects: row?.prospects ?? 0, runs: row?.runs ?? 0 };
+/** Deletes up to `atMost` expired screenings, and up to `atMost` kept summaries past their 12 months; their outcomes stay. */
+export async function expireBatch(client: OperatorClient, atMost: number, requestId: string): Promise<{ readonly prospects: number; readonly runs: number; readonly leads: number }> {
+  const { rows } = await client.query('SELECT prospects, runs, leads FROM operator_screening_expire($1, $2)', [atMost, requestId]);
+  const row = rows[0] as { prospects: number; runs: number; leads: number } | undefined;
+  return { prospects: row?.prospects ?? 0, runs: row?.runs ?? 0, leads: row?.leads ?? 0 };
 }

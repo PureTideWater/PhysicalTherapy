@@ -253,8 +253,9 @@ describe('platform handlers', () => {
     expect(lines.at(-1)).toMatchObject({ job_id: JOB, screening_run_id: JOB });
   });
 
-  it('expires screenings 1,000 at a time until a batch takes fewer', async () => {
+  it('expires screenings and kept summaries 1,000 at a time until a batch takes fewer of both', async () => {
     const batches = [1000, 1000, 7];
+    const leadBatches = [3, 1000, 1000, 0];
     const calls: unknown[][] = [];
     const pool = {
       connect: () =>
@@ -262,7 +263,7 @@ describe('platform handlers', () => {
           query: (text: string, values?: unknown[]) => {
             if (text.includes('operator_screening_expire')) {
               calls.push(values ?? []);
-              return Promise.resolve({ rows: [{ prospects: batches.shift() ?? 0, runs: 1 }] });
+              return Promise.resolve({ rows: [{ prospects: batches.shift() ?? 0, runs: 1, leads: leadBatches.shift() ?? 0 }] });
             }
             return Promise.resolve({ rows: [] });
           },
@@ -273,6 +274,7 @@ describe('platform handlers', () => {
     const { lines, logger } = capture();
     await handlers.screening_expiry({}, { jobId: JOB, logger });
     expect(calls).toEqual([
+      [1000, JOB],
       [1000, JOB],
       [1000, JOB],
       [1000, JOB],

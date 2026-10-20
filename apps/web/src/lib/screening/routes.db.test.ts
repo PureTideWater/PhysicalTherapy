@@ -223,7 +223,21 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
           left_out_claim_lines: 0,
           left_out_allowed_cents: 0,
         },
-        prospect: { practice_name: 'Synthetic Therapy Group', state: 'MN', zip: '00011', contact_email: email },
+        prospect: {
+          practice_name: 'Synthetic Therapy Group',
+          state: 'MN',
+          zip: '00011',
+          contact_email: email,
+          // No attribution, consent or terms in this request.
+          source: null,
+          utm_source: null,
+          utm_medium: null,
+          utm_campaign: null,
+          paid_click: null,
+          referring_firm: null,
+          followup_consent_sha256: null,
+          screening_terms_sha256: null,
+        },
         runs: 0,
       },
     ]);
@@ -443,13 +457,15 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
       // Not even a refusal: an upload with a member-ID column, posted directly while the page hides the form.
       const refused = submitInput({ contactEmail: 'closed.probe@clinic-closed.synthetic.test', headers: ['Member ID', ...SCREENING_HEADERS] });
       expect(issuesOf(await closed.call(screeningSubmit, { input: refused }))).toEqual([{ field: 'input', message: 'screening is not open yet; try again later' }]);
-      for (const table of ['screening_prospect', 'screening_upload', 'screening_run']) {
+      for (const table of ['screening_prospect', 'screening_upload', 'screening_run', 'screening_outcome']) {
         expect((await closed.owner.query(`SELECT count(*)::int AS n FROM ${table}`)).rows, table).toEqual([{ n: 0 }]);
       }
       expect((await closed.owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action LIKE 'screening_%'")).rows).toEqual([{ n: 0 }]);
       // The definer function refuses it too, whoever calls it.
       await expect(
-        closed.owner.query("SELECT reject_screening_upload('SYNTHETIC', 'MN', '00011', 'closed.probe@clinic-closed.synthetic.test', 1, '[{\"code\":\"no_rows\"}]', 'test')"),
+        closed.owner.query(
+          "SELECT reject_screening_upload('SYNTHETIC', 'MN', '00011', 'closed.probe@clinic-closed.synthetic.test', 1, '[{\"code\":\"no_rows\"}]', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'test')",
+        ),
       ).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
     } finally {
       await closed.close();

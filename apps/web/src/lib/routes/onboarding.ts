@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import { ESIGN_ROLE, PROSPECT_BILLING_ARRANGEMENTS, type ProspectBillingArrangement } from '@tp/db/runtime';
+import { ESIGN_ROLE, PROSPECT_BILLING_ARRANGEMENTS, PROSPECT_SOURCES, type ProspectBillingArrangement, type ProspectSource } from '@tp/db/runtime';
 import { textPhiFindings } from '@tp/observability';
 import { z } from 'zod';
 
 import { ESIGN_SIGNATURE_HEADER, ESignatureError } from '../agreements/esign';
+import { attributionValues, readAttribution } from '../http/attribution';
 import { publicRoute, selfRoute } from '../http/invoke';
 import { InputError, type MutationResult } from '../http/route';
 import { emailAddress, opaqueId, optionalText, requiredText } from './schemas';
@@ -15,7 +16,10 @@ import { emailAddress, opaqueId, optionalText, requiredText } from './schemas';
  * - The audit request (/request-audit): public, no PHI by design ("name, organization, locations, payers, billing
  *   arrangement"), each text screened for identifier shapes before it is kept, counted per address against the
  *   public form's rate limit, written only through submit_prospect_request(). The founder scopes it on a call; a
- *   platform administrator then creates the organization from it in the console.
+ *   platform administrator then creates the organization from it in the console. Beside it the request keeps how the
+ *   requester heard of us (a closed list, optional), a referring firm (optional, screened as the other texts are) and
+ *   the first-party attribution cookie's campaign codes and kind of paid click, read here on the server (audit #57;
+ *   src/lib/http/attribution.ts).
  * - The e-signature vendor's webhook (/api/agreements/webhook): public, verified by the vendor's signature before
  *   anything in it is read; the signed document is fetched from the vendor and hashed here; the agreement is
  *   recorded once per event by record_esigned_agreement(), by reference and SHA-256.
@@ -50,13 +54,49 @@ export const BILLING_ARRANGEMENT_LABELS: Readonly<Record<ProspectBillingArrangem
   other: 'Something else',
 };
 
+/** "How did you hear about us?", as the screening and the audit request offer it (the founder's ruling of 2026-10-20, decision 8). */
+export const PROSPECT_SOURCE_LABELS: Readonly<Record<ProspectSource, string>> = {
+  search: 'A search engine',
+  billing_firm: 'My billing firm',
+  colleague: 'A colleague or another practice',
+  association: 'A professional association (APTA, AOTA, ASHA or a state chapter)',
+  event: 'A conference, webinar or event',
+  social: 'LinkedIn or other social media',
+  paidwhole_email: 'An email from PaidWhole',
+  article: 'An article, newsletter or podcast',
+  other: 'Something else',
+};
+
+/** The select's options: blank (no answer) first, then the list in its order. */
+export const PROSPECT_SOURCE_OPTIONS: readonly { readonly value: string; readonly label: string }[] = [
+  { value: '', label: 'Choose one (optional)' },
+  ...PROSPECT_SOURCES.map((value) => ({ value, label: PROSPECT_SOURCE_LABELS[value] })),
+];
+
+/** The referring firm as the form sent it: blank is none; at most 200 characters, and no identifier shapes. */
+function referringFirm(text: string | undefined): string | null {
+  const value = (text ?? '').trim().replace(/\s+/g, ' ');
+  if (value === '') {
+    return null;
+  }
+  if (value.length > 200) {
+    throw new InputError([{ field: 'referringFirm', message: 'the firm’s name, at most 200 characters' }]);
+  }
+  return screened('referringFirm', value);
+}
+
 export const requestAuditPage = publicRoute({
   id: 'public.request_audit_page',
   kind: 'page',
   path: '/request-audit',
   phi: false,
   params: z.object({ sent: optionalText(z.literal('1')) }),
-  handle: ({ params }) => Promise.resolve({ sent: params.sent !== undefined, arrangements: PROSPECT_BILLING_ARRANGEMENTS.map((value) => ({ value, label: BILLING_ARRANGEMENT_LABELS[value] })) }),
+  handle: ({ params }) =>
+    Promise.resolve({
+      sent: params.sent !== undefined,
+      arrangements: PROSPECT_BILLING_ARRANGEMENTS.map((value) => ({ value, label: BILLING_ARRANGEMENT_LABELS[value] })),
+      sources: PROSPECT_SOURCE_OPTIONS,
+    }),
 });
 
 export const requestAudit = publicRoute({
@@ -73,14 +113,28 @@ export const requestAudit = publicRoute({
     locations: z.coerce.number({ message: 'a whole number' }).int('a whole number').min(1, 'at least 1').max(1000, 'at most 1,000'),
     payers: payerList,
     billingArrangement: z.enum(PROSPECT_BILLING_ARRANGEMENTS, { message: 'choose how you bill' }),
+    // Optional: blank is no answer.
+    heardFrom: z.preprocess((value) => (value === '' ? undefined : value), z.enum(PROSPECT_SOURCES, { message: 'choose one of the listed answers, or leave it blank' }).optional()),
+    referringFirm: z.string().max(400, 'at most 200 characters').optional(),
   }),
-  handle: async ({ input, services }): Promise<MutationResult> => {
+  handle: async ({ input, services, request }): Promise<MutationResult> => {
     const contact = screened('contactName', input.contactName);
     const organization = screened('organizationName', input.organizationName);
     const payers = input.payers.map((name) => screened('payers', name));
+    const firm = referringFirm(input.referringFirm);
     const client = await services.pool.connect();
     try {
-      await client.query('SELECT submit_prospect_request($1, $2, $3, $4, $5, $6)', [contact, input.contactEmail, organization, input.locations, payers, input.billingArrangement]);
+      await client.query('SELECT submit_prospect_request($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)', [
+        contact,
+        input.contactEmail,
+        organization,
+        input.locations,
+        payers,
+        input.billingArrangement,
+        input.heardFrom ?? null,
+        ...attributionValues(readAttribution(request.cookies)),
+        firm,
+      ]);
     } finally {
       client.release();
     }

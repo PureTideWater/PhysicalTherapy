@@ -96,7 +96,7 @@ function practiceName(): string {
 
 async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string; readonly practice?: string } = {}): Promise<string> {
   const rows = options.rows ?? ROWS;
-  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS id', [
+  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS id', [
     options.practice ?? practiceName(),
     'MN',
     options.zip ?? '00011',
@@ -112,6 +112,15 @@ async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: 
     0,
     0,
     '0',
+    // No attribution, consent or terms.
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
     `test-${randomUUID()}`,
   ]);
   return created?.id ?? '';
@@ -574,8 +583,12 @@ describe('SCR-03: a screening expires 30 days after its upload', () => {
     expect((await owner.query("SELECT request_id FROM audit_event WHERE action = 'screening_expired' AND object_id = $1", [prospectId])).rows).toEqual([{ request_id: jobId }]);
     expect((await owner.query("SELECT action FROM audit_event WHERE action = 'screening_converted' AND object_id = $1", [request?.id])).rows).toHaveLength(1);
     expect((await owner.query('SELECT count(*)::int AS n FROM prospect_request WHERE id = $1', [request?.id])).rows).toEqual([{ n: 1 }]);
+    // The converted screening's summary is kept with its request for 12 months, and every outcome outlives its
+    // screening, unlinked (the founder's rulings of 2026-10-20).
+    expect((await owner.query('SELECT upload_id FROM screening_lead WHERE prospect_request_id = $1', [request?.id])).rows).toEqual([{ upload_id: null }]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM screening_outcome WHERE upload_id IS NULL AND stage = 'priced' AND converted")).rows[0]?.n).toBeGreaterThanOrEqual(1);
     // Run again, it finds nothing more.
-    expect(await expireScreenings({ operator: admin, jobId: randomUUID() })).toEqual({ prospects: 0, runs: 0 });
+    expect(await expireScreenings({ operator: admin, jobId: randomUUID() })).toEqual({ prospects: 0, runs: 0, leads: 0 });
   });
 });
 

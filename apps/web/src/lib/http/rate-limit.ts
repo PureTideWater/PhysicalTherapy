@@ -15,9 +15,9 @@ import type { Sealer } from '../auth/seal';
  * them, low enough that guessing and scraping stop within a window.
  */
 
-export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook' | 'screening';
+export type RateBucket = 'sign_in' | 'mfa' | 'mutation' | 'upload' | 'export' | 'public_form' | 'webhook' | 'screening' | 'screening_signal';
 
-export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook', 'screening'];
+export const RATE_BUCKETS: readonly RateBucket[] = ['sign_in', 'mfa', 'mutation', 'upload', 'export', 'public_form', 'webhook', 'screening', 'screening_signal'];
 
 export interface Limit {
   readonly hits: number;
@@ -48,6 +48,9 @@ export const RATE_LIMITS: Readonly<Record<RateBucket, BucketLimits>> = {
   // address and the whole address for a free-mail one (src/lib/screening/rate.ts), so one firm's colleagues share a
   // day's screenings while gmail.com's prospects do not share one count.
   screening: { address: { hits: 10, windowSeconds: 3600 }, account: { hits: 20, windowSeconds: 86_400 } },
+  // The result page's opened signal (docs/adr/0062): one a page view, so a person's own views never meet it, and a
+  // script sending it in a loop stops within the hour.
+  screening_signal: { address: { hits: 120, windowSeconds: 3600 } },
 };
 
 export interface RateSubjects {

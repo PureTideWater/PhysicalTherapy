@@ -206,8 +206,8 @@ describe('every registered route', () => {
       expect(route.phi).toBe(false);
       // Sign-in, Stripe's and the e-signature vendor's webhooks, which their signatures authenticate (docs/adr/0050,
       // 0053), the audit request, the status page, the maintenance page, the load balancer's health check (0055), and
-      // the free screening and its result link (0062).
-      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance)$|^\/api\/health$|^\/screening(\/results\/\[resultId\])?$/);
+      // the free screening, its result link and the result page's opened signal (0062).
+      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance)$|^\/api\/health$|^\/screening(\/results\/\[resultId\])?$|^\/api\/screening\/opened$/);
     }
     if (route.method !== 'GET' || route.kind === 'action') {
       // Every POST and PUT is checked for the application's origin, but a webhook its sender signs (docs/adr/0053).

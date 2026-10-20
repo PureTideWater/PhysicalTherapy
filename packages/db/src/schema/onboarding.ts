@@ -1,4 +1,4 @@
-import { bigint, date, index, integer, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, index, integer, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { agreement, membership, organization, user } from './tenancy';
 
@@ -8,7 +8,9 @@ import { agreement, membership, organization, user } from './tenancy';
  * source of truth for who reads and writes each (row-level security, grants, the functions that are the only
  * writers of several of them); a database test checks that these columns match it.
  *
- * - prospect_request: the public audit request (PRD 5, J1), written only by submit_prospect_request().
+ * - prospect_request: the public audit request (PRD 5, J1), written only by submit_prospect_request() and
+ *   convert_screening(), with how the requester heard of us, their campaign codes and why a declined one was declined
+ *   (migration 20261104090000).
  * - invitation: one per membership of an invited user, with its seven-day expiry (J2).
  * - terms_version, terms_acceptance: the terms of use by version and each customer's acceptance.
  * - agreement_event: each e-signature webhook event, once.
@@ -27,6 +29,58 @@ export type ProspectBillingArrangement = (typeof PROSPECT_BILLING_ARRANGEMENTS)[
 export const PROSPECT_STATUSES = ['new', 'contacted', 'converted', 'declined'] as const;
 export type ProspectStatus = (typeof PROSPECT_STATUSES)[number];
 
+/*
+ * The closed lists of audit #57 (the founder's rulings of 2026-10-20; ADR 0062, Outcomes, leads and attribution). The
+ * migration (20261104090000_free_screening.sql) writes each inline in every CHECK that uses it, never through a
+ * validator function (the application role updates prospect_request directly; ADR 0053), and a database test holds
+ * each list here equal to the literals pg_get_constraintdef prints.
+ */
+
+/** How a prospect heard of PaidWhole, as the screening and the audit request ask it (optional). */
+export const PROSPECT_SOURCES = ['search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other'] as const;
+export type ProspectSource = (typeof PROSPECT_SOURCES)[number];
+
+/**
+ * Why a declined request was declined, required on the console's decline. not_recorded is the reason a request
+ * declined before the list, or by the previous image, records; it is never offered.
+ */
+/** The reasons the console offers (decision 9): every one but not_recorded. */
+export const OFFERED_DECLINED_REASONS = [
+  'no_response',
+  'not_now',
+  'price',
+  'too_little_to_recover',
+  'chose_other',
+  'doing_it_themselves',
+  'data_unavailable',
+  'compliance_declined',
+  'not_a_fit',
+  'not_a_prospect',
+  'other',
+] as const;
+export const PROSPECT_DECLINED_REASONS = [...OFFERED_DECLINED_REASONS, 'not_recorded'] as const;
+export type ProspectDeclinedReason = (typeof PROSPECT_DECLINED_REASONS)[number];
+
+/** The channel an outcome counts, computed by the database (marketing_channel()) from the campaign medium and the kind of paid click. */
+export const MARKETING_CHANNELS = ['none', 'email', 'paid_search', 'paid_social', 'social', 'partner', 'event', 'content', 'other'] as const;
+export type MarketingChannel = (typeof MARKETING_CHANNELS)[number];
+
+/** The kind of paid click a landing URL carried, from the presence of a click-ID parameter (never its value). */
+export const PAID_CLICKS = ['paid_search', 'paid_social'] as const;
+export type PaidClick = (typeof PAID_CLICKS)[number];
+
+/** A count as an outcome keeps it (screening_count_band()): none (no count or zero), then up to 100, 1,000, 10,000, 50,000, and more. */
+export const SCREENING_COUNT_BANDS = ['none', '1_100', '101_1k', '1k_10k', '10k_50k', 'over_50k'] as const;
+export type ScreeningCountBand = (typeof SCREENING_COUNT_BANDS)[number];
+
+/** A sum of dollars as an outcome keeps it (screening_difference_band()): none, then under $1,000, $10,000, $50,000, $250,000, and more. */
+export const SCREENING_DIFFERENCE_BANDS = ['none', 'under_1k', '1k_to_10k', '10k_to_50k', '50k_to_250k', '250k_or_more'] as const;
+export type ScreeningDifferenceBand = (typeof SCREENING_DIFFERENCE_BANDS)[number];
+
+/** How soon a result was first opened (screening_open_band()), by UTC calendar days from the upload. */
+export const SCREENING_OPEN_BANDS = ['same_day', '1_2_days', '3_7_days', '8_30_days'] as const;
+export type ScreeningOpenBand = (typeof SCREENING_OPEN_BANDS)[number];
+
 export const prospectRequest = pgTable(
   'prospect_request',
   {
@@ -43,6 +97,19 @@ export const prospectRequest = pgTable(
     reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** How the requester heard of PaidWhole (PROSPECT_SOURCES), or none. */
+    source: text('source', { enum: PROSPECT_SOURCES }),
+    /** The first-party attribution cookie's campaign codes, normalised and shape-checked. */
+    utmSource: text('utm_source'),
+    utmMedium: text('utm_medium'),
+    utmCampaign: text('utm_campaign'),
+    /** The kind of paid click the landing URL carried (never the click ID). */
+    paidClick: text('paid_click', { enum: PAID_CLICKS }),
+    referringFirm: text('referring_firm'),
+    /** The request came from a screening's result (convert_screening()). */
+    fromScreening: boolean('from_screening').notNull().default(false),
+    /** Why it was declined: set exactly when the status is declined. */
+    declinedReason: text('declined_reason', { enum: PROSPECT_DECLINED_REASONS }),
   },
   (table) => [index('prospect_request_by_status').on(table.status, table.createdAt.desc())],
 );

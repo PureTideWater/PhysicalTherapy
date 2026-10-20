@@ -223,7 +223,7 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
     },
     screening_expiry: async (_payload, context) => {
       const result = await expireScreenings({ operator: dependencies.operator, jobId: context.jobId });
-      if (result.prospects > 0) {
+      if (result.prospects + result.leads > 0) {
         context.logger.info('screening expiry deleted expired screenings', { job_id: context.jobId });
       }
     },

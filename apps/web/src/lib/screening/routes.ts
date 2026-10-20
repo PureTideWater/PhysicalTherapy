@@ -1,4 +1,4 @@
-import { PROSPECT_BILLING_ARRANGEMENTS, type ScopeClient, type ScopePool } from '@tp/db/runtime';
+import { PROSPECT_BILLING_ARRANGEMENTS, PROSPECT_SOURCES, type ProspectSource, type ScopeClient, type ScopePool } from '@tp/db/runtime';
 import { type Cents, cents } from '@tp/money';
 import { textPhiFindings } from '@tp/observability';
 import {
@@ -26,6 +26,7 @@ import {
 } from '@tp/worker/screening';
 import { z } from 'zod';
 
+import { attributionValues, readAttribution } from '../http/attribution';
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS } from '../routes/onboarding';
@@ -57,7 +58,17 @@ import { screeningRateAccount } from './rate';
  *   the reduction, and fully reduced), and where each row and group stands is the database's (screening_standing()).
  *   A result under a release since withdrawn keeps its notice and may still be converted.
  * - The conversion (/screening/results/[resultId], public action, the public form's rate limit): an audit request
- *   from the screening, an audit event that outlives the screening's expiry.
+ *   from the screening, with its attribution and from_screening, an audit event that outlives the screening's expiry;
+ *   the database keeps the screening's summary with the request for 12 months from the screening.
+ * - The opened signal (/api/screening/opened, public POST, its own rate limit): the result page's script sends it
+ *   once the page has been visible two seconds and used; the database records the first open of a complete,
+ *   unexpired result (its run, its counts-only outcome's band, its kept summary). The page's GET records nothing, so a
+ *   mail scanner opening the link counts as no open. It answers alike whatever the link.
+ * - What every submission keeps beside the file's rows (audit #57; the founder's rulings of 2026-10-20): how the
+ *   prospect heard of us (a closed list, optional), a referring firm (optional, screened for identifier shapes), and
+ *   the first-party attribution cookie's campaign codes and kind of paid click, read here on the server
+ *   (src/lib/http/attribution.ts). The database writes the counts-only outcome of every submission, refused or
+ *   accepted.
  * - The console's split (/console/screening): the contract specialist (rate_record.approve) approves the platform's
  *   default place-of-service split; a person, never a model.
  *
@@ -208,16 +219,60 @@ interface ProspectFields {
   readonly state: string;
   readonly zip: string;
   readonly contactEmail: string;
+  /** How the prospect heard of us, or null when the form left it blank. */
+  readonly heardFrom: ProspectSource | null;
+  /** The billing firm that referred the practice, or null. */
+  readonly referringFirm: string | null;
+}
+
+/** The message a form gives text that looks like an identifier, a date or a phone number. */
+export const NO_PATIENT_INFORMATION = 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number';
+
+/** How the prospect heard of us, as the form sent it: blank is none; anything off the list is an issue. */
+export function heardFromField(text: string, issues: Issue[]): ProspectSource | null {
+  const value = text.trim();
+  if (value === '') {
+    return null;
+  }
+  if (!(PROSPECT_SOURCES as readonly string[]).includes(value)) {
+    issues.push({ field: 'heardFrom', message: 'choose one of the listed answers, or leave it blank' });
+    return null;
+  }
+  return value as ProspectSource;
+}
+
+/** The referring firm as the form sent it: blank is none; at most 200 characters, and no identifier shapes. */
+export function referringFirmField(text: string, issues: Issue[]): string | null {
+  const value = text.trim().replace(/\s+/g, ' ');
+  if (value === '') {
+    return null;
+  }
+  if (value.length > 200) {
+    issues.push({ field: 'referringFirm', message: 'the firm’s name, at most 200 characters' });
+    return null;
+  }
+  if (textPhiFindings(value).length > 0) {
+    issues.push({ field: 'referringFirm', message: NO_PATIENT_INFORMATION });
+    return null;
+  }
+  return value;
 }
 
 /** The form's own fields, checked: what the prospect row needs, or the issues (no record is made for them). */
-function prospectFields(input: { readonly practiceName: string; readonly state: string; readonly zip: string; readonly contactEmail: string }): ProspectFields {
+function prospectFields(input: {
+  readonly practiceName: string;
+  readonly state: string;
+  readonly zip: string;
+  readonly contactEmail: string;
+  readonly heardFrom: string;
+  readonly referringFirm: string;
+}): ProspectFields {
   const issues: Issue[] = [];
   const practiceName = input.practiceName.trim();
   if (practiceName === '' || practiceName.length > 200) {
     issues.push({ field: 'practiceName', message: 'the practice’s name, at most 200 characters' });
   } else if (textPhiFindings(practiceName).length > 0) {
-    issues.push({ field: 'practiceName', message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number' });
+    issues.push({ field: 'practiceName', message: NO_PATIENT_INFORMATION });
   }
   const state = input.state.trim().toUpperCase();
   if (!(SCREENING_STATES as readonly string[]).includes(state)) {
@@ -231,10 +286,12 @@ function prospectFields(input: { readonly practiceName: string; readonly state: 
   if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {
     issues.push({ field: 'contactEmail', message: 'an email address: the result’s link is sent there' });
   }
+  const heardFrom = heardFromField(input.heardFrom, issues);
+  const referringFirm = referringFirmField(input.referringFirm, issues);
   if (issues.length > 0) {
     throw new InputError(issues);
   }
-  return { practiceName, state, zip, contactEmail };
+  return { practiceName, state, zip, contactEmail, heardFrom, referringFirm };
 }
 
 /** A refusal's issues: one per reason kept (at most 20), the last saying how many more there were. */
@@ -336,6 +393,9 @@ export const screeningSubmit = publicRoute({
     leftOutRows: field(12),
     leftOutClaimLines: field(12),
     leftOutAllowedCents: field(20),
+    // How the prospect heard of us (PROSPECT_SOURCES; blank is none) and a referring firm (optional).
+    heardFrom: field(32),
+    referringFirm: field(400),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
@@ -351,12 +411,25 @@ export const screeningSubmit = publicRoute({
     }
     const checked = checkUpload(headers, input.rows, rowCount, services.now());
     const prospectValues = [prospect.practiceName, prospect.state, prospect.zip, prospect.contactEmail];
+    // How the prospect heard of us, the first-party cookie's campaign codes and kind of paid click (read on the
+    // server, checked again by the database), and the referring firm. The screening terms' SHA-256 is null until their
+    // wording and checkbox land (audit #51); the follow-up consent's until PR 6e captures it.
+    const attribution = [prospect.heardFrom, ...attributionValues(readAttribution(request.cookies)), prospect.referringFirm];
+    const termsSha256 = null;
+    const consentSha256 = null;
     if ('reasons' in checked) {
       const reasons = storableRejections(checked.reasons);
       try {
         await withClient(services.pool, (client) =>
           // No hash of a refused upload: its rows can hold the very row the claim-line floor withholds.
-          client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', [...prospectValues, Math.min(rowCount, 10_000_000), JSON.stringify(reasons), request.requestId]),
+          client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)', [
+            ...prospectValues,
+            Math.min(rowCount, 10_000_000),
+            JSON.stringify(reasons),
+            ...attribution,
+            termsSha256,
+            request.requestId,
+          ]),
         );
       } catch (error) {
         if (pgError(error)?.constraint === 'screening_closed') {
@@ -375,7 +448,9 @@ export const screeningSubmit = publicRoute({
     try {
       runId = await withClient(services.pool, async (client) => {
         // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
-        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS run_id', [
+        const result = await client.query<{ run_id: string }>(
+          'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS run_id',
+          [
           ...prospectValues,
           rows.map((row) => row.procedureCode),
           rows.map((row) => row.modifiers.join(' ')),
@@ -388,8 +463,12 @@ export const screeningSubmit = publicRoute({
           leftOut.rows,
           leftOut.claimLines,
           leftOut.allowedCents.toString(),
+          ...attribution,
+          consentSha256,
+          termsSha256,
           request.requestId,
-        ]);
+          ],
+        );
         return result.rows[0]?.run_id ?? '';
       });
     } catch (error) {
@@ -760,7 +839,7 @@ export const screeningConvert = publicRoute({
     if (contactName === '' || contactName.length > 200) {
       issues.push({ field: 'contactName', message: 'your name, at most 200 characters' });
     } else if (textPhiFindings(contactName).length > 0) {
-      issues.push({ field: 'contactName', message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number' });
+      issues.push({ field: 'contactName', message: NO_PATIENT_INFORMATION });
     }
     const locations = /^[0-9]{1,4}$/.test(input.locations.trim()) ? Number(input.locations.trim()) : 0;
     if (locations < 1 || locations > 1000) {
@@ -770,7 +849,7 @@ export const screeningConvert = publicRoute({
     if (payers.length < 1 || payers.length > 50 || payers.some((name) => name.length > 120)) {
       issues.push({ field: 'payers', message: 'name 1 to 50 payers, each at most 120 characters' });
     } else if (payers.some((name) => textPhiFindings(name).length > 0)) {
-      issues.push({ field: 'payers', message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number' });
+      issues.push({ field: 'payers', message: NO_PATIENT_INFORMATION });
     }
     const arrangement = (PROSPECT_BILLING_ARRANGEMENTS as readonly string[]).includes(input.billingArrangement) ? input.billingArrangement : null;
     if (arrangement === null) {
@@ -797,6 +876,30 @@ export const screeningConvert = publicRoute({
       throw error;
     }
     return { redirect: `/screening/results/${input.resultId}?requested=1` };
+  },
+});
+
+/**
+ * The result page's signal that a person opened it (src/components/screening/opened-signal.tsx sends it once the page
+ * has been visible two seconds and used). A malformed link returns before the database; the database records the
+ * first open of a complete, unexpired result alone. The route's file answers 204 whatever happened, so the answer says
+ * nothing about the link.
+ */
+export const screeningOpened = publicRoute({
+  id: 'public.screening_opened',
+  kind: 'handler',
+  method: 'POST',
+  path: '/api/screening/opened',
+  phi: false,
+  rateLimit: 'screening_signal',
+  params: z.object({}),
+  input: z.object({ resultId: field(64) }),
+  handle: async ({ input, services }): Promise<null> => {
+    if (!SCREENING_TOKEN.test(input.resultId)) {
+      return null;
+    }
+    await withClient(services.pool, (client) => client.query('SELECT screening_result_opened($1)', [screeningTokenHash(input.resultId)]));
+    return null;
   },
 });
 
@@ -874,4 +977,4 @@ export const screeningSplitApprove = platformRoute({
   sample: { params: () => ({}), input: () => ({ settings: JSON.stringify({ '11': 'non_facility', '22': 'facility' }) }) },
 });
 
-export const SCREENING_ROUTES = [screeningPage, screeningSubmit, screeningResult, screeningConvert, screeningSplitPage, screeningSplitApprove] as const;
+export const SCREENING_ROUTES = [screeningPage, screeningSubmit, screeningResult, screeningConvert, screeningOpened, screeningSplitPage, screeningSplitApprove] as const;

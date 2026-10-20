@@ -41,22 +41,48 @@
 --   across codes. MA contracted and commercial rows are never priced (contract_required); medicaid and other rows are
 --   not screened.
 --
+-- What outlives a screening (audit #57; the founder's rulings of 2026-10-20, which amend CO-04's "results expire
+-- after 30 days"; ADR 0062, Outcomes, leads and attribution):
+-- - screening_outcome: one counts-only row for every screening, a refused one included, kept with no end date: its
+--   stage, month, how the prospect heard of us, the channel, a campaign the founder lists, bands of its row counts,
+--   whole-percent shares, an anomaly band, a dollar band, how soon it was first opened, and whether an audit was
+--   requested. Never a name, an email, a ZIP, an exact count, a date or a dollar figure; unlinked from its screening
+--   when that expires or is replaced, and then sealed.
+-- - screening_lead and screening_lead_product: the frozen summary of a converted or consenting prospect's screening,
+--   kept 12 months from the upload, one for a practice at a time (a later screening of the practice replaces it at its
+--   completion, carrying the audit request over), every claim-line sum 0 or at least 11.
+-- - marketing_campaign: the campaign codes an outcome may name, listed by the founder.
+-- - screening_prospect gains how the prospect heard of us, the attribution cookie's campaign codes and kind of paid
+--   click, a referring firm, and the SHA-256s of the follow-up consent (PR 6e captures it) and of the screening terms
+--   accepted (audit #51); screening_run gains when the result was first opened by a person.
+-- - prospect_request gains the same attribution, whether it came from a screening, and why a declined request was
+--   declined (a closed list).
+--
 -- The tables live in schema public with row-level security forced and one policy, the owner's; they have no
 -- practice_id and no phi_table_registry row, and no role but the owner reads or writes them. The application role
--- reaches them only through the SECURITY DEFINER functions below (submit, reject, read by token, convert, and the
--- console's split), the operator role (platform jobs) only through operator_screening_*(). Nothing is recorded while
--- screening is closed. Every row expires 30 days after the upload: the reads refuse it from expires_at on, and the
--- screening_expiry job deletes it; an accepted screening goes sooner when a later one of the same practice replaces
--- it (submit_screening, each an audit event, screening_replaced). A run is priced only under its pinned release while that release is published,
--- its manifest unchanged and not withdrawn; a result whose release has since been withdrawn says so. The conversion
--- to an audit request is an audit event (screening_converted) and outlives the expiry.
+-- reaches them only through the SECURITY DEFINER functions below (submit, reject, read by token, the result's opened
+-- signal, convert, withdraw, and the console's split and campaign list), the operator role (platform jobs) only
+-- through operator_screening_*(). Nothing is recorded while screening is closed. A screening's prospect, upload, run
+-- and rows expire 30 days after the upload: the reads refuse them from expires_at on, and the screening_expiry job
+-- deletes them; an accepted screening goes sooner when a later one of the same practice replaces it (submit_screening,
+-- each an audit event, screening_replaced). Its outcome stays, unlinked; a kept summary goes after 12 months (the same
+-- job), at a replacement's completion, on withdrawal, or with its audit request. A run is priced only under its pinned
+-- release while that release is published, its manifest unchanged and not withdrawn; a result whose release has
+-- since been withdrawn says so. The release is read in two parts: the record types no row's key selects, which the
+-- job holds once per release and manifest (operator_screening_release), and the five a line looks up by its own key,
+-- read per run by the keys its rows can ask for (operator_screening_run_keys, operator_screening_run_records; audit
+-- #53). The conversion to an audit request is an audit event (screening_converted) and outlives the expiry.
 --
--- Runs as tp_owner. Safe with the previous image running: yes. Added: five tables, their CHECK and trigger
--- functions, the standing a result's figures are read by (screening_standing), the definer functions and their
--- grants. Altered or removed: nothing; no existing table, function,
--- policy, CHECK or grant changes, and no DDL touches a rule, ledger or pricing table. Rollout: migrate, then the
--- new worker (it creates the screening queues), then the new web; a submission whose job cannot be sent yet stays
--- queued and the minute sweep prices it.
+-- Runs as tp_owner. Safe with the previous image running: yes. Added: nine tables, their CHECK and trigger functions,
+-- the standing a result's figures are read by (screening_standing), the bands and channel outcomes are written with,
+-- the definer functions and their grants, and a second, twelve-argument submit_prospect_request. Altered:
+-- prospect_request gains eight columns with their CHECKs (built-ins only, so the application role's direct updates
+-- need no EXECUTE), a column grant (UPDATE (declined_reason) to tp_app) and a replaced trigger function
+-- (prospect_request_fixed); its declined rows take 'not_recorded' as their reason. The previous image's review,
+-- decline and conversion meet only built-in CHECKs, its decline records 'not_recorded', and it calls the six-argument
+-- submit_prospect_request, which stays. No other existing table, function, policy, CHECK or grant changes, and no DDL
+-- touches a rule, ledger or pricing table. Rollout: migrate, then the new worker (it creates the screening queues),
+-- then the new web; a submission whose job cannot be sent yet stays queued and the minute sweep prices it.
 
 -- ---------------------------------------------------------------------------------------------------
 -- What a row may hold
@@ -119,6 +145,69 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
   SELECT lower(regexp_replace(btrim(practice), '\s+', ' ', 'g'))
 $$;
 
+-- The marketing channel a screening or request came by (MARKETING_CHANNELS), computed here from the campaign medium
+-- and the kind of paid click, never taken from a caller. A medium no list names is 'other'; with none or 'other', a
+-- paid click names the channel. Called only inside the definer functions below.
+CREATE FUNCTION marketing_channel(utm_medium text, paid_click text) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT CASE WHEN m.channel IN ('none', 'other') AND paid_click IN ('paid_search', 'paid_social') THEN paid_click ELSE m.channel END
+    FROM (SELECT CASE
+                   WHEN utm_medium IS NULL THEN 'none'
+                   WHEN utm_medium IN ('email', 'newsletter') THEN 'email'
+                   WHEN utm_medium IN ('cpc', 'ppc', 'paid_search', 'sem') THEN 'paid_search'
+                   WHEN utm_medium IN ('paid_social') THEN 'paid_social'
+                   WHEN utm_medium IN ('social', 'organic_social', 'linkedin') THEN 'social'
+                   WHEN utm_medium IN ('partner', 'referral', 'affiliate') THEN 'partner'
+                   WHEN utm_medium IN ('event', 'conference', 'webinar') THEN 'event'
+                   WHEN utm_medium IN ('content', 'blog', 'podcast', 'article') THEN 'content'
+                   ELSE 'other'
+                 END AS channel) m
+$$;
+
+-- A count as an outcome keeps it (SCREENING_COUNT_BANDS): a band, never the number. None for no count or zero.
+CREATE FUNCTION screening_count_band(n bigint) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT CASE WHEN n IS NULL OR n <= 0 THEN 'none' WHEN n <= 100 THEN '1_100' WHEN n <= 1000 THEN '101_1k'
+              WHEN n <= 10000 THEN '1k_10k' WHEN n <= 50000 THEN '10k_50k' ELSE 'over_50k' END
+$$;
+
+-- A sum of dollars as an outcome keeps it (SCREENING_DIFFERENCE_BANDS), the narrowest step $1,000: none for no sum
+-- or one of zero or less; then under $1,000, under $10,000, under $50,000, under $250,000, and $250,000 or more.
+CREATE FUNCTION screening_difference_band(gap_cents bigint) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT CASE WHEN gap_cents IS NULL OR gap_cents <= 0 THEN 'none' WHEN gap_cents < 100000 THEN 'under_1k'
+              WHEN gap_cents < 1000000 THEN '1k_to_10k' WHEN gap_cents < 5000000 THEN '10k_to_50k'
+              WHEN gap_cents < 25000000 THEN '50k_to_250k' ELSE '250k_or_more' END
+$$;
+
+-- How soon a result was first opened (SCREENING_OPEN_BANDS), by UTC calendar days from the upload; never a date.
+CREATE FUNCTION screening_open_band(uploaded timestamptz, opened timestamptz) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT CASE WHEN d.days IS NULL THEN NULL WHEN d.days <= 0 THEN 'same_day' WHEN d.days <= 2 THEN '1_2_days'
+              WHEN d.days <= 7 THEN '3_7_days' ELSE '8_30_days' END
+    FROM (SELECT (opened AT TIME ZONE 'UTC')::date - (uploaded AT TIME ZONE 'UTC')::date AS days) d
+$$;
+
+-- A refused upload's reasons as an outcome keeps them: the codes alone (screening_rejection_valid()'s list), distinct
+-- and in ascending order, at most the 13 there are; never a row, a column or a field.
+CREATE FUNCTION screening_refusal_codes_valid(codes text[]) RETURNS boolean
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT coalesce(cardinality(codes) <= 13
+     AND (cardinality(codes) = 0 OR (array_ndims(codes) = 1 AND array_lower(codes, 1) = 1))
+     AND array_position(codes, NULL) IS NULL
+     AND NOT EXISTS (SELECT 1 FROM unnest(codes) c
+                      WHERE c NOT IN ('phi_column', 'unknown_column', 'duplicate_column', 'missing_column', 'row_shape', 'invalid_value', 'band_holds_date',
+                                      'band_in_future', 'duplicate_row', 'no_rows', 'too_many_rows', 'row_count_mismatch', 'too_few_claim_lines'))
+     AND codes = ARRAY(SELECT d.c FROM (SELECT DISTINCT c FROM unnest(codes) c) d ORDER BY d.c COLLATE "C"), false)
+$$;
+
+-- The version of the result page's labels a kept summary was shown under: SCREENING_LABELS_VERSION in
+-- apps/web/src/lib/screening/labels.ts (a test holds the two equal, and the labels to their version).
+CREATE FUNCTION screening_labels_version() RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT 'screening-labels/2026-10-18'::text
+$$;
+
 -- A screening's prospect, upload and run are kept until they expire, then deleted together (screening_expiry), or
 -- until a later accepted screening of the same practice replaces them (screening_replaced). A row deleted with its
 -- parent (the cascade from its prospect or upload) was checked with that parent.
@@ -169,6 +258,25 @@ CREATE TABLE screening_prospect (
   contact_email text NOT NULL CONSTRAINT screening_prospect_contact_email
     CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&''*+/=?^_`{|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
            AND length(contact_email) <= 254 AND strpos(contact_email, '@') <= 65 AND contact_email = lower(contact_email)),
+  -- How the prospect heard of PaidWhole: one of the closed list the form offers (PROSPECT_SOURCES in
+  -- packages/db/src/schema/onboarding.ts, written inline here as in every CHECK that uses it), or none.
+  source text CONSTRAINT screening_prospect_source CHECK (source IS NULL OR source IN (
+    'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
+  -- The campaign codes of the first-party attribution cookie (pw_first_touch; apps/web/src/lib/http/attribution.ts),
+  -- normalised there and shape-checked here: codes a link carried, never a person's identifier.
+  utm_source text CONSTRAINT screening_prospect_utm_source CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  utm_medium text CONSTRAINT screening_prospect_utm_medium CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  utm_campaign text CONSTRAINT screening_prospect_utm_campaign CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  -- The kind of paid click the landing URL carried, from the presence of a click-ID parameter; never its value.
+  paid_click text CONSTRAINT screening_prospect_paid_click CHECK (paid_click IN ('paid_search', 'paid_social')),
+  -- The billing firm that referred the practice, as typed (screened for identifier shapes by the handler).
+  referring_firm text CONSTRAINT screening_prospect_referring_firm
+    CHECK (btrim(referring_firm) <> '' AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm)),
+  -- The SHA-256 of the exact follow-up consent wording the prospect ticked; null is no consent (PR 6e captures it).
+  followup_consent_sha256 text CONSTRAINT screening_prospect_followup_consent CHECK (followup_consent_sha256 ~ '^[0-9a-f]{64}$'),
+  -- The SHA-256 of the screening terms' text the prospect accepted (audit #51, the founder's ruling of 2026-10-20);
+  -- null until the terms' wording, the founder's and counsel's, and its checkbox land.
+  screening_terms_sha256 text CONSTRAINT screening_prospect_screening_terms CHECK (screening_terms_sha256 ~ '^[0-9a-f]{64}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
   CONSTRAINT screening_prospect_expiry CHECK (expires_at = created_at + interval '30 days')
@@ -268,8 +376,12 @@ CREATE TABLE screening_run (
   result_token_sha256 text UNIQUE CONSTRAINT screening_run_result_token CHECK (result_token_sha256 ~ '^[0-9a-f]{64}$'),
   converted_prospect_request_id uuid REFERENCES prospect_request (id),
   converted_at timestamptz,
+  -- When the result was first opened by a person: the result page's signal after it was visible and used
+  -- (screening_result_opened()), or the conversion; never the link's GET, which a mail scanner also makes.
+  first_opened_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL DEFAULT (now() + interval '30 days'),
+  CONSTRAINT screening_run_opened CHECK (first_opened_at IS NULL OR status = 'complete'),
   CONSTRAINT screening_run_complete CHECK (
     (status = 'complete') = (result_token_sha256 IS NOT NULL)
     AND (status = 'complete') = (completed_at IS NOT NULL)
@@ -285,8 +397,8 @@ CREATE TABLE screening_run (
 CREATE INDEX screening_run_by_status ON screening_run (status, created_at);
 
 -- A run keeps its upload, release, split, row count and dates; it moves queued to pricing (a stale run is claimed
--- again, one attempt more), pricing to complete or failed, or queued to failed; its token and its conversion are
--- each set once.
+-- again, one attempt more), pricing to complete or failed, or queued to failed; its token, its conversion and its
+-- first open are each set once (a complete run's conversion and first open in the same update or apart).
 CREATE FUNCTION screening_run_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF (NEW.id, NEW.upload_id, NEW.release_no, NEW.release_manifest_sha256, NEW.place_of_service_split_id, NEW.row_count, NEW.created_at, NEW.expires_at)
@@ -301,16 +413,23 @@ BEGIN
     IF NEW.attempts <> OLD.attempts OR NEW.started_at IS DISTINCT FROM OLD.started_at THEN
       RAISE EXCEPTION 'a screening run ends on the attempt that priced it' USING ERRCODE = 'check_violation';
     END IF;
-    IF NEW.converted_at IS NOT NULL THEN
-      RAISE EXCEPTION 'a screening converts once it is complete' USING ERRCODE = 'check_violation';
+    IF NEW.converted_at IS NOT NULL OR NEW.first_opened_at IS NOT NULL THEN
+      RAISE EXCEPTION 'a screening is opened and converts once it is complete' USING ERRCODE = 'check_violation';
     END IF;
   ELSIF OLD.status = 'complete' AND NEW.status = 'complete' THEN
-    IF (NEW.attempts, NEW.started_at, NEW.completed_at, NEW.engine_version, NEW.result_token_sha256)
-       IS DISTINCT FROM (OLD.attempts, OLD.started_at, OLD.completed_at, OLD.engine_version, OLD.result_token_sha256) THEN
+    IF (NEW.attempts, NEW.started_at, NEW.completed_at, NEW.engine_version, NEW.result_token_sha256, NEW.failed_at, NEW.failure_code)
+       IS DISTINCT FROM (OLD.attempts, OLD.started_at, OLD.completed_at, OLD.engine_version, OLD.result_token_sha256, OLD.failed_at, OLD.failure_code) THEN
       RAISE EXCEPTION 'a complete screening keeps its result and its link' USING ERRCODE = 'check_violation';
     END IF;
-    IF OLD.converted_at IS NOT NULL OR NEW.converted_at IS NULL THEN
+    IF (NEW.converted_prospect_request_id, NEW.converted_at) IS DISTINCT FROM (OLD.converted_prospect_request_id, OLD.converted_at)
+       AND (OLD.converted_at IS NOT NULL OR NEW.converted_at IS NULL) THEN
       RAISE EXCEPTION 'a screening converts to an audit request once' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_converted_once';
+    END IF;
+    IF NEW.first_opened_at IS DISTINCT FROM OLD.first_opened_at AND (OLD.first_opened_at IS NOT NULL OR NEW.first_opened_at IS NULL) THEN
+      RAISE EXCEPTION 'a screening result is first opened once' USING ERRCODE = 'check_violation';
+    END IF;
+    IF (NEW.converted_prospect_request_id, NEW.converted_at, NEW.first_opened_at) IS NOT DISTINCT FROM (OLD.converted_prospect_request_id, OLD.converted_at, OLD.first_opened_at) THEN
+      RAISE EXCEPTION 'a complete screening changes only by its conversion or its first open' USING ERRCODE = 'check_violation';
     END IF;
   ELSE
     RAISE EXCEPTION 'a screening run moves queued, pricing, then complete or failed' USING ERRCODE = 'check_violation';
@@ -437,6 +556,279 @@ CREATE TRIGGER screening_upload_no_truncate BEFORE TRUNCATE ON screening_upload 
 CREATE TRIGGER screening_run_no_truncate BEFORE TRUNCATE ON screening_run FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
 CREATE TRIGGER screening_result_no_truncate BEFORE TRUNCATE ON screening_result FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
 
+-- ---------------------------------------------------------------------------------------------------
+-- What outlives a screening (audit #57, the founder's rulings of 2026-10-20): the counts-only outcome of every
+-- screening, the frozen summary a converted or consenting prospect's screening keeps for 12 months, and the
+-- campaign codes the founder lists
+-- ---------------------------------------------------------------------------------------------------
+
+-- The campaign codes an outcome may name: campaigns the founder sends to many people, so a one-off code never
+-- reaches an outcome. A listed code stays listed (no update, delete or truncate); listing one later does not
+-- reclassify the outcomes that named it 'other'.
+CREATE TABLE marketing_campaign (
+  code text PRIMARY KEY CONSTRAINT marketing_campaign_code CHECK (code ~ '^[a-z0-9][a-z0-9._-]{0,63}$' AND code <> 'other'),
+  label text NOT NULL CONSTRAINT marketing_campaign_label CHECK (btrim(label) <> '' AND length(label) <= 120 AND label = btrim(label)),
+  added_by uuid NOT NULL REFERENCES "user" (id),
+  added_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TRIGGER marketing_campaign_fixed BEFORE UPDATE OR DELETE ON marketing_campaign FOR EACH ROW EXECUTE FUNCTION reject_change();
+CREATE TRIGGER marketing_campaign_no_truncate BEFORE TRUNCATE ON marketing_campaign FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+
+-- One row for every screening, a refused one included, written by the definer functions alone and kept with no end
+-- date (the founder's ruling of 2026-10-20, Q6): its stage, the month, how the prospect heard of us, the channel, a
+-- listed campaign, bands of its row counts, whole-percent shares of an allowed total it never holds, an anomaly band,
+-- a dollar band whose narrowest step is $1,000, how soon it was first opened, whether an audit was requested, whether
+-- a refused upload was followed by an accepted one, and the release. Never a name, an email, a ZIP, an exact count, a
+-- date or a dollar figure, so the difference of two outcomes is never a cell of claim lines. It links to its
+-- screening's upload while that is kept and is unlinked (upload_id null) when the screening expires or is replaced;
+-- an unlinked outcome is sealed. No audit event names one.
+CREATE TABLE screening_outcome (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The live screening's upload while it is kept; null once it expires or is replaced.
+  upload_id uuid UNIQUE REFERENCES screening_upload (id) ON DELETE SET NULL,
+  screened_month text NOT NULL CONSTRAINT screening_outcome_month CHECK (screened_month ~ '^20[0-9]{2}-(0[1-9]|1[0-2])$'),
+  stage text NOT NULL CONSTRAINT screening_outcome_stage CHECK (stage IN ('refused', 'accepted', 'priced', 'failed')),
+  source text CONSTRAINT screening_outcome_source CHECK (source IS NULL OR source IN (
+    'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
+  channel text NOT NULL CONSTRAINT screening_outcome_channel CHECK (channel IN ('none', 'email', 'paid_search', 'paid_social', 'social', 'partner', 'event', 'content', 'other')),
+  -- A code from marketing_campaign when it is listed there at submission; 'other' when not; null with no campaign code.
+  campaign text CONSTRAINT screening_outcome_campaign CHECK (campaign IS NULL OR campaign = 'other' OR campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  consented boolean NOT NULL DEFAULT false,
+  row_band text NOT NULL CONSTRAINT screening_outcome_row_band CHECK (row_band IN ('none', '1_100', '101_1k', '1k_10k', '10k_50k', 'over_50k')),
+  left_out_band text NOT NULL DEFAULT 'none' CONSTRAINT screening_outcome_left_out_band CHECK (left_out_band IN ('none', '1_100', '101_1k', '1k_10k', '10k_50k')),
+  refusal_codes text[] NOT NULL DEFAULT '{}' CONSTRAINT screening_outcome_refusal_codes CHECK (screening_refusal_codes_valid(refusal_codes)),
+  -- A refused upload the practice followed with an accepted one.
+  retried boolean NOT NULL DEFAULT false,
+  release_no integer CONSTRAINT screening_outcome_release CHECK (release_no > 0),
+  engine_version text CONSTRAINT screening_outcome_engine CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'),
+  -- Whole percents (floored) of the file's allowed total: priced, cannot be priced without a contract, could not be
+  -- priced (unpriced or rates change in the quarter), and not screened.
+  priced_share_pct smallint CONSTRAINT screening_outcome_priced_share CHECK (priced_share_pct BETWEEN 0 AND 100),
+  contract_share_pct smallint CONSTRAINT screening_outcome_contract_share CHECK (contract_share_pct BETWEEN 0 AND 100),
+  could_not_price_share_pct smallint CONSTRAINT screening_outcome_could_not_price_share CHECK (could_not_price_share_pct BETWEEN 0 AND 100),
+  not_screened_share_pct smallint CONSTRAINT screening_outcome_not_screened_share CHECK (not_screened_share_pct BETWEEN 0 AND 100),
+  anomaly_band text CONSTRAINT screening_outcome_anomaly_band CHECK (anomaly_band IN ('none', '1_100', '101_1k', '1k_10k', '10k_50k')),
+  anomaly_difference_band text CONSTRAINT screening_outcome_difference_band
+    CHECK (anomaly_difference_band IN ('none', 'under_1k', '1k_to_10k', '10k_to_50k', '50k_to_250k', '250k_or_more')),
+  first_open_band text CONSTRAINT screening_outcome_open_band CHECK (first_open_band IN ('same_day', '1_2_days', '3_7_days', '8_30_days')),
+  converted boolean NOT NULL DEFAULT false,
+  superseded boolean NOT NULL DEFAULT false,
+  CONSTRAINT screening_outcome_refused CHECK ((stage = 'refused') = (cardinality(refusal_codes) > 0)
+    AND (stage <> 'refused' OR (release_no IS NULL AND left_out_band = 'none' AND NOT consented AND NOT superseded))
+    AND (NOT retried OR stage = 'refused')),
+  CONSTRAINT screening_outcome_pinned CHECK ((stage = 'refused') = (release_no IS NULL)),
+  CONSTRAINT screening_outcome_accepted_rows CHECK (stage = 'refused' OR row_band NOT IN ('none', 'over_50k')),
+  CONSTRAINT screening_outcome_priced CHECK (
+    (stage = 'priced') = (engine_version IS NOT NULL) AND (stage = 'priced') = (priced_share_pct IS NOT NULL)
+    AND (stage = 'priced') = (contract_share_pct IS NOT NULL) AND (stage = 'priced') = (could_not_price_share_pct IS NOT NULL)
+    AND (stage = 'priced') = (not_screened_share_pct IS NOT NULL) AND (stage = 'priced') = (anomaly_band IS NOT NULL)
+    AND (stage = 'priced') = (anomaly_difference_band IS NOT NULL)),
+  -- Each share floors, so the four sum to 97..100; all zero only when the file's allowed total is zero.
+  CONSTRAINT screening_outcome_shares CHECK (stage <> 'priced'
+    OR (priced_share_pct + contract_share_pct + could_not_price_share_pct + not_screened_share_pct BETWEEN 97 AND 100)
+    OR (priced_share_pct + contract_share_pct + could_not_price_share_pct + not_screened_share_pct = 0)),
+  CONSTRAINT screening_outcome_band CHECK (stage <> 'priced' OR (anomaly_band = 'none') = (anomaly_difference_band = 'none')),
+  CONSTRAINT screening_outcome_opened CHECK (first_open_band IS NULL OR stage = 'priced'),
+  CONSTRAINT screening_outcome_converted CHECK (NOT converted OR stage = 'priced')
+);
+CREATE INDEX screening_outcome_by_cohort ON screening_outcome (screened_month, source, channel, campaign);
+
+-- An outcome keeps what it was written with; its link only goes (once); its stage moves only from accepted to priced
+-- or failed, its figures set on the move to priced; its first open band is set once; its flags go from false to
+-- true once; and once unlinked it is sealed.
+CREATE FUNCTION screening_outcome_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF OLD.upload_id IS NULL THEN
+    RAISE EXCEPTION 'an outcome no longer linked to its screening is sealed' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_sealed';
+  END IF;
+  IF (NEW.id, NEW.screened_month, NEW.source, NEW.channel, NEW.campaign, NEW.consented, NEW.row_band, NEW.left_out_band, NEW.refusal_codes, NEW.release_no)
+     IS DISTINCT FROM (OLD.id, OLD.screened_month, OLD.source, OLD.channel, OLD.campaign, OLD.consented, OLD.row_band, OLD.left_out_band, OLD.refusal_codes, OLD.release_no) THEN
+    RAISE EXCEPTION 'an outcome keeps what it was written with' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  IF NEW.upload_id IS DISTINCT FROM OLD.upload_id AND NEW.upload_id IS NOT NULL THEN
+    RAISE EXCEPTION 'an outcome''s link to its screening only goes' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  IF NEW.stage IS DISTINCT FROM OLD.stage AND NOT (OLD.stage = 'accepted' AND NEW.stage IN ('priced', 'failed')) THEN
+    RAISE EXCEPTION 'an outcome moves from accepted to priced or failed' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  IF (NEW.engine_version, NEW.priced_share_pct, NEW.contract_share_pct, NEW.could_not_price_share_pct, NEW.not_screened_share_pct, NEW.anomaly_band, NEW.anomaly_difference_band)
+     IS DISTINCT FROM (OLD.engine_version, OLD.priced_share_pct, OLD.contract_share_pct, OLD.could_not_price_share_pct, OLD.not_screened_share_pct, OLD.anomaly_band, OLD.anomaly_difference_band)
+     AND NOT (OLD.stage = 'accepted' AND NEW.stage = 'priced') THEN
+    RAISE EXCEPTION 'an outcome''s figures are set once, as it is priced' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  IF NEW.first_open_band IS DISTINCT FROM OLD.first_open_band AND OLD.first_open_band IS NOT NULL THEN
+    RAISE EXCEPTION 'an outcome''s first open is set once' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  IF (OLD.converted AND NOT NEW.converted) OR (OLD.superseded AND NOT NEW.superseded) OR (OLD.retried AND NOT NEW.retried) THEN
+    RAISE EXCEPTION 'an outcome''s flags are set once' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_outcome_fixed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER screening_outcome_rules BEFORE UPDATE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION screening_outcome_rules();
+CREATE TRIGGER screening_outcome_kept BEFORE DELETE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION reject_change();
+CREATE TRIGGER screening_outcome_no_truncate BEFORE TRUNCATE ON screening_outcome FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+
+-- The frozen summary of a converted or consenting prospect's screening, kept 12 months from the upload (the
+-- founder's ruling of 2026-10-20, Q4), one for a practice at a time: the practice's name, state, ZIP and contact
+-- address with how they heard of us, the release, the labels the result was shown under, and sums over the stored
+-- rows (each of at least 11 claim lines, so every claim-line sum is 0 or at least 11); the left-out claim lines and
+-- allowed amount only at 11 or more. A later screening of the practice replaces it at that screening's completion
+-- and carries its audit request over. No patient: no phi_table_registry row; a business contact's personal data,
+-- under the privacy notice.
+CREATE TABLE screening_lead (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- The live screening, while it is kept.
+  upload_id uuid UNIQUE REFERENCES screening_upload (id) ON DELETE SET NULL,
+  practice_name text NOT NULL CONSTRAINT screening_lead_practice_name
+    CHECK (btrim(practice_name) <> '' AND length(practice_name) <= 200 AND practice_name = btrim(practice_name)),
+  state text NOT NULL CONSTRAINT screening_lead_state CHECK (state IN (
+    'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+    'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+    'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY', 'DC', 'PR', 'VI', 'GU', 'AS', 'MP')),
+  zip text NOT NULL CONSTRAINT screening_lead_zip CHECK (zip ~ '^[0-9]{5}$'),
+  contact_email text NOT NULL CONSTRAINT screening_lead_contact_email
+    CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_`{|}~-]+(\.[a-z0-9!#$%&''*+/=?^_`{|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'
+           AND length(contact_email) <= 254 AND strpos(contact_email, '@') <= 65 AND contact_email = lower(contact_email)),
+  source text CONSTRAINT screening_lead_source CHECK (source IS NULL OR source IN (
+    'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
+  utm_source text CONSTRAINT screening_lead_utm_source CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  utm_medium text CONSTRAINT screening_lead_utm_medium CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  utm_campaign text CONSTRAINT screening_lead_utm_campaign CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  paid_click text CONSTRAINT screening_lead_paid_click CHECK (paid_click IN ('paid_search', 'paid_social')),
+  referring_firm text CONSTRAINT screening_lead_referring_firm
+    CHECK (btrim(referring_firm) <> '' AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm)),
+  consent_sha256 text CONSTRAINT screening_lead_consent CHECK (consent_sha256 ~ '^[0-9a-f]{64}$'),
+  -- The withdrawal (unsubscribe) link's token, stored only as its SHA-256; consent-based leads only (PR 6e).
+  withdrawal_token_sha256 text UNIQUE CONSTRAINT screening_lead_withdrawal_token CHECK (withdrawal_token_sha256 ~ '^[0-9a-f]{64}$'),
+  -- The reminder before deletion (PR 6e).
+  reminder_sent_at timestamptz,
+  prospect_request_id uuid UNIQUE REFERENCES prospect_request (id) ON DELETE CASCADE,
+  release_no integer NOT NULL CONSTRAINT screening_lead_release CHECK (release_no > 0),
+  release_manifest_sha256 text NOT NULL CONSTRAINT screening_lead_release_manifest CHECK (release_manifest_sha256 ~ '^[0-9a-f]{64}$'),
+  engine_version text NOT NULL CONSTRAINT screening_lead_engine CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'),
+  labels_version text NOT NULL CONSTRAINT screening_lead_labels CHECK (labels_version ~ '^screening-labels/20[0-9]{2}-[0-9]{2}-[0-9]{2}$'),
+  screened_at timestamptz NOT NULL,
+  result_first_opened_at timestamptz,
+  row_count integer NOT NULL CONSTRAINT screening_lead_row_count CHECK (row_count BETWEEN 1 AND 50000),
+  claim_lines bigint NOT NULL CONSTRAINT screening_lead_claim_lines CHECK (claim_lines >= 11),
+  observed_cents bigint NOT NULL CONSTRAINT screening_lead_observed CHECK (observed_cents >= 0),
+  anomaly_rows integer NOT NULL CONSTRAINT screening_lead_anomaly_rows CHECK (anomaly_rows BETWEEN 0 AND 50000),
+  left_out_rows integer NOT NULL CONSTRAINT screening_lead_left_out_rows CHECK (left_out_rows BETWEEN 0 AND 50000),
+  -- Kept only at 11 or more; else null.
+  left_out_claim_lines integer CONSTRAINT screening_lead_left_out_claim_lines CHECK (left_out_claim_lines >= 11),
+  left_out_allowed_cents bigint CONSTRAINT screening_lead_left_out_allowed CHECK (left_out_allowed_cents >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  CONSTRAINT screening_lead_basis CHECK (consent_sha256 IS NOT NULL OR prospect_request_id IS NOT NULL),
+  CONSTRAINT screening_lead_consent_only CHECK (consent_sha256 IS NOT NULL OR (withdrawal_token_sha256 IS NULL AND reminder_sent_at IS NULL)),
+  CONSTRAINT screening_lead_left_out CHECK ((left_out_claim_lines IS NULL) = (left_out_allowed_cents IS NULL)
+    AND (left_out_claim_lines IS NULL OR left_out_rows > 0)),
+  -- Frozen at 12 months; a withdrawal moves it to now() just before the lead is deleted.
+  CONSTRAINT screening_lead_expiry CHECK (expires_at > screened_at AND expires_at <= screened_at + interval '12 months')
+);
+CREATE INDEX screening_lead_by_expiry ON screening_lead (expires_at);
+CREATE INDEX screening_lead_by_contact ON screening_lead (contact_email);
+CREATE INDEX screening_lead_by_practice ON screening_lead (zip, screening_practice_key(practice_name));
+
+-- The same sums by payer product, each claim-line sum 0 or at least 11. The differences are not stored: a read
+-- computes them as expected or lowest less observed.
+CREATE TABLE screening_lead_product (
+  lead_id uuid NOT NULL REFERENCES screening_lead (id) ON DELETE CASCADE,
+  payer_product text NOT NULL CONSTRAINT screening_lead_product_payer_product
+    CHECK (payer_product IN ('medicare_ffs', 'ma_noncontracted', 'ma_contracted', 'commercial', 'medicaid', 'other')),
+  row_count integer NOT NULL CONSTRAINT screening_lead_product_row_count CHECK (row_count BETWEEN 1 AND 50000),
+  claim_lines bigint NOT NULL CONSTRAINT screening_lead_product_claim_lines CHECK (claim_lines >= 11),
+  observed_cents bigint NOT NULL CONSTRAINT screening_lead_product_observed CHECK (observed_cents >= 0),
+  priced_rows integer NOT NULL DEFAULT 0 CONSTRAINT screening_lead_product_priced_rows CHECK (priced_rows >= 0),
+  priced_claim_lines bigint NOT NULL DEFAULT 0,
+  priced_observed_cents bigint NOT NULL DEFAULT 0 CONSTRAINT screening_lead_product_priced_observed CHECK (priced_observed_cents >= 0),
+  -- Before the reduction across codes.
+  expected_cents bigint NOT NULL DEFAULT 0 CONSTRAINT screening_lead_product_expected CHECK (expected_cents >= 0),
+  -- Fully reduced for pooled rows, the one figure otherwise.
+  lowest_cents bigint NOT NULL DEFAULT 0 CONSTRAINT screening_lead_product_lowest CHECK (lowest_cents >= 0),
+  pooled_rows integer NOT NULL DEFAULT 0,
+  anomaly_rows integer NOT NULL DEFAULT 0,
+  could_not_price_rows integer NOT NULL DEFAULT 0,
+  could_not_price_claim_lines bigint NOT NULL DEFAULT 0,
+  could_not_price_observed_cents bigint NOT NULL DEFAULT 0 CONSTRAINT screening_lead_product_could_not_price_observed CHECK (could_not_price_observed_cents >= 0),
+  PRIMARY KEY (lead_id, payer_product),
+  CONSTRAINT screening_lead_product_cells CHECK ((priced_claim_lines = 0 OR priced_claim_lines >= 11)
+    AND (could_not_price_claim_lines = 0 OR could_not_price_claim_lines >= 11)),
+  CONSTRAINT screening_lead_product_medicare CHECK (payer_product IN ('medicare_ffs', 'ma_noncontracted')
+    OR (priced_rows = 0 AND priced_claim_lines = 0 AND priced_observed_cents = 0 AND expected_cents = 0 AND lowest_cents = 0
+        AND pooled_rows = 0 AND anomaly_rows = 0 AND could_not_price_rows = 0 AND could_not_price_claim_lines = 0 AND could_not_price_observed_cents = 0)),
+  CONSTRAINT screening_lead_product_partition CHECK (payer_product NOT IN ('medicare_ffs', 'ma_noncontracted')
+    OR (priced_rows + could_not_price_rows = row_count AND priced_claim_lines + could_not_price_claim_lines = claim_lines
+        AND priced_observed_cents + could_not_price_observed_cents = observed_cents)),
+  CONSTRAINT screening_lead_product_figures CHECK (lowest_cents <= expected_cents AND pooled_rows BETWEEN 0 AND priced_rows AND anomaly_rows BETWEEN 0 AND priced_rows)
+);
+
+-- A lead keeps what it was frozen with, but, each once: its link to the live screening goes; its first open, its
+-- audit request, its withdrawal token's hash and its reminder are set; and a withdrawal moves its expiry to now.
+CREATE FUNCTION screening_lead_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF (NEW.id, NEW.practice_name, NEW.state, NEW.zip, NEW.contact_email, NEW.source, NEW.utm_source, NEW.utm_medium, NEW.utm_campaign, NEW.paid_click,
+      NEW.referring_firm, NEW.consent_sha256, NEW.release_no, NEW.release_manifest_sha256, NEW.engine_version, NEW.labels_version, NEW.screened_at,
+      NEW.row_count, NEW.claim_lines, NEW.observed_cents, NEW.anomaly_rows, NEW.left_out_rows, NEW.left_out_claim_lines, NEW.left_out_allowed_cents, NEW.created_at)
+     IS DISTINCT FROM
+     (OLD.id, OLD.practice_name, OLD.state, OLD.zip, OLD.contact_email, OLD.source, OLD.utm_source, OLD.utm_medium, OLD.utm_campaign, OLD.paid_click,
+      OLD.referring_firm, OLD.consent_sha256, OLD.release_no, OLD.release_manifest_sha256, OLD.engine_version, OLD.labels_version, OLD.screened_at,
+      OLD.row_count, OLD.claim_lines, OLD.observed_cents, OLD.anomaly_rows, OLD.left_out_rows, OLD.left_out_claim_lines, OLD.left_out_allowed_cents, OLD.created_at) THEN
+    RAISE EXCEPTION 'a kept screening summary keeps what it was frozen with' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_fixed';
+  END IF;
+  IF (NEW.upload_id IS DISTINCT FROM OLD.upload_id AND NEW.upload_id IS NOT NULL)
+     OR (NEW.result_first_opened_at IS DISTINCT FROM OLD.result_first_opened_at AND OLD.result_first_opened_at IS NOT NULL)
+     OR (NEW.prospect_request_id IS DISTINCT FROM OLD.prospect_request_id AND OLD.prospect_request_id IS NOT NULL)
+     OR (NEW.withdrawal_token_sha256 IS DISTINCT FROM OLD.withdrawal_token_sha256 AND OLD.withdrawal_token_sha256 IS NOT NULL)
+     OR (NEW.reminder_sent_at IS DISTINCT FROM OLD.reminder_sent_at AND OLD.reminder_sent_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'a kept screening summary''s link goes once, and its first open, request, withdrawal token and reminder are each set once'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_fixed';
+  END IF;
+  IF NEW.expires_at IS DISTINCT FROM OLD.expires_at AND NEW.expires_at > now() THEN
+    RAISE EXCEPTION 'a kept screening summary''s expiry moves only to now, as it is withdrawn' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_fixed';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER screening_lead_rules BEFORE UPDATE ON screening_lead FOR EACH ROW EXECUTE FUNCTION screening_lead_rules();
+
+-- A lead is deleted only once it expires (or is withdrawn, which moves its expiry to now), when a complete screening
+-- of the same practice (the same ZIP and practice name, or the same contact address) was uploaded after it, which
+-- replaces it, or when its audit request is gone (the cascade from the request's deletion, audit #51).
+CREATE FUNCTION screening_lead_kept() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF OLD.expires_at <= now() THEN
+    RETURN OLD;
+  END IF;
+  IF OLD.prospect_request_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM prospect_request q WHERE q.id = OLD.prospect_request_id) THEN
+    RETURN OLD;
+  END IF;
+  IF EXISTS (SELECT 1 FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+              WHERE r.status = 'complete' AND u.created_at > OLD.screened_at
+                AND (p.contact_email = OLD.contact_email OR (p.zip = OLD.zip AND screening_practice_key(p.practice_name) = screening_practice_key(OLD.practice_name)))) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'a kept screening summary is kept 12 months from its upload, until a later screening of the practice replaces it, or until it is withdrawn'
+    USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_kept';
+END;
+$$;
+CREATE TRIGGER screening_lead_kept BEFORE DELETE ON screening_lead FOR EACH ROW EXECUTE FUNCTION screening_lead_kept();
+CREATE TRIGGER screening_lead_no_truncate BEFORE TRUNCATE ON screening_lead FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+
+-- A lead's product rows never change and go only with their lead.
+CREATE FUNCTION screening_lead_product_kept() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM screening_lead l WHERE l.id = OLD.lead_id) THEN
+    RAISE EXCEPTION 'a kept screening summary''s products go only with it' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_kept';
+  END IF;
+  RETURN OLD;
+END;
+$$;
+CREATE TRIGGER screening_lead_product_fixed BEFORE UPDATE ON screening_lead_product FOR EACH ROW EXECUTE FUNCTION reject_change();
+CREATE TRIGGER screening_lead_product_kept BEFORE DELETE ON screening_lead_product FOR EACH ROW EXECUTE FUNCTION screening_lead_product_kept();
+CREATE TRIGGER screening_lead_product_no_truncate BEFORE TRUNCATE ON screening_lead_product FOR EACH STATEMENT EXECUTE FUNCTION reject_change();
+
 -- Every table forces row-level security; the owner's policy serves the definer functions below, and no other role
 -- holds a privilege on any of them.
 ALTER TABLE screening_prospect ENABLE ROW LEVEL SECURITY;
@@ -454,6 +846,77 @@ CREATE POLICY screening_run_owner ON screening_run FOR ALL TO tp_owner USING (tr
 ALTER TABLE screening_result ENABLE ROW LEVEL SECURITY;
 ALTER TABLE screening_result FORCE ROW LEVEL SECURITY;
 CREATE POLICY screening_result_owner ON screening_result FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+ALTER TABLE screening_outcome ENABLE ROW LEVEL SECURITY;
+ALTER TABLE screening_outcome FORCE ROW LEVEL SECURITY;
+CREATE POLICY screening_outcome_owner ON screening_outcome FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+ALTER TABLE screening_lead ENABLE ROW LEVEL SECURITY;
+ALTER TABLE screening_lead FORCE ROW LEVEL SECURITY;
+CREATE POLICY screening_lead_owner ON screening_lead FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+ALTER TABLE screening_lead_product ENABLE ROW LEVEL SECURITY;
+ALTER TABLE screening_lead_product FORCE ROW LEVEL SECURITY;
+CREATE POLICY screening_lead_product_owner ON screening_lead_product FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+ALTER TABLE marketing_campaign ENABLE ROW LEVEL SECURITY;
+ALTER TABLE marketing_campaign FORCE ROW LEVEL SECURITY;
+CREATE POLICY marketing_campaign_owner ON marketing_campaign FOR ALL TO tp_owner USING (true) WITH CHECK (true);
+
+-- ---------------------------------------------------------------------------------------------------
+-- prospect_request (migration 20261030090000, applied; nothing in it is edited): attribution, whether it came from a
+-- screening, and why a declined request was declined. Every CHECK here uses built-ins alone, because the application
+-- role updates the table directly (the console's review), and a CHECK calling a function needs EXECUTE on it on every
+-- update (the bug migration 20261030110000 fixed for prospect_payers_valid; ADR 0053).
+-- ---------------------------------------------------------------------------------------------------
+
+ALTER TABLE prospect_request
+  ADD COLUMN source text CONSTRAINT prospect_request_source CHECK (source IS NULL OR source IN (
+    'search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other')),
+  ADD COLUMN utm_source text CONSTRAINT prospect_request_utm_source CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  ADD COLUMN utm_medium text CONSTRAINT prospect_request_utm_medium CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  ADD COLUMN utm_campaign text CONSTRAINT prospect_request_utm_campaign CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'),
+  ADD COLUMN paid_click text CONSTRAINT prospect_request_paid_click CHECK (paid_click IN ('paid_search', 'paid_social')),
+  ADD COLUMN referring_firm text CONSTRAINT prospect_request_referring_firm
+    CHECK (btrim(referring_firm) <> '' AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm)),
+  -- The request came from a screening's result (convert_screening()).
+  ADD COLUMN from_screening boolean NOT NULL DEFAULT false,
+  -- Why a declined request was declined (PROSPECT_DECLINED_REASONS): required on the console's decline;
+  -- 'not_recorded' for a request declined before this migration, or by the previous image, and never offered.
+  ADD COLUMN declined_reason text CONSTRAINT prospect_request_declined_reason CHECK (declined_reason IS NULL OR declined_reason IN (
+    'no_response', 'not_now', 'price', 'too_little_to_recover', 'chose_other', 'doing_it_themselves', 'data_unavailable',
+    'compliance_declined', 'not_a_fit', 'not_a_prospect', 'other', 'not_recorded'));
+
+-- A request's own fields, its attribution and whether it came from a screening never change once received; only its
+-- review moves, and a converted or declined request's status (and a declined one's reason) are fixed. A move to
+-- declined without a reason (the previous image's decline) records 'not_recorded'. One exception, for the backfill
+-- below: a request declined before this migration takes 'not_recorded' as its reason with nothing else changed, and
+-- keeps when it was reviewed. Built-ins only: it runs as the application role.
+CREATE OR REPLACE FUNCTION prospect_request_fixed() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF (NEW.id, NEW.contact_name, NEW.contact_email, NEW.organization_name, NEW.locations, NEW.payers, NEW.billing_arrangement, NEW.created_at,
+      NEW.source, NEW.utm_source, NEW.utm_medium, NEW.utm_campaign, NEW.paid_click, NEW.referring_firm, NEW.from_screening)
+     IS DISTINCT FROM (OLD.id, OLD.contact_name, OLD.contact_email, OLD.organization_name, OLD.locations, OLD.payers, OLD.billing_arrangement, OLD.created_at,
+      OLD.source, OLD.utm_source, OLD.utm_medium, OLD.utm_campaign, OLD.paid_click, OLD.referring_firm, OLD.from_screening) THEN
+    RAISE EXCEPTION 'a prospect request is kept as it was received' USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status = 'declined' AND OLD.declined_reason IS NULL AND NEW.declined_reason = 'not_recorded'
+     AND (NEW.status, NEW.organization_id, NEW.reviewed_by, NEW.reviewed_at) IS NOT DISTINCT FROM (OLD.status, OLD.organization_id, OLD.reviewed_by, OLD.reviewed_at) THEN
+    RETURN NEW;
+  END IF;
+  IF OLD.status = 'converted' THEN
+    RAISE EXCEPTION 'a converted request names its organization for good' USING ERRCODE = 'check_violation';
+  END IF;
+  IF OLD.status = 'declined' AND (NEW.status, NEW.declined_reason) IS DISTINCT FROM (OLD.status, OLD.declined_reason) THEN
+    RAISE EXCEPTION 'a declined request keeps its status and its reason' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NEW.status = 'declined' AND OLD.status <> 'declined' AND NEW.declined_reason IS NULL THEN
+    NEW.declined_reason := 'not_recorded';
+  END IF;
+  NEW.reviewed_at := now();
+  RETURN NEW;
+END;
+$$;
+
+UPDATE prospect_request SET declined_reason = 'not_recorded' WHERE status = 'declined';
+
+ALTER TABLE prospect_request ADD CONSTRAINT prospect_request_declined CHECK ((status = 'declined') = (declined_reason IS NOT NULL));
 
 -- ---------------------------------------------------------------------------------------------------
 -- The public form (tp_app)
@@ -489,9 +952,15 @@ $$;
 -- them); nothing in an error names a value. The upload replaces any earlier accepted screening of the same practice
 -- (the same ZIP and practice name, or the same contact address): that one is deleted with its upload, run and rows,
 -- each an audit event (screening_replaced), so a practice never has two screenings held at once to be subtracted.
+-- The prospect keeps how they heard of us, the campaign codes and kind of paid click of the attribution cookie, the
+-- referring firm, and the SHA-256s of the consent and terms wording accepted (null for none). Its counts-only outcome
+-- is written here (accepted, its bands and channel computed here); a refused upload of the practice still linked is
+-- marked retried, and the outcomes of the screenings it replaces superseded, before they are deleted. Kept summaries
+-- (screening_lead) are not touched here: a later screening replaces one at its completion.
 CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, email text, codes text[], modifier_sets text[],
   unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[],
-  rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, request text) RETURNS uuid
+  rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, heard_from text, campaign_source text,
+  campaign_medium text, campaign_name text, click_kind text, firm text, consent_sha256 text, terms_sha256 text, request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   in_force integer := current_rule_release();
@@ -503,6 +972,8 @@ DECLARE
   rows_hash text;
   lock_key bigint;
   created uuid;
+  kept_prospect uuid;
+  kept_upload uuid;
 BEGIN
   SELECT r.manifest_sha256 INTO manifest FROM rule_release r WHERE r.release_no = in_force;
   IF in_force IS NULL OR manifest IS NULL OR split IS NULL THEN
@@ -543,12 +1014,22 @@ BEGIN
     FROM unnest(codes, modifier_sets, unit_counts, places, products, bands, allowed_cents, claim_counts)
            WITH ORDINALITY AS u (code, mods, unit_count, place, product, band, allowed, claims, ordinality);
   WITH prospect AS (
-    INSERT INTO screening_prospect (practice_name, state, zip, contact_email)
-    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
+    INSERT INTO screening_prospect (practice_name, state, zip, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm,
+                                    followup_consent_sha256, screening_terms_sha256)
+    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)), heard_from, campaign_source, campaign_medium, campaign_name, click_kind, firm,
+            consent_sha256, terms_sha256)
     RETURNING id
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, rows_sha256, row_count, status, left_out_rows, left_out_claim_lines, left_out_allowed_cents)
     SELECT prospect.id, rows_hash, n, 'accepted', rows_left_out, claim_lines_left_out, allowed_cents_left_out FROM prospect
+    RETURNING id
+  ), outcome AS (
+    -- The counts-only outcome: bands, the channel computed here, a campaign code only when the founder lists it.
+    INSERT INTO screening_outcome (upload_id, screened_month, stage, source, channel, campaign, consented, row_band, left_out_band, release_no)
+    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'accepted', heard_from, marketing_channel(campaign_medium, click_kind),
+           CASE WHEN campaign_name IS NULL THEN NULL WHEN EXISTS (SELECT 1 FROM marketing_campaign c WHERE c.code = campaign_name) THEN campaign_name ELSE 'other' END,
+           consent_sha256 IS NOT NULL, screening_count_band(n), screening_count_band(rows_left_out), in_force
+      FROM upload
     RETURNING id
   ), run AS (
     INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count)
@@ -563,14 +1044,25 @@ BEGIN
              WITH ORDINALITY AS u (code, mods, unit_count, place, product, band, allowed, claims, ordinality)
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-  SELECT 'system', 'screening_submitted', 'screening_run', run.id, 'screening', request FROM run
+  SELECT 'system', 'screening_submitted', 'screening_run', run.id, 'screening', request FROM run, outcome
   RETURNING object_id INTO created;
+  SELECT u.prospect_id, u.id INTO kept_prospect, kept_upload FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = created;
+  -- A refused upload of the practice still kept was followed by this accepted one.
+  UPDATE screening_outcome o SET retried = true
+    FROM screening_upload u, screening_prospect p, screening_prospect k
+   WHERE o.upload_id = u.id AND u.prospect_id = p.id AND u.status = 'rejected' AND o.stage = 'refused' AND NOT o.retried
+     AND k.id = kept_prospect AND p.id <> k.id
+     AND (p.contact_email = k.contact_email OR (p.zip = k.zip AND screening_practice_key(p.practice_name) = screening_practice_key(k.practice_name)));
+  -- The outcomes of the screenings this one replaces, before the screenings are deleted (which unlinks them).
+  UPDATE screening_outcome o SET superseded = true
+    FROM screening_upload u, screening_prospect p, screening_prospect k
+   WHERE o.upload_id = u.id AND u.prospect_id = p.id AND u.status = 'accepted' AND NOT o.superseded
+     AND k.id = kept_prospect AND p.id <> k.id
+     AND (p.contact_email = k.contact_email OR (p.zip = k.zip AND screening_practice_key(p.practice_name) = screening_practice_key(k.practice_name)));
   -- The screening replaces any earlier accepted one of the same practice (screening_replaced), deleted with its upload,
   -- run and rows, each an audit event.
   WITH kept AS (
-    SELECT p.id, p.zip, p.practice_name, p.contact_email
-      FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
-     WHERE r.id = created
+    SELECT p.id, p.zip, p.practice_name, p.contact_email FROM screening_prospect p WHERE p.id = kept_prospect
   ), replaced AS (
     DELETE FROM screening_prospect o USING kept, screening_upload u
      WHERE u.prospect_id = o.id AND u.status = 'accepted' AND o.id <> kept.id
@@ -585,8 +1077,11 @@ $$;
 
 -- A refused upload: the prospect and the upload with its row count and reasons (codes, positions and kinds only); no
 -- hash, since the rows refused can hold the row the floor withholds, and no run. Nothing is recorded while screening
--- is closed. It replaces nothing: it holds no row.
-CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, email text, row_count integer, reasons jsonb, request text)
+-- is closed. It replaces nothing: it holds no row. The prospect keeps its attribution as an accepted one does, and the
+-- refusal its counts-only outcome: refused, the band of its row count and the sorted, distinct codes of its reasons
+-- (never a row, a column or a field).
+CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, email text, row_count integer, reasons jsonb, heard_from text,
+  campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text, terms_sha256 text, request text)
 RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -597,16 +1092,26 @@ BEGIN
       USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_closed';
   END IF;
   WITH prospect AS (
-    INSERT INTO screening_prospect (practice_name, state, zip, contact_email)
-    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
+    INSERT INTO screening_prospect (practice_name, state, zip, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm,
+                                    screening_terms_sha256)
+    VALUES (btrim(practice), state_code, zip5, lower(btrim(email)), heard_from, campaign_source, campaign_medium, campaign_name, click_kind, firm, terms_sha256)
     RETURNING id
   ), upload AS (
     INSERT INTO screening_upload (prospect_id, row_count, status, rejection_reasons)
     SELECT prospect.id, $5, 'rejected', reasons FROM prospect
     RETURNING id
+  ), outcome AS (
+    INSERT INTO screening_outcome (upload_id, screened_month, stage, source, channel, campaign, row_band, refusal_codes)
+    SELECT upload.id, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM'), 'refused', heard_from, marketing_channel(campaign_medium, click_kind),
+           CASE WHEN campaign_name IS NULL THEN NULL WHEN EXISTS (SELECT 1 FROM marketing_campaign c WHERE c.code = campaign_name) THEN campaign_name ELSE 'other' END,
+           screening_count_band($5),
+           ARRAY(SELECT d.code FROM (SELECT DISTINCT r ->> 'code' AS code FROM jsonb_array_elements(CASE WHEN jsonb_typeof(reasons) = 'array' THEN reasons ELSE '[]'::jsonb END) r) d
+                  ORDER BY d.code COLLATE "C")
+      FROM upload
+    RETURNING id
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-  SELECT 'system', 'screening_rejected', 'screening_upload', upload.id, 'screening', request FROM upload
+  SELECT 'system', 'screening_rejected', 'screening_upload', upload.id, 'screening', request FROM upload, outcome
   RETURNING object_id INTO created;
   RETURN created;
 END;
@@ -734,15 +1239,105 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
    LIMIT least(greatest(coalesce(top, 0), 0), 100)
 $$;
 
+-- The frozen summary of a run's screening (screening_lead and its product rows), kept 12 months from the upload with
+-- the audit request given or the prospect's consent: bigint sums over the stored rows, with the filters of
+-- screening_result_summary() and screening_result_coverage(); the prospect's practice, state, ZIP, contact address,
+-- consent and attribution; the run's release, manifest, engine and first open; the labels' version; and of what the
+-- browser left out, the row count, and the claim lines and allowed amount only at 11 or more. A consent lead without a
+-- withdrawal token's hash is refused. Called only inside the definer functions below (no grant), so it runs as the
+-- owner. Returns the lead.
+CREATE FUNCTION screening_freeze_lead(run uuid, request_id uuid, withdrawal_token_sha256 text, request text) RETURNS uuid
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  target screening_run%ROWTYPE;
+  prospect screening_prospect%ROWTYPE;
+  upload screening_upload%ROWTYPE;
+  created uuid;
+BEGIN
+  SELECT r.* INTO target FROM screening_run r WHERE r.id = $1 AND r.status = 'complete';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'a screening summary is kept from a complete run' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_basis';
+  END IF;
+  SELECT u.* INTO upload FROM screening_upload u WHERE u.id = target.upload_id;
+  SELECT p.* INTO prospect FROM screening_prospect p WHERE p.id = upload.prospect_id;
+  IF prospect.followup_consent_sha256 IS NOT NULL AND $3 IS NULL THEN
+    RAISE EXCEPTION 'a summary kept by consent has a withdrawal link' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_lead_withdrawal_token';
+  END IF;
+  INSERT INTO screening_lead (upload_id, practice_name, state, zip, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm,
+                              consent_sha256, withdrawal_token_sha256, prospect_request_id, release_no, release_manifest_sha256, engine_version, labels_version,
+                              screened_at, result_first_opened_at, row_count, claim_lines, observed_cents, anomaly_rows, left_out_rows, left_out_claim_lines,
+                              left_out_allowed_cents, expires_at)
+  SELECT upload.id, prospect.practice_name, prospect.state, prospect.zip, prospect.contact_email, prospect.source, prospect.utm_source, prospect.utm_medium,
+         prospect.utm_campaign, prospect.paid_click, prospect.referring_firm, prospect.followup_consent_sha256,
+         CASE WHEN prospect.followup_consent_sha256 IS NULL THEN NULL ELSE $3 END, $2, target.release_no, target.release_manifest_sha256,
+         target.engine_version, screening_labels_version(), upload.created_at, target.first_opened_at, t.all_rows, t.all_claims, t.all_observed, t.anomalies,
+         upload.left_out_rows,
+         CASE WHEN upload.left_out_claim_lines >= 11 THEN upload.left_out_claim_lines END,
+         CASE WHEN upload.left_out_claim_lines >= 11 THEN upload.left_out_allowed_cents END,
+         upload.created_at + interval '12 months'
+    FROM (SELECT count(*)::integer AS all_rows, coalesce(sum(s.claim_count), 0)::bigint AS all_claims, coalesce(sum(s.observed_allowed_cents), 0)::bigint AS all_observed,
+                 (count(*) FILTER (WHERE s.disposition = 'priced'
+                                     AND screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly'))::integer AS anomalies
+            FROM screening_result s WHERE s.run_id = target.id) t
+  RETURNING id INTO created;
+  INSERT INTO screening_lead_product (lead_id, payer_product, row_count, claim_lines, observed_cents, priced_rows, priced_claim_lines, priced_observed_cents,
+                                      expected_cents, lowest_cents, pooled_rows, anomaly_rows, could_not_price_rows, could_not_price_claim_lines,
+                                      could_not_price_observed_cents)
+  SELECT created, s.payer_product, count(*)::integer, sum(s.claim_count)::bigint, sum(s.observed_allowed_cents)::bigint,
+         count(*) FILTER (WHERE s.disposition = 'priced')::integer,
+         coalesce(sum(s.claim_count) FILTER (WHERE s.disposition = 'priced'), 0)::bigint,
+         coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint,
+         coalesce(sum(s.expected_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint,
+         coalesce(sum(coalesce(s.reduced_cents, s.expected_cents)) FILTER (WHERE s.disposition = 'priced'), 0)::bigint,
+         count(*) FILTER (WHERE s.disposition = 'priced' AND s.in_reduction_pool)::integer,
+         count(*) FILTER (WHERE s.disposition = 'priced' AND screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly')::integer,
+         count(*) FILTER (WHERE s.disposition IN ('unpriced', 'rates_change_in_band'))::integer,
+         coalesce(sum(s.claim_count) FILTER (WHERE s.disposition IN ('unpriced', 'rates_change_in_band')), 0)::bigint,
+         coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition IN ('unpriced', 'rates_change_in_band')), 0)::bigint
+    FROM screening_result s WHERE s.run_id = target.id
+   GROUP BY s.payer_product;
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'screening_lead_kept', 'screening_lead', created, 'screening', $4);
+  RETURN created;
+END;
+$$;
+
+-- The result page's signal that a person opened it (the result page sends it after two seconds visible and a first
+-- interaction; never the link's GET, which a mail scanner also makes): for a complete run before it expires, the
+-- first time, the run's first open, its outcome's band and its kept summary's first open, and an audit event of the
+-- run. Anything else does nothing, and answers alike.
+CREATE FUNCTION screening_result_opened(token_sha256 text) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  target screening_run%ROWTYPE;
+BEGIN
+  SELECT r.* INTO target FROM screening_run r
+   WHERE r.result_token_sha256 = $1 AND r.status = 'complete' AND now() < r.expires_at AND r.first_opened_at IS NULL
+     FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+  UPDATE screening_run r SET first_opened_at = now() WHERE r.id = target.id;
+  UPDATE screening_outcome o SET first_open_band = screening_open_band(u.created_at, now())
+    FROM screening_upload u WHERE u.id = target.upload_id AND o.upload_id = u.id AND o.first_open_band IS NULL;
+  UPDATE screening_lead l SET result_first_opened_at = now() WHERE l.upload_id = target.upload_id AND l.result_first_opened_at IS NULL;
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'screening_result_opened', 'screening_run', target.id, 'screening', NULL);
+END;
+$$;
+
 -- The conversion from a screening to an audit request: a prospect_request in the screening's contact address and
--- practice name (that table's CHECKs and trigger apply), recorded on the run once and as an audit event, which
--- outlives the screening's expiry. An unknown, expired or incomplete link is no_data_found.
+-- practice name, with the prospect's attribution and from_screening (that table's CHECKs and trigger apply),
+-- recorded on the run once and as an audit event, which outlives the screening's expiry. It also records the first
+-- open if the result page's signal did not, marks the outcome converted, and keeps the screening's summary with the
+-- request: frozen now when the run has none, or given the request when its summary has none (a summary already
+-- carrying an earlier request keeps that one). An unknown, expired or incomplete link is no_data_found.
 CREATE FUNCTION convert_screening(token_sha256 text, contact text, location_count integer, payer_names text[], arrangement text, request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   target screening_run%ROWTYPE;
-  email text;
-  practice text;
+  prospect screening_prospect%ROWTYPE;
+  lead screening_lead%ROWTYPE;
   created uuid;
 BEGIN
   SELECT r.* INTO target FROM screening_run r
@@ -754,14 +1349,60 @@ BEGIN
   IF target.converted_at IS NOT NULL THEN
     RAISE EXCEPTION 'a screening converts to an audit request once' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_converted_once';
   END IF;
-  SELECT p.contact_email, p.practice_name INTO email, practice
-    FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = target.upload_id;
-  created := submit_prospect_request(contact, email, practice, location_count, payer_names, arrangement);
-  UPDATE screening_run r SET converted_prospect_request_id = created, converted_at = now() WHERE r.id = target.id;
+  SELECT p.* INTO prospect FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = target.upload_id;
+  -- As submit_prospect_request() writes a request, with the screening's attribution and from_screening, which no
+  -- later update may set (prospect_request_fixed()).
+  INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, source, utm_source, utm_medium,
+                                utm_campaign, paid_click, referring_firm, from_screening)
+  VALUES (btrim(contact), prospect.contact_email, prospect.practice_name, location_count, payer_names, arrangement, prospect.source, prospect.utm_source,
+          prospect.utm_medium, prospect.utm_campaign, prospect.paid_click, prospect.referring_firm, true)
+  RETURNING id INTO created;
+  UPDATE screening_run r SET converted_prospect_request_id = created, converted_at = now(), first_opened_at = coalesce(r.first_opened_at, now()) WHERE r.id = target.id;
+  UPDATE screening_outcome o SET converted = true, first_open_band = coalesce(o.first_open_band, screening_open_band(u.created_at, now()))
+    FROM screening_upload u WHERE u.id = target.upload_id AND o.upload_id = u.id;
+  SELECT l.* INTO lead FROM screening_lead l WHERE l.upload_id = target.upload_id FOR UPDATE;
+  IF NOT FOUND THEN
+    PERFORM screening_freeze_lead(target.id, created, NULL, request);
+  ELSE
+    UPDATE screening_lead l SET prospect_request_id = coalesce(l.prospect_request_id, created), result_first_opened_at = coalesce(l.result_first_opened_at, now())
+     WHERE l.id = lead.id;
+  END IF;
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
   VALUES ('system', 'screening_converted', 'prospect_request', created, 'screening', request);
   RETURN created;
 END;
+$$;
+
+-- A consenting prospect's withdrawal (PR 6e's link): the summary kept with that withdrawal token's hash is deleted
+-- now, its products with it, and the withdrawal is an audit event. An unknown token does nothing; the route answers
+-- alike.
+CREATE FUNCTION screening_lead_withdraw(token_sha256 text, request text) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  target uuid;
+BEGIN
+  SELECT l.id INTO target FROM screening_lead l WHERE l.withdrawal_token_sha256 = $1 AND $1 ~ '^[0-9a-f]{64}$' FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+  UPDATE screening_lead l SET expires_at = now() WHERE l.id = target;
+  DELETE FROM screening_lead l WHERE l.id = target;
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'screening_lead_withdrawn', 'screening_lead', target, 'screening', $2);
+END;
+$$;
+
+-- The public audit request with its attribution (/request-audit): how the requester heard of us, the attribution
+-- cookie's campaign codes and kind of paid click, and the referring firm. The six-argument form stays for the
+-- previous image until no image calls it.
+CREATE FUNCTION submit_prospect_request(contact text, email text, organization text, location_count integer, payer_names text[], arrangement text,
+  heard_from text, campaign_source text, campaign_medium text, campaign_name text, click_kind text, firm text) RETURNS uuid
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, source, utm_source, utm_medium,
+                                utm_campaign, paid_click, referring_firm)
+  VALUES (btrim(contact), lower(btrim(email)), btrim(organization), location_count, payer_names, arrangement, heard_from, campaign_source, campaign_medium,
+          campaign_name, click_kind, firm)
+  RETURNING id
 $$;
 
 -- ---------------------------------------------------------------------------------------------------
@@ -844,21 +1485,63 @@ BEGIN
 END;
 $$;
 
--- The pinned release's rule records as the engine reads them (with the stored SHA-256 the traces name), the
--- locality map limited to the run's ZIP; only for a run being priced, and only while the release's manifest is
--- the one the run pinned and the release is not withdrawn (content known to be wrong prices nothing).
+-- The pinned release's rule records the engine reads whatever a row's key (with the stored SHA-256 the traces name):
+-- every record type but the five a line looks up by its own key (pfs_rvu, ncci_mue, mppr_rate, ncci_ptp and
+-- locality_map), which operator_screening_run_records() reads by the keys the run's rows can ask for. The job holds
+-- these once per release and manifest. Only for a run being priced, and only while the release's manifest is the one
+-- the run pinned and the release is not withdrawn (content known to be wrong prices nothing).
 CREATE FUNCTION operator_screening_release(run uuid)
 RETURNS TABLE (record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   SELECT rr.record_type, rr.key, rr.value, rr.effective_from::text, rr.effective_to::text, rr.sha256
     FROM screening_run r
-    JOIN screening_upload u ON u.id = r.upload_id
-    JOIN screening_prospect p ON p.id = u.prospect_id
     JOIN rule_release rl ON rl.release_no = r.release_no AND rl.manifest_sha256 = r.release_manifest_sha256 AND rl.published_at IS NOT NULL
     JOIN rule_record rr ON rr.release_no = r.release_no
    WHERE r.id = $1 AND r.status = 'pricing'
      AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
-     AND (rr.record_type <> 'locality_map' OR rr.key = jsonb_build_object('zip', p.zip))
+     AND rr.record_type NOT IN ('pfs_rvu', 'ncci_mue', 'mppr_rate', 'ncci_ptp', 'locality_map')
+   ORDER BY rr.record_type, rr.effective_from, rr.id
+$$;
+
+-- The keys a run's rows can ask for: the distinct procedure codes of its Medicare rows still to price (original
+-- Medicare and Medicare Advantage without a contract), sorted, and the prospect's ZIP; read from the run's own rows,
+-- never from a caller. Under the same guards as operator_screening_release(); nothing otherwise.
+CREATE FUNCTION operator_screening_run_keys(run uuid) RETURNS TABLE (codes text[], zip text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT ARRAY(SELECT d.code FROM (SELECT DISTINCT s.procedure_code AS code FROM screening_result s
+                                    WHERE s.run_id = r.id AND s.payer_product IN ('medicare_ffs', 'ma_noncontracted') AND s.disposition = 'pending') d
+                ORDER BY d.code COLLATE "C"),
+         p.zip
+    FROM screening_run r
+    JOIN screening_upload u ON u.id = r.upload_id
+    JOIN screening_prospect p ON p.id = u.prospect_id
+    JOIN rule_release rl ON rl.release_no = r.release_no AND rl.manifest_sha256 = r.release_manifest_sha256 AND rl.published_at IS NOT NULL
+   WHERE r.id = $1 AND r.status = 'pricing'
+     AND NOT EXISTS (SELECT 1 FROM rule_release_withdrawal w WHERE w.release_no = r.release_no)
+$$;
+
+-- The pinned release's keyed records for exactly those keys, by equality on rule_record_identity: for each code, its
+-- fee schedule values (pfs_rvu, no modifier), its MUE (ncci_mue), its own reduction record (mppr_rate, no modifier) and
+-- its same-code pair (ncci_ptp: a screening claim is one line, or two of the same code); the general reduction record
+-- (mppr_rate, practice expense); and the prospect's ZIP in the locality map. Under the same guards; nothing otherwise.
+CREATE FUNCTION operator_screening_run_records(run uuid)
+RETURNS TABLE (record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  WITH keyed AS (
+    SELECT r.release_no, k.codes, k.zip FROM screening_run r CROSS JOIN LATERAL operator_screening_run_keys(r.id) k WHERE r.id = $1
+  ), wanted AS (
+    SELECT keyed.release_no, w.record_type, w.key
+      FROM keyed CROSS JOIN LATERAL (
+        SELECT t.record_type, t.key FROM unnest(keyed.codes) c
+          CROSS JOIN LATERAL (VALUES ('pfs_rvu', jsonb_build_object('hcpcs', c, 'modifier', '')),
+                                     ('ncci_mue', jsonb_build_object('hcpcs', c)),
+                                     ('mppr_rate', jsonb_build_object('hcpcs', c, 'modifier', '')),
+                                     ('ncci_ptp', jsonb_build_object('column1', c, 'column2', c))) AS t (record_type, key)
+        UNION ALL SELECT 'mppr_rate', jsonb_build_object('component', 'practice_expense')
+        UNION ALL SELECT 'locality_map', jsonb_build_object('zip', keyed.zip)) w
+  )
+  SELECT rr.record_type, rr.key, rr.value, rr.effective_from::text, rr.effective_to::text, rr.sha256
+    FROM wanted JOIN rule_record rr ON rr.release_no = wanted.release_no AND rr.record_type = wanted.record_type AND rr.key = wanted.key
    ORDER BY rr.record_type, rr.effective_from, rr.id
 $$;
 
@@ -911,11 +1594,22 @@ $$;
 
 -- Completes a run being priced once no row is pending: the SHA-256 of the link's token (the token itself never
 -- reaches the database) and the engine's version. Returns where the link goes and the row count; nothing when the
--- run is already complete (a retry after the email went).
-CREATE FUNCTION operator_screening_complete(run uuid, token_sha256 text, engine text, request text) RETURNS TABLE (contact_email text, row_count integer)
+-- run is already complete (a retry after the email went). In the same transaction: the outcome is priced, with its
+-- shares (each 100 * part / total, floored, of the bigint sums of the allowed amounts: priced, cannot be priced without
+-- a contract, could not be priced, not screened; all 0 when the total is 0), its anomaly band (the count of priced rows
+-- screening_standing() names an anomaly) and the band of those rows' summed gap below their lowest figure; and this
+-- screening replaces the practice's kept summaries screened before it (the same ZIP and practice name, or the same
+-- contact address), each deletion an audit event, carrying over the audit request of the most recently screened one
+-- that has one. With that request, or the prospect's consent (and the withdrawal token's hash it needs), this run's
+-- summary is frozen. So a failed or abandoned replacement deletes nothing.
+CREATE FUNCTION operator_screening_complete(run uuid, token_sha256 text, withdrawal_token_sha256 text, engine text, request text)
+RETURNS TABLE (contact_email text, row_count integer)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   target screening_run%ROWTYPE;
+  prospect screening_prospect%ROWTYPE;
+  uploaded timestamptz;
+  carried uuid;
 BEGIN
   SELECT r.* INTO target FROM screening_run r WHERE r.id = $1 FOR UPDATE;
   IF NOT FOUND THEN
@@ -930,15 +1624,53 @@ BEGIN
   IF EXISTS (SELECT 1 FROM screening_result s WHERE s.run_id = target.id AND s.disposition = 'pending') THEN
     RAISE EXCEPTION 'a screening run completes once every row is priced' USING ERRCODE = 'check_violation';
   END IF;
-  UPDATE screening_run r SET status = 'complete', result_token_sha256 = $2, completed_at = now(), engine_version = $3 WHERE r.id = target.id;
+  UPDATE screening_run r SET status = 'complete', result_token_sha256 = $2, completed_at = now(), engine_version = $4 WHERE r.id = target.id;
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
-  VALUES ('system', 'screening_completed', 'screening_run', target.id, 'screening', $4);
-  RETURN QUERY
-    SELECT p.contact_email, target.row_count FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = target.upload_id;
+  VALUES ('system', 'screening_completed', 'screening_run', target.id, 'screening', $5);
+  -- The counts-only outcome, every figure computed here from the stored rows.
+  UPDATE screening_outcome o
+     SET stage = 'priced', engine_version = $4,
+         priced_share_pct = CASE WHEN t.total = 0 THEN 0 ELSE (100 * t.priced / t.total)::smallint END,
+         contract_share_pct = CASE WHEN t.total = 0 THEN 0 ELSE (100 * t.contract / t.total)::smallint END,
+         could_not_price_share_pct = CASE WHEN t.total = 0 THEN 0 ELSE (100 * t.could_not_price / t.total)::smallint END,
+         not_screened_share_pct = CASE WHEN t.total = 0 THEN 0 ELSE (100 * t.not_screened / t.total)::smallint END,
+         anomaly_band = screening_count_band(t.anomalies), anomaly_difference_band = screening_difference_band(t.anomaly_gap)
+    FROM (SELECT coalesce(sum(s.observed_allowed_cents), 0)::bigint AS total,
+                 coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'priced'), 0)::bigint AS priced,
+                 coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'contract_required'), 0)::bigint AS contract,
+                 coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition IN ('unpriced', 'rates_change_in_band')), 0)::bigint AS could_not_price,
+                 coalesce(sum(s.observed_allowed_cents) FILTER (WHERE s.disposition = 'not_screened'), 0)::bigint AS not_screened,
+                 count(*) FILTER (WHERE s.disposition = 'priced' AND screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly') AS anomalies,
+                 sum(coalesce(s.reduced_cents, s.expected_cents) - s.observed_allowed_cents)
+                   FILTER (WHERE s.disposition = 'priced' AND screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly')::bigint AS anomaly_gap
+            FROM screening_result s WHERE s.run_id = target.id) t
+   WHERE o.upload_id = target.upload_id AND o.stage = 'accepted';
+  SELECT u.created_at INTO uploaded FROM screening_upload u WHERE u.id = target.upload_id;
+  SELECT p.* INTO prospect FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE u.id = target.upload_id;
+  -- The practice's kept summaries screened before this upload: the request of the latest that carries one goes over.
+  SELECT l.prospect_request_id INTO carried FROM screening_lead l
+   WHERE l.screened_at < uploaded AND l.prospect_request_id IS NOT NULL
+     AND (l.contact_email = prospect.contact_email OR (l.zip = prospect.zip AND screening_practice_key(l.practice_name) = screening_practice_key(prospect.practice_name)))
+   ORDER BY l.screened_at DESC, l.id DESC LIMIT 1;
+  WITH replaced AS (
+    DELETE FROM screening_lead l
+     WHERE l.screened_at < uploaded
+       AND (l.contact_email = prospect.contact_email OR (l.zip = prospect.zip AND screening_practice_key(l.practice_name) = screening_practice_key(prospect.practice_name)))
+    RETURNING l.id, l.prospect_request_id
+  )
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  SELECT 'system', 'screening_lead_replaced', CASE WHEN replaced.prospect_request_id IS NULL THEN 'screening_lead' ELSE 'prospect_request' END,
+         coalesce(replaced.prospect_request_id, replaced.id), 'screening', $5
+    FROM replaced;
+  IF prospect.followup_consent_sha256 IS NOT NULL OR carried IS NOT NULL THEN
+    PERFORM screening_freeze_lead(target.id, carried, $3, $5);
+  END IF;
+  RETURN QUERY SELECT prospect.contact_email, target.row_count;
 END;
 $$;
 
--- Fails a queued or pricing run with a code. Returns where the notice goes; nothing when the run had already ended.
+-- Fails a queued or pricing run with a code, and its outcome. Returns where the notice goes; nothing when the run had
+-- already ended.
 CREATE FUNCTION operator_screening_fail(run uuid, failure text, request text) RETURNS TABLE (contact_email text)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -949,6 +1681,7 @@ BEGIN
     RETURN;
   END IF;
   UPDATE screening_run r SET status = 'failed', failure_code = $2, failed_at = now() WHERE r.id = target.id;
+  UPDATE screening_outcome o SET stage = 'failed' WHERE o.upload_id = target.upload_id AND o.stage = 'accepted';
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
   VALUES ('system', 'screening_failed', 'screening_run', target.id, 'screening', $3);
   RETURN QUERY
@@ -957,11 +1690,13 @@ END;
 $$;
 
 -- Deletes up to at_most prospects whose screening has expired, with their uploads, runs and rows, each an audit
--- event. Returns how many prospects and runs went.
-CREATE FUNCTION operator_screening_expire(at_most integer, request text) RETURNS TABLE (prospects integer, runs integer)
+-- event (their outcomes stay, unlinked), and up to at_most kept summaries past their 12 months, with their products,
+-- each an audit event. Returns how many prospects, runs and summaries went.
+CREATE FUNCTION operator_screening_expire(at_most integer, request text) RETURNS TABLE (prospects integer, runs integer, leads integer)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   doomed uuid[];
+  doomed_leads uuid[];
   run_total integer;
 BEGIN
   SELECT coalesce(array_agg(x.id), '{}') INTO doomed FROM (
@@ -973,7 +1708,56 @@ BEGIN
   DELETE FROM screening_prospect p WHERE p.id = ANY (doomed);
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
   SELECT 'system', 'screening_expired', 'screening_prospect', d.id, 'screening', $2 FROM unnest(doomed) AS d (id);
-  RETURN QUERY SELECT cardinality(doomed), run_total;
+  SELECT coalesce(array_agg(x.id), '{}') INTO doomed_leads FROM (
+    SELECT l.id FROM screening_lead l WHERE l.expires_at <= now()
+     ORDER BY l.expires_at, l.id
+     LIMIT least(greatest(coalesce($1, 0), 0), 1000)
+       FOR UPDATE SKIP LOCKED) x;
+  DELETE FROM screening_lead l WHERE l.id = ANY (doomed_leads);
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  SELECT 'system', 'screening_lead_expired', 'screening_lead', d.id, 'screening', $2 FROM unnest(doomed_leads) AS d (id);
+  RETURN QUERY SELECT cardinality(doomed), run_total, cardinality(doomed_leads);
+END;
+$$;
+
+-- The consenting prospects' kept summaries due a reminder before they are deleted (PR 6e's job sets the days): no
+-- reminder yet, and expiring within the days given; at most 1,000, the soonest first.
+CREATE FUNCTION operator_screening_reminders_due(within_days integer, at_most integer) RETURNS TABLE (lead_id uuid, contact_email text, expires_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT l.id, l.contact_email, l.expires_at FROM screening_lead l
+   WHERE l.consent_sha256 IS NOT NULL AND l.reminder_sent_at IS NULL
+     AND l.expires_at > now() AND l.expires_at <= now() + make_interval(days => greatest(coalesce($1, 0), 0))
+   ORDER BY l.expires_at, l.id
+   LIMIT least(greatest(coalesce($2, 0), 0), 1000)
+$$;
+
+-- Records a consent summary's reminder, once, as an audit event. Returns whether it was recorded now.
+CREATE FUNCTION operator_screening_reminder_sent(lead uuid, request text) RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  UPDATE screening_lead l SET reminder_sent_at = now() WHERE l.id = $1 AND l.consent_sha256 IS NOT NULL AND l.reminder_sent_at IS NULL;
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'screening_lead_reminded', 'screening_lead', $1, 'screening', $2);
+  RETURN true;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- The campaign list (tp_app): a person with organization.manage lists a code (PR 7 builds its screen)
+-- ---------------------------------------------------------------------------------------------------
+
+CREATE FUNCTION console_register_marketing_campaign(code text, label text) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_actor_id() IS NULL OR NOT app_actor_is_person() OR NOT coalesce(app_actor_platform_permitted('organization.manage'), false) THEN
+    RAISE EXCEPTION 'a campaign is listed by a platform administrator' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  INSERT INTO marketing_campaign (code, label, added_by) VALUES ($1, btrim($2), app_actor_id());
+  INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose)
+  VALUES (app_actor_id(), 'user', 'marketing_campaign_registered', 'marketing_campaign', NULL, 'console');
 END;
 $$;
 
@@ -981,26 +1765,40 @@ $$;
 -- Privileges
 -- ---------------------------------------------------------------------------------------------------
 
-REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_split, screening_run, screening_result FROM PUBLIC;
+REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_split, screening_run, screening_result, screening_outcome, screening_lead,
+  screening_lead_product, marketing_campaign FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
-  screening_practice_key(text), screening_replaced(uuid), screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(),
-  screening_result_rules(), screening_split_in_force(), screening_status(), screening_standing(bigint, bigint, bigint, bigint),
-  screening_zip_status(text), submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
-  reject_screening_upload(text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
-  screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
-  console_approve_screening_split(jsonb), operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
+  screening_practice_key(text), marketing_channel(text, text), screening_count_band(bigint), screening_difference_band(bigint),
+  screening_open_band(timestamptz, timestamptz), screening_refusal_codes_valid(text[]), screening_labels_version(), screening_replaced(uuid),
+  screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_outcome_rules(), screening_lead_rules(),
+  screening_lead_kept(), screening_lead_product_kept(), screening_split_in_force(), screening_status(), screening_standing(bigint, bigint, bigint, bigint),
+  screening_zip_status(text),
+  submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text, text, text, text, text, text, text, text, text),
+  reject_screening_upload(text, text, text, text, integer, jsonb, text, text, text, text, text, text, text, text), screening_result_summary(text),
+  screening_result_groups(text), screening_result_coverage(text), screening_result_rows(text, integer), screening_freeze_lead(uuid, uuid, text, text),
+  screening_result_opened(text), convert_screening(text, text, integer, text[], text, text), screening_lead_withdraw(text, text),
+  submit_prospect_request(text, text, text, integer, text[], text, text, text, text, text, text, text), console_screening_splits(),
+  console_approve_screening_split(jsonb), console_register_marketing_campaign(text, text), operator_screening_due(integer, integer),
+  operator_screening_claim(uuid), operator_screening_release(uuid), operator_screening_run_keys(uuid), operator_screening_run_records(uuid),
   operator_screening_rows(uuid, integer, integer),
   operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[], text[]),
-  operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) FROM PUBLIC;
+  operator_screening_complete(uuid, text, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text),
+  operator_screening_reminders_due(integer, integer), operator_screening_reminder_sent(uuid, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
-  submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
-  reject_screening_upload(text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
-  screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
-  console_approve_screening_split(jsonb) TO tp_app;
+  submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text, text, text, text, text, text, text, text, text),
+  reject_screening_upload(text, text, text, text, integer, jsonb, text, text, text, text, text, text, text, text), screening_result_summary(text),
+  screening_result_groups(text), screening_result_coverage(text), screening_result_rows(text, integer), screening_result_opened(text),
+  convert_screening(text, text, integer, text[], text, text), screening_lead_withdraw(text, text),
+  submit_prospect_request(text, text, text, integer, text[], text, text, text, text, text, text, text), console_screening_splits(),
+  console_approve_screening_split(jsonb), console_register_marketing_campaign(text, text) TO tp_app;
 
 GRANT EXECUTE ON FUNCTION operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
-  operator_screening_rows(uuid, integer, integer),
+  operator_screening_run_keys(uuid), operator_screening_run_records(uuid), operator_screening_rows(uuid, integer, integer),
   operator_screening_record(uuid, integer[], text[], bigint[], numeric[], bigint[], bigint[], boolean[], bigint[], numeric[], bigint[], bigint[], text[], text[], text[], text[]),
-  operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) TO tp_operator;
+  operator_screening_complete(uuid, text, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text),
+  operator_screening_reminders_due(integer, integer), operator_screening_reminder_sent(uuid, text) TO tp_operator;
+
+-- The console's decline records its reason (prospect_request_platform_review is unchanged).
+GRANT UPDATE (declined_reason) ON prospect_request TO tp_app;

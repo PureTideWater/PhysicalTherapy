@@ -23,7 +23,17 @@ import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrg
  * its screenings can be subtracted into a cell of fewer than 11 claim lines. Synthetic data only.
  */
 
-const SCREENING_TABLES = ['screening_place_of_service_split', 'screening_prospect', 'screening_result', 'screening_run', 'screening_upload'] as const;
+const SCREENING_TABLES = [
+  'marketing_campaign',
+  'screening_lead',
+  'screening_lead_product',
+  'screening_outcome',
+  'screening_place_of_service_split',
+  'screening_prospect',
+  'screening_result',
+  'screening_run',
+  'screening_upload',
+] as const;
 
 /**
  * Column names shaped like the five kinds CO-04 forbids (names, dates of birth, member IDs, dates of service,
@@ -95,6 +105,18 @@ interface SubmitOptions {
   readonly rows?: readonly (readonly [string, string, number, string, string, string, bigint, number])[];
   /** The rows of fewer than 11 claim lines the browser left out: how many, their claim lines and their allowed cents. */
   readonly leftOut?: readonly [number | null, number | null, bigint | null];
+  /** How the prospect heard of us, the cookie's campaign codes and kind of paid click, and the referring firm. */
+  readonly attribution?: {
+    readonly source?: string | null;
+    readonly utmSource?: string | null;
+    readonly utmMedium?: string | null;
+    readonly utmCampaign?: string | null;
+    readonly paidClick?: string | null;
+    readonly firm?: string | null;
+  };
+  /** The SHA-256 of the consent wording ticked (PR 6e), and of the screening terms accepted. */
+  readonly consentSha256?: string | null;
+  readonly termsSha256?: string | null;
 }
 
 /** Every row sums at least 11 claim lines (the CMS small-cell standard). */
@@ -108,7 +130,7 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
   ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 11],
 ];
 
-const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS run_id';
+const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24) AS run_id';
 
 /** The rows in their canonical form (format.ts, encodeScreeningRows): each row's eight fields tab-joined, the rows joined by line feeds. */
 function canonicalRows(rows: NonNullable<SubmitOptions['rows']>): string {
@@ -136,6 +158,14 @@ function submitValues(options: SubmitOptions = {}): unknown[] {
     leftRows,
     leftLines,
     leftCents === null ? null : leftCents.toString(),
+    options.attribution?.source ?? null,
+    options.attribution?.utmSource ?? null,
+    options.attribution?.utmMedium ?? null,
+    options.attribution?.utmCampaign ?? null,
+    options.attribution?.paidClick ?? null,
+    options.attribution?.firm ?? null,
+    options.consentSha256 ?? null,
+    options.termsSha256 ?? null,
     `test-${randomUUID()}`,
   ];
 }
@@ -174,7 +204,7 @@ async function complete(runId: string, tokenSha256: string): Promise<void> {
     pending.map(() => null),
     pending.map(() => hex('f')),
   ]);
-  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4)', [runId, tokenSha256, 'phase-two/1', `test-${randomUUID()}`])).toHaveLength(1);
+  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, tokenSha256, 'phase-two/1', `test-${randomUUID()}`])).toHaveLength(1);
 }
 
 /** As the superuser, with triggers off for the statement: moves a screening's dates back past its expiry. */
@@ -221,7 +251,7 @@ afterAll(async () => {
 });
 
 describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
-  it('names five tables, none of whose columns is shaped like a name, a date of birth, a member ID, a date of service or a claim number', async () => {
+  it('names nine tables, none of whose columns is shaped like a name, a date of birth, a member ID, a date of service or a claim number', async () => {
     const { rows } = await admin.query<{ table_name: string; column_name: string; type: string }>(
       `SELECT c.relname AS table_name, a.attname AS column_name, format_type(a.atttypid, a.atttypmod) AS type
          FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -231,21 +261,93 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
     );
     expect([...new Set(rows.map((row) => row.table_name))]).toEqual([...SCREENING_TABLES]);
     expect(rows.filter((row) => PHI_SHAPED.test(row.column_name)).map((row) => `${row.table_name}.${row.column_name}`)).toEqual([]);
-    // No calendar date at all: a date of birth or of service would be one; the only times are when a row was made and when it expires.
+    // No calendar date at all: a date of birth or of service would be one; the only times are when a row was made, when
+    // it expires, and when a run moved, was opened or converted, a split or campaign approved, a summary screened,
+    // opened and reminded.
     expect(rows.filter((row) => row.type === 'date').map((row) => `${row.table_name}.${row.column_name}`)).toEqual([]);
-    expect(rows.filter((row) => row.type.startsWith('timestamp')).map((row) => row.column_name).sort()).toEqual(
-      ['approved_at', 'completed_at', 'converted_at', 'created_at', 'created_at', 'created_at', 'expires_at', 'expires_at', 'expires_at', 'failed_at', 'started_at'].sort(),
+    expect(rows.filter((row) => row.type.startsWith('timestamp')).map((row) => `${row.table_name}.${row.column_name}`).sort()).toEqual(
+      [
+        'marketing_campaign.added_at',
+        'screening_lead.created_at',
+        'screening_lead.expires_at',
+        'screening_lead.reminder_sent_at',
+        'screening_lead.result_first_opened_at',
+        'screening_lead.screened_at',
+        'screening_place_of_service_split.approved_at',
+        'screening_prospect.created_at',
+        'screening_prospect.expires_at',
+        'screening_run.completed_at',
+        'screening_run.converted_at',
+        'screening_run.created_at',
+        'screening_run.expires_at',
+        'screening_run.failed_at',
+        'screening_run.first_opened_at',
+        'screening_run.started_at',
+        'screening_upload.created_at',
+        'screening_upload.expires_at',
+      ].sort(),
     );
-    // The prospect's own fields are a practice's, not a patient's: its name, state, ZIP and contact address.
+    // The prospect's own fields are a practice's, not a patient's: its name, state, ZIP and contact address, how it
+    // heard of us (a closed list, the campaign codes of a link and the kind of paid click, a referring firm), and the
+    // SHA-256s of the consent and terms wording accepted.
     expect(rows.filter((row) => row.table_name === 'screening_prospect').map((row) => row.column_name)).toEqual([
       'id',
       'practice_name',
       'state',
       'zip',
       'contact_email',
+      'source',
+      'utm_source',
+      'utm_medium',
+      'utm_campaign',
+      'paid_click',
+      'referring_firm',
+      'followup_consent_sha256',
+      'screening_terms_sha256',
       'created_at',
       'expires_at',
     ]);
+    // An outcome holds no name, email, ZIP, exact count, dollar figure, date or day count: bands, whole percents of a
+    // total it never holds, closed codes, flags, the month as text and the release (audit #57).
+    const outcome = rows.filter((row) => row.table_name === 'screening_outcome');
+    expect(outcome.map((row) => row.column_name)).toEqual([
+      'id',
+      'upload_id',
+      'screened_month',
+      'stage',
+      'source',
+      'channel',
+      'campaign',
+      'consented',
+      'row_band',
+      'left_out_band',
+      'refusal_codes',
+      'retried',
+      'release_no',
+      'engine_version',
+      'priced_share_pct',
+      'contract_share_pct',
+      'could_not_price_share_pct',
+      'not_screened_share_pct',
+      'anomaly_band',
+      'anomaly_difference_band',
+      'first_open_band',
+      'converted',
+      'superseded',
+    ]);
+    expect(
+      outcome.filter((row) => /cents|claim|count|rows|days|name|email|zip|practice|contact|_at$/.test(row.column_name) || row.type.startsWith('timestamp') || row.type === 'bigint'),
+    ).toEqual([]);
+    // Its only numbers: the release, and four whole percents.
+    expect(outcome.filter((row) => ['integer', 'smallint', 'bigint', 'numeric'].includes(row.type)).map((row) => `${row.column_name} ${row.type}`)).toEqual([
+      'release_no integer',
+      'priced_share_pct smallint',
+      'contract_share_pct smallint',
+      'could_not_price_share_pct smallint',
+      'not_screened_share_pct smallint',
+    ]);
+    // Every dollar column of the nine is bigint cents.
+    expect(rows.filter((row) => row.column_name.endsWith('_cents') && row.type !== 'bigint')).toEqual([]);
     // An upload keeps no byte of its file and no hash of it: no bytea, no free text but the hash of the rows stored and
     // the coded reasons, and of the rows of fewer than 11 claim lines the browser left out, three numbers alone.
     expect(rows.filter((row) => row.type === 'bytea')).toEqual([]);
@@ -350,7 +452,7 @@ describe('the roles reach the tables only through their functions', () => {
               has_function_privilege($3, p.oid, 'EXECUTE') AS billing,
               EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') AS public
          FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-        WHERE n.nspname = 'public' AND (p.proname LIKE '%screening%') ORDER BY 1`,
+        WHERE n.nspname = 'public' AND (p.proname LIKE '%screening%' OR p.proname LIKE '%marketing%') ORDER BY 1`,
       [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE],
     );
     const byName = Object.fromEntries(rows.map((row) => [row.name.replace(/\(.*$/, ''), row]));
@@ -366,6 +468,9 @@ describe('the roles reach the tables only through their functions', () => {
       'convert_screening',
       'console_screening_splits',
       'console_approve_screening_split',
+      'screening_result_opened',
+      'screening_lead_withdraw',
+      'console_register_marketing_campaign',
     ];
     const forOperator = [
       'operator_screening_due',
@@ -376,6 +481,10 @@ describe('the roles reach the tables only through their functions', () => {
       'operator_screening_complete',
       'operator_screening_fail',
       'operator_screening_expire',
+      'operator_screening_run_keys',
+      'operator_screening_run_records',
+      'operator_screening_reminders_due',
+      'operator_screening_reminder_sent',
     ];
     for (const name of [...forApp, ...forOperator]) {
       expect(byName[name], name).toBeDefined();
@@ -544,7 +653,7 @@ describe('the screening rules', () => {
   });
 
   it('records a rejected upload with its count and reasons alone, no hash, and its audit event', async () => {
-    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7) AS id', [
+    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $7) AS id', [
       'Synthetic Therapy Group',
       'MN',
       '00011',
@@ -558,9 +667,9 @@ describe('the screening rules', () => {
     expect((await admin.query('SELECT count(*)::int AS n FROM screening_run WHERE upload_id = $1', [row?.id])).rows).toEqual([{ n: 0 }]);
     expect((await admin.query('SELECT action, object_type FROM audit_event WHERE object_id = $1', [row?.id])).rows).toEqual([{ action: 'screening_rejected', object_type: 'screening_upload' }]);
     await expect(
-      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
+      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
     ).rejects.toMatchObject({ constraint: 'screening_upload_reasons' });
-    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, '[]', 'x'])).rejects.toMatchObject({
+    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, '[]', 'x'])).rejects.toMatchObject({
       constraint: 'screening_upload_rejected',
     });
   });
@@ -722,11 +831,14 @@ describe('the screening rules', () => {
     );
     expect(claim).toEqual({ release_no: 900001, release_available: true, zip: '00011', settings: SPLIT, as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string, row_count: 6, attempt: 1 });
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toEqual([]);
-    // The release as the engine reads it: the run's ZIP's locality alone.
-    const release = await as<{ record_type: string; key: object; sha256: string }>(OPERATOR_ROLE, 'SELECT record_type, key, sha256 FROM operator_screening_release($1)', [runId]);
+    // The release as the engine reads it: no keyed type is shared (this release holds only the locality map), and the
+    // run's keyed records are its ZIP's locality alone, by the keys its own rows ask for (audit #53).
+    expect(await as(OPERATOR_ROLE, 'SELECT record_type FROM operator_screening_release($1)', [runId])).toEqual([]);
+    expect(await as(OPERATOR_ROLE, 'SELECT codes, zip FROM operator_screening_run_keys($1)', [runId])).toEqual([{ codes: ['97110'], zip: '00011' }]);
+    const release = await as<{ record_type: string; key: object; sha256: string }>(OPERATOR_ROLE, 'SELECT record_type, key, sha256 FROM operator_screening_run_records($1)', [runId]);
     expect(release).toEqual([{ record_type: 'locality_map', key: { zip: '00011' }, sha256: hex('b') }]);
     // It completes only once nothing is pending.
-    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
     // The trigger refuses moving started_at without a claim, so a stale run is aged as the superuser, triggers off.
     await expect(admin.query("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId])).rejects.toMatchObject({ code: '23514' });
     const client = await admin.connect();
@@ -761,12 +873,12 @@ describe('the screening rules', () => {
       [hex('f'), hex('f')],
     ]);
     // A token is stored only as its hash: a link token itself does not fit the column.
-    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4)', [runId, 'abcdefghijklmnopqrstuvwxyzabcdef', 'phase-two/1', 'x'])).rejects.toMatchObject({
+    await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, 'abcdefghijklmnopqrstuvwxyzabcdef', 'phase-two/1', 'x'])).rejects.toMatchObject({
       constraint: 'screening_run_result_token',
     });
-    const done = await as<{ contact_email: string; row_count: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x']);
+    const done = await as<{ contact_email: string; row_count: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x']);
     expect(done).toEqual([{ contact_email: expect.stringMatching(/@synthetic\.test$/) as string, row_count: 6 }]);
-    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4)', [runId, hex('3'), 'phase-two/1', 'x'])).toEqual([]);
+    expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('3'), 'phase-two/1', 'x'])).toEqual([]);
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [runId, 'PRICING_FAILED', 'x'])).toEqual([]);
     await expect(admin.query('UPDATE screening_run SET result_token_sha256 = $2 WHERE id = $1', [runId, hex('4')])).rejects.toMatchObject({ code: '23514' });
     const [summary] = await as<{ priced_rows: number; unpriced_rows: number; contract_rows: number; contract_observed_cents: string; not_screened_rows: number; converted: boolean }>(
@@ -917,7 +1029,7 @@ describe('the screening rules', () => {
     const firstIds = await held(first);
     const neighbour = await submit({ practice: `Synthetic Neighbour ${letters()}`, email: `neighbour.${letters()}@synthetic.test` });
     // A refused upload of the same address holds no row: it replaces nothing.
-    await as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['Synthetic Refused Clinic', 'MN', '00011', email, 3, JSON.stringify([{ code: 'no_rows' }]), 'x']);
+    await as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $7)', ['Synthetic Refused Clinic', 'MN', '00011', email, 3, JSON.stringify([{ code: 'no_rows' }]), 'x']);
     expect(await gone(first, firstIds)).toBe(false);
     const second = await submit({ practice: `Synthetic Renamed ${letters()}`, email: ` ${email.toUpperCase()} `, rows: [['97110', 'GP', 2, '11', 'ma_noncontracted', '2026-Q2', 49_687n, 11]] });
     expect(await gone(first, firstIds)).toBe(true);
