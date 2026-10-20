@@ -8,9 +8,11 @@ import { SYNTHETIC_PLACES, readRuleRelease, releaseVariant, ruleRecordLike, synt
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { ReleaseReadOutsideFetch } from '../price/keyed-release';
 import {
   LATER_PROCEDURE_LINE_NO,
   type PendingScreeningRow,
+  ReleaseKeysMismatch,
   SCREENING_MAPPING,
   ScreeningPricer,
   type ScreeningPricingContext,
@@ -29,6 +31,7 @@ import {
   traceSha256,
 } from './adapter';
 import { quarterDays } from './format';
+import { ScreeningPricer as LegacyScreeningPricer } from './test-support/legacy-adapter';
 
 /**
  * The screening's pricing (test matrix SCR-02, in its pure part; D19 a, D20 a; the owner's rulings of 2026-10-18):
@@ -37,8 +40,10 @@ import { quarterDays } from './format';
  * is that less the allowed total; a code in the reduction across a visit's codes is priced by the engine a second
  * time, as a later code of a visit, for its fully reduced figure, and a code outside it keeps one figure; the
  * engine's unpriced reasons pass through unchanged; a row whose rule records change inside its band shows no figure,
- * whether a record the trace names ends there or one it did not need on the band's first day starts there.
- * SYNTHETIC release 900001 only, and variants of it built here.
+ * whether a record the trace names ends there or one it did not need on the band's first day starts there. The
+ * pricer's memo keeps a compact record per distinct line, never a trace, and gives every row what the pricer gave at
+ * commit 3c1b289 (test-support/legacy-adapter.ts; audit #53 part 2). SYNTHETIC release 900001 only, and variants of
+ * it built here.
  */
 
 const RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900001';
@@ -402,5 +407,62 @@ describe('the screening pricing adapter', () => {
       { numRuns: 300 },
     );
     expect(pricer.priced).toBeLessThanOrEqual(300);
+  });
+
+  it('keeps a compact record per distinct line, never a trace, and gives every row the outcome the pricer gave at 3c1b289 (property)', () => {
+    const pendingRow = fc.record({
+      rowNo: fc.integer({ min: 1, max: 50_000 }),
+      procedureCode: fc.constantFrom(...CODES),
+      modifiers: fc.subarray(['59', 'CO', 'CQ', 'GO', 'GP', 'KX'], { maxLength: 4 }),
+      units: fc.integer({ min: 1, max: 12 }),
+      placeOfService: fc.constantFrom('11', '22', '12'),
+      payerProduct: fc.constantFrom('medicare_ffs' as const, 'ma_noncontracted' as const),
+      serviceBand: fc.constantFrom('2025-Q4', '2026-Q1', '2026-Q2', '2026-Q3', '2026-Q4'),
+      claimCount: fc.integer({ min: 1, max: 1_000_000 }),
+      observedAllowedCents: fc.bigInt({ min: 0n, max: 99_999_999_999n }).map(cents),
+    });
+    const pricer = new ScreeningPricer(CONTEXT);
+    const legacy = new LegacyScreeningPricer(CONTEXT);
+    fc.assert(
+      fc.property(pendingRow, (pending) => {
+        expect(pricer.outcome(pending)).toEqual(legacy.outcome(pending));
+      }),
+      { numRuns: 400 },
+    );
+    // SCR-02's rows (apps/worker/src/screening/screening.db.test.ts), each priced by both.
+    for (const [procedureCode, modifiers, units, placeOfService, serviceBand, claimCount] of [
+      ['97110', ['GP'], 2, '11', '2026-Q1', 11],
+      ['97110', ['CQ', 'GP'], 1, '11', '2026-Q2', 11],
+      ['97140', ['GP'], 1, '22', '2026-Q3', 300],
+      ['97110', ['GP'], 8, '11', '2026-Q1', 11],
+      ['97110', ['GP'], 1, '12', '2026-Q4', 11],
+    ] as const) {
+      const pending = row({ procedureCode, modifiers: [...modifiers], units, placeOfService, serviceBand, claimCount });
+      expect(pricer.outcome(pending)).toEqual(legacy.outcome(pending));
+    }
+    // What the memo holds: figures, reasons and hashes, no engine trace.
+    const memo = (pricer as unknown as { readonly lines: ReadonlyMap<string, unknown> }).lines;
+    expect(memo.size).toBe(pricer.priced);
+    const keys = new Set<string>();
+    const visit = (value: unknown): void => {
+      if (typeof value === 'object' && value !== null) {
+        for (const [key, inner] of Object.entries(value)) {
+          keys.add(key);
+          visit(inner);
+        }
+      }
+    };
+    memo.forEach(visit);
+    expect([...keys].filter((key) => !['disposition', 'expectedLineCents', 'expectedLineUnrounded', 'inReductionPool', 'traceSha256', 'reduced', 'lineCents', 'lineUnrounded', 'reason', 'detail'].includes(key))).toEqual([]);
+  });
+
+  it('checks the codes and the view a keyed read gives it: a row outside the codes, and a lookup outside the fetch, stop the run outside the engine', () => {
+    const outside = { violation: null as { recordType: 'pfs_rvu'; keyFields: string[] } | null };
+    const pricer = new ScreeningPricer({ ...CONTEXT, read: { codes: new Set(['97110']), view: outside } });
+    expect(pricer.outcome(row()).disposition).toBe('priced');
+    expect([...pricer.codes]).toEqual(['97110']);
+    expect(() => pricer.outcome(row({ procedureCode: '97140' }))).toThrow(ReleaseKeysMismatch);
+    outside.violation = { recordType: 'pfs_rvu', keyFields: ['hcpcs', 'modifier'] };
+    expect(() => pricer.outcome(row({ units: 3 }))).toThrow(ReleaseReadOutsideFetch);
   });
 });

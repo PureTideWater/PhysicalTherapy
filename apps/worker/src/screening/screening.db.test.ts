@@ -447,7 +447,7 @@ describe('the result link', () => {
     }
     expect(JSON.stringify(lines)).not.toContain(token);
     expect(JSON.stringify(lines)).not.toContain('prospect.link@synthetic.test');
-    expect(lines.every((line) => Object.keys(line).every((key) => ['level', 'msg', 'time', 'job_id', 'screening_run_id', 'error_code'].includes(key)))).toBe(true);
+    expect(lines.every((line) => Object.keys(line).every((key) => ['level', 'msg', 'time', 'job_id', 'screening_run_id', 'error_code', 'elapsed_ms', 'record_count'].includes(key)))).toBe(true);
     const audit = await owner.query<{ action: string; request_id: string }>('SELECT action, request_id FROM audit_event WHERE object_id = $1 ORDER BY at', [runId]);
     expect(audit.rows.map((row) => row.action)).toEqual(['screening_submitted', 'screening_completed']);
     expect(audit.rows[1]?.request_id).toBe(deps.jobId);

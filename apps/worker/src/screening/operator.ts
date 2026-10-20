@@ -106,9 +106,37 @@ export async function claimRun(client: OperatorClient, runId: string): Promise<C
       };
 }
 
-/** The pinned release's records as the engine reads them (the locality map limited to the run's ZIP). */
+/**
+ * The pinned release's records of the shared types, as the engine reads them: every type but those a line looks up
+ * by its own key (KEYED_RECORD_TYPES in apps/worker/src/price/keyed-release.ts), the same for every run under the
+ * release and manifest. Nothing for a run not being priced, or whose release is not there as pinned.
+ */
 export async function releaseRecords(client: OperatorClient, runId: string): Promise<StoredRecordRow[]> {
   const { rows } = await client.query('SELECT record_type, key, value, effective_from, effective_to, sha256 FROM operator_screening_release($1)', [runId]);
+  return rows as StoredRecordRow[];
+}
+
+/** The key set a run's keyed records are read by: the distinct codes of its rows still to price (the database's, from its own rows) and the prospect's ZIP. */
+export interface RunKeys {
+  /** The distinct procedure codes of the run's medicare_ffs and ma_noncontracted rows still to price, sorted. */
+  readonly codes: readonly string[];
+  readonly zip: string;
+}
+
+/** The run's key set, or null for a run not being priced, or whose release is not there as pinned. */
+export async function runKeys(client: OperatorClient, runId: string): Promise<RunKeys | null> {
+  const { rows } = await client.query('SELECT codes, zip FROM operator_screening_run_keys($1)', [runId]);
+  const row = rows[0] as { codes: string[]; zip: string } | undefined;
+  return row === undefined ? null : { codes: [...row.codes].sort(), zip: row.zip };
+}
+
+/**
+ * The pinned release's records of the keyed types for the run's key set (operator_screening_run_keys): for each code,
+ * its relative values and MPPR rate with no modifier, its medically unlikely edit and its same-code pair; the general
+ * practice-expense MPPR rate; and the prospect's ZIP's locality. Never a code the caller names.
+ */
+export async function runRecords(client: OperatorClient, runId: string): Promise<StoredRecordRow[]> {
+  const { rows } = await client.query('SELECT record_type, key, value, effective_from, effective_to, sha256 FROM operator_screening_run_records($1)', [runId]);
   return rows as StoredRecordRow[];
 }
 

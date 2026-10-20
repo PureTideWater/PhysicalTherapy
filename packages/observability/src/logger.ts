@@ -1,10 +1,10 @@
-import { type LogField, isAllowedLogField } from './fields';
+import { type IdentifierLogField, type NumericLogField, isAllowedLogField, isNumericLogField } from './fields';
 
 export const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export type LogValue = string | number | boolean | bigint | null;
-export type LogFields = Partial<Record<LogField, LogValue>>;
+export type LogFields = Partial<Record<IdentifierLogField, LogValue>> & Partial<Record<NumericLogField, number>>;
 
 export interface Logger {
   debug(message: string, fields?: LogFields): void;
@@ -36,12 +36,19 @@ function isLogValue(value: unknown): value is LogValue {
 }
 
 /**
- * Keeps only allowlisted keys whose values are primitives. The types already refuse other keys;
- * this is the runtime fence for values that arrive through casts or untyped code.
+ * Keeps only allowlisted keys whose values are primitives, and a numeric field only when it holds a finite,
+ * non-negative number. The types already refuse other keys; this is the runtime fence for values that arrive
+ * through casts or untyped code.
  */
 export function allowlistedFields(fields: Readonly<Record<string, unknown>>): Record<string, LogValue> {
   const kept: Record<string, LogValue> = {};
   for (const [key, value] of Object.entries(fields)) {
+    if (isNumericLogField(key)) {
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        kept[key] = value;
+      }
+      continue;
+    }
     if (isAllowedLogField(key) && isLogValue(value)) {
       kept[key] = typeof value === 'bigint' ? value.toString() : value;
     }

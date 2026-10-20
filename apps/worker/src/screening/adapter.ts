@@ -16,6 +16,7 @@ import {
   price,
 } from '@tp/pricing';
 
+import { ReleaseReadOutsideFetch, type ReleaseViolation } from '../price/keyed-release';
 import { type ScreeningPayerProduct, quarterDays } from './format';
 
 /**
@@ -51,6 +52,12 @@ import { type ScreeningPayerProduct, quarterDays } from './format';
  * record that does not cover its whole band, or when the engine prices either of its lines differently (another
  * outcome, amount or set of records) on any day inside the band where a record of the release starts or the day after
  * one ends: those are engine calls too, one per such day.
+ *
+ * The release is read by key (audit #53 part 2; docs/adr/0062, "The release read"): the job gives the engine a view
+ * that serves only the keys the database fetched for the run (apps/worker/src/price/keyed-release.ts) and the codes it
+ * fetched them for. A row whose code is not among them throws ReleaseKeysMismatch before the engine sees it, and every
+ * engine call is followed by a check of the view's violation, which throws ReleaseReadOutsideFetch outside the engine
+ * (inside it, any throw becomes a row priced ENGINE_ERROR). Either fails the run before its batch is recorded.
  */
 
 /** The fixed mapping every screening line resolves to: MA non-contracted, no contract, open-ended from 2000. */
@@ -74,6 +81,25 @@ export interface ScreeningPricingContext {
   readonly placeOfServiceSettings: Readonly<Record<string, PlaceOfServiceSetting>>;
   /** The run's creation date (UTC). */
   readonly asOf: IsoDate;
+  /** The keys the release was read by (keyed-release.ts): checked before each row and after every engine call. Tests that index a whole release leave it out. */
+  readonly read?: ScreeningReleaseRead;
+}
+
+/** How the run's release was read: the codes the database fetched keyed records for, and the view's first lookup outside them. */
+export interface ScreeningReleaseRead {
+  /** The run's distinct priced codes, as operator_screening_run_keys() returned them. */
+  readonly codes: ReadonlySet<string>;
+  readonly view: { readonly violation: ReleaseViolation | null };
+}
+
+/** A row whose code is not among the codes the run's records were fetched for (RELEASE_READ_OUTSIDE_FETCH). */
+export class ReleaseKeysMismatch extends Error {
+  override readonly name = 'ReleaseKeysMismatch';
+  readonly code = 'RELEASE_READ_OUTSIDE_FETCH';
+
+  constructor() {
+    super('a row’s code is not among the codes the run’s release records were read for');
+  }
 }
 
 /** A row still to price, as operator_screening_rows() gives it. */
@@ -119,6 +145,30 @@ export type ScreeningRowOutcome =
       readonly traceSha256: string;
       /** For a code in that reduction, the engine's figure for the row as a later procedure of a visit (fully reduced); null outside it. */
       readonly reduced: ScreeningFigure | null;
+    }
+  | { readonly disposition: 'unpriced'; readonly reason: UnpricedReason; readonly detail: string | null; readonly traceSha256: string }
+  | { readonly disposition: 'rates_change_in_band'; readonly traceSha256: string };
+
+/** One of a distinct line's figures before its row's count and total: the engine's line amount before sequestration and its trace's hash. */
+export interface ScreeningLineFigure {
+  readonly lineCents: Cents;
+  readonly lineUnrounded: string;
+  readonly traceSha256: string;
+}
+
+/**
+ * What a distinct line's pricing comes to before any row's count and allowed total (the pricer's compact memo): the
+ * disposition, the figures for one line alone and fully reduced, whether the code is in the reduction across codes,
+ * the reason, and the traces' SHA-256s, each computed once. No trace is kept.
+ */
+export type ScreeningLineOutcome =
+  | {
+      readonly disposition: 'priced';
+      readonly expectedLineCents: Cents;
+      readonly expectedLineUnrounded: string;
+      readonly inReductionPool: boolean;
+      readonly traceSha256: string;
+      readonly reduced: ScreeningLineFigure | null;
     }
   | { readonly disposition: 'unpriced'; readonly reason: UnpricedReason; readonly detail: string | null; readonly traceSha256: string }
   | { readonly disposition: 'rates_change_in_band'; readonly traceSha256: string };
@@ -280,16 +330,79 @@ export function samePricing(a: LinePricing, b: LinePricing): boolean {
   return false;
 }
 
-/** One figure of a row: the engine's line before sequestration, times the count, less the allowed total. */
-function figureOf(row: Pick<PendingScreeningRow, 'claimCount' | 'observedAllowedCents'>, line: PricedLine): ScreeningFigure {
+/** A priced line's figure before sequestration (beforeSequestration), with its trace's hash. */
+function lineFigure(line: PricedLine, hash: string): ScreeningLineFigure {
   const amount = beforeSequestration(line);
-  const total = cents(amount.cents * BigInt(row.claimCount));
+  return { lineCents: amount.cents, lineUnrounded: amount.unrounded.toString(), traceSha256: hash };
+}
+
+/** One figure of a row: the engine's line before sequestration, times the count, less the allowed total. */
+function figureOf(row: Pick<PendingScreeningRow, 'claimCount' | 'observedAllowedCents'>, figure: ScreeningLineFigure): ScreeningFigure {
+  const total = cents(figure.lineCents * BigInt(row.claimCount));
   return {
-    lineCents: amount.cents,
-    lineUnrounded: amount.unrounded.toString(),
+    lineCents: figure.lineCents,
+    lineUnrounded: figure.lineUnrounded,
     cents: total,
     differenceCents: subtractCents(total, row.observedAllowedCents),
-    traceSha256: traceSha256(line.trace),
+    traceSha256: figure.traceSha256,
+  };
+}
+
+/**
+ * What a distinct line's pricing comes to before any row's count and total, in its band: `line` is the engine's
+ * one-line result, `later` its result for the row as a later procedure of a visit (needed when the code is in the
+ * reduction across codes), and `changesInBand` whether the engine priced either differently on a day inside the band
+ * where the release's records change. Each trace is hashed once.
+ */
+export function screeningLineOutcome(serviceBand: string, line: LinePricing, changesInBand = false, later: LinePricing | null = null): ScreeningLineOutcome {
+  const hash = traceSha256(line.trace);
+  if (changesInBand) {
+    return { disposition: 'rates_change_in_band', traceSha256: hash };
+  }
+  if (line.outcome === 'unpriced') {
+    return { disposition: 'unpriced', reason: line.reason, detail: line.detail, traceSha256: hash };
+  }
+  const pooled = inReductionPool(line.trace);
+  if (!coversBand(line.trace, serviceBand) || (pooled && later !== null && !coversBand(later.trace, serviceBand))) {
+    return { disposition: 'rates_change_in_band', traceSha256: hash };
+  }
+  const alone = lineFigure(line, hash);
+  let reduced: ScreeningLineFigure | null = null;
+  if (pooled) {
+    // The engine prices a pooled code as a later procedure whenever it prices it alone: anything else is an error, never a figure.
+    if (later?.outcome !== 'priced' || later.lineNo !== LATER_PROCEDURE_LINE_NO || !reducedAsLaterProcedure(later.trace)) {
+      throw new Error('the engine did not price the row as a later procedure of a visit');
+    }
+    reduced = lineFigure(later, traceSha256(later.trace));
+    if (reduced.lineCents > alone.lineCents) {
+      throw new Error('the engine priced the row higher as a later procedure than alone');
+    }
+  }
+  return {
+    disposition: 'priced',
+    expectedLineCents: alone.lineCents,
+    expectedLineUnrounded: alone.lineUnrounded,
+    inReductionPool: pooled,
+    traceSha256: hash,
+    reduced,
+  };
+}
+
+/** A row's outcome from its distinct line's: each figure times the row's claim count, less its allowed total, in bigint. */
+export function rowOutcome(row: Pick<PendingScreeningRow, 'claimCount' | 'observedAllowedCents'>, line: ScreeningLineOutcome): ScreeningRowOutcome {
+  if (line.disposition !== 'priced') {
+    return line;
+  }
+  const alone = figureOf(row, { lineCents: line.expectedLineCents, lineUnrounded: line.expectedLineUnrounded, traceSha256: line.traceSha256 });
+  return {
+    disposition: 'priced',
+    expectedLineCents: alone.lineCents,
+    expectedLineUnrounded: alone.lineUnrounded,
+    expectedCents: alone.cents,
+    differenceCents: alone.differenceCents,
+    inReductionPool: line.inReductionPool,
+    traceSha256: line.traceSha256,
+    reduced: line.reduced === null ? null : figureOf(row, line.reduced),
   };
 }
 
@@ -305,39 +418,7 @@ export function screeningOutcome(
   changesInBand = false,
   later: LinePricing | null = null,
 ): ScreeningRowOutcome {
-  const hash = traceSha256(line.trace);
-  if (changesInBand) {
-    return { disposition: 'rates_change_in_band', traceSha256: hash };
-  }
-  if (line.outcome === 'unpriced') {
-    return { disposition: 'unpriced', reason: line.reason, detail: line.detail, traceSha256: hash };
-  }
-  const pooled = inReductionPool(line.trace);
-  if (!coversBand(line.trace, row.serviceBand) || (pooled && later !== null && !coversBand(later.trace, row.serviceBand))) {
-    return { disposition: 'rates_change_in_band', traceSha256: hash };
-  }
-  const alone = figureOf(row, line);
-  let reduced: ScreeningFigure | null = null;
-  if (pooled) {
-    // The engine prices a pooled code as a later procedure whenever it prices it alone: anything else is an error, never a figure.
-    if (later?.outcome !== 'priced' || later.lineNo !== LATER_PROCEDURE_LINE_NO || !reducedAsLaterProcedure(later.trace)) {
-      throw new Error('the engine did not price the row as a later procedure of a visit');
-    }
-    reduced = figureOf(row, later);
-    if (reduced.lineCents > alone.lineCents) {
-      throw new Error('the engine priced the row higher as a later procedure than alone');
-    }
-  }
-  return {
-    disposition: 'priced',
-    expectedLineCents: alone.lineCents,
-    expectedLineUnrounded: alone.lineUnrounded,
-    expectedCents: alone.cents,
-    differenceCents: alone.differenceCents,
-    inReductionPool: pooled,
-    traceSha256: hash,
-    reduced,
-  };
+  return rowOutcome(row, screeningLineOutcome(row.serviceBand, line, changesInBand, later));
 }
 
 /** The claim dated the day given, every line. */
@@ -345,13 +426,19 @@ function dated(claim: ClaimFacts, serviceDate: IsoDate | undefined): ClaimFacts 
   return serviceDate === undefined ? claim : { ...claim, lines: claim.lines.map((line) => ({ ...line, serviceDate })) };
 }
 
+/** One engine call; then, outside the engine, a lookup the release read did not fetch stops the run (keyed-release.ts). */
 function priceClaim(context: ScreeningPricingContext, claim: ClaimFacts): LinePricing[] {
-  return price({
+  const lines = price({
     claim,
     release: context.release,
     settings: { zip: context.zip, defaultRounding: null, placeOfServiceSettings: context.placeOfServiceSettings },
     asOf: context.asOf,
   });
+  const violation = context.read?.view.violation ?? null;
+  if (violation !== null) {
+    throw new ReleaseReadOutsideFetch(violation);
+  }
+  return lines;
 }
 
 /** The engine's one line for a row, dated its band's first day or the day given: the claim's only result. */
@@ -372,20 +459,16 @@ export function priceScreeningLaterProcedure(context: ScreeningPricingContext, r
   return line;
 }
 
-interface PricedLines {
-  readonly line: LinePricing;
-  readonly later: LinePricing | null;
-  readonly changesInBand: boolean;
-}
-
 /**
  * Prices a run's rows, the engine once per distinct line (code, modifiers, units, place of service and band: both
  * priced products price under the same terms), once more for a code in the reduction across codes (the row as a
  * later procedure of a visit), and again for each day inside the band where the release's records change, each
- * row's outcome from its own count and total.
+ * row's outcome from its own count and total. The memo keeps a compact record per distinct line
+ * (ScreeningLineOutcome: figures and hashes), never the engine's traces past their line.
  */
 export class ScreeningPricer {
-  private readonly lines = new Map<string, PricedLines>();
+  private readonly lines = new Map<string, ScreeningLineOutcome>();
+  private readonly seen = new Set<string>();
 
   constructor(private readonly context: ScreeningPricingContext) {}
 
@@ -394,10 +477,19 @@ export class ScreeningPricer {
     return this.lines.size;
   }
 
+  /** The codes of every row priced so far. */
+  get codes(): ReadonlySet<string> {
+    return this.seen;
+  }
+
   outcome(row: PendingScreeningRow): ScreeningRowOutcome {
     if (!pricesAsMedicare(row.payerProduct)) {
       throw new RangeError('only medicare_ffs and ma_noncontracted rows are priced');
     }
+    if (this.context.read !== undefined && !this.context.read.codes.has(row.procedureCode)) {
+      throw new ReleaseKeysMismatch();
+    }
+    this.seen.add(row.procedureCode);
     const key = [row.procedureCode, [...row.modifiers].sort().join(' '), String(row.units), row.placeOfService, row.serviceBand].join('\t');
     let priced = this.lines.get(key);
     if (priced === undefined) {
@@ -406,9 +498,9 @@ export class ScreeningPricer {
       const changesInBand = changeDaysInBand(this.context.changeDays, row.serviceBand).some(
         (day) => !samePricing(line, priceScreeningLine(this.context, row, day)) || (later !== null && !samePricing(later, priceScreeningLaterProcedure(this.context, row, day))),
       );
-      priced = { line, later, changesInBand };
+      priced = screeningLineOutcome(row.serviceBand, line, changesInBand, later);
       this.lines.set(key, priced);
     }
-    return screeningOutcome(row, priced.line, priced.changesInBand, priced.later);
+    return rowOutcome(row, priced);
   }
 }
