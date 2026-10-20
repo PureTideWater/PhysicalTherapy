@@ -75,7 +75,12 @@ async function as<T extends pg.QueryResultRow = pg.QueryResultRow>(role: string,
   }
 }
 
-/** A SYNTHETIC release with two locality_map records: 00011 (no ZIP+4) and 00012 (ZIP+4 required). */
+/**
+ * A SYNTHETIC release with two locality_map records, 00011 (no ZIP+4) and 00012 (ZIP+4 required), and for the keyed
+ * read (audit #53's SQL) the keyed records of 97110 (its fee schedule values, MUE, own reduction record and same-code
+ * pair), the general reduction record, a fee schedule record and a pair no screening row asks for, and a shared
+ * conversion factor. Values are SYNTHETIC placeholders: these tests price no row through the engine.
+ */
 async function publishSyntheticRelease(releaseNo: number): Promise<void> {
   const client = await admin.connect();
   try {
@@ -87,6 +92,23 @@ async function publishSyntheticRelease(releaseNo: number): Promise<void> {
          ($1, 'locality_map', '{"zip":"00012"}', '{"state":"ZZ","carrier":"99999","locality":"01","rural_indicator":"R","plus_four_required":true}', '2026-01-01', '2026-12-31', '{"synthetic":true}', 'L1', $3)`,
       [releaseNo, hex('b'), hex('c')],
     );
+    const keyed: readonly (readonly [string, object])[] = [
+      ['pfs_rvu', { hcpcs: '97110', modifier: '' }],
+      ['pfs_rvu', { hcpcs: '97999', modifier: '' }],
+      ['ncci_mue', { hcpcs: '97110' }],
+      ['mppr_rate', { hcpcs: '97110', modifier: '' }],
+      ['mppr_rate', { component: 'practice_expense' }],
+      ['ncci_ptp', { column1: '97110', column2: '97110' }],
+      ['ncci_ptp', { column1: '97110', column2: '97140' }],
+      ['conversion_factor', { applicability: 'non_qualifying_apm' }],
+    ];
+    for (const [type, key] of keyed) {
+      await client.query(
+        `INSERT INTO rule_record (release_no, record_type, key, value, effective_from, effective_to, source, verification, sha256)
+         VALUES ($1, $2, $3, '{"synthetic":true}', '2026-01-01', '2026-12-31', '{"synthetic":true}', 'L1', $4)`,
+        [releaseNo, type, JSON.stringify(key), sha256(`${type}:${JSON.stringify(key)}`)],
+      );
+    }
     await client.query('UPDATE rule_release SET published_at = now() WHERE release_no = $1', [releaseNo]);
     await client.query('COMMIT');
   } catch (error) {
@@ -831,12 +853,26 @@ describe('the screening rules', () => {
     );
     expect(claim).toEqual({ release_no: 900001, release_available: true, zip: '00011', settings: SPLIT, as_of: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) as string, row_count: 6, attempt: 1 });
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toEqual([]);
-    // The release as the engine reads it: no keyed type is shared (this release holds only the locality map), and the
-    // run's keyed records are its ZIP's locality alone, by the keys its own rows ask for (audit #53).
-    expect(await as(OPERATOR_ROLE, 'SELECT record_type FROM operator_screening_release($1)', [runId])).toEqual([]);
+    // The release as the engine reads it (audit #53): the shared types once (no keyed type among them), and the run's
+    // keyed records by the keys its own rows can ask for: its Medicare rows' one code and its ZIP, never another code,
+    // pair or ZIP.
+    expect(await as(OPERATOR_ROLE, 'SELECT record_type, key FROM operator_screening_release($1)', [runId])).toEqual([
+      { record_type: 'conversion_factor', key: { applicability: 'non_qualifying_apm' } },
+    ]);
     expect(await as(OPERATOR_ROLE, 'SELECT codes, zip FROM operator_screening_run_keys($1)', [runId])).toEqual([{ codes: ['97110'], zip: '00011' }]);
     const release = await as<{ record_type: string; key: object; sha256: string }>(OPERATOR_ROLE, 'SELECT record_type, key, sha256 FROM operator_screening_run_records($1)', [runId]);
-    expect(release).toEqual([{ record_type: 'locality_map', key: { zip: '00011' }, sha256: hex('b') }]);
+    const byKey = (rows: readonly { record_type: string; key: object }[]) => rows.map((row) => `${row.record_type} ${JSON.stringify(row.key)}`).sort();
+    expect(byKey(release)).toEqual(
+      [
+        'locality_map {"zip":"00011"}',
+        'mppr_rate {"hcpcs":"97110","modifier":""}',
+        'mppr_rate {"component":"practice_expense"}',
+        'ncci_mue {"hcpcs":"97110"}',
+        'ncci_ptp {"column1":"97110","column2":"97110"}',
+        'pfs_rvu {"hcpcs":"97110","modifier":""}',
+      ].sort(),
+    );
+    expect(release.find((row) => row.record_type === 'locality_map')?.sha256).toBe(hex('b'));
     // It completes only once nothing is pending.
     await expect(as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [runId, hex('2'), 'phase-two/1', 'x'])).rejects.toMatchObject({ code: '23514' });
     // The trigger refuses moving started_at without a claim, so a stale run is aged as the superuser, triggers off.
@@ -1074,6 +1110,894 @@ describe('the screening rules', () => {
     } finally {
       first.release();
       second.release();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------
+// Audit #57 (the founder's rulings of 2026-10-20; ADR 0062, Outcomes, leads and attribution): the counts-only outcome
+// of every screening, the kept summary of a converted or consenting practice, attribution, and the campaign list. And
+// audit #53's keyed reads, the SQL's own guards. Test matrix SCR-09 to SCR-14, the database's part. SYNTHETIC values.
+// ---------------------------------------------------------------------------------------------------
+
+/** A column's value as text: a date in ISO form, a string as it is, anything else as JSON. */
+const asText = (value: unknown): string => (value instanceof Date ? value.toISOString() : typeof value === 'string' ? value : JSON.stringify(value));
+
+/** A link token's hash, one of its own each time. */
+const tokenHash = () => sha256(`token-${randomUUID()}`);
+
+/** The screening's ids: its prospect and upload. */
+async function idsOf(runId: string): Promise<{ readonly prospectId: string; readonly uploadId: string }> {
+  const { rows } = await admin.query<{ prospect_id: string; upload_id: string }>('SELECT u.prospect_id, r.upload_id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1', [runId]);
+  return { prospectId: rows[0]?.prospect_id ?? '', uploadId: rows[0]?.upload_id ?? '' };
+}
+
+/** The outcome of an upload (by id, so it is found once unlinked too). */
+async function outcomeOfUpload(uploadId: string): Promise<Record<string, unknown> | undefined> {
+  return (await admin.query('SELECT * FROM screening_outcome WHERE upload_id = $1', [uploadId])).rows[0] as Record<string, unknown> | undefined;
+}
+
+async function outcomeById(id: string): Promise<Record<string, unknown> | undefined> {
+  return (await admin.query('SELECT * FROM screening_outcome WHERE id = $1', [id])).rows[0] as Record<string, unknown> | undefined;
+}
+
+/** Completes a run as complete() does, with a withdrawal token's hash for a consent summary. */
+async function completeWith(runId: string, token: string, withdrawal: string | null): Promise<void> {
+  expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId])).toHaveLength(1);
+  const pending = await as<{ row_no: number; claim_count: number; observed_allowed_cents: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_rows($1, 0, 5000)', [runId]);
+  await as(OPERATOR_ROLE, 'SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)', [
+    runId,
+    pending.map((row) => row.row_no),
+    pending.map(() => 'priced'),
+    pending.map(() => '5000'),
+    pending.map(() => '5000.25'),
+    pending.map((row) => (5000n * BigInt(row.claim_count)).toString()),
+    pending.map((row) => (5000n * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
+    pending.map(() => true),
+    pending.map(() => '4000'),
+    pending.map(() => '4000.4'),
+    pending.map((row) => (4000n * BigInt(row.claim_count)).toString()),
+    pending.map((row) => (4000n * BigInt(row.claim_count) - BigInt(row.observed_allowed_cents)).toString()),
+    pending.map(() => hex('e')),
+    pending.map(() => null),
+    pending.map(() => null),
+    pending.map(() => hex('f')),
+  ]);
+  await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_complete($1, $2, $3, $4, $5)', [runId, token, withdrawal, 'phase-two/1', `test-${randomUUID()}`]);
+}
+
+async function convert(token: string): Promise<string> {
+  const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT convert_screening($1, $2, $3, $4, $5, $6) AS id', [token, 'SYNTHETIC CONTACT', 2, ['SYNTHETIC PAYER'], 'in_house', `test-${randomUUID()}`]);
+  return row?.id ?? '';
+}
+
+async function reject(options: { readonly practice?: string; readonly email: string; readonly rowCount?: number; readonly reasons?: readonly object[]; readonly source?: string | null }): Promise<string> {
+  const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) AS id', [
+    options.practice ?? `Synthetic Refused ${letters()}`,
+    'MN',
+    '00011',
+    options.email,
+    options.rowCount ?? 3,
+    JSON.stringify(options.reasons ?? [{ code: 'no_rows' }]),
+    options.source ?? null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    `test-${randomUUID()}`,
+  ]);
+  return row?.id ?? '';
+}
+
+async function leadsOf(email: string): Promise<Record<string, unknown>[]> {
+  return (await admin.query('SELECT * FROM screening_lead WHERE contact_email = $1 ORDER BY screened_at', [email])).rows as Record<string, unknown>[];
+}
+
+/** As the superuser, triggers off: moves a kept summary's dates back by `months`. */
+async function ageLead(leadId: string, months: number): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL session_replication_role = replica');
+    await client.query('UPDATE screening_lead SET screened_at = screened_at - $2::interval, expires_at = expires_at - $2::interval, created_at = created_at - $2::interval WHERE id = $1', [
+      leadId,
+      `${String(months)} months`,
+    ]);
+    await client.query('COMMIT');
+  } finally {
+    client.release();
+  }
+}
+
+/** Every CHECK literal pg_get_constraintdef prints for a constraint, in its order. */
+async function constraintLiterals(table: string, name: string): Promise<string[]> {
+  const { rows } = await admin.query<{ definition: string }>('SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c WHERE c.conrelid = $1::regclass AND c.conname = $2', [table, name]);
+  return [...(rows[0]?.definition ?? '').matchAll(/'((?:[^']|'')*)'::text/g)].map((match) => (match[1] ?? '').replace(/''/g, "'"));
+}
+
+describe('audit #57: what a row may hold, and the bands and channel the database computes', () => {
+  it('holds every closed list inline in each CHECK, never through a function, equal to the TypeScript lists', async () => {
+    const { MARKETING_CHANNELS, PAID_CLICKS, PROSPECT_DECLINED_REASONS, PROSPECT_SOURCES, SCREENING_COUNT_BANDS, SCREENING_DIFFERENCE_BANDS, SCREENING_OPEN_BANDS } = await import('./schema');
+    for (const [table, name] of [
+      ['screening_prospect', 'screening_prospect_source'],
+      ['screening_outcome', 'screening_outcome_source'],
+      ['screening_lead', 'screening_lead_source'],
+      ['prospect_request', 'prospect_request_source'],
+    ] as const) {
+      expect(await constraintLiterals(table, name), name).toEqual([...PROSPECT_SOURCES]);
+    }
+    for (const [table, name] of [
+      ['screening_prospect', 'screening_prospect_paid_click'],
+      ['screening_lead', 'screening_lead_paid_click'],
+      ['prospect_request', 'prospect_request_paid_click'],
+    ] as const) {
+      expect(await constraintLiterals(table, name), name).toEqual([...PAID_CLICKS]);
+    }
+    expect(await constraintLiterals('prospect_request', 'prospect_request_declined_reason')).toEqual([...PROSPECT_DECLINED_REASONS]);
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_channel')).toEqual([...MARKETING_CHANNELS]);
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_row_band')).toEqual([...SCREENING_COUNT_BANDS]);
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_left_out_band')).toEqual(SCREENING_COUNT_BANDS.filter((band) => band !== 'over_50k'));
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_anomaly_band')).toEqual(SCREENING_COUNT_BANDS.filter((band) => band !== 'over_50k'));
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_difference_band')).toEqual([...SCREENING_DIFFERENCE_BANDS]);
+    expect(await constraintLiterals('screening_outcome', 'screening_outcome_open_band')).toEqual([...SCREENING_OPEN_BANDS]);
+    // No CHECK on prospect_request calls a function but the one migration 20261030110000 granted (prospect_payers_valid):
+    // the application role updates the table directly.
+    const calls = await admin.query<{ conname: string; definition: string }>(
+      "SELECT conname, pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid = 'prospect_request'::regclass AND contype = 'c' AND conname <> 'prospect_request_payers'",
+    );
+    for (const row of calls.rows) {
+      expect(row.definition, row.conname).not.toMatch(/\b(?!btrim|length|lower)[a-z_]+\(/);
+    }
+  });
+
+  it('computes the channel from the campaign medium and the kind of paid click', async () => {
+    const channel = async (medium: string | null, click: string | null) => (await admin.query<{ c: string }>('SELECT marketing_channel($1, $2) AS c', [medium, click])).rows[0]?.c;
+    const table: readonly (readonly [string | null, string])[] = [
+      [null, 'none'],
+      ['email', 'email'],
+      ['newsletter', 'email'],
+      ['cpc', 'paid_search'],
+      ['ppc', 'paid_search'],
+      ['paid_search', 'paid_search'],
+      ['sem', 'paid_search'],
+      ['paid_social', 'paid_social'],
+      ['social', 'social'],
+      ['organic_social', 'social'],
+      ['linkedin', 'social'],
+      ['partner', 'partner'],
+      ['referral', 'partner'],
+      ['affiliate', 'partner'],
+      ['event', 'event'],
+      ['conference', 'event'],
+      ['webinar', 'event'],
+      ['content', 'content'],
+      ['blog', 'content'],
+      ['podcast', 'content'],
+      ['article', 'content'],
+      ['print', 'other'],
+    ];
+    for (const [medium, expected] of table) {
+      expect(await channel(medium, null), String(medium)).toBe(expected);
+    }
+    // A paid click names the channel only when the medium names none, or none the list knows.
+    expect(await channel(null, 'paid_social')).toBe('paid_social');
+    expect(await channel('print', 'paid_search')).toBe('paid_search');
+    expect(await channel('email', 'paid_search')).toBe('email');
+  });
+
+  it('bands counts, dollars and the first open, never keeping the number, the sum or the date', async () => {
+    const band = async (sql: string, value: unknown) => (await admin.query<{ b: string | null }>(`SELECT ${sql} AS b`, [value])).rows[0]?.b;
+    for (const [n, expected] of [
+      [null, 'none'],
+      [0, 'none'],
+      [-3, 'none'],
+      [1, '1_100'],
+      [100, '1_100'],
+      [101, '101_1k'],
+      [1000, '101_1k'],
+      [1001, '1k_10k'],
+      [10_000, '1k_10k'],
+      [10_001, '10k_50k'],
+      [50_000, '10k_50k'],
+      [50_001, 'over_50k'],
+    ] as const) {
+      expect(await band('screening_count_band($1)', n), String(n)).toBe(expected);
+    }
+    for (const [cents_, expected] of [
+      [null, 'none'],
+      [-500, 'none'],
+      [0, 'none'],
+      [1, 'under_1k'],
+      [99_999, 'under_1k'],
+      [100_000, '1k_to_10k'],
+      [999_999, '1k_to_10k'],
+      [1_000_000, '10k_to_50k'],
+      [4_999_999, '10k_to_50k'],
+      [5_000_000, '50k_to_250k'],
+      [24_999_999, '50k_to_250k'],
+      [25_000_000, '250k_or_more'],
+    ] as const) {
+      expect(await band('screening_difference_band($1)', cents_), String(cents_)).toBe(expected);
+    }
+    const open = async (uploaded: string, opened: string) => (await admin.query<{ b: string | null }>('SELECT screening_open_band($1, $2) AS b', [uploaded, opened])).rows[0]?.b;
+    // By UTC calendar days from the upload.
+    expect(await open('2026-10-01T23:59:00Z', '2026-10-01T23:59:30Z')).toBe('same_day');
+    expect(await open('2026-10-01T23:59:00Z', '2026-10-02T00:01:00Z')).toBe('1_2_days');
+    expect(await open('2026-10-01T00:00:00Z', '2026-10-03T23:00:00Z')).toBe('1_2_days');
+    expect(await open('2026-10-01T00:00:00Z', '2026-10-04T00:00:00Z')).toBe('3_7_days');
+    expect(await open('2026-10-01T00:00:00Z', '2026-10-08T12:00:00Z')).toBe('3_7_days');
+    expect(await open('2026-10-01T00:00:00Z', '2026-10-09T00:00:00Z')).toBe('8_30_days');
+    expect(await open('2026-10-01T00:00:00Z', '2026-10-31T00:00:00Z')).toBe('8_30_days');
+    expect(await open('2026-10-01T00:00:00Z', null as unknown as string)).toBeNull();
+    // A refused upload's codes: distinct, ascending, each a rejection code, never a row or a field.
+    const codes = async (value: unknown) => (await admin.query<{ ok: boolean }>('SELECT screening_refusal_codes_valid($1::text[]) AS ok', [value])).rows[0]?.ok;
+    expect(await codes(['no_rows'])).toBe(true);
+    expect(await codes(['duplicate_row', 'phi_column', 'too_few_claim_lines'])).toBe(true);
+    expect(await codes([])).toBe(true);
+    expect(await codes(['phi_column', 'duplicate_row'])).toBe(false);
+    expect(await codes(['no_rows', 'no_rows'])).toBe(false);
+    expect(await codes(['row 12'])).toBe(false);
+    expect(await codes(['no_rows', null])).toBe(false);
+    expect(await codes(Array.from({ length: 14 }, () => 'no_rows'))).toBe(false);
+    expect((await admin.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows[0]?.v).toMatch(/^screening-labels\/20\d{2}-\d{2}-\d{2}$/);
+  });
+
+  it('refuses a prospect’s attribution that is not a code, a list answer or a firm’s name, and a consent or terms hash that is not one', async () => {
+    const insert = (column: string, value: unknown) =>
+      admin.query(`INSERT INTO screening_prospect (practice_name, state, zip, contact_email, ${column}) VALUES ('Synthetic Check', 'MN', '00011', 'check@synthetic.test', $1)`, [value]);
+    for (const [column, value, constraint] of [
+      ['source', 'friend', 'screening_prospect_source'],
+      ['utm_source', 'Newsletter', 'screening_prospect_utm_source'],
+      ['utm_medium', 'e mail', 'screening_prospect_utm_medium'],
+      ['utm_campaign', 'jane.doe@synthetic.test', 'screening_prospect_utm_campaign'],
+      ['utm_campaign', 'a'.repeat(65), 'screening_prospect_utm_campaign'],
+      ['paid_click', 'gclid', 'screening_prospect_paid_click'],
+      ['referring_firm', ' Synthetic Firm', 'screening_prospect_referring_firm'],
+      ['referring_firm', '', 'screening_prospect_referring_firm'],
+      ['referring_firm', 'x'.repeat(201), 'screening_prospect_referring_firm'],
+      ['followup_consent_sha256', 'yes', 'screening_prospect_followup_consent'],
+      ['screening_terms_sha256', hex('A'), 'screening_prospect_screening_terms'],
+    ] as const) {
+      await expect(insert(column, value), `${column} ${String(value)}`).rejects.toMatchObject({ code: '23514', constraint });
+    }
+  });
+});
+
+describe('audit #57: the counts-only outcome (SCR-10)', () => {
+  it('is written at submission: accepted, its bands, the channel and campaign computed here, the month and the release, and nothing that names anyone', async () => {
+    await admin.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('listed-launch', 'SYNTHETIC listed launch', $1)", [specialist]);
+    const email = `outcome.${letters()}@synthetic.test`;
+    const practice = `Synthetic Outcome ${letters()}`;
+    const runId = await submit({
+      practice,
+      email,
+      leftOut: [2, 15, 30_000n],
+      attribution: { source: 'colleague', utmSource: 'newsletter', utmMedium: 'cpc', utmCampaign: 'listed-launch', paidClick: 'paid_social', firm: 'Synthetic Billing Partners' },
+      termsSha256: hex('7'),
+    });
+    const { uploadId } = await idsOf(runId);
+    const outcome = await outcomeOfUpload(uploadId);
+    expect(outcome).toMatchObject({
+      stage: 'accepted',
+      source: 'colleague',
+      channel: 'paid_search',
+      campaign: 'listed-launch',
+      consented: false,
+      row_band: '1_100',
+      left_out_band: '1_100',
+      refusal_codes: [],
+      retried: false,
+      release_no: 900001,
+      engine_version: null,
+      priced_share_pct: null,
+      first_open_band: null,
+      converted: false,
+      superseded: false,
+    });
+    expect(outcome?.screened_month).toBe(new Date().toISOString().slice(0, 7));
+    const { id: _id, upload_id: _upload, ...held } = outcome ?? {};
+    const text = JSON.stringify(held);
+    for (const value of [email, practice, '00011', 'Synthetic Billing Partners', 'newsletter', '20100', '15', '30000']) {
+      expect(text, value).not.toContain(value);
+    }
+    // The prospect keeps its own attribution and the terms' hash.
+    expect((await admin.query('SELECT source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm, screening_terms_sha256 FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([
+      { source: 'colleague', utm_source: 'newsletter', utm_medium: 'cpc', utm_campaign: 'listed-launch', paid_click: 'paid_social', referring_firm: 'Synthetic Billing Partners', screening_terms_sha256: hex('7') },
+    ]);
+    // An unlisted campaign code counts as other, and listing it later does not reclassify it; no code is null.
+    const unlisted = await submit({ attribution: { utmCampaign: 'one-off-code', utmMedium: 'email' } });
+    expect(await outcomeOfUpload((await idsOf(unlisted)).uploadId)).toMatchObject({ campaign: 'other', channel: 'email' });
+    await admin.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('one-off-code', 'SYNTHETIC listed later', $1)", [specialist]);
+    expect(await outcomeOfUpload((await idsOf(unlisted)).uploadId)).toMatchObject({ campaign: 'other' });
+    const none = await submit();
+    expect(await outcomeOfUpload((await idsOf(none)).uploadId)).toMatchObject({ campaign: null, channel: 'none', source: null });
+  });
+
+  it('is written at refusal: refused, the band of the row count and the sorted, distinct codes of its reasons alone', async () => {
+    const email = `refused.${letters()}@synthetic.test`;
+    const uploadId = await reject({
+      email,
+      rowCount: 60_000,
+      reasons: [
+        { code: 'too_many_rows' },
+        { code: 'phi_column', column: 4, phi: 'member_id' },
+        { code: 'invalid_value', row: 12, field: 'units' },
+        { code: 'phi_column', column: 5, phi: 'name' },
+      ],
+      source: 'event',
+    });
+    expect(await outcomeOfUpload(uploadId)).toMatchObject({
+      stage: 'refused',
+      row_band: 'over_50k',
+      refusal_codes: ['invalid_value', 'phi_column', 'too_many_rows'],
+      source: 'event',
+      channel: 'none',
+      release_no: null,
+      left_out_band: 'none',
+      retried: false,
+    });
+    // A refused upload the practice follows with an accepted one is marked retried; another practice's is not.
+    const other = await reject({ email: `other.${letters()}@synthetic.test` });
+    const byZipAndName = await reject({ email: `zip.${letters()}@synthetic.test`, practice: 'Synthetic Retried Clinic' });
+    await submit({ email });
+    await submit({ practice: '  synthetic   RETRIED clinic ', email: `fresh.${letters()}@synthetic.test` });
+    expect(await outcomeOfUpload(uploadId)).toMatchObject({ retried: true });
+    expect(await outcomeOfUpload(byZipAndName)).toMatchObject({ retried: true });
+    expect(await outcomeOfUpload(other)).toMatchObject({ retried: false });
+  });
+
+  it('is priced at completion: whole-percent shares that floor to 97..100, the anomaly band from screening_standing() and the band of their gap', async () => {
+    const runId = await submit();
+    const { uploadId } = await idsOf(runId);
+    await complete(runId, tokenHash());
+    // Allowed 20,100 cents in all: priced 12,000 (59.7%), contract 7,000 (34.8%), not screened 1,100 (5.5%), none unpriced.
+    // Both priced rows are more than $5 a claim line below their fully reduced figure (44,000 cents for 11 lines):
+    // gaps of 34,000 and 42,000 cents, 76,000 in all, under $1,000.
+    expect(await outcomeOfUpload(uploadId)).toMatchObject({
+      stage: 'priced',
+      engine_version: 'phase-two/1',
+      priced_share_pct: 59,
+      contract_share_pct: 34,
+      could_not_price_share_pct: 0,
+      not_screened_share_pct: 5,
+      anomaly_band: '1_100',
+      anomaly_difference_band: 'under_1k',
+    });
+    // A file with no allowed dollars has all-zero shares.
+    const zero = await submit({ rows: [['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 0n, 11]] });
+    await complete(zero, tokenHash());
+    expect(await outcomeOfUpload((await idsOf(zero)).uploadId)).toMatchObject({ priced_share_pct: 0, contract_share_pct: 0, could_not_price_share_pct: 0, not_screened_share_pct: 0 });
+    // No anomaly: both bands none.
+    const fine = await submit({ rows: [['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 60_000n, 11]] });
+    await complete(fine, tokenHash());
+    expect(await outcomeOfUpload((await idsOf(fine)).uploadId)).toMatchObject({ anomaly_band: 'none', anomaly_difference_band: 'none', priced_share_pct: 100 });
+  });
+
+  it('fails with its run', async () => {
+    const runId = await submit();
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [runId, 'PRICING_FAILED', 'x']);
+    expect(await outcomeOfUpload((await idsOf(runId)).uploadId)).toMatchObject({ stage: 'failed', engine_version: null, priced_share_pct: null });
+  });
+
+  it('keeps what it was written with, moves one way, sets its flags and first open once, and refuses each CHECK’s breach', async () => {
+    const runId = await submit();
+    const { uploadId } = await idsOf(runId);
+    const id = String((await outcomeOfUpload(uploadId))?.id);
+    for (const change of ["source = 'search'", "channel = 'email'", "campaign = 'other'", 'consented = true', "row_band = '101_1k'", "left_out_band = '1_100'", 'release_no = 900002', "screened_month = '2026-01'"]) {
+      await expect(admin.query(`UPDATE screening_outcome SET ${change} WHERE id = $1`, [id]), change).rejects.toMatchObject({ code: '23514', constraint: 'screening_outcome_fixed' });
+    }
+    // Its link only goes: never to another upload.
+    const other = (await idsOf(await submit())).uploadId;
+    await expect(admin.query('UPDATE screening_outcome SET upload_id = $2 WHERE id = $1', [id, other])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    // The figures are set only as it is priced, and the stage moves only from accepted.
+    await expect(admin.query("UPDATE screening_outcome SET anomaly_band = 'none' WHERE id = $1", [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    await expect(admin.query("UPDATE screening_outcome SET stage = 'refused' WHERE id = $1", [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    const token = tokenHash();
+    await complete(runId, token);
+    await expect(admin.query("UPDATE screening_outcome SET stage = 'failed' WHERE id = $1", [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    await expect(admin.query('UPDATE screening_outcome SET priced_share_pct = 58 WHERE id = $1', [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    // The first open and the flags, once.
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [token]);
+    expect(await outcomeById(id)).toMatchObject({ first_open_band: 'same_day' });
+    await expect(admin.query("UPDATE screening_outcome SET first_open_band = '3_7_days' WHERE id = $1", [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    await convert(token);
+    expect(await outcomeById(id)).toMatchObject({ converted: true, first_open_band: 'same_day' });
+    await expect(admin.query('UPDATE screening_outcome SET converted = false WHERE id = $1', [id])).rejects.toMatchObject({ constraint: 'screening_outcome_fixed' });
+    // DELETE and TRUNCATE are refused, whoever asks.
+    await expect(admin.query('DELETE FROM screening_outcome WHERE id = $1', [id])).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('TRUNCATE screening_outcome')).rejects.toMatchObject({ code: 'P0001' });
+    // The CHECKs, as the owner writing a row directly.
+    const row = (values: Record<string, unknown>) => {
+      const base: Record<string, unknown> = { screened_month: '2026-10', stage: 'accepted', channel: 'none', row_band: '1_100', release_no: 900001, ...values };
+      const columns = Object.keys(base);
+      return admin.query(`INSERT INTO screening_outcome (${columns.join(', ')}) VALUES (${columns.map((_, index) => `$${String(index + 1)}`).join(', ')})`, Object.values(base));
+    };
+    const priced = { stage: 'priced', engine_version: 'phase-two/1', priced_share_pct: 50, contract_share_pct: 30, could_not_price_share_pct: 10, not_screened_share_pct: 9, anomaly_band: 'none', anomaly_difference_band: 'none' };
+    await expect(row({})).resolves.toBeDefined();
+    await expect(row(priced)).resolves.toBeDefined();
+    for (const [values, constraint] of [
+      [{ screened_month: '2026-13' }, 'screening_outcome_month'],
+      [{ screened_month: '2026-10-01' }, 'screening_outcome_month'],
+      [{ stage: 'refused', release_no: null }, 'screening_outcome_refused'],
+      [{ stage: 'refused', release_no: null, refusal_codes: ['no_rows'], consented: true }, 'screening_outcome_refused'],
+      [{ refusal_codes: ['no_rows'] }, 'screening_outcome_refused'],
+      [{ retried: true }, 'screening_outcome_refused'],
+      [{ release_no: null }, 'screening_outcome_pinned'],
+      [{ row_band: 'none' }, 'screening_outcome_accepted_rows'],
+      [{ row_band: 'over_50k' }, 'screening_outcome_accepted_rows'],
+      [{ channel: 'billboard' }, 'screening_outcome_channel'],
+      [{ campaign: 'Spring Launch' }, 'screening_outcome_campaign'],
+      [{ left_out_band: 'over_50k' }, 'screening_outcome_left_out_band'],
+      [{ ...priced, engine_version: null }, 'screening_outcome_priced'],
+      [{ engine_version: 'phase-two/1' }, 'screening_outcome_priced'],
+      [{ ...priced, priced_share_pct: 10 }, 'screening_outcome_shares'],
+      [{ ...priced, anomaly_band: '1_100' }, 'screening_outcome_band'],
+      [{ first_open_band: 'same_day' }, 'screening_outcome_opened'],
+      [{ converted: true }, 'screening_outcome_converted'],
+      [{ refusal_codes: ['row 12'], stage: 'refused', release_no: null }, 'screening_outcome_refusal_codes'],
+    ] as const) {
+      await expect(row(values), JSON.stringify(values)).rejects.toMatchObject({ code: '23514', constraint });
+    }
+  });
+
+  it('outlives its screening: unlinked on replacement (superseded) and on expiry, then sealed, and no audit event names it', async () => {
+    const email = `outlive.${letters()}@synthetic.test`;
+    const first = await submit({ email });
+    const firstUpload = (await idsOf(first)).uploadId;
+    const firstOutcome = String((await outcomeOfUpload(firstUpload))?.id);
+    await submit({ email });
+    expect(await outcomeById(firstOutcome)).toMatchObject({ upload_id: null, superseded: true, stage: 'accepted' });
+    await expect(admin.query('UPDATE screening_outcome SET converted = true WHERE id = $1', [firstOutcome])).rejects.toMatchObject({ constraint: 'screening_outcome_sealed' });
+    const expiring = await submit();
+    const expiringOutcome = String((await outcomeOfUpload((await idsOf(expiring)).uploadId))?.id);
+    await age(expiring, 31);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', ['x']);
+    expect(await outcomeById(expiringOutcome)).toMatchObject({ upload_id: null, superseded: false });
+    expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE object_type = 'screening_outcome' OR object_id IN (SELECT id FROM screening_outcome)")).rows).toEqual([{ n: 0 }]);
+  });
+
+  it('cannot be paired to reveal a small cell: two screenings whose one row differs by one claim line keep outcomes that differ in no count', async () => {
+    const practice = `Synthetic Pair ${letters()}`;
+    const twelve = await submit({ practice, rows: [['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 12]] });
+    const twelveOutcome = String((await outcomeOfUpload((await idsOf(twelve)).uploadId))?.id);
+    await complete(twelve, tokenHash());
+    const eleven = await submit({ practice, rows: [['97110', 'GP', 2, '11', 'medicare_ffs', '2026-Q1', 10_000n, 11]] });
+    const elevenOutcome = String((await outcomeOfUpload((await idsOf(eleven)).uploadId))?.id);
+    await complete(eleven, tokenHash());
+    const strip = (outcome: Record<string, unknown> | undefined) => {
+      const { id: _id, upload_id: _upload, superseded: _superseded, ...rest } = outcome ?? {};
+      return rest;
+    };
+    // Both outcomes are kept for good, and subtracting one from the other gives nothing: every count is the same band.
+    expect(strip(await outcomeById(twelveOutcome))).toEqual(strip(await outcomeById(elevenOutcome)));
+    expect(await outcomeById(twelveOutcome)).toMatchObject({ superseded: true, upload_id: null });
+  });
+});
+
+describe('audit #57: the kept summary of a converted or consenting practice (SCR-11, SCR-14)', () => {
+  it('is frozen at conversion with the screening’s sums, its attribution, the labels’ version, its first open and 12 months to keep', async () => {
+    const email = `lead.${letters()}@synthetic.test`;
+    const runId = await submit({ email, leftOut: [2, 11, 4_000n], attribution: { source: 'search', utmSource: 'google', utmMedium: 'cpc', paidClick: 'paid_search', firm: 'Synthetic Firm' } });
+    const token = tokenHash();
+    await complete(runId, token);
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [token]);
+    expect(await leadsOf(email)).toEqual([]);
+    const requestId = await convert(token);
+    const [lead] = await leadsOf(email);
+    const [summary] = await as<Record<string, string | number>>(APP_ROLE, 'SELECT * FROM screening_result_summary($1)', [token]);
+    const run = (await admin.query<{ first_opened_at: Date; created_at: Date }>('SELECT r.first_opened_at, u.created_at FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1', [runId])).rows[0];
+    expect(lead).toMatchObject({
+      prospect_request_id: requestId,
+      practice_name: summary?.practice_name,
+      zip: '00011',
+      state: 'MN',
+      source: 'search',
+      utm_source: 'google',
+      utm_medium: 'cpc',
+      utm_campaign: null,
+      paid_click: 'paid_search',
+      referring_firm: 'Synthetic Firm',
+      consent_sha256: null,
+      withdrawal_token_sha256: null,
+      release_no: 900001,
+      release_manifest_sha256: hex('a'),
+      engine_version: 'phase-two/1',
+      labels_version: (await admin.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows[0]?.v,
+      row_count: summary?.rows,
+      claim_lines: String(summary?.claim_lines),
+      observed_cents: String(summary?.observed_cents),
+      anomaly_rows: 2,
+      left_out_rows: 2,
+      left_out_claim_lines: 11,
+      left_out_allowed_cents: '4000',
+    });
+    expect((lead?.result_first_opened_at as Date).toISOString()).toBe(run?.first_opened_at.toISOString());
+    expect((lead?.screened_at as Date).toISOString()).toBe(run?.created_at.toISOString());
+    const twelve = new Date(run?.created_at ?? 0);
+    twelve.setUTCMonth(twelve.getUTCMonth() + 12);
+    expect((lead?.expires_at as Date).toISOString()).toBe(twelve.toISOString());
+    // The products' sums are the coverage's, row for row.
+    const coverage = await as<{ payer_product: string; disposition: string; rows: number; claim_lines: string; observed_cents: string }>(APP_ROLE, 'SELECT * FROM screening_result_coverage($1)', [token]);
+    const products = (await admin.query<Record<string, string | number>>('SELECT * FROM screening_lead_product WHERE lead_id = $1 ORDER BY payer_product', [lead?.id])).rows;
+    expect(products.map((product) => product.payer_product).sort()).toEqual([...new Set(coverage.map((row) => row.payer_product))].sort());
+    for (const product of products) {
+      const rows = coverage.filter((row) => row.payer_product === product.payer_product);
+      expect(product.row_count, String(product.payer_product)).toBe(rows.reduce((sum, row) => sum + row.rows, 0));
+      expect(product.claim_lines).toBe(String(rows.reduce((sum, row) => sum + BigInt(row.claim_lines), 0n)));
+      expect(product.observed_cents).toBe(String(rows.reduce((sum, row) => sum + BigInt(row.observed_cents), 0n)));
+      expect(product.priced_observed_cents).toBe(String(rows.filter((row) => row.disposition === 'priced').reduce((sum, row) => sum + BigInt(row.observed_cents), 0n)));
+    }
+    expect(products.find((product) => product.payer_product === 'medicare_ffs')).toMatchObject({ priced_rows: 1, expected_cents: '55000', lowest_cents: '44000', pooled_rows: 1, anomaly_rows: 1 });
+    expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_lead_kept' AND object_type = 'screening_lead' AND object_id = $1", [lead?.id])).rows).toEqual([{ n: 1 }]);
+  });
+
+  it('keeps the left-out claim lines and dollars only at 11 or more', async () => {
+    const email = `lead.small.${letters()}@synthetic.test`;
+    const runId = await submit({ email, leftOut: [1, 10, 4_517n] });
+    const token = tokenHash();
+    await complete(runId, token);
+    await convert(token);
+    expect(await leadsOf(email)).toEqual([expect.objectContaining({ left_out_rows: 1, left_out_claim_lines: null, left_out_allowed_cents: null })]);
+  });
+
+  it('records a conversion as the first open when no signal came, and a signal after it sets nothing more', async () => {
+    const email = `lead.open.${letters()}@synthetic.test`;
+    const runId = await submit({ email });
+    const token = tokenHash();
+    await complete(runId, token);
+    const { uploadId } = await idsOf(runId);
+    await convert(token);
+    const run = (await admin.query<{ first_opened_at: Date | null }>('SELECT first_opened_at FROM screening_run WHERE id = $1', [runId])).rows[0];
+    expect(run?.first_opened_at).not.toBeNull();
+    expect(await outcomeOfUpload(uploadId)).toMatchObject({ first_open_band: 'same_day', converted: true });
+    expect((await leadsOf(email))[0]?.result_first_opened_at).not.toBeNull();
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [token]);
+    expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_result_opened' AND object_id = $1", [runId])).rows).toEqual([{ n: 0 }]);
+    // The signal answers alike for an unknown, an incomplete or an expired link: nothing.
+    await expect(as(APP_ROLE, 'SELECT screening_result_opened($1)', [tokenHash()])).resolves.toBeDefined();
+    const queued = await submit();
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [hex('9')]);
+    expect((await admin.query('SELECT first_opened_at FROM screening_run WHERE id = $1', [queued])).rows).toEqual([{ first_opened_at: null }]);
+    const expired = await submit();
+    const expiredToken = tokenHash();
+    await complete(expired, expiredToken);
+    await age(expired, 31);
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [expiredToken]);
+    expect((await admin.query('SELECT first_opened_at FROM screening_run WHERE id = $1', [expired])).rows).toEqual([{ first_opened_at: null }]);
+  });
+
+  it('opens once: the run, the outcome’s band and the kept summary’s first open, one audit event, and a summary frozen after the open copies it', async () => {
+    const email = `opened.${letters()}@synthetic.test`;
+    const runId = await submit({ email });
+    const token = tokenHash();
+    await complete(runId, token);
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [token]);
+    const first = (await admin.query<{ first_opened_at: Date }>('SELECT first_opened_at FROM screening_run WHERE id = $1', [runId])).rows[0]?.first_opened_at;
+    expect(first).toBeInstanceOf(Date);
+    await as(APP_ROLE, 'SELECT screening_result_opened($1)', [token]);
+    expect((await admin.query<{ first_opened_at: Date }>('SELECT first_opened_at FROM screening_run WHERE id = $1', [runId])).rows[0]?.first_opened_at).toEqual(first);
+    expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_result_opened' AND object_type = 'screening_run' AND object_id = $1", [runId])).rows).toEqual([{ n: 1 }]);
+    await expect(admin.query('UPDATE screening_run SET first_opened_at = now() WHERE id = $1', [runId])).rejects.toMatchObject({ code: '23514' });
+    await convert(token);
+    expect(((await leadsOf(email))[0]?.result_first_opened_at as Date).toISOString()).toBe(first?.toISOString());
+  });
+
+  it('is replaced at the completion of the practice’s next screening, which carries its request over and names it in the replacement’s event', async () => {
+    const email = `replace.${letters()}@synthetic.test`;
+    const first = await submit({ email });
+    const firstToken = tokenHash();
+    await complete(first, firstToken);
+    const requestId = await convert(firstToken);
+    const [kept] = await leadsOf(email);
+    // A later screening of the practice deletes the earlier screening at once, but not its summary: that waits for the
+    // later one's completion, so a failed or abandoned resend deletes nothing.
+    const failed = await submit({ email, practice: `Synthetic Renamed ${letters()}` });
+    expect(await leadsOf(email)).toEqual([expect.objectContaining({ id: kept?.id, upload_id: null, prospect_request_id: requestId })]);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_fail($1, $2, $3)', [failed, 'PRICING_FAILED', 'x']);
+    const abandoned = await submit({ email });
+    expect((await leadsOf(email)).map((lead) => lead.id)).toEqual([kept?.id]);
+    // Nor may anyone delete it before it expires.
+    await expect(admin.query('DELETE FROM screening_lead WHERE id = $1', [kept?.id])).rejects.toMatchObject({ code: '23514', constraint: 'screening_lead_kept' });
+    // A refused upload replaces nothing.
+    await reject({ email });
+    expect((await leadsOf(email)).map((lead) => lead.id)).toEqual([kept?.id]);
+    await complete(abandoned, tokenHash());
+    const [replacement, ...more] = await leadsOf(email);
+    expect(more).toEqual([]);
+    expect(replacement?.id).not.toBe(kept?.id);
+    expect(replacement).toMatchObject({ prospect_request_id: requestId, upload_id: (await idsOf(abandoned)).uploadId });
+    expect((await admin.query("SELECT object_type FROM audit_event WHERE action = 'screening_lead_replaced' AND object_id = $1", [requestId])).rows).toEqual([{ object_type: 'prospect_request' }]);
+    // Converting the replacement keeps the earlier request on it; the new request is still from the screening.
+    const later = await convert((await admin.query<{ result_token_sha256: string }>('SELECT result_token_sha256 FROM screening_run WHERE id = $1', [abandoned])).rows[0]?.result_token_sha256 ?? '');
+    expect(await leadsOf(email)).toEqual([expect.objectContaining({ prospect_request_id: requestId })]);
+    expect((await admin.query('SELECT from_screening FROM prospect_request WHERE id = $1', [later])).rows).toEqual([{ from_screening: true }]);
+  });
+
+  it('is replaced the same way by a screening of the same ZIP and practice name from another address, and never by another practice’s', async () => {
+    const practice = `Synthetic Same Practice ${letters()}`;
+    const email = `first.${letters()}@synthetic.test`;
+    const first = await submit({ practice, email });
+    const token = tokenHash();
+    await complete(first, token);
+    const requestId = await convert(token);
+    const neighbour = await submit({ practice: `Synthetic Neighbour ${letters()}`, email: `neighbour.${letters()}@synthetic.test` });
+    await complete(neighbour, tokenHash());
+    expect((await leadsOf(email)).map((lead) => lead.prospect_request_id)).toEqual([requestId]);
+    const other = `second.${letters()}@synthetic.test`;
+    const second = await submit({ practice: ` ${practice.toUpperCase()}  `, email: other });
+    await complete(second, tokenHash());
+    expect(await leadsOf(email)).toEqual([]);
+    expect(await leadsOf(other)).toEqual([expect.objectContaining({ prospect_request_id: requestId })]);
+  });
+
+  it('refuses a consent summary without a withdrawal link, keeps one with it, reminds once within the window, and withdraws it with its products', async () => {
+    const email = `consent.${letters()}@synthetic.test`;
+    const refused = await submit({ email: `consent.refused.${letters()}@synthetic.test`, consentSha256: hex('c') });
+    await expect(completeWith(refused, tokenHash(), null)).rejects.toMatchObject({ code: '23514', constraint: 'screening_lead_withdrawal_token' });
+    const runId = await submit({ email, consentSha256: hex('c') });
+    const withdrawal = sha256(`withdraw-${randomUUID()}`);
+    await completeWith(runId, tokenHash(), withdrawal);
+    const [lead] = await leadsOf(email);
+    expect(lead).toMatchObject({ consent_sha256: hex('c'), withdrawal_token_sha256: withdrawal, prospect_request_id: null, reminder_sent_at: null });
+    expect(await outcomeOfUpload((await idsOf(runId)).uploadId)).toMatchObject({ consented: true });
+    // Reminders: consent summaries only, within the window, once.
+    const converted = `consent.converted.${letters()}@synthetic.test`;
+    const plain = await submit({ email: converted });
+    const plainToken = tokenHash();
+    await complete(plain, plainToken);
+    await convert(plainToken);
+    const due = async (days: number) => (await as<{ lead_id: string; contact_email: string }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_reminders_due($1, 1000)', [days])).map((row) => row.lead_id);
+    expect(await due(30)).not.toContain(lead?.id);
+    expect(await due(400)).toContain(lead?.id);
+    expect(await due(400)).not.toContain((await leadsOf(converted))[0]?.id);
+    expect(await as(OPERATOR_ROLE, 'SELECT operator_screening_reminder_sent($1, $2) AS sent', [lead?.id, 'x'])).toEqual([{ sent: true }]);
+    expect(await as(OPERATOR_ROLE, 'SELECT operator_screening_reminder_sent($1, $2) AS sent', [lead?.id, 'x'])).toEqual([{ sent: false }]);
+    expect(await as(OPERATOR_ROLE, 'SELECT operator_screening_reminder_sent($1, $2) AS sent', [(await leadsOf(converted))[0]?.id, 'x'])).toEqual([{ sent: false }]);
+    expect(await due(400)).not.toContain(lead?.id);
+    // Withdrawal: an unknown token does nothing; the right one deletes the summary and its products, an audit event.
+    await as(APP_ROLE, 'SELECT screening_lead_withdraw($1, $2)', [sha256('unknown'), 'x']);
+    await as(APP_ROLE, 'SELECT screening_lead_withdraw($1, $2)', ['not-a-hash', 'x']);
+    expect(await leadsOf(email)).toHaveLength(1);
+    await as(APP_ROLE, 'SELECT screening_lead_withdraw($1, $2)', [withdrawal, 'x']);
+    expect(await leadsOf(email)).toEqual([]);
+    expect((await admin.query('SELECT count(*)::int AS n FROM screening_lead_product WHERE lead_id = $1', [lead?.id])).rows).toEqual([{ n: 0 }]);
+    expect((await admin.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_lead_withdrawn' AND object_id = $1", [lead?.id])).rows).toEqual([{ n: 1 }]);
+  });
+
+  it('keeps what it was frozen with, sets its request and other fields once, and its products never change and go only with it', async () => {
+    const email = `fixed.${letters()}@synthetic.test`;
+    const runId = await submit({ email });
+    const token = tokenHash();
+    await complete(runId, token);
+    await convert(token);
+    const [lead] = await leadsOf(email);
+    for (const change of ["practice_name = 'Synthetic Other'", 'row_count = row_count + 1', 'observed_cents = 0', "labels_version = 'screening-labels/2027-01-01'", 'screened_at = now()']) {
+      await expect(admin.query(`UPDATE screening_lead SET ${change} WHERE id = $1`, [lead?.id]), change).rejects.toMatchObject({ constraint: 'screening_lead_fixed' });
+    }
+    const otherRequest = (await admin.query<{ id: string }>("SELECT submit_prospect_request('SYNTHETIC', 'x@synthetic.test', 'SYNTHETIC ORG', 1, ARRAY['SYNTHETIC PAYER'], 'in_house') AS id")).rows[0]?.id;
+    await expect(admin.query('UPDATE screening_lead SET prospect_request_id = $2 WHERE id = $1', [lead?.id, otherRequest])).rejects.toMatchObject({ constraint: 'screening_lead_fixed' });
+    await expect(admin.query("UPDATE screening_lead SET expires_at = now() + interval '1 day' WHERE id = $1", [lead?.id])).rejects.toMatchObject({ constraint: 'screening_lead_fixed' });
+    await expect(admin.query("UPDATE screening_lead_product SET row_count = row_count WHERE lead_id = $1 AND payer_product = 'medicaid'", [lead?.id])).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query("DELETE FROM screening_lead_product WHERE lead_id = $1 AND payer_product = 'medicaid'", [lead?.id])).rejects.toMatchObject({ constraint: 'screening_lead_kept' });
+    await expect(admin.query('TRUNCATE screening_lead_product')).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('TRUNCATE screening_lead CASCADE')).rejects.toMatchObject({ code: 'P0001' });
+    // The CHECKs on a summary and its products: every claim-line sum 0 or at least 11 (10 refused, 11 taken).
+    const fresh = (await admin.query<{ id: string }>(
+      `INSERT INTO screening_lead (practice_name, state, zip, contact_email, consent_sha256, release_no, release_manifest_sha256, engine_version, labels_version, screened_at,
+                                   row_count, claim_lines, observed_cents, anomaly_rows, left_out_rows, expires_at)
+       VALUES ('Synthetic Check Lead', 'MN', '00011', 'check.lead@synthetic.test', $1, 900001, $2, 'phase-two/1', 'screening-labels/2026-10-18', now(), 2, 22, 100, 0, 0, now() + interval '1 month')
+       RETURNING id`,
+      [hex('d'), hex('a')],
+    )).rows[0]?.id;
+    const product = (claims: [number, number]) =>
+      admin.query(
+        `INSERT INTO screening_lead_product (lead_id, payer_product, row_count, claim_lines, observed_cents, priced_rows, priced_claim_lines, priced_observed_cents, could_not_price_rows, could_not_price_claim_lines, could_not_price_observed_cents)
+         VALUES ($1, 'medicare_ffs', 2, $2, 100, 1, $3, 60, 1, $4, 40)`,
+        [fresh, claims[0] + claims[1], claims[0], claims[1]],
+      );
+    await expect(product([10, 12])).rejects.toMatchObject({ constraint: 'screening_lead_product_cells' });
+    await expect(product([11, 11])).resolves.toBeDefined();
+    await expect(admin.query("INSERT INTO screening_lead_product (lead_id, payer_product, row_count, claim_lines, observed_cents) VALUES ($1, 'medicaid', 1, 10, 0)", [fresh])).rejects.toMatchObject({
+      constraint: 'screening_lead_product_claim_lines',
+    });
+    await expect(admin.query("INSERT INTO screening_lead_product (lead_id, payer_product, row_count, claim_lines, observed_cents, priced_rows) VALUES ($1, 'commercial', 1, 11, 0, 1)", [fresh])).rejects.toMatchObject({
+      constraint: 'screening_lead_product_medicare',
+    });
+    const lead_ = (values: string) =>
+      admin.query(
+        `INSERT INTO screening_lead (practice_name, state, zip, contact_email, release_no, release_manifest_sha256, engine_version, labels_version, screened_at, row_count, claim_lines, observed_cents, anomaly_rows, left_out_rows, expires_at ${values})`,
+      );
+    const base = `'Synthetic', 'MN', '00011', 'c@synthetic.test', 900001, '${hex('a')}', 'phase-two/1', 'screening-labels/2026-10-18', now(), 1, 11, 0, 0, 0, now() + interval '1 month'`;
+    await expect(lead_(`) VALUES (${base}`)).rejects.toMatchObject({ constraint: 'screening_lead_basis' });
+    await expect(lead_(`, consent_sha256, left_out_claim_lines, left_out_allowed_cents) VALUES (${base}, '${hex('d')}', 11, 5`)).rejects.toMatchObject({ constraint: 'screening_lead_left_out' });
+    await expect(lead_(`, consent_sha256) VALUES (${base.replace("now() + interval '1 month'", "now() + interval '13 months'")}, '${hex('d')}'`)).rejects.toMatchObject({ constraint: 'screening_lead_expiry' });
+    await expect(lead_(`, reminder_sent_at, prospect_request_id) VALUES (${base}, now(), '${String(otherRequest)}'`)).rejects.toMatchObject({ constraint: 'screening_lead_consent_only' });
+  });
+
+  it('goes after its 12 months with its products (the expiry job), or with its request (the cascade of audit #51)', async () => {
+    const email = `expire.${letters()}@synthetic.test`;
+    const runId = await submit({ email });
+    const token = tokenHash();
+    await complete(runId, token);
+    await convert(token);
+    const [lead] = await leadsOf(email);
+    await ageLead(String(lead?.id), 13);
+    const jobId = `test-${randomUUID()}`;
+    const [expired] = await as<{ leads: number }>(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', [jobId]);
+    expect(expired?.leads).toBeGreaterThanOrEqual(1);
+    expect(await leadsOf(email)).toEqual([]);
+    expect((await admin.query('SELECT count(*)::int AS n FROM screening_lead_product WHERE lead_id = $1', [lead?.id])).rows).toEqual([{ n: 0 }]);
+    expect((await admin.query("SELECT request_id FROM audit_event WHERE action = 'screening_lead_expired' AND object_id = $1", [lead?.id])).rows).toEqual([{ request_id: jobId }]);
+    // A request's deletion takes its summary with it, once its converted run has gone.
+    const second = `cascade.${letters()}@synthetic.test`;
+    const other = await submit({ email: second });
+    const otherToken = tokenHash();
+    await complete(other, otherToken);
+    const requestId = await convert(otherToken);
+    await age(other, 31);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', ['x']);
+    expect(await leadsOf(second)).toHaveLength(1);
+    await admin.query('DELETE FROM prospect_request WHERE id = $1', [requestId]);
+    expect(await leadsOf(second)).toEqual([]);
+  });
+
+  it('can be matched to its outcome only while it is kept, by month and release; once it and its request are gone, the outcome holds no count, sum or date any record holds', async () => {
+    const email = `relink.${letters()}@synthetic.test`;
+    const runId = await submit({ email, leftOut: [2, 12, 3_000n] });
+    const { uploadId } = await idsOf(runId);
+    const outcomeId = String((await outcomeOfUpload(uploadId))?.id);
+    const token = tokenHash();
+    await complete(runId, token);
+    const requestId = await convert(token);
+    const [lead] = await leadsOf(email);
+    // The stated linkage while the summary is kept: the same month and release, and converted.
+    const matched = await admin.query<{ id: string }>(
+      "SELECT o.id FROM screening_outcome o JOIN screening_lead l ON o.screened_month = to_char(l.screened_at AT TIME ZONE 'UTC', 'YYYY-MM') AND o.release_no = l.release_no AND o.converted WHERE l.id = $1",
+      [lead?.id],
+    );
+    expect(matched.rows.map((row) => row.id)).toContain(outcomeId);
+    // Its exact counts, sums and dates, while kept.
+    const exact = new Set<string>();
+    for (const [key, value] of Object.entries(lead ?? {})) {
+      if (/rows|count|claim_lines|cents|_at$/.test(key) && value !== null) {
+        exact.add(asText(value));
+      }
+    }
+    const events = await admin.query<{ at: Date }>('SELECT at FROM audit_event WHERE object_id IN ($1, $2, $3)', [runId, requestId, lead?.id]);
+    for (const event of events.rows) {
+      exact.add(event.at.toISOString());
+    }
+    // Then everything that held them goes: the screening at 30 days, the summary with its request.
+    await age(runId, 31);
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_expire(1000, $1)', ['x']);
+    await admin.query('DELETE FROM prospect_request WHERE id = $1', [requestId]);
+    expect(await leadsOf(email)).toEqual([]);
+    const outcome = await outcomeById(outcomeId);
+    expect(outcome?.upload_id).toBeNull();
+    const values = Object.entries(outcome ?? {})
+      .filter(([key]) => key !== 'id')
+      .flatMap(([, value]): unknown[] => (Array.isArray(value) ? (value as unknown[]) : [value]))
+      .filter((value) => value !== null)
+      .map(asText);
+    const shared = values.filter((value) => exact.has(value) && !['0', 'true', 'false'].includes(value));
+    expect(shared).toEqual([]);
+    // The month and the release are all it keeps of when and under what; no date finer than the month.
+    expect(outcome?.screened_month).toMatch(/^\d{4}-\d{2}$/);
+  });
+});
+
+describe('audit #57: the campaign list and the request’s new columns', () => {
+  it('lists a campaign by a platform administrator alone, an audit event, and keeps it listed for good', async () => {
+    const owner = await admin.connect();
+    let administrator: string;
+    try {
+      const internal = await createOrganization(owner, 'internal');
+      administrator = await createUser(owner, { hardwareKeyRequired: true });
+      await addMembership(owner, internal, administrator, 'platform_admin');
+    } finally {
+      owner.release();
+    }
+    await expect(as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', ['spring-webinar', 'SYNTHETIC spring webinar'], specialist)).rejects.toMatchObject({ code: '42501' });
+    await as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', ['spring-webinar', ' SYNTHETIC spring webinar '], administrator);
+    expect((await admin.query("SELECT label, added_by FROM marketing_campaign WHERE code = 'spring-webinar'")).rows).toEqual([{ label: 'SYNTHETIC spring webinar', added_by: administrator }]);
+    expect((await admin.query("SELECT actor_id FROM audit_event WHERE action = 'marketing_campaign_registered' AND actor_id = $1", [administrator])).rows).toHaveLength(1);
+    await expect(as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', ['spring-webinar', 'Again'], administrator)).rejects.toMatchObject({ code: '23505' });
+    await expect(as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', ['other', 'Other'], administrator)).rejects.toMatchObject({ constraint: 'marketing_campaign_code' });
+    await expect(as(APP_ROLE, 'SELECT console_register_marketing_campaign($1, $2)', ['Spring Webinar', 'x'], administrator)).rejects.toMatchObject({ constraint: 'marketing_campaign_code' });
+    await expect(admin.query("UPDATE marketing_campaign SET label = 'x' WHERE code = 'spring-webinar'")).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query("DELETE FROM marketing_campaign WHERE code = 'spring-webinar'")).rejects.toMatchObject({ code: 'P0001' });
+    await expect(admin.query('TRUNCATE marketing_campaign CASCADE')).rejects.toMatchObject({ code: 'P0001' });
+  });
+
+  it('grants the twelve-argument audit request to the application role alone, and keeps the six-argument one for the previous image', async () => {
+    const { rows } = await admin.query<{ name: string; app: boolean; public: boolean; definer: boolean }>(
+      `SELECT p.oid::regprocedure::text AS name, has_function_privilege($1, p.oid, 'EXECUTE') AS app, p.prosecdef AS definer,
+              EXISTS (SELECT 1 FROM aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x WHERE x.grantee = 0 AND x.privilege_type = 'EXECUTE') AS public
+         FROM pg_proc p WHERE p.proname = 'submit_prospect_request' ORDER BY p.pronargs`,
+      [APP_ROLE],
+    );
+    expect(rows.map((row) => ({ args: row.name.split(',').length, app: row.app, public: row.public, definer: row.definer }))).toEqual([
+      { args: 6, app: true, public: false, definer: true },
+      { args: 12, app: true, public: false, definer: true },
+    ]);
+    const [request] = await as<{ id: string }>(APP_ROLE, 'SELECT submit_prospect_request($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) AS id', [
+      ' SYNTHETIC REQUESTER ',
+      'Requester@Synthetic.Test',
+      'SYNTHETIC ORGANIZATION',
+      2,
+      ['SYNTHETIC PAYER'],
+      'mixed',
+      'article',
+      'blog',
+      'content',
+      'fall-launch',
+      'paid_social',
+      'SYNTHETIC FIRM',
+    ]);
+    expect((await admin.query('SELECT contact_name, contact_email, source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm, from_screening, declined_reason FROM prospect_request WHERE id = $1', [request?.id])).rows).toEqual([
+      {
+        contact_name: 'SYNTHETIC REQUESTER',
+        contact_email: 'requester@synthetic.test',
+        source: 'article',
+        utm_source: 'blog',
+        utm_medium: 'content',
+        utm_campaign: 'fall-launch',
+        paid_click: 'paid_social',
+        referring_firm: 'SYNTHETIC FIRM',
+        from_screening: false,
+        declined_reason: null,
+      },
+    ]);
+    // Its attribution and from_screening never change once received.
+    for (const change of ["source = 'search'", "utm_campaign = 'x'", 'from_screening = true', "referring_firm = 'Other'"]) {
+      await expect(admin.query(`UPDATE prospect_request SET ${change} WHERE id = $1`, [request?.id]), change).rejects.toMatchObject({ code: '23514' });
+    }
+    await expect(as(APP_ROLE, 'SELECT submit_prospect_request($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)', ['S', 's@synthetic.test', 'O', 1, ['P'], 'mixed', 'friend', null, null, null, null, null])).rejects.toMatchObject({
+      constraint: 'prospect_request_source',
+    });
+  });
+});
+
+describe('audit #53: the release’s keyed records are read by the run’s own keys, under the pinned release alone', () => {
+  it('reads nothing for a run not being priced, or whose release’s manifest changed or was withdrawn, and takes no codes from a caller', async () => {
+    const runId = await submit();
+    // Queued, not pricing.
+    for (const fn of ['operator_screening_release', 'operator_screening_run_keys', 'operator_screening_run_records']) {
+      expect(await as(OPERATOR_ROLE, `SELECT * FROM ${fn}($1)`, [runId]), fn).toEqual([]);
+    }
+    await as(OPERATOR_ROLE, 'SELECT * FROM operator_screening_claim($1)', [runId]);
+    expect(await as(OPERATOR_ROLE, 'SELECT codes FROM operator_screening_run_keys($1)', [runId])).toEqual([{ codes: ['97110'] }]);
+    // Each function takes the run alone: no signature takes codes.
+    const signatures = await admin.query<{ name: string }>(
+      "SELECT p.oid::regprocedure::text AS name FROM pg_proc p WHERE p.proname IN ('operator_screening_release', 'operator_screening_run_keys', 'operator_screening_run_records') ORDER BY 1",
+    );
+    expect(signatures.rows.map((row) => row.name)).toEqual(['operator_screening_release(uuid)', 'operator_screening_run_keys(uuid)', 'operator_screening_run_records(uuid)']);
+    // A changed manifest, or a withdrawal, read in a transaction rolled back: nothing.
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL session_replication_role = replica');
+      await client.query('UPDATE screening_run SET release_manifest_sha256 = $2 WHERE id = $1', [runId, hex('9')]);
+      await client.query('SET LOCAL session_replication_role = origin');
+      await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
+      for (const fn of ['operator_screening_release', 'operator_screening_run_keys', 'operator_screening_run_records']) {
+        expect((await client.query(`SELECT * FROM ${fn}($1)`, [runId])).rows, `${fn}, re-manifested`).toEqual([]);
+      }
+      await client.query('ROLLBACK');
+      await client.query('BEGIN');
+      await client.query('SET LOCAL session_replication_role = replica');
+      await client.query('INSERT INTO rule_release (release_no, manifest_sha256) VALUES (899999, $1)', [hex('8')]);
+      await client.query("INSERT INTO rule_release_withdrawal (release_no, reinstated_release_no, reason) VALUES (900001, 899999, 'SYNTHETIC withdrawal for a test')");
+      await client.query('SET LOCAL session_replication_role = origin');
+      await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
+      for (const fn of ['operator_screening_release', 'operator_screening_run_keys', 'operator_screening_run_records']) {
+        expect((await client.query(`SELECT * FROM ${fn}($1)`, [runId])).rows, `${fn}, withdrawn`).toEqual([]);
+      }
+    } finally {
+      await client.query('ROLLBACK');
+      client.release();
     }
   });
 });

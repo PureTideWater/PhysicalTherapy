@@ -1,6 +1,7 @@
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 
 import type { ActionState } from '../../lib/http/next';
+import { CONVERT_KEPT } from '../../lib/screening/retention';
 import { ActionForm } from '../action-form';
 import { Field, SelectField, TextAreaField } from '../field';
 
@@ -8,7 +9,8 @@ import { Field, SelectField, TextAreaField } from '../field';
  * From a screening to an audit request (Change Order 001, CO-04): the screening already holds the practice's name
  * and the contact's email, so the form asks only for the rest of what the audit request takes (PRD 5, J1: the
  * contact's name, locations, payers and billing arrangement). Sending it records an audit request and the
- * conversion as an audit event; a screening converts once. No patient information.
+ * conversion as an audit event; a screening converts once. No patient information. The form says the screening's
+ * totals are kept with the request for 12 months from the screening (the founder's rulings of 2026-10-20).
  */
 export function ScreeningConvertForm({
   action,
@@ -39,7 +41,8 @@ export function ScreeningConvertForm({
       <CardHeader>
         <CardTitle id="screening-convert">Ask for a PaidWhole audit</CardTitle>
         <CardDescription>
-          An audit prices every line under your signed contracts and the contracts&apos; own rules, the rows this screening could not. We already have your practice&apos;s name and your email from the screening. No patient information.
+          An audit prices every line under your signed contracts and the contracts&apos; own rules, the rows this screening could not. We already have your practice&apos;s name and your email from the screening. No patient information.{' '}
+          <span data-copy="convert-kept">{CONVERT_KEPT}</span>
         </CardDescription>
       </CardHeader>
       <CardContent>

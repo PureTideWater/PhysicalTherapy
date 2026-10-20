@@ -10,6 +10,13 @@ import { unpricedReasonText } from '../contracts/remedies';
  * between is the "difference". Plain data, safe to import in the browser.
  */
 
+/**
+ * The version of these words. A kept screening summary (screening_lead.labels_version, audit #57) names the version
+ * its result was shown under; the database's screening_labels_version() returns the same (a database test holds the
+ * two equal), and labels.test.ts pins every label here to its version, so a label changes only under a new version.
+ */
+export const SCREENING_LABELS_VERSION = 'screening-labels/2026-10-18';
+
 /** What every Medicare figure priced alone, and every figure worked out from one, is qualified by (decision D19 a). */
 export const BEFORE_REDUCTION = 'before the reduction across codes';
 

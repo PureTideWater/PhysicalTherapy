@@ -26,7 +26,8 @@ export function proxy(request: NextRequest): NextResponse {
   headers.set('content-security-policy', policy);
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('content-security-policy', policy);
-  const touch = firstTouch({ method: request.method, url: request.nextUrl, hasCookie: request.cookies.has(ATTRIBUTION_COOKIE) });
+  // The URL as the browser sent it (Next's nextUrl rewrites a /_next/data path to the page's).
+  const touch = firstTouch({ method: request.method, url: new URL(request.url), hasCookie: request.cookies.has(ATTRIBUTION_COOKIE) });
   if (touch !== null) {
     response.cookies.set(ATTRIBUTION_COOKIE, touch, {
       maxAge: ATTRIBUTION_MAX_AGE_SECONDS,

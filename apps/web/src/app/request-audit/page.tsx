@@ -7,6 +7,7 @@ import { Field, SelectField, TextAreaField } from '../../components/field';
 import { BRAND_DESCRIPTOR, BRAND_INDEPENDENCE } from '../../lib/brand';
 import { loadPublicPage } from '../../lib/http/next';
 import { requestAuditPage } from '../../lib/routes/onboarding';
+import { HEARD_FROM_LABEL, REFERRING_FIRM_HINT, REFERRING_FIRM_LABEL, REQUEST_AUDIT_KEPT } from '../../lib/screening/retention';
 import { requestAuditAction } from './actions';
 import { PublicHeader } from '../../components/public-header';
 
@@ -16,10 +17,12 @@ export const metadata: Metadata = { title: 'Request an audit' };
  * The public audit request (PRD 5, J1: "a public form with no PHI: name, organization, locations, payers, billing
  * arrangement"). The founder follows up with a scoping call; nothing here is a patient's information, and the form
  * refuses anything that looks like one. Its lede is the descriptor and the independence claim (Change Order 001,
- * CO-11; decision D11), the brand's words from @paidwhole/brand.
+ * CO-11; decision D11), the brand's words from @paidwhole/brand. Two optional fields ask how the requester heard of
+ * PaidWhole and which billing firm referred them, and the form says what is kept with the request, the campaign link
+ * the requester came from included (audit #57; the founder's rulings of 2026-10-20).
  */
 export default async function RequestAuditPage(props: { readonly searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const { sent, arrangements } = await loadPublicPage(requestAuditPage, props);
+  const { sent, arrangements, sources } = await loadPublicPage(requestAuditPage, props);
   return (
     <>
       <PublicHeader />
@@ -40,7 +43,8 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
           <CardHeader>
             <CardTitle>About your practice</CardTitle>
             <CardDescription>
-              No patient information: only who you are, your locations, the payers you bill and how you bill. A PaidWhole audit compares what your payers paid with what your contracts say.
+              No patient information: only who you are, your locations, the payers you bill and how you bill. A PaidWhole audit compares what your payers paid with what your contracts say.{' '}
+              <span data-copy="kept">{REQUEST_AUDIT_KEPT}</span>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -51,6 +55,8 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
               <Field label="Locations" name="locations" type="number" min={1} max={1000} required inputMode="numeric" />
               <TextAreaField label="Payers you bill" name="payers" required hint="One per line, or separated by commas. Payer names only." />
               <SelectField label="How you bill" name="billingArrangement" options={arrangements} />
+              <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} />
+              <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} />
             </ActionForm>
           </CardContent>
         </Card>

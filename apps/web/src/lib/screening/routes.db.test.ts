@@ -6,9 +6,11 @@ import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { ATTRIBUTION_COOKIE } from '../http/attribution';
 import { RATE_LIMITS } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
-import { screeningConvert, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
+import { SCREENING_LABELS_VERSION } from './labels';
+import { NO_PATIENT_INFORMATION, screeningConvert, screeningOpened, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
 import { parseScreeningBytes } from './parse';
 import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
@@ -63,6 +65,13 @@ async function storedText(): Promise<string> {
 
 function issuesOf(outcome: Outcome<unknown>): { field: string; message: string }[] {
   return outcome.status === 'invalid' ? [...outcome.issues] : [];
+}
+
+function ok<R>(outcome: Outcome<R>): R {
+  if (outcome.status !== 'ok') {
+    throw new Error(`expected ok, got ${JSON.stringify(outcome)}`);
+  }
+  return outcome.data;
 }
 
 async function submitted(input: Record<string, string>): Promise<Outcome<MutationResult>> {
@@ -665,5 +674,119 @@ describe('an expired screening', () => {
     expect(
       (await world.call(screeningConvert, { input: { resultId: token, contactName: 'SYNTHETIC CONTACT', locations: '1', payers: 'SYNTHETIC PAYER', billingArrangement: 'in_house' } })).status,
     ).toBe('not_found');
+  });
+});
+
+describe('SCR-10 to SCR-13: attribution, the counts-only outcome and the opened signal through the routes (audit #57)', () => {
+  const COOKIE = { [ATTRIBUTION_COOKIE]: 's=linkedin&m=paid-social&c=fall-launch&k=paid_social' };
+  const convertInput = (resultId: string) => ({ resultId, contactName: 'SYNTHETIC CONTACT', locations: '2', payers: 'SYNTHETIC PAYER', billingArrangement: 'in_house' });
+
+  it('keeps how the prospect heard of us, the cookie’s codes and kind of click and the referring firm, with an outcome the database writes', async () => {
+    const email = `attributed.${randomUUID().slice(0, 8)}@clinic-attributed.synthetic.test`;
+    const outcome = await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), heardFrom: 'social', referringFirm: '  Synthetic   Billing Partners ' }, cookies: COOKIE });
+    expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    const { rows } = await world.owner.query(
+      `SELECT p.source, p.utm_source, p.utm_medium, p.utm_campaign, p.paid_click, p.referring_firm, p.followup_consent_sha256, p.screening_terms_sha256, o.stage, o.channel, o.campaign, o.source AS outcome_source
+         FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+      [email],
+    );
+    expect(rows).toEqual([
+      {
+        source: 'social',
+        utm_source: 'linkedin',
+        utm_medium: 'paid-social',
+        utm_campaign: 'fall-launch',
+        paid_click: 'paid_social',
+        referring_firm: 'Synthetic Billing Partners',
+        followup_consent_sha256: null,
+        screening_terms_sha256: null,
+        stage: 'accepted',
+        // paid-social is no medium the list knows: the paid click names the channel; the code is not listed.
+        channel: 'paid_social',
+        campaign: 'other',
+        outcome_source: 'social',
+      },
+    ]);
+  });
+
+  it('refuses a source off the list and a firm’s name that holds an identifier or runs too long, recording nothing; a cookie that is not codes is dropped', async () => {
+    for (const [extra, issue] of [
+      [{ heardFrom: 'friend' }, { field: 'heardFrom', message: 'choose one of the listed answers, or leave it blank' }],
+      [{ referringFirm: 'Synthetic Billing 555-201-3344' }, { field: 'referringFirm', message: NO_PATIENT_INFORMATION }],
+      [{ referringFirm: 'x'.repeat(201) }, { field: 'referringFirm', message: 'the firm’s name, at most 200 characters' }],
+    ] as const) {
+      const email = `refused.field.${randomUUID().slice(0, 8)}@clinic-fields.synthetic.test`;
+      const outcome = await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), ...extra } });
+      expect(issuesOf(outcome), JSON.stringify(extra)).toEqual([issue]);
+      expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([{ n: 0 }]);
+    }
+    const email = `forged.${randomUUID().slice(0, 8)}@clinic-forged.synthetic.test`;
+    await world.call(screeningSubmit, { input: submitInput({ contactEmail: email }), cookies: { [ATTRIBUTION_COOKIE]: 's=Jane%20Doe&m=email&c=a%40b&k=gclid' } });
+    expect((await world.owner.query('SELECT source, utm_source, utm_medium, utm_campaign, paid_click FROM screening_prospect WHERE contact_email = $1', [email])).rows).toEqual([
+      { source: null, utm_source: null, utm_medium: 'email', utm_campaign: null, paid_click: null },
+    ]);
+  });
+
+  it('keeps a refused upload’s attribution and its refused outcome, codes only', async () => {
+    const email = `refused.attributed.${randomUUID().slice(0, 8)}@clinic-refused-attr.synthetic.test`;
+    const headers = [...SCREENING_HEADERS, 'Member ID'];
+    await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email, headers }), heardFrom: 'event' }, cookies: COOKIE });
+    expect(
+      (
+        await world.owner.query(
+          `SELECT p.source, p.utm_campaign, o.stage, o.refusal_codes, o.row_band, o.channel FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id
+             JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+          [email],
+        )
+      ).rows,
+    ).toEqual([{ source: 'event', utm_campaign: 'fall-launch', stage: 'refused', refusal_codes: ['phi_column'], row_band: '1_100', channel: 'paid_social' }]);
+  });
+
+  it('records a person’s first open from the signal alone, once, answering alike for any link; converting carries the attribution, keeps the summary and marks the outcome', async () => {
+    const email = `opened.${randomUUID().slice(0, 8)}@clinic-opened.synthetic.test`;
+    await world.call(screeningSubmit, { input: { ...submitInput({ contactEmail: email }), heardFrom: 'search', referringFirm: 'Synthetic Billing Partners' }, cookies: COOKIE });
+    await world.price();
+    const token = world.tokenFor(email);
+    const run = async () =>
+      (
+        await world.owner.query<{ id: string; first_opened_at: Date | null; band: string | null }>(
+          `SELECT r.id, r.first_opened_at, o.first_open_band AS band FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+             JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+          [email],
+        )
+      ).rows[0];
+    // The page's GET records nothing.
+    expect((await world.call(screeningResult, { params: { resultId: token } })).status).toBe('ok');
+    expect(await run()).toMatchObject({ first_opened_at: null, band: null });
+    // The signal: alike for a malformed, an unknown and a real link; the real one records the first open, once.
+    for (const resultId of ['not-a-token', 'abcdefghijklmnopqrstuvwxyzabcdef', token, token]) {
+      expect(await world.call(screeningOpened, { input: { resultId } }), resultId).toEqual({ status: 'ok', data: null });
+    }
+    const opened = await run();
+    expect(opened?.first_opened_at).toBeInstanceOf(Date);
+    expect(opened?.band).toBe('same_day');
+    expect((await world.owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action = 'screening_result_opened' AND object_id = $1", [opened?.id])).rows).toEqual([{ n: 1 }]);
+    // A cross-site POST is refused before anything is read.
+    expect(await screeningOpened.invoke({ cookies: { get: () => undefined, set: () => undefined, delete: () => undefined }, params: {}, input: { resultId: token }, requestId: 'x', userAgent: null, origin: 'https://elsewhere.example', fetchSite: 'cross-site' }, world.services)).toEqual({ status: 'csrf_refused' });
+    expect(ok(await world.call(screeningConvert, { input: convertInput(token) }))).toEqual({ redirect: `/screening/results/${token}?requested=1` });
+    const request = (
+      await world.owner.query(
+        `SELECT q.from_screening, q.source, q.utm_source, q.utm_medium, q.utm_campaign, q.paid_click, q.referring_firm, l.result_first_opened_at = r.first_opened_at AS lead_opened, o.converted
+           FROM screening_run r JOIN prospect_request q ON q.id = r.converted_prospect_request_id JOIN screening_lead l ON l.prospect_request_id = q.id
+           JOIN screening_outcome o ON o.upload_id = r.upload_id WHERE r.id = $1`,
+        [opened?.id],
+      )
+    ).rows;
+    expect(request).toEqual([
+      { from_screening: true, source: 'search', utm_source: 'linkedin', utm_medium: 'paid-social', utm_campaign: 'fall-launch', paid_click: 'paid_social', referring_firm: 'Synthetic Billing Partners', lead_opened: true, converted: true },
+    ]);
+    expect(ok(await world.call(screeningResult, { params: { resultId: token } })).converted).toBe(true);
+  });
+
+  it('offers the source list on the page, and names the labels’ version the database names', async () => {
+    const page = ok(await world.call(screeningPage));
+    expect(page.sources[0]).toEqual({ value: '', label: 'Choose one (optional)' });
+    expect(page.sources.map((option) => option.value).slice(1)).toEqual(['search', 'billing_firm', 'colleague', 'association', 'event', 'social', 'paidwhole_email', 'article', 'other']);
+    expect((await world.owner.query<{ v: string }>('SELECT screening_labels_version() AS v')).rows[0]?.v).toBe(SCREENING_LABELS_VERSION);
   });
 });

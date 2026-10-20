@@ -83,10 +83,13 @@ policy (`<table>_owner`, for `tp_owner` alone), `REVOKE ALL FROM PUBLIC` and no 
   at most 100,000 claim lines (`screening_result_claim_count`; see the floor below), and at most $25,000.00 of
   allowed amount a claim line (so an identifier typed under the allowed total is refused, never kept as dollars).
 
-Every row but the split expires 30 days after its upload: the reads refuse a run from its `expires_at` on, a delete
-before then is refused (`screening_kept_until_expiry`) unless a later screening of the same practice has replaced it
-(below), and the `screening_expiry` job deletes prospect, upload, run and rows together, each prospect an audit
-event (`screening_expired`).
+A screening's prospect, upload, run and rows expire 30 days after its upload: the reads refuse a run from its
+`expires_at` on, a delete before then is refused (`screening_kept_until_expiry`) unless a later screening of the same
+practice has replaced it (below), and the `screening_expiry` job deletes prospect, upload, run and rows together, each
+prospect an audit event (`screening_expired`). *Amended by the founder's rulings of 2026-10-20 (see The CO-04
+amendment, below):* this sentence first said every row but the split expires; what outlives the 30 days is a
+counts-only outcome of every screening, kept with no end date, and a converted or consenting practice's frozen
+summary, kept 12 months from the upload.
 
 The application role calls `screening_status()`, `screening_zip_status()` (an invoker function over the global
 `locality_map`), `submit_screening()` (prospect, upload with the hash of its rows, run and every row in one call,
@@ -272,6 +275,83 @@ public header), and never say owed, underpaid or recovered: "below the figure be
 figures", "allowed in your file", "difference", "within the range of the reduction across codes", "cannot be priced
 without a contract". The copy lint reads the screening paths, the worker's screening module included.
 
+**Outcomes, leads and attribution (audit #57; the founder's rulings of 2026-10-20, decisions 7 to 12 and 17 to 19).**
+Migration 20261104090000 also keeps what the screening teaches about the funnel, written by the definer functions
+from day one, and four tables more, each built as the five are (row-level security forced, the owner's policy alone,
+no `practice_id`, no registry row, no other role's privilege):
+
+- `screening_outcome`: one counts-only row for every screening, a refused one included, kept with no end date. Its
+  stage (refused, accepted, priced or failed), the month (UTC, `YYYY-MM`), how the prospect heard of us, the channel
+  (computed by `marketing_channel()` from the campaign medium and the kind of paid click, never a caller's), a campaign
+  code only when the founder lists it in `marketing_campaign` at submission (`other` otherwise, null with none),
+  whether the prospect consented, bands of the row counts (`screening_count_band()`: none, up to 100, 1,000, 10,000,
+  50,000, more), the sorted codes of a refusal's reasons, whether a refused upload was followed by an accepted one of
+  the practice (`retried`), the release, and once priced the engine, four whole-percent shares of the file's allowed
+  total (floored, so they sum to 97 to 100; all 0 when the total is 0), the band of the rows `screening_standing()`
+  names anomalies and the band of their summed gap below their lowest figure (`screening_difference_band()`, the
+  narrowest step $1,000), how soon the result was first opened (`screening_open_band()`, by UTC days from the upload),
+  whether an audit was requested, and whether a later screening replaced it. Never a name, an email, a ZIP, an exact
+  count, a date or a dollar figure, so the difference of two outcomes is never a cell of claim lines; two screenings
+  of a practice whose one row differs by one claim line leave outcomes that differ in no count. It links to its
+  upload while the screening is kept and is unlinked (`ON DELETE SET NULL`) in the transaction that deletes it, at
+  expiry or replacement; an unlinked outcome is sealed (`screening_outcome_rules`), and DELETE and TRUNCATE are refused.
+  No audit event names one.
+- `screening_lead` and `screening_lead_product`: the frozen summary of a converted or consenting prospect's
+  screening, kept 12 months from the upload (decision 10). `screening_freeze_lead()` (an invoker function, called only
+  inside the definers) copies the practice's name, state, ZIP and contact address, how they heard of us and the
+  attribution, the consent's hash, the release, manifest, engine, the labels' version (`screening_labels_version()`,
+  equal to `SCREENING_LABELS_VERSION` in `labels.ts`, whose words a test pins to their version) and the first open,
+  and bigint sums over the stored rows with the filters of `screening_result_summary()` and
+  `screening_result_coverage()`, by payer product too. Every row sums at least 11 claim lines, so every claim-line sum
+  is 0 or at least 11 (`screening_lead_product_cells`); the left-out claim lines and dollars are kept only at 11 or
+  more. A practice keeps one summary at a time: a later screening of the practice (the same ZIP and practice name, or
+  the same contact address) replaces it at that screening's own completion (`operator_screening_complete()`), carrying
+  over the request of the latest summary that has one, each deletion an audit event (`screening_lead_replaced`, naming
+  the request it carried). A failed or abandoned resend deletes nothing, and a refused upload replaces nothing. A
+  conversion freezes the summary when the run has none, or gives it the request when it has none (decision 17: a
+  different address of the same practice replaces it the same way, with a notice in the console, PR 7). The summary
+  goes after its 12 months (`operator_screening_expire()`, `screening_lead_expired`), on withdrawal
+  (`screening_lead_withdraw()`, PR 6e's link), or with its request (the cascade #51's deletion uses); a delete
+  otherwise is refused (`screening_lead_kept`).
+- `marketing_campaign`: the campaign codes the founder lists (`console_register_marketing_campaign()`, a platform
+  administrator; its screen is PR 7's), append-only.
+- `screening_prospect` gains `source` (the closed list of decision 8, optional), `utm_source`, `utm_medium`,
+  `utm_campaign` and `paid_click` (from the attribution cookie), `referring_firm` (optional, screened by
+  `textPhiFindings`), `followup_consent_sha256` (null until PR 6e captures consent) and `screening_terms_sha256` (the
+  SHA-256 of the screening terms accepted, decision 19; null until the terms' wording, the founder's and counsel's,
+  and its checkbox land). `screening_run` gains `first_opened_at`: set by the result page's signal
+  (`screening_result_opened()`, POST `/api/screening/opened`, sent only after two seconds visible and a first
+  interaction, `focusin` among them) or by the conversion, never by the link's GET, which a mail scanner also makes.
+- `prospect_request` gains the same attribution, `from_screening` (set by `convert_screening()`, which now writes the
+  request itself, since no later update may set it), and `declined_reason`, the closed list of decision 9, required on
+  the console's decline (`not_recorded` for a request declined before the list, or by the previous image). Every new
+  CHECK on it writes its list inline and calls no function, because the application role updates the table directly
+  (the bug migration 20261030110000 fixed for `prospect_payers_valid`); `prospect_request_fixed()` keeps the new
+  columns fixed and a declined request's status and reason, with one exception for the backfill. A second,
+  twelve-argument `submit_prospect_request()` takes the attribution; the six-argument one stays for the previous image.
+- Consent capture, the withdrawal page, the reminder job (`operator_screening_reminders_due()`,
+  `operator_screening_reminder_sent()`) and their emails are PR 6e's, on these columns and functions with no
+  migration; the console's funnel, lead list and campaign screen are PR 7's.
+
+**The attribution cookie (decision 11).** `pw_first_touch`, first-party, set by the proxy (`src/proxy.ts`), which
+otherwise authorizes nothing and touches no database: on a page GET (never `/api` or Next's assets) whose URL carries
+a valid `utm_*` code after normalisation (lower case, trimmed, each run of white space or `+` a hyphen, then
+`^[a-z0-9][a-z0-9._-]{0,63}$` or dropped) or a click-ID parameter, and no such cookie yet, it sets the three codes and
+the kind of paid click (`paid_search` for `gclid`, `gbraid`, `wbraid` or `msclkid`; `paid_social` for `fbclid`,
+`li_fat_id`, `ttclid` or `twclid`), read by presence alone, so the click ID never leaves the URL. `Max-Age` 30 days,
+`Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` on https; the first visit wins. The screening and request-audit
+handlers read it on the server (`src/lib/http/attribution.ts`), check every value again, and pass the four values; the
+database's CHECKs hold the same shape. No script reads it, no third party receives it, and nothing logs it. The
+privacy notice (#51) discloses it; counsel confirms the disclosure.
+
+**The CO-04 amendment.** CO-04 says results "expire after 30 days (a platform job deletes them)". A screening's
+result, rows and the prospect's details still do. What outlives them, by the founder's rulings of 2026-10-20: the
+counts-only outcome (no end date, decision 12), and for a practice that requested an audit or consented, the
+screening's totals with its practice name, ZIP, email and how it heard of us, kept with the request for 12 months from
+the screening (decision 10). Every surface that deletes or collects says so in the plain list of decision 7: the
+result page (and its converted variant), the email, the closed link's page, the upload form's email hint, the "sent"
+alert, the request-audit form and the conversion form.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -296,6 +376,15 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 | Rate-limit by domain and IP only (D21 b) | Every gmail.com prospect would share one count. |
 | Show the result in the browser only (D21 c) | Nothing verifies the contact, and the result could not be reopened. |
 | A base64url token | The URL guard refuses it; 32 letters carry about 150 bits. |
+| Say "we keep anonymous counts" (decision 7 b) | Says less than what is kept, counsel may not accept "anonymous", and it is not true while a request is kept, whose outcome can be matched to it. |
+| Free text for how a prospect heard of us (decision 8 b) | Cannot be counted, and can hold anything typed. |
+| Keep a converted prospect's summary as long as the request (decision 10 b), or not past 30 days without consent (c) | A period tied to #51's request retention is not one stated period; 30 days loses the summary the founder takes to the scoping call. |
+| A session-only or last-touch attribution cookie (decision 11 b, c) | Loses the prospect who returns another day, or the channel that first brought them. |
+| Delete outcomes after a fixed period, such as seven years (decision 12 b) | Gives up long-run cohort trends and adds a deletion job; an unlinked outcome names no one. |
+| Replace a summary only from the same email (decision 17 b) | Either two summaries of one practice are held, to be subtracted into a small cell, or a colleague at another address cannot convert. |
+| No conversion flag on the outcome (decision 18 b) | Conversion by what the result showed cannot be counted. In return no outcome would match a request; the wording says that while a request is kept, its outcome can be matched to it. |
+| Record an open on the link's GET | A mail scanner opens every link it is sent; an open counted there means nothing. |
+| A validator function for each closed list in its CHECK | The application role updates `prospect_request` directly, and Postgres checks EXECUTE on a CHECK's function on every update (migration 20261030110000's bug). The lists are inline, and a test holds them equal to the TypeScript. |
 
 ## Consequences
 
@@ -335,7 +424,28 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 - A result priced under a rule release since withdrawn says so above its figures and may still be converted to an
   audit request, which prices nothing from the screening (the owner's ruling 4).
 - The platform split is a fifth table the domain model shows as a divergence from CO-12; approving the document
-  approves it.
+  approves it, and the four of audit #57 with it.
+- Every screening leaves a counts-only outcome for good, a refused one included; while a converted or consenting
+  practice's summary or its request is kept, its outcome can be matched to them (the same month and release, and
+  `converted`), which the wording says and counsel confirms. Once both are gone the outcome holds only a month,
+  bands, whole-percent shares, closed codes and the release. A converted prospect who resends a file keeps the summary
+  the founder takes to the scoping call: it moves to the later screening at that screening's completion, with its
+  request. A billing firm screening several practices from one address keeps one summary of them at a time.
+- The attribution cookie is a cookie the proxy now sets; the privacy notice (#51) must disclose it before the
+  screening opens. The screening terms' hash is null until their wording and checkbox exist; making it required needs
+  a later migration or the wording before this one merges (open).
+- What proves audit #57: SEC-17 at nine tables, the grants, the closed lists against `pg_get_constraintdef`, the
+  bands, channel and refusal codes, the outcome's lifecycle (written at submission, refusal, completion and failure;
+  shares, anomaly and difference bands; retried and superseded; fixed columns, one-way stage, flags and first open
+  once; unlinked on expiry and replacement, then sealed; DELETE and TRUNCATE refused), the pair of outcomes that
+  reveals no cell, the summary's freeze, sums, labels version, first open, 12 months, replacement at completion (by
+  address and by ZIP and name), withdrawal, reminders, expiry and cascade, and the re-linking test
+  (`packages/db/src/screening.db.test.ts`); the backfill of declined requests (`migrate.db.test.ts`); the routes'
+  attribution, the opened signal and the conversion (`apps/web/src/lib/screening/routes.db.test.ts`); the request's
+  attribution and the console's decline as the application role (`onboarding-routes.db.test.ts`); the cookie, the
+  proxy, the source and decline lists and the signal (`attribution.test.ts`, `proxy.test.ts`,
+  `opened-signal.test.tsx`); the wording (`upload-form.test.tsx`, `message.test.ts`, `labels.test.ts`); and the
+  screening journey (`e2e/screening.spec.ts`).
 - What proves it: SEC-17 (`packages/db/src/screening.db.test.ts`, from the catalog), SCR-01 to SCR-06
   (`apps/worker/src/screening/*.test.ts`, `apps/web/src/lib/screening/routes.db.test.ts`,
   `screening.large.db.test.ts`, `apps/web/src/components/screening/result.test.tsx`, the copy lint and the screening
@@ -411,6 +521,45 @@ sequestration, the comparison is put to the owner again); ZIP+4 localities, in P
 on the floor (the number; lines or patients; whether a left-out total under 11 claim lines may be shown as counted;
 and the scope of one screening a practice); and visit-level aggregates (see Revisit when).
 
+## Owner rulings (2026-10-20): what outlives a screening (audit #57) and the screening terms (audit #51)
+
+The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to every question in the PR 6 design for
+audits #53 and #57 (decisions 7 to 19 of that day). Those on what a screening keeps, built here:
+
+7. **What the pages say is kept:** the plain list (ranges of rows, a dollar range, the shares priced, how the
+   prospect heard of us, whether the result was opened and an audit requested, the release and the month), and after
+   an audit request that the screening's totals, practice name, ZIP, email and how the prospect heard of us are kept
+   with the request for 12 months. *Built:* `src/lib/screening/retention.ts` on every surface named above, and the
+   result email. Counsel confirms the wording before the screening opens.
+8. **How a prospect heard of us:** the nine answers (a search engine; my billing firm; a colleague or another
+   practice; a professional association; a conference, webinar or event; LinkedIn or other social media; an email
+   from PaidWhole; an article, newsletter or podcast; something else), optional. *Built:* `PROSPECT_SOURCES` and
+   their labels, on both forms.
+9. **Why a request was declined:** the eleven reasons, required on the console's decline. *Built:*
+   `prospect_request.declined_reason`, `OFFERED_DECLINED_REASONS`, and `not_recorded` for past declines.
+10. **How long a requester's summary is kept:** 12 months from the screening, as a consenting prospect's. *Built:*
+    `screening_lead.expires_at`.
+11. **The attribution cookie:** first-party, 30 days, the first visit wins, the campaign codes and the kind of click,
+    never the click ID. *Built:* `pw_first_touch` above.
+12. **How long counts-only outcomes are kept:** no end date. *Built:* `screening_outcome`, never deleted.
+17. **A later screening from a different email of the same practice (same ZIP and name):** it replaces the earlier
+    summary and carries the request over, with a notice in the console (PR 7). Counsel confirms. *Built:* the
+    replacement at completion.
+18. **Whether an outcome records the conversion:** yes, with the open band; the wording says the record can be
+    matched to a kept request. *Built:* `converted` and `first_open_band`.
+19. **The screening terms' fingerprint (#51's part in PR 6):** the column now, in this migration, so PR 6 needs one
+    approval. *Built:* `screening_prospect.screening_terms_sha256`, nullable until the terms' wording (the founder's and
+    counsel's) and its checkbox exist; the definer functions already take it.
+
+Decisions 13 to 16 (the 60-second promise and its test, audit #53) are recorded with the release read and the
+capacity test.
+
+What stays open: counsel on the reworded surfaces and the cookie disclosure, on keeping a converted prospect's summary
+12 months without consent, on unlinked outcomes and the stated linkage while a summary or request is kept, and on a
+different address replacing a request's summary; the terms' wording and whether their hash is required; PR 6e's
+consent capture, withdrawal page and reminders; PR 7's funnel, lead list and campaign screen (a schema PR for its read
+functions).
+
 ## Revisit when
 
 Release 1 is published (screening opens); PR 6b lands (ZIP+4 localities: the refusal here is replaced); counsel
@@ -418,4 +567,6 @@ answers on the floor (the number, whether it counts claim lines or patients, the
 screening a practice); the reimbursement specialist
 answers Q21 (the owner's ruling 2: which figure a payer's allowed amount is compared with); prospects ask for
 visit-level aggregates (the reduction across codes); or the permission matrix gains a dedicated permission for
-platform pricing defaults (PR 14).
+platform pricing defaults (PR 14); counsel answers on the reworded surfaces, the attribution cookie's disclosure or
+the linkage between an outcome and a kept request; the screening terms' wording lands (its hash may then be required);
+PR 6e builds consent capture on the columns here; or PR 7's funnel needs read functions over the outcomes.

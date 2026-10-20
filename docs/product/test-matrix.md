@@ -145,17 +145,22 @@ Every case the suites must contain, by module, with the fixture that exercises i
 
 ## Free screening (SCR)
 
-Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the founder's ruling of 2026-10-18 on the best-option audit's item 6 (the CMS small-cell standard); docs/adr/0062.
+Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the founder's ruling of 2026-10-18 on the best-option audit's item 6 (the CMS small-cell standard); SCR-10 to SCR-14 by the founder's rulings of 2026-10-20 on audit #57 (what outlives a screening, attribution and the opened signal); docs/adr/0062.
 
 | ID | Case | Assertion |
 | --- | --- | --- |
 | SCR-01 | Screening upload with a date-of-service or member-ID column | Rejected with the column named by position and kind; only the row count and reasons stored, no hash |
 | SCR-02 | Screening pricing of a clean upload | Each Medicare row is the engine's one-line amount before sequestration times its claim count in bigint, and a code in the reduction across codes also its amount as a later code of a visit; a row is an anomaly only more than $5 a claim line below its lowest figure; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds |
-| SCR-03 | Screening 30 days after its upload | Link refuses it; the expiry job deletes the run and its results; the conversion stays |
+| SCR-03 | Screening 30 days after its upload | Link refuses it; the expiry job deletes the run and its results; the conversion stays, and so do the screening's counts-only outcome (unlinked) and a kept summary (SCR-10, SCR-11) |
 | SCR-04 | Screening uploads past the limit | Refused per business domain, per free-mail mailbox however its address is spelled, and per IP; subjects stored as keyed hashes |
 | SCR-05 | Screening output wording | No page, message or email says owed, underpaid or recovered; no tagline |
 | SCR-06 | Screening converted to an audit request | Audit request recorded and logged as an audit event |
 | SCR-07 | Screening row of fewer than 11 claim lines | Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the row count and coded reasons, no hash; refused by the database's CHECK; 11 claim lines taken; the hash kept is the database's, of the rows accepted, never the file's; a later screening of the same practice replaces the earlier, so a row of 12 claim lines and the same row at 11 are never held together |
+| SCR-10 | A screening's counts-only outcome (audit #57; the founder's rulings of 2026-10-20) | Written at submission, refusal, completion and failure by the database alone: stage, month, source, the channel computed from the medium and click kind, a listed campaign or other, bands of the row counts, whole-percent shares summing 97 to 100, the anomaly and dollar bands, the open band and the conversion; no name, email, ZIP, exact count, date or dollar figure; unlinked on expiry and replacement, then sealed; never deleted; two outcomes of a practice whose row differs by one claim line differ in no count |
+| SCR-11 | A converted or consenting practice's kept summary | Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused |
+| SCR-12 | Attribution on the screening and the audit request | The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); both forms keep how the prospect heard of us (closed list, optional), the cookie's codes and click kind, and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list |
+| SCR-13 | A screening result opened by a person | The page's GET records nothing; the signal goes once, after two visible seconds and a first interaction (focusin among them), and records the run's first open, the outcome's band and the summary's; it answers alike for any link; a conversion records the open when no signal came |
+| SCR-14 | A later screening of a practice with a kept summary | The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), carrying its request, an audit event naming it; a failed, abandoned or refused resend deletes nothing |
 
 ## Jobs and monitoring (JOB)
 

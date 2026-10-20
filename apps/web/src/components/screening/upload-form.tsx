@@ -6,6 +6,7 @@ import { type FormEvent, startTransition, useActionState, useEffect, useRef, use
 import type { ActionState } from '../../lib/http/next';
 import { FILE_MESSAGES, leftOutMessage } from '../../lib/screening/messages';
 import { type ScreeningParse, clockOffset, parseScreeningFile } from '../../lib/screening/parse';
+import { ABOUT_PRACTICE, HEARD_FROM_LABEL, REFERRING_FIRM_HINT, REFERRING_FIRM_LABEL, UPLOAD_EMAIL_HINT } from '../../lib/screening/retention';
 import { TEMPLATE_FILE_NAME, screeningTemplateCsv } from '../../lib/screening/template';
 import { Field, SelectField } from '../field';
 
@@ -24,7 +25,9 @@ import { Field, SelectField } from '../field';
  * ZIP+4 is asked for: the pricing takes a five-digit ZIP alone, so a ZIP that spans two Medicare localities cannot be
  * screened yet, and the form says so before the upload (decision D20 a; until PR 6b, which takes a ZIP+4 before launch by
  * the founder's ruling of 2026-10-18). The result is emailed:
- * the page only says to check the email.
+ * the page only says to check the email. Two optional fields say how the practice heard of PaidWhole (a closed list) and
+ * which billing firm referred it, and the hint under the email address says what is deleted and what is kept (audit
+ * #57; the founder's rulings of 2026-10-20).
  */
 
 export interface ScreeningUploadFormProps {
@@ -35,6 +38,8 @@ export interface ScreeningUploadFormProps {
   readonly minClaimLines: number;
   /** The server's clock when it built the page (ISO 8601): the file's quarters are dated by it, never this computer's. */
   readonly serverTime: string;
+  /** "How did you hear about us?": a blank first option, then the closed list. */
+  readonly sources: readonly { readonly value: string; readonly label: string }[];
 }
 
 /** The fields the server names in its refusals, as the form labels them. */
@@ -43,6 +48,8 @@ const FIELD_NAMES: Readonly<Record<string, string>> = {
   state: 'State',
   zip: 'ZIP code',
   contactEmail: 'Work email',
+  heardFrom: HEARD_FROM_LABEL,
+  referringFirm: REFERRING_FIRM_LABEL,
   upload: 'File',
   input: 'Form',
 };
@@ -51,7 +58,7 @@ function issueField(field: string): string {
   return FIELD_NAMES[field] ?? field;
 }
 
-export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, serverTime }: ScreeningUploadFormProps) {
+export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, serverTime, sources }: ScreeningUploadFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
   const [parsed, setParsed] = useState<ScreeningParse | null>(null);
   const [reading, setReading] = useState(false);
@@ -125,16 +132,26 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
       <Card>
         <CardHeader>
           <CardTitle>About your practice</CardTitle>
-          <CardDescription>
-            Who the screening is for, and where its result is emailed. Your ZIP code names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet.
-            A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.
+          <CardDescription data-copy="about-practice">
+            {ABOUT_PRACTICE} A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Field label="Practice name" name="practiceName" required maxLength={200} autoComplete="organization" />
           <SelectField label="State" name="state" options={[{ value: '', label: 'Choose a state' }, ...states]} required />
-          <Field label="ZIP code" name="zip" required inputMode="numeric" pattern="[0-9]{5}" maxLength={5} autoComplete="postal-code" hint="The five-digit ZIP of the practice's location." />
-          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint="The result is emailed here as a link that opens it for 30 days, or until a later screening replaces it." />
+          <Field
+            label="ZIP code"
+            name="zip"
+            required
+            inputMode="numeric"
+            pattern="[0-9]{5}"
+            maxLength={5}
+            autoComplete="postal-code"
+            hint="The five-digit ZIP of the practice's location, which names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet."
+          />
+          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint={UPLOAD_EMAIL_HINT} />
+          <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} />
+          <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} />
         </CardContent>
       </Card>
       <Card>

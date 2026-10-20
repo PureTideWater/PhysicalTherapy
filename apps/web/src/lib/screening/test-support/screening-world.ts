@@ -32,7 +32,10 @@ const RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../../../fixture
 export const SCREENING_HEADERS = ['procedure_code', 'modifiers', 'units', 'place_of_service', 'payer_product', 'service_band', 'allowed_total', 'claim_count'] as const;
 
 class MemoryJar implements CookieJar {
-  private readonly values = new Map<string, string>();
+  private readonly values: Map<string, string>;
+  constructor(initial: Readonly<Record<string, string>> = {}) {
+    this.values = new Map(Object.entries(initial));
+  }
   get(name: string) {
     return this.values.get(name);
   }
@@ -124,6 +127,8 @@ export interface CallOptions {
   readonly input?: Record<string, unknown>;
   /** The client's address, as the trusted proxy names it (the per-IP limit), or none. */
   readonly address?: string | null;
+  /** The browser's cookies (the attribution cookie, audit #57). */
+  readonly cookies?: Readonly<Record<string, string>>;
 }
 
 export class ScreeningWorld {
@@ -200,7 +205,7 @@ export class ScreeningWorld {
   /** Calls a route as the application's own page would: same origin, no session. */
   call<R>(route: Route<R>, options: CallOptions = {}): Promise<Outcome<R>> {
     const request: RouteRequest = {
-      cookies: new MemoryJar(),
+      cookies: new MemoryJar(options.cookies),
       params: options.params ?? {},
       input: options.input,
       requestId: `test-${randomUUID()}`,

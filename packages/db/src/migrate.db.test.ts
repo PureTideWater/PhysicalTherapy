@@ -234,6 +234,53 @@ describe('migrate', () => {
   });
 });
 
+describe('the free screening migration (20261104090000) over requests declined before it', () => {
+  it('gives a declined request not_recorded as its reason and keeps when it was reviewed; the exception refuses any other change, and a declined request is fixed', async () => {
+    const screening = '20261104090000_free_screening.sql';
+    const later = readMigrations(dir).filter((migration) => migration.name >= screening);
+    for (const migration of later) {
+      unlinkSync(path.join(dir, migration.name));
+    }
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      const user = randomUUID();
+      await query(url, 'INSERT INTO "user" (id, cognito_sub, email, mfa_enrolled, hardware_key_required, status) VALUES ($1, $2, $3, true, false, \'active\')', [user, `synthetic-${user}`, `${user}@synthetic.test`]);
+      const [declined] = await query<{ id: string; reviewed_at: Date }>(
+        url,
+        `INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, status, reviewed_by, reviewed_at)
+         VALUES ('SYNTHETIC', 'declined@synthetic.test', 'SYNTHETIC DECLINED ORG', 1, ARRAY['SYNTHETIC PAYER'], 'in_house', 'declined', $1, '2026-10-01T12:00:00Z') RETURNING id, reviewed_at`,
+        [user],
+      );
+      const [open] = await query<{ id: string }>(
+        url,
+        `INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement) VALUES ('SYNTHETIC', 'open@synthetic.test', 'SYNTHETIC OPEN ORG', 1, ARRAY['SYNTHETIC PAYER'], 'in_house') RETURNING id`,
+      );
+      for (const migration of later) {
+        copyFileSync(path.join(MIGRATIONS_DIR, migration.name), path.join(dir, migration.name));
+      }
+      await migrate({ databaseUrl: url, migrationsDir: dir });
+      expect(await query(url, 'SELECT status, declined_reason, reviewed_at FROM prospect_request WHERE id = $1', [declined?.id])).toEqual([
+        { status: 'declined', declined_reason: 'not_recorded', reviewed_at: declined?.reviewed_at },
+      ]);
+      expect(await query(url, 'SELECT status, declined_reason FROM prospect_request WHERE id = $1', [open?.id])).toEqual([{ status: 'new', declined_reason: null }]);
+      // After the backfill no row meets the exception: a declined request keeps its status and its reason.
+      await expect(query(url, "UPDATE prospect_request SET declined_reason = 'price' WHERE id = $1", [declined?.id])).rejects.toMatchObject({ code: '23514' });
+      await expect(query(url, "UPDATE prospect_request SET status = 'contacted', declined_reason = NULL WHERE id = $1", [declined?.id])).rejects.toMatchObject({ code: '23514' });
+      // A decline without a reason (the previous image's) records not_recorded; a contacted request takes no reason.
+      await query(url, "UPDATE prospect_request SET status = 'declined', reviewed_by = $2 WHERE id = $1", [open?.id, user]);
+      expect(await query(url, 'SELECT declined_reason FROM prospect_request WHERE id = $1', [open?.id])).toEqual([{ declined_reason: 'not_recorded' }]);
+      await expect(
+        query(
+          url,
+          `INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement, status, reviewed_by, declined_reason)
+           VALUES ('SYNTHETIC', 'contacted@synthetic.test', 'SYNTHETIC ORG', 1, ARRAY['SYNTHETIC PAYER'], 'in_house', 'contacted', $1, 'price')`,
+          [user],
+        ),
+      ).rejects.toMatchObject({ constraint: 'prospect_request_declined' });
+    });
+  });
+});
+
 describe('migrate --dry-run', () => {
   it('applies the pending migrations to a database at the previous head, then leaves it exactly there', async () => {
     await withScratchDatabase(adminUrl, async (url) => {
@@ -382,6 +429,7 @@ describe('the Drizzle schema', () => {
   const POSTGRES_TYPES: Record<string, string> = {
     PgUUID: 'uuid',
     PgInteger: 'integer',
+    PgSmallInt: 'smallint',
     PgText: 'text',
     PgTimestamp: 'timestamp with time zone',
     PgJsonb: 'jsonb',

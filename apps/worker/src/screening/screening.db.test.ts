@@ -586,7 +586,7 @@ describe('SCR-03: a screening expires 30 days after its upload', () => {
     // The converted screening's summary is kept with its request for 12 months, and every outcome outlives its
     // screening, unlinked (the founder's rulings of 2026-10-20).
     expect((await owner.query('SELECT upload_id FROM screening_lead WHERE prospect_request_id = $1', [request?.id])).rows).toEqual([{ upload_id: null }]);
-    expect((await owner.query("SELECT count(*)::int AS n FROM screening_outcome WHERE upload_id IS NULL AND stage = 'priced' AND converted")).rows[0]?.n).toBeGreaterThanOrEqual(1);
+    expect((await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM screening_outcome WHERE upload_id IS NULL AND stage = 'priced' AND converted")).rows[0]?.n).toBeGreaterThanOrEqual(1);
     // Run again, it finds nothing more.
     expect(await expireScreenings({ operator: admin, jobId: randomUUID() })).toEqual({ prospects: 0, runs: 0, leads: 0 });
   });

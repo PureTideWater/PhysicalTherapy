@@ -32,6 +32,10 @@ describe('the screening result email', () => {
     expect(message.lines.join(' ')).toContain('30 days from your upload');
     // A practice keeps one screening at a time: a later one replaces this one, and its link stops opening it.
     expect(message.lines.join(' ')).toContain('or until a later screening for the same practice or from this address replaces it');
+    // What is deleted, and the plain list of what is kept (the founder's ruling of 2026-10-20, decision 7).
+    expect(message.lines.join(' ')).toContain(
+      'Then we delete the result and your details, and keep only a record of counts that names no one: ranges of the file’s rows and dollars, the shares priced, how you heard of us, whether the result was opened or an audit requested, the release and the month.',
+    );
   });
 
   it('holds no dollar figure, no date, no code and none of the words screening never uses', () => {
@@ -39,7 +43,8 @@ describe('the screening result email', () => {
     const html = mailBodyHtml(message, STATIC);
     for (const text of [body, html, message.subject]) {
       expect(text).not.toMatch(FORBIDDEN);
-      expect(text).not.toMatch(/\$|\bcents?\b|\bdollars?\b/i);
+      // No dollar figure: the kept list names "dollars" as a range kept, never an amount.
+      expect(text).not.toMatch(/\$|\bcents?\b|\d[\d,.]*\s*dollars?\b/i);
       expect(text).not.toMatch(/\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
     }
     // The only numbers are the row count and the 30 days.

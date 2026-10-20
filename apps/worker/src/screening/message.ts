@@ -10,7 +10,8 @@ import type { MailMessage } from '../mail/mail';
  * What a message holds: fixed sentences, the count of rows the upload had, and one link. Never a dollar figure, a
  * date, a code, the practice's name or anything from the file; the link's only identifier is the result's
  * unguessable token, which the caller passes in and which is never logged (a refusal here names the rule, never
- * the link).
+ * the link). The result email says what is deleted when the link closes and what is kept: a record of counts that
+ * names no one (audit #57; the founder's ruling of 2026-10-20, decision 7, the plain list).
  */
 
 /** A result link's path: /screening/results/ and the 32-letter token (apps/worker/src/screening/token.ts). */
@@ -67,7 +68,8 @@ export function screeningResultMessage({ to, link, rows }: { readonly to: string
     subject: 'Your screening is ready',
     lines: [
       `The screening you started on the PaidWhole screening page is ready. It covers the ${rowsText(rows)} of your upload.`,
-      'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it, and then the result is deleted. Anyone with the link can open it, so share it only with people at your practice.',
+      'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it. Then we delete the result and your details, and keep only a record of counts that names no one: ranges of the file’s rows and dollars, the shares priced, how you heard of us, whether the result was opened or an audit requested, the release and the month.',
+      'Anyone with the link can open it, so share it only with people at your practice.',
       'If you did not start a screening, ignore this message; nothing more will be sent.',
       'Open your screening:',
     ],

@@ -6,6 +6,7 @@ import { PublicHeader } from '../../components/public-header';
 import { ScreeningUploadForm } from '../../components/screening/upload-form';
 import { loadPublicPage } from '../../lib/http/next';
 import { MEDICARE_FIGURE_LABEL, PRODUCT_NOTES, REDUCED_FIGURE_LABEL, productLabel } from '../../lib/screening/labels';
+import { SENT_KEPT } from '../../lib/screening/retention';
 import { screeningPage } from '../../lib/screening/routes';
 import { TEMPLATE_COLUMNS, TEMPLATE_RULES } from '../../lib/screening/template';
 import { submitScreeningAction } from './actions';
@@ -41,7 +42,11 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             <AlertTitle>Check your email</AlertTitle>
             <AlertDescription>
               We are screening your file. The result is emailed to the address you gave as a link, usually within a few minutes, and the link opens it for 30 days, or until a later screening for the same
-              practice or from the same email address replaces it. If nothing arrives, check your spam folder, or <Link className="underline" href="/screening">start again</Link>.
+              practice or from the same email address replaces it. <span data-copy="kept">{SENT_KEPT}</span> If nothing arrives, check your spam folder, or{' '}
+              <Link className="underline" href="/screening">
+                start again
+              </Link>
+              .
             </AlertDescription>
           </Alert>
         ) : !data.open ? (
@@ -62,6 +67,7 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
             maxRows={data.limits.maxRows}
             minClaimLines={data.limits.minClaimLines}
             serverTime={data.serverTime}
+            sources={data.sources}
           />
         )}
         <Card>

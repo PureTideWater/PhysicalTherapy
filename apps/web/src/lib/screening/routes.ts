@@ -29,7 +29,7 @@ import { z } from 'zod';
 import { attributionValues, readAttribution } from '../http/attribution';
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
-import { BILLING_ARRANGEMENT_LABELS } from '../routes/onboarding';
+import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
 import { optionalText } from '../routes/schemas';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
@@ -121,6 +121,8 @@ export interface ScreeningPageData {
    * nothing the server takes.
    */
   readonly serverTime: string;
+  /** "How did you hear about us?": a blank first option (no answer), then the closed list. */
+  readonly sources: readonly { readonly value: string; readonly label: string }[];
 }
 
 async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
@@ -157,6 +159,7 @@ export const screeningPage = publicRoute({
       states: SCREENING_STATES,
       limits: SCREENING_LIMITS,
       serverTime: services.now().toISOString(),
+      sources: PROSPECT_SOURCE_OPTIONS,
     };
   },
 });

@@ -5,7 +5,9 @@ import { tagline } from '@paidwhole/brand/tokens';
 import { type Page, expect, test } from '@playwright/test';
 import { cents, formatUsd } from '@tp/money';
 
+import { ATTRIBUTION_COOKIE } from '../src/lib/http/attribution';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
+import { CONVERT_KEPT, REQUEST_AUDIT_KEPT, SENT_KEPT } from '../src/lib/screening/retention';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import {
@@ -42,6 +44,15 @@ import {
  * accessible, and with no sideways scroll at 390 and 1280 px. Converting it records an audit request and the
  * screening_converted event; once the screening is past its 30 days the link opens nothing, the expiry job deletes
  * it, and the conversion's event remains. Synthetic data only.
+ *
+ * Audit #57 (the founder's rulings of 2026-10-20; SCR-10 to SCR-13, the screens' side): the prospect lands with
+ * campaign codes and a paid click in the URL, and the proxy sets the first-party attribution cookie (the codes and the
+ * kind of click, never the click ID); the form asks how they heard of us and the referring firm; the database keeps
+ * them with the screening and writes its counts-only outcome; the email and every page say what is kept; the result's
+ * GET records no open, a person's use after two visible seconds does; the conversion carries the attribution and
+ * from_screening, keeps the screening's summary with the request and shows the converted wording; the outcome and the
+ * summary outlive the expiry; the audit request form keeps the same attribution; and the console declines a request
+ * with its reason.
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
@@ -49,13 +60,22 @@ const PRACTICE = 'SYNTHETIC SCREENING CLINIC';
 
 /** The prospect's address: one per run, so the outbox and the rate limit's account are this run's. */
 const CONTACT = `screening-${randomBytes(4).toString('hex')}@clinic-e2e.synthetic.test`;
+const FIRM = 'SYNTHETIC BILLING PARTNERS';
+/** The landing URL: campaign codes as a newsletter's link carries them, and a SYNTHETIC search click ID. */
+const LANDING = '/screening?utm_source=Newsletter&utm_medium=email&utm_campaign=Fall+Launch&gclid=SYNTHETICCLICK123';
+const CAMPAIGN = 'fall-launch';
 
 async function fillProspect(page: Page): Promise<void> {
   await page.getByLabel('Practice name').fill(PRACTICE);
   await page.getByLabel('State').selectOption('MN');
   await page.getByLabel('ZIP code', { exact: true }).fill(SCREENING_ZIP);
   await page.getByLabel('Work email').fill(CONTACT);
+  await page.getByLabel('How did you hear about us?').selectOption('billing_firm');
+  await page.getByLabel('Referring billing firm').fill(FIRM);
 }
+
+/** The screening's run, by the prospect's address (kept while the screening is). */
+const RUN_OF_CONTACT = 'SELECT r.* FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1';
 
 async function noSidewaysScroll(page: Page, width: number, what: string): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
@@ -102,6 +122,22 @@ test('a specialist approves the split; a file with patient information is refuse
   });
 
   let template = Buffer.alloc(0);
+  await test.step('landing with campaign codes and a paid click sets the first-party cookie once: the codes and the kind of click, never the click ID (SCR-12)', async () => {
+    // The founder lists the campaign, so an outcome may name it (a code no one listed counts as other).
+    await withDatabase((client) =>
+      client.query(`INSERT INTO marketing_campaign (code, label, added_by) SELECT $1, 'SYNTHETIC fall launch', id FROM "user" ORDER BY created_at LIMIT 1 ON CONFLICT DO NOTHING`, [CAMPAIGN]),
+    );
+    await page.goto(LANDING);
+    const cookie = (await context.cookies()).find((item) => item.name === ATTRIBUTION_COOKIE);
+    expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax', path: '/' });
+    expect(decodeURIComponent(cookie?.value ?? '')).toBe(`s=newsletter&m=email&c=${CAMPAIGN}&k=paid_search`);
+    expect(cookie?.value).not.toContain('SYNTHETICCLICK123');
+    expect((cookie?.expires ?? 0) - Date.now() / 1000).toBeGreaterThan(29 * 86_400);
+    // A later landing with other codes changes nothing: the first visit wins.
+    await page.goto('/screening?utm_source=search&utm_medium=cpc');
+    expect((await context.cookies()).find((item) => item.name === ATTRIBUTION_COOKIE)?.value).toBe(cookie?.value);
+  });
+
   await test.step('a Member ID column, and a date-of-service column, are refused in the browser with the column named; nothing is sent (SCR-01)', async () => {
     await page.goto('/screening');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('A free screening of your allowed amounts');
@@ -162,6 +198,7 @@ test('a specialist approves the split; a file with patient information is refuse
     await page.getByRole('button', { name: 'Screen the file' }).click();
     await expect(page).toHaveURL(/\/screening\?sent=1$/);
     await expect(page.locator('[data-state="sent"]')).toContainText('Check your email');
+    await expect(page.locator('[data-state="sent"] [data-copy="kept"]')).toHaveText(SENT_KEPT);
     expect(await page.locator('body').innerText()).not.toMatch(/\/screening\/results\//);
     // The request carried nothing of the rows left out: neither their code nor their quarter, only the three numbers.
     expect(bodies.length).toBeGreaterThanOrEqual(1);
@@ -207,6 +244,39 @@ test('a specialist approves the split; a file with patient information is refuse
         ).rows[0]?.n,
     );
     expect(small).toBe('0');
+    // The prospect keeps how they heard of us, the cookie's codes and kind of click, and the firm; the outcome keeps
+    // bands, the channel the database computed, the listed campaign and the release, never a name, email or ZIP (SCR-10, SCR-12).
+    const kept = await withDatabase(
+      async (client) =>
+        (
+          await client.query<Record<string, unknown>>(
+            `SELECT p.source, p.utm_source, p.utm_medium, p.utm_campaign, p.paid_click, p.referring_firm, o.stage, o.channel, o.campaign, o.row_band, o.left_out_band,
+                    o.release_no IS NOT NULL AS pinned, o.screened_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM') AS this_month, (to_jsonb(o) - 'id' - 'upload_id')::text AS outcome
+               FROM screening_prospect p JOIN screening_upload u ON u.prospect_id = p.id JOIN screening_outcome o ON o.upload_id = u.id WHERE p.contact_email = $1`,
+            [CONTACT],
+          )
+        ).rows,
+    );
+    expect(kept).toEqual([
+      expect.objectContaining({
+        source: 'billing_firm',
+        utm_source: 'newsletter',
+        utm_medium: 'email',
+        utm_campaign: CAMPAIGN,
+        paid_click: 'paid_search',
+        referring_firm: FIRM,
+        stage: 'accepted',
+        channel: 'email',
+        campaign: CAMPAIGN,
+        row_band: '1_100',
+        left_out_band: '1_100',
+        pinned: true,
+        this_month: true,
+      }),
+    ]);
+    for (const value of [CONTACT, PRACTICE, SCREENING_ZIP, FIRM]) {
+      expect(String(kept[0]?.outcome), value).not.toContain(value);
+    }
   });
 
   let link = '';
@@ -218,6 +288,8 @@ test('a specialist approves the split; a file with patient information is refuse
     expect(message?.subject).toBe('Your screening is ready | PaidWhole');
     link = resultLinkIn(message as NonNullable<typeof message>);
     expect(message?.body).not.toMatch(/\$|\d{4}-\d{2}-\d{2}/);
+    // What is kept once the link closes, in the plain list (decision 7).
+    expect(message?.body.replace(/\s+/g, ' ')).toContain('keep only a record of counts that names no one');
     expect(message?.html).not.toContain('tagline');
     expect(`${message?.body ?? ''} ${message?.html ?? ''}`).not.toMatch(FORBIDDEN);
     // The token's hash alone is stored.
@@ -229,6 +301,12 @@ test('a specialist approves the split; a file with patient information is refuse
   await test.step('the link opens the result: the database’s sums under D19’s label, with no owed, underpaid or recovered and no tagline (SCR-05)', async () => {
     await page.goto(link);
     await expect(page.getByRole('heading', { level: 1, name: 'Your free screening' })).toBeVisible();
+    // The link's GET records no open, nor do two visible seconds with no one using the page: a mail scanner opens links too (SCR-13).
+    const opened = () => withDatabase(async (client) => (await client.query<{ first_opened_at: Date | null }>(`SELECT first_opened_at FROM (${RUN_OF_CONTACT}) r`, [CONTACT])).rows[0]?.first_opened_at ?? null);
+    expect(await opened()).toBeNull();
+    await page.waitForTimeout(2500);
+    expect(await opened()).toBeNull();
+    await expect(page.locator('[data-copy="kept"]')).toContainText('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. We keep a record of counts that names no one');
     const sums = await withDatabase(async (client) => {
       const { rows } = await client.query<{ disposition: string; expected: string | null; observed: string }>(
         `SELECT s.disposition, sum(s.expected_cents)::text AS expected, sum(s.observed_allowed_cents)::text AS observed
@@ -295,9 +373,25 @@ test('a specialist approves the split; a file with patient information is refuse
     await expectAccessible(page, 'the screening result');
     await noSidewaysScroll(page, 390, 'the screening result');
     await noSidewaysScroll(page, 1280, 'the screening result');
+    // A person using the visible page records the first open, once: the run, the outcome's band and an audit event.
+    await page.mouse.move(200, 200);
+    await page.mouse.wheel(0, 400);
+    await expect.poll(opened, { timeout: 10_000 }).not.toBeNull();
+    const first = await withDatabase(
+      async (client) =>
+        (
+          await client.query<{ band: string | null; events: string }>(
+            `SELECT o.first_open_band AS band, (SELECT count(*)::text FROM audit_event e WHERE e.action = 'screening_result_opened' AND e.object_id = r.id) AS events
+               FROM (${RUN_OF_CONTACT}) r JOIN screening_outcome o ON o.upload_id = r.upload_id`,
+            [CONTACT],
+          )
+        ).rows[0],
+    );
+    expect(first).toEqual({ band: 'same_day', events: '1' });
   });
 
-  await test.step('converting it records an audit request and the screening_converted event (SCR-06)', async () => {
+  await test.step('converting it records an audit request with its attribution, keeps the screening’s summary with it, and says so (SCR-06, SCR-11)', async () => {
+    await expect(page.locator('[data-copy="convert-kept"]')).toHaveText(CONVERT_KEPT);
     await page.getByLabel('Your name').fill('SYNTHETIC CONTACT');
     await page.getByLabel('Locations').fill('2');
     await page.getByLabel('Payers you bill').fill('SYNTHETIC PAYER A\nSYNTHETIC PAYER B');
@@ -318,9 +412,40 @@ test('a specialist approves the split; a file with patient information is refuse
         ).rows,
     );
     expect(converted).toEqual([{ organization_name: PRACTICE, contact_email: CONTACT, events: '1' }]);
+    // The request carries the screening's attribution and from_screening; the summary is kept with it for 12 months;
+    // the outcome records the conversion.
+    const carried = await withDatabase(
+      async (client) =>
+        (
+          await client.query<Record<string, unknown>>(
+            `SELECT q.from_screening, q.source, q.utm_source, q.utm_medium, q.utm_campaign, q.paid_click, q.referring_firm,
+                    l.practice_name AS lead_practice, l.expires_at = l.screened_at + interval '12 months' AS twelve_months, l.left_out_claim_lines, o.converted
+               FROM (${RUN_OF_CONTACT}) r JOIN prospect_request q ON q.id = r.converted_prospect_request_id
+               JOIN screening_lead l ON l.prospect_request_id = q.id JOIN screening_outcome o ON o.upload_id = r.upload_id`,
+            [CONTACT],
+          )
+        ).rows,
+    );
+    expect(carried).toEqual([
+      {
+        from_screening: true,
+        source: 'billing_firm',
+        utm_source: 'newsletter',
+        utm_medium: 'email',
+        utm_campaign: CAMPAIGN,
+        paid_click: 'paid_search',
+        referring_firm: FIRM,
+        lead_practice: PRACTICE,
+        twelve_months: true,
+        left_out_claim_lines: SMALL_LEFT_OUT.claimLines,
+        converted: true,
+      },
+    ]);
     await page.reload();
     await expect(page.locator('[data-state="requested"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Request an audit' })).toHaveCount(0);
+    await expect(page.locator('[data-copy="kept-converted"]')).toContainText('Because you requested an audit, we keep this screening’s totals');
+    await expect(page.locator('[data-copy="kept-converted"]')).toContainText('while we keep your request, yours can be matched to it');
   });
 
   await test.step('past its 30 days the link opens nothing, the expiry job deletes it, and the conversion’s event remains (SCR-03)', async () => {
@@ -346,6 +471,57 @@ test('a specialist approves the split; a file with patient information is refuse
       return { prospects, converted };
     });
     expect(left).toEqual({ prospects: '0', converted: '1' });
+    // The outcome stays, unlinked, and the summary stays with its request (the founder's rulings of 2026-10-20, Q4 and Q6).
+    const outlived = await withDatabase(
+      async (client) =>
+        (
+          await client.query<{ lead: string | null; outcome_linked: boolean | null }>(
+            `SELECT l.upload_id::text AS lead, (SELECT bool_or(o.upload_id IS NOT NULL) FROM screening_outcome o WHERE o.converted AND o.campaign = $2) AS outcome_linked
+               FROM prospect_request q JOIN screening_lead l ON l.prospect_request_id = q.id WHERE q.contact_email = $1`,
+            [CONTACT, CAMPAIGN],
+          )
+        ).rows,
+    );
+    expect(outlived).toEqual([{ lead: null, outcome_linked: false }]);
+  });
+
+  await test.step('the audit request form keeps the same attribution, and the console declines a request with its reason (SCR-12)', async () => {
+    const organization = `SYNTHETIC DECLINED CLINIC ${randomBytes(3).toString('hex').toUpperCase()}`;
+    await page.goto('/request-audit');
+    await expect(page.locator('[data-copy="kept"]')).toHaveText(REQUEST_AUDIT_KEPT);
+    await page.getByLabel('Your name').fill('SYNTHETIC REQUESTER');
+    await page.getByLabel('Work email').fill(`declined-${CONTACT}`);
+    await page.getByLabel('Organization').fill(organization);
+    await page.getByLabel('Locations').fill('1');
+    await page.getByLabel('Payers you bill').fill('SYNTHETIC PAYER C');
+    await page.getByLabel('How you bill').selectOption('billing_firm');
+    await page.getByLabel('How did you hear about us?').selectOption('association');
+    await page.getByLabel('Referring billing firm').fill(FIRM);
+    await expectAccessible(page, 'Request an audit, with attribution');
+    await page.getByRole('button', { name: 'Send request' }).click();
+    await expect(page.getByText('Request received')).toBeVisible();
+    const query = 'SELECT source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm, from_screening, status, declined_reason FROM prospect_request WHERE organization_name = $1';
+    const requested = await withDatabase(async (client) => (await client.query<Record<string, unknown>>(query, [organization])).rows);
+    expect(requested).toEqual([
+      { source: 'association', utm_source: 'newsletter', utm_medium: 'email', utm_campaign: CAMPAIGN, paid_click: 'paid_search', referring_firm: FIRM, from_screening: false, status: 'new', declined_reason: null },
+    ]);
+    const admin = await browser.newContext();
+    const console_ = await admin.newPage();
+    try {
+      await registerKeyAndSignIn(console_, 'screening-admin');
+      await console_.goto('/console/prospects');
+      const row = console_.getByRole('row').filter({ hasText: organization });
+      await row.getByLabel('Why declined').selectOption('not_now');
+      await row.getByRole('button', { name: 'Decline' }).click();
+      await expect(console_).toHaveURL(/\/console\/prospects$/);
+      const declined = await withDatabase(async (client) => (await client.query<Record<string, unknown>>(query, [organization])).rows[0]);
+      expect(declined).toMatchObject({ status: 'declined', declined_reason: 'not_now' });
+      await console_.goto('/console/prospects?status=declined');
+      await expect(console_.getByRole('row').filter({ hasText: organization }).locator('[data-declined-reason="not_now"]')).toHaveText('Not now');
+      await expectAccessible(console_, 'Declined audit requests');
+    } finally {
+      await admin.close();
+    }
   });
 
   await context.close();

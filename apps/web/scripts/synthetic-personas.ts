@@ -95,6 +95,8 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'era-duplicates-manager', organization: 'other_group', role: 'billing_manager' },
   // The free screening's journey (CO-04, decision D20 a): the contract specialist who approves the screening's place-of-service split.
   { key: 'screening-specialist', organization: 'internal', role: 'contract_specialist' },
+  // The same journey (audit #57): the platform administrator who declines an audit request with its reason.
+  { key: 'screening-admin', organization: 'internal', role: 'platform_admin' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

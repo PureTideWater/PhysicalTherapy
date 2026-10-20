@@ -14,6 +14,7 @@ import {
   SCREENING_INVESTIGATORY_NOTE,
   leftOutNote,
 } from '../../lib/screening/labels';
+import { convertedRetention, resultRetention } from '../../lib/screening/retention';
 import { utc, utcDate } from '../format';
 
 /**
@@ -117,14 +118,23 @@ function GroupStats({ group, slot }: { readonly group: ScreeningGroupTotals; rea
   );
 }
 
-/** Who the screening is for, under which release, and until when the link opens it. */
-export function ScreeningHeading({ summary }: { readonly summary: ScreeningSummaryData }) {
+/**
+ * Who the screening is for, under which release, until when the link opens it, and what is kept after it closes
+ * (audit #57; the founder's ruling of 2026-10-20, decision 7: the plain list). Once an audit was requested from it, the
+ * notice says the screening's totals are kept with the request for 12 months from the screening, and that its record
+ * of counts can be matched to the request while the request is kept.
+ */
+export function ScreeningHeading({ summary, converted = false }: { readonly summary: ScreeningSummaryData; readonly converted?: boolean }) {
+  const until = utcDate(summary.expiresAt);
   return (
     <div className="flex flex-col gap-1">
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Your free screening</h1>
       <p className="text-base text-muted-foreground">
         <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{summary.zip}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
-        <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>). This link opens it until {utcDate(summary.expiresAt)}, or until a later screening for the same practice or from the same email address replaces it, and then the result is deleted.
+        <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>).
+      </p>
+      <p className="text-sm text-muted-foreground" data-copy={converted ? 'kept-converted' : 'kept'}>
+        {converted ? convertedRetention(until) : resultRetention(until)}
       </p>
     </div>
   );
