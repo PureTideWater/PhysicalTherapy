@@ -60,7 +60,9 @@ function refusal(content: Uint8Array | string, label: string): string {
   throw new Error(`${label} was let through`);
 }
 
-describe('the fixture hook (SEC-14)', () => {
+// Each case runs the hook, which starts tsx for a file under fixtures/: seconds apiece on a loaded machine, beyond the
+// default five-second timeout under coverage beside the rest of the suite.
+describe('the fixture hook (SEC-14)', { timeout: 60_000 }, () => {
   it('refuses a Write of X12 content whose sender is not SYNTHSENDER', () => {
     const result = runHook(otherSender);
     expect(result.status).toBe(2);
