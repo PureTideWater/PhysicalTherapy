@@ -204,6 +204,8 @@ export class Compute extends Construct {
         // X-Forwarded-For entry it appends (rate limits; docs/adr/0053).
         TRUSTED_PROXY_HOPS: '1',
         SUPPORT_EMAIL: parameters.supportEmail,
+        // security.txt's Contact and the disclosure page's address (audit item #20 (f)).
+        SECURITY_EMAIL: parameters.securityEmail,
         // No e-signature vendor is chosen yet: agreements are recorded in the console (docs/adr/0053).
         ESIGN_PROVIDER: 'none',
         TP_ENVIRONMENT: environmentName,

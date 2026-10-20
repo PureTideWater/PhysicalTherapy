@@ -67,6 +67,8 @@ describe('the content checkout of the Rule releases screen', () => {
       DOCUMENTS_KMS_KEY_ID: 'alias/tp',
       TRUSTED_PROXY_HOPS: '1',
       SUPPORT_EMAIL: 'support@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
+      APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'staging',
     };
     expect(readWebConfig(production).contentRoot).toBeNull();

@@ -15,6 +15,7 @@ export const PARAMETER_NAMES = {
   staticCertificateArn: 'StaticCertificateArn',
   mailFromAddress: 'MailFromAddress',
   supportEmail: 'SupportEmail',
+  securityEmail: 'SecurityEmail',
   imageTag: 'ImageTag',
 } as const;
 
@@ -35,6 +36,9 @@ export const PARAMETER_NAMES = {
  *   identity in the stack's region before the deploy.
  * - SupportEmail: the support address the support, status and maintenance pages name
  *   (PRD 19, Support; docs/adr/0053); what arrives there the desk records as a ticket.
+ * - SecurityEmail: the security address /.well-known/security.txt and the disclosure page (/security)
+ *   give for vulnerability reports (audit item #20 (f)): a mailbox the security official reads, never
+ *   the support address, whose mail opens tickets only for accounts (the web app refuses the two equal).
  * - ImageTag: the release tag of the web and worker images in this environment's repositories.
  *   `none` (the default) is the first deploy, before any image exists: the services run no task.
  */
@@ -47,6 +51,7 @@ export class DeployParameters extends Construct {
   /** The domain part of MailFromAddress: the SES identity Cognito sends through. */
   readonly mailFromDomain: string;
   readonly supportEmail: string;
+  readonly securityEmail: string;
   readonly imageTag: string;
   /** True once ImageTag names a release. */
   readonly released: CfnCondition;
@@ -94,6 +99,12 @@ export class DeployParameters extends Construct {
     this.supportEmail = parameter(PARAMETER_NAMES.supportEmail, {
       type: 'String',
       description: 'The support address the support, status and maintenance pages name',
+      allowedPattern: '^[A-Za-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
+      constraintDescription: 'an email address on a lowercase domain',
+    });
+    this.securityEmail = parameter(PARAMETER_NAMES.securityEmail, {
+      type: 'String',
+      description: 'The security address security.txt and the disclosure page give for vulnerability reports (not the support address)',
       allowedPattern: '^[A-Za-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?([.][a-z0-9]([a-z0-9-]*[a-z0-9])?)+$',
       constraintDescription: 'an email address on a lowercase domain',
     });

@@ -11,8 +11,13 @@ one in us-east-1), a verified SES identity for the sender's domain, CDK bootstra
 
 ```
 cdk deploy tp-<env> --parameters AppDomainName=… CertificateArn=… StaticDomainName=… StaticCertificateArn=… \
-  MailFromAddress=… SupportEmail=…
+  MailFromAddress=… SupportEmail=… SecurityEmail=…
 ```
+
+`SecurityEmail` is the address `/.well-known/security.txt` and the disclosure page (`/security`) give for vulnerability
+reports: a mailbox the security official reads, on a domain whose mail reaches it. It is never the support address,
+whose mail opens tickets only for accounts (the web app refuses to start with the two equal). An environment deployed
+before this parameter existed takes it on its next deploy: pass `SecurityEmail=…` once.
 
 `ImageTag` stays `none`: everything is created and no task runs (the heartbeat and uptime alarms stay in ALARM until the
 first release). Point the two DNS names at the `LoadBalancerDnsName` and `StaticAssetsDistributionDomain` outputs. Write
@@ -31,9 +36,10 @@ the Stripe keys (docs/runbooks/billing.md) and set up support mail (docs/runbook
    and creates any missing service login; no service moves to the new task definition until it has exited 0, so a failed
    migration fails the deploy before traffic moves. Each service then rolls with its circuit breaker.
 4. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
-   `/status` load; a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled
-   run; the uptime canaries go green within ten minutes. In staging, run `pnpm test:e2e` against the release before
-   tagging it for production.
+   `/status` load; `/.well-known/security.txt` names the environment's `SecurityEmail` and links `/security`, which
+   loads; a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run; the
+   uptime canaries go green within ten minutes. In staging, run `pnpm test:e2e` against the release before tagging it
+   for production.
 
 ## Rollback
 
