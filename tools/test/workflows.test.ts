@@ -321,6 +321,98 @@ describe('workflows', () => {
     const publish = stepIndex(steps, (step) => step.run?.includes('tools/publish-content.sh') === true);
     expect(verify).toBeLessThan(publish);
   });
+
+  it('measure the screening under production limits on pushes, pull requests, weekly and on request, failing on what PR 6 controls and opening an issue from a job of its own (audit #53 part 1)', () => {
+    const file = readFileSync(path.join(repositoryRoot, '.github/workflows/screening-capacity.yml'), 'utf8');
+    const capacity = parse(file) as Workflow & { permissions: unknown; concurrency: Record<string, unknown>; jobs: Record<string, Job & { 'timeout-minutes'?: number; needs?: unknown; if?: string; permissions?: unknown }> };
+    const on = capacity.on as Record<string, { branches?: string[]; paths?: string[] } | null | { cron: string }[]>;
+    expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule', 'workflow_dispatch']);
+    expect(on.schedule).toEqual([{ cron: '41 6 * * 1' }]);
+    expect(on.workflow_dispatch).toBeNull();
+    const push = on.push as { branches: string[]; paths: string[] };
+    expect(push.branches).toEqual(['claude/build-platform']);
+    // Pushes measure every change that can move the result, migrations and the lockfile included.
+    expect(push.paths).toEqual([
+      'apps/worker/src/screening/**',
+      'apps/worker/src/price/**',
+      'apps/worker/src/jobs/**',
+      'apps/worker/src/worker.ts',
+      'apps/worker/src/mail/**',
+      'apps/web/src/lib/screening/**',
+      'apps/web/src/app/screening/**',
+      'apps/web/src/components/screening/**',
+      'apps/web/src/proxy.ts',
+      'packages/pricing/src/**',
+      'packages/rules/src/**',
+      'packages/contracts/src/**',
+      'packages/money/src/**',
+      'packages/db/migrations/**',
+      'packages/synth/src/release/**',
+      'packages/synth/src/screening/**',
+      'tools/screening-capacity/**',
+      'tools/release/scale.ts',
+      'infra/lib/environments.ts',
+      'infra/lib/constructs/database.ts',
+      'apps/web/Dockerfile',
+      'apps/worker/Dockerfile',
+      'pnpm-lock.yaml',
+      '.github/workflows/screening-capacity.yml',
+    ]);
+    // Pull requests only where the screening, pricing, the harness or the images change: no lockfile, no other migration.
+    expect((on.pull_request as { paths: string[] }).paths).toEqual([
+      'apps/worker/src/screening/**',
+      'apps/worker/src/price/**',
+      'apps/web/src/lib/screening/**',
+      'apps/web/src/app/screening/**',
+      'apps/web/src/components/screening/**',
+      'packages/pricing/src/**',
+      'packages/rules/src/**',
+      'packages/synth/src/release/**',
+      'packages/synth/src/screening/**',
+      'packages/db/migrations/*screening*.sql',
+      'tools/screening-capacity/**',
+      'tools/release/scale.ts',
+      'infra/lib/environments.ts',
+      'apps/web/Dockerfile',
+      'apps/worker/Dockerfile',
+      '.github/workflows/screening-capacity.yml',
+    ]);
+    expect(capacity.permissions).toEqual({ contents: 'read' });
+    // Pushes group by commit and are never cancelled; only a pull request's older run is.
+    expect(capacity.concurrency).toEqual({
+      group: "screening-capacity-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+      'cancel-in-progress': "${{ github.event_name == 'pull_request' }}",
+    });
+    expect(Object.keys(capacity.jobs).sort()).toEqual(['capacity', 'notify']);
+    const measure = capacity.jobs.capacity;
+    expect(measure?.['runs-on']).toBe('ubuntu-24.04');
+    expect(measure?.['timeout-minutes']).toBe(90);
+    expect(measure?.permissions).toBeUndefined();
+    const steps = measure?.steps ?? [];
+    // Both production images built from their Dockerfiles before the harness runs.
+    const builds = steps.filter((step) => step.uses === 'docker/build-push-action@v6');
+    expect(builds.map((step) => [step.with?.file, step.with?.load, step.with?.tags])).toEqual([
+      ['apps/web/Dockerfile', true, 'tp-web:capacity'],
+      ['apps/worker/Dockerfile', true, 'tp-worker:capacity'],
+    ]);
+    const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
+    expect(stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6')).toBeLessThan(run);
+    expect(steps[run]?.run).toContain('taskset -c');
+    const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
+    expect(upload).toBe(run + 1);
+    expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
+    expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual(['${{ runner.temp }}/screening-capacity/screening-capacity.json', '${{ runner.temp }}/screening-capacity/summary.md']);
+    expect(steps[upload]?.with?.['retention-days']).toBe(90);
+    // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
+    const notify = capacity.jobs.notify;
+    expect(notify?.['runs-on']).toBe('ubuntu-24.04');
+    expect(notify?.needs).toBe('capacity');
+    expect(notify?.if).toBe("failure() && github.event_name != 'pull_request'");
+    expect(notify?.permissions).toEqual({ issues: 'write' });
+    expect(notify?.steps.some((step) => step.uses?.startsWith('actions/checkout') === true)).toBe(false);
+    expect(notify?.steps.every((step) => step.uses === undefined)).toBe(true);
+    expect(notify?.steps.map((step) => step.run ?? '').join('\n')).toContain('--label screening-capacity');
+  });
 });
 
 describe('dependabot', () => {

@@ -40,7 +40,7 @@ function dataLines(file: ScaleSourceFile): string[] {
 describe('the scale release’s shape', () => {
   it('is release 900100, its counts at the design’s figures', () => {
     expect(SCALE_RELEASE_NUMBER).toBe(900_100);
-    expect(SCALE_RELEASE_SHAPE).toMatchObject({ years: [2025, 2026], rvuCodes: 19_000, localities: 109, zips: 42_000, pooledCodes: 150, mueCodes: 15_000, ptpPairs: 2_000_000, ptpFileRecords: 250_000 });
+    expect(SCALE_RELEASE_SHAPE).toMatchObject({ years: [2025, 2026], rvuCodes: 19_000, localities: 109, zips: 42_000, pooledCodes: 150, mueCodes: 15_000, ptpPairs: 2_000_000, ptpFileRecords: 100_000 });
     const counts = scaleRecordCounts(SCALE_RELEASE_SHAPE);
     expect(counts).toEqual({
       pfs_rvu: 2 * (19_000 + 380),

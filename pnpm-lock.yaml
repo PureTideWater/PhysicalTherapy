@@ -824,6 +824,9 @@ importers:
       fast-check:
         specifier: 'catalog:'
         version: 4.10.2
+      playwright-core:
+        specifier: 1.56.1
+        version: 1.56.1
       tsx:
         specifier: 'catalog:'
         version: 4.23.15

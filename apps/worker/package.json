@@ -19,7 +19,8 @@
     "./billing": "./src/billing/public.ts",
     "./era-formats": "./src/parse/era/formats.ts",
     "./screening": "./src/screening/public.ts",
-    "./screening-format": "./src/screening/format.ts"
+    "./screening-format": "./src/screening/format.ts",
+    "./screening-oracle": "./src/screening/test-support/legacy-release.ts"
   },
   "scripts": {
     "dev": "tsx watch src/main.ts",

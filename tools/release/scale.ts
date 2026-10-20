@@ -15,8 +15,8 @@ import { SYNTHETIC_RELEASE_DIR } from './synthetic';
  * builds release 900001 with, and the hand-typed records (assistant modifiers, sequestration, therapy thresholds,
  * dispute windows, prompt pay, a denial category and the general MPPR rate) taken from release 900001 and dated
  * from the first year. Every record has source.synthetic true and says SYNTHETIC in its title; the release loads only
- * with the loader's synthetic test option, into a scratch database. The PTP table goes in files of at most 250,000
- * records. Nothing is written under the repository: the caller names the directory ($RUNNER_TEMP in CI).
+ * with the loader's synthetic test option, into a scratch database. The PTP table goes in files of at most 100,000
+ * records (SCALE_RELEASE_SHAPE.ptpFileRecords says why). Nothing is written under the repository: the caller names the directory ($RUNNER_TEMP in CI).
  *
  *   tsx tools/release/scale.ts --out <dir> [--small]
  */

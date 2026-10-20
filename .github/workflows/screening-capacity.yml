@@ -1,0 +1,159 @@
+name: screening-capacity
+
+# The free screening's capacity test under production limits (audit #53 part 1; docs/adr/0062, "Capacity under
+# production limits"; docs/runbooks/screening-capacity.md): the production images run as containers under production's
+# task sizes (a quarter vCPU and 512 MiB for web and platform), Postgres at db.t4g.medium's size or the runner's share of
+# it with gp3's I/O baseline and a 1 ms delay each way, the SYNTHETIC scale release 900100 and the practice and worst
+# 50,000-row uploads, alone and three at once with a small one behind them. The job fails on everything PR 6 controls;
+# the time to email is reported as "open, PR 6b" until infra/lib/environments.ts declares the screening's own consumer,
+# and fails the job from then on (the founder's rulings of 2026-10-20, decisions 13 to 16). Synthetic data only, no
+# credentials. Not a required check: it runs where its paths change, weekly and on request.
+on:
+  schedule:
+    # Weekly. Schedules fire only from the default branch, so this one runs once it carries the workflows (audit #54).
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [claude/build-platform]
+    paths:
+      - apps/worker/src/screening/**
+      - apps/worker/src/price/**
+      - apps/worker/src/jobs/**
+      - apps/worker/src/worker.ts
+      - apps/worker/src/mail/**
+      - apps/web/src/lib/screening/**
+      - apps/web/src/app/screening/**
+      - apps/web/src/components/screening/**
+      - apps/web/src/proxy.ts
+      - packages/pricing/src/**
+      - packages/rules/src/**
+      - packages/contracts/src/**
+      - packages/money/src/**
+      - packages/db/migrations/**
+      - packages/synth/src/release/**
+      - packages/synth/src/screening/**
+      - tools/screening-capacity/**
+      - tools/release/scale.ts
+      - infra/lib/environments.ts
+      - infra/lib/constructs/database.ts
+      - apps/web/Dockerfile
+      - apps/worker/Dockerfile
+      - pnpm-lock.yaml
+      - .github/workflows/screening-capacity.yml
+  pull_request:
+    # Where the screening, pricing, the harness or the images change; schema and lockfile pull requests elsewhere are
+    # measured by the push to the build branch after they merge.
+    paths:
+      - apps/worker/src/screening/**
+      - apps/worker/src/price/**
+      - apps/web/src/lib/screening/**
+      - apps/web/src/app/screening/**
+      - apps/web/src/components/screening/**
+      - packages/pricing/src/**
+      - packages/rules/src/**
+      - packages/synth/src/release/**
+      - packages/synth/src/screening/**
+      - packages/db/migrations/*screening*.sql
+      - tools/screening-capacity/**
+      - tools/release/scale.ts
+      - infra/lib/environments.ts
+      - apps/web/Dockerfile
+      - apps/worker/Dockerfile
+      - .github/workflows/screening-capacity.yml
+
+permissions:
+  contents: read
+
+# Every push is measured (grouped by its commit, never cancelled); only a pull request's older run is cancelled.
+concurrency:
+  group: screening-capacity-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  capacity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The production images, from their Dockerfiles, as supply-chain.yml builds them; layers kept in the Actions cache.
+      - name: Build the web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          load: true
+          push: false
+          tags: tp-web:capacity
+          cache-from: type=gha,scope=screening-capacity-web
+          cache-to: type=gha,mode=max,scope=screening-capacity-web
+
+      - name: Build the worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/worker/Dockerfile
+          load: true
+          push: false
+          tags: tp-worker:capacity
+          cache-from: type=gha,scope=screening-capacity-worker
+          cache-to: type=gha,mode=max,scope=screening-capacity-worker
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # The browser the uploads are sent from: Playwright's own Chromium, as ci.yml installs it.
+      - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
+
+      # The SYNTHETIC scale release, kept between runs by the SHA-256 of what generates it.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/scale-release
+          key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
+
+      # The harness, its child processes and Chromium on every CPU but the last, which web and platform share.
+      - name: Measure under production limits
+        run: |
+          last=$(( $(nproc) - 1 ))
+          taskset -c "0-$(( last > 0 ? last - 1 : 0 ))" pnpm screening:capacity \
+            --out "$RUNNER_TEMP/screening-capacity" \
+            --release-dir "$RUNNER_TEMP/scale-release" \
+            --web-image tp-web:capacity \
+            --worker-image tp-worker:capacity
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screening-capacity
+          path: |
+            ${{ runner.temp }}/screening-capacity/screening-capacity.json
+            ${{ runner.temp }}/screening-capacity/summary.md
+          if-no-files-found: ignore
+          retention-days: 90
+
+  # A failure outside a pull request opens one issue, or comments on the one already open. This job holds the
+  # workflow's only write permission and runs no repository code: it checks nothing out.
+  notify:
+    needs: capacity
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the screening-capacity issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="The screening capacity test failed on ${GITHUB_REF_NAME} at ${GITHUB_SHA}: ${RUN_URL}. The run's artifact holds screening-capacity.json and summary.md with each failing check."
+          number=$(gh issue list --label screening-capacity --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            gh label create screening-capacity --description "The screening capacity test (audit #53)" --color B60205 2>/dev/null || true
+            gh issue create --title "Screening capacity test failing" --label screening-capacity --body "$body"
+          else
+            gh issue comment "$number" --body "$body"
+          fi

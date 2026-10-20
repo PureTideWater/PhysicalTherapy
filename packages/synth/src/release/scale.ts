@@ -67,7 +67,10 @@ export const SCALE_RELEASE_SHAPE: ScaleReleaseShape = {
   mueCodes: 15_000,
   // The full practitioner PTP table in force, about 2,000,000 edits.
   ptpPairs: 2_000_000,
-  ptpFileRecords: 250_000,
+  // At most 100,000 edits a file: the release loader reads each file's records into one push of spread arguments
+  // (packages/rules/src/content.ts, readRelease), which overflows the call stack above about 120,000 (audit #31's
+  // loader at real size). CMS's own files are larger; the design allowed up to 250,000.
+  ptpFileRecords: 100_000,
   // X12's claim adjustment reason codes (about 400 with the deactivated ones), remittance remark codes (about 1,200)
   // and claim status codes (about 300); prompt-pay rules for the fifty states and the District of Columbia.
   carcCodes: 400,
