@@ -162,3 +162,10 @@ Applies from the next round of every PR. Every stage stays: design, independent 
 ## Founder rulings of 2026-10-20 ~20:00 UTC: the 19 design decisions
 - The founder accepted the recommended answer on all 19 questions in scratchpad/design/decisions-2026-10-20.md: 1-6 for PR 5 (#37 part 1, design scratchpad/design/pr5-37-payer-packet.md, including contact_missing as a coded refusal in PR 5's migration) and 7-19 for PR 6 (#53 parts 1-2 and #57 schema, design scratchpad/design/pr6-53-57-screening.md, including the screening_terms_sha256 column for #51). The builders record each ruling in ADR 0061 (PR 5) and ADR 0062 (PR 6). Counsel confirms the wording of 3, 4, 7 and 17, the cookie notice and the 11-line floor before the first real packet or the screening opens.
 - Build order: PR 6 #53/#57 build starts when a heavy slot frees; PR 5 #37 build starts after PR 5's current fix and verify round finishes (same worktree).
+
+## Founder rulings of 2026-10-20 ~21:00 UTC: governance
+- Content publisher: a GitHub App owned by the organization, Contents only, the only bypass of "Protect main" and of content-release tag creation, its key in environment content-publish readable only from main (runbook step 7). Confirmed.
+- Release tags (v*): only the founder creates them, from the Releases page; the deploy runbook checks the tag's commit is on main. Confirmed.
+- One PR into main before launch is allowed: main's .github/dependabot.yml to the grouped, limited copy (target-branch lines kept) plus .github/pull_request_template.md; opened after the governance PR merges and before runbook step 5; the founder approves it.
+- Rulesets split: "Protect main history" (no bypass at all) and "Protect main" (pull-request rule); content-release tag rules split the same way. Confirmed.
+- To do: record these four in ADR 0063's 2026-10-20 amendment and the runbook ("confirmed by the founder") after the round-3 fix (wf_73afeed2-2d3) finishes; PR #25 is open as a draft and subscribed.
