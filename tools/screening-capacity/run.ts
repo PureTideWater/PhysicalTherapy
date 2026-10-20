@@ -14,7 +14,7 @@ import { type Browser, type BrowserContext, type Page, chromium } from 'playwrig
 import { environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
 import { DockerRuntime, ProcessRuntime, type Runtime, type ServiceName, type ServiceSpec } from './containers';
-import { DEPARTURES, type HarnessDirectories, loginsEnvironment, platformEnvironment, webEnvironment } from './env';
+import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginsEnvironment, platformEnvironment, webEnvironment } from './env';
 import { MIB, NETWORK_DELAY_MS, RUNNER_TO_FARGATE, SCENARIO_CAP_MS, STALL_MS, postgresLimit, productionLimits, runnerTooSmall } from './limits';
 import { anonBytes, cpuThrottling, memoryEvents, peak, phaseLines, phasesByRun, workerStarted } from './measure';
 import { type AppliedLimits, type ContainerMeasure, type Measurements, type OracleComparison, type ScenarioMeasure, type UploadMeasure, markdown, report, timeRule } from './report';
@@ -452,6 +452,7 @@ async function main(): Promise<number> {
   const expected = { web: limits.web, platform: limits.platform, postgres: pgLimit, storage: { iops: limits.database.iops, bytesPerSecond: limits.database.bytesPerSecond } };
   const runnerProblems = runnerTooSmall(runner, limits);
   const dataHost = path.join(opts.out, 'data');
+  const logins = opts.runtime === 'process' ? harnessLogins(randomBytes(4).toString('hex')) : HARNESS_LOGINS;
   const runtime: Runtime =
     opts.runtime === 'docker'
       ? new DockerRuntime({ web: opts.webImage, worker: opts.workerImage }, dataHost)
@@ -486,7 +487,7 @@ async function main(): Promise<number> {
       ownerService = withDatabase(urls.serviceUrl, opts.database);
     }
     say('migrating and creating the logins');
-    await runtime.migrate(ownerService, loginsEnvironment(ownerService));
+    await runtime.migrate(ownerService, loginsEnvironment(ownerService, logins));
     say('loading the release');
     say(`loaded: ${(await child('tools/screening-capacity/load.ts', [ownerHarness, built.dir], 6144)).trim()}`);
     await approveSplit(ownerHarness);
@@ -498,8 +499,8 @@ async function main(): Promise<number> {
     }
     const serviceDirs = directories(runtime.dataDir.service);
     const secrets = { cookieSecret: randomBytes(32).toString('base64'), masterKey: developmentMasterKey().toString('base64') };
-    const web: ServiceSpec = { name: 'web', env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets), limit: limits.web, cpuset: pgLimit.taskCpuset };
-    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs), limit: limits.platform, cpuset: pgLimit.taskCpuset };
+    const web: ServiceSpec = { name: 'web', env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins), limit: limits.web, cpuset: pgLimit.taskCpuset };
+    const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: pgLimit.taskCpuset };
     say('starting web and platform');
     await runtime.startService(web);
     await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
@@ -543,9 +544,17 @@ async function main(): Promise<number> {
     await runtime.stopAll().catch(() => undefined);
   }
   if (opts.runtime === 'process' && !opts.keepDatabase && opts.adminUrl !== null) {
+    // The scratch database, then the run's own logins (roles outlive a database; their names carry the run's suffix).
     const admin = new pg.Client({ connectionString: opts.adminUrl });
     await admin.connect();
-    await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(opts.database)} WITH (FORCE)`).finally(() => admin.end());
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(opts.database)} WITH (FORCE)`);
+      await admin.query(`DROP ROLE IF EXISTS ${Object.values(logins).map((login) => admin.escapeIdentifier(login.username)).join(', ')}`);
+    } finally {
+      await admin.end();
+    }
+  } else if (opts.runtime === 'process') {
+    say(`kept database ${opts.database} and its logins ${Object.values(logins).map((login) => login.username).join(', ')}; drop all of them when done`);
   }
   const measured: Measurements = {
     commit,

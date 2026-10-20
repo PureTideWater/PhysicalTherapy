@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { repositoryRoot } from '../content-files';
-import { NODE_ENV_READS, platformEnvironment, webEnvironment } from './env';
+import { HARNESS_LOGINS, NODE_ENV_READS, harnessLogins, loginsEnvironment, platformEnvironment, webEnvironment } from './env';
 
 /**
  * Production fidelity of the capacity test (audit #53 part 1): every NODE_ENV read in apps/worker/src and
@@ -86,5 +86,23 @@ describe('the containers’ environments', () => {
     expect(env).toMatchObject({ NODE_ENV: 'production', TP_ALLOW_LOCAL_PROVIDERS: 'e2e', TRUSTED_PROXY_HOPS: '1', MODEL_PROVIDER: 'local' });
     expect(new URL(env.DATABASE_URL ?? '').username).toBe('tp_app_login');
     expect(env).not.toHaveProperty('ESIGN_PROVIDER');
+  });
+
+  it('gives a run on a shared server logins of its own, which every service and the migration task use', () => {
+    const logins = harnessLogins('ab12cd34');
+    expect(Object.values(logins).map((login) => login.username)).toEqual(['tp_app_login_ab12cd34', 'tp_operator_login_ab12cd34', 'tp_queue_login_ab12cd34', 'tp_billing_login_ab12cd34']);
+    expect(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity', logins)).toMatchObject({ TP_APP_LOGIN_USERNAME: 'tp_app_login_ab12cd34', TP_BILLING_LOGIN_USERNAME: 'tp_billing_login_ab12cd34' });
+    const web = webEnvironment('postgres://owner:secret@db:5432/tp_capacity', 'http://web:3000', dirs, { cookieSecret: 'c', masterKey: 'k' }, logins);
+    const platform = platformEnvironment('postgres://owner:secret@db:5432/tp_capacity', 'http://web:3000', dirs, logins);
+    expect([web.DATABASE_URL, web.BILLING_DATABASE_URL, web.QUEUE_DATABASE_URL, platform.OPERATOR_DATABASE_URL, platform.QUEUE_DATABASE_URL].map((url) => new URL(url ?? '').username)).toEqual([
+      'tp_app_login_ab12cd34',
+      'tp_billing_login_ab12cd34',
+      'tp_queue_login_ab12cd34',
+      'tp_operator_login_ab12cd34',
+      'tp_queue_login_ab12cd34',
+    ]);
+    // The Docker runtime's own Postgres keeps production's names.
+    expect(loginsEnvironment('postgres://owner:secret@db:5432/tp_capacity').TP_APP_LOGIN_USERNAME).toBe(HARNESS_LOGINS.app.username);
+    expect(() => harnessLogins('AB-12')).toThrow(RangeError);
   });
 });

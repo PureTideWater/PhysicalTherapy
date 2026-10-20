@@ -61,6 +61,22 @@ export const HARNESS_LOGINS = {
   billing: { username: 'tp_billing_login', password: 'synthetic-capacity-billing' },
 } as const;
 
+export type HarnessLogins = Readonly<Record<keyof typeof HARNESS_LOGINS, { readonly username: string; readonly password: string }>>;
+
+/**
+ * The logins with a run's own suffix. Roles belong to the whole server, not to a database: on a server the harness
+ * shares (the process runtime), the run's logins carry its suffix and are dropped with its database, so they never meet
+ * another run's or another test's roles (apps/worker/src/deploy/logins.db.test.ts does the same). The Docker runtime's
+ * Postgres is the harness's own, so its logins keep production's names.
+ */
+export function harnessLogins(suffix: string): HarnessLogins {
+  if (!/^[a-z0-9]{1,16}$/.test(suffix)) {
+    throw new RangeError('a login suffix is 1 to 16 lowercase letters and digits');
+  }
+  const withSuffix = (login: { readonly username: string; readonly password: string }) => ({ username: `${login.username}_${suffix}`, password: login.password });
+  return { app: withSuffix(HARNESS_LOGINS.app), operator: withSuffix(HARNESS_LOGINS.operator), queue: withSuffix(HARNESS_LOGINS.queue), billing: withSuffix(HARNESS_LOGINS.billing) };
+}
+
 /** A login's URL on the harness's database. */
 export function loginUrl(databaseUrl: string, login: { readonly username: string; readonly password: string }): string {
   const url = new URL(databaseUrl);
@@ -70,17 +86,17 @@ export function loginUrl(databaseUrl: string, login: { readonly username: string
 }
 
 /** The migration image's environment for dist/logins.js. */
-export function loginsEnvironment(ownerUrl: string): Record<string, string> {
+export function loginsEnvironment(ownerUrl: string, logins: HarnessLogins = HARNESS_LOGINS): Record<string, string> {
   return {
     DATABASE_URL: ownerUrl,
-    TP_APP_LOGIN_USERNAME: HARNESS_LOGINS.app.username,
-    TP_APP_LOGIN_PASSWORD: HARNESS_LOGINS.app.password,
-    TP_OPERATOR_LOGIN_USERNAME: HARNESS_LOGINS.operator.username,
-    TP_OPERATOR_LOGIN_PASSWORD: HARNESS_LOGINS.operator.password,
-    TP_QUEUE_LOGIN_USERNAME: HARNESS_LOGINS.queue.username,
-    TP_QUEUE_LOGIN_PASSWORD: HARNESS_LOGINS.queue.password,
-    TP_BILLING_LOGIN_USERNAME: HARNESS_LOGINS.billing.username,
-    TP_BILLING_LOGIN_PASSWORD: HARNESS_LOGINS.billing.password,
+    TP_APP_LOGIN_USERNAME: logins.app.username,
+    TP_APP_LOGIN_PASSWORD: logins.app.password,
+    TP_OPERATOR_LOGIN_USERNAME: logins.operator.username,
+    TP_OPERATOR_LOGIN_PASSWORD: logins.operator.password,
+    TP_QUEUE_LOGIN_USERNAME: logins.queue.username,
+    TP_QUEUE_LOGIN_PASSWORD: logins.queue.password,
+    TP_BILLING_LOGIN_USERNAME: logins.billing.username,
+    TP_BILLING_LOGIN_PASSWORD: logins.billing.password,
   };
 }
 
@@ -98,12 +114,12 @@ export interface HarnessDirectories {
 }
 
 /** The platform worker's environment: production's platform settings, with the local outbox and directories (see the module comment). */
-export function platformEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories): Record<string, string> {
+export function platformEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories, logins: HarnessLogins = HARNESS_LOGINS): Record<string, string> {
   return {
     NODE_ENV: 'test',
     WORKER_JOBS: 'platform',
-    OPERATOR_DATABASE_URL: loginUrl(databaseUrl, HARNESS_LOGINS.operator),
-    QUEUE_DATABASE_URL: loginUrl(databaseUrl, HARNESS_LOGINS.queue),
+    OPERATOR_DATABASE_URL: loginUrl(databaseUrl, logins.operator),
+    QUEUE_DATABASE_URL: loginUrl(databaseUrl, logins.queue),
     AUDIT_COPY_DIR: dirs.auditCopies,
     RESTORE_DRILL_MODE: 'local',
     RESTORE_DRILL_WORK_DIR: dirs.restoreDrill,
@@ -114,14 +130,20 @@ export function platformEnvironment(databaseUrl: string, origin: string, dirs: H
 }
 
 /** The web's environment: the production build with the e2e suite's local providers, one trusted proxy hop (each upload its own client address). */
-export function webEnvironment(databaseUrl: string, origin: string, dirs: HarnessDirectories, secrets: { readonly cookieSecret: string; readonly masterKey: string }): Record<string, string> {
+export function webEnvironment(
+  databaseUrl: string,
+  origin: string,
+  dirs: HarnessDirectories,
+  secrets: { readonly cookieSecret: string; readonly masterKey: string },
+  logins: HarnessLogins = HARNESS_LOGINS,
+): Record<string, string> {
   return {
     NODE_ENV: 'production',
     NEXT_TELEMETRY_DISABLED: '1',
-    DATABASE_URL: loginUrl(databaseUrl, HARNESS_LOGINS.app),
-    BILLING_DATABASE_URL: loginUrl(databaseUrl, HARNESS_LOGINS.billing),
+    DATABASE_URL: loginUrl(databaseUrl, logins.app),
+    BILLING_DATABASE_URL: loginUrl(databaseUrl, logins.billing),
     // No e-signature vendor, as in production today (ESIGN_PROVIDER unset is none there): no e-signature login.
-    QUEUE_DATABASE_URL: loginUrl(databaseUrl, HARNESS_LOGINS.queue),
+    QUEUE_DATABASE_URL: loginUrl(databaseUrl, logins.queue),
     APP_ORIGIN: origin,
     TP_ALLOW_LOCAL_PROVIDERS: 'e2e',
     TP_AUTH_PROVIDER: 'dev',
