@@ -170,3 +170,10 @@ Applies from the next round of every PR. Every stage stays: design, independent 
 - Rulesets split: "Protect main history" (no bypass at all) and "Protect main" (pull-request rule); content-release tag rules split the same way. Confirmed.
 - To do: record these four in ADR 0063's 2026-10-20 amendment and the runbook ("confirmed by the founder") after the round-3 fix (wf_73afeed2-2d3) finishes; PR #25 is open as a draft and subscribed.
 - Governance: PR #25 (draft) at 0acf852 (round-3 fixes f890ffc, cd42a64; founder's four rulings 0acf852). Final verify running (wf_d18db740-5e7). Lesson for the efficient pipeline: ci.yml cancels an in-progress run on each new push (concurrency), so batch pushes on a draft PR; supply-chain and approval-of-record were green on 98392bf and cd42a64.
+
+## PR 5 audit-fix round verified (2026-10-20 ~21:25 UTC) and two rulings
+- PR 5 verified at 6d93b40 (wf_4eae97e6-03a done): every check passed; #4, #5, #26, #61 proven in a scratch copy; domain model unapproved at 372fa545... (do NOT ask to sign: #37 part 1 changes one SQL function next, so the founder signs once after it).
+- Founder rulings of 2026-10-20 ~21:25 UTC:
+  1. Pricing that goes stale after export but before attestation: the submission is logged as unattested ("sent without sign-off: pricing went stale after export") so reconciliation tracks the payer's answer; the stale packet is never attested.
+  2. "Remittance date" in a contract window means the remittance advice's own date, not the payment date (BPR16); such windows stay unverified until PR 6c computes it.
+- Next PR 5 round: merge claude/build-platform (after #25 merges), #37 part 1 (design scratchpad/design/pr5-37-payer-packet.md, rulings 1-6), ruling 1 above (an unattested submission path, in PR 5's migration), record ruling 2 in ADR 0061; the version-form.tsx name="intent" nit; draft PR at once; reviews; fix; verify reads CI.
