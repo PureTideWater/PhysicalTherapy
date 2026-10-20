@@ -1,69 +1,114 @@
 # GitHub governance: protecting the repository, and your approval as the approval of record
 
-For Tyler Williams (GitHub `PureTideWater`), the repository's owner. You approved this on 2026-10-18 (audit item #12,
-"Make your approval and the CI gate real"; the decision is `docs/adr/0063`). Every step is something only you can
-click; the build cannot do any of it. Do them in order, on a phone or a computer. Each step says what it protects
+For the founder (GitHub `PureTideWater`), the repository's owner. You approved the first version on 2026-10-18 (audit
+item #12, "Make your approval and the CI gate real") and, on 2026-10-20, the combined audit's item #20, "Make your
+approval, the CI gate and the repository's settings real": a company organization on GitHub Team, your approval on
+every pull request, the content publisher and the launch switch. The decision is `docs/adr/0063`. Every step is
+something only you can click; the build cannot do any of it. Do them in order. Each step says what it protects
 against.
 
-Use github.com in your phone's browser (Safari or Chrome) for steps 1 to 5: the GitHub app does not have these
-settings. Step 6 works in the GitHub app. If a page looks different from what is written here, look for the same
-words; GitHub renames menus from time to time.
+Use github.com in your phone's browser (Safari or Chrome) for steps 1 to 5 and step 8: the GitHub app does not have
+these settings. Step 6 works in the GitHub app. Step 7 needs a computer, since it downloads a key file. If a page
+looks different from what is written here, look for the same words; GitHub renames menus from time to time.
+
+Below, `<organization>` is the organization's name you choose in step 1, so the repository's address becomes
+github.com/<organization>/PhysicalTherapy.
 
 | Step | What | When | About |
 | --- | --- | --- | --- |
-| 1 | GitHub Pro and an Actions budget | now | 10 minutes |
-| 2 | Make the repository private | right after step 1 | 2 minutes |
-| 3 | The build agent's own GitHub account, and your account taken out of every Claude session | now; tell the build sessions before 3f (3e) | 30 minutes |
-| 4 | The rulesets for `claude/build-platform` and `main` | after step 1, once the pull request that added this guide is merged into `claude/build-platform` | 15 minutes |
-| 5 | Code Owners review, your approval on `main`, and `APPROVAL_REVIEW_REQUIRED` | after step 3's check (3j) shows the agent's login, and no pull request your account opened is still open | 10 minutes |
+| 1 | A company organization on GitHub Team, and an Actions budget | now | 15 minutes |
+| 2 | Move the repository into it, make it private, and install the Claude app there | right after step 1, and before PR 7's red team at the latest | 15 minutes |
+| 3 | The build agent's own GitHub account, and your account taken out of every Claude session | after step 2; tell the build sessions before 3f (3e) | 30 minutes |
+| 4 | The rulesets for `claude/build-platform` and `main` | after step 2, once the pull request that added this guide is merged into `claude/build-platform` | 15 minutes |
+| 5 | Your approval on every pull request, and `APPROVAL_REVIEW_REQUIRED` | after step 3's check (3j) shows the agent's login, and no pull request your account opened is still open | 10 minutes |
 | 6 | Approving a pull request from the GitHub app | every time the build asks | 2 minutes |
+| 7 | The content publisher | before launch | 20 minutes |
+| 8 | Launch: `claude/build-platform` into `main` | when you decide to launch | 10 minutes |
 
-## 1. Upgrade to GitHub Pro and set an Actions budget
+Dependabot's settings on `main` wait for a ruling of yours; see the section after step 8.
 
-Protects against: a private repository with no branch protection (GitHub Free has none for private repositories), and
-CI stopping when the free Actions minutes run out.
+## 1. Create the company's organization on GitHub Team, and set an Actions budget
+
+Protects against: the company's code living in a personal account, and a private repository with no branch
+protection or roles.
 
 1. Open github.com and sign in as yourself (`PureTideWater`).
-2. Tap your profile picture (top right) → **Settings**.
-3. In the settings menu, tap **Billing and licensing** → **Licensing** (on some accounts: **Plans and usage**).
-4. Next to "GitHub Free", tap **Upgrade** → choose **Pro** → **Monthly** → enter the payment card → **Upgrade**.
-5. Back in **Billing and licensing**, tap **Budgets and alerts** (older screens: **Spending limits**) → **New budget**.
-6. Product: **Actions**. Amount: **$60** a month to start. Turn on **Stop usage when budget limit is reached**. Tap
-   **Create budget**.
-7. A week later: **Billing and licensing** → **Usage**, filtered to Actions. Set the budget to what a month of that use
+2. Tap your profile picture (top right) → **Your organizations** → **New organization** (or open
+   github.com/organizations/plan).
+3. Choose **Team**. Organization name: the company's name, for example `paidwhole` (it is part of every link to the
+   repository; tell the build the name). Contact email: the company's. **This organization belongs to**: **A business
+   or institution**, with the company's legal name. Tap **Next**.
+4. Enter the payment card. If GitHub asks how many seats: **2**. It counts everyone with access to a private
+   repository: you, and from step 3 the build agent's account. Finish the setup, and skip the screen that offers to
+   invite members (step 3 adds the agent to the repository alone).
+5. In the new organization: **Settings** → **Authentication security** → turn on **Require two-factor authentication
+   for everyone in the organization** → **Save**.
+6. **Settings** → **Member privileges** → **Base permissions**: **No permission** → **Save**. Nobody you add later
+   sees a repository you have not given them.
+7. **Settings** → **Billing and licensing** → **Budgets and alerts** → **New budget**. Product: **Actions**. Amount:
+   **$60** a month to start. Turn on **Stop usage when budget limit is reached**. Tap **Create budget**.
+8. A week later: **Billing and licensing** → **Usage**, filtered to Actions. Set the budget to what a month of that use
    needs, with room to spare.
 
-Why $60: Pro includes 3,000 Actions minutes a month for a private repository (Free: 2,000), and 1 GB of storage for
-what CI keeps. Measured on this repository on 17 and 18 October: one push to a pull request costs about 35 minutes (the
-`ci` check 25 to 35, the image and license checks about 5, `approval-of-record` about 1), so 3,000 minutes is about
-85 pushes. In those 34 hours CI used about 1,100 minutes: about 410 for the build's own pull requests, about 340 for
+Why $60: GitHub Team includes 3,000 Actions minutes a month for private repositories, and 2 GB of storage for what CI
+keeps. Measured on this repository on 17 and 18 October: one push to a pull request costs about 35 minutes (the `ci`
+check 25 to 35, the image and license checks about 5, `approval-of-record` about 1), so 3,000 minutes is about 85
+pushes. In those 34 hours CI used about 1,100 minutes: about 410 for the build's own pull requests, about 340 for
 Dependabot's dependency-update pull requests (15 `ci` runs in two bursts), and 360 for one image check that hung until
-GitHub stopped it. At that rate the included minutes last three days. The pull request that added this guide stops a
-hung job after 15 or 60 minutes and groups Dependabot's updates (at most one a week for the actions and one for the
-images; Dependabot reads its settings from `main`, so this takes effect once the build's small pull request into `main`
-carrying them is merged), so plan on the build's own rate, about 300 minutes a day: the included minutes last about ten days, and a
-month needs about 6,000 more. GitHub charges under a cent a minute for the Linux machines CI runs on (the billing page
-shows today's price), so $60 buys more than 6,000 minutes. With a $0 budget, or one too small, CI stops when the
-minutes run out, and with step 4's required checks nothing merges until the next month. The build tells you if a
-month is running short.
+GitHub stopped it. The pull request that added this guide stops a hung job after 15 or 60 minutes. Plan on the build's
+own rate, about 300 minutes a day: the included minutes last about ten days, and a month needs about 6,000 more.
+GitHub charges under a cent a minute for the Linux machines CI runs on (the billing page shows today's price), so $60
+buys more than 6,000 minutes. With a $0 budget, or one too small, CI stops when the minutes run out, and with step 4's
+required checks nothing merges until the next month. The build tells you if a month is running short.
 
-Check: **Billing and licensing** shows "GitHub Pro" and your Actions budget.
+If you upgraded your own account to GitHub Pro under this guide's first version: once step 2 is done, the
+organization's plan is the one that counts for this repository, and you can downgrade your own account if nothing
+else needs Pro.
 
-## 2. Make the repository private
+Check: the organization's **Billing and licensing** shows "GitHub Team" and your Actions budget.
 
-Protects against: anyone on the internet reading the code, its history and its security design.
+## 2. Move the repository into the organization, make it private, and give the build access there
 
-What it costs: on GitHub Pro, a private repository no longer gets GitHub's own secret scanning and push protection
-(for a private repository they need GitHub Team or Enterprise, with Secret Protection). The `gitleaks` scan in CI
-stays the secret check; it runs after a push, not before it.
+Protects against: anyone on the internet reading the code, its history and its security design, and PR 7's red team
+publishing working attack paths before they are fixed.
 
-1. Open github.com/PureTideWater/PhysicalTherapy.
-2. Tap **Settings** (in the tab bar under the repository name; on a phone, swipe the tab bar or tap **…**).
-3. Stay on **General**. Scroll to the bottom, to **Danger Zone**.
-4. Tap **Change visibility** → **Change to private**. Read the warnings, tap **I want to make this repository private**,
-   then **I have read and understand these effects**, and confirm (GitHub may ask for your two-factor code).
+What it changes for the build:
 
-Check: the repository name shows a **Private** label.
+- The repository's address becomes github.com/<organization>/PhysicalTherapy. GitHub redirects the old address for
+  links and git, but the build points every clone at the new one, so nothing depends on the redirect.
+- The Claude app reaches a repository through its installation on the account that owns it. After the move that is
+  the organization, so the app must be installed there (2e), or every build session loses the repository.
+- A build session opened on the old address may not reach the new one; the build replaces it with a new session.
+
+What it costs: a private repository no longer gets GitHub's own secret scanning and push protection unless you add
+GitHub Secret Protection. The `gitleaks` scan in CI and the pre-push hook (`.githooks/pre-push`) stay the secret
+checks.
+
+**2a. Tell every build session first.** Send: "Push what you have and pause; I am moving the repository to
+<organization>." Wait until each says it has paused.
+
+**2b. Transfer it.** Open github.com/PureTideWater/PhysicalTherapy → **Settings** (in the tab bar under the repository
+name; on a phone, swipe the tab bar or tap **…**) → stay on **General**, scroll to **Danger Zone** → **Transfer** →
+**Select one of my organizations** → the new organization → type `PureTideWater/PhysicalTherapy` to confirm → **I
+understand, transfer this repository** (GitHub may ask for your two-factor code).
+
+**2c. Make it private.** Open github.com/<organization>/PhysicalTherapy → **Settings** → **Danger Zone** → **Change
+visibility** → **Change to private**. Read the warnings, tap **I want to make this repository private**, then **I have
+read and understand these effects**, and confirm.
+
+**2d. Leave the rest as it is.** Pull requests, branches, issues and Actions history move with the repository.
+
+**2e. Install the Claude app on the organization.** Open github.com/apps/claude → **Configure** (or **Install**) →
+choose the organization → **Only select repositories** → `PhysicalTherapy` → **Install** (or **Save**). If GitHub asks
+an organization owner to approve, that is you.
+
+**2f. Resume.** Tell the build sessions: "Resume. The repository is now <organization>/PhysicalTherapy." The build
+points every clone at the new address and reports a fetch and a push there; a session that cannot reach it ends, and
+the build carries on in a new session opened on the new address (on claude.ai/code, pick the repository under the
+organization's name).
+
+Check: the repository shows a **Private** label under the organization's name, and the build reports its push to the
+new address.
 
 ## 3. Create the build agent's own GitHub account, and take yours out of every Claude session
 
@@ -86,32 +131,32 @@ authentication** → **Enable two-factor authentication** → **Authenticator ap
 code is on the same screen as your authenticator app, so it cannot be scanned: tap **setup key** under the code, copy
 the key, and in the authenticator app choose to add an account by entering a setup key (or scan the code with a second
 device). Enter the six digits → **Download** (or copy) the recovery codes into your password manager → **I have saved
-my recovery codes** → **Done**. (A passkey from your password manager works as the second factor too.)
+my recovery codes** → **Done**. (A passkey from your password manager works as the second factor too.) The
+organization requires two-factor (step 1), so the invitation in 3c waits for it.
 
-**3c. Invite it to the repository.** Signed in as yourself: github.com/PureTideWater/PhysicalTherapy → **Settings** →
-**Collaborators** (under "Access"; GitHub may ask for your two-factor code) → **Add people** → type the new username →
-select it → **Add ... to this repository**. On a repository owned by a personal account every collaborator has the
-same access: push and open pull requests, no settings. That is Write, not Admin. (If the repository ever moves to an
-organization, give it the **Write** role.)
+**3c. Give it the repository, with Write.** Signed in as yourself: github.com/<organization>/PhysicalTherapy →
+**Settings** → **Collaborators and teams** (under "Access"; GitHub may ask for your two-factor code) → **Add people** →
+type the new username → select it → role **Write** → **Add**. It joins as an outside collaborator: it sees this
+repository and nothing else in the organization, can push and open pull requests, and cannot change settings. It takes
+the plan's second seat.
 
 **3d. Accept the invitation.** In the private tab, signed in as the new account, open the invitation email, or
-github.com/PureTideWater/PhysicalTherapy/invitations → **Accept invitation**.
+github.com/<organization>/PhysicalTherapy/invitations → **Accept invitation**.
 
 **3e. Tell every build session first.** The GitHub connection belongs to your Claude account, so it changes for every
 Claude session at once. In each Claude session that is building, send: "Finish the pull request you are on. Then merge,
 or close, every open pull request my account opened, and pause; I am switching your GitHub identity to <username>."
-Wait until each says it has paused. Then open github.com/PureTideWater/PhysicalTherapy/pulls and check that no open
+Wait until each says it has paused. Then open github.com/<organization>/PhysicalTherapy/pulls and check that no open
 pull request was opened by `PureTideWater` (Dependabot's are fine). Why: a pull request keeps the account that opened it
 as its author, whoever pushes to it later. One opened as you can never get your approval (GitHub refuses an author's
-own), so after step 5 any that touches a protected file would stay grey. A closed one is opened again by the agent's
-account after the switch.
+own), so after step 5 it could never merge. A closed one is opened again by the agent's account after the switch.
 
 **3f. Connect the new account to Claude.** In the private tab (GitHub signed in as the new account), open
 https://claude.ai/connect-github, sign in to Claude as yourself if asked, and follow the prompts to connect GitHub.
 If the page shows your own GitHub account, sign out of GitHub in that tab, sign in as the new account, and open the
 link again. If GitHub offers to install the Claude app for the new account, choose **Only select repositories** and
-select none, or skip it: the app stays installed on your repository from your own account, and that is how the new
-account reaches it.
+select none, or skip it: the app is installed on the organization (2e), and that is how the new account reaches the
+repository.
 
 **3g. Disconnect your account from Claude's GitHub connector.** Still in the private tab, on claude.ai: **Settings** →
 **Connectors** → **GitHub** → **Disconnect**. If the build needs the connector, connect it again only while the tab is
@@ -120,8 +165,9 @@ signed in to GitHub as the new account; otherwise leave it off. (The connector g
 
 **3h. Revoke Claude's access to your own GitHub account.** In your normal browser, signed in to GitHub as yourself:
 profile picture → **Settings** → **Applications** → **Authorized GitHub Apps**: next to Claude (or Anthropic), tap
-**Revoke** and confirm. Then the **Authorized OAuth Apps** tab: the same, if it is listed there. Leave **Installed
-GitHub Apps** as it is: the Claude app installed on your repository is how the new account reaches it.
+**Revoke** and confirm. Then the **Authorized OAuth Apps** tab: the same, if it is listed there. Leave the Claude app
+installed on the organization (2e). If it is also listed under your own account's **Installed GitHub Apps**, it no
+longer reaches this repository; remove it there only if no other repository of yours needs it.
 
 **3i. Resume.** Tell the build session: "Resume as <username>."
 
@@ -136,17 +182,18 @@ merge ...".
 Protects against: a force push or a deletion rewriting either branch, a direct push to either, and a merge into the
 build branch with a failing, missing or out-of-date check, by anyone, you included.
 
-Do this after step 1 (a private repository on GitHub Free has no rulesets) and after the pull request that added this
-guide is merged into `claude/build-platform`, so the `approval-of-record` check exists. It need not have reached
-`main`: a pull request from `claude/build-platform` into `main` brings the workflows with it.
+Do this after step 2 and after the pull request that added this guide is merged into `claude/build-platform`, so the
+`approval-of-record` check exists. It need not have reached `main`: a pull request from `claude/build-platform` into
+`main` brings the workflows with it.
 
-`main` holds only the plan files until launch, with no workflows, so it gets its own ruleset without required checks:
-a check that cannot run there would block every pull request into it, a repair like #18 included. At launch, when
-`claude/build-platform` merges into `main`, the build asks you to add the same five checks to `main`'s ruleset.
+`main` holds only the plan files until launch, with no workflows, so its ruleset requires no check until then: a check
+that cannot run there would block every pull request into it, a repair like #18 included. Step 8 adds the five checks
+at launch. Neither ruleset requires an approval yet: until step 3, your account opens the build's pull requests and
+cannot approve them. Step 5 adds your approval to both.
 
 **4A. The build branch.**
 
-1. github.com/PureTideWater/PhysicalTherapy → **Settings** → **Rules** → **Rulesets** (under "Code and automation") →
+1. github.com/<organization>/PhysicalTherapy → **Settings** → **Rules** → **Rulesets** (under "Code and automation") →
    **New ruleset** → **New branch ruleset**.
 2. **Ruleset name**: `Protect the build branch`.
 3. **Enforcement status**: **Active**.
@@ -155,8 +202,8 @@ a check that cannot run there would block every pull request into it, a repair l
    pattern**.
 6. **Rules**: turn on exactly these, and leave every other rule off.
    - **Restrict deletions**.
-   - **Require a pull request before merging**, with **Required approvals** at **0**. Leave its four options off for
-     now ("Dismiss stale pull request approvals when new commits are pushed", "Require review from Code Owners",
+   - **Require a pull request before merging**, with **Required approvals** at **0** for now. Leave its four options off
+     for now ("Dismiss stale pull request approvals when new commits are pushed", "Require review from Code Owners",
      "Require approval of the most recent reviewable push", "Require conversation resolution before merging"); step 5
      turns two of them on. Leave the allowed merge methods as they are.
    - **Require status checks to pass**, with **Require branches to be up to date before merging** on. Tap **Add
@@ -189,52 +236,55 @@ merge button stays grey until the five checks are green and the branch is up to 
 
 What a required check cannot stop: a collaborator with Write, the build agent included, can produce a check with the
 same name from a workflow on a branch it pushes, and GitHub Actions is then its source too. The checks catch mistakes
-and a missed approval; what holds a change to the files in `.github/CODEOWNERS` (the workflows, the approval and the
-code that runs the gate among them) is your own review, from step 5.
+and a missed approval; what holds a change to the workflows, the approval and the code that runs the gate is your own
+review, from step 5.
 
 Three effects to know:
 
 - A pull request whose branch is behind its base must be brought up to date (**Update branch**) before it merges,
   and its checks run again. The build does this.
-- Until launch, a pull request into `main` merges with no check at all; only a pull request can change `main`, and
-  after step 5 only with your approval.
-- The `publish-content` workflow pushes content releases to `main` directly, and the ruleset refuses that push.
-  There is no content release to publish today; before the first one, the build will bring you a change for it.
+- Until step 5, a pull request into the build branch merges on its five green checks, and one into `main` with no
+  check at all; only a pull request can change either branch.
+- The `publish-content` workflow pushes content releases to `main` directly, and the ruleset refuses that push. It
+  runs only from `main`, which has no workflows until launch, so nothing is refused yet; step 7 sets up the one
+  account allowed to make that push.
 
-## 5. After the switch: require your review, and make the approval-of-record check enforce it
+## 5. After the switch: require your approval on every pull request
 
-Protects against: a change to a migration, the domain model, a release, CLAUDE.md, `.claude`, `.github` or the code
-that runs the gate, or to an approval, merging without your review of its latest commit; and anything merging into
-`main` without your approval.
+Protects against: any change, Dependabot's included, merging into either branch without your approval of its latest
+commit; and an approval line or approver list merging without your review of the commit that holds it.
 
 Do this once step 3's check (3j) shows the agent's login, and no open pull request was opened by your account (3e).
 Not before: GitHub refuses an author's own review, so while your account authors a pull request, these settings
 block it.
 
 1. **Settings** → **Rules** → **Rulesets** → **Protect the build branch** → **Require a pull request before merging**:
-   - turn on **Require review from Code Owners** (the paths are in `.github/CODEOWNERS`, each owned by you);
+   - set **Required approvals** to **1**;
    - turn on **Dismiss stale pull request approvals when new commits are pushed**;
+   - turn on **Require review from Code Owners**: `.github/CODEOWNERS` names you for every path, so the one approval
+     must be yours, never another account's with Write, such as the agent's on a Dependabot pull request;
    - leave **Require approval of the most recent reviewable push** off: when you commit the approval line yourself
      (step 6), your commit is the latest push, and you then approve it;
-   - leave **Required approvals** at 0, so a pull request that touches none of those paths still merges on green
-     checks. (If GitHub will not save Code Owners review with 0, set 1: every pull request then needs your approval.)
-   - Tap **Save changes**.
-2. **Rulesets** → **Protect main** → **Require a pull request before merging**: set **Required approvals** to **1** and
-   turn on **Dismiss stale pull request approvals when new commits are pushed** → **Save changes**. GitHub reads code
-   owners from the branch a pull request merges into, and `main` has no `.github/CODEOWNERS` until launch, so this is
-   what makes every pull request into `main`, the launch itself included, wait for your approval. After launch, also
-   turn on **Require review from Code Owners** here.
+   - tap **Save changes**.
+2. **Rulesets** → **Protect main** → **Require a pull request before merging**: the same four settings → **Save
+   changes**. `main` has no `.github/CODEOWNERS` until launch, and GitHub reads code owners from the branch a pull
+   request merges into, so until launch the one approval is what holds `main`: only you can give it, since the agent
+   authors every pull request into `main` and Dependabot opens none there. From the launch merge, Code Owners review
+   applies there too, with nothing more to set.
 3. **Settings** → **Secrets and variables** → **Actions** → the **Variables** tab → **New repository variable**:
    - **Name**: `APPROVAL_REVIEW_REQUIRED`
    - **Value**: `true` (a capital letter from your phone's keyboard is fine: the check reads `True` too)
    - Tap **Add variable**.
+4. Tell the build the date. It records it in `docs/adr/0063`; the change-management policy's quarterly review checks
+   every pull request merged from that date.
 
-Check: on the next pull request, open **Checks** → **approval-of-record**. It no longer says "not yet enforced". A
-pull request that changes the approval line or `packages/db/domain-model/approvers.json` shows it red until you
-approve its latest commit.
+Check: on the next pull request, open **Checks** → **approval-of-record**. It no longer says "not yet enforced", and
+the merge button stays grey until you approve. A pull request that changes the approval line or
+`packages/db/domain-model/approvers.json` also shows **approval-of-record** red until you approve its latest commit.
 
-From then on, Dependabot's update pull requests that touch `.github` (the action updates) or `package.json` (most
-dependency updates) need your approval like any other change to those files: about one or two a week, grouped.
+From then on every pull request waits for you, about two minutes each from the GitHub app (step 6). The build brings a
+pull request up to date and waits for its checks before it asks you. If it has to bring the branch up to date after
+you approved, GitHub may ask you to approve again; the build says so.
 
 To undo any of it, edit the ruleset again, or delete the variable (or set it to `false`). Only an administrator (you)
 can; the build agent cannot.
@@ -249,11 +299,13 @@ Install the GitHub app (App Store or Google Play) and sign in as yourself, never
 **Any pull request:**
 
 1. Tap the notification, or **Home** → **Pull requests**, and open the pull request.
-2. Read the description. Scroll to the checks at the bottom: green ticks, or what is still running.
+2. Read the description. It follows `.github/pull_request_template.md`: what changes, why, what it does not change,
+   the checks, the reviewer agents' findings and how each was resolved, the freeze-exception answer and, for a
+   migration, the domain model's SHA-256. Scroll to the checks at the bottom: green ticks, or what is still running.
 3. Tap **Files changed** to look at the change if you want to.
 4. Tap **Review** (top right of Files changed; on some versions, the **…** menu → **Review changes**) → **Approve** →
    add a comment if you like → **Submit**. If something is wrong, choose **Request changes** and say what.
-5. When every check is green, the build merges it (or tap **Merge pull request** yourself).
+5. When every check is green, the build merges it. You do not need to.
 
 **A pull request that asks you to approve the domain model** (it regenerates `docs/product/domain-model.md`):
 
@@ -272,16 +324,155 @@ Install the GitHub app (App Store or Google Play) and sign in as yourself, never
 4. If the build pushes anything after your approval, GitHub dismisses it (step 5) and the check goes red again:
    approve the new latest commit.
 
+## 7. Before launch: the content publisher
+
+Protects against: content releases that cannot be published once `main` refuses direct pushes, without opening
+`main` to anyone else.
+
+Why: after launch, when a merged pull request adds a release under `content/outgoing/`, the `publish-content`
+workflow on `main` runs the content checks again, moves the release to `content/releases/<n>`, commits and tags it,
+and pushes to `main`. `main`'s ruleset refuses that push from everyone. The content publisher is a GitHub App the
+organization owns, with one permission (the repository's contents), installed on this repository alone, and the only
+bypass any ruleset has. Its key is a secret of an environment that only a workflow running on `main` can read, so no
+branch, pull request or person can use it. The build changes `publish-content.yml` to push with it, in a pull request
+you approve; that pull request touches the content pipeline's workflow, so it also asks for your confirmation under
+the change order.
+
+Do it on a computer: 7b downloads a key file.
+
+**7a. Create the app.** github.com/organizations/<organization>/settings/apps → **New GitHub App**.
+
+- **GitHub App name**: `<organization> content publisher`.
+- **Homepage URL**: github.com/<organization>/PhysicalTherapy.
+- **Webhook**: untick **Active**.
+- **Repository permissions** → **Contents**: **Read and write**. Leave every other permission at **No access**
+  (**Metadata** stays read-only, as GitHub requires).
+- **Where can this GitHub App be installed?**: **Only on this account**.
+- Tap **Create GitHub App**, and note the **App ID** at the top of the page.
+
+**7b. Make its key.** On the app's page: **Private keys** → **Generate a private key**. Your computer downloads a
+`.pem` file. Keep it only until 7d.
+
+**7c. Install it.** **Install App** (left menu) → **Install** beside the organization → **Only select repositories** →
+`PhysicalTherapy` → **Install**.
+
+**7d. Give the key to `main` alone.** github.com/<organization>/PhysicalTherapy → **Settings** → **Environments** →
+**New environment** → name `content-publish` → **Configure environment**.
+
+- **Deployment branches and tags**: **Selected branches and tags** → **Add deployment branch or tag rule** → `main` →
+  **Add rule**.
+- **Add environment secret**: name `CONTENT_PUBLISHER_KEY`; value: open the `.pem` file in a text editor and paste
+  all of it → **Add secret**.
+- **Add environment variable**: name `CONTENT_PUBLISHER_APP_ID`; value: the App ID → **Add variable**.
+- Delete the `.pem` file from your computer, and empty the trash. GitHub keeps no copy; a new key can be generated if
+  one is ever needed (and the old one deleted on the app's page).
+
+**7e. Let the publisher past `main`'s ruleset.** **Settings** → **Rules** → **Rulesets** → **Protect main** → **Bypass
+list** → **Add bypass** → the content publisher → mode **Always** → **Save changes**.
+
+**7f. Protect the release tags.** **Rulesets** → **New ruleset** → **New tag ruleset**. Name: `Protect content
+release tags`. **Enforcement status**: **Active**. **Bypass list**: the content publisher, **Always**. **Target tags**
+→ **Add target** → **Include by pattern** → `content-release-*`. **Rules**: **Restrict creations**, **Restrict
+updates**, **Restrict deletions** and **Block force pushes**. Tap **Create**.
+
+Check: **Environments** shows `content-publish` with one secret, one variable and `main` as its only branch;
+"Protect main" lists one bypass, the content publisher; "Protect the build branch" lists none.
+
+## 8. Launch: `claude/build-platform` into `main`
+
+Protects against: the launch merging unchecked or unapproved, and `main` being anything but the protected default
+afterwards.
+
+The build asks for your ruling first; until then nothing goes into `main`.
+
+1. **Rulesets** → **Protect main** → turn on **Require status checks to pass**, with **Require branches to be up to
+   date before merging** on, and add the same five checks as 4A, each with the source **GitHub Actions** → **Save
+   changes**. They run on the launch pull request itself, since its workflows come with it.
+2. The build opens one pull request from `claude/build-platform` into `main`, filled in from the template. It brings
+   the workflows, `.github/CODEOWNERS`, the approver list and the build branch's Dependabot settings, which have no
+   `target-branch` lines, so from the merge on Dependabot opens its updates against `main`.
+3. Approve it at its latest commit (step 6). `approval-of-record` judges it against the build branch's approver list,
+   since `main` has none until the merge. The build merges it once the five checks are green.
+4. Leave **Settings** → **General** → **Default branch** at `main`. From then on every pull request targets `main`,
+   and Code Owners review reads `main`'s CODEOWNERS. `claude/build-platform` keeps its ruleset and takes no new pull
+   requests.
+5. Tell the build the date; it records it in `docs/adr/0063`.
+
+## Dependabot's settings on `main`: waiting for your ruling
+
+Dependabot reads `.github/dependabot.yml` from the default branch, `main`, never from `claude/build-platform`. So the
+grouping and limits the pull request that added this guide put on the build branch take effect only when `main`'s copy
+changes, and the build opens no pull request into `main` before launch unless you rule on one. It has not opened one.
+
+Until then `main`'s copy stays in force: npm minor and patch updates in one pull request, up to 10 open; each action
+and each base image in a pull request of its own, up to 5 open each (Dependabot's default). Each runs about 35 minutes
+of CI and, after step 5, needs your approval.
+
+If you rule for it, the build opens one pull request into `main` that changes `.github/dependabot.yml` alone, and only
+this:
+
+- npm: at most 5 open at once (today 10);
+- actions: every action update in one pull request, at most 2 open;
+- base images: both images' updates in one pull request, at most 2 open;
+- every `target-branch: claude/build-platform` line stays, so updates still go to the build branch.
+
+<details>
+<summary>The exact text <code>main</code>'s copy would have</summary>
+
+```yaml
+# Dependabot reads this file from the default branch (main). Until launch the build lives on
+# claude/build-platform, so every update is opened against it and passes the build's CI there.
+# Every pull request runs about 35 minutes of CI, so updates are grouped and few are open at once
+# (docs/adr/0063). At launch, when the finished build merges into main, target-branch is removed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories: [/apps/web, /apps/worker]
+    target-branch: claude/build-platform
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      base-images:
+        patterns: ["*"]
+```
+
+</details>
+
+Without the ruling nothing changes until launch, when the launch pull request brings the build branch's copy (step 8).
+
 ## What the build does, and what only you do
 
 | The build | Only you |
 | --- | --- |
-| Opens pull requests as its own account (after step 3), keeps branches up to date, merges when checks are green | Steps 1 to 5 and any change to them |
+| Opens pull requests as its own account (after step 3), fills in the template, keeps branches up to date, and merges once you have approved and the checks are green | Steps 1 to 8 and any change to them |
 | Regenerates the domain model; the `ci` check writes the summary, and the build copies it to the description | Commits the approval line (from the build's suggestion) and approves the pull request |
 | Proposes changes to CODEOWNERS, the workflows or this runbook in a pull request | Approves those pull requests |
 | Never writes an "Approved by:" line or `approvers.json` itself: its edit tools refuse it; it posts the text as a suggestion | Commits that suggestion, and approves the pull request |
 | Never submits a review: a hook refuses the GitHub connector's review tools, and after step 3 no Claude session holds your account | Reviews, from your own account |
-| Tells you when a setting here needs to change | Changes the rulesets, the variable and the account settings, and decides when to set or remove `APPROVAL_REVIEW_REQUIRED` |
+| Opens no pull request into `main` before launch unless you rule on it | Rules on it, and on the launch |
+| Tells you when a setting here needs to change | Changes the rulesets, the variable, the environment and the account settings, and decides when to set or remove `APPROVAL_REVIEW_REQUIRED` |
+| Lists the pull requests merged each quarter | Engages someone independent of the build for the quarterly review of a sample of them (the change-management policy, rule 9) |
 
 The hooks guard the build's edit and GitHub tools, not a shell command it runs. Until step 5, an approval line is only
 as trustworthy as the commit that wrote it; from step 5, what makes an approval count is your GitHub review of the

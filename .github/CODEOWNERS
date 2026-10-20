@@ -2,6 +2,12 @@
 # and claude/build-platform (docs/runbooks/github-governance.md, step 5; docs/adr/0063). Every owner named here is a
 # GitHub login on packages/db/domain-model/approvers.json (tools/test/codeowners.test.ts).
 
+# Every path, first (the founder's ruling of 2026-10-20): every pull request needs the founder's own approval, so the
+# one required approval cannot come from another account with Write, such as the build agent's on a Dependabot pull
+# request. GitHub takes the last line that matches a path, so each line below names the founder again for what it
+# protects.
+* @PureTideWater
+
 # The schema and its approval.
 /packages/db/migrations/ @PureTideWater
 /docs/product/domain-model.md @PureTideWater

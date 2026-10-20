@@ -34,8 +34,23 @@ export type ControlId =
 
 export type PolicyId = 'access-control' | 'incident-response' | 'change-management' | 'vendor-management' | 'data-retention' | 'workforce-and-device';
 
-/** The records a person keeps for the checklist (compliance_record.kind), and the restore drill's own. */
-export type RecordKind = 'policy_approval' | 'access_review' | 'tabletop_exercise' | 'training_attestation' | 'vendor_review' | 'risk_analysis' | 'security_official' | 'restore_drill';
+/**
+ * The records a person keeps for the checklist (compliance_record.kind), and the restore drill's own. change_review,
+ * the quarterly independent review of merged pull requests (docs/policies/change-management.md, 0.2), is not yet a
+ * kind compliance_record accepts: the console records it once a migration adds it under CO-02 (with the review and
+ * penetration-test kinds of the evidence-coverage work); until then the checklist shows it missing, and the review's
+ * signed document is kept with the program's records.
+ */
+export type RecordKind =
+  | 'policy_approval'
+  | 'access_review'
+  | 'change_review'
+  | 'tabletop_exercise'
+  | 'training_attestation'
+  | 'vendor_review'
+  | 'risk_analysis'
+  | 'security_official'
+  | 'restore_drill';
 
 export type EvidenceSource =
   /** A step of a CI workflow, by the workflow file and the command or action it runs. */
@@ -66,6 +81,7 @@ export interface Control {
 const CI = '.github/workflows/ci.yml';
 const SUPPLY = '.github/workflows/supply-chain.yml';
 const RELEASE = '.github/workflows/release.yml';
+const APPROVAL = '.github/workflows/approval-of-record.yml';
 
 export const CONTROLS: readonly Control[] = [
   {
@@ -267,12 +283,21 @@ export const CONTROLS: readonly Control[] = [
     name: 'Change management',
     implementation: 'Pull requests with review, CI gates, tagged releases, migration dry-runs, rollback by image',
     planEvidence: 'Branch protection evidence',
-    soc2: ['CC8.1'],
-    hipaa: ['164.308(a)(1)(ii)(B)'],
+    soc2: ['CC8.1', 'CC4.1'],
+    hipaa: ['164.308(a)(1)(ii)(B)', '164.308(a)(8)'],
     evidence: [
-      { kind: 'external', system: 'github', what: 'branch protection on main: required review and the ci workflow’s checks, collected by the compliance platform' },
+      {
+        kind: 'external',
+        system: 'github',
+        what: 'the rulesets of main and claude/build-platform as GitHub holds them (no bypass, no force push or deletion, a pull request for every change, the founder’s approval of its latest commit as code owner of every path, stale approvals dismissed, the required checks from GitHub Actions), and each merged pull request’s reviews and checks; collected by the compliance platform',
+      },
+      { kind: 'ci_job', workflow: APPROVAL, step: 'node tools/approval-of-record/approval-of-record.ts', what: 'the approval of record on every pull request: a change to the domain model’s approval line or the approver list needs the approver’s review of its latest commit' },
+      { kind: 'unit_test', file: 'tools/approval-of-record/approval-of-record.test.ts', test: 'refuses the author’s own approval' },
+      { kind: 'unit_test', file: 'tools/test/codeowners.test.ts', test: 'gives every tracked file the founder as its owner' },
       { kind: 'ci_job', workflow: CI, step: 'pnpm db:migrate && pnpm test:db', what: 'migrations applied before the suite on every pull request' },
       { kind: 'database_test', file: 'packages/db/src/migrate.db.test.ts', test: 'migrate --dry-run' },
+      { kind: 'record', record: 'change_review', withinDays: 92, what: 'the quarterly review of a sample of merged pull requests by someone independent of the build, against the change-management policy (recorded here once the database accepts this kind)' },
+      { kind: 'runbook', file: 'docs/runbooks/github-governance.md' },
       { kind: 'runbook', file: 'docs/runbooks/deploy-and-rollback.md' },
       { kind: 'policy', policy: 'change-management' },
     ],
