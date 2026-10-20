@@ -20,6 +20,7 @@ import { waitText } from '../../../../../../lib/packets/approval';
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
+import { STALE_EXPORT_BUILDER } from '../../../../../../lib/packets/unattested';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
 
@@ -403,7 +404,17 @@ export default async function PacketPage(props: Props) {
                     {version.exportVerifier === null ? null : ` The verifier checked the narrative the export printed: ${version.exportVerifier.passed ? 'passed' : 'failed'}.`}
                   </p>
                   {version.attestation === null ? (
-                    <p data-attestation="waiting">Waiting for the reimbursement reviewer’s attestation of the export over its two SHA-256; the submission is logged after it.</p>
+                    version.pricingNow.status === 'current' ? (
+                      <p data-attestation="waiting">Waiting for the reimbursement reviewer’s attestation of the export over its two SHA-256; the submission is logged after it.</p>
+                    ) : (
+                      // Its pricing went stale after the export: never attested (the founder's ruling of 2026-10-20).
+                      <p data-attestation="never">
+                        {STALE_EXPORT_BUILDER}{' '}
+                        <Link className="underline" href={`${casePath}/submissions`}>
+                          Submissions
+                        </Link>
+                      </p>
+                    )
                   ) : (
                     <p data-attestation="attested">
                       Attested {utc(version.attestation.at)} by {version.attestation.by ?? 'the reimbursement reviewer'} over the export’s SHA-256.{' '}

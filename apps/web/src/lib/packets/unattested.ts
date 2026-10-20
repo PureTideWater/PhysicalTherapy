@@ -85,6 +85,10 @@ export const STALE_EXPORT_REVIEW = {
   button: 'Not attested: its pricing went stale after the export, so this export is never attested. Its replacement, a new version’s export, is the one to attest.',
 } as const;
 
+/** The packet builder's line for an export whose pricing went stale after it was made, where it would otherwise wait for the attestation. */
+export const STALE_EXPORT_BUILDER =
+  'Never attested: this export’s pricing went stale after the export. Do not send it; the stale lines are re-priced, and a new version is written, approved and exported on the pricing in effect. If it already went to the payer, log it on the submissions page as sent without sign-off.';
+
 /** The submissions page's words for logging an export whose pricing went stale after it was made, never attested. */
 export const STALE_EXPORT_SUBMISSION = {
   title: 'This export is never attested: its pricing went stale after the export',

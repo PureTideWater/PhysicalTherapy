@@ -356,7 +356,8 @@ export went to the payer without the reviewer's sign-off, refusing without it. T
 `SUBMISSION_UNATTESTED_WORDS` ("sent without sign-off: pricing went stale after export"), said everywhere the
 submission shows (`apps/web/src/lib/packets/unattested.ts`): the submissions page says the export is never attested,
 not to send it if it has not gone, and how to log it if it has, with the confirmation box and "Log the submission
-sent without sign-off"; the log marks it "Sent without sign-off"; the review page explains the refusal and what to do
+sent without sign-off"; the log marks it "Sent without sign-off"; the packet builder says the export is never attested
+rather than waiting for the reviewer, and links the submissions page; the review page explains the refusal and what to do
 instead in three steps, re-price (already done when an accepted re-run priced the lines again; otherwise a re-run
 under what is in force now, accepted), a new version on the pricing in effect (the stale lines written off, since
 refreshing a case is PR 11's) and a new export that a reviewer attests, and says once the export was logged sent
@@ -594,7 +595,8 @@ migrate first (ADR 0049).
   (`exportsAwaitingAttestation()`); a stale export not logged stays there, its review saying why it is never attested.
   Every other unattested export is still refused. The tests: `packages/db/src/pricing-check.db.test.ts`,
   `apps/worker/src/packets/unattested-submission.db.test.ts`, `apps/web/src/lib/routes/unattested-submission-routes.db.test.ts`,
-  `apps/web/src/lib/packets/unattested.test.ts` and `apps/web/e2e/unattested.spec.ts`.
+  `apps/web/src/lib/packets/unattested.test.ts` and `apps/web/e2e/unattested.spec.ts` (its personas `unattested-manager`,
+  `unattested-approver` and `unattested-reviewer`).
 - Item #5: a window cited in business days or months, or counted from the date of service, the remittance advice's
   own date or its receipt, is approved unverified and its lines wait (CONTRACT_WINDOW_RULE_NOT_COMPUTED) until PR 6c
   computes it, with no end stated or judged for them. Most contracts word their window "of the remittance date"; such a

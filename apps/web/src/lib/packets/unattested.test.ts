@@ -6,6 +6,7 @@ import { PRICING_BLOCKED_TEXT, PRICING_CAUSE_TEXT } from './pricing';
 import {
   RECONCILIATION_UNATTESTED,
   SENT_WITHOUT_SIGN_OFF,
+  STALE_EXPORT_BUILDER,
   STALE_EXPORT_REVIEW,
   STALE_EXPORT_SUBMISSION,
   sentWithoutSignOffLine,
@@ -24,6 +25,7 @@ import {
 
 const EVERY_TEXT = [
   SENT_WITHOUT_SIGN_OFF,
+  STALE_EXPORT_BUILDER,
   STALE_EXPORT_REVIEW.title,
   STALE_EXPORT_REVIEW.whatToDo,
   STALE_EXPORT_REVIEW.ifSent,
@@ -97,6 +99,13 @@ describe('the review’s refusal of a stale export', () => {
     expect(PRICING_BLOCKED_TEXT.attestation).toContain('never attested');
     expect(PRICING_BLOCKED_TEXT.attestation).toContain('re-priced');
     expect(PRICING_BLOCKED_TEXT.attestation).toContain('sent without sign-off');
+  });
+});
+
+describe('the packet builder’s line for a stale export', () => {
+  it('says it is never attested instead of waiting for the reviewer, and where an export already sent is logged', () => {
+    expect(STALE_EXPORT_BUILDER).toMatch(/^Never attested: this export’s pricing went stale after the export\. Do not send it; /);
+    expect(STALE_EXPORT_BUILDER).toContain('log it on the submissions page as sent without sign-off');
   });
 });
 
