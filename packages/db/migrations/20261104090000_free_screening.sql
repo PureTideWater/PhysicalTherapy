@@ -7,20 +7,24 @@
 -- A prospect uploads an aggregate file (one row per code, modifier set, units, place of service, payer product and
 -- service-date band, with the allowed total and the claim count) and is emailed a link to what the unchanged engine
 -- expects under Medicare for each row. Nothing here is PHI and nothing names a practice: the browser parses the
--- file, the server checks its header names and typed rows, and no byte of it is stored, only its SHA-256, its row
--- count and, when refused, the reasons by code, column position and kind (never a header's text or a cell).
--- Every row sums at least 11 claim lines (the CMS small-cell standard; the founder's ruling of 2026-10-18): a row of
--- fewer, beside its quarter and the practice's name and ZIP, can be one patient's service line. The browser leaves
--- such a row out and the upload keeps only how many rows, claim lines and dollars it left out; the server refuses
--- one sent anyway, by its row number; and screening_result_claim_count refuses one stored.
+-- file, the server checks its header names and typed rows, and no byte of it is stored, nor any hash of it: an
+-- accepted upload keeps the SHA-256 of the rows the server accepted, computed here from the rows it stores, and its
+-- row count; a refused one its row count and the reasons by code, column position and kind (never a header's text or
+-- a cell). Every row sums at least 11 claim lines (the CMS small-cell standard; the founder's ruling of 2026-10-18): a
+-- row of fewer, beside its quarter and the practice's name and ZIP, can be one patient's service line. The browser
+-- leaves such a row out and the upload keeps only how many rows, claim lines and dollars it left out; the server
+-- refuses one sent anyway, by its row number; and screening_result_claim_count refuses one stored. A practice keeps
+-- one accepted screening at a time: a later one of the same practice (the same ZIP and practice name, or the same
+-- contact address) replaces it, so no two of its screenings are held at once to be subtracted, row from row or from
+-- what was left out, into a cell of fewer than 11 claim lines.
 --
 -- - screening_prospect: the practice's name, state, five-digit ZIP and the contact address the result link goes to.
 --   No ZIP+4: the engine takes a five-digit ZIP alone, so a ZIP whose locality_map record needs its ZIP+4 is refused
 --   (screening_zip_plus_four) rather than asked for a ZIP+4 nothing could use, until PR 6b, which the founder's ruling
 --   of 2026-10-18 puts before launch, takes one.
--- - screening_upload: one file a prospect sent: its hash, its row count, accepted or rejected, and the reasons; for
---   an accepted one, how many rows of fewer than 11 claim lines the browser left out, their claim lines and their
---   allowed total (never which rows).
+-- - screening_upload: one upload a prospect sent: its row count, accepted or rejected, and the reasons; for an
+--   accepted one, the SHA-256 of its rows as accepted, and how many rows of fewer than 11 claim lines the browser left
+--   out, their claim lines and their allowed total (never which rows).
 -- - screening_place_of_service_split: the platform's default facility or non-facility setting per place of
 --   service, approved by a contract specialist (rate_record.approve; a person, never a model), append-only; the
 --   latest approval is in force. A fifth table beside CO-12's four: the engine needs a split and no rule record
@@ -42,7 +46,8 @@
 -- reaches them only through the SECURITY DEFINER functions below (submit, reject, read by token, convert, and the
 -- console's split), the operator role (platform jobs) only through operator_screening_*(). Nothing is recorded while
 -- screening is closed. Every row expires 30 days after the upload: the reads refuse it from expires_at on, and the
--- screening_expiry job deletes it. A run is priced only under its pinned release while that release is published,
+-- screening_expiry job deletes it; an accepted screening goes sooner when a later one of the same practice replaces
+-- it (submit_screening, each an audit event, screening_replaced). A run is priced only under its pinned release while that release is published,
 -- its manifest unchanged and not withdrawn; a result whose release has since been withdrawn says so. The conversion
 -- to an audit request is an audit event (screening_converted) and outlives the expiry.
 --
@@ -108,11 +113,38 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
      AND (cardinality(modifiers) < 4 OR modifiers[3] COLLATE "C" < modifiers[4] COLLATE "C"), false)
 $$;
 
--- A screening's prospect, upload and run are kept until they expire, then deleted together (screening_expiry).
+-- A practice name as two prospects of one practice are compared: lower case, each run of white space one space.
+CREATE FUNCTION screening_practice_key(practice text) RETURNS text
+LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, pg_temp AS $$
+  SELECT lower(regexp_replace(btrim(practice), '\s+', ' ', 'g'))
+$$;
+
+-- A screening's prospect, upload and run are kept until they expire, then deleted together (screening_expiry), or
+-- until a later accepted screening of the same practice replaces them (screening_replaced). A row deleted with its
+-- parent (the cascade from its prospect or upload) was checked with that parent.
 CREATE FUNCTION screening_kept_until_expiry() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  prospect uuid;
 BEGIN
-  IF OLD.expires_at > now() THEN
-    RAISE EXCEPTION 'a screening is kept until it expires, 30 days after its upload' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_kept_until_expiry';
+  IF OLD.expires_at <= now() THEN
+    RETURN OLD;
+  END IF;
+  IF TG_TABLE_NAME = 'screening_prospect' THEN
+    prospect := OLD.id;
+  ELSIF TG_TABLE_NAME = 'screening_upload' THEN
+    SELECT p.id INTO prospect FROM screening_prospect p WHERE p.id = OLD.prospect_id;
+    IF NOT FOUND THEN
+      RETURN OLD;
+    END IF;
+  ELSE
+    SELECT u.prospect_id INTO prospect FROM screening_upload u WHERE u.id = OLD.upload_id;
+    IF NOT FOUND THEN
+      RETURN OLD;
+    END IF;
+  END IF;
+  IF NOT screening_replaced(prospect) THEN
+    RAISE EXCEPTION 'a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_kept_until_expiry';
   END IF;
   RETURN OLD;
 END;
@@ -142,17 +174,27 @@ CREATE TABLE screening_prospect (
   CONSTRAINT screening_prospect_expiry CHECK (expires_at = created_at + interval '30 days')
 );
 CREATE INDEX screening_prospect_by_expiry ON screening_prospect (expires_at);
+-- The prospects of one practice, as a new screening finds the one it replaces (screening_replaced).
+CREATE INDEX screening_prospect_by_contact ON screening_prospect (contact_email);
+CREATE INDEX screening_prospect_by_practice ON screening_prospect (zip, screening_practice_key(practice_name));
 
 CREATE TABLE screening_upload (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   prospect_id uuid NOT NULL REFERENCES screening_prospect (id) ON DELETE CASCADE,
-  file_sha256 text NOT NULL CONSTRAINT screening_upload_file_sha256 CHECK (file_sha256 ~ '^[0-9a-f]{64}$'),
+  -- On an accepted upload, the SHA-256 of its rows as the server accepted them, in their canonical form (format.ts,
+  -- encodeScreeningRows), computed by submit_screening from the rows it stores and never taken from the caller. Never
+  -- a hash of the file: the file holds the rows the browser left out, and a hash over them, with no key, beside the
+  -- rows kept and the sums of those left out, would let a left-out row be found by trial. A refused upload keeps no
+  -- hash, because the rows refused can hold the very row the floor withholds.
+  rows_sha256 text CONSTRAINT screening_upload_rows_sha256 CHECK (rows_sha256 ~ '^[0-9a-f]{64}$'),
   row_count integer NOT NULL CONSTRAINT screening_upload_row_count CHECK (row_count BETWEEN 0 AND 10000000),
   status text NOT NULL CONSTRAINT screening_upload_status CHECK (status IN ('accepted', 'rejected')),
   rejection_reasons jsonb NOT NULL DEFAULT '[]'::jsonb CONSTRAINT screening_upload_reasons CHECK (screening_rejections_valid(rejection_reasons)),
   -- The rows the prospect's browser left out before sending because each sums fewer than 11 claim lines (format.ts,
   -- SCREENING_MIN_CLAIM_LINES): how many, their claim lines and their allowed total, as the browser counted them, for
-  -- the result to say. Never which rows, and nothing else of any of them; zero on a rejected upload.
+  -- the result to say. Never which rows: no code, modifier, units, place of service, payer product or quarter, and no
+  -- hash over any of them. When one row of one claim line is left out, these are that line's count and allowed amount,
+  -- without its key (counsel's question, ADR 0062). Zero on a rejected upload.
   left_out_rows integer NOT NULL DEFAULT 0 CONSTRAINT screening_upload_left_out_rows CHECK (left_out_rows BETWEEN 0 AND 50000),
   left_out_claim_lines integer NOT NULL DEFAULT 0,
   left_out_allowed_cents bigint NOT NULL DEFAULT 0,
@@ -161,6 +203,8 @@ CREATE TABLE screening_upload (
   CONSTRAINT screening_upload_rejected CHECK (
     (status = 'rejected') = (CASE WHEN jsonb_typeof(rejection_reasons) = 'array' THEN jsonb_array_length(rejection_reasons) > 0 ELSE false END)),
   CONSTRAINT screening_upload_accepted_rows CHECK (status <> 'accepted' OR (row_count BETWEEN 1 AND 50000 AND row_count + left_out_rows <= 50000)),
+  -- An accepted upload has the hash of its rows; a refused one has none.
+  CONSTRAINT screening_upload_rows_hashed CHECK ((status = 'accepted') = (rows_sha256 IS NOT NULL)),
   -- Each row left out sums 1 to 10 claim lines, at most $25,000.00 a claim line; a rejected upload leaves nothing out.
   CONSTRAINT screening_upload_left_out_claim_lines CHECK (left_out_claim_lines BETWEEN left_out_rows AND 10 * left_out_rows),
   CONSTRAINT screening_upload_left_out_allowed CHECK (left_out_allowed_cents BETWEEN 0 AND 2500000::bigint * left_out_claim_lines),
@@ -168,6 +212,20 @@ CREATE TABLE screening_upload (
   CONSTRAINT screening_upload_expiry CHECK (expires_at = created_at + interval '30 days')
 );
 CREATE INDEX screening_upload_by_prospect ON screening_upload (prospect_id);
+
+-- Whether a prospect's accepted screening has been replaced: another prospect of the same practice (the same ZIP and
+-- practice name, or the same contact address) has an accepted upload. A practice keeps one accepted screening at a
+-- time (submit_screening deletes the one a new upload replaces), because two held at once could be subtracted, row
+-- from row or from what was left out, into a cell of fewer than 11 claim lines.
+CREATE FUNCTION screening_replaced(prospect uuid) RETURNS boolean
+LANGUAGE sql STABLE SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM screening_prospect o
+      JOIN screening_prospect n ON n.id <> o.id
+       AND (n.contact_email = o.contact_email OR (n.zip = o.zip AND screening_practice_key(n.practice_name) = screening_practice_key(o.practice_name)))
+      JOIN screening_upload u ON u.prospect_id = n.id AND u.status = 'accepted'
+     WHERE o.id = prospect)
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- The place-of-service split the specialist approves
@@ -423,13 +481,15 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_te
    WHERE r.release_no = current_rule_release() AND r.record_type = 'locality_map' AND r.key = jsonb_build_object('zip', zip5)
 $$;
 
--- An accepted upload: the prospect, the upload (hash, row count, and the rows of fewer than 11 claim lines the browser
--- left out, as three numbers), a queued run pinned to the release and the split in force, and every row, decoded and
--- checked by the server; the arrays are the rows' columns in order (modifier sets space-joined, '' for none). Returns
--- the run. A ZIP the release maps to no locality, or to one that needs its ZIP+4, is refused. The tables' CHECKs and
--- the row key's uniqueness hold the rest (a row of fewer than 11 claim lines among them); nothing in an error names a
--- value.
-CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, email text, file_sha256 text, codes text[], modifier_sets text[],
+-- An accepted upload: the prospect, the upload (the SHA-256 of its rows, computed here, its row count, and the rows of
+-- fewer than 11 claim lines the browser left out, as three numbers), a queued run pinned to the release and the split
+-- in force, and every row, decoded and checked by the server; the arrays are the rows' columns in order (modifier sets
+-- space-joined, '' for none). Returns the run. A ZIP the release maps to no locality, or to one that needs its ZIP+4,
+-- is refused. The tables' CHECKs and the row key's uniqueness hold the rest (a row of fewer than 11 claim lines among
+-- them); nothing in an error names a value. The upload replaces any earlier accepted screening of the same practice
+-- (the same ZIP and practice name, or the same contact address): that one is deleted with its upload, run and rows,
+-- each an audit event (screening_replaced), so a practice never has two screenings held at once to be subtracted.
+CREATE FUNCTION submit_screening(practice text, state_code text, zip5 text, email text, codes text[], modifier_sets text[],
   unit_counts integer[], places text[], products text[], bands text[], allowed_cents bigint[], claim_counts integer[],
   rows_left_out integer, claim_lines_left_out integer, allowed_cents_left_out bigint, request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
@@ -440,6 +500,8 @@ DECLARE
   zip_known boolean;
   plus_four boolean;
   n integer := coalesce(cardinality(codes), 0);
+  rows_hash text;
+  lock_key bigint;
   created uuid;
 BEGIN
   SELECT r.manifest_sha256 INTO manifest FROM rule_release r WHERE r.release_no = in_force;
@@ -462,13 +524,31 @@ BEGIN
      OR cardinality(bands) <> n OR cardinality(allowed_cents) <> n OR cardinality(claim_counts) <> n THEN
     RAISE EXCEPTION 'a screening is 1 to 50,000 rows, every column with a value for each' USING ERRCODE = 'check_violation', CONSTRAINT = 'screening_rows';
   END IF;
+  -- Submissions of one practice take these locks in one order (its ZIP and name, its contact address), so the later
+  -- waits for the earlier to commit, then sees it and replaces it.
+  FOR lock_key IN
+    SELECT k FROM unnest(ARRAY[hashtextextended('screening_practice:' || zip5 || ':' || screening_practice_key(practice), 0),
+                               hashtextextended('screening_contact:' || lower(btrim(email)), 0)]) AS k
+     ORDER BY k
+  LOOP
+    PERFORM pg_advisory_xact_lock(lock_key);
+  END LOOP;
+  -- The SHA-256 of the rows as accepted, in their canonical form (format.ts, encodeScreeningRows: each row's eight
+  -- fields tab-joined in column order, the rows joined by line feeds), from the rows stored below and never from the
+  -- caller: a hash of the file would cover the rows the browser left out. A row with a null field is refused by its
+  -- column's NOT NULL below, so no hash is kept beside rows other than those it covers.
+  SELECT encode(sha256(convert_to(string_agg(u.code || E'\t' || u.mods || E'\t' || u.unit_count::text || E'\t' || u.place || E'\t' || u.product || E'\t' || u.band
+                                             || E'\t' || u.allowed::text || E'\t' || u.claims::text, E'\n' ORDER BY u.ordinality), 'UTF8')), 'hex')
+    INTO rows_hash
+    FROM unnest(codes, modifier_sets, unit_counts, places, products, bands, allowed_cents, claim_counts)
+           WITH ORDINALITY AS u (code, mods, unit_count, place, product, band, allowed, claims, ordinality);
   WITH prospect AS (
     INSERT INTO screening_prospect (practice_name, state, zip, contact_email)
     VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
     RETURNING id
   ), upload AS (
-    INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, left_out_rows, left_out_claim_lines, left_out_allowed_cents)
-    SELECT prospect.id, file_sha256, n, 'accepted', rows_left_out, claim_lines_left_out, allowed_cents_left_out FROM prospect
+    INSERT INTO screening_upload (prospect_id, rows_sha256, row_count, status, left_out_rows, left_out_claim_lines, left_out_allowed_cents)
+    SELECT prospect.id, rows_hash, n, 'accepted', rows_left_out, claim_lines_left_out, allowed_cents_left_out FROM prospect
     RETURNING id
   ), run AS (
     INSERT INTO screening_run (upload_id, release_no, release_manifest_sha256, place_of_service_split_id, row_count)
@@ -485,13 +565,28 @@ BEGIN
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
   SELECT 'system', 'screening_submitted', 'screening_run', run.id, 'screening', request FROM run
   RETURNING object_id INTO created;
+  -- The screening replaces any earlier accepted one of the same practice (screening_replaced), deleted with its upload,
+  -- run and rows, each an audit event.
+  WITH kept AS (
+    SELECT p.id, p.zip, p.practice_name, p.contact_email
+      FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+     WHERE r.id = created
+  ), replaced AS (
+    DELETE FROM screening_prospect o USING kept, screening_upload u
+     WHERE u.prospect_id = o.id AND u.status = 'accepted' AND o.id <> kept.id
+       AND (o.contact_email = kept.contact_email OR (o.zip = kept.zip AND screening_practice_key(o.practice_name) = screening_practice_key(kept.practice_name)))
+    RETURNING o.id
+  )
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  SELECT 'system', 'screening_replaced', 'screening_prospect', replaced.id, 'screening', request FROM replaced;
   RETURN created;
 END;
 $$;
 
--- A refused upload: the prospect and the upload with its reasons (codes, positions and kinds only); no run. Nothing
--- is recorded while screening is closed.
-CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, email text, file_sha256 text, row_count integer, reasons jsonb, request text)
+-- A refused upload: the prospect and the upload with its row count and reasons (codes, positions and kinds only); no
+-- hash, since the rows refused can hold the row the floor withholds, and no run. Nothing is recorded while screening
+-- is closed. It replaces nothing: it holds no row.
+CREATE FUNCTION reject_screening_upload(practice text, state_code text, zip5 text, email text, row_count integer, reasons jsonb, request text)
 RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -506,8 +601,8 @@ BEGIN
     VALUES (btrim(practice), state_code, zip5, lower(btrim(email)))
     RETURNING id
   ), upload AS (
-    INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, rejection_reasons)
-    SELECT prospect.id, file_sha256, $6, 'rejected', reasons FROM prospect
+    INSERT INTO screening_upload (prospect_id, row_count, status, rejection_reasons)
+    SELECT prospect.id, $5, 'rejected', reasons FROM prospect
     RETURNING id
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
@@ -889,10 +984,10 @@ $$;
 REVOKE ALL ON screening_prospect, screening_upload, screening_place_of_service_split, screening_run, screening_result FROM PUBLIC;
 
 REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_valid(jsonb), screening_split_valid(jsonb), screening_modifiers_valid(text[]),
-  screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(), screening_result_rules(), screening_split_in_force(), screening_status(),
-  screening_standing(bigint, bigint, bigint, bigint),
-  screening_zip_status(text), submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
-  reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
+  screening_practice_key(text), screening_replaced(uuid), screening_kept_until_expiry(), screening_run_rules(), screening_result_inserted(),
+  screening_result_rules(), screening_split_in_force(), screening_status(), screening_standing(bigint, bigint, bigint, bigint),
+  screening_zip_status(text), submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
+  reject_screening_upload(text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), operator_screening_due(integer, integer), operator_screening_claim(uuid), operator_screening_release(uuid),
   operator_screening_rows(uuid, integer, integer),
@@ -900,8 +995,8 @@ REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_va
   operator_screening_complete(uuid, text, text, text), operator_screening_fail(uuid, text, text), operator_screening_expire(integer, text) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
-  submit_screening(text, text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
-  reject_screening_upload(text, text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
+  submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text),
+  reject_screening_upload(text, text, text, text, integer, jsonb, text), screening_result_summary(text), screening_result_groups(text),
   screening_result_coverage(text), screening_result_rows(text, integer), convert_screening(text, text, integer, text[], text, text), console_screening_splits(),
   console_approve_screening_split(jsonb) TO tp_app;
 

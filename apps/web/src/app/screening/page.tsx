@@ -40,8 +40,8 @@ export default async function ScreeningPage(props: { readonly searchParams: Prom
           <Alert data-state="sent">
             <AlertTitle>Check your email</AlertTitle>
             <AlertDescription>
-              We are screening your file. The result is emailed to the address you gave as a link, usually within a few minutes, and the link opens it for 30 days. If nothing arrives, check your spam
-              folder, or <Link className="underline" href="/screening">start again</Link>.
+              We are screening your file. The result is emailed to the address you gave as a link, usually within a few minutes, and the link opens it for 30 days, or until a later screening for the same
+              practice or from the same email address replaces it. If nothing arrives, check your spam folder, or <Link className="underline" href="/screening">start again</Link>.
             </AlertDescription>
           </Alert>
         ) : !data.open ? (

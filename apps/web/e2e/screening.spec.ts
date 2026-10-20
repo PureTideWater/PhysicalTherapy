@@ -32,7 +32,8 @@ import {
  * total and claim count), and the template it downloads carries them as note lines above its header, in plain ASCII.
  * That template, filled with SYNTHETIC totals and its notes kept, with two rows of fewer than 11 claim lines
  * (SCR-07): the browser leaves those two out and says how many rows, claim lines and dollars it left out, and sends
- * the rest as its hash and rows (nothing of the two in the request); the worker's sweep prices it (an operator pool
+ * the rest as its rows (nothing of the two in the request, and no hash of the file, which holds them); the database
+ * keeps the SHA-256 of the rows it stored; the worker's sweep prices it (an operator pool
  * on the e2e database) and emails the link to the local outbox. The link opens the result: the Medicare figures
  * under D19's label and the fully reduced ones under theirs (the owner's rulings of 2026-10-18), the anomalies with
  * the database's standings (G01's 97110 within the range of the reduction across codes, 97140 an anomaly), the
@@ -150,7 +151,7 @@ test('a specialist approves the split; a file with patient information is refuse
 
   // The downloaded template, its notes kept, filled with SYNTHETIC totals.
   const clean = Buffer.concat([template, screeningRowsCsv([...CLEAN_ROWS, ...SMALL_ROWS])]);
-  await test.step('the template, filled and its notes kept, is sent as its hash and rows of totals, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
+  await test.step('the template, filled and its notes kept, is sent as its rows of totals, no hash of the file, its rows of fewer than 11 claim lines left out and counted, and the page says to check the email (SCR-07)', async () => {
     await page.getByLabel('File to screen').setInputFiles({ name: 'totals.csv', mimeType: 'text/csv', buffer: clean });
     await expect(page.locator('[data-state="file-ready"]')).toContainText(`${String(CLEAN_ROWS.length)} rows of totals`);
     const leftOut = page.locator('[data-state="left-out"]');
@@ -164,23 +165,32 @@ test('a specialist approves the split; a file with patient information is refuse
     expect(await page.locator('body').innerText()).not.toMatch(/\/screening\/results\//);
     // The request carried nothing of the rows left out: neither their code nor their quarter, only the three numbers.
     expect(bodies.length).toBeGreaterThanOrEqual(1);
+    // Nor a hash of the file, which covers the rows left out.
+    const fileHash = createHash('sha256').update(clean).digest('hex');
     for (const body of bodies) {
       expect(body).not.toContain('97164');
       expect(body).not.toContain('2026-Q3');
+      expect(body).not.toContain(fileHash);
+      expect(body).not.toContain('fileSha256');
     }
     const upload = await withDatabase(
       async (client) =>
         (
-          await client.query<{ file_sha256: string; row_count: number; status: string; left_out: string[] }>(
-            `SELECT u.file_sha256, u.row_count, u.status, ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out
+          await client.query<{ rows_sha256: string; again: string; row_count: number; status: string; left_out: string[] }>(
+            `SELECT u.rows_sha256, u.row_count, u.status, ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out,
+                    (SELECT encode(sha256(convert_to(string_agg(concat_ws(E'\\t', s.procedure_code, array_to_string(s.modifiers, ' '), s.units, s.place_of_service, s.payer_product,
+                                                                          s.service_band, s.observed_allowed_cents, s.claim_count), E'\\n' ORDER BY s.row_no), 'UTF8')), 'hex')
+                       FROM screening_run r JOIN screening_result s ON s.run_id = r.id WHERE r.upload_id = u.id) AS again
                FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
             [CONTACT],
           )
         ).rows,
     );
-    expect(upload).toEqual([
+    // The hash kept is the database's own, of the rows it stored (their canonical form), never the file's.
+    expect(upload[0]?.rows_sha256).toBe(upload[0]?.again);
+    expect(upload[0]?.rows_sha256).not.toBe(fileHash);
+    expect(upload.map(({ again: _again, rows_sha256: _hash, ...rest }) => rest)).toEqual([
       {
-        file_sha256: createHash('sha256').update(clean).digest('hex'),
         row_count: CLEAN_ROWS.length,
         status: 'accepted',
         left_out: [String(SMALL_LEFT_OUT.rows), String(SMALL_LEFT_OUT.claimLines), SMALL_LEFT_OUT.allowedCents.toString()],

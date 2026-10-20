@@ -40,15 +40,15 @@ import { screeningRateAccount } from './rate';
  *   split approved; production stays closed until release 1), the columns, products, states and limits.
  * - The upload (/screening, public action, the screening rate limit: per client address, and per email domain or
  *   free-mail mailbox). Nothing is recorded while screening is closed. The browser parsed the file and sends no byte
- *   of it: the hash, the header's canonical column names, the row count and the rows' totals in their canonical form,
- *   and how many rows of fewer than 11 claim lines it left out, their claim lines and their allowed total (three
- *   numbers; never which rows). The server checks the form's fields (an address it can mail: plain ASCII, a dotted
- *   domain), the header names and every row again; a row of fewer than 11 claim lines, sent around the browser, is
- *   refused by its row number (it can be one patient's service line). A refused upload is recorded by hash, count and
- *   reasons alone (reject_screening_upload()), and its messages name a column by position and kind, never a header's
- *   text or a cell's value. A clean one is stored
- *   and queued for pricing in one call (submit_screening()), and the browser says to check the email: the result's
- *   link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
+ *   of it, nor any hash of it: the header's canonical column names, the row count and the rows' totals in their
+ *   canonical form, and how many rows of fewer than 11 claim lines it left out, their claim lines and their allowed
+ *   total (three numbers; never which rows). The server checks the form's fields (an address it can mail: plain
+ *   ASCII, a dotted domain), the header names and every row again; a row of fewer than 11 claim lines, sent around
+ *   the browser, is refused by its row number (it can be one patient's service line). A refused upload is recorded by
+ *   count and reasons alone, with no hash (reject_screening_upload()), and its messages name a column by position and
+ *   kind, never a header's text or a cell's value. A clean one is stored and queued for pricing in one call
+ *   (submit_screening(), which hashes the rows it stores and replaces any earlier screening of the same practice), and
+ *   the browser says to check the email: the result's link goes to the contact address only. A ZIP whose Medicare locality needs its ZIP+4 is refused: the engine
  *   takes a five-digit ZIP alone, so no ZIP+4 is asked for or kept. The refusal stays until PR 6b, which takes a
  *   ZIP+4 and resolves its locality before launch (the founder's ruling of 2026-10-18, 11:47 UTC, superseding ruling 3).
  * - The result (/screening/results/[resultId], public): the token in the link, looked up by its SHA-256 alone; a link
@@ -65,7 +65,6 @@ import { screeningRateAccount } from './rate';
  * audit request does, and the function writes the audit event.
  */
 
-const HEX64 = /^[0-9a-f]{64}$/;
 /**
  * An address the mail service can send to, lower-cased: an RFC 5322 dot-atom before the @ (no leading, trailing or
  * doubled dot), and a domain of at least two dotted labels with no trailing dot; plain ASCII only. The
@@ -198,7 +197,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
       return 'The rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
-      const why = `a screening takes a row of at least ${floor} claim lines, so that no row can describe one patient’s care`;
+      const why = `a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care`;
       return reason.row === undefined ? `Every row sums fewer than ${floor} claim lines, so there is nothing to screen: ${why}` : `${row} sums fewer than ${floor} claim lines; ${why}: leave it out`;
     }
   }
@@ -327,7 +326,6 @@ export const screeningSubmit = publicRoute({
     state: field(8),
     zip: field(16),
     contactEmail: field(320),
-    fileSha256: field(64),
     // The header cells as JSON (the browser sends the columns' canonical names): at most 64 of 200 characters, each
     // escaped at worst to six.
     headers: field(SCREENING_MAX_HEADER_CELLS * (SCREENING_MAX_HEADER_LENGTH * 6 + 3) + 2),
@@ -345,11 +343,10 @@ export const screeningSubmit = publicRoute({
       throw new InputError([SCREENING_CLOSED]);
     }
     const prospect = prospectFields(input);
-    const fileSha256 = input.fileSha256.trim().toLowerCase();
     const headers = headerCells(input.headers);
     const rowCount = /^[0-9]{1,8}$/.test(input.rowCount.trim()) ? Number(input.rowCount.trim()) : null;
     const leftOut = leftOutFields(input);
-    if (!HEX64.test(fileSha256) || headers === null || rowCount === null || leftOut === null) {
+    if (headers === null || rowCount === null || leftOut === null) {
       throw new InputError([{ field: 'upload', message: UPLOAD_UNREADABLE }]);
     }
     const checked = checkUpload(headers, input.rows, rowCount, services.now());
@@ -358,7 +355,8 @@ export const screeningSubmit = publicRoute({
       const reasons = storableRejections(checked.reasons);
       try {
         await withClient(services.pool, (client) =>
-          client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', [...prospectValues, fileSha256, Math.min(rowCount, 10_000_000), JSON.stringify(reasons), request.requestId]),
+          // No hash of a refused upload: its rows can hold the very row the claim-line floor withholds.
+          client.query('SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', [...prospectValues, Math.min(rowCount, 10_000_000), JSON.stringify(reasons), request.requestId]),
         );
       } catch (error) {
         if (pgError(error)?.constraint === 'screening_closed') {
@@ -376,9 +374,9 @@ export const screeningSubmit = publicRoute({
     let runId: string;
     try {
       runId = await withClient(services.pool, async (client) => {
-        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS run_id', [
+        // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
+        const result = await client.query<{ run_id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS run_id', [
           ...prospectValues,
-          fileSha256,
           rows.map((row) => row.procedureCode),
           rows.map((row) => row.modifiers.join(' ')),
           rows.map((row) => row.units),

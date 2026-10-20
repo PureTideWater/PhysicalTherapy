@@ -236,6 +236,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/screening/parse.test.ts',
     'apps/web/src/components/screening/result.test.tsx',
     'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
     'apps/web/src/lib/screening/routes.db.test.ts',
     'apps/web/e2e/screening.spec.ts',
   ]),

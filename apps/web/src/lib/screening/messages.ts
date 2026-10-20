@@ -11,8 +11,12 @@ import { PHI_KIND_LABELS, SCREENING_MAX_REASONS, SCREENING_MAX_ROWS, SCREENING_M
  * how many, their claim lines and their allowed total, never which. Plain data, safe to import in the browser.
  */
 
-/** Why a row of fewer claim lines is left out, in plain words. */
-export const CLAIM_FLOOR_REASON = `a screening takes a row of at least ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so that no row can describe one patient’s care`;
+/**
+ * Why a row of fewer claim lines is left out, in plain words: the risk the floor answers, never a promise that a row
+ * of 11 or more cannot describe one patient (a plan of care can give one patient 11 lines in a quarter; counsel
+ * confirms whether the floor counts lines or patients, ADR 0062).
+ */
+export const CLAIM_FLOOR_REASON = `a screening takes a row of at least ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, because a row of fewer can describe one patient’s care`;
 
 /** The most messages a refusal shows: the format keeps at most 20 reasons. */
 export const MAX_MESSAGES = SCREENING_MAX_REASONS;
@@ -89,7 +93,8 @@ export function reasonMessage(reason: ScreeningRejection, headers?: readonly str
       return 'The rows sent do not add up to the file’s row count. Choose the file again.';
     case 'too_few_claim_lines':
       return reason.row === undefined
-        ? `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen: ${CLAIM_FLOOR_REASON}.`
+        ? // The left-out line that follows it gives the reason, once.
+          `Every row sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines, so nothing is left to screen.`
         : `${rowName(reason.row)} sums fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines: ${CLAIM_FLOOR_REASON}. Leave the row out.`;
   }
 }
@@ -107,7 +112,9 @@ export function leftOutMessage(leftOut: ScreeningLeftOut): string | null {
   if (leftOut.rows === 0) {
     return null;
   }
-  return `Left out: ${many(leftOut.rows, 'row')} of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines each, ${many(leftOut.claimLines, 'claim line')} and ${formatUsd(leftOut.allowedCents)} allowed in your file. They are not sent, and no figure includes them: ${CLAIM_FLOOR_REASON}.`;
+  const one = leftOut.rows === 1;
+  const rows = one ? `1 row of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines` : `${many(leftOut.rows, 'row')} of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines each`;
+  return `Left out: ${rows}, ${many(leftOut.claimLines, 'claim line')} and ${formatUsd(leftOut.allowedCents)} allowed in your file. ${one ? 'It is not sent, and no figure includes it' : 'They are not sent, and no figure includes them'}: ${CLAIM_FLOOR_REASON}.`;
 }
 
 /**

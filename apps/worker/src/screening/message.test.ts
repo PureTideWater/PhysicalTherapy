@@ -30,6 +30,8 @@ describe('the screening result email', () => {
     expect(message.lines[0]).toContain('1,234 rows');
     expect(screeningResultMessage({ to: TO, link: LINK, rows: 1 }).lines[0]).toContain('the 1 row of your upload');
     expect(message.lines.join(' ')).toContain('30 days from your upload');
+    // A practice keeps one screening at a time: a later one replaces this one, and its link stops opening it.
+    expect(message.lines.join(' ')).toContain('or until a later screening for the same practice or from this address replaces it');
   });
 
   it('holds no dollar figure, no date, no code and none of the words screening never uses', () => {

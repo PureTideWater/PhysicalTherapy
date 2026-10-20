@@ -149,13 +149,13 @@ Added by Change Order 001 (CO-04, CO-09) in its pull request 6; SCR-07 by the fo
 
 | ID | Case | Assertion |
 | --- | --- | --- |
-| SCR-01 | Screening upload with a date-of-service or member-ID column | Rejected with the column named by position and kind; only the file hash, row count and reasons stored |
+| SCR-01 | Screening upload with a date-of-service or member-ID column | Rejected with the column named by position and kind; only the row count and reasons stored, no hash |
 | SCR-02 | Screening pricing of a clean upload | Each Medicare row is the engine's one-line amount before sequestration times its claim count in bigint, and a code in the reduction across codes also its amount as a later code of a visit; a row is an anomaly only more than $5 a claim line below its lowest figure; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds |
 | SCR-03 | Screening 30 days after its upload | Link refuses it; the expiry job deletes the run and its results; the conversion stays |
 | SCR-04 | Screening uploads past the limit | Refused per business domain, per free-mail mailbox however its address is spelled, and per IP; subjects stored as keyed hashes |
 | SCR-05 | Screening output wording | No page, message or email says owed, underpaid or recovered; no tagline |
 | SCR-06 | Screening converted to an audit request | Audit request recorded and logged as an audit event |
-| SCR-07 | Screening row of fewer than 11 claim lines | Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the hash, row count and coded reasons; refused by the database's CHECK; 11 claim lines taken |
+| SCR-07 | Screening row of fewer than 11 claim lines | Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the row count and coded reasons, no hash; refused by the database's CHECK; 11 claim lines taken; the hash kept is the database's, of the rows accepted, never the file's; a later screening of the same practice replaces the earlier, so a row of 12 claim lines and the same row at 11 are never held together |
 
 ## Jobs and monitoring (JOB)
 

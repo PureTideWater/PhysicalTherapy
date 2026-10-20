@@ -71,7 +71,6 @@ describe('a screening of 50,000 rows', () => {
         state: 'MN',
         zip: '00011',
         contactEmail: email,
-        fileSha256: 'f'.repeat(64),
         headers: JSON.stringify(SCREENING_HEADERS),
         rowCount: String(SCREENING_MAX_ROWS),
         rows: text,

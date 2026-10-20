@@ -119,7 +119,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   {
     id: 'SCR-01',
     title: 'Screening upload with a date-of-service or member-ID column',
-    assertion: 'Rejected with the column named by position and kind; only the file hash, row count and reasons stored',
+    assertion: 'Rejected with the column named by position and kind; only the row count and reasons stored, no hash',
   },
   {
     id: 'SCR-02',
@@ -139,7 +139,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-07',
     title: 'Screening row of fewer than 11 claim lines',
     assertion:
-      "Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the hash, row count and coded reasons; refused by the database's CHECK; 11 claim lines taken",
+      "Left out in the browser, which says how many rows, claim lines and dollars it left out, as the result does; a request sent around the browser refused with the row numbers, storing only the row count and coded reasons, no hash; refused by the database's CHECK; 11 claim lines taken; the hash kept is the database's, of the rows accepted, never the file's; a later screening of the same practice replaces the earlier, so a row of 12 claim lines and the same row at 11 are never held together",
   },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },

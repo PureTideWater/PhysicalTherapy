@@ -5,15 +5,16 @@ import { FILE_MESSAGES, leftOutMessage, reasonMessages } from './messages';
 /**
  * The screening upload, read in the browser (Change Order 001, CO-04; reconciliation-001, D18 a: "the browser parses
  * the upload; the server checks the header names and the typed rows and stores no bytes"). The file never leaves the
- * browser. This module hashes its bytes (SHA-256, crypto.subtle), reads it as UTF-8 CSV or tab-separated text with
- * RFC 4180 quotes (skipping the note lines above the header, which is how the template states its rules), checks the
- * header and every row against the screening's format (@tp/worker/screening-format, the same rules the server applies
- * again, its quarters dated by the server's clock), and gives either the problems, at most 20, patient information first, each
- * naming its column by position and header text and its row by number, or what the form sends: the hash, the header's
- * canonical column names in the file's order (never the text typed), the row count and the rows of totals in their
- * canonical form. A row of fewer than 11 claim lines is left out and never sent (it can be one patient's service
- * line); the form sends only how many rows, claim lines and dollars were left out. A problem never quotes a cell's
- * value, and no header text leaves the browser.
+ * browser. This module reads it as UTF-8 CSV or tab-separated text with RFC 4180 quotes (skipping the note lines
+ * above the header, which is how the template states its rules), checks the header and every row against the
+ * screening's format (@tp/worker/screening-format, the same rules the server applies again, its quarters dated by the
+ * server's clock), and gives either the problems, at most 20, patient information first, each naming its column by
+ * position and header text and its row by number, or what the form sends: the header's canonical column names in the
+ * file's order (never the text typed), the row count and the rows of totals in their canonical form. A row of fewer
+ * than 11 claim lines is left out and never sent (it can be one patient's service line); the form sends only how many
+ * rows, claim lines and dollars were left out. No hash of the file is made or sent: the file holds the rows left out,
+ * and a hash over them would let them be found by trial; the server hashes the rows it accepts. A problem never
+ * quotes a cell's value, and no header text leaves the browser.
  */
 
 /** The most a file may be (25 MiB): 50,000 rows of totals fit in far less. */
@@ -22,7 +23,6 @@ export const MAX_FILE_BYTES = SCREENING_MAX_FILE_BYTES;
 export type ScreeningParse =
   | {
       readonly ok: true;
-      readonly fileSha256: string;
       /** The header as the form sends it: each column's canonical name in the file's order, never the text typed. */
       readonly headers: readonly string[];
       readonly rowCount: number;
@@ -71,12 +71,6 @@ export function utf8Text(bytes: Uint8Array): string | null {
   } catch {
     return null;
   }
-}
-
-/** The SHA-256 of the bytes, lowercase hex. */
-export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>));
-  return [...digest].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export type TableProblem = 'unclosed_quote' | 'text_after_quote';
@@ -219,7 +213,7 @@ function refusedFor(reasons: readonly ScreeningRejection[], headers: readonly st
 }
 
 /** Reads and screens the bytes of a chosen file. */
-export async function parseScreeningBytes(file: { readonly name: string; readonly type: string; readonly size: number }, bytes: Uint8Array, now: Date): Promise<ScreeningParse> {
+export function parseScreeningBytes(file: { readonly name: string; readonly type: string; readonly size: number }, bytes: Uint8Array, now: Date): ScreeningParse {
   const before = fileProblem(file);
   if (before !== null) {
     return refused(before);
@@ -240,7 +234,7 @@ export async function parseScreeningBytes(file: { readonly name: string; readonl
   if (!screened.ok) {
     return refusedFor(screened.reasons, screened.headers, screened.total, screened.leftOut);
   }
-  return { ok: true, fileSha256: await sha256Hex(bytes), headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows, leftOut: screened.leftOut };
+  return { ok: true, headers: screened.headers, rowCount: screened.rowCount, rows: screened.rows, leftOut: screened.leftOut };
 }
 
 /**

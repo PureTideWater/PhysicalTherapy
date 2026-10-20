@@ -34,6 +34,8 @@ describe('the screening upload form', () => {
     }
     expect(html).not.toContain('name="zipPlusFour"');
     expect(html).toContain('a ZIP code that spans two Medicare localities cannot be screened yet');
+    // One screening a practice: a later one replaces it, so two are never held to be subtracted.
+    expect(html).toContain('A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.');
     expect(html).toContain('<option value="">Choose a state</option>');
     expect(html).toContain('<option value="MN">MN</option>');
     expect(html).toContain('50,000 rows');
@@ -47,7 +49,9 @@ describe('the screening upload form', () => {
 
   it('says, in plain words, that a row of fewer than 11 claim lines is left out, that denied lines stay out of every total, and that the template’s first lines say so', () => {
     const text = html.replace(/<!-- -->/g, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    expect(text).toContain('a row of fewer than 11 claim lines is left out, so that no row can describe one patient’s care');
+    expect(text).toContain('a row of fewer than 11 claim lines is left out, because it can describe one patient’s care');
+    // The form says the risk the floor answers, never that no row can describe one patient.
+    expect(text).not.toMatch(/no row can describe|no row could describe/);
     expect(text).toContain('The template’s first lines state its rules: each row sums at least 11 claim lines, and denied lines are left out of every total and claim count.');
     expect(text).toContain('this page skips them, so you can keep them');
     expect(html).toMatch(/aria-describedby="screening-template-rules"/);

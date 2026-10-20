@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
@@ -82,14 +82,25 @@ async function asApp<T extends Record<string, unknown>>(sql: string, values: unk
   }
 }
 
-async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string } = {}): Promise<string> {
+/**
+ * A screening's practice name of its own (letters only), so that no test's screening replaces another's: a practice
+ * keeps one accepted screening at a time.
+ */
+function practiceName(): string {
+  const letters = randomUUID()
+    .replace(/-/g, '')
+    .slice(0, 10)
+    .replace(/[0-9]/g, (digit) => 'ghijklmnop'.charAt(Number(digit)));
+  return `Synthetic Therapy Group ${letters}`;
+}
+
+async function submit(options: { readonly rows?: readonly Row[]; readonly zip?: string; readonly email?: string; readonly practice?: string } = {}): Promise<string> {
   const rows = options.rows ?? ROWS;
-  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS id', [
-    'Synthetic Therapy Group',
+  const [created] = await asApp<{ id: string }>('SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS id', [
+    options.practice ?? practiceName(),
     'MN',
     options.zip ?? '00011',
     options.email ?? `prospect.${randomUUID().slice(0, 8)}@synthetic.test`,
-    createHash('sha256').update(randomUUID()).digest('hex'),
     rows.map((row) => row[0]),
     rows.map((row) => row[1]),
     rows.map((row) => row[2]),
@@ -452,6 +463,18 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect(await priceScreeningRun(dependencies(mail), runId)).toBe('not_claimed');
     expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 0, failed: 0, skipped: 0 });
     expect(mail.sent.filter((message) => message.subject === 'Your screening is ready')).toHaveLength(1);
+  });
+
+  it('prices nothing and sends nothing for a run a later screening of the same practice replaced before it was priced', async () => {
+    const practice = practiceName();
+    const replaced = await submit({ practice });
+    const kept = await submit({ practice });
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_run WHERE id = $1', [replaced])).rows).toEqual([{ n: 0 }]);
+    const mail = new MemoryMailSender();
+    expect(await priceScreeningRun(dependencies(mail), replaced)).toBe('not_claimed');
+    expect(mail.sent).toEqual([]);
+    expect(await priceScreeningRun(dependencies(mail), kept)).toBe('complete');
+    expect(mail.sent.map((message) => message.subject)).toEqual(['Your screening is ready']);
   });
 
   it('leaves a run whose email failed to a later claim, which sends it once the pricing is stale', async () => {

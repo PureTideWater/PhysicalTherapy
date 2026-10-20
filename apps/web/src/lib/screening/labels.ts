@@ -76,9 +76,15 @@ export const ANOMALY_RULE =
 /**
  * The rows a screening leaves out (the founder's ruling of 2026-10-18; the CMS small-cell standard): a row of fewer
  * than 11 claim lines can be one patient's service line, so the browser leaves it out before anything is sent, and
- * the result counts what was left out apart from every figure.
+ * the result counts what was left out apart from every figure. The note says the risk the floor answers, never that
+ * a row of 11 or more cannot describe one patient, and it is worded for one row or several.
  */
-export const LEFT_OUT_NOTE = `A row of fewer than ${String(SCREENING_MIN_CLAIM_LINES)} claim lines was left out by your browser before anything was sent, so that no row could describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.`;
+export function leftOutNote(rows: number): string {
+  const floor = String(SCREENING_MIN_CLAIM_LINES);
+  return rows === 1
+    ? `A row of fewer than ${floor} claim lines was left out by your browser before anything was sent, because a row that small can describe one patient’s care. No figure on this page includes it; this is what your browser counted of it.`
+    : `Rows of fewer than ${floor} claim lines were left out by your browser before anything was sent, because a row that small can describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.`;
+}
 
 /** That a screening is investigatory, never a contract figure (CO-04). */
 export const SCREENING_INVESTIGATORY_NOTE =

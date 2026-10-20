@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { cents } from '@tp/money';
 import { decodeScreeningRows } from '@tp/worker/screening-format';
 import { describe, expect, it } from 'vitest';
@@ -16,15 +14,14 @@ import {
   parseScreeningBytes,
   parseScreeningFile,
   readTable,
-  sha256Hex,
   utf8Text,
 } from './parse';
 import { TEMPLATE_NOTES, TEMPLATE_RULES, screeningTemplateCsv } from './template';
 
 /**
  * The screening upload as the browser reads it (CO-04; decision D18 a): the file's own checks, its text as a table,
- * its hash, and (SCR-07) the rows of fewer than 11 claim lines it leaves out, never sent, with how many rows, claim
- * lines and dollars it left out. SYNTHETIC rows of totals, built here; no CSV is committed.
+ * no hash of it, and (SCR-07) the rows of fewer than 11 claim lines it leaves out, never sent, with how many rows,
+ * claim lines and dollars it left out. SYNTHETIC rows of totals, built here; no CSV is committed.
  */
 
 const bytes = (text: string) => new TextEncoder().encode(text);
@@ -47,11 +44,6 @@ describe('the file, before its rows', () => {
     expect(looksLikeSpreadsheet(bytes('procedure_code,units'))).toBe(false);
     expect(utf8Text(new Uint8Array([0xff, 0xfe, 0x00]))).toBeNull();
     expect(utf8Text(bytes('﻿code'))).toBe('﻿code');
-  });
-
-  it('hashes the raw bytes with SHA-256, as the server records it', async () => {
-    const raw = bytes('﻿procedure_code\r\n97110\r\n');
-    expect(await sha256Hex(raw)).toBe(createHash('sha256').update(raw).digest('hex'));
   });
 });
 
@@ -89,8 +81,8 @@ function csv(...lines: string[]): Uint8Array {
   return bytes(`${lines.join('\r\n')}\r\n`);
 }
 
-async function parse(content: Uint8Array, name = 'totals.csv'): Promise<ScreeningParse> {
-  return parseScreeningBytes({ name, type: 'text/csv', size: content.length }, content, NOW);
+function parse(content: Uint8Array, name = 'totals.csv'): Promise<ScreeningParse> {
+  return Promise.resolve(parseScreeningBytes({ name, type: 'text/csv', size: content.length }, content, NOW));
 }
 
 async function messages(content: Uint8Array): Promise<readonly string[]> {
@@ -102,12 +94,11 @@ async function messages(content: Uint8Array): Promise<readonly string[]> {
 }
 
 describe('a clean file (CO-04)', () => {
-  it('becomes the hash of its bytes, its header cells, its row count and its rows in their canonical form', async () => {
+  it('becomes its header cells, its row count and its rows in their canonical form, and no hash of the file', async () => {
     const content = csv(HEADER, ROW_A, ROW_B);
     const result = await parse(content);
     expect(result).toEqual({
       ok: true,
-      fileSha256: createHash('sha256').update(content).digest('hex'),
       headers: HEADER.split(','),
       rowCount: 2,
       rows: ['97110\tGP\t1\t11\tma_noncontracted\t2026-Q1\t60000\t40', '97140\t59 GP\t1\t11\tmedicare_ffs\t2026-Q2\t250000\t50'].join('\n'),
@@ -196,13 +187,13 @@ describe('the quarters dated by the server’s clock, never this computer’s', 
     expect(clockOffset('2026-10-18T12:00:00.000Z', Number.NaN)).toBe(0);
   });
 
-  it('takes the current quarter on a computer whose clock is a year behind, and refuses the next on one a quarter ahead', async () => {
+  it('takes the current quarter on a computer whose clock is a year behind, and refuses the next on one a quarter ahead', () => {
     const content = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2026-Q4,440.00,11');
     const at = (browserNow: number) => parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: content.length }, content, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
-    expect(await at(Date.parse('2025-10-18T12:00:00Z'))).toMatchObject({ ok: true, rowCount: 1 });
+    expect(at(Date.parse('2025-10-18T12:00:00Z'))).toMatchObject({ ok: true, rowCount: 1 });
     const ahead = csv(HEADER, '97110,GP,1,11,ma_noncontracted,2027-Q1,440.00,11');
     const browserNow = Date.parse('2027-01-15T12:00:00Z');
-    const refused = await parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: ahead.length }, ahead, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
+    const refused = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: ahead.length }, ahead, new Date(browserNow + clockOffset(NOW.toISOString(), browserNow)));
     expect(refused).toMatchObject({ ok: false, reasons: [{ code: 'band_in_future', row: 1, field: 'service_band' }] });
   });
 });
@@ -213,7 +204,6 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
     const result = await parse(content);
     expect(result).toEqual({
       ok: true,
-      fileSha256: createHash('sha256').update(content).digest('hex'),
       headers: HEADER.split(','),
       rowCount: 1,
       rows: '97110\tGP\t1\t11\tmedicare_ffs\t2026-Q1\t39600\t11',
@@ -222,21 +212,36 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient�
     // Nothing of a row left out is sent: neither its code nor its figures.
     expect(result.ok ? result.rows : '').not.toMatch(/97140|97530|36000|100001/);
     expect(leftOutMessage(result.ok ? result.leftOut : { rows: 0, claimLines: 0, allowedCents: cents(0n) })).toBe(
-      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,360.01 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,360.01 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
     );
+    // One row is one row: no "each", and "it".
     expect(leftOutMessage({ rows: 1, claimLines: 1, allowedCents: cents(4_500n) })).toBe(
-      'Left out: 1 row of fewer than 11 claim lines each, 1 claim line and $45.00 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+      'Left out: 1 row of fewer than 11 claim lines, 1 claim line and $45.00 allowed in your file. It is not sent, and no figure includes it: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
     );
     expect(leftOutMessage({ rows: 0, claimLines: 0, allowedCents: cents(0n) })).toBeNull();
   });
 
+  it('makes no hash of the file: two files that differ only in the key of a row left out send exactly the same', async () => {
+    const kept = '97110,GP,1,11,medicare_ffs,2026-Q1,396.00,11';
+    const one = await parse(csv(HEADER, kept, 'G0283,GP,1,22,ma_noncontracted,2025-Q3,136.84,3'));
+    const other = await parse(csv(HEADER, kept, '97140,GP,1,11,medicare_ffs,2026-Q2,136.84,3'));
+    expect(one.ok && other.ok).toBe(true);
+    expect(Object.keys(one).sort()).toEqual(['headers', 'leftOut', 'ok', 'rowCount', 'rows']);
+    expect(one).toEqual(other);
+  });
+
   it('sends nothing when every row is left out, and says what it left out', async () => {
+    // The reason is given once, in the left-out line.
     expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2026-Q1,45.00,1', '97140,GP,1,11,ma_noncontracted,2026-Q2,"1,234.56",10'))).toEqual([
-      'Every row sums fewer than 11 claim lines, so nothing is left to screen: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
-      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,279.56 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care.',
+      'Every row sums fewer than 11 claim lines, so nothing is left to screen.',
+      'Left out: 2 rows of fewer than 11 claim lines each, 11 claim lines and $1,279.56 allowed in your file. They are not sent, and no figure includes them: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
+    ]);
+    expect(await messages(csv(HEADER, '97110,GP,1,11,medicare_ffs,2026-Q1,45.00,1'))).toEqual([
+      'Every row sums fewer than 11 claim lines, so nothing is left to screen.',
+      'Left out: 1 row of fewer than 11 claim lines, 1 claim line and $45.00 allowed in your file. It is not sent, and no figure includes it: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care.',
     ]);
     expect(reasonMessage({ code: 'too_few_claim_lines', row: 3, field: 'claim_count' })).toBe(
-      'Row 3 sums fewer than 11 claim lines: a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care. Leave the row out.',
+      'Row 3 sums fewer than 11 claim lines: a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patient’s care. Leave the row out.',
     );
   });
 });

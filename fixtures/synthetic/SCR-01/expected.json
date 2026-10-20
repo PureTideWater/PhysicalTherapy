@@ -2,7 +2,7 @@
   "case": "SCR-01",
   "module": "SCR",
   "title": "Screening upload with a date-of-service or member-ID column",
-  "assertion": "Rejected with the column named by position and kind; only the file hash, row count and reasons stored",
+  "assertion": "Rejected with the column named by position and kind; only the row count and reasons stored, no hash",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [

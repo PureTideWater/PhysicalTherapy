@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
@@ -9,21 +9,24 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RATE_LIMITS } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
 import { screeningConvert, screeningPage, screeningReasonMessage, screeningResult, screeningSubmit } from './routes';
-import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInput } from './test-support/screening-world';
+import { parseScreeningBytes } from './parse';
+import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, practiceName, screeningRow, submitInput } from './test-support/screening-world';
 
 /**
  * The free screening's routes against a scratch database (Change Order 001, CO-04; docs/adr/0062):
  *
  * - SCR-01, the rejection: an upload whose header holds a member-ID or date-of-service column is refused with the
- *   column named by position and kind, and nothing of it is stored but its hash, its row count and the reasons.
+ *   column named by position and kind, and nothing of it is stored but its row count and the reasons: no hash.
  * - SCR-04, the rate limit: per business email domain, per free-mail mailbox however its address is spelled, and per
  *   client address.
  * - SCR-06, the conversion event: converting a screening to an audit request is an audit event.
  * - SCR-05, the wording, on the server's side: no result, message or email says owed, underpaid or recovered, and
  *   the prospect's email carries no tagline.
  * - SCR-07, the claim-line floor on the server's side: a row of fewer than 11 claim lines posted around the browser is
- *   refused with its row number, storing nothing of it but the coded reason; 11 is taken; what the browser left out
- *   is stored as three numbers and the result says so.
+ *   refused with its row number, storing nothing of it but the coded reason, and no hash; 11 is taken; what the browser
+ *   left out is stored as three numbers and the result says so; the hash kept is the database's, of the rows it
+ *   accepted, so two files differing only in a row left out store the same one, and a hash a request sends is never
+ *   kept; and a later screening of the same practice replaces the earlier one, whose link stops opening it.
  *
  * And around them: closed until a split is approved, recording nothing while closed; a ZIP whose locality needs its
  * ZIP+4 refused (the pricing cannot use one; the refusal stays until PR 6b, which takes a ZIP+4 before launch by the
@@ -35,6 +38,8 @@ import { ScreeningWorld, SCREENING_HEADERS, SAMPLE_ROWS, screeningRow, submitInp
  */
 
 const FORBIDDEN = /\b(?:owed|under-?paid|recovered)\b/i;
+
+const sha256 = (text: string | Uint8Array) => createHash('sha256').update(text).digest('hex');
 
 let world: ScreeningWorld;
 
@@ -65,7 +70,7 @@ async function submitted(input: Record<string, string>): Promise<Outcome<Mutatio
 }
 
 describe('SCR-01: an upload holding patient information is refused with its column named, and nothing of it is stored', () => {
-  it('refuses a member-ID column and a date-of-service column by position and kind, storing the hash, count and reasons alone', async () => {
+  it('refuses a member-ID column and a date-of-service column by position and kind, storing the count and reasons alone, no hash', async () => {
     const email = 'prospect.refused@clinic-refused.synthetic.test';
     const headers = [...SCREENING_HEADERS.slice(0, 3), 'Subscriber ID', ...SCREENING_HEADERS.slice(3), 'DOS'];
     const input = submitInput({ contactEmail: email, headers, rows: 'SYNTHETIC-CELL-9137\t1\t2\t3' });
@@ -77,15 +82,15 @@ describe('SCR-01: an upload holding patient information is refused with its colu
     ]);
     // The messages never echo a header or a cell.
     expect(JSON.stringify(outcome)).not.toMatch(/Subscriber|DOS\b|SYNTHETIC-CELL/);
-    const { rows } = await world.owner.query<{ status: string; row_count: number; file_sha256: string; rejection_reasons: unknown; contact_email: string }>(
-      `SELECT u.status, u.row_count, u.file_sha256, u.rejection_reasons, p.contact_email FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
+    const { rows } = await world.owner.query<{ status: string; row_count: number; rows_sha256: string | null; rejection_reasons: unknown; contact_email: string }>(
+      `SELECT u.status, u.row_count, u.rows_sha256, u.rejection_reasons, p.contact_email FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
       [email],
     );
     expect(rows).toEqual([
       {
         status: 'rejected',
         row_count: 1,
-        file_sha256: input.fileSha256,
+        rows_sha256: null,
         rejection_reasons: [
           { code: 'phi_column', column: 4, phi: 'member_id' },
           { code: 'phi_column', column: 10, phi: 'date_of_service' },
@@ -185,14 +190,17 @@ describe('SCR-01: an upload holding patient information is refused with its colu
 describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€™s service line', () => {
   const FLOOR_MESSAGE = (row: number) => ({
     field: 'upload',
-    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11 claim lines, so that no row can describe one patientâ€™s care: leave it out`,
+    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11 claim lines, because a row of fewer can describe one patientâ€™s care: leave it out`,
   });
 
-  it('refuses a direct POST around the browser with a row of one claim line, by its row number, and stores nothing of the row', async () => {
+  it('refuses a direct POST around the browser with a row of one claim line, by its row number, and stores nothing of the row, nor any hash', async () => {
     const email = 'prospect.smallcell@clinic-smallcell.synthetic.test';
     // SYNTHETIC values found nowhere else in this file, so the database and the logs can be searched for them.
     const small = screeningRow('G0283', 'ma_noncontracted', { modifiers: ['GP'], band: '2025-Q3', place: '22', allowedCents: 4_517n, claims: 1 });
-    const input = submitInput({ contactEmail: email, rows: [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'], allowedCents: 39_600n }), small] });
+    const sent = submitInput({ practiceName: 'Synthetic Therapy Group', contactEmail: email, rows: [screeningRow('97110', 'medicare_ffs', { modifiers: ['GP'], allowedCents: 39_600n }), small] });
+    // A hash of the rows, the small one among them, sent as an older page sent the file's: never stored.
+    const clientHash = sha256(sent.rows ?? '');
+    const input = { ...sent, fileSha256: clientHash };
     const before = await world.owner.query<{ n: number }>("SELECT count(*)::int AS n FROM screening_result WHERE procedure_code = 'G0283'");
     const outcome = await submitted(input);
     expect(issuesOf(outcome)).toEqual([FLOOR_MESSAGE(2)]);
@@ -203,11 +211,11 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
          FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1`,
       [email],
     );
-    // Only the hash, the row count and the coded reason (its row and field): no code, count, quarter or dollars of it.
+    // Only the row count and the coded reason (its row and field): no code, count, quarter or dollars of it, and no hash.
     expect(rows).toEqual([
       {
         upload: {
-          file_sha256: input.fileSha256,
+          rows_sha256: null,
           row_count: 2,
           status: 'rejected',
           rejection_reasons: [{ code: 'too_few_claim_lines', row: 2, field: 'claim_count' }],
@@ -223,7 +231,7 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     // The code and the quarter are searched for everywhere (hex and UUIDs cannot hold them); the dollars were held to the
     // upload's exact columns above, and no result row holds them.
     const stored = await storedText();
-    for (const value of ['G0283', '2025-Q3']) {
+    for (const value of ['G0283', '2025-Q3', clientHash]) {
       expect(stored, value).not.toContain(value);
     }
     expect((await world.owner.query('SELECT count(*)::int AS n FROM screening_result WHERE observed_allowed_cents = 4517')).rows).toEqual([{ n: 0 }]);
@@ -282,6 +290,61 @@ describe('SCR-07: a row of fewer than 11 claim lines, which can be one patientâ€
     const blank = { ...submitInput({ contactEmail: 'prospect.leftout.blank@clinic-leftout-blank.synthetic.test' }), leftOutRows: '', leftOutClaimLines: '', leftOutAllowedCents: '' };
     expect(await submitted(blank)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
   });
+
+  it('keeps the hash of the rows it accepted, never of the file: two files differing only in a row left out store the same hash, and a hash the request sends is not kept', async () => {
+    const now = new Date();
+    const quarter = `${String(now.getUTCFullYear() - 1)}-Q2`;
+    const header = SCREENING_HEADERS.join(',');
+    const kept = `97110,GP,2,11,ma_noncontracted,${quarter},440.00,11`;
+    // SYNTHETIC files: the same kept row, and a different small row (3 claim lines, then 7) that the browser leaves out.
+    const files = [`${header}\r\n${kept}\r\nG0283,GP,1,22,ma_noncontracted,${quarter},136.84,3\r\n`, `${header}\r\n${kept}\r\n97140,GP,1,11,medicare_ffs,${quarter},210.00,7\r\n`];
+    const hashes: string[] = [];
+    for (const [index, file] of files.entries()) {
+      const bytes = new TextEncoder().encode(file);
+      const parsed = parseScreeningBytes({ name: 'totals.csv', type: 'text/csv', size: bytes.length }, bytes, now);
+      expect(parsed.ok, `file ${String(index)}`).toBe(true);
+      if (!parsed.ok) {
+        return;
+      }
+      expect(parsed.rowCount).toBe(1);
+      const email = `prospect.hash.${String(index)}@clinic-hash-${String(index)}.synthetic.test`;
+      const input = {
+        ...submitInput({ contactEmail: email, rows: parsed.rows, leftOut: parsed.leftOut }),
+        // What an older page sent: the hash of the whole file, small row and all.
+        fileSha256: sha256(bytes),
+      };
+      expect(await submitted(input)).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+      const stored = await world.owner.query<{ rows_sha256: string }>('SELECT u.rows_sha256 FROM screening_upload u JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email]);
+      // The SHA-256 of the canonical rows sent, which the database holds row by row anyway.
+      expect(stored.rows).toEqual([{ rows_sha256: sha256(parsed.rows) }]);
+      expect(await storedText()).not.toContain(sha256(bytes));
+      hashes.push(stored.rows[0]?.rows_sha256 ?? '');
+    }
+    expect(hashes[0]).toBe(hashes[1]);
+    expect(hashes[0]).toBe(sha256(encodeScreeningRows([screeningRow('97110', 'ma_noncontracted', { modifiers: ['GP'], units: 2, band: quarter, allowedCents: 44_000n, claims: 11 })])));
+  });
+
+  it('replaces an earlier screening of the same practice, so a row of 12 claim lines and the same row at 11 are never held together; the earlier link stops opening it', async () => {
+    const name = practiceName();
+    const row = (allowedCents: bigint, claims: number) => [screeningRow('97530', 'ma_noncontracted', { modifiers: ['GP'], units: 2, band: '2026-Q2', allowedCents, claims })];
+    const firstEmail = `prospect.diff.first.${randomUUID().slice(0, 6)}@clinic-diff.synthetic.test`;
+    expect(await submitted(submitInput({ practiceName: name, contactEmail: firstEmail, rows: row(60_000n, 12) }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    await world.price();
+    const firstToken = world.tokenFor(firstEmail);
+    expect((await world.call(screeningResult, { params: { resultId: firstToken } })).status).toBe('ok');
+    // The same practice, its name typed in another case, from a colleague's address: the earlier screening goes.
+    const secondEmail = `prospect.diff.second.${randomUUID().slice(0, 6)}@clinic-diff.synthetic.test`;
+    expect(await submitted(submitInput({ practiceName: name.toLowerCase(), contactEmail: secondEmail, rows: row(54_517n, 11) }))).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
+    expect((await world.call(screeningResult, { params: { resultId: firstToken } })).status).toBe('not_found');
+    const held = await world.owner.query<{ claim_count: number }>(
+      `SELECT s.claim_count FROM screening_result s JOIN screening_run r ON r.id = s.run_id JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id
+        WHERE screening_practice_key(p.practice_name) = screening_practice_key($1)`,
+      [name],
+    );
+    expect(held.rows).toEqual([{ claim_count: 11 }]);
+    await world.price();
+    expect((await world.call(screeningResult, { params: { resultId: world.tokenFor(secondEmail) } })).status).toBe('ok');
+  });
 });
 
 describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, read by its link alone', () => {
@@ -312,7 +375,7 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
     expect(serverTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     expect(Date.parse(serverTime)).toBeGreaterThanOrEqual(before);
     expect(Date.parse(serverTime)).toBeLessThanOrEqual(Date.now());
-    const outcome = await submitted(submitInput({ contactEmail: email }));
+    const outcome = await submitted(submitInput({ practiceName: 'Synthetic Therapy Group', contactEmail: email }));
     expect(outcome).toEqual({ status: 'ok', data: { redirect: '/screening?sent=1' } });
     const run = (await world.owner.query<{ id: string }>('SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.contact_email = $1', [email])).rows[0];
     expect(world.queue.screeningRuns).toContain(run?.id);
@@ -386,7 +449,7 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
       expect((await closed.owner.query("SELECT count(*)::int AS n FROM audit_event WHERE action LIKE 'screening_%'")).rows).toEqual([{ n: 0 }]);
       // The definer function refuses it too, whoever calls it.
       await expect(
-        closed.owner.query("SELECT reject_screening_upload('SYNTHETIC', 'MN', '00011', 'closed.probe@clinic-closed.synthetic.test', $1, 1, '[{\"code\":\"no_rows\"}]', 'test')", ['e'.repeat(64)]),
+        closed.owner.query("SELECT reject_screening_upload('SYNTHETIC', 'MN', '00011', 'closed.probe@clinic-closed.synthetic.test', 1, '[{\"code\":\"no_rows\"}]', 'test')"),
       ).rejects.toMatchObject({ code: '23514', constraint: 'screening_closed' });
     } finally {
       await closed.close();

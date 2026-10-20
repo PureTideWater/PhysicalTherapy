@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
@@ -81,25 +81,35 @@ export interface SubmitOverrides {
   readonly headers?: readonly string[];
   readonly rows?: readonly ScreeningRow[] | string;
   readonly rowCount?: string;
-  readonly fileSha256?: string;
   /** What the browser says it left out (rows of fewer than 11 claim lines); none unless given. */
   readonly leftOut?: { readonly rows: number | string; readonly claimLines: number | string; readonly allowedCents: bigint | string };
 }
 
 /**
- * The form the upload page sends for these rows: no byte of the file, its hash, header cells, count and canonical rows,
- * and the three numbers of what it left out.
+ * A practice name of its own (letters only, so the form's patient-information check passes it): a practice keeps one
+ * accepted screening at a time, so a test's screening replaces another's only when the test gives the same name.
+ */
+export function practiceName(): string {
+  const letters = randomUUID()
+    .replace(/-/g, '')
+    .slice(0, 10)
+    .replace(/[0-9]/g, (digit) => 'ghijklmnop'.charAt(Number(digit)));
+  return `Synthetic Therapy Group ${letters}`;
+}
+
+/**
+ * The form the upload page sends for these rows: no byte of the file and no hash of it; its header cells, count and
+ * canonical rows, and the three numbers of what it left out.
  */
 export function submitInput(overrides: SubmitOverrides = {}): Record<string, string> {
   const rows = overrides.rows ?? SAMPLE_ROWS;
   const text = typeof rows === 'string' ? rows : encodeScreeningRows(rows);
   const count = typeof rows === 'string' ? (text === '' ? 0 : text.split('\n').length) : rows.length;
   return {
-    practiceName: overrides.practiceName ?? 'Synthetic Therapy Group',
+    practiceName: overrides.practiceName ?? practiceName(),
     state: overrides.state ?? 'MN',
     zip: overrides.zip ?? '00011',
     contactEmail: overrides.contactEmail ?? `prospect.${randomUUID().slice(0, 8)}@clinic-${randomUUID().slice(0, 6)}.synthetic.test`,
-    fileSha256: overrides.fileSha256 ?? createHash('sha256').update(text).digest('hex'),
     headers: JSON.stringify(overrides.headers ?? SCREENING_HEADERS),
     rowCount: overrides.rowCount ?? String(count),
     rows: text,

@@ -6,13 +6,13 @@ import { counted } from '../../lib/copy/words';
 import {
   BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
-  LEFT_OUT_NOTE,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   REDUCED_DIFFERENCE_LABEL,
   REDUCED_FIGURE,
   REDUCED_FIGURE_LABEL,
   SCREENING_INVESTIGATORY_NOTE,
+  leftOutNote,
 } from '../../lib/screening/labels';
 import { utc, utcDate } from '../format';
 
@@ -124,7 +124,7 @@ export function ScreeningHeading({ summary }: { readonly summary: ScreeningSumma
       <h1 className="text-[2rem] font-bold leading-display tracking-display">Your free screening</h1>
       <p className="text-base text-muted-foreground">
         <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{summary.zip}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
-        <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>). This link opens it until {utcDate(summary.expiresAt)}, and then the result is deleted.
+        <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>). This link opens it until {utcDate(summary.expiresAt)}, or until a later screening for the same practice or from the same email address replaces it, and then the result is deleted.
       </p>
     </div>
   );
@@ -163,7 +163,7 @@ export function ScreeningSummary({ summary }: { readonly summary: ScreeningSumma
         <Card data-section="left-out">
           <CardHeader>
             <CardTitle>Left out before sending</CardTitle>
-            <CardDescription>{LEFT_OUT_NOTE}</CardDescription>
+            <CardDescription>{leftOutNote(summary.leftOut.rows)}</CardDescription>
           </CardHeader>
           <CardContent>
             <GroupStats group={summary.leftOut} slot="left-out" />

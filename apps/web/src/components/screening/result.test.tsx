@@ -9,7 +9,6 @@ import {
   BEFORE_REDUCTION_FIGURE,
   DIFFERENCE_LABEL,
   FULLY_REDUCED,
-  LEFT_OUT_NOTE,
   MEDICARE_FIGURE_LABEL,
   MEDICARE_FIGURE_NOTE,
   MEDICARE_LINE_LABEL,
@@ -19,6 +18,7 @@ import {
   REDUCED_FIGURE_LABEL,
   REDUCED_LINE_LABEL,
   WITHIN_REDUCTION_RANGE,
+  leftOutNote,
 } from '../../lib/screening/labels';
 import { type ScreeningGroup, type ScreeningRow, ScreeningAnomalies, ScreeningTopRows, anomaliesDescription } from './anomalies';
 import { type ScreeningCoverageRow, ScreeningCoverage } from './coverage';
@@ -276,10 +276,16 @@ describe('the screening summary', () => {
 
   it('says how many rows, claim lines and dollars the browser left out before sending, apart from every figure, and nothing when none (SCR-07)', () => {
     expect(html).toMatch(/data-section="left-out"[\s\S]*?Left out before sending/);
-    expect(LEFT_OUT_NOTE).toBe(
-      'A row of fewer than 11 claim lines was left out by your browser before anything was sent, so that no row could describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.',
+    // Worded for the rows the card counts, and the risk the floor answers, never a promise that no row describes one patient.
+    expect(leftOutNote(2)).toBe(
+      'Rows of fewer than 11 claim lines were left out by your browser before anything was sent, because a row that small can describe one patient’s care. No figure on this page includes these rows; this is what your browser counted of them.',
     );
-    expect(text(html)).toContain(LEFT_OUT_NOTE);
+    expect(leftOutNote(1)).toBe(
+      'A row of fewer than 11 claim lines was left out by your browser before anything was sent, because a row that small can describe one patient’s care. No figure on this page includes it; this is what your browser counted of it.',
+    );
+    expect(text(html)).toContain(leftOutNote(2));
+    const single = renderToStaticMarkup(<ScreeningSummary summary={{ ...SUMMARY, leftOut: { rows: 1, claimLines: 1, observedCents: c(4_517n) } }} />);
+    expect(text(single)).toContain(leftOutNote(1));
     const stat = (slot: string) => text(new RegExp(`data-figure="${slot}"[^>]*>([\\s\\S]*?)</dd>`).exec(html)?.[1] ?? '').trim();
     expect(stat('left-out-rows')).toBe('Rows 2');
     expect(stat('left-out-claim-lines')).toBe('Claim lines 13');
@@ -295,6 +301,7 @@ describe('the screening summary', () => {
     expect(text(html)).toContain('rule release 900001');
     expect(text(html)).toContain('engine/1');
     expect(text(html)).toContain('until 2026-11-17');
+    expect(text(html)).toContain('or until a later screening for the same practice or from the same email address replaces it');
   });
 
   it('says so above the figures when the release they were priced under has since been withdrawn', () => {

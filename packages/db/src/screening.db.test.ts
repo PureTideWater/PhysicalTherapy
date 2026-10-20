@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -18,7 +18,9 @@ import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrg
  * times the count in bigint, runs that move one way, a token stored only as its hash, rows kept until they expire,
  * and a split a contract specialist approves. SCR-07, the database's part: no row of fewer than 11 claim lines is
  * stored (10 refused, 11 taken), and an upload keeps only three numbers of the rows the browser left out, held to what
- * the browser could have counted. Synthetic data only.
+ * the browser could have counted, beside the SHA-256 of the rows it stored, computed by the database and never taken
+ * from the caller (a refused upload keeps no hash); and a practice keeps one accepted screening at a time, so no two of
+ * its screenings can be subtracted into a cell of fewer than 11 claim lines. Synthetic data only.
  */
 
 const SCREENING_TABLES = ['screening_place_of_service_split', 'screening_prospect', 'screening_result', 'screening_run', 'screening_upload'] as const;
@@ -32,6 +34,12 @@ const PHI_SHAPED =
 
 const SPLIT = { '11': 'non_facility', '22': 'facility' };
 const hex = (character: string) => character.repeat(64);
+/** Ten random letters: a practice name of its own for each screening, so none replaces another unless a test says so. */
+const letters = () =>
+  randomUUID()
+    .replace(/-/g, '')
+    .slice(0, 10)
+    .replace(/[0-9]/g, (digit) => 'ghijklmnop'.charAt(Number(digit)));
 
 let database: MigratedDatabase;
 let admin: pg.Pool;
@@ -80,6 +88,8 @@ async function publishSyntheticRelease(releaseNo: number): Promise<void> {
 }
 
 interface SubmitOptions {
+  /** The practice's name; one of its own unless given (a screening replaces an earlier one of the same practice). */
+  readonly practice?: string;
   readonly zip?: string;
   readonly email?: string;
   readonly rows?: readonly (readonly [string, string, number, string, string, string, bigint, number])[];
@@ -98,17 +108,23 @@ const ROWS: NonNullable<SubmitOptions['rows']> = [
   ['97116', 'GP', 1, '11', 'other', '2026-Q1', 600n, 11],
 ];
 
-const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS run_id';
+const SUBMIT = 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS run_id';
+
+/** The rows in their canonical form (format.ts, encodeScreeningRows): each row's eight fields tab-joined, the rows joined by line feeds. */
+function canonicalRows(rows: NonNullable<SubmitOptions['rows']>): string {
+  return rows.map((row) => row.map(String).join('\t')).join('\n');
+}
+
+const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 function submitValues(options: SubmitOptions = {}): unknown[] {
   const rows = options.rows ?? ROWS;
   const [leftRows, leftLines, leftCents] = options.leftOut ?? [0, 0, 0n];
   return [
-    '  Synthetic Therapy Group  ',
+    options.practice ?? `  Synthetic Therapy Group ${letters()}  `,
     'MN',
     options.zip ?? '00011',
     options.email ?? ` Prospect.${randomUUID().slice(0, 8)}@Synthetic.Test `,
-    hex('d'),
     rows.map((row) => row[0]),
     rows.map((row) => row[1]),
     rows.map((row) => row[2]),
@@ -230,13 +246,13 @@ describe('SEC-17: the screening tables hold no PHI-shaped column', () => {
       'created_at',
       'expires_at',
     ]);
-    // An upload keeps no byte of its file: no bytea, no free text but the hash and the coded reasons, and of the rows of
-    // fewer than 11 claim lines the browser left out, three numbers alone.
+    // An upload keeps no byte of its file and no hash of it: no bytea, no free text but the hash of the rows stored and
+    // the coded reasons, and of the rows of fewer than 11 claim lines the browser left out, three numbers alone.
     expect(rows.filter((row) => row.type === 'bytea')).toEqual([]);
     expect(rows.filter((row) => row.table_name === 'screening_upload').map((row) => row.column_name)).toEqual([
       'id',
       'prospect_id',
-      'file_sha256',
+      'rows_sha256',
       'row_count',
       'status',
       'rejection_reasons',
@@ -405,9 +421,9 @@ describe('the screening rules', () => {
   });
 
   it('stores the prospect, an accepted upload of hash and count, a queued run pinned to the release and split, and every row, with its audit event', async () => {
-    const runId = await submit({ email: ' Prospect.Pinned@Synthetic.Test ' });
+    const runId = await submit({ practice: '  Synthetic Therapy Group  ', email: ' Prospect.Pinned@Synthetic.Test ' });
     const { rows } = await admin.query(
-      `SELECT p.practice_name, p.state, p.zip, p.contact_email, u.file_sha256, u.row_count AS upload_rows,
+      `SELECT p.practice_name, p.state, p.zip, p.contact_email, u.rows_sha256, u.row_count AS upload_rows,
               ARRAY[u.left_out_rows::text, u.left_out_claim_lines::text, u.left_out_allowed_cents::text] AS left_out, u.status AS upload_status, u.rejection_reasons,
               r.release_no, r.release_manifest_sha256, r.row_count, r.status, r.attempts, r.result_token_sha256,
               r.place_of_service_split_id = screening_split_in_force() AS split_in_force, r.expires_at = r.created_at + interval '30 days' AS thirty_days
@@ -420,7 +436,8 @@ describe('the screening rules', () => {
         state: 'MN',
         zip: '00011',
         contact_email: 'prospect.pinned@synthetic.test',
-        file_sha256: hex('d'),
+        // The SHA-256 of the rows stored, in their canonical form, computed by the database.
+        rows_sha256: sha256(canonicalRows(ROWS)),
         upload_rows: 6,
         left_out: ['0', '0', '0'],
         upload_status: 'accepted',
@@ -453,7 +470,7 @@ describe('the screening rules', () => {
 
   it('refuses arrays of different lengths, no rows, more than 50,000, a repeated row key and a modifier set out of order', async () => {
     const values = submitValues();
-    await expect(as(APP_ROLE, SUBMIT, values.map((value, index) => (index === 8 ? [2] : value)))).rejects.toMatchObject({ constraint: 'screening_rows' });
+    await expect(as(APP_ROLE, SUBMIT, values.map((value, index) => (index === 7 ? ['11'] : value)))).rejects.toMatchObject({ constraint: 'screening_rows' });
     await expect(submit({ rows: [] })).rejects.toMatchObject({ constraint: 'screening_rows' });
     const many = Array.from({ length: 50_001 }, (_, index) => ['97110', '', 1 + (index % 999), '11', 'medicare_ffs', `20${String(10 + Math.floor(index / 999) % 17)}-Q1`, 0n, 11] as const);
     await expect(submit({ rows: many })).rejects.toMatchObject({ constraint: 'screening_rows' });
@@ -520,33 +537,63 @@ describe('the screening rules', () => {
     const [prospect] = (await admin.query<{ id: string }>("INSERT INTO screening_prospect (practice_name, state, zip, contact_email) VALUES ('SYNTHETIC', 'MN', '00011', 'left.out@synthetic.test') RETURNING id")).rows;
     await expect(
       admin.query(
-        `INSERT INTO screening_upload (prospect_id, file_sha256, row_count, status, rejection_reasons, left_out_rows, left_out_claim_lines) VALUES ($1, $2, 2, 'rejected', '[{"code":"no_rows"}]', 1, 1)`,
-        [prospect?.id, hex('e')],
+        `INSERT INTO screening_upload (prospect_id, row_count, status, rejection_reasons, left_out_rows, left_out_claim_lines) VALUES ($1, 2, 'rejected', '[{"code":"no_rows"}]', 1, 1)`,
+        [prospect?.id],
       ),
     ).rejects.toMatchObject({ constraint: 'screening_upload_left_out_accepted' });
   });
 
-  it('records a rejected upload with its reasons alone, and its audit event', async () => {
-    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8) AS id', [
+  it('records a rejected upload with its count and reasons alone, no hash, and its audit event', async () => {
+    const [row] = await as<{ id: string }>(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7) AS id', [
       'Synthetic Therapy Group',
       'MN',
       '00011',
       'Prospect.Rejected@Synthetic.Test',
-      hex('e'),
       120,
       JSON.stringify([{ code: 'phi_column', column: 4, phi: 'member_id' }]),
       `test-${randomUUID()}`,
     ]);
-    const upload = await admin.query('SELECT status, row_count, rejection_reasons FROM screening_upload WHERE id = $1', [row?.id]);
-    expect(upload.rows).toEqual([{ status: 'rejected', row_count: 120, rejection_reasons: [{ code: 'phi_column', column: 4, phi: 'member_id' }] }]);
+    const upload = await admin.query('SELECT status, row_count, rejection_reasons, rows_sha256 FROM screening_upload WHERE id = $1', [row?.id]);
+    expect(upload.rows).toEqual([{ status: 'rejected', row_count: 120, rejection_reasons: [{ code: 'phi_column', column: 4, phi: 'member_id' }], rows_sha256: null }]);
     expect((await admin.query('SELECT count(*)::int AS n FROM screening_run WHERE upload_id = $1', [row?.id])).rows).toEqual([{ n: 0 }]);
     expect((await admin.query('SELECT action, object_type FROM audit_event WHERE object_id = $1', [row?.id])).rows).toEqual([{ action: 'screening_rejected', object_type: 'screening_upload' }]);
     await expect(
-      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', hex('e'), 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
+      as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, JSON.stringify([{ code: 'phi_column', header: 'Member ID' }]), 'x']),
     ).rejects.toMatchObject({ constraint: 'screening_upload_reasons' });
-    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7, $8)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', hex('e'), 1, '[]', 'x'])).rejects.toMatchObject({
+    await expect(as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['SYNTHETIC', 'MN', '00011', 'p@synthetic.test', 1, '[]', 'x'])).rejects.toMatchObject({
       constraint: 'screening_upload_rejected',
     });
+  });
+
+  it('hashes the rows it stores, never anything a caller sends: an accepted upload has that hash, a refused one none, whoever writes the row', async () => {
+    const rows: NonNullable<SubmitOptions['rows']> = [
+      ['97530', 'GP', 2, '11', 'ma_noncontracted', '2026-Q2', 60_000n, 12],
+      ['97110', 'CQ GP', 1, '22', 'medicare_ffs', '2026-Q1', 0n, 11],
+    ];
+    const runId = await submit({ rows });
+    const stored = await admin.query<{ rows_sha256: string; again: string }>(
+      `SELECT u.rows_sha256,
+              encode(sha256(convert_to(string_agg(concat_ws(E'\\t', s.procedure_code, array_to_string(s.modifiers, ' '), s.units, s.place_of_service, s.payer_product, s.service_band,
+                                                             s.observed_allowed_cents, s.claim_count), E'\\n' ORDER BY s.row_no), 'UTF8')), 'hex') AS again
+         FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_result s ON s.run_id = r.id WHERE r.id = $1 GROUP BY u.rows_sha256`,
+      [runId],
+    );
+    // The canonical rows sent, hashed: and the same hash worked out again from the rows the table holds.
+    expect(stored.rows).toEqual([{ rows_sha256: sha256('97530\tGP\t2\t11\tma_noncontracted\t2026-Q2\t60000\t12\n97110\tCQ GP\t1\t22\tmedicare_ffs\t2026-Q1\t0\t11'), again: sha256(canonicalRows(rows)) }]);
+    expect(stored.rows[0]?.rows_sha256).toBe(stored.rows[0]?.again);
+    // The function takes no hash: a seventeenth argument is no submit_screening at all.
+    await expect(as(APP_ROLE, 'SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)', [...submitValues().slice(0, 4), hex('d'), ...submitValues().slice(4)])).rejects.toMatchObject({
+      code: '42883',
+    });
+    // The owner either: an accepted upload has the hash of its rows, a refused one none.
+    const [prospect] = (await admin.query<{ id: string }>("INSERT INTO screening_prospect (practice_name, state, zip, contact_email) VALUES ('SYNTHETIC', 'MN', '00011', 'hash.rule@synthetic.test') RETURNING id")).rows;
+    await expect(admin.query(`INSERT INTO screening_upload (prospect_id, row_count, status) VALUES ($1, 1, 'accepted')`, [prospect?.id])).rejects.toMatchObject({
+      code: '23514',
+      constraint: 'screening_upload_rows_hashed',
+    });
+    await expect(
+      admin.query(`INSERT INTO screening_upload (prospect_id, rows_sha256, row_count, status, rejection_reasons) VALUES ($1, $2, 1, 'rejected', '[{"code":"no_rows"}]')`, [prospect?.id, hex('e')]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'screening_upload_rows_hashed' });
   });
 
   it('never prices an MA contracted or commercial row, and holds a priced row to the line amount times the count in bigint', async () => {
@@ -659,7 +706,7 @@ describe('the screening rules', () => {
   });
 
   it('moves a run queued, pricing, then complete or failed, sets its token hash and its conversion once, and refuses the rest', async () => {
-    const runId = await submit();
+    const runId = await submit({ practice: 'Synthetic Therapy Group' });
     await expect(admin.query("UPDATE screening_run SET status = 'complete', result_token_sha256 = $2, completed_at = now(), engine_version = 'phase-two/1' WHERE id = $1", [runId, hex('1')])).rejects.toMatchObject({
       code: '23514',
     });
@@ -814,5 +861,107 @@ describe('the screening rules', () => {
       { action: 'screening_converted', object_type: 'prospect_request' },
     ]);
     expect((await admin.query('SELECT count(*)::int AS n FROM prospect_request WHERE id = $1', [requestId])).rows).toEqual([{ n: 1 }]);
+  });
+
+  /** Where a run's screening stands: its run, upload and prospect, and whether each is still held. */
+  async function held(runId: string): Promise<{ readonly prospectId: string; readonly uploadId: string }> {
+    const [row] = (
+      await admin.query<{ prospect_id: string; upload_id: string }>('SELECT u.prospect_id, u.id AS upload_id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id WHERE r.id = $1', [
+        runId,
+      ])
+    ).rows;
+    return { prospectId: row?.prospect_id ?? '', uploadId: row?.upload_id ?? '' };
+  }
+
+  async function gone(runId: string, ids: { readonly prospectId: string; readonly uploadId: string }): Promise<boolean> {
+    const counts = await admin.query<{ n: number }>(
+      `SELECT ((SELECT count(*) FROM screening_prospect WHERE id = $1) + (SELECT count(*) FROM screening_upload WHERE id = $2)
+              + (SELECT count(*) FROM screening_run WHERE id = $3) + (SELECT count(*) FROM screening_result WHERE run_id = $3))::int AS n`,
+      [ids.prospectId, ids.uploadId, runId],
+    );
+    return counts.rows[0]?.n === 0;
+  }
+
+  it('keeps one accepted screening a practice: a row of 12 claim lines and the same row at 11 are never held together to be subtracted into one claim line (SCR-07)', async () => {
+    const name = `Synthetic Diff Therapy ${letters()}`;
+    const row = (allowed: bigint, claims: number) => [['97530', 'GP', 2, '11', 'ma_noncontracted', '2026-Q2', allowed, claims]] as const;
+    const first = await submit({ practice: name, email: `first.${letters()}@synthetic.test`, rows: row(60_000n, 12) });
+    const firstIds = await held(first);
+    // The same practice again (its name in another case and spacing, the same ZIP), from another address: the first goes.
+    const request = `test-${randomUUID()}`;
+    const values = submitValues({ practice: `  ${name.toUpperCase().replace(' ', '   ')} `, email: `second.${letters()}@synthetic.test`, rows: row(54_517n, 11) });
+    const [second] = await as<{ run_id: string }>(APP_ROLE, SUBMIT, [...values.slice(0, -1), request]);
+    expect(await gone(first, firstIds)).toBe(true);
+    expect((await admin.query('SELECT claim_count, observed_allowed_cents::text AS cents FROM screening_result WHERE run_id = $1', [second?.run_id])).rows).toEqual([{ claim_count: 11, cents: '54517' }]);
+    // No two rows of one key are held for the practice, so no difference of 1 claim line and $54.83 can be read.
+    const pairs = await admin.query(
+      `SELECT a.claim_count - b.claim_count AS derived_claim_lines
+         FROM screening_result a JOIN screening_run ra ON ra.id = a.run_id JOIN screening_upload ua ON ua.id = ra.upload_id JOIN screening_prospect pa ON pa.id = ua.prospect_id
+         JOIN screening_result b ON (b.procedure_code, b.modifiers, b.units, b.place_of_service, b.payer_product, b.service_band) = (a.procedure_code, a.modifiers, a.units, a.place_of_service, a.payer_product, a.service_band)
+              AND b.run_id <> a.run_id
+         JOIN screening_run rb ON rb.id = b.run_id JOIN screening_upload ub ON ub.id = rb.upload_id JOIN screening_prospect pb ON pb.id = ub.prospect_id
+        WHERE screening_practice_key(pa.practice_name) = screening_practice_key($1) AND screening_practice_key(pb.practice_name) = screening_practice_key($1)`,
+      [name],
+    );
+    expect(pairs.rows).toEqual([]);
+    // The replacement is an audit event of the prospect it deleted, under the request that replaced it.
+    expect((await admin.query('SELECT action, object_type, request_id FROM audit_event WHERE object_id = $1', [firstIds.prospectId])).rows).toEqual([
+      { action: 'screening_replaced', object_type: 'screening_prospect', request_id: request },
+    ]);
+  });
+
+  it('replaces a screening from the same contact address, and one whose rows were left out, but never another practice’s, and a refused upload replaces nothing (SCR-07)', async () => {
+    const email = `same.${letters()}@synthetic.test`;
+    // A row of 10 claim lines left out the first time (its count and dollars are the upload's sums) that reaches 11.
+    const first = await submit({ practice: `Synthetic Left Out ${letters()}`, email, rows: [FIRST_ROW], leftOut: [1, 10, 45_170n] });
+    const firstIds = await held(first);
+    const neighbour = await submit({ practice: `Synthetic Neighbour ${letters()}`, email: `neighbour.${letters()}@synthetic.test` });
+    // A refused upload of the same address holds no row: it replaces nothing.
+    await as(APP_ROLE, 'SELECT reject_screening_upload($1, $2, $3, $4, $5, $6, $7)', ['Synthetic Refused Clinic', 'MN', '00011', email, 3, JSON.stringify([{ code: 'no_rows' }]), 'x']);
+    expect(await gone(first, firstIds)).toBe(false);
+    const second = await submit({ practice: `Synthetic Renamed ${letters()}`, email: ` ${email.toUpperCase()} `, rows: [['97110', 'GP', 2, '11', 'ma_noncontracted', '2026-Q2', 49_687n, 11]] });
+    expect(await gone(first, firstIds)).toBe(true);
+    // The other practice, at the same ZIP from another address, keeps its screening; the refused upload stays to expire.
+    expect((await held(neighbour)).uploadId).not.toBe('');
+    expect((await admin.query("SELECT count(*)::int AS n FROM screening_prospect WHERE contact_email = $1 AND practice_name = 'Synthetic Refused Clinic'", [email])).rows).toEqual([{ n: 1 }]);
+    expect((await held(second)).uploadId).not.toBe('');
+  });
+
+  it('keeps a screening until it expires or is replaced, and lets two submissions of one practice at once leave one', async () => {
+    const runId = await submit();
+    const ids = await held(runId);
+    // Nothing replaces it: the owner cannot delete it before it expires, prospect, upload or run.
+    for (const [table, id] of [
+      ['screening_prospect', ids.prospectId],
+      ['screening_upload', ids.uploadId],
+      ['screening_run', runId],
+    ] as const) {
+      await expect(admin.query(`DELETE FROM ${table} WHERE id = $1`, [id]), table).rejects.toMatchObject({ code: '23514', constraint: 'screening_kept_until_expiry' });
+    }
+    // Two submissions of one practice at once: the second waits for the first, then replaces it.
+    const name = `Synthetic Race Clinic ${letters()}`;
+    const first = await admin.connect();
+    const second = await admin.connect();
+    try {
+      await first.query('BEGIN');
+      await first.query(`SET LOCAL ROLE ${APP_ROLE}`);
+      await second.query('BEGIN');
+      await second.query(`SET LOCAL ROLE ${APP_ROLE}`);
+      const one = (await first.query<{ run_id: string }>(SUBMIT, submitValues({ practice: name }))).rows[0]?.run_id ?? '';
+      const waiting = second.query<{ run_id: string }>(SUBMIT, submitValues({ practice: name }));
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await first.query('COMMIT');
+      const two = (await waiting).rows[0]?.run_id ?? '';
+      await second.query('COMMIT');
+      const runs = await admin.query<{ id: string }>(
+        'SELECT r.id FROM screening_run r JOIN screening_upload u ON u.id = r.upload_id JOIN screening_prospect p ON p.id = u.prospect_id WHERE p.practice_name = $1',
+        [name],
+      );
+      expect(runs.rows).toEqual([{ id: two }]);
+      expect(one).not.toBe(two);
+    } finally {
+      first.release();
+      second.release();
+    }
   });
 });

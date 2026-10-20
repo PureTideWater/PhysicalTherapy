@@ -11,15 +11,16 @@ import { Field, SelectField } from '../field';
 
 /**
  * The free screening's upload (Change Order 001, CO-04; reconciliation-001, D18 a and D21 a). The file is read here,
- * in the browser, and never sent: the file input has no name, so no form submission carries it. The browser hashes
- * its bytes, checks the header and every row against the screening's format, and refuses a file that holds patient
+ * in the browser, and never sent: the file input has no name, so no form submission carries it. The browser checks
+ * the header and every row against the screening's format, and refuses a file that holds patient
  * information (names, dates of birth, member IDs, dates of service or claim numbers), naming the column by its
  * position and header, before anything is sent. A file's quarters are dated by the server's clock (the page's
  * serverTime, moved on by this browser's clock since), so a computer whose clock is wrong refuses no quarter the server
  * takes and sends none it refuses. A row of fewer than 11 claim lines (the CMS small-cell standard) is
  * left out before sending, since it can be one patient's service line, and the form says how many rows, claim lines
- * and dollars it left out. A clean file goes to the server as its hash, its header's canonical column names, its row
- * count, its rows of totals in their canonical form and those three left-out numbers; the server checks them again. No
+ * and dollars it left out. A clean file goes to the server as its header's canonical column names, its row count, its
+ * rows of totals in their canonical form and those three left-out numbers, never a hash of the file (which holds the
+ * rows left out); the server checks them again and hashes the rows it accepts. No
  * ZIP+4 is asked for: the pricing takes a five-digit ZIP alone, so a ZIP that spans two Medicare localities cannot be
  * screened yet, and the form says so before the upload (decision D20 a; until PR 6b, which takes a ZIP+4 before launch by
  * the founder's ruling of 2026-10-18). The result is emailed:
@@ -96,7 +97,6 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
         return;
       }
       const body = new FormData(form);
-      body.set('fileSha256', result.fileSha256);
       body.set('headers', JSON.stringify(result.headers));
       body.set('rowCount', String(result.rowCount));
       body.set('rows', result.rows);
@@ -127,20 +127,21 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
           <CardTitle>About your practice</CardTitle>
           <CardDescription>
             Who the screening is for, and where its result is emailed. Your ZIP code names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet.
+            A practice keeps one screening at a time: a later one for the same practice name and ZIP code, or from the same email address, replaces it, and the earlier link stops opening it.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <Field label="Practice name" name="practiceName" required maxLength={200} autoComplete="organization" />
           <SelectField label="State" name="state" options={[{ value: '', label: 'Choose a state' }, ...states]} required />
           <Field label="ZIP code" name="zip" required inputMode="numeric" pattern="[0-9]{5}" maxLength={5} autoComplete="postal-code" hint="The five-digit ZIP of the practice's location." />
-          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint="The result is emailed here as a link that opens it for 30 days." />
+          <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint="The result is emailed here as a link that opens it for 30 days, or until a later screening replaces it." />
         </CardContent>
       </Card>
       <Card>
         <CardHeader>
           <CardTitle>Your file</CardTitle>
           <CardDescription>
-            A CSV or tab-separated file of totals, one row per code, modifier set, units, place of service, payer product and quarter, at most {maxRows.toLocaleString('en-US')} rows. It is read in this browser and never uploaded: only its rows of totals are sent, and a row of fewer than {minClaimLines} claim lines is left out, so that no row can describe one patient’s care.
+            A CSV or tab-separated file of totals, one row per code, modifier set, units, place of service, payer product and quarter, at most {maxRows.toLocaleString('en-US')} rows. It is read in this browser and never uploaded: only its rows of totals are sent, and a row of fewer than {minClaimLines} claim lines is left out, because it can describe one patient’s care.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">

@@ -67,7 +67,7 @@ export function screeningResultMessage({ to, link, rows }: { readonly to: string
     subject: 'Your screening is ready',
     lines: [
       `The screening you started on the PaidWhole screening page is ready. It covers the ${rowsText(rows)} of your upload.`,
-      'The link below opens it for 30 days from your upload, and then the result is deleted. Anyone with the link can open it, so share it only with people at your practice.',
+      'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it, and then the result is deleted. Anyone with the link can open it, so share it only with people at your practice.',
       'If you did not start a screening, ignore this message; nothing more will be sent.',
       'Open your screening:',
     ],

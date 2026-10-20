@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { bigint, boolean, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 
 import { prospectRequest } from './onboarding';
@@ -6,12 +7,13 @@ import { user } from './tenancy';
 /**
  * The free screening layer (Change Order 001, CO-04 and CO-12; reconciliation-001 D18 to D21; docs/adr/0062),
  * mirroring migrations/20261104090000_free_screening.sql for typed queries. None holds PHI and none has a
- * practice_id: a prospect's practice name, state, ZIP and contact address; an upload's hash, row count and
- * rejection reasons (codes, column positions and kinds, never a header or a cell); the place-of-service split a
+ * practice_id: a prospect's practice name, state, ZIP and contact address; an upload's row count and rejection
+ * reasons (codes, column positions and kinds, never a header or a cell), and for an accepted one the SHA-256 of the
+ * rows the server accepted (never of the file); the place-of-service split a
  * contract specialist approves; a run pinned to a release and a split; and one aggregate row per uploaded row with
  * the engine's figures. Row-level security is forced on every one with the owner's policy only; the application and
  * operator roles reach them through the SECURITY DEFINER functions alone. Every row but the split expires 30 days
- * after its upload.
+ * after its upload, and an accepted screening goes sooner when a later one of the same practice replaces it.
  */
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -47,7 +49,12 @@ export const screeningProspect = pgTable(
     createdAt: createdAt(),
     expiresAt: expiresAt(),
   },
-  (table) => [index('screening_prospect_by_expiry').on(table.expiresAt)],
+  (table) => [
+    index('screening_prospect_by_expiry').on(table.expiresAt),
+    // The prospects of one practice, as a new screening finds the one it replaces (screening_replaced()).
+    index('screening_prospect_by_contact').on(table.contactEmail),
+    index('screening_prospect_by_practice').on(table.zip, sql`screening_practice_key(${table.practiceName})`),
+  ],
 );
 
 export const screeningUpload = pgTable(
@@ -57,7 +64,11 @@ export const screeningUpload = pgTable(
     prospectId: uuid('prospect_id')
       .notNull()
       .references(() => screeningProspect.id, { onDelete: 'cascade' }),
-    fileSha256: text('file_sha256').notNull(),
+    /**
+     * On an accepted upload, the SHA-256 of its rows as the server accepted them (encodeScreeningRows), computed by
+     * submit_screening(); never a hash of the file, which holds the rows the browser left out. Null on a refused one.
+     */
+    rowsSha256: text('rows_sha256'),
     rowCount: integer('row_count').notNull(),
     status: text('status', { enum: SCREENING_UPLOAD_STATUSES }).notNull(),
     /** Codes, column positions, rows, fields and PHI kinds only (screening_rejections_valid()). */
@@ -65,7 +76,7 @@ export const screeningUpload = pgTable(
     /**
      * The rows of fewer than 11 claim lines the prospect's browser left out before sending (the CMS small-cell
      * standard), as three numbers for the result to say: how many, their claim lines and their allowed total. Never
-     * which rows; zero on a rejected upload.
+     * which rows, and no hash over them; zero on a rejected upload.
      */
     leftOutRows: integer('left_out_rows').notNull().default(0),
     leftOutClaimLines: integer('left_out_claim_lines').notNull().default(0),
