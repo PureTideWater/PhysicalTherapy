@@ -88,6 +88,13 @@ describe('packetHtml', () => {
     for (const cause of DEADLINE_UNVERIFIED_CAUSES) {
       expect(deadlineText({ status: 'unverified', cause })).toMatch(/^not verified: .{20,}/);
     }
+    // Best-option audit #5: a contract window counted another way, and a Medicare Advantage line before the route is confirmed (Q34).
+    expect(deadlineText({ status: 'unverified', cause: 'CONTRACT_WINDOW_RULE_NOT_COMPUTED' })).toBe(
+      'not verified: the contract counts its window in a unit or from a date the product does not compute yet',
+    );
+    expect(deadlineText({ status: 'unverified', cause: 'MA_ROUTE_UNCONFIRMED' })).toBe(
+      'not verified: the contract specialist has not confirmed which dispute route applies to a Medicare Advantage non-contracted line',
+    );
     expect(deadlineText({ status: 'verified', cause: null })).toBe('verified');
     expect(deadlineText({ status: 'not_applicable', cause: null })).toBe('no window');
   });

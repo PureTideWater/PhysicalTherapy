@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { COMPUTED_CONTRACT_WINDOW_RULE, DISPUTE_WINDOW_STARTS, DISPUTE_WINDOW_UNITS } from '@tp/contracts';
 import { NOT_ACTIONABLE_REASONS } from '@tp/triage';
 import { describe, expect, it } from 'vitest';
 
@@ -22,6 +23,24 @@ const AUDIT = path.join(repositoryRoot, 'fixtures/synthetic/audit/AUDIT-01');
 
 function worksheet(...args: string[]) {
   return spawnSync('python3', ['-I', '-B', WORKSHEET, ...args], { cwd: repositoryRoot, encoding: 'utf8' });
+}
+
+/** The worksheet's own module-level constants, read by importing it isolated (-I) and without bytecode (-B). */
+function worksheetConstants(...names: string[]): unknown[] {
+  const read = spawnSync(
+    'python3',
+    [
+      '-I',
+      '-B',
+      '-c',
+      'import importlib.util, json, sys; spec = importlib.util.spec_from_file_location("worksheet", sys.argv[1]); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); print(json.dumps([getattr(module, name) for name in sys.argv[2:]]))',
+      WORKSHEET,
+      ...names,
+    ],
+    { cwd: repositoryRoot, encoding: 'utf8' },
+  );
+  expect(read.status, read.stderr).toBe(0);
+  return JSON.parse(read.stdout) as unknown[];
 }
 
 describe('the synthetic audit worksheet', () => {
@@ -125,20 +144,16 @@ describe('the synthetic audit worksheet', () => {
     }
   });
 
+  it('lists the window’s units and starts, and computes one rule, exactly as @tp/contracts does (best-option audit #5)', () => {
+    const [units, starts, computed] = worksheetConstants('WINDOW_UNITS', 'WINDOW_STARTS', 'COMPUTED_WINDOW_RULE') as [string[], string[], string[]];
+    expect(units).toEqual([...DISPUTE_WINDOW_UNITS]);
+    expect(starts).toEqual([...DISPUTE_WINDOW_STARTS]);
+    expect(computed).toEqual([COMPUTED_CONTRACT_WINDOW_RULE.unit, COMPUTED_CONTRACT_WINDOW_RULE.measuredFrom]);
+    expect(existsSync(path.join(repositoryRoot, 'tools/audit-worksheet/__pycache__'))).toBe(false);
+  });
+
   it('lists the reasons a validated line waits in the report’s order, @tp/triage’s, with the case materiality last', () => {
-    const listed = spawnSync(
-      'python3',
-      [
-        '-I',
-        '-B',
-        '-c',
-        'import importlib.util, json, sys; spec = importlib.util.spec_from_file_location("worksheet", sys.argv[1]); module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); print(json.dumps(module.NOT_ACTIONABLE_ORDER))',
-        WORKSHEET,
-      ],
-      { cwd: repositoryRoot, encoding: 'utf8' },
-    );
-    expect(listed.status, listed.stderr).toBe(0);
-    const order = JSON.parse(listed.stdout) as string[];
+    const [order] = worksheetConstants('NOT_ACTIONABLE_ORDER') as [string[]];
     expect(order.at(-1)).toBe('BELOW_CASE_MATERIALITY');
     expect(order).toEqual(expect.arrayContaining(['VERSION_NOT_SIGNED_OFF', 'VERSION_NOT_IN_FORCE', 'RELEASE_WITHDRAWN']));
     // Every reason the worksheet lists is triage's, in triage's order (the report's, report/content.ts).
