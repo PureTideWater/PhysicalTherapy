@@ -30,6 +30,7 @@ import * as reports from './reports';
 import * as roi from './roi';
 import * as ruleReleases from './rule-releases';
 import * as screening from '../screening/routes';
+import * as security from './security';
 import * as settings from './settings';
 import * as signIn from './sign-in';
 import * as specialist from './specialist';
@@ -80,6 +81,7 @@ const EXPORTED = new Map<string, Route>(
     roi,
     ruleReleases,
     screening,
+    security,
     settings,
     signIn,
     specialist,
@@ -144,7 +146,7 @@ describe('the route registry', () => {
 
   it('runs every route handler through a registered handler route at its own path', () => {
     for (const file of handlers) {
-      const used = routesUsed(readFileSync(file, 'utf8'), ['routeHandler', 'downloadHandler']);
+      const used = routesUsed(readFileSync(file, 'utf8'), ['routeHandler', 'downloadHandler', 'textHandler']);
       expect(used, file).toHaveLength(1);
       expect(used[0]?.kind, file).toBe('handler');
       expect(used[0]?.path, file).toBe(urlOf(file));
@@ -180,10 +182,22 @@ describe('the route registry', () => {
   });
 });
 
+/**
+ * Addresses a standard fixes (RFC 8615's /.well-known/ prefix and RFC 9116's file name): their dotted segments are
+ * no route word, and they take no parameter, so nothing in them can name a record.
+ */
+const STANDARD_ADDRESSES = new Set(['/.well-known/security.txt']);
+const STRUCTURE = /is neither an opaque ID nor a lowercase route word$/;
+
 describe('every registered route', () => {
   it.each(registry.ROUTES.map((route) => [route.id, route] as const))('%s: opaque IDs only in its path, an audit event if it changes records, scoped as declared', (_id, route) => {
     const sample = route.path.replace(/\[(\w+)\]/g, '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60');
-    expect(urlPhiFindings(sample)).toEqual([]);
+    const findings = urlPhiFindings(sample);
+    expect(STANDARD_ADDRESSES.has(route.path) ? findings.filter((finding) => !STRUCTURE.test(finding)) : findings).toEqual([]);
+    if (STANDARD_ADDRESSES.has(route.path)) {
+      expect(route.path, `${route.id}: a standard address takes no parameter`).not.toContain('[');
+      expect(route.access.kind, route.id).toBe('public');
+    }
     for (const segment of route.path.split('/').filter((part) => part.startsWith('['))) {
       expect(segment, `${route.id}: a path parameter names an opaque ID`).toMatch(/^\[\w+Id\]$/);
     }
@@ -205,9 +219,10 @@ describe('every registered route', () => {
     if (route.access.kind === 'public') {
       expect(route.phi).toBe(false);
       // Sign-in, Stripe's and the e-signature vendor's webhooks, which their signatures authenticate (docs/adr/0050,
-      // 0053), the audit request, the status page, the maintenance page, the load balancer's health check (0055), and
-      // the free screening, its result link and the result page's opened signal (0062).
-      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance)$|^\/api\/health$|^\/screening(\/results\/\[resultId\])?$|^\/api\/screening\/opened$/);
+      // 0053), the audit request, the status page, the maintenance page, the load balancer's health check (0055), the
+      // free screening, its result link and the result page's opened signal (0062), and the security contact: the
+      // disclosure page and security.txt (audit item #20 (f)).
+      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance|security)$|^\/api\/health$|^\/screening(\/results\/\[resultId\])?$|^\/api\/screening\/opened$|^\/\.well-known\/security\.txt$/);
     }
     if (route.method !== 'GET' || route.kind === 'action') {
       // Every POST and PUT is checked for the application's origin, but a webhook its sender signs (docs/adr/0053).

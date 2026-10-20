@@ -66,7 +66,7 @@ export * from './release/scale';
 export * from './screening/uploads';
 
 // Writing fixtures.
-export { SYNTHETIC_FIXTURES, SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, driftFrom, writeCases } from './write';
+export { INTERCHANGE_HEADER, SYNTHETIC_FIXTURES, SyntheticSenderError, assertSyntheticFixture, assertSyntheticHeaders, assertSyntheticX12, driftFrom, searchableText, startsInterchange, writeCases } from './write';
 
 // The twin generator (production only; synthetic input elsewhere).
 export { TwinBoundary, TwinBoundaryError } from './twin/boundary';

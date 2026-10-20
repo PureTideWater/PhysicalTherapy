@@ -20,7 +20,7 @@ export interface Policy {
 export const POLICIES: readonly Policy[] = [
   { id: 'access-control', title: 'Access control', file: 'docs/policies/access-control.md', version: '0.1', reviewEveryDays: 365 },
   { id: 'incident-response', title: 'Incident response', file: 'docs/policies/incident-response.md', version: '0.1', reviewEveryDays: 365 },
-  { id: 'change-management', title: 'Change management', file: 'docs/policies/change-management.md', version: '0.1', reviewEveryDays: 365 },
+  { id: 'change-management', title: 'Change management', file: 'docs/policies/change-management.md', version: '0.2', reviewEveryDays: 365 },
   { id: 'vendor-management', title: 'Vendor management', file: 'docs/policies/vendor-management.md', version: '0.1', reviewEveryDays: 365 },
   { id: 'data-retention', title: 'Data retention', file: 'docs/policies/data-retention.md', version: '0.1', reviewEveryDays: 365 },
   { id: 'workforce-and-device', title: 'Workforce and device', file: 'docs/policies/workforce-and-device.md', version: '0.1', reviewEveryDays: 365 },

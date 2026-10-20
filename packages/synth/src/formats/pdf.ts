@@ -4,6 +4,9 @@
  * bytes. The text of every page can be found in the file as written (uncompressed content streams).
  */
 
+/** The Producer of every exhibit PDF this writer makes; the fixture guard refuses a PDF that names no synthetic writer. */
+export const EXHIBIT_PRODUCER = 'packages/synth SYNTHETIC exhibit writer';
+
 function escapeText(line: string): string {
   if (!/^[\x20-\x7e]*$/.test(line)) {
     throw new Error('PDF exhibit text is printable ASCII');
@@ -28,7 +31,7 @@ export function writePdf(pages: readonly (readonly string[])[], title: string): 
     objects[pageId + 1] = `<< /Length ${String(Buffer.byteLength(content, 'latin1'))} >>\nstream\n${content}\nendstream`;
   });
   const infoId = objects.length;
-  objects[infoId] = `<< /Title (${escapeText(title)}) /Producer (packages/synth SYNTHETIC exhibit writer) >>`;
+  objects[infoId] = `<< /Title (${escapeText(title)}) /Producer (${EXHIBIT_PRODUCER}) >>`;
   let body = '%PDF-1.4\n';
   const offsets: number[] = [];
   for (let id = 1; id < objects.length; id += 1) {

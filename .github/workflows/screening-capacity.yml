@@ -72,9 +72,14 @@ concurrency:
 jobs:
   capacity:
     runs-on: ubuntu-24.04
+    # A run takes 30 to 60 minutes (the scale release, two image builds, five scenarios); a hung scenario stops at 90
+    # instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 90
     steps:
+      # The harness calls no GitHub API and pushes nothing, so the token is not left in the checkout.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: docker/setup-buildx-action@v3
 
@@ -140,6 +145,8 @@ jobs:
     needs: capacity
     if: failure() && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    # One call to the issues API; a hung call stops at 5 minutes instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 5
     permissions:
       issues: write
     steps:

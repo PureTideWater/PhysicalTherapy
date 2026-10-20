@@ -1,0 +1,40 @@
+# The founder's review is required on these paths once "Require review from Code Owners" is on in the ruleset of main
+# and claude/build-platform (docs/runbooks/github-governance.md, step 5; docs/adr/0063). Every owner named here is a
+# GitHub login on packages/db/domain-model/approvers.json (tools/test/codeowners.test.ts).
+
+# Every path, first (the founder's ruling of 2026-10-20): every pull request needs the founder's own approval, so the
+# one required approval cannot come from another account with Write, such as the build agent's on a Dependabot pull
+# request. GitHub takes the last line that matches a path, so each line below names the founder again for what it
+# protects.
+* @PureTideWater
+
+# The schema and its approval.
+/packages/db/migrations/ @PureTideWater
+/docs/product/domain-model.md @PureTideWater
+/packages/db/domain-model/ @PureTideWater
+
+# The code that decides an approval: a pull request could otherwise pass the gate by changing its judge.
+/packages/db/src/domain-model/ @PureTideWater
+/packages/db/src/cli/domain-model.ts @PureTideWater
+/tools/approval-of-record/ @PureTideWater
+
+# The code that decides whether the gate runs at all: which migrations apply (migrate.ts), the catalog test, which
+# tests run and what each script does (vitest.config.ts, the package.json files), the fixture guard the hooks call,
+# and the release immutability check. A pull request could otherwise leave the gate's judge alone and stop it running.
+/packages/db/src/migrate.ts @PureTideWater
+/packages/db/src/cli/migrate.ts @PureTideWater
+/packages/db/src/catalog.ts @PureTideWater
+/vitest.config.ts @PureTideWater
+/package.json @PureTideWater
+/packages/db/package.json @PureTideWater
+/packages/synth/src/guard/ @PureTideWater
+/tools/check-releases-immutable.sh @PureTideWater
+
+# The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
+/content/releases/ @PureTideWater
+/fixtures/synthetic/rules/release-*/ @PureTideWater
+
+# The rules every session and every workflow runs under.
+/CLAUDE.md @PureTideWater
+/.claude/ @PureTideWater
+/.github/ @PureTideWater

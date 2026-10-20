@@ -98,6 +98,9 @@ function rasterize(lines: readonly string[], seed: string): Uint8Array {
   return bits;
 }
 
+/** The Producer of every scanned PDF this writer makes; the fixture guard refuses a PDF that names no synthetic writer. */
+export const SCAN_PRODUCER = 'packages/synth SYNTHETIC scan writer';
+
 /**
  * A PDF with one image per page and no text: each page is the picture of its lines. Its pages hold no
  * text operator at all, so a text reader finds every page empty and a scan reader must read it.
@@ -113,7 +116,7 @@ export function scannedPdf(pages: readonly (readonly string[])[], title: string,
   const pageIds = pages.map((_, index) => 4 + index * 3);
   objects[1] = Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1');
   objects[2] = Buffer.from(`<< /Type /Pages /Kids [${pageIds.map((id) => `${String(id)} 0 R`).join(' ')}] /Count ${String(pages.length)} >>`, 'latin1');
-  objects[3] = Buffer.from('<< /Producer (packages/synth SYNTHETIC scan writer) >>', 'latin1');
+  objects[3] = Buffer.from(`<< /Producer (${SCAN_PRODUCER}) >>`, 'latin1');
   pages.forEach((lines, index) => {
     const pageId = pageIds[index] ?? 0;
     const content = 'q 612 0 0 792 0 0 cm /Im0 Do Q';

@@ -26,6 +26,7 @@ import { REPORT_ROUTES } from './reports';
 import { ROI_ROUTES } from './roi';
 import { SCREENING_ROUTES } from '../screening/routes';
 import { RULE_RELEASE_ROUTES } from './rule-releases';
+import { SECURITY_ROUTES } from './security';
 import { SETTINGS_ROUTES } from './settings';
 import { SIGN_IN_ROUTES } from './sign-in';
 import { SPECIALIST_ROUTES } from './specialist';
@@ -85,6 +86,7 @@ export const ROUTES: readonly Route[] = [
   ...CONSOLE_ONBOARDING_ROUTES,
   ...SETTINGS_ROUTES,
   ...SUPPORT_ROUTES,
+  ...SECURITY_ROUTES,
   ...COMPLIANCE_ROUTES,
   ...CONSOLE_MODEL_ROUTES,
   ...SCREENING_ROUTES,

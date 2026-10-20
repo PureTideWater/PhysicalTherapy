@@ -390,6 +390,7 @@ describe('the web configuration', () => {
       AUTH_COOKIE_SECRET: key,
       TRUSTED_PROXY_HOPS: '1',
       SUPPORT_EMAIL: 'help@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
       TP_ENVIRONMENT: 'production',
       APP_ORIGIN: 'https://app.synthetic.test/ignored',
       DOCUMENTS_BUCKET: 'tp-production-documents',
@@ -405,6 +406,7 @@ describe('the web configuration', () => {
       queueDatabaseUrl: 'postgres://tp_queue:x@db.internal:5432/tp',
       trustedProxyHops: 1,
       supportEmail: 'help@synthetic.test',
+      securityEmail: 'security@synthetic.test',
       environment: 'production',
       esign: { kind: 'none' },
       complianceExportDir: null,
@@ -469,6 +471,8 @@ describe('the web configuration', () => {
       DOCUMENTS_KMS_KEY_ID: 'alias/tp',
       TRUSTED_PROXY_HOPS: '1',
       SUPPORT_EMAIL: 'help@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
+      APP_ORIGIN: 'https://app.synthetic.test',
       TP_ENVIRONMENT: 'staging',
     };
     expect(readWebConfig(production)).toMatchObject({ supportEmail: 'help@synthetic.test', environment: 'staging', esign: { kind: 'none' }, complianceExportDir: null });
@@ -482,6 +486,39 @@ describe('the web configuration', () => {
     expect(development.complianceExportDir).not.toBeNull();
     expect(readWebConfig({ ...base, ESIGN_PROVIDER: 'none' }).esign).toEqual({ kind: 'none' });
     expect(readWebConfig({ ...base, ESIGN_LOCAL_SECRET: 'synthetic-esign-secret-0001', ESIGN_LOCAL_DIR: '/tmp/esign' }).esign).toEqual({ kind: 'local', secret: 'synthetic-esign-secret-0001', directory: '/tmp/esign' });
+  });
+
+  it('requires the security address and an https origin in production, and refuses the support address as the security one (audit item #20 (f))', () => {
+    const production = {
+      ...base,
+      NODE_ENV: 'production',
+      TP_AUTH_PROVIDER: 'cognito',
+      COGNITO_USER_POOL_ID: 'us-east-1_Synthetic',
+      COGNITO_CLIENT_ID: 'syntheticclient',
+      TP_KEY_PROVIDER: 'kms',
+      KMS_KEY_ID: 'alias/tp',
+      AUTH_COOKIE_SECRET: key,
+      DOCUMENTS_BUCKET: 'tp-documents',
+      DOCUMENTS_KMS_KEY_ID: 'alias/tp',
+      TRUSTED_PROXY_HOPS: '1',
+      SUPPORT_EMAIL: 'help@synthetic.test',
+      SECURITY_EMAIL: 'security@synthetic.test',
+      APP_ORIGIN: 'https://app.synthetic.test',
+      TP_ENVIRONMENT: 'production',
+    };
+    expect(readWebConfig(production)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'https://app.synthetic.test' });
+    expect(() => readWebConfig({ ...production, SECURITY_EMAIL: undefined })).toThrow(new ConfigError('SECURITY_EMAIL is required in production'));
+    expect(() => readWebConfig({ ...production, SECURITY_EMAIL: 'HELP@synthetic.test' })).toThrow(
+      new ConfigError('SECURITY_EMAIL must not be the support address in production (support mail opens tickets only for accounts)'),
+    );
+    expect(() => readWebConfig({ ...production, SECURITY_EMAIL: 'not an address' })).toThrow(new ConfigError('invalid settings: SECURITY_EMAIL'));
+    // The development default origin is never what a deployment names.
+    expect(() => readWebConfig({ ...production, APP_ORIGIN: undefined })).toThrow(new ConfigError('APP_ORIGIN is required in production, as an https origin'));
+    expect(() => readWebConfig({ ...production, APP_ORIGIN: 'http://app.synthetic.test' })).toThrow(new ConfigError('APP_ORIGIN is required in production, as an https origin'));
+    // The e2e suite runs the production build on the synthetic defaults, over plain http.
+    const e2e = { ...production, TP_ALLOW_LOCAL_PROVIDERS: 'e2e', SECURITY_EMAIL: undefined, APP_ORIGIN: 'http://localhost:4601' };
+    expect(readWebConfig(e2e)).toMatchObject({ securityEmail: 'security@synthetic.test', origin: 'http://localhost:4601' });
+    expect(readWebConfig(base).securityEmail).toBe('security@synthetic.test');
   });
 
   it('names the settings it refuses, never their values', () => {

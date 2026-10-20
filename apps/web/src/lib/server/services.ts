@@ -76,6 +76,8 @@ export interface Services {
   readonly trustedProxyHops: number;
   /** The support address (PRD 19, Support): shown on the support, status and maintenance pages. */
   readonly supportEmail: string;
+  /** The security address: security.txt's Contact and the disclosure page's address for reports (WebConfig.securityEmail). */
+  readonly securityEmail: string;
   /** The e-signature vendor's webhook verifier and document source, or null when none is configured (docs/adr/0053). */
   readonly esign: ESignatureProvider | null;
   /** Where uploaded agreements are kept (docs/adr/0053). */
@@ -138,6 +140,7 @@ export interface ServiceParts {
   readonly billing?: BillingProvider;
   readonly trustedProxyHops?: number;
   readonly supportEmail?: string;
+  readonly securityEmail?: string;
   /** Tests give the local e-signature stand-in; otherwise none. */
   readonly esign?: ESignatureProvider | null;
   readonly agreementDocuments?: AgreementDocuments;
@@ -179,6 +182,7 @@ export function createServices(parts: ServiceParts): Services {
     billing: parts.billing ?? memoryBillingProvider(billingPool),
     trustedProxyHops: parts.trustedProxyHops ?? 0,
     supportEmail: parts.supportEmail ?? 'support@synthetic.test',
+    securityEmail: parts.securityEmail ?? 'security@synthetic.test',
     esign: parts.esign ?? null,
     agreementDocuments: parts.agreementDocuments ?? new LocalAgreementDocuments(path.join(tmpdir(), `tp-agreements-${randomUUID()}`)),
     compliancePlatform: parts.compliancePlatform === undefined ? new FileCompliancePlatform(path.join(tmpdir(), `tp-compliance-export-${randomUUID()}`)) : parts.compliancePlatform,
@@ -211,6 +215,7 @@ export function servicesFromConfig(config: WebConfig): Services {
     billing: billingProvider(readBillingConfig(), billingPool),
     trustedProxyHops: config.trustedProxyHops,
     supportEmail: config.supportEmail,
+    securityEmail: config.securityEmail,
     esign: config.esign.kind === 'local' ? new LocalESignature({ secret: config.esign.secret, directory: config.esign.directory }) : null,
     agreementDocuments:
       documents.kind === 's3' ? new S3AgreementDocuments({ client: new S3Client({}), bucket: documents.bucket, kmsKeyId: documents.kmsKeyId }) : new LocalAgreementDocuments(config.agreementsDir),

@@ -32,6 +32,8 @@ import { opaqueId, optionalText } from './schemas';
  * - Record evidence: a policy approved, an access review, a tabletop, a training and device attestation per
  *   workforce member, a vendor review, the risk analysis, the security official named. By reference and SHA-256
  *   (the document itself is kept where the program keeps its records); evidence is recorded for what has happened.
+ *   The form offers the kinds compliance_record accepts; the quarterly review of merged pull requests is offered
+ *   once a migration adds its kind (packages/compliance/src/controls.ts).
  * - The export ("tp-compliance-evidence/1"), downloaded as JSON or sent over CompliancePlatform. No PHI and no
  *   person's name is in it.
  */
@@ -39,6 +41,7 @@ import { opaqueId, optionalText } from './schemas';
 const RECORD_LABELS: Readonly<Record<PersonRecordKind, string>> = {
   policy_approval: 'Policy approved by the security official',
   access_review: 'Quarterly access review',
+  change_review: 'Quarterly review of merged pull requests',
   tabletop_exercise: 'Incident response tabletop',
   training_attestation: 'Training and device attestation',
   vendor_review: 'Quarterly vendor and data-flow review',
@@ -49,6 +52,7 @@ const RECORD_LABELS: Readonly<Record<PersonRecordKind, string>> = {
 /** The subject each kind of record carries when it is not a policy's version or a person. */
 const FIXED_SUBJECTS: Readonly<Partial<Record<PersonRecordKind, string>>> = {
   access_review: 'quarterly-access-review',
+  change_review: 'merged-pull-requests',
   tabletop_exercise: 'incident-response-tabletop',
   vendor_review: 'subprocessor-inventory',
   risk_analysis: 'risk-analysis',
