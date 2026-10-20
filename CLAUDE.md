@@ -50,7 +50,7 @@ proves recovery by reconciling later remittances to posting and deposits.
 - Schema gate (CO-02):
   - Milestone 1 does not start until the founder approves `docs/product/domain-model.md`.
   - No migration merges unless `docs/product/domain-model.md` is regenerated in the same pull request and its approval line carries the founder's name, a date and the hash of that text (`pnpm db:domain-model --check --require-approval`).
-  - The approval of record is the founder's APPROVED GitHub review of the pull request's latest commit, enforced by the approval-of-record job once `APPROVAL_REVIEW_REQUIRED` is true (docs/adr/0063); open the pull request with `pnpm db:domain-model --summary-since <base>` and never write the approval line or approvers.json yourself.
+  - The approval of record is the founder's APPROVED GitHub review of the pull request's latest commit, enforced by the approval-of-record job once `APPROVAL_REVIEW_REQUIRED` is true (docs/adr/0063); open the pull request with `pnpm db:domain-model --summary-since <base>`, never write the approval line or approvers.json yourself, and never submit a review.
 
 ## Where things are
 - Parser: packages/edi835. Engine: packages/pricing. Contracts: packages/contracts. Rules: packages/rules.

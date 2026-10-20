@@ -40,22 +40,41 @@ and privacy, compliance, reliability, cost to serve, dispute success, time to va
 maintainability and business readiness. CLAUDE.md carries it in one line, and one line on the approval of record.
 
 **GitHub, set by the founder.** The repository becomes private on GitHub Pro, with an Actions budget that stops usage
-at its limit. The build agent gets its own GitHub account (a machine user with its own email address and two-factor
-authentication, a collaborator with Write, never Admin), connected to Claude for build sessions; until then it works as
-the founder's account. One branch ruleset covers `main` and `claude/build-platform`: active, no bypass actors (an
-administrator is held to it), deletion restricted, force pushes blocked, a pull request required, and the status
-checks `check` (ci), `images (web)`, `images (worker)` and `licenses` (supply-chain) and `approval-of-record` required,
-with branches up to date before merging. After the identity switch the founder turns on "Require review from Code
-Owners" with stale approvals dismissed (and "approval of the most recent reviewable push" left off, since the founder's
-own commit of the approval line is a push the founder then approves), and sets the repository variable
-`APPROVAL_REVIEW_REQUIRED` to `true`. `docs/runbooks/github-governance.md` gives every click in that order, for a phone.
+at its limit, sized on the measured use (runbook step 1). The build agent gets its own GitHub account (a machine user
+with its own email address and two-factor authentication, a collaborator with Write, never Admin), connected to Claude
+for build sessions; until then it works as the founder's account. The switch also takes the founder's account out of
+every Claude session: the GitHub connection belongs to the founder's Claude account, so every open build session first
+merges or closes the pull requests the founder's account opened (each keeps its author, who could never approve it),
+the claude.ai GitHub connector is disconnected (or reconnected as the agent), and the Claude app's authorization on
+the founder's GitHub account is revoked while the app stays installed on the repository. A new build session then
+reports `gh api user` and the connector's `get_me`; step 5 starts only when both name the agent, or the connector is
+absent. Two branch rulesets, active, with no bypass actors (an administrator is held to them), deletion restricted,
+force pushes blocked and a pull request required: `claude/build-platform`'s also requires the status checks `check`
+(ci), `images (web)`, `images (worker)` and `licenses` (supply-chain) and `approval-of-record`, each with GitHub Actions
+as its source, with branches up to date before merging; `main`'s requires no check until launch, since `main` holds no
+workflow and a required check that cannot run would block every pull request into it (a repair like #18 among them).
+The founder sets both as soon as this pull request is merged into `claude/build-platform`, rather than waiting for it
+to reach `main` at launch, which would leave `main` open to a direct or force push until then. After the identity
+switch the founder turns on "Require review from Code Owners" on the build branch with stale approvals dismissed (and
+"approval of the most recent reviewable push" left off, since the founder's own commit of the approval line is a push
+the founder then approves), sets one required approval on `main` (GitHub reads code owners from the base branch, and
+`main` has no CODEOWNERS until launch, so every pull request into `main`, the launch included, waits for the founder),
+and sets the repository variable `APPROVAL_REVIEW_REQUIRED` to `true`. At launch the founder adds the five checks and
+Code Owners review to `main`'s ruleset. `docs/runbooks/github-governance.md` gives every click in that order, for a
+phone.
 
 **CODEOWNERS.** `.github/CODEOWNERS` names `@PureTideWater` for `packages/db/migrations/`, `docs/product/domain-model.md`,
 `packages/db/domain-model/`, `content/releases/` (absent today; `publish-content.yml` creates it),
 `fixtures/synthetic/rules/release-*/` (the releases), `CLAUDE.md`, `.claude/` and `.github/`, and for the code that
 decides an approval: `packages/db/src/domain-model/`, `packages/db/src/cli/domain-model.ts` and
 `tools/approval-of-record/`. A pull request could otherwise make the gate pass by editing the code that judges it,
-without touching a protected file. Every owner it names must be a login on `approvers.json`
+without touching a protected file. It also names the code that decides whether the gate runs at all:
+`packages/db/src/migrate.ts` (the migrations directory it applies), `packages/db/src/cli/migrate.ts`,
+`packages/db/src/catalog.ts` (the catalog test), `vitest.config.ts` (the `db` project that runs the domain-model
+tests), the root and `packages/db` `package.json` files (`test:db`, `db:domain-model`), `packages/synth/src/guard/` (the
+fixture guard the hooks call, its pinned tables included) and `tools/check-releases-immutable.sh`; otherwise a pull
+request could point the migrator at a new directory and drop the domain-model tests, leave the document and its
+approval line unchanged, and merge new DDL on green checks. Every owner it names must be a login on `approvers.json`
 (`tools/test/codeowners.test.ts`).
 
 **The approver list names each approver's GitHub login.** `approvers.json` moves to
@@ -75,20 +94,27 @@ the approver list relative to the base tip (which is what merging changes, since
 requires an APPROVED review of the head commit from an approver on the **base** branch's list (a pull request cannot
 name its own approver) who is not the pull request's author: when the head's line names a person, from that person's
 login, otherwise from any listed login. A reviewer's latest review that approves, requests changes or is dismissed is
-their state; a comment changes nothing; an approval of an earlier commit does not count. The decision is one pure
+their state; a comment changes nothing; an approval of an earlier commit does not count. Every file is read at a
+commit: the base tip is resolved as a branch (`GET /git/ref/heads/{base}`), so a tag named like the branch cannot
+stand in for it, and the head is the commit the event names (`pull_request.head.sha`), the one the run's check
+belongs to; when the API already shows a newer head, that commit gets its own run. A base branch with no approver list
+at all (`main` until the launch merge brings one) takes the list on `claude/build-platform`'s tip, the protected build
+branch, never the head's: without it the launch pull request could never pass once enforced. The decision is one pure
 function, `decide`, unit-tested with recorded API shapes beside the run's own requests (`approval-of-record.test.ts`).
 
 While `APPROVAL_REVIEW_REQUIRED` is unset (or `false`) the job passes, and says that the requirement is not yet
 enforced and why (the founder's account authors every pull request and cannot review its own), and what it would
-decide. Set to `true` it fails a pull request the rule refuses, and on any error reading the API. Any other value fails
-the job. It goes to `true` when the build agent's first pull request under its own login is open, in the same sitting
-as Code Owners review (runbook step 5).
+decide. Set to `true` it fails a pull request the rule refuses, and on any error reading the API. Both words are read
+in any case (a phone capitalises the first letter); any other value fails the job. It goes to `true` when the build
+agent's first pull request under its own login is open, in the same sitting as Code Owners review (runbook step 5).
 
-**Who writes the approval line.** With the hooks on, the build cannot write an "Approved by:" line
-(`protect-approval.sh`). The build posts the exact line, the founder's name, the date and the hash
+**Who writes the approval line.** With the hooks on, the build's edit tools cannot write an "Approved by:" line
+(`protect-approval.sh`); a shell command still could, since no hook reads one, so until step 5 an approval line is only
+as trustworthy as the commit that wrote it. The build posts the exact line, the founder's name, the date and the hash
 `--require-approval` names, as a suggested change on the pull request; the founder commits it, and then approves the
 pull request at that commit. The commit holds the text and the hash, the review is the approval of record, and the job
-holds them to each other.
+holds them to each other. The build never submits a review (CLAUDE.md): `protect-github.sh` refuses the GitHub
+connector's review tools, and after the switch no Claude session holds the founder's account.
 
 **Changes since the last approved document.** `pnpm db:domain-model --summary-since <ref>` compares the document at a
 git ref (the base branch, whose document is approved, since nothing merges otherwise) with the working tree's, or with
@@ -101,16 +127,34 @@ divergence rows; then migrations, the cross-checks and any other line. A line re
 into the line that holds it, and every other changed line is listed under "Other lines", so nothing that changes the
 hash goes unreported. `summary.test.ts` holds it to synthetic edits of the committed document and
 `summary.db.test.ts` to real DDL on a scratch database, regenerated. CI's `check` job writes the summary against the
-base branch into its job summary; the build opens the description of every pull request that regenerates the document
-with it (`.claude/skills/new-migration`).
+base branch into its job summary, which is the copy the founder reads (the build's copy in the description is the
+build's text); the build opens the description of every pull request that regenerates the document with it
+(`.claude/skills/new-migration`). A code block is read by CommonMark's rule (it closes only at a fence as long as its
+own); the generator fences a view definition, and the cross-checks, with more backticks than any run inside them; and
+a block left open is still reported line by line, under a warning that the document could not be read line by line.
+A line of backticks inside a view's definition no longer hides the rest of the document in one block.
 
 **The hooks, switched on now; push and sandbox later.** `.claude/settings.json` holds the hooks only: PreToolUse
 `protect-content.sh`, `fixture-guard.sh` and `protect-approval.sh` on `Edit|Write|MultiEdit|NotebookEdit`, and
-PostToolUse `typecheck.sh` on `Edit|Write|MultiEdit`. NotebookEdit joins ADR 0059's matcher because it writes files
-too. The `git push` deny and the sandbox stay out until the final pass, as ADR 0059 decided. The hooks change where
-reading them showed a gap:
+PostToolUse `typecheck.sh` on `Edit|Write|MultiEdit`, and PreToolUse `protect-github.sh` on the GitHub connector's
+tools that review a pull request or write files on a branch. NotebookEdit joins ADR 0059's matcher because it writes
+files too. The `git push` deny and the sandbox stay out until the final pass, as ADR 0059 decided. The hooks change
+where reading them showed a gap:
 
-- every hook takes `notebook_path` when there is no `file_path`;
+- every hook takes `notebook_path` when there is no `file_path`, and resolves a relative path from the hook input's
+  `cwd`, as Claude Code resolves it (a Bash `cd` moves it), not from the repository's top; each guard refuses a path
+  holding a control character (a line break ended the path the hooks read before the one Node writes);
+- `protect-content.sh` and `fixture-guard.sh` take the path in the file's own repository and in each repository
+  around it, so a gitfile or a clone that makes `content/` or `fixtures/` its own repository leaves a release a
+  release; `protect-content.sh` refuses any path with a `.git` segment, and the hooks and their settings
+  (`.claude/settings*.json` anywhere, `.claude/hooks/`, `.claude/.allow-protected-edit`), so no edit switches the
+  guards off;
+- `fixture-guard.sh` finds every X12 interchange header anywhere in the text a call writes (after a byte-order mark,
+  white space or other text, in any edit of a MultiEdit, with any separator) and refuses one whose ISA06 is not
+  SYNTHSENDER; before, only a text that began with `ISA` was read;
+- `protect-github.sh` refuses every review the connector's tools would create, submit or delete, and a file written
+  through the GitHub API (`create_or_update_file`, `push_files`, `delete_file`) to a path the edit hooks guard or
+  that configures the hooks or CI, or holding another sender's interchange;
 - `protect-content.sh` resolves the path as the other two do (dot segments, links, the file's own repository, any
   case) and fails closed on input that is not JSON;
 - `fixture-guard.sh` applies the X12 rule to a NotebookEdit's `new_source`, and refuses a NotebookEdit under
@@ -129,7 +173,12 @@ the hooks as `settings.json` wires them.
 
 | Option | Why not (or when we would switch) |
 | --- | --- |
-| Stay public, or private on GitHub Free | Public shows the code and its history to anyone; private on Free has no branch protection, so a force push or a red merge stays possible. |
+| Stay public, or private on GitHub Free | Public shows the code and its history to anyone; private on Free has no branch protection, so a force push or a red merge stays possible. Going private on Pro ends GitHub's own secret scanning and push protection (Team or Enterprise with Secret Protection has them); gitleaks in CI stays the secret check. |
+| One ruleset over both branches, set once this pull request reaches both | `main` would stay open to a direct or force push until launch, and its required checks could never run on a pull request from a branch cut from `main` (no workflows there). |
+| Fail approval-of-record when the API's head differs from the event's | The event's head is the commit the check belongs to, so judging it is exact; a newer head gets its own run, and failing would leave a red check on a commit after an API lag. |
+| A permissions deny for the connector's review tools | `.claude/settings.json` holds hooks only until the final pass; a hook refuses the same tools and says why. |
+| Refuse the connector's merge tool too | A merge is bounded by the ruleset, whoever performs it (no bypass, required checks, the founder's review on owned paths); the build merges when checks are green, and `gh` would merge the same way. |
+| Dependabot monthly | PRD section 16 asks for weekly updates; grouping (every action in one pull request, both images in one) and lower limits cut the runs instead. |
 | GitHub Team, an organization | Granular roles and team reviews the repository does not need with one approver; Pro gives rulesets and code owners for a personal repository. Revisit when a second person reviews. |
 | Keep the build agent on the founder's account | GitHub refuses an author's own review, so the founder could never be the approval of record. |
 | Require the founder's review on every pull request (one required approval) | Most pull requests touch no protected path; code owners put the founder's review where the approval and the rules live. |
@@ -144,11 +193,31 @@ the hooks as `settings.json` wires them.
 
 ## Consequences
 
-- Once the founder has done steps 1 to 4, no one, the founder included, can force-push or delete either branch or
-  merge with a failing or stale required check. After step 5, a change to a migration, the domain model, a release,
-  CLAUDE.md, `.claude/` or `.github/` needs the founder's review, and a pull request that writes or removes an
-  approval, or changes the approver list, fails approval-of-record until the founder approves its latest commit.
+- Once the founder has done steps 1 to 4, no one, the founder included, can force-push, delete or push directly to
+  either branch, or merge into the build branch with a failing or stale required check. After step 5, a change to a
+  migration, the domain model, a release, CLAUDE.md, `.claude/`, `.github/` or the code that runs the gate needs the
+  founder's review, every pull request into `main` needs the founder's approval, and a pull request that writes or
+  removes an approval, or changes the approver list, fails approval-of-record until the founder approves its latest
+  commit.
 - Until step 5 the job passes and prints why, so it can be a required check from step 4.
+- What a required check cannot stop: a collaborator with Write, the agent included, can produce a check run or a
+  status with a required check's name from a workflow on a branch it pushes, and GitHub Actions is then its source.
+  Pinning the source stops a plain status from a token; the rest of the risk stays. The checks, approval-of-record
+  among them, are defence in depth; what holds an approval and the CI wiring is the founder's Code Owners review, with
+  stale approvals dismissed, on `.github/` and the files that run the gate.
+- What the hooks cannot stop: a shell command (`gh`, `git`, `curl`) passes no hook. Before step 5 a session that still
+  held the founder's GitHub account could approve as the founder, and both approval-of-record and Code Owners review
+  would accept it; that is why the switch takes the account out of every session and step 5 waits for a new session's
+  check (runbook 3g to 3j). Recheck it whenever a GitHub connection on the founder's Claude account changes.
+- Until launch a pull request into `main` merges with no required check; after step 5 it needs the founder's approval.
+  The launch pull request is judged by approval-of-record against the build branch's approver list.
+- CI's cost, measured on 17 and 18 October: about 35 billable minutes a push; about 1,100 minutes in 34 hours, a third
+  of it one image job that hung for GitHub's 360-minute default. `ci`'s check now stops at 60 minutes (its mutation job
+  at 120) and the supply-chain jobs at 15; Dependabot groups every action update in one pull request and both images in
+  one, with fewer open at once (it reads `.github/dependabot.yml` from `main`, so `main`'s copy needs the same change
+  to take effect before launch); the e2e artifact (up to 54 MB) is kept 7 days, against Pro's 1 GB of Actions storage.
+  After step 5, Dependabot's pull requests that touch `.github/` or a code-owned `package.json` need the founder's
+  review.
 - `publish-content.yml` pushes to `main` directly; the ruleset refuses that push. `content/outgoing` holds no release
   today. Before the first content release is published, the workflow needs a push the ruleset admits (a deploy key as
   the ruleset's only bypass actor, or a pull request a person merges); that is an open item, not decided here.
@@ -163,11 +232,14 @@ the hooks as `settings.json` wires them.
   check needs TypeScript 7's compiler or a resident checker process, not decided here.
 - Checks: `packages/db/src/domain-model/summary.test.ts`, `summary.db.test.ts`, `approval.test.ts` (the second
   format), `tools/approval-of-record/approval-of-record.test.ts`, `tools/test/workflows.test.ts` (approval-of-record's
-  triggers, permissions and run; the summary step), `tools/test/codeowners.test.ts`, `tools/hooks/hooks.test.ts`,
-  and `actionlint` on the workflows where it is installed.
+  triggers, permissions and run; the summary step; job timeouts; Dependabot's groups), `tools/test/codeowners.test.ts`,
+  `tools/hooks/hooks.test.ts` (relative paths from a subdirectory, control characters, gitfiles, the hooks' own files,
+  interchanges anywhere, the GitHub guard), and `actionlint` on the workflows where it is installed.
 
 ## Revisit when
 
-The build agent's identity is switched and the variable set (record the date here); a second approver is added; the
-final pass commits the `git push` deny and the sandbox; the first content release needs `publish-content.yml` to push
-to a protected `main`; or the repository moves to an organization.
+The build agent's identity is switched and the variable set (record the date here); the launch merge brings the
+workflows and CODEOWNERS to `main` (add the five checks and Code Owners review to `main`'s ruleset, and drop the
+`target-branch` lines from Dependabot's settings); a second approver is added; the final pass commits the `git push`
+deny and the sandbox; the first content release needs `publish-content.yml` to push to a protected `main`; or the
+repository moves to an organization.

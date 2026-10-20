@@ -515,7 +515,7 @@ an organization subscribes once; mail to the support address opens a ticket (SES
 inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DIR`; docs/runbooks/support-mail.md);
 deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
 `docs/runbooks/`. `docs/runbooks/github-governance.md` is the founder's guide to the repository's GitHub settings: GitHub
-Pro, a private repository, the build agent's own account, the ruleset over `main` and `claude/build-platform`, Code
+Pro, a private repository, the build agent's own account, the rulesets for `claude/build-platform` and `main`, Code
 Owners review and `APPROVAL_REVIEW_REQUIRED`, and approving from the GitHub app (docs/adr/0063).
 
 The brand and the product's words (ADRs 0056 to 0058; Change Order 001, CO-01 and CO-11): `packages/brand`
