@@ -91,9 +91,10 @@ can still push another branch, run a workflow from it and publish an image to th
 reaches production on GitHub's word alone: the deploy runbook checks that the release tag's commit is on `main`.
 `docs/runbooks/github-governance.md` gives every click in that order, for a phone.
 
-**The content publisher** (chosen by the build on 2026-10-20 under the standing rule; the founder confirms it by setting
-it up in runbook step 7, and again by approving the workflow's own pull request under the change order's rule 4; the
-first version left it open). `publish-content.yml` pushes the release commit and its tag to `main`, which "Protect main"
+**The content publisher** (chosen by the build on 2026-10-20 under the standing rule, and confirmed by the founder the
+same day; the founder sets it up in runbook step 7, and again by approving the workflow's own pull request under the
+change order's rule 4; the first version left it open).
+`publish-content.yml` pushes the release commit and its tag to `main`, which "Protect main"
 refuses from everyone. A GitHub App the organization owns, with one permission (Contents, read and write) and installed
 on this repository alone, is the only bypass actor of "Protect main" and of a tag ruleset that restricts creating
 `content-release-*`. "Protect main history" and a second tag ruleset, which restricts moving and deleting those tags,
@@ -143,9 +144,9 @@ content pipeline, the security program, the milestones and their gates), the dom
 changes it, and the founder's approval. GitHub offers a template only from the default branch, and `main` has none until
 the launch merge brings it, so until then the template applies because CLAUDE.md tells the build to fill it in, and from
 launch GitHub offers it on every new pull request. GitHub enforces neither; the quarterly review of merged pull requests
-checks it (the change-management policy, rule 9). If the founder rules on a pull request into `main` before launch (the
-Dependabot settings, under Consequences), the template could go into `main` in the same pull request; that is an option
-for the ruling, not decided here.
+checks it (the change-management policy, rule 9). On 2026-10-20 the founder ruled for one pull request into `main`
+before launch (the Dependabot settings, under Consequences), and it brings the template too, so GitHub offers it
+from then on.
 
 **CODEOWNERS.** `.github/CODEOWNERS` first names `@PureTideWater` for every path (`*`; amended 2026-10-20), so with
 Code Owners review required the one approval each pull request needs is the founder's, never another account's with
@@ -329,15 +330,16 @@ the hooks as `settings.json` wires them.
   of it one image job that hung for GitHub's 360-minute default. `ci`'s check now stops at 60 minutes (its mutation job
   at 120) and the supply-chain jobs at 15; Dependabot groups every action update in one pull request and both images in
   one, with fewer open at once; the e2e artifact (up to 54 MB) is kept 7 days, against Team's 2 GB of Actions storage.
-  Dependabot reads `.github/dependabot.yml` from `main`, so the groups and limits take effect before launch only if
-  `main`'s copy changes, and no pull request goes into `main` before launch unless the founder rules on it: none is
-  opened, and the runbook gives the exact change `main`'s copy would need (the same groups and limits, with every
-  `target-branch` line kept) for that ruling. After step 5, every Dependabot pull request needs the founder's approval.
+  Dependabot reads `.github/dependabot.yml` from `main`, so the groups and limits take effect before launch only when
+  `main`'s copy changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it (the same
+  groups and limits, with every `target-branch` line kept) and adds the pull request template; the build opens it after
+  this pull request merges and before runbook step 5, and it merges on the founder's approval. After step 5, every
+  Dependabot pull request needs the founder's approval.
   Dependabot's alerts and security updates read only `main`, which holds no manifest until launch: until then the build
   branch's dependencies are checked by `pnpm audit --prod` in every pull request's `check` and by the weekly version
   updates, and from the launch merge Dependabot's alerts cover them too.
 - `publish-content.yml` pushes to `main` with the content publisher's token, the only bypass of "Protect main" and of
-  creating a content release tag (the build's choice of 2026-10-20, above, awaiting the founder's confirmation).
+  creating a content release tag (the build's choice of 2026-10-20, above, confirmed by the founder the same day).
   `content/outgoing` holds no release today, and the workflow is not on `main` until launch; the app (runbook step 7)
   and the workflow's change both come before launch.
 - The approval line is still checked as before; a pull request that regenerates the document still fails `test:db`
@@ -433,8 +435,9 @@ the founder confirms by doing the runbook's steps, then what is recorded so the 
    `/.well-known/security.txt` and a public vulnerability-disclosure page, whose two parts that wait for review a
    production server leaves out (`docs/product/legal-surfaces.md`).
 
-**Chosen by the build under the standing rule, awaiting the founder's confirmation.** Each is the best option the build
-found for a ruling above; the founder confirms it by doing its runbook step, or rules otherwise.
+**Chosen by the build under the standing rule.** Each is the best option the build found for a ruling above. On
+2026-10-20 the founder confirmed 7 and 8, including that only the founder creates `v*` tags, when the build asked; the
+founder confirms the others by doing their runbook steps, or rules otherwise.
 
 7. **The content publisher** (above; runbook step 7): how `publish-content.yml` pushes to a protected `main`, which item
    #20 does not say. The founder confirms it by doing step 7, and again by approving the workflow's own pull request
@@ -458,7 +461,8 @@ found for a ruling above; the founder confirms it by doing its runbook step, or 
     version's runbook and this record already agreed on the checks; they now also agree on the approval and on when it
     starts.
 13. **Dependabot's settings on `main`.** The groups and limits on this branch take effect only when `main`'s copy
-    changes, and that waits for the founder's ruling (Consequences; the runbook's section on it).
+    changes. On 2026-10-20 the founder ruled for one pull request into `main` that changes it and adds the pull request
+    template (Consequences; the runbook's section on it).
 14. **`typecheck.sh`'s time, stated both ways** (Consequences): 8 to 11 s in `apps/web` after an edit of a file few
     others import, 27 to 33 s after an edit of a widely imported module such as `apps/web/src/lib/server/config.ts`.
 15. **approval-of-record's runner.** It runs on `ubuntu-24.04`, as every job has since #24.

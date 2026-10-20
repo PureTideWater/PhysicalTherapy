@@ -5,10 +5,11 @@ item #12, "Make your approval and the CI gate real") and, on 2026-10-20, the com
 approval, the CI gate and the repository's settings real": a company organization on GitHub Team, a private repository,
 your approval on every pull request and the launch switch. The decision is `docs/adr/0063`. The build chose, under your
 standing rule, how to carry some of it out: the content publisher (step 7), the second rulesets for `main` and the
-release tags (steps 4 and 7) and the launch preparation (step 8). You confirm each by doing its step, and the content
-publisher again when you approve the workflow's own pull request under the change order's rule 4; if you would rather
-something else, say so before that step. Every step is something only you can click; the build cannot do any of it. Do
-them in order. Each step says what it protects against.
+release tags (steps 4 and 7) and the launch preparation (step 8). You confirmed the content publisher, the second
+rulesets and that only you create release tags on 2026-10-20, and you confirm the launch preparation by doing step 8;
+the content publisher comes to you again when you approve the workflow's own pull request under the change order's
+rule 4. Every step is something only you can click; the build cannot do any of it. Do them in order. Each step says what
+it protects against.
 
 Use github.com in your phone's browser (Safari or Chrome) for steps 1 to 5 and step 8: the GitHub app does not have
 these settings. Step 6 works in the GitHub app. Step 7 needs a computer, since it downloads a key file. If a page
@@ -542,22 +543,24 @@ build.
    updates** is on: from the merge `main` holds the product's manifests, so alerts and security updates cover them.
 6. Tell the build the date; it records it in `docs/adr/0063`.
 
-## Dependabot's settings on `main`: waiting for your ruling
+## Dependabot's settings on `main`: your ruling of 2026-10-20
 
 Dependabot reads `.github/dependabot.yml` from the default branch, `main`, never from `claude/build-platform`. So the
 grouping and limits the pull request that added this guide put on the build branch take effect only when `main`'s copy
-changes, and the build opens no pull request into `main` before launch unless you rule on one. It has not opened one.
-GitHub reads `.github/pull_request_template.md` from `main` too, so until launch it offers none on the pull request
-form; the build fills the template in because CLAUDE.md tells it to.
+changes, and the build opens no pull request into `main` before launch unless you rule on one. On 2026-10-20 you ruled
+for this one: the build opens it after the pull request that added this guide merges and before step 5, and it merges on
+your approval. GitHub reads `.github/pull_request_template.md` from `main` too, so until launch it offers none on the
+pull request form; the build fills the template in because CLAUDE.md tells it to.
 
 Until then `main`'s copy stays in force: npm minor and patch updates in one pull request, up to 10 open; each action
 and each base image in a pull request of its own, up to 5 open each (Dependabot's default). Each runs about 35 minutes
 of CI and, after step 5, needs your approval.
 
-If you rule for it, the build opens one pull request into `main` that changes `.github/dependabot.yml` alone. Its branch
-is cut from `main`, which has no pre-push hook until launch, so the build pushes it from its checkout of the build
-branch, where the hook runs over the branch's commits (`git push origin <branch>`; a push from the branch's own checkout
-is refused), and never merges `claude/build-platform` into it. The change is only this:
+The build opens one pull request into `main` that changes `.github/dependabot.yml` and adds
+`.github/pull_request_template.md`. Its branch is cut from `main`, which has no pre-push hook until launch, so the build
+pushes it from its checkout of the build branch, where the hook runs over the branch's commits (`git push origin
+<branch>`; a push from the branch's own checkout is refused), and never merges `claude/build-platform` into it. The
+change is only this:
 
 - npm: at most 5 open at once (today 10);
 - actions: every action update in one pull request, at most 2 open;
@@ -607,9 +610,8 @@ updates:
 
 </details>
 
-If you rule for it, the same pull request could also bring `.github/pull_request_template.md`, so GitHub offers it on
-every pull request before launch; that is an option for your ruling, not something already decided. Without the ruling
-nothing changes until launch, when the launch pull request brings the build branch's copies of both (step 8).
+The same pull request brings `.github/pull_request_template.md`, so GitHub offers it on every pull request before
+launch. At launch, the launch pull request brings the build branch's copies of both (step 8).
 
 ## What the build does, and what only you do
 
