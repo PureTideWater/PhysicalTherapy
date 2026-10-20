@@ -34,7 +34,7 @@ import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, u
  *     and a small one behind them in S4 and S5); memory sampled every 500 ms, the outbox polled every 250 ms, a run in
  *     pricing that records no batch for five minutes called stalled, a 30-minute cap; then the cgroups' peaks, events
  *     and throttling, the phase lines, the platform jobs that ran, the stored rows; a fresh platform where it says;
- *  7. open every result link;  8. close the browsers;
+ *  7. open every result link, then its last page of groups;  8. close the browsers;
  *  9. compare upload 1 of S1 and of S2 with the oracle in a child process;
  * 10. write screening-capacity.json and summary.md (and the job summary in CI); exit non-zero on any failing check.
  *
@@ -387,13 +387,20 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     await sleep(250);
   }
   // Each emailed link opened from the harness, as the prospect's mail client would (the link is never written
-  // anywhere), while memory is still sampled, and before the containers are read, so a service the page brings down
-  // counts in this scenario.
-  const resultStatuses = new Map<string, number | null>();
+  // anywhere), then its last page of groups (a page past the last, which the page shows as its last: the worst shape
+  // has 411 pages of 50), while memory is still sampled, and before the containers are read, so a service a page
+  // brings down counts in this scenario. Each body is read to its end, as a browser reads it.
+  const open = async (url: string): Promise<number | null> => {
+    const response = await fetch(url, { headers: { 'X-Forwarded-For': '198.51.100.250' }, signal: AbortSignal.timeout(RESULT_PAGE_MS) }).catch(() => null);
+    const read = await response?.arrayBuffer().catch(() => null);
+    return read === undefined || read === null ? null : (response?.status ?? null);
+  };
+  const resultStatuses = new Map<string, { readonly first: number | null; readonly last: number | null }>();
   for (const entry of prepared) {
     if (entry.link !== null) {
-      const response = await fetch(entry.link.replace(/^https?:\/\/[^/]+/, runtime.webOrigin), { headers: { 'X-Forwarded-For': '198.51.100.250' }, signal: AbortSignal.timeout(RESULT_PAGE_MS) }).catch(() => null);
-      resultStatuses.set(entry.upload.id, response?.status ?? null);
+      const url = entry.link.replace(/^https?:\/\/[^/]+/, runtime.webOrigin);
+      const first = await open(url);
+      resultStatuses.set(entry.upload.id, { first, last: first === 200 ? await open(`${url}?groups=999999`) : null });
     }
   }
   sampling = false;
@@ -408,7 +415,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       runs.set(entry.upload.id, facts.id);
     }
     const lines = facts === null ? undefined : phases.get(facts.id);
-    const resultStatus = resultStatuses.get(entry.upload.id) ?? null;
+    const opened = resultStatuses.get(entry.upload.id);
     const phaseLog = phaseLines(await runtime.logs('platform')).filter((line) => line.runId === facts?.id);
     const firstPhase = phaseLog[0] === undefined ? null : Date.parse(phaseLog[0].at);
     uploads.push({
@@ -419,7 +426,8 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       emailedMs: entry.emailedAt === null ? null : entry.emailedAt - scenarioStart,
       queueWaitMs: firstPhase === null || entry.submittedAt === null ? null : Math.max(0, firstPhase - entry.submittedAt),
       phases: lines ?? {},
-      resultStatus,
+      resultStatus: opened?.first ?? null,
+      lastPageStatus: opened?.last ?? null,
       storedRows: facts?.stored ?? null,
       pendingRows: facts?.pending ?? null,
       engineErrorRows: facts?.engineErrors ?? null,

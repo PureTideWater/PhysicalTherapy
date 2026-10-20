@@ -129,6 +129,11 @@ export interface UploadMeasure {
   readonly phases: Partial<Record<PhaseName, { readonly elapsedMs: number; readonly recordCount: number }>>;
   /** The result link's HTTP status when opened; null when there was no email. */
   readonly resultStatus: number | null;
+  /**
+   * The HTTP status of the result's last page of groups (the link with ?groups= past the last page, which the page
+   * shows as its last), opened after the link; null when there was no email or the link did not open.
+   */
+  readonly lastPageStatus: number | null;
   readonly storedRows: number | null;
   readonly pendingRows: number | null;
   readonly engineErrorRows: number | null;
@@ -220,6 +225,8 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
         reasons.push(`not emailed when the scenario's cap ended: ${where}`);
       } else if (upload.resultStatus !== 200) {
         reasons.push(`result link did not open: ${where} (HTTP ${String(upload.resultStatus)})`);
+      } else if (upload.lastPageStatus !== 200) {
+        reasons.push(`result's last page of groups did not open: ${where} (HTTP ${String(upload.lastPageStatus)})`);
       }
       if (upload.storedRows !== upload.rows) {
         reasons.push(`row count: ${where} stored ${String(upload.storedRows)} of ${String(upload.rows)}`);
