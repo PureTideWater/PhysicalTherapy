@@ -7,7 +7,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Pinned, as every job is, because ubuntu-latest moves to Ubuntu 26.04 from 2026-10-19 and Playwright 1.56.1
+    # predates it (audit item #19). The move to 26.04 comes with the Playwright upgrade, in its own pull request.
+    runs-on: ubuntu-24.04
     # A run takes 25 to 35 minutes; a hung step stops at 60 instead of GitHub's 360 (docs/adr/0063).
     timeout-minutes: 60
     services:
@@ -88,7 +90,7 @@ jobs:
         if: ${{ !cancelled() }}
   mutation:
     if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'money')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4

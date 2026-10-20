@@ -19,7 +19,7 @@ permissions:
 # for the full 360 on 2026-10-18).
 jobs:
   licenses:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +30,7 @@ jobs:
       - run: pnpm licenses:check
 
   images:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
