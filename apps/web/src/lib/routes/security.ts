@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { publicRoute } from '../http/invoke';
 import type { TextDocument } from '../http/route';
-import { DISCLOSURE_PATH, SECURITY_TXT_EXPIRES, SECURITY_TXT_PATH, securityTxt } from '../security/disclosure';
+import { DISCLOSURE_LEGAL_SURFACES, DISCLOSURE_PATH, SECURITY_TXT_EXPIRES, SECURITY_TXT_PATH, securityTxt, showsLegalSurface } from '../security/disclosure';
 
 /**
  * The product's security contact (audit item #20 (f)): /.well-known/security.txt (RFC 9116) and the public
@@ -24,6 +24,8 @@ export const securityTxtFile = publicRoute({
 export interface DisclosurePageData {
   readonly securityEmail: string;
   readonly securityTxtPath: string;
+  /** The page's legal surfaces this server shows: in production, none still waiting for its review. */
+  readonly legalSurfaces: readonly string[];
 }
 
 export const disclosurePage = publicRoute({
@@ -32,7 +34,12 @@ export const disclosurePage = publicRoute({
   path: DISCLOSURE_PATH,
   phi: false,
   params: z.object({}),
-  handle: ({ services }): Promise<DisclosurePageData> => Promise.resolve({ securityEmail: services.securityEmail, securityTxtPath: SECURITY_TXT_PATH }),
+  handle: ({ services }): Promise<DisclosurePageData> =>
+    Promise.resolve({
+      securityEmail: services.securityEmail,
+      securityTxtPath: SECURITY_TXT_PATH,
+      legalSurfaces: DISCLOSURE_LEGAL_SURFACES.filter((id) => showsLegalSurface(id, services.environment)),
+    }),
   sample: { params: () => ({}) },
 });
 

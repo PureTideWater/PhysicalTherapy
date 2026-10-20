@@ -15,6 +15,11 @@ the screening terms and the AMA notice in a legal-surfaces pull request before P
 | `good-faith-research` | The disclosure page's good-faith research statement: research that follows the page is treated as authorized, no legal action is brought or supported over it, and a third party's claim is answered by saying so; it never authorizes access to patient information or to data that is not the researcher's | `apps/web/src/app/security/page.tsx` | Counsel (the legal-surfaces pull request) | Launch, and any production deploy |
 | `disclosure-response-times` | The disclosure page's response times: receipt confirmed within three business days, an assessment within ten, a fix aimed for within 90 days of the report, publication agreed with the reporter, no rewards | `apps/web/src/app/security/page.tsx` | The security official (with the incident-response policy) | Launch, and any production deploy |
 
+Until a row's review is recorded, a production server leaves its surface out: the disclosure page renders the two below
+only outside production (`LEGAL_SURFACES_AWAITING_REVIEW` in `apps/web/src/lib/security/disclosure.ts`, which the test
+holds to every row whose Before column names a production deploy). The pull request that records a review removes the
+row and the id together.
+
 The security contact itself (`/.well-known/security.txt` and the address on the page) is configuration, not a legal
 text: production refuses to start without `SECURITY_EMAIL`, and `apps/web/src/lib/security/disclosure.test.ts` fails 30
 days before security.txt's `Expires` date, when the address is checked again and the date moved on.

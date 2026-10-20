@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { DISCLOSURE_LEGAL_SURFACES, LEGAL_SURFACES_AWAITING_REVIEW } from '../../apps/web/src/lib/security/disclosure';
 import { repositoryRoot } from '../content-files';
 
 /**
@@ -28,6 +29,7 @@ interface Row {
   readonly id: string;
   readonly where: string;
   readonly review: string;
+  readonly before: string;
 }
 
 function rows(): Row[] {
@@ -36,7 +38,7 @@ function rows(): Row[] {
     .filter((line) => /^\| `[a-z0-9-]+` \|/.test(line))
     .map((line) => {
       const cells = line.split(' | ').map((cell) => cell.replace(/^\| ?|\s*\|$/g, '').trim());
-      return { id: (cells[0] ?? '').replaceAll('`', ''), where: (cells[2] ?? '').replaceAll('`', ''), review: cells[3] ?? '' };
+      return { id: (cells[0] ?? '').replaceAll('`', ''), where: (cells[2] ?? '').replaceAll('`', ''), review: cells[3] ?? '', before: cells[4] ?? '' };
     });
 }
 
@@ -65,5 +67,21 @@ describe('the legal surfaces list', () => {
     expect(rows().find((row) => row.id === 'good-faith-research')?.review).toMatch(/^Counsel/);
     const page = readFileSync(path.join(SOURCE, 'app/security/page.tsx'), 'utf8');
     expect(page).toContain("Needs counsel's review before launch: docs/product/legal-surfaces.md, good-faith-research");
+  });
+
+  it('keeps every surface still waiting for its review before a production deploy out of production, until its row leaves the list', () => {
+    const awaiting = rows()
+      .filter((row) => /production deploy/i.test(row.before))
+      .map((row) => row.id)
+      .sort();
+    expect([...LEGAL_SURFACES_AWAITING_REVIEW].sort()).toEqual(awaiting);
+    // The disclosure page renders each of its surfaces only where the server shows it (src/lib/security/disclosure.ts).
+    const page = readFileSync(path.join(SOURCE, 'app/security/page.tsx'), 'utf8');
+    for (const id of DISCLOSURE_LEGAL_SURFACES) {
+      expect(page, id).toMatch(new RegExp(`\\{shows\\('${id}'\\) \\? \\(\\s*<section [^>]*data-legal-surface="${id}"`));
+    }
+    for (const id of awaiting) {
+      expect(DISCLOSURE_LEGAL_SURFACES as readonly string[], `${id} waits for its review, and no production gate holds it`).toContain(id);
+    }
   });
 });

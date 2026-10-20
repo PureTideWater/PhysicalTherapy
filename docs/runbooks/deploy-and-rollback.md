@@ -16,8 +16,11 @@ cdk deploy tp-<env> --parameters AppDomainName=… CertificateArn=… StaticDoma
 
 `SecurityEmail` is the address `/.well-known/security.txt` and the disclosure page (`/security`) give for vulnerability
 reports: a mailbox the security official reads, on a domain whose mail reaches it. It is never the support address,
-whose mail opens tickets only for accounts (the web app refuses to start with the two equal). An environment deployed
-before this parameter existed takes it on its next deploy: pass `SecurityEmail=…` once.
+whose mail opens tickets only for accounts (the web app refuses to start with the two equal), and it is not on the
+support address's domain while that domain's mail goes to SES: the stack's receipt rule set holds only the support
+recipient (`infra/lib/constructs/support-mail.ts`), so a report sent there would never reach a person, unless a receipt
+rule for the security address is added first. An environment deployed before this parameter existed takes it on its next
+deploy: pass `SecurityEmail=…` once.
 
 `ImageTag` stays `none`: everything is created and no task runs (the heartbeat and uptime alarms stay in ALARM until the
 first release). Point the two DNS names at the `LoadBalancerDnsName` and `StaticAssetsDistributionDomain` outputs. Write
@@ -25,8 +28,17 @@ the Stripe keys (docs/runbooks/billing.md) and set up support mail (docs/runbook
 
 ## A release
 
-1. **Tag.** Merge to main with CI green, then tag `v<major>.<minor>.<patch>`. The release workflow builds, scans and
-   pushes both images with a software bill of materials.
+1. **Tag.** Merge to main with CI green and the founder's approval, then the founder creates the tag
+   `v<major>.<minor>.<patch>` on main's merged commit (docs/runbooks/github-governance.md, 4C: only the founder can).
+   The release workflow builds, scans and pushes both images with a software bill of materials. Before anything below,
+   check that the tag names a commit on main; this must exit 0:
+
+   ```
+   git fetch origin --tags && git merge-base --is-ancestor <tag> origin/main
+   ```
+
+   If it does not, stop: the tag is not a reviewed release, and the deploy waits for one that is (the change-management
+   policy, rule 5).
 2. **Images for the environment.** Push both images to the environment's `WebRepositoryUri` and `WorkerRepositoryUri`
    under the tag (immutable tags: a tag is never pushed twice). Build the web image for the environment with its static
    host, so pages load their assets from CloudFront (Next writes the prefix into the build; ADR 0055):
@@ -37,9 +49,12 @@ the Stripe keys (docs/runbooks/billing.md) and set up support mail (docs/runbook
    migration fails the deploy before traffic moves. Each service then rolls with its circuit breaker.
 4. **Smoke checks.** `GET https://<AppDomainName>/api/health` answers 200 (it touches the database); `/sign-in` and
    `/status` load; `/.well-known/security.txt` names the environment's `SecurityEmail` and links `/security`, which
-   loads; a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run; the
-   uptime canaries go green within ten minutes. In staging, run `pnpm test:e2e` against the release before tagging it
-   for production.
+   loads; in production, `/security` shows neither "What you can expect from us" nor "Research in good faith" while
+   `docs/product/legal-surfaces.md` still lists them (a production server leaves out a legal text whose review is not
+   recorded); a synthetic smoke account signs in; the platform log group shows each platform job's next scheduled run;
+   the uptime canaries go green within ten minutes. On an environment's first deploy, and whenever `SecurityEmail`
+   changes, send a test message to it and have the security official confirm it arrived. In staging, run `pnpm test:e2e`
+   against the release before tagging it for production.
 
 ## Rollback
 

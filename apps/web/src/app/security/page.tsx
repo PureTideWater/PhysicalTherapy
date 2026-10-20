@@ -12,10 +12,12 @@ export const metadata: Metadata = { title: 'Report a security vulnerability' };
  * report, what to include, what not to do and what to expect. No sign-in, no PHI and no form: a report goes by email
  * to the security address the server is configured with. Two parts are drafts that need a review before launch, each
  * marked with data-legal-surface and listed in docs/product/legal-surfaces.md: the response times (the security
- * official's) and the good-faith research statement (counsel's, in the legal-surfaces pull request).
+ * official's) and the good-faith research statement (counsel's, in the legal-surfaces pull request). A production
+ * server leaves both out until their review is recorded (src/lib/security/disclosure.ts).
  */
 export default async function SecurityPage() {
-  const { securityEmail, securityTxtPath } = await loadPublicPage(disclosurePage, {});
+  const { securityEmail, securityTxtPath, legalSurfaces } = await loadPublicPage(disclosurePage, {});
+  const shows = (id: string) => legalSurfaces.includes(id);
   const address = (
     <a className="underline" href={`mailto:${securityEmail}`}>
       {securityEmail}
@@ -84,34 +86,38 @@ export default async function SecurityPage() {
         </section>
 
         {/* The security official confirms these times before launch: docs/product/legal-surfaces.md, disclosure-response-times. */}
-        <section className="flex flex-col gap-2" aria-labelledby="expect" data-legal-surface="disclosure-response-times">
-          <h2 id="expect" className="text-xl font-bold tracking-display">
-            What you can expect from us
-          </h2>
-          <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
-            <li>We confirm that your report has arrived within three business days.</li>
-            <li>Within ten business days we tell you whether we can reproduce the problem, how serious we judge it, and what happens next.</li>
-            <li>We keep you informed while we fix it, and tell you when it is fixed.</li>
-            <li>We agree with you when the details can be published, and aim to fix the problem within 90 days of your report.</li>
-            <li>We do not pay rewards for reports.</li>
-          </ul>
-        </section>
+        {shows('disclosure-response-times') ? (
+          <section className="flex flex-col gap-2" aria-labelledby="expect" data-legal-surface="disclosure-response-times">
+            <h2 id="expect" className="text-xl font-bold tracking-display">
+              What you can expect from us
+            </h2>
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
+              <li>We confirm that your report has arrived within three business days.</li>
+              <li>Within ten business days we tell you whether we can reproduce the problem, how serious we judge it, and what happens next.</li>
+              <li>We keep you informed while we fix it, and tell you when it is fixed.</li>
+              <li>We agree with you when the details can be published, and aim to fix the problem within 90 days of your report.</li>
+              <li>We do not pay rewards for reports.</li>
+            </ul>
+          </section>
+        ) : null}
 
         {/* Needs counsel's review before launch: docs/product/legal-surfaces.md, good-faith-research (the legal-surfaces pull request). */}
-        <section className="flex flex-col gap-2" aria-labelledby="good-faith" data-legal-surface="good-faith-research">
-          <h2 id="good-faith" className="text-xl font-bold tracking-display">
-            Research in good faith
-          </h2>
-          <p className="text-sm">
-            If you make a good-faith effort to follow this page while you look for and report a problem, we consider your research authorized, we will work with you to understand and fix
-            the problem, and we will not bring or support legal action against you for it. If someone else brings a claim against you for research that followed this page, we will make
-            it known that your research was authorized.
-          </p>
-          <p className="text-sm">
-            This does not authorize access to patient information or to any data that is not yours, and it does not cover testing that this page asks you not to do. If you are unsure
-            whether something is covered, ask us at {address} before you go on.
-          </p>
-        </section>
+        {shows('good-faith-research') ? (
+          <section className="flex flex-col gap-2" aria-labelledby="good-faith" data-legal-surface="good-faith-research">
+            <h2 id="good-faith" className="text-xl font-bold tracking-display">
+              Research in good faith
+            </h2>
+            <p className="text-sm">
+              If you make a good-faith effort to follow this page while you look for and report a problem, we consider your research authorized, we will work with you to understand and fix
+              the problem, and we will not bring or support legal action against you for it. If someone else brings a claim against you for research that followed this page, we will make
+              it known that your research was authorized.
+            </p>
+            <p className="text-sm">
+              This does not authorize access to patient information or to any data that is not yours, and it does not cover testing that this page asks you not to do. If you are unsure
+              whether something is covered, ask us at {address} before you go on.
+            </p>
+          </section>
+        ) : null}
 
         <p className="text-sm text-muted-foreground">
           Service status:{' '}

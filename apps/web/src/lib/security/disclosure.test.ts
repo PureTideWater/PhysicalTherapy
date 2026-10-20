@@ -3,7 +3,18 @@ import { describe, expect, it } from 'vitest';
 import { createServices } from '../server/services';
 import { securityTxtFile, disclosurePage } from '../routes/security';
 import { textHandler } from '../http/handler';
-import { DISCLOSURE_PATH, PREFERRED_LANGUAGES, SECURITY_TXT_EXPIRES, SECURITY_TXT_PATH, SECURITY_TXT_RENEW_DAYS, parseSecurityTxt, securityTxt } from './disclosure';
+import {
+  DISCLOSURE_LEGAL_SURFACES,
+  DISCLOSURE_PATH,
+  LEGAL_SURFACES_AWAITING_REVIEW,
+  PREFERRED_LANGUAGES,
+  SECURITY_TXT_EXPIRES,
+  SECURITY_TXT_PATH,
+  SECURITY_TXT_RENEW_DAYS,
+  parseSecurityTxt,
+  securityTxt,
+  showsLegalSurface,
+} from './disclosure';
 
 /**
  * The security contact (audit item #20 (f)): security.txt as RFC 9116 states it, from the server's configuration,
@@ -90,6 +101,25 @@ describe('the security routes', () => {
     expect(disclosurePage.phi).toBe(false);
     expect(securityTxtFile.phi).toBe(false);
     const outcome = await disclosurePage.invoke({ cookies: { get: () => undefined, set: () => undefined, delete: () => undefined }, params: {}, requestId: 'r', userAgent: null }, services());
-    expect(outcome).toEqual({ status: 'ok', data: { securityEmail: 'report@synthetic.test', securityTxtPath: '/.well-known/security.txt' } });
+    expect(outcome).toEqual({
+      status: 'ok',
+      data: { securityEmail: 'report@synthetic.test', securityTxtPath: '/.well-known/security.txt', legalSurfaces: ['disclosure-response-times', 'good-faith-research'] },
+    });
+  });
+
+  it('leave the legal surfaces still waiting for their review out of the page in production, and show them elsewhere', async () => {
+    const context = { cookies: { get: () => undefined, set: () => undefined, delete: () => undefined }, params: {}, requestId: 'r', userAgent: null };
+    const shown = async (environment: 'dev' | 'staging' | 'production') => {
+      const outcome = await disclosurePage.invoke(context, { ...services(), environment });
+      return outcome.status === 'ok' ? outcome.data.legalSurfaces : null;
+    };
+    expect(await shown('production')).toEqual([]);
+    expect(await shown('staging')).toEqual([...DISCLOSURE_LEGAL_SURFACES]);
+    expect(await shown('dev')).toEqual([...DISCLOSURE_LEGAL_SURFACES]);
+    expect(showsLegalSurface('reviewed-elsewhere', 'production')).toBe(true);
+    for (const id of DISCLOSURE_LEGAL_SURFACES) {
+      expect(LEGAL_SURFACES_AWAITING_REVIEW.has(id), id).toBe(true);
+      expect(showsLegalSurface(id, 'production'), id).toBe(false);
+    }
   });
 });
