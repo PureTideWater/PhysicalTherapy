@@ -79,6 +79,8 @@ What it changes for the build:
 - The Claude app reaches a repository through its installation on the account that owns it. After the move that is
   the organization, so the app must be installed there (2e), or every build session loses the repository.
 - A build session opened on the old address may not reach the new one; the build replaces it with a new session.
+- What the build needs from you to keep access: the Claude app installed on the organization (2e) and, from step 3,
+  the agent's Write role on the repository (3c). Nothing else.
 
 What it costs: a private repository no longer gets GitHub's own secret scanning and push protection unless you add
 GitHub Secret Protection. The `gitleaks` scan in CI and the pre-push hook (`.githooks/pre-push`) stay the secret
@@ -473,6 +475,7 @@ Without the ruling nothing changes until launch, when the launch pull request br
 | Opens no pull request into `main` before launch unless you rule on it | Rules on it, and on the launch |
 | Tells you when a setting here needs to change | Changes the rulesets, the variable, the environment and the account settings, and decides when to set or remove `APPROVAL_REVIEW_REQUIRED` |
 | Lists the pull requests merged each quarter | Engages someone independent of the build for the quarterly review of a sample of them (the change-management policy, rule 9) |
+| Turns on the pre-push hook in every clone it pushes from (`git config core.hooksPath .githooks`, as the README says), so a real file or a secret is refused before it reaches GitHub; a refused push is rewritten, never sent past the hook with `--no-verify` | Nothing: the hook needs no setting of yours |
 
 The hooks guard the build's edit and GitHub tools, not a shell command it runs. Until step 5, an approval line is only
 as trustworthy as the commit that wrote it; from step 5, what makes an approval count is your GitHub review of the
