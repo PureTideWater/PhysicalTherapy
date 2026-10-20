@@ -29,7 +29,7 @@
     "fast-check": "catalog:",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "tsx": "catalog:",
     "typescript-eslint": "^8.71.2",
     "vitest": "catalog:",
