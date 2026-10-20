@@ -241,7 +241,7 @@ never priced: their allowed totals are "the dollars that cannot be priced withou
 
 **A platform job prices and emails (D21 a).** The web app sends `screening_price` with the run's ID (singleton key
 `screening_price:<id>`); every minute the same job sweeps runs queued over 30 seconds and runs whose pricing is ten
-minutes stale. A run is claimed, its release read and cached per process by release, manifest and ZIP, its pending
+minutes stale. A run is claimed, its release read by key (The release read, below), its pending
 rows priced and recorded 5,000 a statement, then completed and its link emailed in one operator transaction: a
 failed send rolls the completion back and a later claim sends it. After a third attempt, or when the pinned
 release is not there as pinned or has been withdrawn (checked at every claim, so a release this process has cached
@@ -251,7 +251,67 @@ each due run on its own: one that throws (its contact's address refused by the m
 (`SCREENING_RUN_FAILED`, by its ID) and the sweep goes on, so no one run holds up the others. Every worker creates
 the platform queues, so the web app's send never meets a missing queue; a send that fails anyway leaves the run to
 the sweep. 50,000 rows run from the server action to the emailed link in about 8 seconds here with each pooled
-code priced twice (8.3 s on 2026-10-18; about 4 seconds before the rulings), against CO-04's 60.
+code priced twice (8.3 s on 2026-10-18; about 4 seconds before the rulings), against CO-04's 60, in one unlimited
+process on a 4-CPU machine; under production's limits, see Capacity under production limits.
+
+**The release read (audit #53 part 2; the founder's ruling of 2026-10-20).** The job no longer copies the whole
+release for each ZIP. The record types no row's key selects (the GPCIs, conversion factors, the assistant and
+sequestration records, the code lists and the other small types) are read by `operator_screening_release()` and held
+once per release and manifest, two releases at most (`RELEASES_KEPT`; a withdrawal still evicts its entry). The five
+types a line looks up by its own key (`pfs_rvu`, `ncci_mue`, `mppr_rate`, `ncci_ptp`, `locality_map`) are read for
+each run, in one operator transaction: `operator_screening_run_keys()` returns the distinct codes of the run's
+Medicare rows still to price and the prospect's ZIP, from the run's own rows and never a caller's, and
+`operator_screening_run_records()` returns, for each code, its relative values and MPPR rate with no modifier, its
+medically unlikely edit and its same-code pair (a screening claim is one line, or two lines of one code), with the
+general practice-expense MPPR rate and the ZIP's locality, by equality on `rule_record_identity`. The engine reads both
+through a keyed view (`apps/worker/src/price/keyed-release.ts`, generic so audit #31's Release-operations pull request
+can reuse it): shared types from the shared index, keyed types only by the keys fetched, a fetched key that has no
+record answering null. A lookup outside the keys fetched sets a sticky violation (its record type and its key's field
+names, never a value) and throws; because the engine turns any throw into a row priced ENGINE_ERROR, the pricer checks
+the violation after every engine call, and a row whose code is not in the key set, or codes priced unequal to it after
+the last batch, stop the run the same way: the job fails it as `RELEASE_READ_OUTSIDE_FETCH` before the batch is
+recorded, so no row is ever stored on a lookup the run did not make (audit #31's rule). The days on which a line is
+priced again are the change days of the shared types and of the run's records; the old read also held days on which
+records change only for codes and pairs no row asks for, where no line's pricing can change. The pricer's memo keeps a
+compact record per distinct line (its figures, reason and two trace hashes, each computed once), never an engine
+trace. Each phase (the shared read or its reuse, the keyed read, pricing, recording) logs `elapsed_ms` and
+`record_count`, two numbers-only fields added to the log allowlist, beside the run's ID. The output is proved equal to
+the old read's by an oracle, `adapter.ts` and the read path exactly as they were at commit 3c1b289, frozen in
+`apps/worker/src/screening/test-support` and imported only by tests and the capacity harness's oracle: row for row on a
+test-local release built for the cases where the two could differ (`release-cache.db.test.ts`), and by SHA-256 over
+upload 1 of each production-shaped scenario in the capacity test. As built, the key set's codes are those of the rows
+still to price (the database's function reads `pending` rows), so a run claimed again after a stale attempt reads only
+what it still prices; the codes priced equal the key set on every attempt.
+
+**Capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16).**
+`.github/workflows/screening-capacity.yml` builds the production images and runs `pnpm screening:capacity`
+(`tools/screening-capacity`; docs/runbooks/screening-capacity.md). Web and platform run as containers at production's
+task sizes, read from `infra/lib/environments.ts` (a quarter vCPU and 512 MiB with no swap, sharing the runner's last
+CPU); Postgres 18 at db.t4g.medium's size or the runner's share of it, with gp3's I/O baseline on the device behind
+Docker's data root and a 1 ms delay each way on its interface; every limit is read back before the run counts, and
+the harness and Chromium run on the other CPUs. The release is the SYNTHETIC production-shaped release 900100
+(`packages/synth/src/release/scale.ts` through `tools/release/scale.ts`: 2,245,245 invented records in CMS's layouts
+at the sizes of CMS's public files, the full practitioner PTP table among them, built outside the repository and
+loaded by the release loader with its synthetic option). The uploads are the practice shape (the large test's 50,000
+rows, held equal to them) and the worst shape (50,000 distinct priced lines over at least 15,000 codes, half of them
+in the reduction across codes, a tenth in a quarter whose records change), each alone and three at once with a small
+upload behind them. The verdict is split. The job fails on what PR 6 controls: an OOM kill, a restart or an exit the
+harness did not cause, anonymous memory above 90% of a task's limit, a limit not applied, a runner too small, a wrong
+or unfinished result, a run that records no batch for five minutes, or an oracle mismatch. The time from each
+submission to its email is measured always and reported as "open, PR 6b" while
+`environmentSettings('production').compute.screening` is absent; once PR 6b declares that consumer, a time above 48
+seconds on the runner fails the job until staging measures how much faster the runner is than Fargate, and from then
+on a time above 60 seconds scaled by that factor. The switch is that declaration, read from the settings the stacks
+deploy, and `tools/screening-capacity/report.test.ts` proves both sides of it. The platform container runs
+`NODE_ENV=test` with the local outbox, because the worker refuses the outbox in production; every `NODE_ENV` read in
+the code the images load is listed in `tools/screening-capacity/env.ts`, with what it selects, and a test fails on
+one not listed. Each upload comes from its own client address through one trusted proxy hop, as production's load
+balancer gives it, since the screening's limit of ten an address an hour would otherwise refuse the eleventh. The
+workflow runs weekly (once the default branch carries workflows), on request, on pushes to `claude/build-platform`
+that touch its paths and on pull requests that touch the screening, pricing, the harness or the images; a failure
+outside a pull request opens or updates one issue from a job that holds the workflow's only write permission and runs
+no repository code. Its report (`tp-screening-capacity/2`) holds counts, times, limits and hashes, never a row, a link
+or a token.
 
 **An unguessable link, emailed only.** The token is 32 letters a to z drawn by rejection sampling from the
 operating system's random bytes (about 150 bits), letters only so the URL guard admits it, at
@@ -470,6 +530,21 @@ alert, the request-audit form and the conversion form.
   screening replaced from the same address and one whose row was left out, another practice's kept, a refused upload
   replacing nothing, two submissions at once leaving one, and a replaced run never priced or emailed
   (`packages/db/src/screening.db.test.ts`, `routes.db.test.ts`, `apps/worker/src/screening/screening.db.test.ts`).
+- What proves it (audit #53): SCR-09, the release read: every stored row of runs at two ZIPs in two localities over
+  every 2026 band deep-equal to the oracle's and none ENGINE_ERROR, on a test-local release that corrects a used code's
+  relative values and starts a used code's edit mid-quarter, changes an unused code's values, an unasked pair, the
+  conversion factor and sequestration mid-quarter, holds a same-code pair and leaves a priced code without relative
+  values; sixteen runs at sixteen ZIPs reading the shared types once and holding one entry, at most two releases held;
+  a view missing one code's relative values or MPPR rate, a row outside the key set and codes priced unequal to it each
+  failing the run as `RELEASE_READ_OUTSIDE_FETCH` with no row stored ENGINE_ERROR (`release-cache.db.test.ts`); the
+  view's five keyed types refusing a lookup outside the fetch with the first violation kept, and a fetched key with no
+  record answering null (`keyed-release.test.ts`); the compact memo equal to the frozen pricer and holding no trace
+  (`adapter.test.ts`); the oracle frozen and out of the product (`oracle-imports.test.ts`). SCR-08, the capacity test:
+  its limits from production's settings (`limits.test.ts`), its `NODE_ENV` departures listed (`env.test.ts`), its split
+  verdict and time switch (`report.test.ts`), its readers and Docker arguments (`measure.test.ts`), the scale release
+  and uploads (`packages/synth/src/release/scale.test.ts`, `screening/uploads.test.ts`, `tools/release/scale.test.ts`;
+  the practice shape held equal to the large test's rows there), the workflow's wiring (`tools/test/workflows.test.ts`),
+  and the workflow's runs themselves.
 
 ## Owner rulings (2026-10-18)
 
@@ -559,6 +634,38 @@ What stays open: counsel on the reworded surfaces and the cookie disclosure, on 
 different address replacing a request's summary; the terms' wording and whether their hash is required; PR 6e's
 consent capture, withdrawal page and reminders; PR 7's funnel, lead list and campaign screen (a schema PR for its read
 functions).
+
+## Owner rulings (2026-10-20): the 60-second promise at production size (audit #53)
+
+The founder, Tyler Williams, accepted on 2026-10-20 the recommended answer to every question in the PR 6 design
+(decisions 7 to 19 of that day), and folded audit #53's parts 1 and 2 into this pull request. Those on the screening's
+60-second promise and its test, built here (The release read; Capacity under production limits):
+
+13. **If the speed test is red at launch:** the screening does not open until the latest capacity run on the image
+    being deployed passes with time enforced. *Built:* the capacity test; time becomes enforced with PR 6b's
+    declaration of the screening's consumer.
+14. **Which file the promise covers:** any accepted 50,000-row file, the worst shape included. PR 6b sizes the
+    screening's own consumer to that file and reports its size and monthly cost before building it, which may exceed
+    the roughly $18 a month accepted. *Built:* the worst shape is measured alone and three at once, beside the
+    practice shape.
+15. **Where the time check draws the line:** at 48 seconds on GitHub's runner until staging measures how much faster
+    the runner is than Fargate, then at 60 seconds scaled by that factor. *Built:* `TIME_ALLOWANCE_MS`,
+    `TIME_PROMISE_MS` and `RUNNER_TO_FARGATE` (null until staging measures it) in `tools/screening-capacity/limits.ts`;
+    `timeVerdict()` in `report.ts`: 47.9 s passes, 48.1 s fails as the allowance, 60.1 s as the promise.
+16. **How PR 6 merges before its consumer exists:** the test fails PR 6 on everything PR 6 controls; time shows as
+    "open, PR 6b" until PR 6b declares the consumer in `infra/lib/environments.ts`, which switches it on in tested
+    code. *Built:* `timeRule()` reads `compute.screening`; `report.test.ts` holds today's settings to "open" and a
+    declared consumer to "enforced".
+
+The first local run (the process runtime of `tools/screening-capacity/containers.ts`, on a shared 4-CPU machine, its
+Postgres unlimited) is recorded in the PR 6 approval summary with the load average beside its times; it is not a
+measurement under production's limits. The first CI run's URL and figures are cited here once it runs.
+
+What stays open: staging's runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
+cap and the honest message), sized from these measurements and decisions 14 and 15; the choice of a cache for keyed
+records, from the keyed read's measured seconds (PR 6b); the weekly schedule, which fires once the default branch
+carries workflows (audit #54); a larger runner once the Team organization exists; #31's check of the scale release's
+counts against release 1's real sources.
 
 ## Revisit when
 
