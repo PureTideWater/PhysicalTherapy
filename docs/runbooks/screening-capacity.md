@@ -54,10 +54,13 @@ when it is red. Synthetic data only: the release and the uploads are generated, 
    heap out of memory" in the service's log is Node's heap limit, which it sets from the task's memory (about half of
    512 MiB), reached before the cgroup's: no OOM kill is counted. A service that exited is started again before the
    next scenario, so the later scenarios are still measured.
-4. `row count`, `rows still pending`, `ENGINE_ERROR rows`, `stalled`, `not emailed`, `result link did not open`: the
-   result is wrong or unfinished. Read the platform's log in the job (IDs and codes only) for the run's `error_code`;
-   `RELEASE_READ_OUTSIDE_FETCH` means a lookup outside the keys the run fetched, a defect of the key set or the engine's
-   reads (ADR 0062, The release read).
+4. `row count`, `rows still pending`, `ENGINE_ERROR rows`, `stalled`, `not emailed`, `result link did not open`,
+   `result's last page of groups did not open`: the result is wrong or unfinished. Read the platform's log in the job
+   (IDs and codes only) for the run's `error_code`; `RELEASE_READ_OUTSIDE_FETCH` means a lookup outside the keys the
+   run fetched, a defect of the key set or the engine's reads (ADR 0062, The release read). A result page that does
+   not open while web's log says "JavaScript heap out of memory" is the page holding more than its one page of groups:
+   run `apps/web/src/lib/screening/result-page.large.db.test.ts`, which renders the worst shape under a 512 MiB heap
+   (ADR 0062, The result page holds one page of groups).
 5. `oracle mismatch`: the new read path priced a row differently from the old one. Treat it as a pricing defect: run
    `apps/worker/src/screening/release-cache.db.test.ts`, find the first differing row by comparing the stored rows
    with `legacyOutcomes()` for the run, and fix before merging.

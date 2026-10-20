@@ -95,8 +95,9 @@ The application role calls `screening_status()`, `screening_zip_status()` (an in
 `locality_map`), `submit_screening()` (prospect, upload with the hash of its rows, run and every row in one call,
 `screening_submitted`, deleting any earlier screening of the same practice, `screening_replaced`),
 `reject_screening_upload()` (`screening_rejected`; like the submission, it records nothing while screening is
-closed), the four reads by token hash (`screening_result_summary`, which also says whether the run's release has
-since been withdrawn, `_groups`, `_coverage`, `_rows`, every figure a bigint sum in SQL), `convert_screening()` (a
+closed), the reads by token hash (`screening_result_summary`, which also says whether the run's release has since
+been withdrawn; `_group_totals` and `_groups`, the groups one page at a time with the counts over every group and the
+sums of those off the page; `_coverage`; `_rows`; every figure a bigint sum in SQL), `convert_screening()` (a
 `prospect_request` in the screening's name and address, and `screening_converted`, which outlives the expiry) and
 the console's two split functions. Where an allowed total stands is `screening_standing()`'s, in SQL, from the
 stored figures (the owner's ruling 1 of 2026-10-18): `anomaly` when it is more than $5 a claim line (ADR 0038's
@@ -297,7 +298,8 @@ rows, held equal to them) and the worst shape (50,000 distinct priced lines over
 in the reduction across codes, a tenth in a quarter whose records change), each alone and three at once with a small
 upload behind them. The verdict is split. The job fails on what PR 6 controls: an OOM kill, a restart or an exit the
 harness did not cause, anonymous memory above 90% of a task's limit, a limit not applied, a runner too small, a wrong
-or unfinished result, a run that records no batch for five minutes, or an oracle mismatch. The time from each
+or unfinished result, a result page that does not open (each emailed link, then its last page of groups), a run that
+records no batch for five minutes, or an oracle mismatch. The time from each
 submission to its email is measured always and reported as "open, PR 6b" while
 `environmentSettings('production').compute.screening` is absent; once PR 6b declares that consumer, a time above 48
 seconds on the runner fails the job until staging measures how much faster the runner is than Fargate, and from then
@@ -312,6 +314,26 @@ that touch its paths and on pull requests that touch the screening, pricing, the
 outside a pull request opens or updates one issue from a job that holds the workflow's only write permission and runs
 no repository code. Its report (`tp-screening-capacity/2`) holds counts, times, limits and hashes, never a row, a link
 or a token.
+
+**The result page holds one page of groups (audit #53 part 1, found by the capacity test's first local run).** The
+page read and rendered every group by payer product and code, and a worst-shape result's 20,507 groups exhausted the
+web task's heap. Its memory is now bounded whatever the result's size. `screening_result_groups(token, page,
+per_page)` gives one page of groups, numbered in one total order (the largest difference from the lowest figures
+first, then payer product and code), at most 100 a call; the page asks for 50 (`?groups=N`, the first page unless a
+whole number is given, the last for one past it). `screening_result_group_totals(token, page, per_page)` gives, over
+every group, how many there are, how many are anomalies and how many are within the range of the reduction across
+codes, and, for the groups the page does not show, their count, anomalies, rows, claim lines and summed figures. Both
+read one invoker function, `screening_result_ranked_groups()`, which no role may call, so the order and the sums are
+written once. The card's description takes its counts from the database, the table's last row is the other groups'
+sums, and links reach the first, previous, next and last pages, never prefetched. The summary is one row, the coverage
+is bounded by the closed lists of products, dispositions and reasons, and the top rows stay at 25, so nothing on the
+page grows with the file. The page offers no download, and none is added: every group is reachable a page at a
+time, and its figures are the database's. `apps/web/src/lib/screening/result-page.large.db.test.ts` builds a
+worst-shape result (the capacity test's 50,000 rows through the upload route, SYNTHETIC figures recorded by the
+operator functions) and proves the paging, the sums against the summary and, in a process of its own under a 512 MiB
+heap (the web task's memory), that the read and render of the first, a middle and the last page each list 50 groups
+or the last 7 in about 140 KB of HTML and add under 10 MiB to the heap; the harness opens each emailed link and then
+its last page.
 
 **An unguessable link, emailed only.** The token is 32 letters a to z drawn by rejection sampling from the
 operating system's random bytes (about 150 bits), letters only so the URL guard admits it, at
@@ -663,11 +685,15 @@ beside its times; it is not a measurement under production's limits. Every store
 shapes, and no task met its memory limit while pricing. It found one failure PR 6 controls: the result page renders
 every product-and-code group (`screening_result_groups()` has no limit), and a worst-shape result's 20,507 groups
 exhaust the web task's JavaScript heap (Node sizes it from the task's 512 MiB, about 256 MB), so the page does not
-open and the task exits; the practice shape's 72 groups open. The first CI run's URL and figures are cited here once
-it runs.
+open and the task exits; the practice shape's 72 groups open. The page now holds one page of groups (The result page
+holds one page of groups, above). The second local run (the same runtime, 2026-10-20, images at ed3572f, S1 and S4)
+opened every emailed link and then its last page of groups with HTTP 200, the worst shape's 20,507 groups included;
+web's anonymous memory peaked at 215 MiB with one worst-shape upload and 285 MiB with three and a small one at once,
+against 512 MiB and the 90% line at 461 MiB; no task exited, met its limit or was killed, and S1's stored rows equalled
+the oracle's. Its only failing checks are the Postgres limits the process runtime cannot apply. The first CI run's URL
+and figures are cited here once it runs.
 
-What stays open: the result page at the worst shape (above), which PR 6 fixes before it merges; staging's
-runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
+What stays open: staging's runner-to-Fargate factor; PR 6b's consumer (its size, two screenings at a time, the row
 cap and the honest message), sized from these measurements and decisions 14 and 15; the choice of a cache for keyed
 records, from the keyed read's measured seconds (PR 6b); the weekly schedule, which fires once the default branch
 carries workflows (audit #54); a larger runner once the Team organization exists; #31's check of the scale release's
