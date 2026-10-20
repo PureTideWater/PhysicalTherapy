@@ -44,6 +44,24 @@ pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```
 
+The pre-push hook (`.githooks/pre-push`; docs/adr/0063, audit item #20 (e)) stops a real file or a secret on your machine,
+before it reaches GitHub, where CI's gitleaks and fixture steps would only find it after the push. Turn it on once per
+clone, after `pnpm install`; it then runs for the clone and every linked worktree of it:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+It needs gitleaks 8.19 or later on `PATH` (a release from github.com/gitleaks/gitleaks/releases, or `brew install
+gitleaks`), or `GITLEAKS` set to a gitleaks binary's absolute path; without one it refuses every push that sends a new
+commit and says so. For each push it takes the commits the remote does not have yet (a new branch, an update, or a bare
+commit pushed by its hash, as in `git push origin <sha>:refs/heads/salvage/x`) and runs the fixture check over every
+file they write, read from git's objects rather than the working tree (`tools/fixture-check/commits.ts`), and gitleaks
+over the same commits with `.gitleaks.toml` and `.gitleaksignore`, merges read by what they add beyond their parents.
+A refusal names the file, the commit and the rule, never the value; rewrite the commits without it. A deletion, or a
+push of commits the remote already has, checks nothing. `core.hooksPath` replaces `.git/hooks`, so a hook of your own
+moves into `.githooks` or is called from there. `tools/hooks/pre-push.test.ts` runs it through real pushes.
+
 The domain model gate (CO-02; reconciliation-001, D1 and D2): `docs/product/domain-model.md` describes the schema the
 migrations build, by area: every table and view with its keys, PHI flag, row-level security, policies, invariants and
 privileges, and every divergence from the Data dictionary tab with its reviewed explanation. It is generated, never
@@ -501,7 +519,18 @@ the public `/status` page, error pages, help on every screen and support tickets
 evidence checklist at `/console/compliance` (`packages/compliance`), whose export the compliance platform ingests. The
 policies are drafts in `docs/policies/` for the security official; the incident runbook is
 `docs/runbooks/incident-response.md`. Production needs `SUPPORT_EMAIL` (the stack's `SupportEmail` parameter),
-`TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets.
+`SECURITY_EMAIL` (`SecurityEmail`), `TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets, and an https
+`APP_ORIGIN`.
+
+The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116) names `SECURITY_EMAIL` as its
+Contact, the public disclosure page `/security` as its Policy, English as its language and its own address under
+`APP_ORIGIN` as Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`;
+`disclosure.test.ts` fails 30 days before that date, when the address is checked and the date moved on, less than a
+year ahead. The page says how to report, what to include, what not to do and what to expect, with no sign-in and no
+form. Production refuses to start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens
+tickets only for accounts. Its response times and its good-faith research statement are drafts for the security
+official and counsel, listed in `docs/product/legal-surfaces.md` and marked where they render (`data-legal-surface`),
+which `tools/test/legal-surfaces.test.ts` holds together.
 
 Review fixes for milestones 10 and 11 (ADR 0055): a model call never waits on the connection its request holds (the
 gateway's store has its own small pool, every pool gives up on a connection after ten seconds, a server makes at most
