@@ -54,6 +54,12 @@ export async function userId(key: string): Promise<string> {
   return withDatabase(async (client) => (await client.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', [personaEmail(key)])).rows[0]?.id ?? '');
 }
 
+/**
+ * The practice administrator persona of the journeys' practices (the other group's, which owns them by ownership): the
+ * one who sets a practice's correspondence contact (audit item #37 part 1, D6; the packets journey's E2).
+ */
+export const JOURNEY_PRACTICE_ADMIN = 'other-admin';
+
 export interface JourneyPracticeOptions {
   readonly name: string;
   readonly settings: object;

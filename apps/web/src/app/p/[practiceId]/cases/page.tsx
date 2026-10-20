@@ -13,6 +13,7 @@ import { casesPage } from '../../../../lib/routes/triage';
 import { MATERIALITY_CONSEQUENCE } from '../../../../lib/routes/workbench';
 import { openCaseFormAction, setMaterialityFormAction, triageRunFormAction } from './actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { ReferenceSearch } from '../../../../components/packets/reference-search';
 
 export const metadata: Metadata = { title: 'Cases' };
 
@@ -185,6 +186,7 @@ export default async function CasesPage(props: Props) {
           </CardContent>
         ) : null}
       </Card>
+      <ReferenceSearch practiceId={practiceId} />
       <section aria-label="Case list" className="flex flex-col gap-3">
         <h2 className="text-xl font-bold tracking-display">By deadline</h2>
         <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cases">

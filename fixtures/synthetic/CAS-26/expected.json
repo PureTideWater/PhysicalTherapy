@@ -1,0 +1,22 @@
+{
+  "case": "CAS-26",
+  "module": "CAS",
+  "title": "Payer copy of an export",
+  "assertion": "No login, record ID, SHA-256, verification, internal note, or interest not computed; approval line, reference and contact printed; the internal record on the review page",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/worker/src/packets/export.test.ts",
+    "apps/worker/src/packets/payer-copy.db.test.ts",
+    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Prints any approved packet as the payer receives it: an output, not a fixture.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

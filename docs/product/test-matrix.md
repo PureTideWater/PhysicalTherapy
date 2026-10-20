@@ -105,6 +105,9 @@ Every case the suites must contain, by module, with the fixture that exercises i
 | CAS-13 | Edit after approval | New version; approval cleared |
 | CAS-14 | Submission with no response in 45 days | Follow-up surfaces |
 | CAS-15 | Interest line where state rule applies | Separate line; not in expected |
+| CAS-26 | Payer copy of an export | No login, record ID, SHA-256, verification, internal note, or interest not computed; approval line, reference and contact printed; the internal record on the review page |
+| CAS-27 | Export with no correspondence contact | Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing |
+| CAS-28 | Packet found by its reference | Every version of the practice whose reference matches, none of another practice |
 
 ## Ledger (LED)
 

@@ -8,9 +8,10 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
+import { canSetCorrespondence } from '../packets/contact';
 import { exportRefusalText } from '../packets/export-attempts';
-import { type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
-import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
+import { type BuilderView, approveOnce, builderView, exportFile, exportFileNameOf, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
+import { ATTEST_CONFIRMATIONS, PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { sentWithoutSignOffOf } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
@@ -59,6 +60,8 @@ export interface BuilderPageData {
   readonly canDraftWithModel: boolean;
   readonly drafts: readonly DraftView[];
   readonly modelNotice: ModelNotice | null;
+  /** Whether the viewer sets the practice's correspondence contact (the administrator, by ownership): the Export card links to it. */
+  readonly canSetContact: boolean;
 }
 
 export const packetPage = practiceRoute({
@@ -109,6 +112,7 @@ export const packetPage = practiceRoute({
       canDraftWithModel: rolesPermit(access.roles, 'packet.draft') && (await modelFeatures(scope, services, practiceId)).draftPacketNarrative,
       drafts: await packetDrafts(scope, practiceId, params.caseId),
       modelNotice: params.model ?? null,
+      canSetContact: canSetCorrespondence(access),
     };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.caseId }) },
@@ -255,14 +259,18 @@ export const exportPacketAction = practiceRoute({
 
 const downloadParams = z.object({ practiceId: opaqueId, caseId: opaqueId, versionId: opaqueId });
 
-/** An exported version's file, checked against its SHA-256 and recorded as a line-level export; not found before the export. */
-async function exported(context: PracticeContext<z.output<typeof downloadParams>, unknown>, file: 'pdf' | 'csv'): Promise<Uint8Array<ArrayBuffer>> {
+/**
+ * An exported version's file, checked against its SHA-256 and recorded as a line-level export, with the name it is
+ * served under (D8: the packet's reference, never a record ID); not found before the export.
+ */
+async function exported(context: PracticeContext<z.output<typeof downloadParams>, unknown>, file: 'pdf' | 'csv'): Promise<Download<Uint8Array<ArrayBuffer>>> {
   const { scope, practiceId, params, request, services } = context;
-  const bytes = await exportFile(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, file, requestId: request.requestId });
-  if (bytes === undefined) {
+  const filename = await exportFileNameOf(scope, { practiceId, caseId: params.caseId, versionId: params.versionId, file });
+  const bytes = filename === undefined ? undefined : await exportFile(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, file, requestId: request.requestId });
+  if (filename === undefined || bytes === undefined) {
     throw new NotFoundError();
   }
-  return bytes;
+  return { download: file === 'pdf' ? { filename, contentType: 'application/pdf', body: bytes } : { filename, contentType: 'text/csv; charset=utf-8', body: bytes } };
 }
 
 /** The exported PDF (the packet with its identifiers inserted: line-level PHI), for the roles that export PHI. */
@@ -275,10 +283,8 @@ export const packetPdf = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    // The file's name is the version's opaque ID, never a payer's or a patient's name.
-    download: { filename: `packet-${context.params.versionId}.pdf`, contentType: 'application/pdf', body: await exported(context, 'pdf') },
-  }),
+  // The file's name is the packet's reference (payment-dispute-<REF>.pdf), never a record ID, a payer's or a patient's name.
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
@@ -292,14 +298,20 @@ export const packetCsv = practiceRoute({
   phi: true,
   permission: 'phi.export',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    download: { filename: `packet-schedule-${context.params.versionId}.csv`, contentType: 'text/csv; charset=utf-8', body: await exported(context, 'csv') },
-  }),
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/, 'a SHA-256');
-const confirmed = z.literal('on', 'confirm this item');
+
+/** The attestation's input: the two SHA-256 and one required box per checklist item, built from the checklist (D10), so none can be left out. */
+export const ATTEST_INPUT = z.object({
+  caseId: opaqueId,
+  versionId: opaqueId,
+  pdfSha256: sha256,
+  csvSha256: sha256,
+  ...ATTEST_CONFIRMATIONS,
+});
 
 export interface PacketReviewsPageData {
   readonly practiceId: string;
@@ -364,18 +376,7 @@ export const attestPacketExportAction = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: z.object({ practiceId: opaqueId }),
-  input: z.object({
-    caseId: opaqueId,
-    versionId: opaqueId,
-    pdfSha256: sha256,
-    csvSha256: sha256,
-    confirm_figures: confirmed,
-    confirm_deadline: confirmed,
-    confirm_calculation: confirmed,
-    confirm_identifiers: confirmed,
-    confirm_files: confirmed,
-    confirm_independent: confirmed,
-  }),
+  input: ATTEST_INPUT,
   audit: { action: 'packet_export_attested', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
     await underPacketRules(() => attestOnce(scope, { practiceId, caseId: input.caseId, versionId: input.versionId, pdfSha256: input.pdfSha256, csvSha256: input.csvSha256, requestId: request.requestId }));
@@ -404,9 +405,7 @@ export const reviewPacketPdf = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    download: { filename: `packet-${context.params.versionId}.pdf`, contentType: 'application/pdf', body: await exported(context, 'pdf') },
-  }),
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'pdf'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 
@@ -420,9 +419,7 @@ export const reviewPacketCsv = practiceRoute({
   phi: true,
   permission: 'audit_finding.validate',
   params: downloadParams,
-  handle: async (context): Promise<Download<Uint8Array<ArrayBuffer>>> => ({
-    download: { filename: `packet-schedule-${context.params.versionId}.csv`, contentType: 'text/csv; charset=utf-8', body: await exported(context, 'csv') },
-  }),
+  handle: (context): Promise<Download<Uint8Array<ArrayBuffer>>> => exported(context, 'csv'),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });
 

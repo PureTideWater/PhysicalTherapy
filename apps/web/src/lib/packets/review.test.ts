@@ -2,8 +2,9 @@ import { PACKET_ATTESTATION_ITEMS } from '@tp/worker/packets';
 import { PRICING_CHECK_CAUSES } from '@tp/worker/pricing';
 import { describe, expect, it } from 'vitest';
 
+import { ATTEST_INPUT } from '../routes/packets';
 import { PRICING_BLOCKED_TEXT, PRICING_CAUSE_TEXT } from './pricing';
-import { PACKET_CHECKLIST } from './review';
+import { ATTEST_CONFIRMATIONS, PACKET_CHECKLIST } from './review';
 
 /**
  * The reviewer's checklist over a packet's export (D16) names exactly the codes the attestation holds,
@@ -16,6 +17,23 @@ describe('PACKET_CHECKLIST', () => {
       expect(item.id).toMatch(/^[a-z][a-z_]{0,31}$/);
       expect(item.text.length).toBeGreaterThan(30);
     }
+  });
+
+  it('W5: is the founder’s seven items (Q5 (a)), and the attest action’s schema requires exactly their boxes, built from the checklist', () => {
+    expect(PACKET_ATTESTATION_ITEMS).toEqual(['figures', 'deadline', 'calculation', 'identifiers', 'payer_copy', 'files', 'independent']);
+    expect(Object.keys(ATTEST_CONFIRMATIONS)).toEqual(PACKET_ATTESTATION_ITEMS.map((id) => `confirm_${id}`));
+    expect(Object.keys(ATTEST_INPUT.shape).filter((key) => key.startsWith('confirm_'))).toEqual(PACKET_ATTESTATION_ITEMS.map((id) => `confirm_${id}`));
+    const text = Object.fromEntries(PACKET_CHECKLIST.map((item) => [item.id, item.text]));
+    expect(text.figures).toBe(
+      'Every figure, date, code and count in the PDF and the CSV comes from the version’s records, its approval, or the practice’s correspondence contact (printed as set), and the verifier passed the narrative the export printed.',
+    );
+    expect(text.deadline).toMatch(/\(shown on this page; the payer’s files state the window’s end and its clause, not its verification\)\.$/);
+    expect(text.calculation).toBe(
+      'Each line’s calculation in the PDF and the CSV is its trace’s: the method, the steps, the one rounding and the patient share, shown apart from expected; each trace’s SHA-256 is on this page.',
+    );
+    expect(text.payer_copy).toBe(
+      'The PDF and the CSV are fit to send to the payer: they name the practice, its approval line with this reference and its correspondence contact, and carry no login, record ID, SHA-256 or internal note (those are on this page).',
+    );
   });
 });
 

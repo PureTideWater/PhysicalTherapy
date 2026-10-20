@@ -17,6 +17,7 @@ const STEPS: Readonly<Record<string, { readonly title: string; readonly detail: 
   team: { title: 'Invite your team', detail: 'A billing manager and a viewer, at least.' },
   billing: { title: 'Choose a plan and a payment method', detail: 'ACH or card, through the payment provider.' },
   upload: { title: 'Upload your first remittances', detail: '835 files from your clearinghouse or payer portals.' },
+  correspondence: { title: 'Set the correspondence contact', detail: 'Whom a payer writes to or calls about a dispute: every packet prints it, and none is exported without it.' },
 };
 
 /**

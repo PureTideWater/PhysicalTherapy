@@ -15,6 +15,7 @@ import { MAPPING_ROUTES } from './mapping';
 import { MODEL_ROUTES } from './models';
 import { MONITORING_ROUTES } from './monitoring';
 import { ONBOARDING_ROUTES } from './onboarding';
+import { PACKET_REFERENCE_ROUTES } from './packet-reference';
 import { PACKET_ROUTES } from './packets';
 import { PRACTICE_ROUTES } from './practice';
 import { PRICING_ROUTES } from './pricing';
@@ -67,6 +68,7 @@ export const ROUTES: readonly Route[] = [
   ...TRIAGE_ROUTES,
   ...WORKBENCH_ROUTES,
   ...PACKET_ROUTES,
+  ...PACKET_REFERENCE_ROUTES,
   ...SUBMISSION_ROUTES,
   ...REPORT_ROUTES,
   ...REPORT_DOCUMENT_ROUTES,

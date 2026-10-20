@@ -5,13 +5,14 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../../../../components/action-form';
 import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
-import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, Hash, LineSchedule } from '../../../../../../../../components/packets/display';
+import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, EvidenceList, Hash, InterestSection, LineSchedule } from '../../../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../../../components/packets/pricing';
 import { StaleExportReview } from '../../../../../../../../components/packets/unattested';
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
 import { loadPage } from '../../../../../../../../lib/http/next';
-import { PACKET_ATTESTATION_TEXT } from '../../../../../../../../lib/packets/review';
+import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT } from '../../../../../../../../lib/packets/contact';
+import { COMPUTED_BY_CODE_NOTE, PACKET_ATTESTATION_TEXT } from '../../../../../../../../lib/packets/review';
 import { STALE_EXPORT_REVIEW } from '../../../../../../../../lib/packets/unattested';
 import { packetReviewPage } from '../../../../../../../../lib/routes/packets';
 import { attestPacketFormAction } from './actions';
@@ -34,6 +35,12 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
  * to do instead (re-price, a new version, a new export) and how the practice logs it if it already went to the payer,
  * sent without sign-off (the founder's ruling of 2026-10-20; docs/adr/0061), or that it was logged so. Identifiers
  * show as placeholders on this screen.
+ *
+ * Audit item #37 part 1 (the founder's rulings of 2026-10-20): the exported files are the payer's copy, so this page
+ * carries the internal record they no longer print (the Internal record card: who wrote and approved the version and
+ * when, the audit flag, the regulation's confirmation, the version's SHA-256 and reference, the releases' manifests,
+ * the evidence with its SHA-256 and gaps, interest line by line, and that code computed every amount) beside what the
+ * payer's copy carries (the Payer's copy card: the approval line with the reference, and the contact set now).
  */
 export default async function PacketReviewPage(props: Props) {
   const page = await loadPage(packetReviewPage, props);
@@ -147,6 +154,79 @@ export default async function PacketReviewPage(props: Props) {
         <CardContent className="flex min-w-0 flex-col gap-4">
           <LineSchedule content={content} practiceId={practiceId} />
           <CalculationTable content={content} />
+        </CardContent>
+      </Card>
+      <Card role="region" aria-label="Payer’s copy">
+        <CardHeader>
+          <CardTitle>Payer’s copy</CardTitle>
+          <CardDescription>What the exported PDF and CSV carry for the payer, besides the letter’s figures, citations and evidence. They carry no login, record ID, SHA-256 or internal note: those are on this page.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          {review.reference === null || review.approvedAt === null ? (
+            <p>The version is not approved, so it has no approval line or reference yet.</p>
+          ) : (
+            <p data-approval-line>
+              Approved for submission by {content.practice.name} on {review.approvedAt.slice(0, 10)}, reference <span className="font-mono" data-reference={review.reference}>{review.reference}</span>.
+            </p>
+          )}
+          {review.contactNow.state === 'set' ? (
+            <p data-contact="set">
+              Correspondence about this dispute: {review.contactNow.text}. This is the contact set now; an export already made keeps the one it was printed with, and its SHA-256 above is the record of what was printed.
+            </p>
+          ) : (
+            <p data-contact={review.contactNow.state}>{review.contactNow.state === 'missing' ? CONTACT_MISSING_TEXT : CONTACT_MALFORMED_TEXT}</p>
+          )}
+        </CardContent>
+      </Card>
+      <Card role="region" aria-label="Internal record">
+        <CardHeader>
+          <CardTitle>Internal record</CardTitle>
+          <CardDescription>The record of this version that the payer’s copy does not print. It never changes once the version is approved, and the audit log keeps every step.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex min-w-0 flex-col gap-3 text-sm">
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+            <dt className="font-medium">Version</dt>
+            <dd>
+              {review.versionNo}, SHA-256 <Hash value={review.contentSha256} label="Version SHA-256" />
+              {review.reference === null ? null : (
+                <>
+                  , reference <span className="font-mono">{review.reference}</span>
+                </>
+              )}
+            </dd>
+            <dt className="font-medium">Written by</dt>
+            <dd data-internal="written_by">{review.writtenBy ?? 'a person of the practice'}</dd>
+            <dt className="font-medium">Approved</dt>
+            <dd data-internal="approved_by">
+              {review.approvedAt === null ? 'not approved' : `${utc(review.approvedAt)} by ${review.approvedBy ?? 'a person of the practice'}`}
+              {review.approvedAlone ? '; approved alone (the audit flag: the practice has no second person who approves packets)' : ''}
+            </dd>
+            {review.regulationConfirmation === null ? null : (
+              <>
+                <dt className="font-medium">Regulation confirmed</dt>
+                <dd data-internal="regulation_confirmed">
+                  {utc(review.regulationConfirmation.at)} by contract specialist {review.regulationConfirmation.by ?? 'a former contract specialist'}
+                </dd>
+              </>
+            )}
+            <dt className="font-medium">Rule releases</dt>
+            <dd>
+              {content.rule_releases.map((release) => (
+                <span key={release.release_no} className="mr-3 inline-block">
+                  {release.release_no}, manifest SHA-256 <Hash value={release.manifest_sha256} label={`Release ${String(release.release_no)} manifest SHA-256`} />
+                </span>
+              ))}
+            </dd>
+          </dl>
+          <div className="flex flex-col gap-1">
+            <p className="font-medium">Evidence, with its SHA-256 and gaps</p>
+            <EvidenceList content={content} />
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="font-medium">Interest, line by line</p>
+            <InterestSection content={content} />
+          </div>
+          <p className="text-muted-foreground">{COMPUTED_BY_CODE_NOTE}</p>
         </CardContent>
       </Card>
       <Card role="region" aria-label="Attestation">

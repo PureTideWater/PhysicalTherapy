@@ -19,6 +19,7 @@ import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { appDevLoginUrl, openPool, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 
 import { e2eDatabaseUrl } from './env';
 import { withDatabase } from './helpers';
@@ -31,7 +32,9 @@ import { journeyPractice, pricedAndTriaged, signedOffSchedule, until, userId } f
  * 50.00-per-unit 97110 schedule abstracted by the contract specialist (under a support grant) and signed
  * off by a billing manager through @tp/contracts, the plan mapped, the month priced and triaged by the
  * worker's own jobs (e2e/journeys.ts). The browser does the rest. The first journey's practice also
- * grants the reimbursement reviewer a support grant: the reviewer attests its export (D16; docs/adr/0061).
+ * grants the reimbursement reviewer a support grant: the reviewer attests its export (D16; docs/adr/0061). It starts
+ * with no correspondence contact, which its practice administrator sets in the browser before its export (audit item
+ * #37 part 1, E2); the deadline journey's practice has the SYNTHETIC contact from the start.
  */
 
 export const PACKET_PRACTICE = 'SYNTHETIC OTHER PRACTICE PACKETS';
@@ -44,9 +47,9 @@ export function packetPractice(): Promise<string> {
   return journeyPractice({ name: PACKET_PRACTICE, settings: SETTINGS, supportFor: ['packet-reviewer'] });
 }
 
-/** The deadline journey's practice (created once per database): its ID. */
+/** The deadline journey's practice (created once per database), with the SYNTHETIC correspondence contact: its ID. */
 export function deadlinePractice(): Promise<string> {
-  return journeyPractice({ name: DEADLINE_PRACTICE, settings: SETTINGS });
+  return journeyPractice({ name: DEADLINE_PRACTICE, settings: { ...SETTINGS, [CORRESPONDENCE_CONTACT_KEY]: SYNTHETIC_CORRESPONDENCE_CONTACT } });
 }
 
 /** A case of the practice holding a line, once triage has opened it (one of the cases named is not it). */

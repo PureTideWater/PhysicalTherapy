@@ -1,5 +1,5 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
-import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
+import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative, exportFileName, packetReference } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
 import {
   type ExportReadiness,
@@ -20,6 +20,7 @@ import type { JobQueue } from '../uploads/queue';
 import { peopleEmails } from '../cases/people';
 import { NotFoundError } from '../http/route';
 import { type ApprovalState, type BlockedReason, approvalState } from './approval';
+import { type ContactNow, contactNow } from './contact';
 import { type ExportAttempt, exportAttempt } from './export-attempts';
 import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
 
@@ -77,6 +78,11 @@ export interface VersionView {
   readonly narrative: string;
   /** The hash an approval names. */
   readonly contentSha256: string;
+  /**
+   * The packet's reference once the version is approved (packetReference of its approved SHA-256; audit item #37 part
+   * 1, D5): what the payer's copy prints in its approval line and names its files by, and what a payer quotes back.
+   */
+  readonly reference: string | null;
   readonly verifier: VerifierReport;
   readonly writtenAt: string;
   readonly writtenBy: string | null;
@@ -131,6 +137,8 @@ export interface BuilderView {
   readonly approvalRequest: ApprovalRequest | null;
   readonly promptPayStates: readonly string[];
   readonly attachable: readonly AttachableDocument[];
+  /** The practice's correspondence contact now, which the payer's copy prints (no export without it; D6, D7). */
+  readonly contact: ContactNow;
 }
 
 interface HistoryRow {
@@ -213,6 +221,7 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null, atte
     content: detail.content,
     narrative: detail.narrative,
     contentSha256: detail.contentSha256,
+    reference: detail.approvedAt === null ? null : packetReference(detail.contentSha256),
     verifier: detail.verifier,
     writtenAt: detail.createdAt.toISOString(),
     writtenBy,
@@ -239,7 +248,7 @@ export async function builderView(
   if (found === undefined) {
     return undefined;
   }
-  const common = { promptPayStates: await promptPayStates(scope), attachable: await attachable(scope, input.practiceId) };
+  const common = { promptPayStates: await promptPayStates(scope), attachable: await attachable(scope, input.practiceId), contact: await contactNow(scope, input.practiceId) };
   if (found.packetId === null) {
     if (input.versionId !== undefined) {
       throw new NotFoundError();
@@ -492,4 +501,19 @@ export function exportFile(
   input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: PacketExportFile; readonly requestId: string },
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
   return downloadPacketExport(scope, services, input);
+}
+
+/**
+ * The name an exported file is served under (audit item #37 part 1, D8): payment-dispute-<REF>.pdf or
+ * payment-dispute-<REF>-schedule.csv, the reference of the version's approved SHA-256, never a record ID. Undefined
+ * when the version of the case has no export.
+ */
+export async function exportFileNameOf(scope: Scope, input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly file: PacketExportFile }): Promise<string | undefined> {
+  const { rows } = await scope.client.query<{ approved_sha256: string | null }>(
+    `SELECT v.approved_sha256 FROM packet_version v JOIN packet p ON p.id = v.packet_id
+      WHERE v.id = $1 AND v.practice_id = $2 AND p.case_id = $3 AND v.exported_at IS NOT NULL`,
+    [input.versionId, input.practiceId, input.caseId],
+  );
+  const sha = rows[0]?.approved_sha256 ?? null;
+  return sha === null ? undefined : exportFileName(packetReference(sha), input.file);
 }

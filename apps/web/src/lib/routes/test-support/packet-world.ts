@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { type DatabaseClient, type DatabasePool, type KeyProvider, type PracticeScope, type ScopeClient, withJobScope, withPracticeScope } from '@tp/db';
 import { asOwner } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
+import { CORRESPONDENCE_CONTACT_KEY, SYNTHETIC_CORRESPONDENCE_CONTACT } from '@tp/packets';
 import type { DocumentStore } from '@tp/worker/documents';
 import { approvePacketVersion, attestPacketExport, downloadPacketExport, logSubmission, writePacketVersion } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
@@ -21,7 +22,8 @@ import { packetExportHandler } from '@tp/worker/runtime';
  * world's support grant (docs/adr/0061) and submitted by the billing manager today. A third case, a
  * Medicare Advantage non-contracted pattern on a fourth line, whose version (the analyst's draft) cites
  * the regulation and waits for the contract specialist's confirmation. And a payer letter, clean and
- * stored, that a response carries.
+ * stored, that a response carries. The practice has the SYNTHETIC correspondence contact from just before the
+ * export (audit item #37 part 1: no export without one).
  */
 
 export interface PacketLineOptions {
@@ -161,6 +163,10 @@ export async function seedPackets(options: PacketWorldOptions, seeded: SeededPac
     throw new Error('the seeded packet drafts did not pass the verifier');
   }
   await as(options.managerId, (scope) => approvePacketVersion(scope, { practiceId, versionId: second.versionId, versionSha256: second.contentSha256, requestId: `seed-${randomUUID()}` }));
+  // The SYNTHETIC correspondence contact the payer's copy prints, without which nothing is exported (audit item #37 part 1).
+  await asOwner(owner, [practiceId], () =>
+    owner.query(`UPDATE practice SET settings = jsonb_set(settings, '{${CORRESPONDENCE_CONTACT_KEY}}', $2::jsonb) WHERE id = $1`, [practiceId, JSON.stringify(SYNTHETIC_CORRESPONDENCE_CONTACT)]),
+  );
   const jobId = randomUUID();
   await packetExportHandler({ documents: options.documents, keys, pdf: { render: () => Promise.resolve(standInPdf()) } })(
     { practice_id: practiceId, packet_version_id: second.versionId },

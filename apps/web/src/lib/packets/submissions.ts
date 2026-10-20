@@ -1,6 +1,6 @@
 import { type KeyProvider, PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, type ScopeClient } from '@tp/db/runtime';
 import { type Cents, centsToString } from '@tp/money';
-import { FOLLOW_UP_DAYS, type PacketContent, type PayerResponseKind, type SubmissionChannel, addDays } from '@tp/packets';
+import { FOLLOW_UP_DAYS, type PacketContent, type PayerResponseKind, type SubmissionChannel, addDays, packetReference } from '@tp/packets';
 import {
   type LogSubmissionInput,
   type RecordResponseInput,
@@ -68,6 +68,8 @@ export interface SubmissionView {
   /** The export's SHA-256, as sent (CAS-12). */
   readonly exportSha256: string;
   readonly exportCsvSha256: string;
+  /** The packet's reference the export printed and a payer quotes back (from the version's approved SHA-256; audit item #37 part 1). */
+  readonly packetReference: string | null;
   readonly responses: readonly ResponseView[];
   /**
    * Whether the version it sent was still priced current when it was logged, as the database recorded it
@@ -83,9 +85,12 @@ export interface SubmissionView {
 const PRICING_RESULTS: ReadonlySet<string> = new Set(PRICING_CHECK_RESULTS);
 
 /** Each submission's pricing check as the database recorded it, and the content of the version it sent. */
-async function submissionPricing(scope: Scope, input: { readonly practiceId: string; readonly caseId: string }): Promise<ReadonlyMap<string, { readonly check: PricingCheckResult | null; readonly content: PacketContent }>> {
-  const { rows } = await scope.client.query<{ id: string; pricing_check: string | null; content: PacketContent }>(
-    `SELECT s.id, s.pricing_check, v.content FROM submission s JOIN packet_version v ON v.id = s.packet_version_id AND v.practice_id = s.practice_id
+async function submissionPricing(
+  scope: Scope,
+  input: { readonly practiceId: string; readonly caseId: string },
+): Promise<ReadonlyMap<string, { readonly check: PricingCheckResult | null; readonly content: PacketContent; readonly packetReference: string | null }>> {
+  const { rows } = await scope.client.query<{ id: string; pricing_check: string | null; content: PacketContent; approved_sha256: string | null }>(
+    `SELECT s.id, s.pricing_check, v.content, v.approved_sha256 FROM submission s JOIN packet_version v ON v.id = s.packet_version_id AND v.practice_id = s.practice_id
       WHERE s.case_id = $1 AND s.practice_id = $2`,
     [input.caseId, input.practiceId],
   );
@@ -93,7 +98,11 @@ async function submissionPricing(scope: Scope, input: { readonly practiceId: str
     rows.map((row) => [
       row.id,
       // A value the CHECK does not hold cannot be stored; anything else unexpected reads as not current.
-      { check: row.pricing_check === null ? null : PRICING_RESULTS.has(row.pricing_check) ? (row.pricing_check as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT', content: row.content },
+      {
+        check: row.pricing_check === null ? null : PRICING_RESULTS.has(row.pricing_check) ? (row.pricing_check as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT',
+        content: row.content,
+        packetReference: row.approved_sha256 === null ? null : packetReference(row.approved_sha256),
+      },
     ]),
   );
 }
@@ -124,6 +133,7 @@ export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { re
     followUp: index === 0 ? followUpState(entry.followUpOn, input.asOf, entry.responses.length > 0) : 'answered',
     exportSha256: entry.exportSha256,
     exportCsvSha256: entry.exportCsvSha256,
+    packetReference: checks.get(entry.submissionId)?.packetReference ?? null,
     responses: entry.responses.map((response) => ({
       responseId: response.responseId,
       kind: response.kind,
@@ -147,6 +157,8 @@ export interface SubmittableVersion {
   readonly exportedOn: string;
   readonly exportSha256: string;
   readonly exportCsvSha256: string;
+  /** The packet's reference its export printed (audit item #37 part 1). */
+  readonly packetReference: string | null;
   readonly attestedAt: string | null;
   /**
    * Whether the version's pricing is still current now, with the stale lines' figures then and now. A submission
@@ -176,8 +188,9 @@ export async function submittableVersion(scope: Scope, input: { readonly practic
     export_csv_sha256: string;
     attested_at: Date | null;
     content: PacketContent;
+    approved_sha256: string | null;
   }>(
-    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256, v.attested_at, v.content
+    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on, v.export_sha256, v.export_csv_sha256, v.attested_at, v.content, v.approved_sha256
        FROM packet p JOIN packet_version v ON v.id = p.current_version_id
       WHERE p.case_id = $1 AND p.practice_id = $2 AND v.exported_at IS NOT NULL`,
     [input.caseId, input.practiceId],
@@ -192,6 +205,7 @@ export async function submittableVersion(scope: Scope, input: { readonly practic
         exportedOn: row.exported_on,
         exportSha256: row.export_sha256,
         exportCsvSha256: row.export_csv_sha256,
+        packetReference: row.approved_sha256 === null ? null : packetReference(row.approved_sha256),
         attestedAt: row.attested_at?.toISOString() ?? null,
         pricing: await pricingNow(scope, { practiceId: input.practiceId, content: row.content, requestId: input.requestId }),
         unattestedReason: row.attested_at === null ? await packetVersionUnattestedReason(scope.client, { practiceId: input.practiceId, versionId: row.id }) : null,

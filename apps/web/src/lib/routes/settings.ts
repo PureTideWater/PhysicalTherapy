@@ -4,11 +4,14 @@ import { type ProofLevel, PROOF_LEVELS, ledgerSettings } from '@tp/ledger';
 import { type Cents, centsToString, parseAmount } from '@tp/money';
 import { triageSettings } from '@tp/triage';
 import { LedgerSettingsRefused, setLedgerSettings } from '@tp/worker/ledger';
+import { CorrespondenceContactError, type CorrespondenceContact, USPS_STATE_CODES, correspondenceText } from '@tp/packets';
+import { CorrespondenceContactRefused, practiceCorrespondenceContact, setCorrespondenceContact } from '@tp/worker/packets';
 import { organizationBilling } from '@tp/worker/billing';
 import { type MembershipRole, rolesPermit } from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
+import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/contact';
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
@@ -108,7 +111,7 @@ async function lastConfirmation(client: Parameters<typeof practiceOrganization>[
 }
 
 export interface SetupStep {
-  readonly key: 'mfa' | 'terms' | 'agreements' | 'team' | 'billing' | 'upload';
+  readonly key: 'mfa' | 'terms' | 'agreements' | 'team' | 'billing' | 'upload' | 'correspondence';
   readonly done: boolean;
   readonly href: string;
 }
@@ -138,6 +141,8 @@ export const settingsPage = practiceRoute({
         { key: 'team', done: Number.parseInt(team.rows[0]?.count ?? '0', 10) > 0, href: `/settings/organizations/${organizationId}/users` },
         { key: 'billing', done: billing?.subscription?.status === 'active', href: `/settings/billing/${organizationId}` },
         { key: 'upload', done: Number.parseInt(uploads.rows[0]?.count ?? '0', 10) > 0, href: `/p/${practiceId}/uploads` },
+        // The contact every payer's copy prints; no packet is exported without it (audit item #37 part 1, D6).
+        { key: 'correspondence', done: (await practiceCorrespondenceContact(scope.client, practiceId)).state === 'set', href: correspondenceSettingsPath(practiceId) },
       ];
     }
     return {
@@ -379,6 +384,111 @@ export const setProofLevelAction = practiceRoute({
     return { objectId: practiceId, redirect: `/p/${practiceId}/settings/proof-level?notice=saved` };
   },
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ proofLevel: 'deposited', confirm: 'on' }) },
+});
+
+/** The contact form's fields, as their refusals name them (CORRESPONDENCE_FIELDS but the whole contact's). */
+const blankText = (max: number, message: string) => z.string().trim().max(max, message).optional().default('');
+
+/**
+ * The correspondence contact as the form sends it (D6; Q1 (a)): a name or office and a phone required, the extension,
+ * email and a full mailing address optional. The same rules again in @tp/packets correspondenceContactSetting(), which
+ * the worker's setter applies before anything is written.
+ */
+export const correspondenceForm = z.object({
+  name: z.string().trim().min(1, 'a name or office').max(120, 'a name or office of at most 120 characters'),
+  phone: z.string().trim().min(1, 'a 10-digit phone number, such as (919) 555-0100').max(32, 'a 10-digit phone number, such as (919) 555-0100'),
+  phone_extension: blankText(6, 'an extension of 1 to 6 digits').pipe(z.string().regex(/^\d{0,6}$/, 'an extension of 1 to 6 digits')),
+  email: blankText(254, 'an email address of at most 254 characters'),
+  address_line1: blankText(100, 'at most 100 characters'),
+  address_line2: blankText(100, 'at most 100 characters'),
+  address_city: blankText(100, 'at most 100 characters'),
+  address_state: blankText(2, 'a USPS state or territory code, such as NC').pipe(z.string().toUpperCase()),
+  address_zip: blankText(10, 'a ZIP code of five digits, or ZIP+4'),
+});
+
+export interface CorrespondencePageData {
+  readonly practiceId: string;
+  /** The contact as stored, to fill the form; null while none is set or the stored value is malformed. */
+  readonly stored: CorrespondenceContact | null;
+  readonly state: 'set' | 'missing' | 'malformed';
+  /** The words every payer's copy prints, once set (the preview). */
+  readonly printed: string | null;
+  readonly states: readonly string[];
+  /** The practice administrator, reached by ownership: the setter's and Postgres's own rule (canSetCorrespondence). */
+  readonly canSet: boolean;
+  readonly notice: 'saved' | null;
+}
+
+/**
+ * The practice's correspondence contact (audit item #37 part 1, D6; the founder's ruling of 2026-10-20, Q1 (a);
+ * docs/adr/0061): who a payer's examiner writes to or calls about a dispute, which every packet's payer copy prints and
+ * without which none is exported. Everyone who opens the practice sees it; the practice administrator sets it.
+ */
+export const correspondenceSettingsPage = practiceRoute({
+  id: 'practice.settings.correspondence',
+  kind: 'page',
+  path: '/p/[practiceId]/settings/correspondence',
+  phi: true,
+  permission: 'practice.open',
+  params: z.object({ practiceId: opaqueId, notice: optionalText(z.literal('saved')) }),
+  handle: async ({ scope, practiceId, access, params }): Promise<CorrespondencePageData> => {
+    const contact = await practiceCorrespondenceContact(scope.client, practiceId);
+    return {
+      practiceId,
+      stored: contact.state === 'set' ? contact.contact : null,
+      state: contact.state,
+      printed: contact.state === 'set' ? correspondenceText(contact.contact) : null,
+      states: USPS_STATE_CODES,
+      canSet: canSetCorrespondence(access),
+      notice: params.notice ?? null,
+    };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }) },
+});
+
+/**
+ * The practice administrator sets the correspondence contact, replacing the one before (it is never cleared). The
+ * worker's setter checks the role again and records correspondence_contact_set with the practice's ID only; the
+ * database's restrictive practice_administrators_update policy admits the UPDATE for the practice's administrators
+ * alone. A packet already exported keeps the contact it was printed with. The route's gate is agreement.sign, the
+ * permission only the practice administrator holds (the overview's `administers`), as the proof level's action is
+ * gated by proof_level.set, so the persona matrix and the setter agree; a permission of its own needs the schema
+ * (docs/adr/0061, "Audit item #37, part 1").
+ */
+export const setCorrespondenceContactAction = practiceRoute({
+  id: 'practice.settings.set_correspondence',
+  kind: 'action',
+  path: '/p/[practiceId]/settings/correspondence',
+  phi: true,
+  permission: 'agreement.sign',
+  params: practiceParams,
+  input: correspondenceForm,
+  audit: { action: 'correspondence_contact_saved', objectType: 'practice' },
+  handle: async ({ scope, practiceId, input, request }): Promise<MutationResult> => {
+    try {
+      await setCorrespondenceContact(scope, {
+        practiceId,
+        contact: {
+          name: input.name,
+          phone: input.phone,
+          phone_extension: input.phone_extension,
+          email: input.email,
+          address: { line1: input.address_line1, line2: input.address_line2, city: input.address_city, state: input.address_state, zip: input.address_zip },
+        },
+        requestId: request.requestId,
+      });
+    } catch (error) {
+      if (error instanceof CorrespondenceContactError) {
+        throw new InputError([{ field: error.field, message: error.message }]);
+      }
+      if (error instanceof CorrespondenceContactRefused) {
+        throw new InputError([{ field: 'contact', message: error.message }]);
+      }
+      throw error;
+    }
+    return { objectId: practiceId, redirect: `${correspondenceSettingsPath(practiceId)}?notice=saved` };
+  },
+  sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: () => ({ name: 'SYNTHETIC BILLING OFFICE', phone: '(919) 555-0100' }) },
 });
 
 export interface AccessLogEntry {
@@ -683,6 +793,8 @@ export const SETTINGS_ROUTES = [
   settingsPursuitAction,
   proofLevelPage,
   setProofLevelAction,
+  correspondenceSettingsPage,
+  setCorrespondenceContactAction,
   accessLogPage,
   dataSettingsPage,
   usersSettingsPage,

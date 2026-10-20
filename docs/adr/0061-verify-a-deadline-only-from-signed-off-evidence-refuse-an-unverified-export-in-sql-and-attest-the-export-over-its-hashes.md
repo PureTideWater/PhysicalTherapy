@@ -655,6 +655,129 @@ the line's facts, widening `contract_window_rule_computed()`, and the specialist
 may add an export attempts table (items #5 and #26); and PR 7 runs the accessibility check after every page and form
 (item #61).
 
+## Audit item #37, part 1: the payer's copy (the founder's ruling of 2026-10-20)
+
+Until this change one PDF served the payer and the internal audit: it printed the drafter's, approver's and contract
+specialist's login emails, the specialist line, the audit flag, the evidence gaps, record IDs and SHA-256 values, the
+deadline's verification level and status, the packet version number and a "computed by code" footer. The founder
+adopted the combined audit in full on 2026-10-20, with #37 part 1 folded into this pull request before it merges, and
+accepted the recommended answer to every question of its design (Q1 to Q6 below). The export now prints the payer's
+copy only, and the internal record stays where it lives and is shown on the reviewer's review page.
+
+- **D1. One export; the internal copy is a second output only in PR 12.** A stored internal manifest would need its own
+  keys and a third hash in the attestation, whose CHECK holds exactly `format`, `checklist`, `pdf_sha256` and
+  `csv_sha256`; PR 12 rebuilds the export with D26's tables anyway. Nothing is lost: the version's content, its
+  approval columns and its regulation confirmation never change after approval, the audit log is append-only, and the
+  review page renders all of it (the Internal record card).
+- **D2. What the payer's copy prints** (`apps/worker/src/packets/html.ts`): the title and running header as before, the
+  practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); [1] the contract's
+  title, version, effective dates and page with the quoted clause (no document ID or SHA-256), or the regulation; [2]
+  what the payment rules in effect supplied, by release (D14); the narrative alone in its block; the line schedule
+  without the patient control number or trace reference, `Total` in its first cell; the dispute window's dates only
+  (D2, Q3), with the contract's clause or the release's record; each line's window and how its expected amount is
+  computed; interest (D9); the evidence by its labels; the requested action; and "Approved for submission by
+  <practice> on <date>, reference <REF>." with "Correspondence about this dispute: <contact>." (D4 to D6). No login,
+  approval time, specialist line, audit flag, evidence gap, status, verification, version number, trace reference or
+  footer; a version without a stated last day is refused with a TypeError rather than printed.
+- **D3. The CSV is the payer's too** (`csv.ts`): no `patient_control_number`, `trace_ref`, `deadline_status`,
+  `deadline_source` or `trace_sha256` column; the method in the PDF's words; interest empty where code did not
+  compute it. Both files take their words from one module (`words.ts`).
+- **D4. The approval line** names the version's own `content.practice.name` and the UTC calendar date of `approved_at`,
+  as `prepared <as_of>` is; it reads the same for a single-user approval, whose audit flag stays internal.
+- **D5. The reference** is `packetReference(approved_sha256)`: the first 50 bits of the approved version's SHA-256 as
+  10 Crockford digits, a hyphen after the fifth (`packages/packets/src/reference.ts`). No storage, not PHI, not a
+  UUID, never a hex run; nothing enforces uniqueness (about 4.4 × 10^-6 that two of one practice's 100,000 versions
+  share one), so the lookup shows every match. Staff find a packet by the reference a payer quotes on Cases
+  (`practice.cases.by_reference`, `packetVersionsByReference()`): typed in any case, without its hyphen, with O, I and
+  L read as 0, 1 and 1, in the practice's own scope; a malformed reference is refused with its form. The reference is
+  shown beside the version on the packet, review and submissions pages, and it names the files (D8).
+- **D6. The correspondence contact** lives in `practice.settings.correspondence_contact`, set by the practice
+  administrator alone (`practice.open` and the role `practice_admin`, as the proof level; the restrictive
+  `practice_administrators_update` policy admits the UPDATE for the practice's administrators only). Its route
+  (`practice.settings.set_correspondence`) is gated by `agreement.sign`, the permission only the practice
+  administrator holds, as the proof level's is by `proof_level.set`, so the registry's persona tests and the setter
+  agree; a permission of its own needs the schema (see "What later pull requests take"). A name or office
+  and a 10-digit phone are required; the extension, an email and a full mailing address are optional; no other key.
+  It is validated by the web's Zod schema and again by `correspondenceContactSetting()`, read back by
+  `correspondenceContactOf()` (`set`, `missing` or `malformed`, never a default), read at export inside the export's
+  transaction, and never logged: the setter's audit event `correspondence_contact_set` and the route's
+  `correspondence_contact_saved` carry the practice's ID only. It cannot be cleared, only replaced; an export already
+  made keeps the contact it was printed with (its PDF and SHA-256 are the record). The settings page is editable by
+  the same rule (`canSetCorrespondence()`: `practice_admin` reached by ownership), and the overview's checklist gains
+  the step. **The contact's email is the one email the payer's copy prints**: the audit's "no email" rule is about
+  logins, and the contact is the practice's chosen correspondence address.
+- **D7. No export without a contact, refused at every step as one coded reason (Q6 (a)).** `contact_missing` is
+  readiness reason 11, after `inputs_differ`; `PACKET_EXPORT_REFUSALS` and `packet_export_refusal_codes()` hold it
+  between `inputs_differ` and `verifier_failed` (this pull request's unmerged migration, its one function body
+  changed for #37). The packet page shows the reason and a disabled Export button whose description names Settings,
+  Correspondence; the web's request and `requestPacketExport()` refuse before anything is queued; the job records
+  `packet_export_refused` with purpose `contact_missing`, logs `PACKET_CORRESPONDENCE_CONTACT_MISSING`, returns
+  rather than throws (never retried), and reads the contact again before any narrative is decrypted, refusing alike
+  if a concurrent change unset it.
+- **D8. File names carry the reference**: `payment-dispute-<REF>.pdf` and `payment-dispute-<REF>-schedule.csv` on the
+  four download routes, where they were `packet-<versionId>.pdf` and `packet-schedule-<versionId>.csv`.
+- **D9. Interest states only what code computed (Q4 (a)).** The rule sentence ("State <ST>[, <statute>]: payment due <N>
+  <basis> days after the payer received the claim[, interest at <R>% a year] (release <n>).") and its exclusions; the
+  `Interest by line` table lists only the lines whose interest was computed, totalled as "Interest stated in this
+  request: $X"; with none computed the rule prints alone, and with no rule on file the section reads "Prompt-pay
+  interest is not stated in this request." "cannot be computed", "can be computed" and "in all" are never printed.
+  `draftNarrative()` writes no interest sentence when no line computed it, and [4] stays printed whenever the version
+  states interest, so a narrative citing it names a printed section.
+- **D10. The reviewer's checklist is the founder's seven items (Q5 (a))**: `figures` (now covering the practice's
+  correspondence contact, printed as set), `deadline` (shown on the review page; the payer's files state the window's
+  end and its clause, not its verification), `calculation` (each trace's SHA-256 on the review page), `identifiers`,
+  `payer_copy` (new: the files are fit to send to the payer, with the approval line, the reference and the contact, and
+  no login, record ID, SHA-256 or internal note), `files` and `independent`. The attest action's Zod schema builds its
+  `confirm_<id>` fields from the checklist, so a form missing any box is refused before the service runs and the list
+  and the schema cannot drift. The attestation CHECK accepts any code, so no schema change.
+- **D11 to D13.** The verifier's inputs do not change (the same narrative, content and identifiers), so its report
+  and the export guard hold; the payer's copy prints exactly the narrative the export's verifier passed, and nothing
+  else in its block (tested over the HTML and over the printed PDF's text). The job hashes the exact bytes it prints
+  and the attestation binds them, so it binds the files the payer receives. The renderer gets no login and no hash
+  (`PayerCopy`: the approval's date, the reference, the contact); the job no longer reads `packet_version_people()`.
+- **D14. Record numbers stay printed.** `release <n>` and `contract version <n>` are PaidWhole's own record numbers, and
+  narratives cite them as facts the verifier holds them to; #38's worksheet and PR 12 replace them with CMS's own terms
+  (year, locality). [2] names the Medicare fee schedule only when the release supplied one: a regulation, a
+  `PERCENT_OF_MEDICARE` contract, or a `LESSER_OF` contract whose schedule is a percentage of Medicare; otherwise
+  "Payment rules in effect for the service dates". A rule release's evidence item reads as [2] does.
+
+The founder's answers (2026-10-20), each the design's recommendation:
+
+- **Q1 (a).** A name or office and a phone are required; extension, email and address optional; no export until it is
+  set; the contact's email the only email printed. Gives up: some packets give the examiner only a phone in writing.
+- **Q2 (a).** The patient control number is dropped from the payer's PDF and CSV now, and `writePacketVersion()` refuses
+  a narrative holding a `{{patient_control_number:<n>}}` placeholder (`narrative_withheld_identifier`); versions are
+  immutable, so the write is the one place to hold it. PR 12 adds the patient account number back only where a
+  route's form requires it.
+- **Q3 (a).** The copy states only the dates code knows ("The earliest dispute window among the listed lines ends on
+  <date>.", or "The window for dispute level <n> ends on <date>."), never that the dispute is timely: the practice sends
+  the packet after it is printed, and the product cannot see the day the payer receives it.
+- **Q4 (a).** Interest only where code computed it, "Interest stated in this request: $X", nothing said of the other
+  lines (D9), so the letter never reads as waiving interest a statute owes; the practice can still claim it later.
+- **Q5 (a).** The seven-item checklist as worded in D10.
+- **Q6 (a).** `contact_missing` as a coded refusal, one SQL function body changed in this pull request's own unmerged
+  migration, confirmed with the rest of PR 5 by the domain model's new hash (CO-02).
+
+Counsel confirms Q3's and Q4's sentences before the first real packet is sent (the founder's decisions of 2026-10-20,
+"Also noted").
+
+**The model's prompt and input keep their wording until PR 12 (CO-06).** `draftNarrative()` and the MOD-03 reference
+set (`packages/synth/src/eval/narrative-set.ts`) now say nothing of interest no line computed, and name a regulation's
+amount by "the Medicare fee schedule in effect for those service dates (release <n>)"; MOD-03 is regenerated and the
+local `draftPacketNarrative` baseline re-recorded with the eval CLI's `--record`, which changes only its set SHA-256.
+The prompt `draft-packet-narrative/1` and its input (`interest.computed`) are unchanged: a prompt change is a new prompt
+version with its own recorded evaluation (ADR 0054). The narrative stays the person's or the model's words; the
+verifier checks its figures, not its vocabulary, the approver reads it, and the reviewer's `payer_copy` item covers it.
+
+**What later pull requests take.** PR 8: the 835 payee's name, TIN (sealed) and address, remark codes, the contract's
+legal-entity TIN, and the route's payer address, form and required fields (part 2); a CHECK on the contact's shape and,
+if billing managers should set it, a `correspondence.set` permission with a definer setter can join PR 6b's settings
+change. PR 9: the check (gate 7 reads the route; part 4). PR 12: the payer set and the internal manifest as two
+outputs from one frozen version, the cover letter, the per-claim schedule in payer terms, page images and a remittance
+excerpt, D26's scoped exports, the narrative's wording and the model prompt's words and input under CO-06, CMS terms in
+place of release numbers (with #38), which contact and which template printed an export, and a practice time zone for
+the approval and `prepared` dates (UTC now: an approval after 7 or 8 p.m. in US time zones prints the next day).
+
 ## Review fixes (2026-10-20)
 
 Review of the folded-in items found, and this pull request fixes: the mapping cause (item #4); the pricing check's
@@ -685,6 +808,13 @@ Open for the founder then, and ruled on 2026-10-20 (Owner rulings (2026-10-20)):
 
 The founder, Tyler Williams, ruled on this pull request on 2026-10-20:
 
+- **Audit item #37, part 1: the payer's copy.** The founder accepted the recommended answer to every question of the
+  design (Q1 to Q6): a name or office and a phone as the required correspondence contact, its email the only email
+  the payer's copy prints (Q1 (a)); the patient control number dropped from the payer's PDF and CSV and refused in a
+  narrative (Q2 (a)); only the dates code knows, no timeliness claim (Q3 (a)); interest only where code computed it,
+  "Interest stated in this request: $X" (Q4 (a)); the seven-item checklist (Q5 (a)); and `contact_missing` as a coded
+  refusal in this pull request's unmerged migration (Q6 (a)). Built as "Audit item #37, part 1: the payer's copy"
+  says; counsel confirms Q3's and Q4's sentences before the first real packet is sent.
 - **A stale export sent before its attestation is logged unattested, with its reason.** When a version's pricing goes
   stale after its export and before its attestation, the attestation stays refused, and a submission of that export
   can still be logged, recorded truthfully as unattested with its reason ("sent without sign-off: pricing went stale

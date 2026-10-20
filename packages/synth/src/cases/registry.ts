@@ -135,6 +135,20 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CAS-13': none(8, 'Edits any approved packet: an action, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
   'CAS-14': none(8, 'A submission logged 45 days before the test date with no response: dates, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
   'CAS-15': { completesIn: 8, build: workflow.cas15, assertedBy: ['apps/worker/src/packets/packets.db.test.ts', 'packages/packets/src/interest.test.ts'] },
+  // Audit item #37 part 1 (the founder's rulings of 2026-10-20; ADR 0061): the payer's copy, the contact, the reference.
+  'CAS-26': none(8, 'Prints any approved packet as the payer receives it: an output, not a fixture.', [
+    'apps/worker/src/packets/export.test.ts',
+    'apps/worker/src/packets/payer-copy.db.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-27': none(8, 'A practice setting with no contact: no file.', [
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/web/src/lib/routes/payer-copy-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-28': none(8, 'Looks up any approved packet by its reference: no file.', ['packages/packets/src/reference.test.ts', 'apps/web/src/lib/routes/payer-copy-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

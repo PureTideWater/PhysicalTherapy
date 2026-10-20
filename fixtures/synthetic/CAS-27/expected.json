@@ -1,0 +1,22 @@
+{
+  "case": "CAS-27",
+  "module": "CAS",
+  "title": "Export with no correspondence contact",
+  "assertion": "Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/worker/src/packets/export-attempts.db.test.ts",
+    "apps/worker/src/packets/packets.db.test.ts",
+    "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
+    "apps/web/e2e/packets.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "A practice setting with no contact: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -23,7 +23,7 @@ import { releaseText } from './words';
 
 /**
  * The payer's copy of an export (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061; PRD 12,
- * The packet; CAS-11, CAS-12, CAS-15, CAS-16; CO-05): the HTML the worker prints to PDF and the CSV schedule, from
+ * The packet; CAS-11, CAS-12, CAS-15, CAS-26; CO-05): the HTML the worker prints to PDF and the CSV schedule, from
  * SYNTHETIC versions with their identifiers inserted. T1 to T9 of the design.
  */
 

@@ -17,6 +17,7 @@ import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { loadPage } from '../../../../../../lib/http/next';
 import { waitText } from '../../../../../../lib/packets/approval';
+import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_COPY_TEXT, correspondenceSettingsPath } from '../../../../../../lib/packets/contact';
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
@@ -57,6 +58,37 @@ function DisabledApprove({ describedBy }: { readonly describedBy: string }) {
       <Button type="button" disabled aria-describedby={describedBy}>
         Approve this version
       </Button>
+    </div>
+  );
+}
+
+/**
+ * What the export prints for the payer (audit item #37 part 1): the payer's copy, and the correspondence contact it
+ * closes with as set now, or that none is set, linking the administrator to where it is set.
+ */
+function PayerCopyNote({ contact, exported, practiceId, canSetContact }: { readonly contact: ContactNow; readonly exported: boolean; readonly practiceId: string; readonly canSetContact: boolean }) {
+  const settings = canSetContact ? (
+    <>
+      {' '}
+      <Link className="underline" href={correspondenceSettingsPath(practiceId)}>
+        Settings, Correspondence
+      </Link>
+    </>
+  ) : null;
+  return (
+    <div className="flex flex-col gap-1" data-payer-copy={contact.state}>
+      <p>{PAYER_COPY_TEXT}</p>
+      {contact.state === 'set' ? (
+        <p data-contact="set">
+          {exported ? 'The correspondence contact set now (an export already made keeps the one it was printed with): ' : 'Correspondence contact it prints: '}
+          {contact.text}.{settings}
+        </p>
+      ) : (
+        <p data-contact={contact.state}>
+          {contact.state === 'missing' ? CONTACT_MISSING_TEXT : CONTACT_MALFORMED_TEXT}
+          {settings}
+        </p>
+      )}
     </div>
   );
 }
@@ -119,7 +151,7 @@ export default async function PacketPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="A billing manager, an analyst or a firm principal builds packets; open the case to see its state." />;
   }
-  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice } = page.data;
+  const { practiceId, case: item, builder, notice, canApprove, canExport, asOf, canDraftWithModel, drafts, modelNotice, canSetContact } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const version = builder.version;
   const approval = builder.approval;
@@ -182,6 +214,12 @@ export default async function PacketPage(props: Props) {
               </CardTitle>
               <CardDescription>
                 Written {utc(version.writtenAt)} by {version.writtenBy ?? '—'}. Version SHA-256 (what an approval names): <Hash value={version.contentSha256} label="Version SHA-256" />. Dispute level {version.content.dispute_level}.
+                {version.reference === null ? null : (
+                  <>
+                    {' '}
+                    Reference <span className="font-mono" data-reference={version.reference}>{version.reference}</span>: what the payer’s copy prints in its approval line and names its files by, and what a payer quotes back.
+                  </>
+                )}
               </CardDescription>
             </CardHeader>
             {version.current ? null : (
@@ -397,6 +435,7 @@ export default async function PacketPage(props: Props) {
               <CardDescription>The export prints the approved version as a PDF and a CSV schedule with the identifiers inserted from the claim and patient records, stores both sealed, and records their SHA-256.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm">
+              <PayerCopyNote contact={builder.contact} exported={version.exportedAt !== null} practiceId={practiceId} canSetContact={canSetContact} />
               {version.exportedAt !== null ? (
                 <>
                   <p data-export="done">
@@ -430,10 +469,23 @@ export default async function PacketPage(props: Props) {
                   const attempt = exportAttemptWords(version.exportAttempt, utc, { cleared: version.exportReadiness.outcome === 'ready', singleUser: version.singleUser });
                   const status = attempt === null ? null : <ExportStatus words={attempt} checkAgainHref={`${casePath}/packet?version=${version.id}`} refreshMs={ATTEMPT_REFRESH_MS} />;
                   if (version.exportReadiness.outcome === 'refused') {
+                    const { reasons } = version.exportReadiness;
+                    // Everything else ready but the contact: the button is there, disabled, with its reason (item #61).
+                    const onlyContact = reasons.length === 1 && reasons[0] === 'contact_missing';
                     return (
                       <>
                         {status}
                         <ExportBlocked version={version} />
+                        {onlyContact && canExport ? (
+                          <div>
+                            <Button type="button" disabled aria-describedby="export-contact-missing">
+                              Export PDF and CSV
+                            </Button>
+                            <p id="export-contact-missing" className="pt-1 text-sm text-muted-foreground">
+                              {CONTACT_MISSING_TEXT}
+                            </p>
+                          </div>
+                        ) : null}
                       </>
                     );
                   }

@@ -8,6 +8,7 @@ import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
+import { packetReference } from '@tp/packets';
 import { EXPORT_NOT_DOWNLOADED } from '@tp/worker/packets';
 import { packetExportHandler } from '@tp/worker/runtime';
 import type { Practice } from '@tp/worker/testing';
@@ -408,8 +409,15 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     // The files hold the identifiers, checked against their SHA-256; downloading them is a logged line-level export.
     const pdf = ok<Download<Uint8Array<ArrayBuffer>>>(await call(packetPdf, practice.manager, { ...P, caseId, versionId: version?.id ?? '' }));
     expect(createHash('sha256').update(pdf.download.body).digest('hex')).toBe(exported?.exportSha256);
-    expect(pdf.download.filename).toBe(`packet-${version?.id ?? ''}.pdf`);
+    // W2 (audit item #37 part 1, D8): the files are named by the packet's reference, never a record ID.
+    const reference = packetReference(exported?.contentSha256 ?? '');
+    expect(exported?.reference).toBe(reference);
+    expect(pdf.download.filename).toBe(`payment-dispute-${reference}.pdf`);
     const csv = ok<Download<Uint8Array<ArrayBuffer>>>(await call(packetCsv, practice.manager, { ...P, caseId, versionId: version?.id ?? '' }));
+    expect(csv.download.filename).toBe(`payment-dispute-${reference}-schedule.csv`);
+    for (const name of [pdf.download.filename, csv.download.filename]) {
+      expect(name).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    }
     expect(createHash('sha256').update(csv.download.body).digest('hex')).toBe(exported?.exportCsvSha256);
     expect(Buffer.from(csv.download.body).toString('utf8')).toContain('SYNCCNCAS080001');
     expect((await call(packetCsv, viewer, { ...P, caseId, versionId: version?.id ?? '' })).status).toBe('forbidden');
@@ -443,6 +451,22 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(ok(await call(packetReviewsPage, reviewer, P)).awaiting.map((item) => item.versionId)).toEqual([version?.id]);
     const review = ok(await call(packetReviewPage, reviewer, reviewParams)).review;
     expect(review).toMatchObject({ exportSha256: exported?.exportSha256, exportCsvSha256: exported?.exportCsvSha256, deadlineNow: 'verified', attestation: null, viewerTookPart: false });
+    // W4 (audit item #37 part 1): what the payer's copy no longer prints is on the review: the approval's people and time,
+    // the audit flag, the regulation's confirmation, the evidence with its SHA-256 and gaps, the releases' manifests, the
+    // version's SHA-256 and its reference, and the contact the practice has set now.
+    expect(review).toMatchObject({
+      writtenBy: expect.stringContaining('@'),
+      approvedBy: expect.stringContaining('@'),
+      approvedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      approvedAlone: false,
+      regulationConfirmation: null,
+      contentSha256: exported?.contentSha256,
+      reference,
+      contactNow: { state: 'set', text: expect.stringContaining('SYNTHETIC BILLING OFFICE') },
+    });
+    expect(review.content.evidence.every((item) => item.kind === 'rule_release' ? /^[0-9a-f]{64}$/.test(item.sha256 ?? '') : true)).toBe(true);
+    expect(review.content.rule_releases.map((release) => release.manifest_sha256)).toEqual([expect.stringMatching(/^[0-9a-f]{64}$/)]);
+    expect(review.content.evidence_gaps).toEqual(expect.any(Array));
     // The billing manager's downloads are not the reviewer's: the attest route refuses until the reviewer has downloaded both files (docs/adr/0061).
     expect(review.viewerDownloaded).toEqual({ pdf: false, csv: false });
     const attestNow = async () => call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations });
@@ -485,6 +509,24 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
     expect(ok(await call(packetReviewPage, reviewer, reviewParams)).review.viewerDownloaded).toEqual({ pdf: true, csv: true });
     // Every item is confirmed, over the files the review showed: other files are refused.
     expect((await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '' })).status).toBe('invalid');
+    // W7 (D10): the server requires each of the seven boxes; a form without any one is refused as invalid input and writes nothing.
+    expect(PACKET_CHECKLIST).toHaveLength(7);
+    const attestedEvents = async () =>
+      (
+        await asOwner(w.owner, [practice.practiceId], () =>
+          w.owner.query<{ n: number; attested: boolean }>(
+            "SELECT (SELECT count(*)::int FROM audit_event WHERE practice_id = $1 AND action = 'packet_export_attested' AND object_id = $2) AS n, (SELECT attested_at IS NOT NULL FROM packet_version WHERE id = $2) AS attested",
+            [practice.practiceId, version?.id],
+          ),
+        )
+      ).rows[0];
+    for (const item of PACKET_CHECKLIST) {
+      const { [`confirm_${item.id}`]: _left, ...others } = confirmations;
+      const outcome = await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: exported?.exportSha256 ?? '', csvSha256: exported?.exportCsvSha256 ?? '', ...others });
+      expect(outcome.status, item.id).toBe('invalid');
+      expect(outcome.status === 'invalid' ? outcome.issues.map((issue) => issue.field) : [], item.id).toEqual([`confirm_${item.id}`]);
+      expect(await attestedEvents(), item.id).toEqual({ n: 0, attested: false });
+    }
     expect(refused(await call(attestPacketExportAction, reviewer, P, { caseId, versionId: version?.id ?? '', pdfSha256: 'f'.repeat(64), csvSha256: exported?.exportCsvSha256 ?? '', ...confirmations }))).toBe(
       'the files reviewed are not this export’s; open the review again',
     );

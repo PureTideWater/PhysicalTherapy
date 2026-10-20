@@ -5,12 +5,15 @@ import path from 'node:path';
 import { type Page, expect, test } from '@playwright/test';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
+import { PACKET_REFERENCE_PATTERN, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText } from '@tp/packets';
+import { holdsLoosely, printedPdfText } from '@tp/worker/testing/payer-copy';
 
 import { atPhoneWidth, expectAccessible } from './a11y';
 import { attemptEvents, reopenLine, shownVersionId, writeOffFirstLine } from './export-attempts';
 import { registerKeyAndSignIn, signInWithTotp, withDatabase } from './helpers';
-import { queue } from './journeys';
-import { citedAmendmentCase, deadlinePractice, openPacketCase, packetPractice, uncitedWindowCase } from './packets';
+import { JOURNEY_PRACTICE_ADMIN, queue } from './journeys';
+import { PACKET_PRACTICE, citedAmendmentCase, deadlinePractice, openPacketCase, packetPractice, uncitedWindowCase } from './packets';
+import { personaEmail } from '../scripts/synthetic-personas';
 import { holdExports, startLocalWorker } from './worker';
 
 /**
@@ -29,7 +32,12 @@ import { holdExports, startLocalWorker } from './worker';
  * deadline verified from the contract's cited window (CO-05, D17); the reimbursement
  * reviewer, under a support grant, finds the attest button disabled until they have downloaded both of the
  * export's files from the review, then attests over their SHA-256 (D16; the owner's addition of 2026-10-18); and the
- * submission logged carries the export's SHA-256. Identifiers stay placeholders on screen. The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
+ * submission logged carries the export's SHA-256. Identifiers stay placeholders on screen. The export is the payer's
+ * copy (audit item #37 part 1; the founder's rulings of 2026-10-20): with no correspondence contact the approver's
+ * Export button is disabled, saying where it is set (E1); the practice administrator sets it on Settings,
+ * Correspondence (E2); the PDF downloads named by the packet's reference and prints the approval line with it and the
+ * contact, and no login or SHA-256 (E3); the reviewer's page shows the internal record and the seven-item checklist (E4);
+ * and on Cases the reference typed in lower case finds the packet (E5). The payer's answer (PRD 5, J10: "logs the payer's response"; LED-01) follows: a SYNTHETIC
  * payer letter is uploaded on the Contracts screen and recorded as a partial acceptance of 60.00, which
  * moves no money by itself; the next reconcile (queued as the daily schedule queues it) approves it in
  * the recovery ledger, and the dashboard shows it as payer approved, never as recovered. The adjusted
@@ -157,13 +165,57 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
   const held = await holdExports(practiceId);
   try {
     await signInWithTotp(approver, 'packet-approver');
-    await test.step('a second billing manager approves it and asks for the export while it is held: the builder shows it in progress (CAS-11; item #26)', async () => {
+    await test.step('a second billing manager approves it; with no correspondence contact the Export button is disabled, saying where it is set (audit item #37 part 1, E1)', async () => {
       await approver.goto(`${casePath}/packet`);
       const approval = approver.getByRole('region', { name: 'Approval' });
       await expect(approval.locator('[data-approval="ready"]')).toBeVisible();
       await approval.getByRole('button', { name: 'Approve this version' }).click();
       await expect(approver.locator('[data-notice="approved"]')).toBeVisible();
       await expect(approver.locator('[data-approval="approved"]')).toBeVisible();
+      const exportCard = approver.getByRole('region', { name: 'Export', exact: true });
+      await expect(exportCard.locator('[data-export][data-reason="contact_missing"] [data-refusal="contact_missing"]')).toContainText('Settings, Correspondence');
+      const button = exportCard.getByRole('button', { name: 'Export PDF and CSV' });
+      await expect(button).toBeDisabled();
+      await expect(button).toHaveAccessibleDescription(/Settings, Correspondence/);
+      await expect(exportCard.locator('[data-payer-copy="missing"]')).toBeVisible();
+      await expectAccessible(approver, 'Packet builder, no correspondence contact');
+    });
+
+    await test.step('the practice administrator sets the correspondence contact on Settings, Correspondence (E2)', async () => {
+      const adminContext = await browser.newContext();
+      const admin = await adminContext.newPage();
+      try {
+        await signInWithTotp(admin, JOURNEY_PRACTICE_ADMIN);
+        await admin.goto(`/p/${practiceId}/settings`);
+        await expect(admin.locator('[data-step="correspondence"]')).toHaveAttribute('data-done', 'no');
+        await admin.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: /^Correspondence/ }).click();
+        await expect(admin).toHaveURL(new RegExp(`/p/${practiceId}/settings/correspondence$`));
+        await expect(admin.locator('[data-contact="missing"]')).toBeVisible();
+        await expectAccessible(admin, 'Settings, Correspondence');
+        const form = admin.getByRole('region', { name: 'Correspondence contact' });
+        const { address } = SYNTHETIC_CORRESPONDENCE_CONTACT;
+        await form.getByLabel('Name or office').fill(SYNTHETIC_CORRESPONDENCE_CONTACT.name);
+        await form.getByLabel('Phone', { exact: true }).fill('(919) 555-0100');
+        await form.getByLabel('Extension (optional)').fill(SYNTHETIC_CORRESPONDENCE_CONTACT.phone_extension ?? '');
+        await form.getByLabel('Email (optional)').fill(SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? '');
+        await form.getByLabel('Street').fill(address?.line1 ?? '');
+        await form.getByLabel('Suite or floor (optional)').fill(address?.line2 ?? '');
+        await form.getByLabel('City').fill(address?.city ?? '');
+        await form.getByLabel('State').selectOption(address?.state ?? '');
+        await form.getByLabel('ZIP').fill(address?.zip ?? '');
+        await form.getByRole('button', { name: 'Save the contact' }).click();
+        await expect(admin.locator('[data-notice="saved"]')).toBeVisible();
+        await expect(admin.locator('[data-preview]')).toHaveText(`Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`);
+        await expectAccessible(admin, 'Settings, Correspondence, saved');
+        assertNoPhi('url', admin.url(), { known: KNOWN });
+      } finally {
+        await adminContext.close();
+      }
+    });
+
+    await test.step('the approver asks for the export while it is held: the builder shows it in progress (CAS-11; item #26)', async () => {
+      await approver.goto(`${casePath}/packet`);
+      await expect(approver.getByRole('region', { name: 'Export', exact: true }).locator('[data-contact="set"]')).toContainText(correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT));
       await approver.getByRole('button', { name: 'Export PDF and CSV' }).click();
       await expect(approver.locator('[data-notice="export_requested"]')).toBeVisible();
       await expect(approver.locator('[data-notice="export_requested"]')).not.toContainText('Reload');
@@ -218,17 +270,36 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
     });
     expect(pdfSha256).toMatch(/^[0-9a-f]{64}$/);
 
-    await test.step('the PDF downloads with that SHA-256, with the identifiers the screen never showed, and the CSV with its own', async () => {
-      const response = await approver.request.get(`${casePath}/packet/${await currentVersionId(approver)}/pdf`);
+    let reference = '';
+    await test.step('the PDF downloads with that SHA-256, named by the packet’s reference, the payer’s copy with the identifiers the screen never showed, and the CSV with its own (E3)', async () => {
+      const shownVersion = await currentVersionId(approver);
+      reference = (await approver.getByRole('region', { name: 'Version' }).locator('[data-reference]').getAttribute('data-reference')) ?? '';
+      expect(reference).toMatch(PACKET_REFERENCE_PATTERN);
+      const response = await approver.request.get(`${casePath}/packet/${shownVersion}/pdf`);
       expect(response.status()).toBe(200);
       expect(response.headers()['content-type']).toContain('application/pdf');
       expect(response.headers()['cache-control']).toMatch(/private.*no-store|no-store.*private/);
+      expect(response.headers()['content-disposition']).toBe(`attachment; filename="payment-dispute-${reference}.pdf"`);
       expect(createHash('sha256').update(await response.body()).digest('hex')).toBe(pdfSha256);
+      // The payer's copy: the approval line with the reference and the contact; no sign-in email, SHA-256 or record ID.
+      const { text, metadata } = await printedPdfText(new Uint8Array(await response.body()));
+      const printed = `${text}\n${Object.values(metadata).join('\n')}`;
+      expect(holdsLoosely(text, `Approved for submission by ${PACKET_PRACTICE} on`)).toBe(true);
+      expect(holdsLoosely(text, `reference ${reference}.`)).toBe(true);
+      expect(holdsLoosely(text, `Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`)).toBe(true);
+      for (const login of [personaEmail('packet-drafter'), personaEmail('packet-approver'), personaEmail('packet-reviewer')]) {
+        expect(holdsLoosely(printed, login)).toBe(false);
+      }
+      expect(printed).not.toContain('SHA-256');
+      expect(holdsLoosely(printed, shownVersion)).toBe(false);
+      expect(holdsLoosely(printed, pdfSha256.slice(0, 16))).toBe(false);
       const csvSha256 = (await approver.getByLabel('CSV SHA-256', { exact: true }).getAttribute('data-sha256')) ?? '';
-      const csv = await approver.request.get(`${casePath}/packet/${await currentVersionId(approver)}/csv`);
+      const csv = await approver.request.get(`${casePath}/packet/${shownVersion}/csv`);
       expect(csv.status()).toBe(200);
+      expect(csv.headers()['content-disposition']).toBe(`attachment; filename="payment-dispute-${reference}-schedule.csv"`);
       expect(createHash('sha256').update(await csv.body()).digest('hex')).toBe(csvSha256);
       expect(await csv.text()).toContain('SYNCCNCAS080001');
+      expect((await csv.text()).split('\r\n')[0]).not.toMatch(/trace|sha256|patient_control_number/);
       // The submission waits for the reviewer's attestation.
       await expect(approver.locator('[data-attestation="waiting"]')).toBeVisible();
     });
@@ -242,6 +313,15 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await reviewer.getByRole('table', { name: 'Exports waiting' }).getByRole('link').first().click();
         await expect(reviewer).toHaveURL(new RegExp(`${casePath}/packet/[0-9a-f-]{36}/review$`));
         await expect(reviewer.getByRole('region', { name: 'Deadline' }).locator('[data-deadline-summary="verified"]')).toBeVisible();
+        // E4: what the payer's copy no longer prints is here, and what it carries beside it.
+        const record = reviewer.getByRole('region', { name: 'Internal record' });
+        await expect(record.locator('[data-internal="written_by"]')).toHaveText(personaEmail('packet-drafter'));
+        await expect(record.locator('[data-internal="approved_by"]')).toContainText(personaEmail('packet-approver'));
+        await expect(record.getByLabel('Version SHA-256')).toHaveAttribute('data-sha256', /^[0-9a-f]{64}$/);
+        await expect(record.getByRole('list', { name: 'Evidence list' })).toBeVisible();
+        await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
+        await expect(reviewer.getByRole('region', { name: 'Payer’s copy' }).locator('[data-contact="set"]')).toContainText(correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT));
+        await expectAccessible(reviewer, 'Packet review, internal record and payer’s copy');
         await atPhoneWidth(reviewer, 'Packet review');
         const exportFiles = reviewer.getByRole('region', { name: 'Export', exact: true });
         const attestation = reviewer.getByRole('region', { name: 'Attestation' });
@@ -268,6 +348,9 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         await reviewer.reload();
         await expect(exportFiles.locator('[data-download="csv"]')).toHaveAttribute('data-downloaded', 'true');
         await expect(attestation.locator('[data-attestation="needs_downloads"]')).toHaveCount(0);
+        // The founder's seven items (Q5 (a)), the payer's copy among them.
+        await expect(attestation.getByRole('checkbox')).toHaveCount(7);
+        await expect(attestation).toContainText('The PDF and the CSV are fit to send to the payer');
         for (const box of await attestation.getByRole('checkbox').all()) {
           await box.check();
         }
@@ -301,6 +384,20 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       await expect(page.locator('[data-packet="approved"]')).toContainText('approved; exported');
       await expect(page.getByRole('heading', { level: 1 }).locator('[data-state="submitted"]')).toBeVisible();
       assertNoPhi('url', page.url(), { known: KNOWN });
+    });
+
+    await test.step('on Cases, the reference a payer quotes, typed in lower case without its hyphen, finds the packet and opens it (E5; CAS-28)', async () => {
+      await page.goto(`/p/${practiceId}/cases`);
+      await page.getByLabel('Find a packet by its reference').fill(reference.toLowerCase().replace('-', ''));
+      await page.getByRole('button', { name: 'Find', exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`/p/${practiceId}/cases/by-reference\\?reference=`));
+      const matches = page.getByRole('list', { name: 'Matching packet versions' });
+      await expect(matches.getByRole('listitem')).toHaveCount(1);
+      await expect(page.getByRole('region', { name: 'Packets with this reference' })).toContainText(reference);
+      await expectAccessible(page, 'Packet by reference');
+      await matches.getByRole('link', { name: /^Open the packet, version \d+$/ }).click();
+      await expect(page).toHaveURL(new RegExp(`${casePath}/packet\\?version=[0-9a-f-]{36}$`));
+      await expect(page.getByRole('region', { name: 'Version' }).locator('[data-reference]')).toHaveAttribute('data-reference', reference);
     });
 
     await test.step('the payer’s letter is recorded as a partial acceptance; recording moves no money, and the next reconcile approves it (J10, LED-01)', async () => {

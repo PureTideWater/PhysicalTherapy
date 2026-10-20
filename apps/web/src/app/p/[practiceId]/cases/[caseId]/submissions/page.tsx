@@ -113,6 +113,11 @@ export default async function SubmissionsPage(props: Props) {
             <CardContent className="flex flex-col gap-3">
               <p className="text-sm">
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
+                {submittable.packetReference === null ? null : (
+                  <>
+                    ; reference <span className="font-mono" data-reference={submittable.packetReference}>{submittable.packetReference}</span> (printed in the export’s approval line)
+                  </>
+                )}
               </p>
               {submittable.pricing.status === 'current' ? null : submittable.attestedAt !== null ? (
                 <Alert variant="destructive" data-pricing-check={submittable.pricing.status}>
@@ -296,6 +301,11 @@ export default async function SubmissionsPage(props: Props) {
                   </p>
                   <p data-export-hash={submission.exportSha256}>
                     Export SHA-256: PDF <Hash value={submission.exportSha256} label="Submitted PDF SHA-256" />; CSV <Hash value={submission.exportCsvSha256} label="Submitted CSV SHA-256" />
+                    {submission.packetReference === null ? null : (
+                      <>
+                        ; packet reference <span className="font-mono" data-reference={submission.packetReference}>{submission.packetReference}</span>
+                      </>
+                    )}
                   </p>
                   {submission.sent.kind === 'attested' ? null : (
                     <p className="flex flex-wrap items-center gap-2 pt-1" data-submission-sent="unattested" data-unattested-reason={submission.sent.reason}>
