@@ -514,9 +514,10 @@ console; a late `invoice.payment_failed` still starts the dunning clock, the dun
 an organization subscribes once; mail to the support address opens a ticket (SES receiving into the stack's support
 inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DIR`; docs/runbooks/support-mail.md);
 deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
-`docs/runbooks/`. `docs/runbooks/github-governance.md` is the founder's guide to the repository's GitHub settings: GitHub
-Pro, a private repository, the build agent's own account, the rulesets for `claude/build-platform` and `main`, Code
-Owners review and `APPROVAL_REVIEW_REQUIRED`, and approving from the GitHub app (docs/adr/0063).
+`docs/runbooks/`. `docs/runbooks/github-governance.md` is the founder's guide to the repository's GitHub settings: a
+company organization on GitHub Team, a private repository, the build agent's own account, the rulesets for
+`claude/build-platform` and `main` with the founder's approval on every pull request, `APPROVAL_REVIEW_REQUIRED`,
+approving from the GitHub app, the content publisher and the launch (docs/adr/0063).
 
 The brand and the product's words (ADRs 0056 to 0058; Change Order 001, CO-01 and CO-11): `packages/brand`
 (`@paidwhole/brand`; its README is the drop-in's wiring guide, headed by where this repository differs) holds the tokens,
