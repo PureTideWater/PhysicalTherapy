@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -41,26 +42,52 @@ const isList = (value: unknown): value is readonly unknown[] => Array.isArray(va
 /** A runs-on value, or one label of it, that is wholly one matrix value: its key, and any property of that value. */
 const MATRIX_REFERENCE = /^\$\{\{\s*matrix\.([\w-]+(?:\.[\w-]+)*)\s*\}\}$/;
 
+const listKeys = (matrix: Record<string, unknown>) => Object.keys(matrix).filter((name) => name !== 'include' && name !== 'exclude');
+
 /**
- * Every value a job's matrix gives one of its keys, or undefined where this test cannot tell: the matrix, the key's list
- * or the include list is an expression, or some job the matrix makes has no such key. exclude only removes jobs.
+ * The jobs a matrix's lists make, less each one an exclude entry matches in every key it names (GitHub applies exclude
+ * before include), or undefined where a list or the exclude list is an expression.
+ */
+function listedJobs(matrix: Record<string, unknown>): Record<string, unknown>[] | undefined {
+  const exclude = matrix.exclude ?? [];
+  const lists = listKeys(matrix).map((name) => [name, matrix[name]] as const);
+  if (!isList(exclude) || lists.some(([, values]) => !isList(values))) return undefined;
+  const jobs = lists.reduce<Record<string, unknown>[]>((made, [name, values]) => made.flatMap((job) => (values as unknown[]).map((value) => ({ ...job, [name]: value }))), [{}]);
+  const matches = (job: Record<string, unknown>, entry: unknown) => isRecord(entry) && Object.entries(entry).every(([name, value]) => isDeepStrictEqual(job[name], value));
+  return jobs.filter((job) => !exclude.some((entry) => matches(job, entry)));
+}
+
+/**
+ * Every value a job's matrix gives one of its keys, or undefined where this test cannot tell: the matrix, a list, the
+ * include list or the exclude list is an expression, or some job the matrix makes has no such key. An include entry
+ * joins each listed job whose values it leaves as they are, and where it joins none GitHub makes it a job of its own;
+ * so an entry without the key is safe only when it joins a job.
  */
 function matrixValues(matrix: unknown, key: string): unknown[] | undefined {
   const include = isRecord(matrix) ? (matrix.include ?? []) : undefined;
   if (!isRecord(matrix) || !isList(include)) return undefined;
   const listed = matrix[key];
   const named = (entry: unknown) => (isRecord(entry) ? entry[key] : entry);
-  if (isList(listed)) return [...listed, ...include.filter((entry) => !isRecord(entry) || key in entry).map(named)];
+  if (isList(listed)) {
+    const without = include.filter((entry): entry is Record<string, unknown> => isRecord(entry) && !(key in entry));
+    const jobs = without.length === 0 ? [] : listedJobs(matrix);
+    const joins = (entry: Record<string, unknown>, job: Record<string, unknown>) => Object.entries(entry).every(([name, value]) => !Object.hasOwn(job, name) || isDeepStrictEqual(job[name], value));
+    if (jobs === undefined || !without.every((entry) => jobs.some((job) => joins(entry, job)))) return undefined;
+    return [...listed, ...include.filter((entry) => !isRecord(entry) || key in entry).map(named)];
+  }
   // Without a list of the key, only a matrix of include entries alone gives it to every job, each entry its own job.
-  const lists = Object.keys(matrix).filter((name) => name !== 'include' && name !== 'exclude');
-  return listed === undefined && lists.length === 0 ? include.map(named) : undefined;
+  return listed === undefined && listKeys(matrix).length === 0 ? include.map(named) : undefined;
 }
+
+/** GitHub-hosted labels other than -latest ones that name an image without its version. */
+const UNVERSIONED_HOSTED = /^ubuntu-slim$/i;
 
 /**
  * Why a runs-on value does not name only pinned runner images (audit item #19). GitHub moves a -latest label to a new
- * image on its own schedule (ubuntu-latest to Ubuntu 26.04 from 2026-10-19, which Playwright 1.56.1 predates), so a job
- * on one changes under a commit that changed nothing. runs-on is a label, a list of labels or a group with its labels;
- * an expression is followed only when it is one of the job's own matrix values, and refused otherwise.
+ * image on its own schedule (ubuntu-latest to Ubuntu 26.04 from 2026-10-19, which Playwright 1.56.1 predates), and can
+ * move any hosted label without a version, so a job on one changes under a commit that changed nothing. runs-on is a
+ * label, a list of labels or a group with its labels; an expression is followed only when it is one of the job's own
+ * matrix values, and refused otherwise.
  */
 function runnerProblems(runsOn: unknown, matrix?: unknown): string[] {
   const shown = JSON.stringify(runsOn);
@@ -77,7 +104,8 @@ function runnerProblems(runsOn: unknown, matrix?: unknown): string[] {
     return resolved.flatMap((value) => runnerProblems(value).map((problem) => `${shown}: ${problem}`));
   }
   if (runsOn.includes('${{')) return [`${shown} is an expression this test cannot resolve to a pinned label`];
-  return /-latest(-|$)/i.test(runsOn) ? [`${shown} is a -latest label, whose image GitHub moves`] : [];
+  if (/-latest(-|$)/i.test(runsOn)) return [`${shown} is a -latest label, whose image GitHub moves`];
+  return UNVERSIONED_HOSTED.test(runsOn) ? [`${shown} names a hosted image without a version, which GitHub can move`] : [];
 }
 
 /** A job's runner problems. A job that calls one of the directory's own reusable workflows runs on that file's jobs. */
@@ -101,14 +129,14 @@ describe('workflows', () => {
     }
   });
 
-  it('run every job on a pinned runner image: none on a -latest label, none without runs-on, none on an expression this test cannot resolve (audit item #19)', () => {
+  it('run every job on a pinned runner image: none on a -latest or other unversioned hosted label, none without runs-on, none on an expression this test cannot resolve (audit item #19)', () => {
     const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
     expect(files).toContain('ci.yml');
     const problems = files.flatMap((file) => Object.entries(workflow(file).jobs).flatMap(([name, job]) => jobRunnerProblems(job, files).map((problem) => `${file} ${name}: ${problem}`)));
     expect(problems).toEqual([]);
   });
 
-  it('refuse a -latest runner as a label, in a list, in a group, as a matrix value or an include entry’s, and any runner they cannot resolve', () => {
+  it('refuse a -latest or unversioned hosted runner as a label, in a list, in a group, as a matrix value or an include entry’s, and any runner they cannot resolve', () => {
     const problems = (job: string) => jobRunnerProblems(parse(job) as Job, ['build.yml']);
     expect(problems('runs-on: ubuntu-latest')).toEqual(['"ubuntu-latest" is a -latest label, whose image GitHub moves']);
     for (const pinned of [
@@ -117,6 +145,7 @@ describe('workflows', () => {
       'runs-on: { group: larger, labels: [ubuntu-24.04-arm] }',
       'runs-on: ${{ matrix.os }}\nstrategy: { matrix: { os: [ubuntu-24.04, windows-2025], include: [{ os: macos-15 }, { node: 24 }] } }',
       'runs-on: ${{ matrix.os }}\nstrategy: { matrix: { include: [{ os: ubuntu-24.04 }, { os: ubuntu-22.04 }] } }',
+      'runs-on: ${{ matrix.os }}\nstrategy: { matrix: { os: [ubuntu-24.04], app: [web, worker], exclude: [{ app: web }], include: [{ app: worker, node: 24 }] } }',
       'runs-on: ${{ matrix.target.runner }}\nstrategy: { matrix: { target: [{ runner: ubuntu-24.04 }, { runner: [self-hosted, arm64] }] } }',
       'runs-on: [self-hosted, "${{ matrix.arch }}"]\nstrategy: { matrix: { arch: [x64, arm64] } }',
       'uses: ./.github/workflows/build.yml',
@@ -147,6 +176,9 @@ describe('workflows', () => {
       'runs-on: [self-hosted, "${{ matrix.image }}"]\nstrategy: { matrix: { image: [ubuntu-latest] } }',
       'runs-on: ubuntu-${{ matrix.version }}\nstrategy: { matrix: { version: ["24.04"] } }',
       'runs-on: ${{ inputs.runner }}',
+      'runs-on: ubuntu-slim',
+      'runs-on: ${{ matrix.os }}\nstrategy: { matrix: { os: [ubuntu-24.04], app: [web], include: [{ app: mobile }] } }',
+      'runs-on: ${{ matrix.os }}\nstrategy: { matrix: { os: [ubuntu-24.04], app: [web, worker], exclude: [{ app: worker }], include: [{ app: worker, node: 24 }] } }',
     ]) {
       expect(problems(unpinned), unpinned).not.toEqual([]);
     }
