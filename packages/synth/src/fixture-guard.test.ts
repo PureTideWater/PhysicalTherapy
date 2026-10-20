@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type GeneratedCase, render835 } from './cases/builder';
 import { minimalFile } from './cases/par';
+import { writePdf } from './formats/pdf';
+import { scannedPdf } from './formats/scan';
 import { VENDOR_FORMATS } from './formats/vendors/registry';
 import { writeZip } from './formats/zip';
 import { ARCHIVE_LIMITS, Archive, ArchiveReadError } from './guard/archive';
@@ -17,7 +19,7 @@ import { TableReadError, isIdentifierHeader, markerProblem, readTable, sniffedSe
 import { testWorkbook, testZip } from './guard/test-workbook';
 import { vendorFormatOf, vendorMarkerColumn } from './guard/vendors';
 import { workbookSheets } from './guard/xlsx';
-import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, writeCases } from './write';
+import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticHeaders, assertSyntheticX12, searchableText, startsInterchange, writeCases } from './write';
 
 /**
  * Test matrix SEC-14: a fixture with a non-synthetic sender is refused. The non-synthetic interchange
@@ -60,7 +62,9 @@ function refusal(content: Uint8Array | string, label: string): string {
   throw new Error(`${label} was let through`);
 }
 
-describe('the fixture hook (SEC-14)', () => {
+// Each case runs the hook, which starts tsx for a file under fixtures/: seconds apiece on a loaded machine, beyond the
+// default five-second timeout under coverage beside the rest of the suite.
+describe('the fixture hook (SEC-14)', { timeout: 60_000 }, () => {
   it('refuses a Write of X12 content whose sender is not SYNTHSENDER', () => {
     const result = runHook(otherSender);
     expect(result.status).toBe(2);
@@ -135,6 +139,65 @@ describe('the fixture writer guard', () => {
     expect(() => assertSyntheticX12(bytes(`\uFEFF${otherSender}`), 'bom')).toThrow(SyntheticSenderError);
     expect(() => assertSyntheticX12(writeZip([{ name: 'a.835', bytes: bytes(otherSender) }]), 'zip')).toThrow(/zip!a\.835/);
     expect(() => assertSyntheticX12(bytes('Code,Description\n'), 'csv')).not.toThrow();
+  });
+
+  it('reads an interchange after white space, and in UTF-16 by its byte-order mark, as a parser would', () => {
+    const utf16 = (text: string, bigEndian: boolean) => {
+      const body = Buffer.from(text, 'utf16le');
+      if (bigEndian) {
+        body.swap16();
+      }
+      return new Uint8Array(Buffer.concat([Buffer.from(bigEndian ? [0xfe, 0xff] : [0xff, 0xfe]), body]));
+    };
+    for (const [label, other, synthetic835] of [
+      ['white space', bytes(`\r\n \t${otherSender}`), bytes(`\r\n${synthetic}`)],
+      ['UTF-16 LE', utf16(otherSender, false), utf16(synthetic, false)],
+      ['UTF-16 BE', utf16(`\r\n${otherSender}`, true), utf16(synthetic, true)],
+      ['BOM then white space', bytes(`\uFEFF\n${otherSender}`), bytes(`\uFEFF\n${synthetic}`)],
+    ] as const) {
+      expect(() => assertSyntheticX12(other, label), label).toThrow(/ISA06/);
+      expect(() => assertSyntheticX12(synthetic835, label), label).not.toThrow();
+      expect(startsInterchange(other.subarray(0, 1024)), label).toBe(true);
+    }
+    expect(startsInterchange(bytes('Code,Description\n'))).toBe(false);
+    expect(startsInterchange(bytes('  # ISA is the header\n'))).toBe(false);
+  });
+
+  it('finds an interchange header anywhere in a text by the edit hook\'s rule, and lets prose about the segment through', () => {
+    const search = (text: Uint8Array) => {
+      const found = searchableText(text);
+      if (found === null) {
+        throw new Error('not text');
+      }
+      return () => assertSyntheticHeaders(found, 'docs/notes.md');
+    };
+    // After a line of other text, mid-line, in a code block, with another separator, in UTF-16 and in Latin-1.
+    for (const [label, text] of [
+      ['after a line', bytes(`Pasted from the clearinghouse:\n${otherSender}`)],
+      ['mid-line', bytes(`const sample = '${otherSender}';\n`)],
+      ['code block', bytes(`# Remittance\n\n\`\`\`\n${otherSender}\n\`\`\`\n`)],
+      ['pipes', bytes(`notes\n${otherSender.replaceAll('*', '|')}`)],
+      ['UTF-16', new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`notes\n${otherSender}`, 'utf16le')]))],
+      ['Latin-1', new Uint8Array(Buffer.concat([Buffer.from('caf\u00e9\n', 'latin1'), Buffer.from(otherSender, 'latin1')]))],
+    ] as const) {
+      expect(search(text), label).toThrow(SyntheticSenderError);
+    }
+    expect(search(bytes(`Pasted from the clearinghouse:\n${otherSender}`))).toThrow('docs/notes.md: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER');
+    expect(search(bytes(`intro\n${otherSender}`))).not.toThrow(/OTHERSENDER/);
+    // The synthetic sender anywhere, and prose that names the segment, pass.
+    expect(search(bytes(`Example:\n${synthetic}\nconst x = '${synthetic}';\n`))).not.toThrow();
+    expect(search(bytes('ISA*00 opens an interchange; ISA06 is its sender.\nThe ISA segment is 106 characters, ISA*00*.\n'))).not.toThrow();
+    // A binary file (a NUL among its first 8,000 bytes) holds no text to search.
+    expect(searchableText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, ...Buffer.from(otherSender)]))).toBeNull();
+    expect(searchableText(bytes('\uFEFFtext'))).toBe('text');
+  });
+
+  it('lets a PDF through only when packages/synth wrote it, an exhibit or a scan', () => {
+    expect(() => assertSyntheticFixture(writePdf([['Exhibit A']], 'Exhibit A'), 'fixtures/synthetic/CON-01/exhibit.pdf')).not.toThrow();
+    expect(() => assertSyntheticFixture(scannedPdf([['Exhibit A']], 'Exhibit A', 'seed'), 'fixtures/synthetic/MOD-01/scan.pdf')).not.toThrow();
+    const real = bytes('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Producer (Some Office Suite) >>\nendobj\n%%EOF\n');
+    expect(refusal(real, 'docs/contract.pdf')).toMatch(/contract\.pdf: a PDF fixture is one packages\/synth writes/);
+    expect(refusal(testZip([{ name: 'eob.pdf', bytes: real }], true), 'fixtures/x/batch.zip')).toContain('batch.zip!eob.pdf: a PDF fixture');
   });
 
   it('reads each interchange with its own delimiters, so a second sender behind other delimiters is refused', () => {

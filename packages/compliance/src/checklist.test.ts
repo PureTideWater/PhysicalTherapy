@@ -19,6 +19,7 @@ function everything(today: string): EvidenceRecord[] {
   return [
     ...POLICIES.map((policy) => record('policy_approval', policyApprovalSubject(policy), today)),
     record('access_review', 'quarterly-access-review', today),
+    record('change_review', 'merged-pull-requests', today),
     record('tabletop_exercise', 'incident-response-tabletop', today),
     record('vendor_review', 'subprocessor-inventory', today),
     record('risk_analysis', 'risk-analysis', today),
@@ -70,6 +71,22 @@ describe('evaluateChecklist', () => {
     expect(incident?.note).toContain('past its yearly review');
     // On the last day of the period the record still counts.
     expect(evaluateChecklist({ today: '2026-10-01', records, restoreDrills: [], workforce: STAFF }).controls.find((control) => control.control.id === 'access_reviews')?.evidence[0]?.status).toBe('current');
+  });
+
+  it('holds change management to the quarterly independent review of merged pull requests, beside the policy and the GitHub rulesets', () => {
+    const change = (records: EvidenceRecord[], today = '2026-10-16') => evaluateChecklist({ today, records, restoreDrills: [], workforce: STAFF }).controls.find((control) => control.control.id === 'change_management');
+    const review = (records: EvidenceRecord[], today?: string) => change(records, today)?.evidence.find((item) => item.source.kind === 'record');
+    expect(review([])?.status).toBe('missing');
+    expect(review([record('change_review', 'merged-pull-requests', '2026-07-16')])?.status).toBe('current');
+    expect(review([record('change_review', 'merged-pull-requests', '2026-07-15')])?.status).toBe('stale');
+    // An access review is not a change review.
+    expect(review([record('access_review', 'quarterly-access-review', '2026-10-16')])?.status).toBe('missing');
+    const kinds = change([])?.evidence.map((item) => item.source.kind);
+    expect(kinds).toEqual(['external', 'ci_job', 'unit_test', 'unit_test', 'ci_job', 'database_test', 'record', 'runbook', 'runbook', 'policy']);
+    expect(change([])?.status).toBe('action_needed');
+    const approved = [record('policy_approval', policyApprovalSubject(policyById('change-management')), '2026-10-16'), record('change_review', 'merged-pull-requests', '2026-10-01')];
+    expect(change(approved)?.status).toBe('ready');
+    expect(policyById('change-management').version).toBe('0.2');
   });
 
   it('counts each workforce member’s attestation on its own', () => {

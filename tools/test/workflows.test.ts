@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
@@ -305,7 +306,7 @@ describe('workflows', () => {
     const synth = stepIndex(steps, (step) => step.run === 'pnpm synth --all');
     // Right after the secret scan and before pnpm synth --all, which rewrites a hand-edited generated file and removes
     // an extra one, so the check reads the commit's own bytes.
-    expect(check).toBe(stepIndex(steps, (step) => step.uses?.startsWith('gitleaks/gitleaks-action@') === true) + 1);
+    expect(check).toBe(stepIndex(steps, (step) => step.name === "Secret scan of the pull request's commits") + 1);
     expect(check).toBeLessThan(synth);
     // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
     expect(steps[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
@@ -313,6 +314,44 @@ describe('workflows', () => {
     expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
     const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
     expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
+  });
+
+  it('scan the pull request’s commits with the pinned gitleaks the pre-push hook runs, never the gitleaks action, which an organization’s repository must license', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const actions = files.flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => (job.steps ?? []).map((step) => step.uses ?? '')));
+    expect(actions.filter((uses) => /gitleaks/i.test(uses))).toEqual([]);
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const step = steps[stepIndex(steps, (candidate) => candidate.name === "Secret scan of the pull request's commits")] as Step & { env?: Record<string, string> };
+    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
+    const script = step.run ?? '';
+    expect(script).toContain('gitleaks="$(tools/gitleaks/install.sh)"');
+    expect(script).not.toContain('${{');
+    for (const option of ['git --no-banner --redact', '--config .gitleaks.toml', '--gitleaks-ignore-path .gitleaksignore', '--log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge origin/$BASE_REF..HEAD" .']) {
+      expect(script, option).toContain(option);
+    }
+    // The pin it installs: one version and a SHA-256 for each platform, the archive checked before anything in it runs.
+    const release = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64', 'darwin_x64', 'darwin_arm64']) {
+      expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    }
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/install.sh'), 'utf8');
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // The whole workflow reads the repository and nothing more.
+    expect((parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8')) as { permissions?: unknown }).permissions).toEqual({ contents: 'read' });
+  });
+
+  it('write the changes since the last approved domain model into the check job’s summary, against the base branch, before any check can fail', () => {
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const summary = stepIndex(steps, (step) => step.run?.includes('db:domain-model --summary-since') === true);
+    const step = steps[summary] as Step & { env?: Record<string, string> };
+    expect(summary).toBe(stepIndex(steps, (step) => step.run === 'pnpm install --frozen-lockfile') + 1);
+    // The base branch by its name from the environment, never pasted into the script; the summary is appended to the job's.
+    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
+    expect(step.run).toContain('pnpm -s db:domain-model --summary-since "origin/$BASE_REF" >> "$GITHUB_STEP_SUMMARY"');
+    expect(step.run).not.toContain('${{');
+    // It needs the base branch's history, which the checkout fetches whole.
+    expect(steps[0]?.with).toMatchObject({ 'fetch-depth': 0 });
   });
 
   it('run the content checker on each outgoing release before publishing it', () => {
@@ -323,10 +362,58 @@ describe('workflows', () => {
   });
 });
 
+describe('approval-of-record (docs/adr/0063)', () => {
+  const file = readFileSync(path.join(repositoryRoot, '.github/workflows/approval-of-record.yml'), 'utf8');
+  const parsed = parse(file) as Workflow & { permissions?: unknown; jobs: Record<string, { 'timeout-minutes'?: number }> };
+
+  it('runs on each pull request event and each review, so a review re-runs it', () => {
+    expect(parsed.on).toEqual({
+      pull_request: { types: ['opened', 'synchronize', 'reopened', 'edited', 'ready_for_review'] },
+      pull_request_review: { types: ['submitted', 'edited', 'dismissed'] },
+    });
+    // Its job is the required check the ruleset names (docs/runbooks/github-governance.md, step 4).
+    expect(Object.keys(parsed.jobs)).toEqual(['approval-of-record']);
+  });
+
+  it('reads with a read-only token, installs nothing and runs the decision on Node 24 alone', () => {
+    expect(parsed.permissions).toEqual({ contents: 'read', 'pull-requests': 'read' });
+    const steps = parsed.jobs['approval-of-record']?.steps ?? [];
+    expect(steps.map((step) => step.uses ?? step.run)).toEqual(['actions/checkout@v4', 'actions/setup-node@v4', 'node tools/approval-of-record/approval-of-record.ts']);
+    expect(steps[0]?.with).toEqual({ 'persist-credentials': false });
+    expect(steps[1]?.with).toEqual({ 'node-version': 24 });
+    expect((steps[2] as Step & { env?: Record<string, string> }).env).toEqual({
+      GITHUB_TOKEN: '${{ github.token }}',
+      APPROVAL_REVIEW_REQUIRED: '${{ vars.APPROVAL_REVIEW_REQUIRED }}',
+    });
+    // No secret but the workflow's own token, and no step that installs or builds anything.
+    expect(file).not.toMatch(/secrets\./);
+    expect(file).not.toMatch(/pnpm|npm (?:ci|install)|pull_request_target/);
+    expect(parsed.jobs['approval-of-record']?.['timeout-minutes']).toBe(5);
+    expect(existsSync(path.join(repositoryRoot, 'tools/approval-of-record/approval-of-record.ts'))).toBe(true);
+  });
+
+  // actionlint where it is installed (or ACTIONLINT names it); the YAML of every workflow is parsed above either way.
+  const actionlint = process.env.ACTIONLINT ?? spawnSync('/bin/sh', ['-c', 'command -v actionlint'], { encoding: 'utf8' }).stdout.trim();
+  it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).map((name) => path.join(repositoryRoot, '.github/workflows', name));
+    const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
+    expect(result.error).toBeUndefined();
+    expect(result.stdout + result.stderr).toBe('');
+    expect(result.status).toBe(0);
+  });
+});
+
 describe('dependabot', () => {
-  it('updates the workspace, the actions and both base images weekly', () => {
+  it('updates the workspace, the actions and both base images weekly, grouped, a few pull requests at a time', () => {
     const config = parse(readFileSync(path.join(repositoryRoot, '.github/dependabot.yml'), 'utf8')) as {
-      updates: { 'package-ecosystem': string; schedule: { interval: string }; directory?: string; directories?: string[] }[];
+      updates: {
+        'package-ecosystem': string;
+        schedule: { interval: string };
+        directory?: string;
+        directories?: string[];
+        'open-pull-requests-limit'?: number;
+        groups?: Record<string, { 'update-types'?: string[]; patterns?: string[] }>;
+      }[];
     };
     expect(config.updates.map((update) => [update['package-ecosystem'], update.schedule.interval])).toEqual([
       ['npm', 'weekly'],
@@ -334,5 +421,25 @@ describe('dependabot', () => {
       ['docker', 'weekly'],
     ]);
     expect(config.updates[2]?.directories).toEqual(['/apps/web', '/apps/worker']);
+    // Each pull request costs about 35 minutes of CI (docs/adr/0063): one per week for every action, one for both images.
+    expect(config.updates.map((update) => update['open-pull-requests-limit'])).toEqual([5, 2, 2]);
+    expect(config.updates[0]?.groups).toEqual({ 'minor-and-patch': { 'update-types': ['minor', 'patch'] } });
+    expect(config.updates[1]?.groups).toEqual({ actions: { patterns: ['*'] } });
+    expect(config.updates[2]?.groups).toEqual({ 'base-images': { patterns: ['*'] } });
+  });
+});
+
+describe('job timeouts', () => {
+  it('give every job of the pull-request workflows a timeout well under GitHub’s 360 minutes', () => {
+    const limits: Record<string, Record<string, number>> = {};
+    for (const file of ['ci.yml', 'supply-chain.yml', 'approval-of-record.yml']) {
+      const jobs = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows', file), 'utf8')) as { jobs: Record<string, { 'timeout-minutes'?: number }> }).jobs;
+      limits[file] = Object.fromEntries(Object.entries(jobs).map(([name, job]) => [name, job['timeout-minutes'] ?? 360]));
+    }
+    expect(limits).toEqual({
+      'ci.yml': { check: 60, mutation: 120 },
+      'supply-chain.yml': { licenses: 15, images: 15 },
+      'approval-of-record.yml': { 'approval-of-record': 5 },
+    });
   });
 });

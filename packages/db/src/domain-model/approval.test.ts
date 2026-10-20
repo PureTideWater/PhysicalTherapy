@@ -11,6 +11,7 @@ import {
   EARLIEST_APPROVAL_DATE,
   PROVENANCE_LINE_INDEX,
   PROVENANCE_PREFIX,
+  approvalFields,
   approvalLineOf,
   approvalProblems,
   awaitingApprovalLine,
@@ -24,7 +25,7 @@ import {
   provenanceProblems,
 } from './approval';
 import { generateDomainModel } from './generate';
-import { APPROVERS_FILE, APPROVERS_FORMAT, DomainModelError, REPO_ROOT, readApprovers } from './sources';
+import { APPROVERS_FILE, APPROVERS_FORMAT, DomainModelError, GITHUB_LOGIN, REPO_ROOT, readApproverRecords, readApprovers } from './sources';
 
 /** A small document in the generator's shape: the title, its note, provenance on the fifth line, the approval line last. */
 function document(
@@ -478,7 +479,7 @@ describe('the approval of the committed document', () => {
   });
 });
 
-describe('readApprovers', () => {
+describe('readApprovers and readApproverRecords', () => {
   let dir: string | undefined;
   afterEach(() => {
     if (dir !== undefined) rmSync(dir, { recursive: true, force: true });
@@ -491,38 +492,67 @@ describe('readApprovers', () => {
     return target;
   };
   const note = 'changes only with the founder approval';
+  const entry = (name: unknown, github: unknown = 'a-signer') => ({ name, github });
 
-  it('reads packages/db/domain-model/approvers.json, a reviewed list in its format with its note', () => {
+  it('reads packages/db/domain-model/approvers.json, a reviewed list in its format with its note, each name with its GitHub login', () => {
     expect(APPROVERS_FILE).toBe(path.join(REPO_ROOT, APPROVERS_LIST));
+    expect(APPROVERS_FORMAT).toBe('tp-domain-model-approvers/2');
     expect(() => readApprovers()).not.toThrow();
-    expect(readApprovers(file({ format: APPROVERS_FORMAT, note, approvers: ['A. Signer', 'Second Signer'] }))).toEqual(['A. Signer', 'Second Signer']);
+    // Every name the committed list holds has a login, and every login is one GitHub would issue.
+    expect(readApproverRecords().map((r) => r.name)).toEqual(readApprovers());
+    expect(readApproverRecords().every((r) => GITHUB_LOGIN.test(r.github))).toBe(true);
+    const two = file({ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer'), entry('Second Signer', 'second-signer2')] });
+    expect(readApprovers(two)).toEqual(['A. Signer', 'Second Signer']);
+    expect(readApproverRecords(two)).toEqual([
+      { name: 'A. Signer', github: 'a-signer' },
+      { name: 'Second Signer', github: 'second-signer2' },
+    ]);
     expect(readApprovers(file({ format: APPROVERS_FORMAT, note, approvers: [] }))).toEqual([]);
   });
 
-  it('refuses another format, a missing note or list, and an entry that is not a name as it is signed', () => {
+  it('refuses another format, a missing note or list, an entry that is not a name as it is signed, and a login GitHub would not issue', () => {
     const refusals: [unknown, RegExp][] = [
-      [{ format: 'tp-domain-model-approvers/2', note, approvers: [] }, /format must be "tp-domain-model-approvers\/1"$/],
+      [{ format: 'tp-domain-model-approvers/1', note, approvers: ['A. Signer'] }, /format must be "tp-domain-model-approvers\/2"$/],
       [{ approvers: [] }, /format must be/],
       [{ format: APPROVERS_FORMAT, approvers: [] }, /note must be a string$/],
-      [{ format: APPROVERS_FORMAT, note }, /approvers must be a list of strings$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: [7] }, /approvers\[0\] must be a string$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['A. Signer', 'TBD'] }, /approvers\[1\] is a placeholder \("TBD"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['<founder name>'] }, /approvers\[0\] is a placeholder \(text in angle brackets\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['Claude'] }, /approvers\[0\] is a placeholder \("Claude"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['A. Signer', 'T.B.D.'] }, /approvers\[1\] is a placeholder \("TBD"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['N.A.'] }, /approvers\[0\] is a placeholder \("N\/A"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['VERIFY-ONLY'] }, /approvers\[0\] is a placeholder \("VERIFY ONLY"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['ClaudeCode'] }, /approvers\[0\] is a placeholder \("Claude"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['Firstname Lastname'] }, /approvers\[0\] is a placeholder \("Firstname"\), not a person$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['-'] }, /approvers\[0\] has no letters$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: ['   '] }, /approvers\[0\] is blank$/],
-      [{ format: APPROVERS_FORMAT, note, approvers: [' A. Signer'] }, /approvers\[0\] has spaces at either end$/],
+      [{ format: APPROVERS_FORMAT, note }, /approvers must be a list of objects$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: ['A. Signer'] }, /approvers must be a list of objects$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry(7)] }, /approvers\[0\]\.name must be a string$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer'), entry('TBD', 'tbd')] }, /approvers\[1\]\.name is a placeholder \("TBD"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('<founder name>')] }, /approvers\[0\]\.name is a placeholder \(text in angle brackets\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('Claude')] }, /approvers\[0\]\.name is a placeholder \("Claude"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer'), entry('T.B.D.', 'b')] }, /approvers\[1\]\.name is a placeholder \("TBD"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('N.A.')] }, /approvers\[0\]\.name is a placeholder \("N\/A"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('VERIFY-ONLY')] }, /approvers\[0\]\.name is a placeholder \("VERIFY ONLY"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('ClaudeCode')] }, /approvers\[0\]\.name is a placeholder \("Claude"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('Firstname Lastname')] }, /approvers\[0\]\.name is a placeholder \("Firstname"\), not a person$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('-')] }, /approvers\[0\]\.name has no letters$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('   ')] }, /approvers\[0\]\.name is blank$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry(' A. Signer')] }, /approvers\[0\]\.name has spaces at either end$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [{ name: 'A. Signer' }] }, /approvers\[0\]\.github must be a string$/],
+      ...['', '-signer', 'signer-', 'a--b', 'a b', 'bot[bot]', 'a'.repeat(40), '@a-signer'].map(
+        (login): [unknown, RegExp] => [{ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer', login)] }, /approvers\[0\]\.github is not a GitHub login/],
+      ),
+      [{ format: APPROVERS_FORMAT, note, approvers: [{ name: 'A. Signer', github: 'a', role: 'admin' }] }, /approvers\[0\] has fields other than name and github: role$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer', 'a'), entry('A. Signer', 'b')] }, /approvers\[1\]\.name is listed twice$/],
+      [{ format: APPROVERS_FORMAT, note, approvers: [entry('A. Signer', 'Signer'), entry('B. Signer', 'signer')] }, /approvers\[1\]\.github is listed twice$/],
       [[], /expected a JSON object$/],
     ];
     for (const [json, refusal] of refusals) {
       const target = file(json);
-      expect(() => readApprovers(target), JSON.stringify(json)).toThrow(DomainModelError);
+      expect(() => readApproverRecords(target), JSON.stringify(json)).toThrow(DomainModelError);
       expect(() => readApprovers(target), JSON.stringify(json)).toThrow(refusal);
     }
+  });
+});
+
+
+describe('approvalFields', () => {
+  it('reads the name, date and hash of a line in the approval shape, and null for any other line', () => {
+    const sha = 'a'.repeat(64);
+    expect(approvalFields(`${APPROVAL_PREFIX} A. Signer  Date: 2026-10-17  Document SHA-256: \`${sha}\``)).toEqual({ name: 'A. Signer', date: '2026-10-17', sha256: sha });
+    expect(approvalFields(awaitingApprovalLine(sha))).toEqual({ name: '________', date: '________', sha256: sha });
+    expect(approvalFields(`${APPROVAL_PREFIX} A. Signer Date: 2026-10-17`)).toBeNull();
+    expect(approvalFields(null)).toBeNull();
   });
 });

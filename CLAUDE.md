@@ -33,6 +33,7 @@ proves recovery by reconciling later remittances to posting and deposits.
 - pnpm verify-content; pnpm lint; pnpm typecheck; pnpm lint:logs; pnpm synth (generate fixtures)
 
 ## Conventions
+- The founder's standing rule (2026-10-18): recommend and build only the best option, never weighted by build effort, judged on accuracy, quality, user experience, growth, security and privacy, compliance, reliability, cost to serve, dispute success, time to value, resilience to change, AI safety, maintainability and business readiness.
 - Five line stages: flagged | validated | actionable | payer_approved | recovered. Monotonic; reopen is explicit.
 - Unpriced reasons are the closed list in docs/product/unpriced-reasons.md. Never a guessed price.
 - Medicare adjustment flags (apply_mppr, apply_assistant_reduction, apply_sequestration, apply_ncci) default
@@ -49,6 +50,9 @@ proves recovery by reconciling later remittances to posting and deposits.
 - Schema gate (CO-02):
   - Milestone 1 does not start until the founder approves `docs/product/domain-model.md`.
   - No migration merges unless `docs/product/domain-model.md` is regenerated in the same pull request and its approval line carries the founder's name, a date and the hash of that text (`pnpm db:domain-model --check --require-approval`).
+  - The approval of record is the founder's APPROVED GitHub review of the pull request's latest commit, enforced by the approval-of-record job once `APPROVAL_REVIEW_REQUIRED` is true (docs/adr/0063); open the pull request with `pnpm db:domain-model --summary-since <base>`, never write the approval line or approvers.json yourself, and never approve or request changes on a pull request: post the approval line as a suggested change in one pull-request comment on that line through the GitHub API (`gh api repos/<owner>/<repo>/pulls/<n>/comments`; .claude/skills/new-migration), which GitHub records as a comment, since protect-github.sh refuses the connector's review tools.
+- Merging (docs/adr/0063): fill every pull request's description from .github/pull_request_template.md (GitHub offers it only from main); from the day you work as your own GitHub account (runbook 3i), merge a pull request only after the founder approves its latest commit and the required checks are green, even before GitHub requires it (until then, on green checks); open none into main before launch unless the founder rules on it, never approve or merge one Dependabot opens there, and never create a release tag (the founder does).
+- Pushing (docs/adr/0063): every push goes through the pre-push hook (the fixture check and gitleaks); never push with --no-verify and never write files through the GitHub connector. Push a branch cut from main (no hook there until launch) from a checkout of claude/build-platform (`git push origin <branch>`), never by merging claude/build-platform into it. If the session-start message says the hook or gitleaks is missing, run pnpm hooks:install and pnpm gitleaks:install (the pinned gitleaks, its SHA-256 checked) before any push; a refused push is rewritten, never forced past the hook.
 
 ## Where things are
 - Parser: packages/edi835. Engine: packages/pricing. Contracts: packages/contracts. Rules: packages/rules.

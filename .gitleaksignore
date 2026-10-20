@@ -27,3 +27,8 @@ a301ad8d52c282fa47b8d4c019f845d1678138eb:apps/web/src/lib/billing/config.test.ts
 
 # packages/edi835/src/dedup.ts compares the duplicate key's bpr02Cents with the remittance's (code, no literal)
 c57b79efdb4e9f30c5b256db188f3a067b4d89db:packages/edi835/src/dedup.ts:generic-api-key:62
+
+# tools/approval-of-record/approval-of-record.test.ts line 202 (commit 231382f): the github-app-token rule matches
+# the synthetic string the test hands the run as its workflow token (ghs_ followed by "syntheticTokenThat..."), to show
+# it is never printed; not a credential. The next commit gives the string a shape no token rule matches.
+231382f8b7450c04bcf1abfbfdba1132efa7317c:tools/approval-of-record/approval-of-record.test.ts:github-app-token:202

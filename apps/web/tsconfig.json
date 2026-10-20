@@ -18,6 +18,7 @@
   "include": [
     "next-env.d.ts",
     "src",
+    "src/app/.well-known/**/*.ts",
     "e2e",
     "scripts",
     "*.ts",
