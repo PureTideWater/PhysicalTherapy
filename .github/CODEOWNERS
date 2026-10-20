@@ -12,6 +12,18 @@
 /packages/db/src/cli/domain-model.ts @PureTideWater
 /tools/approval-of-record/ @PureTideWater
 
+# The code that decides whether the gate runs at all: which migrations apply (migrate.ts), the catalog test, which
+# tests run and what each script does (vitest.config.ts, the package.json files), the fixture guard the hooks call,
+# and the release immutability check. A pull request could otherwise leave the gate's judge alone and stop it running.
+/packages/db/src/migrate.ts @PureTideWater
+/packages/db/src/cli/migrate.ts @PureTideWater
+/packages/db/src/catalog.ts @PureTideWater
+/vitest.config.ts @PureTideWater
+/package.json @PureTideWater
+/packages/db/package.json @PureTideWater
+/packages/synth/src/guard/ @PureTideWater
+/tools/check-releases-immutable.sh @PureTideWater
+
 # The published rule releases (content/releases is created by publish-content.yml) and the synthetic releases.
 /content/releases/ @PureTideWater
 /fixtures/synthetic/rules/release-*/ @PureTideWater
