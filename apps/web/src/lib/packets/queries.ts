@@ -2,11 +2,14 @@ import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db
 import { type PacketContent, VERIFIER_FORMAT, type VerifierReport, draftNarrative } from '@tp/packets';
 import type { DeadlineStatus } from '@tp/triage';
 import {
+  type ExportReadiness,
+  type ExportReadinessReason,
   type PacketAttestation,
   type PacketExportFile,
   type PacketVersionDetail,
   approvePacketVersion,
   downloadPacketExport,
+  exportReadiness,
   packetOfCase,
   packetVersionOf,
   writePacketVersion,
@@ -16,7 +19,11 @@ import type { Services } from '../server/services';
 import type { JobQueue } from '../uploads/queue';
 import { peopleEmails } from '../cases/people';
 import { NotFoundError } from '../http/route';
-import { type ApprovalState, approvalState } from './approval';
+import { type ApprovalState, type BlockedReason, approvalState } from './approval';
+import { type ExportAttempt, exportAttempt } from './export-attempts';
+import { PRICING_BLOCKED_TEXT, type PricingNowView, pricingNow } from './pricing';
+
+export { DEADLINE_NOT_EXPORTABLE, OUTDATED_NOT_EXPORTABLE, STALE_LEVEL_NOT_EXPORTABLE } from './export-attempts';
 
 /**
  * The packet builder's reads and steps (PRD 7, Packet builder: "citation, line table, traces, narrative
@@ -32,6 +39,11 @@ import { type ApprovalState, approvalState } from './approval';
  * export is asked for only when the database, deriving the deadline again now, says it is not
  * unverified. D16: once exported, a reimbursement reviewer attests the export over its two SHA-256 on
  * the review page; a submission is logged only after that.
+ *
+ * The best-option audit's items #4 and #26 (the founder's ruling of 2026-10-18): the version shown carries its
+ * pricing now (pricingNow(): the stale lines with their figures then and now), its export readiness (the one
+ * @tp/worker/packets exportReadiness() the export action and the job ask too, every reason with its fix) and
+ * the latest attempt at its export (exportAttempt()); approval is blocked ahead while its pricing is not current.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -86,6 +98,12 @@ export interface VersionView {
   readonly exportVerifier: VerifierReport | null;
   /** The reimbursement reviewer's attestation over the export (D16), once made. */
   readonly attestation: { readonly by: string | null; readonly at: string; readonly checklist: PacketAttestation['checklist'] } | null;
+  /** Whether its pricing is still current, with the stale lines' figures then and now (audit item #4). */
+  readonly pricingNow: PricingNowView;
+  /** Whether it can be exported today, and every reason it cannot (audit item #26): what the export action and the job say. */
+  readonly exportReadiness: ExportReadiness;
+  /** The latest attempt at its export since the latest request (audit item #26). */
+  readonly exportAttempt: ExportAttempt;
 }
 
 export interface ApprovalRequest {
@@ -174,7 +192,15 @@ export async function atCaseLevel(scope: Scope, caseId: string, content: PacketC
   return rows[0]?.level === content.dispute_level;
 }
 
-function versionView(detail: PacketVersionDetail, writtenBy: string | null, now: DeadlineStatus, attestedBy: string | null, caseLevel: boolean): VersionView {
+interface VersionChecks {
+  readonly deadlineNow: DeadlineStatus;
+  readonly atCaseLevel: boolean;
+  readonly pricingNow: PricingNowView;
+  readonly exportReadiness: ExportReadiness;
+  readonly exportAttempt: ExportAttempt;
+}
+
+function versionView(detail: PacketVersionDetail, writtenBy: string | null, attestedBy: string | null, checks: VersionChecks): VersionView {
   return {
     id: detail.versionId,
     packetId: detail.packetId,
@@ -193,10 +219,9 @@ function versionView(detail: PacketVersionDetail, writtenBy: string | null, now:
     exportCsvSha256: detail.exportCsvSha256,
     attachedDocumentIds: attachedOf(detail.content),
     deadlineStatus: detail.deadlineStatus,
-    deadlineNow: now,
-    atCaseLevel: caseLevel,
     exportVerifier: detail.exportVerifier,
     attestation: detail.attestedAt === null || detail.attestation === null ? null : { by: attestedBy, at: detail.attestedAt.toISOString(), checklist: detail.attestation.checklist },
+    ...checks,
   };
 }
 
@@ -237,12 +262,18 @@ export async function builderView(
     'SELECT packet_version_matches_case($1, v.content) AS matches, practice_has_other_packet_approver($2, app_actor_id()) AS others FROM packet_version v WHERE v.id = $3',
     [input.caseId, input.practiceId, shown.id],
   );
+  const pricing = await pricingNow(scope, { practiceId: input.practiceId, content: detail.content, requestId: input.requestId });
+  const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: shown.id, asOf: input.now.toISOString().slice(0, 10) });
+  if (readiness === undefined) {
+    throw new NotFoundError();
+  }
   const approval = approvalState(
     {
       verifierPassed: shown.verifier_passed,
       verifierCurrent: detail.verifier.format === VERIFIER_FORMAT,
       current: shown.current,
       matchesCase: facts[0]?.matches ?? false,
+      pricingCurrent: pricing.status === 'current',
       regulationCitation: detail.content.citation.kind === 'regulation',
       regulationConfirmed: detail.regulationConfirmedBy !== null,
       approvedAt: shown.approved_at?.toISOString() ?? null,
@@ -275,13 +306,13 @@ export async function builderView(
       deadlineStatus: row.deadline_verification_status,
       attestedAt: row.attested_at?.toISOString() ?? null,
     })),
-    version: versionView(
-      detail,
-      person(shown.drafted_by),
-      await deadlineNow(scope, input.caseId, detail.content),
-      await attesterEmail(scope, detail.attestedBy),
-      await atCaseLevel(scope, input.caseId, detail.content),
-    ),
+    version: versionView(detail, person(shown.drafted_by), await attesterEmail(scope, detail.attestedBy), {
+      deadlineNow: await deadlineNow(scope, input.caseId, detail.content),
+      atCaseLevel: await atCaseLevel(scope, input.caseId, detail.content),
+      pricingNow: pricing,
+      exportReadiness: readiness,
+      exportAttempt: await exportAttempt(scope, shown.id, input.now),
+    }),
     approval,
     approvalRequest: request === undefined ? null : { at: request.created_at.toISOString(), by: person(request.created_by), message: cipher === null || request.body === null ? null : cipher.decrypt('case_activity.body', request.body) },
     ...common,
@@ -367,21 +398,19 @@ export async function approveOnce(scope: Scope, input: { readonly practiceId: st
   return true;
 }
 
-/** Why an export is not asked for. */
-export const NOT_EXPORTABLE = 'an export prints the packet’s current version once it is approved';
+/** Why approval is blocked, in words, with the next step (the approval panel's reason, beside its disabled button). */
+export const BLOCKED_TEXT: Readonly<Record<BlockedReason, string>> = {
+  verifier: 'Approval is blocked: the verifier failed this version (its mismatches are listed above). Correct the narrative and save a new version; only a version that passes can be approved.',
+  verifier_outdated: 'An earlier verifier checked this version. Save it again as a new version so the current verifier checks it; only a version the current verifier passed can be approved.',
+  not_current: 'A later version of this packet was written since; only the current version can be approved.',
+  case_changed: 'The case’s lines changed since this version was written (a line was written off or reopened); write a new version first.',
+  pricing_not_current: PRICING_BLOCKED_TEXT.approval,
+  regulation:
+    'A contract specialist confirms the Medicare Advantage regulation applies to this case before its packet can be approved: they do it on their Regulations to confirm page, under the practice’s support grant (the platform administrator opens one from a ticket).',
+};
 
-/**
- * Why an export with a deadline that is not verified is not asked for, and what the billing manager does
- * about it (CO-05, D17): the window's evidence is cited and verified, then the version is written again.
- */
-export const DEADLINE_NOT_EXPORTABLE = 'The export is blocked: this version’s deadline is not verified, so the packet is not exported. Each reason, and who supplies the missing evidence, is under Deadline above.';
-
-/** A /1 version's export: it states no deadline, so it is written again. */
-export const OUTDATED_NOT_EXPORTABLE = 'This version was written before packets stated their deadline. Write a new version of the packet and approve it; only that one can be exported.';
-
-/** A version written before a denial reopened the case: it states the earlier level's deadline, so it is written again. */
-export const STALE_LEVEL_NOT_EXPORTABLE =
-  'This version was written before the payer’s denial reopened the case for its next dispute level, so it states the earlier level’s deadline. Write a new version of the packet at this level and approve it; only that one can be exported.';
+/** Why the drafter's Approve button is disabled (CAS-09; audit item #61): someone else approves, and the drafter asks them. */
+export const DRAFTER_APPROVAL_TEXT = 'A second person who approves packets approves it; ask with Request approval.';
 
 /** The person who attested an export, by email; null when they are no longer a user. */
 async function attesterEmail(scope: Scope, userId: string | null): Promise<string | null> {
@@ -392,41 +421,36 @@ async function attesterEmail(scope: Scope, userId: string | null): Promise<strin
   return rows[0]?.email ?? null;
 }
 
+/** What an export request came to: queued, exported already, or refused before anything was queued with every reason. */
+export type ExportRequestOutcome =
+  | { readonly outcome: 'queued' }
+  | { readonly outcome: 'exported' }
+  | { readonly outcome: 'refused'; readonly reasons: readonly [ExportReadinessReason, ...ExportReadinessReason[]] };
+
 /**
  * Asks the worker to print a version's export (the packet_export job: the PDF and the CSV schedule, the
  * identifiers inserted, stored sealed, their SHA-256 recorded on the version; CAS-11, CAS-12). A version
- * exported already is left as it is ('exported'); one not approved or not current is refused, one written
- * before a denial reopened the case ('stale_level'), one whose deadline the database does not verify now
- * (CO-05), and a tp-packet/1 version, which states none.
+ * exported already is left as it is ('exported'). Anything the job would refuse is refused here first, before
+ * anything is queued, with every reason that holds (@tp/worker/packets exportReadiness(), which the job asks
+ * again; audit item #26): not approved, not current, a tp-packet/1 version, the case changed or closed, an
+ * earlier dispute level, a line's window passed on `asOf`, its pricing not current, its deadline not verified,
+ * or its statements not its inputs'. The page shows each with its fix.
  */
 export async function requestExportOnce(
   scope: Scope,
   queue: JobQueue,
-  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string },
-): Promise<'queued' | 'exported' | 'refused' | 'stale_level' | 'deadline_unverified' | 'outdated'> {
-  const version = await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
-  if (version.exported) {
-    return 'exported';
+  input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly asOf: string },
+): Promise<ExportRequestOutcome> {
+  await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);
+  const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: input.versionId, asOf: input.asOf });
+  if (readiness === undefined) {
+    throw new NotFoundError();
   }
-  if (!version.approved || !version.current) {
-    return 'refused';
-  }
-  const { rows } = await scope.client.query<{ format: string; at_case_level: boolean; status: DeadlineStatus }>(
-    `SELECT v.content ->> 'format' AS format, v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level, packet_version_deadline_status(p.case_id, v.content) AS status
-       FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
-    [input.versionId, input.practiceId],
-  );
-  if (rows[0]?.format !== 'tp-packet/2') {
-    return 'outdated';
-  }
-  if (!rows[0].at_case_level) {
-    return 'stale_level';
-  }
-  if (rows[0].status === 'unverified') {
-    return 'deadline_unverified';
+  if (readiness.outcome !== 'ready') {
+    return readiness;
   }
   await queue.enqueue('packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
-  return 'queued';
+  return { outcome: 'queued' };
 }
 
 /**

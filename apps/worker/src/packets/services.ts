@@ -32,6 +32,7 @@ import { type JobSender, enqueue } from '../jobs/enqueue';
 import { todayUtc } from '../triage/execute';
 import { packetExportDownloads } from './downloads';
 import { scheduleIdentifiers } from './identifiers';
+import { type ExportReadinessReason, exportReadiness } from './readiness';
 import { PacketRefusedError, loadAssembly } from './records';
 
 /**
@@ -416,31 +417,21 @@ export async function approvePacketVersion(scope: PracticeScope<ScopeClient>, in
 
 /**
  * Asks the worker to print a version's export (PDF and CSV schedule, identifiers inserted, stored
- * sealed, their SHA-256 recorded on the version; CAS-12). Only an approved, current, unexported version
- * is queued; the export job checks again. Returns the job's ID, or null when it is already queued.
+ * sealed, their SHA-256 recorded on the version; CAS-12). Only a version the export job would print is
+ * queued: the readiness the job asks again (exportReadiness(), ./readiness.ts; audit item #26) refuses
+ * here first, with the first reason that holds in words (the database's own where it has them), so
+ * nothing is queued that the job would refuse. Returns the job's ID, or null when it is already queued.
  */
 export async function requestPacketExport(scope: PracticeScope<ScopeClient>, queue: JobSender, input: VersionAction): Promise<string | null> {
-  const { rows } = await scope.client.query<{ approved: boolean; current: boolean; exported: boolean; at_case_level: boolean; deadline_status: DeadlineStatus }>(
-    `SELECT v.approved_by IS NOT NULL AS approved, p.current_version_id = v.id AS current, v.exported_at IS NOT NULL AS exported,
-            v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level,
-            packet_version_deadline_status(p.case_id, v.content) AS deadline_status
-       FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND v.practice_id = $2`,
-    [input.versionId, input.practiceId],
-  );
-  const found = rows[0];
-  if (found === undefined) {
+  const readiness = await exportReadiness(scope.client, { practiceId: input.practiceId, versionId: input.versionId, asOf: todayUtc() });
+  if (readiness === undefined) {
     throw new PacketRefusedError('version_not_found', 'no such packet version in this practice');
   }
-  if (!found.approved || !found.current || found.exported) {
-    throw new PacketRuleError('23514', found.exported ? 'a packet version is exported once' : 'exporting a packet needs its current version approved');
+  if (readiness.outcome === 'exported') {
+    throw new PacketRuleError('23514', 'a packet version is exported once');
   }
-  // A version written before a denial reopened the case states the earlier level's deadline (as the job and the database refuse it).
-  if (!found.at_case_level) {
-    throw new PacketRuleError('23514', NOT_CASE_LEVEL);
-  }
-  // CO-05: an unverified deadline blocks the export here as in the job and in the database.
-  if (found.deadline_status === 'unverified') {
-    throw new PacketRuleError('23514', DEADLINE_NOT_VERIFIED);
+  if (readiness.outcome === 'refused') {
+    throw new PacketRuleError('23514', EXPORT_REQUEST_REFUSALS[readiness.reasons[0]]);
   }
   return enqueue(queue, 'packet_export', { practice_id: input.practiceId, packet_version_id: input.versionId });
 }
@@ -453,6 +444,26 @@ export const EXPORT_NOT_DOWNLOADED = 'download the export’s PDF and CSV from t
 
 /** The refusal of an export of a version written at an earlier dispute level than the case's now (the database's words). */
 export const NOT_CASE_LEVEL = 'only a version of the case\'s dispute level is exported; write the packet again at this level';
+
+/** The refusal of an export whose pricing is no longer current (audit item #4; the database's words, packet_version_export_guard). */
+export const PRICING_NOT_CURRENT =
+  'a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn, with its contract version signed off and covering the service date';
+
+/**
+ * Why requestPacketExport() queues nothing, by the first reason exportReadiness() gives: the database's own
+ * words where its guard holds the rule, fixed words naming the rule and the next step otherwise (no value).
+ */
+export const EXPORT_REQUEST_REFUSALS: Readonly<Record<ExportReadinessReason, string>> = {
+  not_approved: 'exporting a packet needs its current version approved',
+  not_current: 'exporting a packet needs its current version approved',
+  outdated: 'a packet version written before packets stated their deadline is not exported; write the packet again',
+  case_changed: 'a packet version is exported only while it asks for exactly its case\'s lines and the case is not closed; write the packet again',
+  not_case_level: NOT_CASE_LEVEL,
+  window_passed: 'a packet version is not exported once a line\'s dispute window has passed; write the line off and write the packet again without it',
+  pricing_not_current: PRICING_NOT_CURRENT,
+  deadline_unverified: DEADLINE_NOT_VERIFIED,
+  inputs_differ: 'a packet version is exported only while it states its deadlines and calculations as its inputs give them now; write the packet again',
+};
 
 /**
  * What a reimbursement reviewer confirms over a packet's export before attesting it (D16), as codes:

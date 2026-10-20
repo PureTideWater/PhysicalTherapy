@@ -8,19 +8,8 @@ import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type PracticeContext } from '../http/route';
 import { type DraftView, packetDrafts, reviewNarrativeDrafts } from '../models/narrative-drafts';
 import { modelFeatures } from '../models/path';
-import {
-  DEADLINE_NOT_EXPORTABLE,
-  NOT_EXPORTABLE,
-  OUTDATED_NOT_EXPORTABLE,
-  STALE_LEVEL_NOT_EXPORTABLE,
-  type BuilderView,
-  approveOnce,
-  builderView,
-  exportFile,
-  requestExportOnce,
-  versionOfCase,
-  writeVersionOnce,
-} from '../packets/queries';
+import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
+import { type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
 import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
@@ -44,6 +33,13 @@ import { opaqueId, optionalText } from './schemas';
  * the next step in words; once exported, the reimbursement reviewer (audit_finding.validate, the reviewer
  * role under a support grant) reviews the export's PDF and CSV on its review page and attests over their
  * SHA-256, once, and a submission is logged only after that. The reviewer edits nothing else.
+ *
+ * The best-option audit's items #4, #26 and #61 (the founder's ruling of 2026-10-18): the builder shows a
+ * version's pricing now and blocks its approval while it is not current; the export is refused before anything
+ * is queued for every reason the job would refuse it, each with its fix, and the page shows the latest attempt
+ * (in progress, retrying, refused with its fix, failed); and a version is written through one form whose submit
+ * buttons (save, the code-built draft, the model's draft) the page's one server action routes to the write or
+ * the model draft below, each with its own schema, role, transaction and audit event.
  */
 
 const STATE_CODE = z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/, 'a two-letter state code');
@@ -231,6 +227,9 @@ export const approvePacketVersionAction = practiceRoute({
  * Asks the worker to export the approved current version: the packet_export job prints the PDF and the
  * CSV schedule with the identifiers inserted from the claim and patient records, stores both sealed
  * and records their SHA-256 on the version (CAS-11, CAS-12). An exported version is left as it is.
+ * What the job would refuse is refused here at once, before anything is queued (the best-option audit's item
+ * #26): one issue per reason that holds, its field the reason's code and its message the reason with its fix,
+ * which the packet page lists. The job records its own refusals and failed tries, which the page shows.
  */
 export const exportPacketAction = practiceRoute({
   id: 'practice.cases.packet.export',
@@ -242,20 +241,12 @@ export const exportPacketAction = practiceRoute({
   input: z.object({ caseId: opaqueId, versionId: opaqueId }),
   audit: { action: 'packet_export_requested', objectType: 'packet_version' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
-    const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId });
-    if (outcome === 'refused') {
-      throw new InputError([{ field: 'refused', message: NOT_EXPORTABLE }]);
+    const asOf = services.now().toISOString().slice(0, 10);
+    const outcome = await requestExportOnce(scope, services.queue, { practiceId, caseId: input.caseId, versionId: input.versionId, asOf });
+    if (outcome.outcome === 'refused') {
+      throw new InputError(outcome.reasons.map((reason) => ({ field: reason, message: EXPORT_REFUSAL_TEXT[reason] })));
     }
-    if (outcome === 'stale_level') {
-      throw new InputError([{ field: 'versionId', message: STALE_LEVEL_NOT_EXPORTABLE }]);
-    }
-    if (outcome === 'deadline_unverified') {
-      throw new InputError([{ field: 'deadline', message: DEADLINE_NOT_EXPORTABLE }]);
-    }
-    if (outcome === 'outdated') {
-      throw new InputError([{ field: 'versionId', message: OUTDATED_NOT_EXPORTABLE }]);
-    }
-    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome === 'queued' ? 'export_requested' : 'exported'}` };
+    return { objectId: input.versionId, redirect: `/p/${practiceId}/cases/${input.caseId}/packet?version=${input.versionId}&notice=${outcome.outcome === 'queued' ? 'export_requested' : 'exported'}` };
   },
   // The world's exported version: exported already, so nothing is queued.
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },

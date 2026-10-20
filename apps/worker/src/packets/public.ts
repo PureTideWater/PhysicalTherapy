@@ -7,7 +7,10 @@
  * submission log and the follow-up list; the contract specialist reads the regulations waiting for
  * confirmation; the daily monitor reminds of follow-ups that have come; the recovery ledger (milestone 9) reads the responses that
  * accept an amount and records reprocessed remittances as responses. Printing the export is the
- * worker's (the packet_export job); nothing here writes a ledger entry or a line stage.
+ * worker's (the packet_export job); whether a version can be exported now is the one readiness the web's
+ * export action, requestPacketExport() and the job all ask (exportReadiness(), audit item #26), and the
+ * codes its refusals and failed tries are recorded with are PACKET_EXPORT_REFUSALS and
+ * PACKET_EXPORT_FAILURES. Nothing here writes a ledger entry or a line stage.
  */
 export {
   type AcceptingResponse,
@@ -16,6 +19,7 @@ export {
   type AttestedExport,
   DEADLINE_NOT_VERIFIED,
   EXPORT_NOT_DOWNLOADED,
+  EXPORT_REQUEST_REFUSALS,
   type DraftInputs,
   type DraftInputsRequest,
   type ExportAwaitingAttestation,
@@ -28,6 +32,7 @@ export {
   type PacketAttestationItem,
   type PacketVersionDetail,
   PacketRuleError,
+  PRICING_NOT_CURRENT,
   type RecordResponseInput,
   type RecordedResponse,
   type RegulationAwaiting,
@@ -64,6 +69,16 @@ export {
   downloadPacketExport,
   packetExportDownloads,
 } from './downloads';
+export {
+  type ExportReadiness,
+  type ExportReadinessReason,
+  type ExportReadinessRequest,
+  PACKET_EXPORT_FAILURES,
+  PACKET_EXPORT_REFUSALS,
+  type PacketExportFailure,
+  type PacketExportRefusal,
+  exportReadiness,
+} from './readiness';
 export { MA_NONCONTRACTED_CITATION, PACKET_REFUSALS, type PacketRefusal, PacketRefusedError } from './records';
 export { PACKET_CSV_COLUMNS } from './csv';
 export { type LetterPatient, otherPatientRecords } from './letter-records';

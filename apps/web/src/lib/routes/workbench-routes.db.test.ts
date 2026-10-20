@@ -36,6 +36,7 @@ import {
   reviewPacketPdf,
   writeVersionAction,
 } from './packets';
+import { EXPORT_REFUSAL_TEXT } from '../packets/export-attempts';
 import { PACKET_CHECKLIST } from '../packets/review';
 import { practiceHome } from './practice';
 import { logSubmissionAction, recordResponseAction, submissionsPage } from './submissions';
@@ -392,7 +393,8 @@ describe('the packet builder (CAS-08 to CAS-13)', () => {
       expect(text).not.toContain(identifier);
     }
     expect(version?.content.lines[0]?.claim_control_number).toBe('{{claim_control_number:1}}');
-    expect(refused(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '' }))).toBe('an export prints the packet’s current version once it is approved');
+    // Refused at once, before anything is queued, with the reason and its fix (audit item #26).
+    expect(refused(await call(exportPacketAction, practice.manager, P, { caseId, versionId: version?.id ?? '' }))).toBe(EXPORT_REFUSAL_TEXT.not_approved);
     ok(await call(approvePacketVersionAction, second, P, { caseId, versionId: version?.id ?? '', versionSha256: version?.contentSha256 ?? '' }));
     expect((await call(exportPacketAction, viewer, P, { caseId, versionId: version?.id ?? '' })).status).toBe('forbidden');
     const queuedBefore = queue.jobs.length;

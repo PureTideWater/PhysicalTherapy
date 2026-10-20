@@ -1,19 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
-import { type KeyProvider, type ScopeClient, loadPracticeCipher, packetExportKey } from '@tp/db/runtime';
+import { type KeyProvider, type PracticeScope, type ScopeClient, loadPracticeCipher, packetExportKey, recordAuditEvent } from '@tp/db/runtime';
 import { type PacketContent, type VerifierReport, insertIdentifiers, narrativeFacts, verifyNarrative } from '@tp/packets';
-import { type DeadlineStatus, packetDeadlineStatus } from '@tp/triage';
 
 import type { JobHandler } from '../jobs/handlers';
 import type { PdfRenderer } from '../report/pdf';
 import type { DocumentStore } from '../storage/documents';
-import { lineDeadlines, nextLevelDeadline } from '../triage/deadline';
-import type { TriageJobContext } from '../triage/execute';
+import { type TriageJobContext, todayUtc } from '../triage/execute';
 import { packetCsv } from './csv';
 import { packetHtml } from './html';
 import { scheduleIdentifiers } from './identifiers';
-import { statesItsInputs } from './records';
+import { type PacketExportFailure, type PacketExportRefusal, exportReadiness } from './readiness';
+
+export { exportDeadlineStatus } from './readiness';
 
 /**
  * The packet export job (PRD 12: "Identifiers ... inserted from the record at export"; "Export
@@ -24,20 +24,26 @@ import { statesItsInputs } from './records';
  * PDF printed by Chromium from self-contained HTML and the CSV schedule written, both stored sealed
  * with the practice's key under keys of their own for this attempt, and the version records their keys
  * and SHA-256 (the database lets only a job record them, once, on an approved current version). A
- * version already exported is left as it is (JOB-01); one not approved, no longer current or whose case
- * changed is refused at once, since no attempt changes that.
+ * version already exported is left as it is (JOB-01); one the readiness refuses is refused at once, since
+ * no attempt changes that.
  *
- * CO-05 (docs/adr/0061): the export is refused, and no file written, when the version is not of the case's
- * dispute level now (one written before a denial reopened the case states the earlier level's deadline);
- * when the version's deadline is not verified, derived again now both by the database
- * (packet_version_deadline_status, which also refuses the export's UPDATE) and here (the lines' deadlines
- * from their traces and their windows' evidence, or the next level's), never read from what the version
- * stated; when the version does not state its deadlines and calculations exactly as its inputs give them
- * now (each line's calculation copied again from its trace with the trace's SHA-256, each deadline and its
- * sources derived again: what is printed is what the inputs hold); and when the verifier, run again over
- * exactly the narrative and content the PDF and CSV are printed from and against the schedule rows'
- * identifiers read now, fails it. Its report is stored with the export. The SHA-256 recorded is of the exact bytes printed,
- * and the store must have sealed exactly those bytes (its plaintext hash) before the version records them.
+ * CO-05 (docs/adr/0061): the export is refused, and no file written, for every reason exportReadiness()
+ * gives (./readiness.ts, which the web's export action and requestPacketExport() ask first): the version not
+ * approved, not current, a tp-packet/1 version, its case changed or closed, a version of an earlier dispute
+ * level, a line's window passed, its pricing no longer current (audit item #4), its deadline not verified
+ * (derived again now both by the database, packet_version_deadline_status, which also refuses the export's
+ * UPDATE, and by @tp/triage), or what it states of its deadlines and calculations not what its inputs give
+ * now; and when the verifier, run again over exactly the narrative and content the PDF and CSV are printed
+ * from and against the schedule rows' identifiers read now, fails it. Its report is stored with the export.
+ * The SHA-256 recorded is of the exact bytes printed, and the store must have sealed exactly those bytes (its
+ * plaintext hash) before the version records them.
+ *
+ * Audit item #26 (the founder's ruling of 2026-10-18): every refusal is an audit event of the version
+ * (packet_export_refused, its purpose the first reason, or verifier_failed) written by the job in its own
+ * transaction, and every failed try one too (packet_export_attempt_failed while another try follows,
+ * packet_export_failed on the last), written by the handler in a transaction of its own before the error is
+ * rethrown, its purpose the failure's code. Codes and the version's ID only: no words, no patient data. The
+ * packet page reads the latest (packet_version_export_attempt()). The logs keep the error code only.
  */
 
 export interface PacketExportServices {
@@ -46,11 +52,12 @@ export interface PacketExportServices {
   readonly pdf: PdfRenderer;
 }
 
-export type PacketExportRefusal = 'not_approved' | 'not_current' | 'case_changed' | 'not_case_level' | 'deadline_unverified' | 'inputs_differ' | 'verifier_failed';
+export type { PacketExportRefusal } from './readiness';
 
 export type PacketExportOutcome =
   | { readonly outcome: 'exported'; readonly pdfSha256: string; readonly csvSha256: string; readonly verifier: VerifierReport }
   | { readonly outcome: 'already_exported' }
+  /** Refused: the first reason that holds (the refusal's event records it). */
   | { readonly outcome: 'not_exportable'; readonly reason: PacketExportRefusal }
   | { readonly outcome: 'missing' };
 
@@ -59,58 +66,75 @@ export class PacketExportIntegrityError extends Error {
   override readonly name = 'PacketExportIntegrityError';
 }
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+/** The PDF renderer failed: nothing is stored, and the job fails (fixed words; the renderer's own error is the cause, never logged). */
+export class PacketExportRenderError extends Error {
+  override readonly name = 'PacketExportRenderError';
 
-/**
- * The version's deadline derived again now (D17), as @tp/triage derives it: at the first dispute level
- * every line's from its stored trace and its window's evidence, after a reopened denial the next
- * level's. Never the status the version stated.
- */
-export async function exportDeadlineStatus(client: ScopeClient, caseId: string, content: PacketContent): Promise<DeadlineStatus> {
-  if (content.format !== 'tp-packet/2') {
-    return 'unverified';
+  constructor(cause: unknown) {
+    super('the PDF renderer failed to print the packet', { cause });
   }
-  if (content.dispute_level > 1) {
-    return (await nextLevelDeadline(client, caseId)).verification.status;
-  }
-  const deadlines = await lineDeadlines(
-    client,
-    content.lines.map((line) => line.priced_line_id),
-  );
-  return packetDeadlineStatus(content.lines.map((line) => deadlines.get(line.priced_line_id) ?? { status: 'unverified' as const }));
 }
+
+/** The document store failed to seal a file: nothing is recorded, and the job fails (fixed words; the store's error is the cause). */
+export class PacketExportStoreError extends Error {
+  override readonly name = 'PacketExportStoreError';
+
+  constructor(cause: unknown) {
+    super('the document store failed to seal an export file', { cause });
+  }
+}
+
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 interface ExportRow {
   readonly packet_id: string;
-  readonly case_id: string;
-  readonly deadline_status: DeadlineStatus;
-  readonly verifier_report: VerifierReport;
   readonly version_no: number;
   readonly content: PacketContent;
   readonly narrative: string;
   readonly content_sha256: string;
+  readonly verifier_report: VerifierReport;
   readonly approved_at: Date | null;
   readonly approved_alone: boolean;
-  readonly exported_at: Date | null;
-  readonly current: boolean;
-  readonly matches: boolean;
-  readonly at_case_level: boolean;
   readonly drafted_by_email: string | null;
   readonly approved_by_email: string | null;
   readonly regulation_confirmed_by_email: string | null;
 }
 
-export async function exportPacketVersion(context: TriageJobContext, services: PacketExportServices, practiceId: string, versionId: string): Promise<PacketExportOutcome> {
+/** The job's refusal of a version, as an audit event in the export's own transaction: the version and one code, nothing else. */
+async function recordRefusal(scope: PracticeScope<ScopeClient>, context: TriageJobContext, practiceId: string, versionId: string, reason: PacketExportRefusal): Promise<void> {
+  await recordAuditEvent(scope, { action: 'packet_export_refused', objectType: 'packet_version', objectId: versionId, practiceId, purpose: reason, requestId: context.jobId });
+}
+
+export interface PacketExportOptions {
+  /** The day a line's window is judged on (UTC); today unless a test names one. */
+  readonly asOf?: string;
+}
+
+export async function exportPacketVersion(
+  context: TriageJobContext,
+  services: PacketExportServices,
+  practiceId: string,
+  versionId: string,
+  options: PacketExportOptions = {},
+): Promise<PacketExportOutcome> {
   return context.transaction(async (scope) => {
     // One export of a version at a time, whatever the queue does.
     await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('packet_export:' || $1::text, 0))", [versionId]);
+    const readiness = await exportReadiness(scope.client, { practiceId, versionId, asOf: options.asOf ?? todayUtc() });
+    if (readiness === undefined) {
+      return { outcome: 'missing' };
+    }
+    if (readiness.outcome === 'exported') {
+      return { outcome: 'already_exported' };
+    }
+    if (readiness.outcome === 'refused') {
+      await recordRefusal(scope, context, practiceId, versionId, readiness.reasons[0]);
+      return { outcome: 'not_exportable', reason: readiness.reasons[0] };
+    }
     const { rows } = await scope.client.query<ExportRow>(
-      `SELECT v.packet_id, p.case_id, v.version_no, v.content, v.narrative, v.content_sha256, v.verifier_report, v.approved_at, v.approved_alone, v.exported_at,
-              p.current_version_id = v.id AS current, packet_version_matches_case(p.case_id, v.content) AS matches,
-              v.dispute_level = 1 + case_reopened_levels(p.case_id) AS at_case_level,
-              packet_version_deadline_status(p.case_id, v.content) AS deadline_status,
+      `SELECT v.packet_id, v.version_no, v.content, v.narrative, v.content_sha256, v.verifier_report, v.approved_at, v.approved_alone,
               people.drafted_by_email, people.approved_by_email, people.regulation_confirmed_by_email
-         FROM packet_version v JOIN packet p ON p.id = v.packet_id, LATERAL packet_version_people(v.id) people
+         FROM packet_version v, LATERAL packet_version_people(v.id) people
         WHERE v.id = $1 AND v.practice_id = $2`,
       [versionId, practiceId],
     );
@@ -118,29 +142,10 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     if (version === undefined) {
       return { outcome: 'missing' };
     }
-    if (version.exported_at !== null) {
-      return { outcome: 'already_exported' };
-    }
     if (version.approved_at === null) {
+      // The readiness read it approved in this transaction, and an approval is never taken back; this does not happen.
+      await recordRefusal(scope, context, practiceId, versionId, 'not_approved');
       return { outcome: 'not_exportable', reason: 'not_approved' };
-    }
-    if (!version.current) {
-      return { outcome: 'not_exportable', reason: 'not_current' };
-    }
-    if (!version.matches) {
-      return { outcome: 'not_exportable', reason: 'case_changed' };
-    }
-    // A version of the case's dispute level now: one written before a denial reopened the case states the earlier level's deadline.
-    if (!version.at_case_level) {
-      return { outcome: 'not_exportable', reason: 'not_case_level' };
-    }
-    // The deadline, derived again now by the database and by @tp/triage (CO-05): either unverified refuses it.
-    if (version.deadline_status === 'unverified' || (await exportDeadlineStatus(scope.client, version.case_id, version.content)) === 'unverified') {
-      return { outcome: 'not_exportable', reason: 'deadline_unverified' };
-    }
-    // What the version states of its deadlines and calculations, stated again from its inputs now: anything else is not printed.
-    if (version.content.format !== 'tp-packet/2' || !(await statesItsInputs(scope.client, practiceId, version.case_id, version.content))) {
-      return { outcome: 'not_exportable', reason: 'inputs_differ' };
     }
     const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
     const narrative = cipher.decrypt('packet_version.narrative', version.narrative);
@@ -148,28 +153,39 @@ export async function exportPacketVersion(context: TriageJobContext, services: P
     // The verifier again, over exactly what is printed below: this narrative, this content, today's identifiers.
     const verifier = verifyNarrative(narrative, narrativeFacts(version.content), identifiers.all);
     if (!verifier.passed || verifier.narrative_sha256 !== version.verifier_report.narrative_sha256) {
+      await recordRefusal(scope, context, practiceId, versionId, 'verifier_failed');
       return { outcome: 'not_exportable', reason: 'verifier_failed' };
     }
     const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
-    const pdf = await services.pdf.render(
-      packetHtml(exported, {
-        versionNo: version.version_no,
-        versionSha256: version.content_sha256,
-        draftedBy: version.drafted_by_email,
-        approvedBy: version.approved_by_email,
-        approvedAt: version.approved_at.toISOString(),
-        approvedAlone: version.approved_alone,
-        regulationConfirmedBy: version.regulation_confirmed_by_email,
-      }),
-    );
+    const html = packetHtml(exported, {
+      versionNo: version.version_no,
+      versionSha256: version.content_sha256,
+      draftedBy: version.drafted_by_email,
+      approvedBy: version.approved_by_email,
+      approvedAt: version.approved_at.toISOString(),
+      approvedAlone: version.approved_alone,
+      regulationConfirmedBy: version.regulation_confirmed_by_email,
+    });
+    let pdf: Uint8Array;
+    try {
+      pdf = await services.pdf.render(html);
+    } catch (error) {
+      throw new PacketExportRenderError(error);
+    }
     const csv = Buffer.from(packetCsv(exported), 'utf8');
     // The hashes of the exact bytes printed, which the store must seal unchanged.
     const pdfSha256 = sha256(pdf);
     const csvSha256 = sha256(csv);
     const pdfKey = packetExportKey(practiceId, version.packet_id, randomUUID(), 'pdf');
     const csvKey = packetExportKey(practiceId, version.packet_id, randomUUID(), 'csv');
-    const writtenPdf = await services.documents.write(cipher, pdfKey, Readable.from([pdf]));
-    const writtenCsv = await services.documents.write(cipher, csvKey, Readable.from([csv]));
+    let writtenPdf;
+    let writtenCsv;
+    try {
+      writtenPdf = await services.documents.write(cipher, pdfKey, Readable.from([pdf]));
+      writtenCsv = await services.documents.write(cipher, csvKey, Readable.from([csv]));
+    } catch (error) {
+      throw new PacketExportStoreError(error);
+    }
     if (writtenPdf.sha256 !== pdfSha256 || writtenCsv.sha256 !== csvSha256 || writtenPdf.sizeBytes !== pdf.length || writtenCsv.sizeBytes !== csv.length) {
       throw new PacketExportIntegrityError('the store sealed other bytes than the export printed');
     }
@@ -186,16 +202,70 @@ export const EXPORT_REFUSALS = {
   missing: 'PACKET_VERSION_NOT_FOUND',
   not_approved: 'PACKET_VERSION_NOT_APPROVED',
   not_current: 'PACKET_VERSION_NOT_CURRENT',
+  outdated: 'PACKET_VERSION_OUTDATED',
   case_changed: 'PACKET_CASE_CHANGED',
   not_case_level: 'PACKET_VERSION_NOT_CASE_LEVEL',
+  window_passed: 'PACKET_WINDOW_PASSED',
+  pricing_not_current: 'PACKET_PRICING_NOT_CURRENT',
   deadline_unverified: 'PACKET_DEADLINE_UNVERIFIED',
   inputs_differ: 'PACKET_CONTENT_NOT_ITS_INPUTS',
   verifier_failed: 'PACKET_VERIFIER_FAILED',
-} as const;
+} as const satisfies Readonly<Record<PacketExportRefusal | 'missing', string>>;
+
+/** The error code a failed try is logged with, by its failure code. */
+export const EXPORT_FAILURES = {
+  store_mismatch: 'PACKET_EXPORT_STORE_MISMATCH',
+  render_failed: 'PACKET_EXPORT_RENDER_FAILED',
+  store_failed: 'PACKET_EXPORT_STORE_FAILED',
+  database_refused: 'PACKET_EXPORT_DATABASE_REFUSED',
+  unexpected: 'PACKET_EXPORT_UNEXPECTED',
+} as const satisfies Readonly<Record<PacketExportFailure, string>>;
+
+/** A database rule refused the export's own statements: a check or a privilege (the guard, the export's keys, the job's role). */
+const REFUSING_SQLSTATES: ReadonlySet<string> = new Set(['23514', '42501']);
+
+/** What a failed try failed on, as one code: the store's integrity, the renderer, the store, a database rule, or anything else. */
+export function exportFailureCode(error: unknown): PacketExportFailure {
+  if (error instanceof PacketExportIntegrityError) {
+    return 'store_mismatch';
+  }
+  if (error instanceof PacketExportRenderError) {
+    return 'render_failed';
+  }
+  if (error instanceof PacketExportStoreError) {
+    return 'store_failed';
+  }
+  if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' && REFUSING_SQLSTATES.has(error.code)) {
+    return 'database_refused';
+  }
+  return 'unexpected';
+}
 
 export function packetExportHandler(services: PacketExportServices): JobHandler<'packet_export'> {
   return async (payload, context) => {
-    const outcome = await exportPacketVersion(context, services, payload.practice_id, payload.packet_version_id);
+    let outcome: PacketExportOutcome;
+    try {
+      outcome = await exportPacketVersion(context, services, payload.practice_id, payload.packet_version_id);
+    } catch (error) {
+      const code = exportFailureCode(error);
+      // The failed try, in a transaction of its own (the export's rolled back): another try follows, or this was the last.
+      try {
+        await context.transaction((scope) =>
+          recordAuditEvent(scope, {
+            action: context.lastAttempt ? 'packet_export_failed' : 'packet_export_attempt_failed',
+            objectType: 'packet_version',
+            objectId: payload.packet_version_id,
+            practiceId: payload.practice_id,
+            purpose: code,
+            requestId: context.jobId,
+          }),
+        );
+      } catch {
+        context.logger.warn('packet export failure not recorded', { packet_version_id: payload.packet_version_id, error_code: 'PACKET_EXPORT_FAILURE_NOT_RECORDED' });
+      }
+      context.logger.warn('packet export failed', { packet_version_id: payload.packet_version_id, error_code: EXPORT_FAILURES[code] });
+      throw error;
+    }
     if (outcome.outcome === 'missing' || outcome.outcome === 'not_exportable') {
       context.logger.warn('packet not exported', { packet_version_id: payload.packet_version_id, error_code: EXPORT_REFUSALS[outcome.outcome === 'missing' ? 'missing' : outcome.reason] });
     }
