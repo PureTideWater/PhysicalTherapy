@@ -115,6 +115,15 @@ export function windowRuleComparison(days: number, rule: DisputeWindowRule | nul
 export const WINDOW_RULE_NOT_COMPUTED_TEXT =
   'The product counts a contract’s dispute window only as calendar days after the payment date for now, so a window counted another way cannot be verified: it stays unverified and its lines wait for a verified deadline, with no deadline stated for them (a date counted that way may be earlier or later than the contract’s own; keep the contract’s). The version can still be approved.';
 
+/**
+ * A priced line's window whose cited rule the product does not count yet (the line trace): the rule in words and no
+ * date, since the engine's date counts the same length as calendar days after the payment date and may end earlier or
+ * later than the contract's.
+ */
+export function notComputedWindowText(length: number, rule: DisputeWindowRule): string {
+  return `Not computed: the contract’s window ${windowRuleText(length, rule)}, which the product does not count yet. Keep the contract’s own deadline.`;
+}
+
 /** A window [from, to) with its last day: "2026-01-01 through 2026-12-31", or open-ended. */
 export function windowText(from: string, to: string | null): string {
   return to === null ? `from ${from}, open-ended` : `${from} through ${addDays(to, -1)}`;

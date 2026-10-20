@@ -1,7 +1,7 @@
 import { MA_NONCONTRACTED_FLAGS, parseRateTerms } from '@tp/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { EVIDENCE_PROBLEM_TEXT, describeTerms, exclusiveEnd, windowText } from './display';
+import { EVIDENCE_PROBLEM_TEXT, describeTerms, exclusiveEnd, notComputedWindowText, windowText } from './display';
 
 describe('contract words', () => {
   it('shows a half-open window with its last day, and stores a last day as the next day', () => {
@@ -67,5 +67,13 @@ describe('contract words', () => {
 
   it('words every evidence problem', () => {
     expect(Object.keys(EVIDENCE_PROBLEM_TEXT)).toHaveLength(9);
+  });
+
+  it('states a window the product does not count yet by its rule, with no date (audit item #5)', () => {
+    expect(notComputedWindowText(6, { unit: 'months', measuredFrom: 'remittance_date' })).toBe(
+      'Not computed: the contract’s window ends 6 months after the remittance date, which the product does not count yet. Keep the contract’s own deadline.',
+    );
+    expect(notComputedWindowText(10, { unit: 'business_days', measuredFrom: 'payment_date' })).toMatch(/^Not computed: the contract’s window ends 10 business days after the payment date/);
+    expect(notComputedWindowText(1, { unit: 'months', measuredFrom: 'date_of_service' })).not.toMatch(/\d{4}-\d{2}-\d{2}/);
   });
 });

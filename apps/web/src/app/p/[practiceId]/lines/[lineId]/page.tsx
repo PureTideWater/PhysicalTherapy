@@ -6,6 +6,7 @@ import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { notComputedWindowText } from '../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { linePage } from '../../../../../lib/routes/remittances';
 import { addLineNoteAction } from './actions';
@@ -74,7 +75,15 @@ export default async function LinePage(props: {
                   <Fact label="Adjustments">
                     {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
                   </Fact>
-                  {canReadPhi ? <Fact label="Dispute window ends">{pricing.windowEndsOn ?? 'No window known'}</Fact> : null}
+                  {canReadPhi ? (
+                    <Fact label="Dispute window ends">
+                      {pricing.windowRuleNotComputed === null ? (
+                        (pricing.windowEndsOn ?? 'No window known')
+                      ) : (
+                        <span data-window-rule="not_computed">{notComputedWindowText(pricing.windowRuleNotComputed.length, pricing.windowRuleNotComputed.rule)}</span>
+                      )}
+                    </Fact>
+                  ) : null}
                 </>
               ) : (
                 <Fact label="Unpriced">
