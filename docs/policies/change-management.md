@@ -35,7 +35,8 @@ until a setting is in place, the rule that relies on it is not met.
      the code owner of every path (`.github/CODEOWNERS`) and Code Owners review is required, so only the founder's
      approval counts. An approval is dismissed when a new commit is pushed. GitHub never counts an author's approval of
      their own pull request, and the build agent, which authors pull requests under its own GitHub account, never
-     submits a review.
+     approves or requests changes: what it posts on a pull request, the approval line's suggestion included, is a
+     comment.
    - **Required checks.** A pull request into `claude/build-platform` also needs five checks from GitHub Actions to pass
      on its latest commit, with the branch up to date with its base: `check` (the `ci` workflow) and `images (web)`,
      `images (worker)` and `licenses` (the `supply-chain` workflow), which together run the gates of rule 2, and

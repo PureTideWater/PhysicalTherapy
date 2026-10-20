@@ -49,9 +49,14 @@ with Write on this repository, never Admin), connected to Claude for build sessi
 founder's account. The switch also takes the founder's account out of every Claude session: the GitHub connection
 belongs to the founder's Claude account, so every open build session first merges or closes the pull requests the
 founder's account opened (each keeps its author, who could never approve it), the claude.ai GitHub connector is
-disconnected (or reconnected as the agent), and the Claude app's authorization on the founder's GitHub account is
-revoked while the app stays installed on the organization. A new build session then reports `gh api user` and the
-connector's `get_me`; step 5 starts only when both name the agent, or the connector is absent.
+reconnected as the agent (the build opens, reads and merges pull requests with it; disconnecting it leaves the
+connection sessions push with as it was), and the Claude app's authorization on the founder's GitHub account is
+revoked while the app stays installed on the organization. Every session open before the switch ends; a new build
+session first reports `gh api user`, the connector's `get_me` and the repository's open pull requests through the
+connector, and the build resumes, and step 5 starts, only when both logins name the agent (an error or no login means
+that connection is made again first, and checked in another new session). An app the build uses that reaches GitHub as
+an OAuth app rather than a GitHub App needs the founder's approval for the organization at the move, since a new
+organization restricts OAuth apps' access (runbook 2f).
 
 Rulesets, active, that hold an administrator too (amended 2026-10-20). `claude/build-platform` has one, with no bypass
 actor: deletion restricted, force pushes blocked, a pull request required, and the status checks `check` (ci), `images
@@ -79,7 +84,8 @@ it and never reviews one (CLAUDE.md; a shell command could, and no hook reads on
 before launch without the founder's ruling. Dependabot's version updates go to the build branch; its security updates
 always open against the default branch, and `main` holds no manifest, lockfile, Dockerfile or workflow until launch, so
 none opens there, and one that did would wait for the founder's ruling like any other. The build merges a pull request
-once the approval and the checks are in place. At launch the founder adds the five checks to "Protect main" (step 8);
+once the approval and the checks are in place. At launch, once the launch pull request is open, the founder adds the
+five checks to "Protect main" (step 8);
 Code Owners review, on since step 5, applies there from the launch merge. A collaborator with Write, the agent included,
 can still push another branch, run a workflow from it and publish an image to the repository's registry, so no image
 reaches production on GitHub's word alone: the deploy runbook checks that the release tag's commit is on `main`.
@@ -120,10 +126,12 @@ the preparation). The founder approves that pull request, and it merges with "Cr
 rebase, which would drop `main`'s parent; the launch pull request merges the same way. Before opening the launch pull
 request the build checks `git merge-base --is-ancestor origin/main origin/claude/build-platform`, and repeats the
 preparation if `main` has moved since; it never uses "Update branch" on the launch pull request, which would push a
-merge to `claude/build-platform`, whose ruleset refuses it. Only `README.md` and `.github/dependabot.yml` differ between
-the two branches' trees, and the build's copies replace `main`'s. "Protect main" first gains the five checks, which run
-on the launch pull request because its workflows come with it, and approval-of-record judges it against the build
-branch's approver list. It brings the build branch's `.github/dependabot.yml`, which has no `target-branch` lines, so
+merge to `claude/build-platform`, whose ruleset refuses it. Of `main`'s 10 files, only `README.md` and
+`.github/dependabot.yml` differ from the build branch's (the other eight, the plan files, are the same), and the build's
+copies replace `main`'s; every other file of the build is new to `main`. Once the launch pull request is open, and not
+before (until then a required check that cannot run on `main` would block every other pull request into it), "Protect
+main" gains the five checks, which run on the launch pull request because its workflows come with it, and
+approval-of-record judges it against the build branch's approver list. It brings the build branch's `.github/dependabot.yml`, which has no `target-branch` lines, so
 from the merge Dependabot opens its updates against `main`, and `.github/pull_request_template.md`, which GitHub then
 offers on every new pull request. `main` stays the protected default branch: every later pull request targets it, and
 `claude/build-platform` keeps its ruleset and takes no new pull request (runbook step 8).
@@ -186,15 +194,18 @@ While `APPROVAL_REVIEW_REQUIRED` is unset (or `false`) the job passes, and says 
 and why (the founder's account authors every pull request and cannot review its own), and what it would decide. Set to
 `true` it fails a pull request the rule refuses, and on any error reading the API. Both words are read in any case (a
 phone capitalises the first letter); any other value fails the job. It goes to `true` with Code Owners review in runbook
-step 5, once the agent's login is confirmed (3j) and no pull request the founder's account opened is still open.
+step 5, once the agent's login is confirmed (3i) and no pull request the founder's account opened is still open.
 
 **Who writes the approval line.** With the hooks on, the build's edit tools cannot write an "Approved by:" line
 (`protect-approval.sh`); a shell command still could, since no hook reads one, so until step 5 an approval line is only
 as trustworthy as the commit that wrote it. The build posts the exact line, the founder's name, the date and the hash
 `--require-approval` names, as a suggested change on the pull request; the founder commits it, and then approves the
 pull request at that commit. The commit holds the text and the hash, the review is the approval of record, and the job
-holds them to each other. The build never submits a review (CLAUDE.md): `protect-github.sh` refuses the GitHub
-connector's review tools, and after the switch no Claude session holds the founder's account.
+holds them to each other. The build never approves or requests changes (CLAUDE.md): `protect-github.sh` refuses the
+GitHub connector's review tools, so the build posts the suggestion with the GitHub API as one pull-request comment on
+the approval line (`gh api repos/<owner>/<repo>/pulls/<n>/comments`; `.claude/skills/new-migration` gives the call),
+which GitHub records as a comment and approval-of-record reads as changing nothing; and after the switch no Claude
+session holds the founder's account.
 
 **Changes since the last approved document.** `pnpm db:domain-model --summary-since <ref>` compares the document at a
 git ref (the base branch, whose document is approved, since nothing merges otherwise) with the working tree's, or with
@@ -232,7 +243,10 @@ as ADR 0059 decided. The hooks change where reading them showed a gap:
   guards off;
 - `fixture-guard.sh` finds every X12 interchange header anywhere in the text a call writes (after a byte-order mark,
   white space or other text, in any edit of a MultiEdit, with any separator) and refuses one whose ISA06 is not
-  SYNTHSENDER; before, only a text that began with `ISA` was read;
+  SYNTHSENDER; before, only a text that began with `ISA` was read. The pre-push hook and `pnpm check:fixtures` search
+  every text file a push writes, or the tree holds, by the same pattern (`INTERCHANGE_HEADER` in
+  `packages/synth/src/write.ts`, which `hooks.test.ts` holds equal to the hook's), whatever its name or directory, so
+  a header pasted after a line of prose in a `.md` or `.txt` outside `fixtures/` is refused at push and in CI too;
 - `protect-github.sh` refuses every review the connector's tools would create, submit or delete, and every file written
   through the GitHub API (`create_or_update_file`, `push_files`, `delete_file`), on any path, since such a write passes
   neither the edit hooks nor the pre-push hook (amended 2026-10-20; the first version refused only the guarded paths and
@@ -310,7 +324,7 @@ the hooks as `settings.json` wires them.
 - Until launch a pull request into `main` merges with no required check, and only on the founder's ruling; from 3i the
   build waits for the founder's approval of it, and after step 5 GitHub requires it. The launch pull request is judged
   by approval-of-record against the build branch's approver list, and by the five checks, which "Protect main" gains
-  just before it (runbook step 8).
+  once it is open, never earlier (runbook step 8).
 - CI's cost, measured on 17 and 18 October: about 35 billable minutes a push; about 1,100 minutes in 34 hours, a third
   of it one image job that hung for GitHub's 360-minute default. `ci`'s check now stops at 60 minutes (its mutation job
   at 120) and the supply-chain jobs at 15; Dependabot groups every action update in one pull request and both images in
@@ -331,9 +345,13 @@ the hooks as `settings.json` wires them.
 - The hooks run in every Claude Code session in a checkout of this branch. A NotebookEdit cannot reach a release, a
   migration, a fixture or the approval. Every session installs the pre-push hook and the pinned gitleaks when it starts,
   and a write through the GitHub connector's file tools is refused, so every push the build makes goes through the
-  fixture check and gitleaks before GitHub has it; a branch cut before this pull request is refused at push until it
-  merges `claude/build-platform` (amended 2026-10-20). The fixture check reads every PDF, which passes only when
-  packages/synth wrote it, and an interchange after white space or a UTF-16 byte-order mark; it cannot judge an image.
+  fixture check and gitleaks before GitHub has it. A push made from a working tree whose branch has no hook (one cut
+  before this pull request, or from `main`) is refused (amended 2026-10-20): the launcher runs the hook of the working
+  tree the push is made from, whichever branch it sends, so such a branch is pushed from a working tree of the clone
+  that has the hook. A branch cut from `main` for a pull request into `main`, which has no hook until launch, is pushed
+  from a checkout of the build branch (`git push origin <branch>`), never by merging the build branch into it. The fixture check reads every PDF, which passes only when packages/synth
+  wrote it, an interchange after white space or a UTF-16 byte-order mark, and an interchange header anywhere in any text
+  file; it cannot judge an image.
   `typecheck.sh`, measured end to end on the build's machine (4 CPUs, shared with other builds, load 6 to 9) after a
   real edit: `packages/money` 1.7 s, `packages/db` 5.5 s, `apps/web` 8 to 11 s after an edit of a file few others
   import, and 27 to 33 s after an edit of a widely imported module such as `apps/web/src/lib/server/config.ts`, since
@@ -350,7 +368,8 @@ the hooks as `settings.json` wires them.
   quarterly review, the policy's version), `tools/hooks/hooks.test.ts` (relative paths from a subdirectory, control
   characters, gitfiles, the hooks' own files, interchanges anywhere, the GitHub guard, the session-start hook),
   `tools/hooks/pre-push.test.ts` (real pushes: the launcher and a branch without the hook, colored or rewritten patches,
-  an unfetched remote and a URL, merges), `tools/fixture-check/*.test.ts` (PDFs, indented and UTF-16 interchanges),
+  an unfetched remote and a URL, merges), `tools/fixture-check/*.test.ts` (PDFs, indented and UTF-16 interchanges, a header after a line of text in any
+  file, prose that names the segment),
   `tools/test/legal-surfaces.test.ts` (the production gate), and `actionlint` on the workflows where it is installed.
 - security.txt's expiry fails `pnpm test`, and with it every pull request's `check`, from 30 days before its date
   (2027-03-31 for today's 2027-04-30); the quarterly review renews it when fewer than 120 days remain, so it never
@@ -392,8 +411,11 @@ the founder confirms by doing the runbook's steps, then what is recorded so the 
    ADR 0012), changed with ADR 0012's text in a pull request right after the move and never before, and the role
    redeployed if one is deployed; and the release images, which from then on publish under
    `ghcr.io/<organization>/physicaltherapy` while the earlier ones stay under the personal account. What the build needs
-   from the founder to keep access is only the app's installation on the organization (step 2e) and the agent's Write
-   role (step 3c). CI's secret scan runs the pinned gitleaks itself, so the move needs no gitleaks licence.
+   from the founder to keep access is only the app's installation on the organization (step 2e), the organization's
+   approval of anything the build uses that reaches GitHub as an OAuth app (step 2f; a new organization restricts
+   OAuth apps' access) and the agent's Write role (step 3c). CI's secret scan runs the pinned gitleaks itself, so the
+   move needs no gitleaks licence once this pull request is merged into `claude/build-platform`, which the runbook
+   puts before the transfer (2a): transferred first, every other open pull request's `check` would go red.
 4. **The launch switch** is written down (above; runbook step 8): one reviewed pull request from the build branch into
    `main`, after the preparation that makes `main` an ancestor of the build branch, Dependabot's `target-branch` lines
    gone with it, and `main` the protected default from then on.
