@@ -8,6 +8,8 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A run takes 25 to 35 minutes; a hung step stops at 60 instead of GitHub's 360 (docs/adr/0063).
+    timeout-minutes: 60
     services:
       postgres:
         image: postgres:18
@@ -70,7 +72,8 @@ jobs:
             apps/web/test-results/
             brand-screenshots/
           if-no-files-found: ignore
-          retention-days: 14
+          # Up to 54 MB a run, against the private repository's 1 GB of Actions storage on GitHub Pro (docs/adr/0063).
+          retention-days: 7
       # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
       # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
       - if: failure()
@@ -86,6 +89,7 @@ jobs:
   mutation:
     if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'money')
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

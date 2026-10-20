@@ -237,9 +237,16 @@ describe('approval-of-record (docs/adr/0063)', () => {
 });
 
 describe('dependabot', () => {
-  it('updates the workspace, the actions and both base images weekly', () => {
+  it('updates the workspace, the actions and both base images weekly, grouped, a few pull requests at a time', () => {
     const config = parse(readFileSync(path.join(repositoryRoot, '.github/dependabot.yml'), 'utf8')) as {
-      updates: { 'package-ecosystem': string; schedule: { interval: string }; directory?: string; directories?: string[] }[];
+      updates: {
+        'package-ecosystem': string;
+        schedule: { interval: string };
+        directory?: string;
+        directories?: string[];
+        'open-pull-requests-limit'?: number;
+        groups?: Record<string, { 'update-types'?: string[]; patterns?: string[] }>;
+      }[];
     };
     expect(config.updates.map((update) => [update['package-ecosystem'], update.schedule.interval])).toEqual([
       ['npm', 'weekly'],
@@ -247,5 +254,25 @@ describe('dependabot', () => {
       ['docker', 'weekly'],
     ]);
     expect(config.updates[2]?.directories).toEqual(['/apps/web', '/apps/worker']);
+    // Each pull request costs about 35 minutes of CI (docs/adr/0063): one per week for every action, one for both images.
+    expect(config.updates.map((update) => update['open-pull-requests-limit'])).toEqual([5, 2, 2]);
+    expect(config.updates[0]?.groups).toEqual({ 'minor-and-patch': { 'update-types': ['minor', 'patch'] } });
+    expect(config.updates[1]?.groups).toEqual({ actions: { patterns: ['*'] } });
+    expect(config.updates[2]?.groups).toEqual({ 'base-images': { patterns: ['*'] } });
+  });
+});
+
+describe('job timeouts', () => {
+  it('give every job of the pull-request workflows a timeout well under GitHub’s 360 minutes', () => {
+    const limits: Record<string, Record<string, number>> = {};
+    for (const file of ['ci.yml', 'supply-chain.yml', 'approval-of-record.yml']) {
+      const jobs = (parse(readFileSync(path.join(repositoryRoot, '.github/workflows', file), 'utf8')) as { jobs: Record<string, { 'timeout-minutes'?: number }> }).jobs;
+      limits[file] = Object.fromEntries(Object.entries(jobs).map(([name, job]) => [name, job['timeout-minutes'] ?? 360]));
+    }
+    expect(limits).toEqual({
+      'ci.yml': { check: 60, mutation: 120 },
+      'supply-chain.yml': { licenses: 15, images: 15 },
+      'approval-of-record.yml': { 'approval-of-record': 5 },
+    });
   });
 });
