@@ -22,12 +22,12 @@ jobs:
         env: { POSTGRES_PASSWORD: test }
         ports: ["5432:5432"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
       # The database logs every deliberate refusal the tests provoke; its log is printed after the job and,
       # unquieted, buries the failing test's own output. Only the database's log level changes.
@@ -76,7 +76,7 @@ jobs:
       - run: pnpm test:e2e
         if: ${{ !cancelled() }}
         env: { DATABASE_URL: postgres://postgres:test@localhost:5432/postgres }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright
@@ -104,9 +104,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm stryker run
