@@ -1,13 +1,16 @@
 # Weekly dependency updates (PRD section 16, dependency and image hygiene): the pnpm workspace, the
 # GitHub Actions the workflows use, and the base images of both Dockerfiles. Each update arrives as a
-# pull request and passes every CI gate before a person merges it.
+# pull request and passes every CI gate before a person merges it. Every pull request runs about 35
+# minutes of CI, so updates are grouped (minor and patch npm updates in one, every action in one, both
+# base images in one) and few are open at once (docs/adr/0063). Dependabot reads this file from the
+# default branch: until launch, main's copy (which targets claude/build-platform) is the one in force.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     groups:
       minor-and-patch:
         update-types: [minor, patch]
@@ -16,8 +19,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      actions:
+        patterns: ["*"]
 
   - package-ecosystem: docker
     directories: [/apps/web, /apps/worker]
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      base-images:
+        patterns: ["*"]

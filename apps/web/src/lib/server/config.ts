@@ -45,6 +45,7 @@ const schema = z.object({
   CONTENT_ROOT: z.string().min(1).optional(),
   TRUSTED_PROXY_HOPS: z.enum(['0', '1', '2', '3']).optional(),
   SUPPORT_EMAIL: z.email().optional(),
+  SECURITY_EMAIL: z.email().optional(),
   ESIGN_PROVIDER: z.enum(['local', 'none']).optional(),
   ESIGN_LOCAL_SECRET: z.string().min(16).optional(),
   ESIGN_LOCAL_DIR: z.string().min(1).optional(),
@@ -117,6 +118,12 @@ export interface WebConfig {
   readonly trustedProxyHops: number;
   /** The support address (PRD 19, Support): shown on the support, status and maintenance pages. */
   readonly supportEmail: string;
+  /**
+   * The security address (audit item #20 (f)): the Contact of /.well-known/security.txt and the address the public
+   * disclosure page (/security) gives for reports. Required in production and never the support address, whose mail
+   * opens a ticket only for an account's own address, so a researcher's report sent there would open nothing.
+   */
+  readonly securityEmail: string;
   /**
    * The e-signature vendor (docs/adr/0053): the local stand-in, or none (the webhook then refuses every event and
    * agreements are recorded in the console by upload or by reference). The plan names no vendor.
@@ -222,7 +229,8 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
   }
 
   const esign = esignSettings(settings, production);
-  return {
+  const deployed = production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e';
+  const config: WebConfig = {
     production,
     databaseUrl: settings.DATABASE_URL,
     origin: new URL(settings.APP_ORIGIN).origin,
@@ -241,5 +249,16 @@ export function readWebConfig(env: Readonly<Record<string, string | undefined>> 
     complianceExportDir: settings.COMPLIANCE_EXPORT_DIR ?? (production ? null : path.join(tmpdir(), 'tp-compliance-export')),
     environment: production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TP_ENVIRONMENT, 'TP_ENVIRONMENT') : (settings.TP_ENVIRONMENT ?? 'dev'),
     trustedProxyHops: Number.parseInt(production && settings.TP_ALLOW_LOCAL_PROVIDERS !== 'e2e' ? needed(settings.TRUSTED_PROXY_HOPS, 'TRUSTED_PROXY_HOPS') : (settings.TRUSTED_PROXY_HOPS ?? '0'), 10),
+    securityEmail: deployed ? needed(settings.SECURITY_EMAIL, 'SECURITY_EMAIL') : (settings.SECURITY_EMAIL ?? 'security@synthetic.test'),
   };
+  if (deployed) {
+    // What the public pages and security.txt name (audit item #20 (f)): never the development defaults.
+    if (!config.origin.startsWith('https://')) {
+      throw new ConfigError('APP_ORIGIN is required in production, as an https origin');
+    }
+    if (config.securityEmail.toLowerCase() === config.supportEmail.toLowerCase()) {
+      throw new ConfigError('SECURITY_EMAIL must not be the support address in production (support mail opens tickets only for accounts)');
+    }
+  }
+  return config;
 }

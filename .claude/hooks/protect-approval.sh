@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
-# PreToolUse on Edit|Write|MultiEdit. The founder's approval is written only on the founder's instruction (CO-02,
-# reconciliation-001 D1): refuses any call whose result changes an "Approved by:" line of
+# PreToolUse on Edit|Write|MultiEdit|NotebookEdit. The founder's approval is written only on the founder's instruction
+# (CO-02, reconciliation-001 D1): refuses any call whose result changes an "Approved by:" line of
 # docs/product/domain-model.md, and any change to packages/db/domain-model/approvers.json. The result is rebuilt
-# from the call and the file on disk, and a call it cannot rebuild exactly is refused. Paths resolve from the hook
-# input's cwd (worktrees), links followed. Fails closed without jq.
+# from the call and the file on disk, and a call it cannot rebuild exactly is refused, a NotebookEdit of either file
+# among them (it names its file notebook_path; docs/adr/0063). A relative path resolves from the hook input's cwd, as
+# Claude Code resolves it; links are followed; a path holding a control character is refused (a line break ends the
+# path this hook reads before the one the tool writes). Fails closed without jq.
 set -u
 command -v jq >/dev/null 2>&1 || { echo "protect-approval: jq is required" >&2; exit 2; }
 input=$(cat)
-file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty') || { echo "protect-approval: the hook input is not JSON" >&2; exit 2; }
+file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty') || { echo "protect-approval: the hook input is not JSON" >&2; exit 2; }
+printf '%s' "$input" | jq -e '[.tool_input.file_path, .tool_input.notebook_path] | any(.[]; type == "string" and test("[[:cntrl:]]"))' >/dev/null
+case $? in
+  1) ;;
+  0)
+    echo "Blocked: the file path of this call holds a control character (a line break or a tab), so protect-approval cannot tell which file it writes, and refuses it." >&2
+    exit 2 ;;
+  *) echo "protect-approval: could not read the call's file path, so it is refused" >&2; exit 2 ;;
+esac
 [ -n "$file_path" ] || exit 0
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
-root=$(cd "${cwd:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || root="${cwd:-$PWD}"
-case "$file_path" in /*) abs="$file_path" ;; *) abs="$root/$file_path" ;; esac
+case "$file_path" in /*) abs="$file_path" ;; *) abs="${cwd:-$PWD}/$file_path" ;; esac
 # "." and ".." segments taken out, symbolic links resolved (the file itself, as a Write follows it, and the part of
 # its directory that exists), and the path compared in any case, so no spelling of either path slips past.
 clean_path() {
@@ -65,14 +74,17 @@ verdict=$(printf '%s' "$input" | jq -r --arg rule "$rule" --rawfile current "$cu
    elif .tool_name == "Edit" then edit($current; $in)
    elif .tool_name == "MultiEdit" then reduce ($in.edits // [])[] as $e ($current; edit(.; $e))
    else null end) as $after |
-  if (.tool_name | IN("Write", "Edit", "MultiEdit") | not) then "allow"
+  if .tool_name == "NotebookEdit" then "notebook"
+  elif (.tool_name | IN("Write", "Edit", "MultiEdit") | not) then "allow"
   elif $after == null then "unbuildable"
   elif $rule == "approval_line" then (if ($after | approvals) == ($current | approvals) then "allow" else "refuse" end)
   elif $after == $current then "allow"
   else "refuse" end
 ') || { echo "protect-approval: could not read the call for $file_path, so it is refused" >&2; exit 2; }
 [ "$verdict" = "allow" ] && exit 0
-if [ "$verdict" = "unbuildable" ]; then
+if [ "$verdict" = "notebook" ]; then
+  echo "Blocked: protect-approval cannot rebuild what a NotebookEdit leaves in $file_path, so it cannot tell whether the approval changes, and refuses it." >&2
+elif [ "$verdict" = "unbuildable" ]; then
   echo "Blocked: protect-approval cannot rebuild what this call leaves in $file_path (an old_string not in the file exactly once, as written: its line endings and quotes), so it cannot tell whether the approval changes, and refuses it. Send old_string exactly as the file holds it, or Write the whole file." >&2
 elif [ "$rule" = "approval_line" ]; then
   echo "Blocked: this call would change the \"Approved by:\" line of $file_path. The founder's approval is written only on the founder's instruction, by the founder; regenerate the document with pnpm db:domain-model and leave that line to them." >&2

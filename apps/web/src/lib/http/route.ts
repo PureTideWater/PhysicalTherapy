@@ -263,6 +263,14 @@ export interface Download<B extends string | Uint8Array<ArrayBuffer> = string> {
   readonly download: { readonly filename: string; readonly contentType: string; readonly body: B };
 }
 
+/**
+ * What a public text route returns (/.well-known/security.txt): a short document served inline at its own address,
+ * never as an attachment, and never holding PHI.
+ */
+export interface TextDocument {
+  readonly text: { readonly contentType: 'text/plain; charset=utf-8'; readonly body: string };
+}
+
 interface BaseContext<P, I> {
   readonly params: P;
   readonly input: I;

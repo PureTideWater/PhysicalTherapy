@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Services } from '../server/services';
 import { CSRF_HEADER } from './csrf';
 import { clientAddress } from './rate-limit';
-import type { CookieJar, Download, Outcome, Route, RouteRequest, UploadBody } from './route';
+import type { CookieJar, Download, Outcome, Route, RouteRequest, TextDocument, UploadBody } from './route';
 
 /**
  * The route-handler adapter (route.ts files): a Web Request in, a Web Response out, through the same
@@ -277,5 +277,29 @@ export function downloadHandler(route: Route<Download<string | Uint8Array<ArrayB
       status: 200,
       headers: { 'content-type': contentType, 'content-disposition': `attachment; filename="${filename}"`, 'cache-control': PRIVATE_NO_STORE },
     });
+  };
+}
+
+function isTextDocument(data: unknown): data is TextDocument {
+  return typeof data === 'object' && data !== null && 'text' in data;
+}
+
+/**
+ * A Next route handler for a registered public text route (GET; /.well-known/security.txt): the document inline,
+ * with its own content type, never cached; any refusal as the JSON outcome.
+ */
+export function textHandler(route: Route<TextDocument>, servicesOf: () => Services) {
+  return async (request: Request, context?: { readonly params?: Params }): Promise<Response> => {
+    const cookies = new ResponseCookies(request.headers.get('cookie'));
+    const services = servicesOf();
+    const built = await routeRequest(request, cookies, context, undefined, services.trustedProxyHops);
+    if (built instanceof Response) {
+      return built;
+    }
+    const outcome = await route.invoke(built, services);
+    if (outcome.status !== 'ok' || !isTextDocument(outcome.data)) {
+      return outcomeResponse(outcome, cookies);
+    }
+    return new Response(outcome.data.text.body, { status: 200, headers: { 'content-type': outcome.data.text.contentType, 'cache-control': PRIVATE_NO_STORE } });
   };
 }

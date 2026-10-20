@@ -38,10 +38,51 @@ pnpm dev             # Postgres and MinIO in Docker, then the web app and the wo
 pnpm db:migrate      # roles, then forward-only migrations as the owner role (--dev-login: local app login)
 pnpm db:migrate --dry-run   # apply the pending migrations in one transaction and roll it back
 pnpm db:domain-model --check --strict   # docs/product/domain-model.md against the migrated database (--out rewrites it)
+pnpm db:domain-model --summary-since origin/claude/build-platform   # what changed since the last approved document (no database)
 pnpm licenses:check  # production dependency licenses against tools/check-licenses/allowlist.json
 pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case <id>, --large for PAR-29)
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```
+
+The pre-push hook (`.githooks/pre-push`; docs/adr/0063, audit item #20 (e)) checks on your machine, before GitHub
+receives them, the files and secrets CI's fixture and gitleaks steps would only find after the push. Install it once
+per clone, after `pnpm install`, for the clone and every linked worktree of it:
+
+```sh
+pnpm hooks:install      # the launcher in the clone's own .git/hooks/pre-push (tools/pre-push/install.sh)
+pnpm gitleaks:install   # the pinned gitleaks CI runs, its SHA-256 checked (tools/gitleaks/install.sh)
+```
+
+A Claude Code session does both when it starts (`.claude/hooks/session-start.sh`) and says in its context what is
+missing. The launcher runs the `.githooks/pre-push` of the working tree a push is made from, whichever branch the push
+sends; a working tree whose branch has none (cut before the hook, or from `main`, which has none until launch) is
+refused. Push such a branch from a working tree of the clone that has the hook (`git push origin <branch>` there checks
+its commits); a branch cut from `main` for a pull request into `main` is always pushed that way, never by merging
+`claude/build-platform` into it. It replaces the first instruction, a relative `core.hooksPath` of `.githooks`, which
+git skipped with no warning in any checkout of such a branch; the installer removes that setting, refuses any other
+`core.hooksPath`, and never overwrites a pre-push hook of your own.
+The hook finds gitleaks through `GITLEAKS` (an absolute path), then the pinned one, then `PATH`; it needs 8.19 or
+later, and without one it refuses every push that sends a new commit and says so.
+
+For each push it takes the commits the remote does not have yet (a new branch, an update, or a bare commit pushed by
+its hash, as in `git push origin <sha>:refs/heads/salvage/x`), judged by the remote's tracking refs or, for a remote
+you have not fetched or a URL, by what `git ls-remote` says it holds. It runs the fixture check over every file they
+write, read from git's objects rather than the working tree (`tools/fixture-check/commits.ts`), and gitleaks over the
+same commits with `.gitleaks.toml` and `.gitleaksignore`, merges read by what they add beyond their parents, with
+color, external diffs and textconv drivers off, and refuses the push when gitleaks says it read fewer commits than
+those that add a line. A refusal names the file, the commit and the rule, never the value; rewrite the commits without
+it, and never push with `--no-verify`. A deletion, or a push of commits the remote already has, checks nothing.
+
+The fixture check reads every CSV, TSV and spreadsheet; under `fixtures/` and `packages/synth/` every `.txt`, `.dat`
+or extensionless file; every `.835`, `.837`, `.edi`, `.x12` and `.era` file; and by content every X12 interchange
+(after white space or a UTF-8 or UTF-16 byte-order mark), zip, gzip, OLE2 file and PDF. A PDF passes only when
+packages/synth wrote it (its Producer names the synthetic exhibit or scan writer), so a real contract or EOB is
+refused. It also searches every text file, whatever its name and wherever it is, for an X12 interchange header
+anywhere in it (after a line of other text, mid-line, in a Markdown code block) and refuses one whose ISA06 is not
+SYNTHSENDER, by the pattern the edit hook (`.claude/hooks/fixture-guard.sh`) applies to what a session writes; prose
+that only names the segment ("ISA*00 opens an interchange") passes. It cannot judge a picture: an image of a document
+is not read, and never belongs in the repository.
+`tools/hooks/pre-push.test.ts` runs the hook through real pushes.
 
 The domain model gate (CO-02; reconciliation-001, D1 and D2): `docs/product/domain-model.md` describes the schema the
 migrations build, by area: every table and view with its keys, PHI flag, row-level security, policies, invariants and
@@ -69,8 +110,11 @@ prints the hash to sign when it refuses). The name must be exactly an entry of t
 `packages/db/domain-model/approvers.json` (apart from spaces at either end, in the same case), and never a placeholder
 (TBD, N/A, name, first name, last name, full name, founder, approver, VERIFY ONLY, Claude, in any case and their common
 spellings such as T.B.D., N.A., VERIFY-ONLY or ClaudeCode, or text in angle brackets) or a name with no letters. The
-list changes only with the founder's approval, in the same pull request as a document the founder signs. It starts
-empty, so every approval is refused until the founder's name is added to it in that pull request. The hash covers every
+list names each approver with the GitHub login whose review is the approval of record, and changes only under that
+approval (docs/adr/0063): the `approval-of-record` job requires of a pull request that changes the approval line or the
+list an APPROVED review of its latest commit from the login, on the base branch's list, of the person the line names,
+never from its author. It passes, saying why, until the repository variable `APPROVAL_REVIEW_REQUIRED` is `true`
+(`docs/runbooks/github-governance.md`, step 5). The hash covers every
 line but that one (the last line) and the provenance line, and must be the hash of both the regenerated text and the
 committed one, so any schema change, or an edit to the document alone, leaves it awaiting a new approval, and no
 migration merges without one (CLAUDE.md, Schema gate). The document lists each applied migration's SHA-256 and each
@@ -79,6 +123,13 @@ an edit to a migration after it was signed fails the gate too (`domain-model-dri
 start until the founder approves the document; until then that case fails. The document records PostgreSQL's major
 version beside the catalog's own text, so it is checked on PostgreSQL 18, as CI runs; on an older server its drift case
 fails (on 16, at the version line alone).
+
+Each approval opens with the changes since the last approved document (docs/adr/0063): `pnpm db:domain-model
+--summary-since <ref>` compares the document at a git ref (the base branch, whose document is approved) with the working
+tree's, or with the text `--out` or `--check` generates, and prints one line per change, row-level security, policies,
+the PHI registry and grants first, then tables, columns, constraints, functions, triggers and the divergence rows, with
+both documents' SHA-256 and approval state. CI's `check` job writes it into its job summary, and a pull request that
+regenerates the document opens its description with it.
 
 Synthetic data and the 835 oracle (ADRs 0021 to 0024): `packages/synth` generates every test-matrix case and
 thirty-five oracle variants into `fixtures/synthetic/<case>/`, each with an `expected.json` stating the outcome, and holds
@@ -490,7 +541,20 @@ the public `/status` page, error pages, help on every screen and support tickets
 evidence checklist at `/console/compliance` (`packages/compliance`), whose export the compliance platform ingests. The
 policies are drafts in `docs/policies/` for the security official; the incident runbook is
 `docs/runbooks/incident-response.md`. Production needs `SUPPORT_EMAIL` (the stack's `SupportEmail` parameter),
-`TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets.
+`SECURITY_EMAIL` (`SecurityEmail`), `TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets, and an https
+`APP_ORIGIN`.
+
+The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116) names `SECURITY_EMAIL` as its Contact,
+the public disclosure page `/security` as its Policy, English as its language and its own address under `APP_ORIGIN` as
+Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`; `disclosure.test.ts` fails 30 days
+before that date, when the address is checked and the date moved on, less than a year ahead. That failure is in `pnpm
+test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `check` is red until the
+renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
+how to report, what to include, what not to do and what to expect, with no sign-in and no form. Production refuses to
+start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens tickets only for accounts. Its
+response times and its good-faith research statement are drafts for the security official and counsel, listed in
+`docs/product/legal-surfaces.md` and marked where they render (`data-legal-surface`), which
+`tools/test/legal-surfaces.test.ts` holds together; a production server leaves both out until their review is recorded.
 
 Review fixes for milestones 10 and 11 (ADR 0055): a model call never waits on the connection its request holds (the
 gateway's store has its own small pool, every pool gives up on a connection after ten seconds, a server makes at most
@@ -503,7 +567,10 @@ console; a late `invoice.payment_failed` still starts the dunning clock, the dun
 an organization subscribes once; mail to the support address opens a ticket (SES receiving into the stack's support
 inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DIR`; docs/runbooks/support-mail.md);
 deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
-`docs/runbooks/`.
+`docs/runbooks/`. `docs/runbooks/github-governance.md` is the founder's guide to the repository's GitHub settings: a
+company organization on GitHub Team, a private repository, the build agent's own account, the rulesets for
+`claude/build-platform`, `main` and the release tags with the founder's approval on every pull request,
+`APPROVAL_REVIEW_REQUIRED`, approving from the GitHub app, the content publisher and the launch (docs/adr/0063).
 
 The brand and the product's words (ADRs 0056 to 0058; Change Order 001, CO-01 and CO-11): `packages/brand`
 (`@paidwhole/brand`; its README is the drop-in's wiring guide, headed by where this repository differs) holds the tokens,

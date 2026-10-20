@@ -15,9 +15,12 @@ concurrency:
 permissions:
   contents: read
 
+# Each job takes 1 to 3 minutes; a hung build or scan stops at 15 instead of GitHub's 360 (docs/adr/0063: one hung
+# for the full 360 on 2026-10-18).
 jobs:
   licenses:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -27,7 +30,8 @@ jobs:
       - run: pnpm licenses:check
 
   images:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

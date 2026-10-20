@@ -297,6 +297,7 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       WEBAUTHN_RP_ID: ref(PARAMETER_NAMES.appDomainName),
       TRUSTED_PROXY_HOPS: '1',
       SUPPORT_EMAIL: ref(PARAMETER_NAMES.supportEmail),
+      SECURITY_EMAIL: ref(PARAMETER_NAMES.securityEmail),
       ESIGN_PROVIDER: 'none',
       TP_ENVIRONMENT: environment,
       MODEL_PROVIDER: 'bedrock',

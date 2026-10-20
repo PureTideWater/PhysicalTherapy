@@ -1,6 +1,6 @@
 # 0059. Twin the four vendors' exports as unconfirmed registry data, carry the synthetic marker in an identifier column, and refuse spreadsheet exports at intake
 
-- **Status:** accepted
+- **Status:** accepted; amended by [0063](0063-protect-main-and-the-build-branch-make-the-founders-github-review-the-approval-of-record-open-each-approval-with-what-changed-and-switch-on-the-edit-hooks.md) (`.claude/settings.json` with the hooks lands before the final pass; NotebookEdit joins the matcher)
 - **Date:** 2026-10-17
 - **Deciders:** the owner (D14 option a, in `docs/product/reconciliation-001.md`, approved 2026-10-17); the build (PR 3 of Change Order 001)
 - **PRD sections:** 6 (Intake and documents), 13 (Recovery ledger, Matching steps 2 and 3), 16 (Development data boundary), 18 (Testing), 20 (Posting-export templates); Change Order 001, CO-03 (first part)

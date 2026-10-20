@@ -19,8 +19,10 @@ export const PROVENANCE_PREFIX = '- Generated at commit ';
 /** The day Change Order 001 was issued: no approval of this document is dated before it. */
 export const EARLIEST_APPROVAL_DATE = '2026-10-16';
 /**
- * The reviewed list of who may sign the approval line, from the repository root (readApprovers). It
- * changes only with the founder's approval, in the same pull request as a document the founder signs.
+ * The reviewed list of who may sign the approval line, from the repository root (readApprovers), each with
+ * the GitHub login whose review is the approval of record (readApproverRecords; docs/adr/0063). It changes
+ * only under that approval: the approval-of-record job holds a pull request that changes it to an APPROVED
+ * review from a login on the base branch's list.
  */
 export const APPROVERS_LIST = 'packages/db/domain-model/approvers.json';
 
@@ -108,6 +110,12 @@ export function approvalLineOf(text: string): string | null {
 }
 
 const APPROVAL_LINE = /^Approved by: (.+?) {2}Date: (\S+) {2}Document SHA-256: `([0-9a-f]{64})`$/;
+
+/** The three fields of an approval line in its shape, or null when the line is not in that shape. */
+export function approvalFields(line: string | null): { readonly name: string; readonly date: string; readonly sha256: string } | null {
+  const m = line === null ? null : APPROVAL_LINE.exec(line);
+  return m ? { name: m[1] ?? '', date: m[2] ?? '', sha256: m[3] ?? '' } : null;
+}
 
 /** Words that hold a name's place: a name with one of them as a word, in any case, names no one. */
 const PLACEHOLDER_WORDS = new Set(['tbd', 'name', 'firstname', 'lastname', 'fullname', 'founder', 'approver', 'claude']);

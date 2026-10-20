@@ -24,6 +24,11 @@ export interface RenderInput {
 
 const esc = (s: string | null | undefined): string => (s === null || s === undefined ? '' : s.replace(/\|/g, '\\|').replace(/\n/g, ' '));
 const code = (s: string | null | undefined): string => (s === null || s === undefined || s === '' ? '' : '`' + esc(s).replace(/`/g, "'") + '`');
+/**
+ * A code block's fence: more backticks than the longest run of them in its text, and never fewer than three
+ * (CommonMark), so no line of the text can close it early (summary.ts reads the document by the same rule).
+ */
+export const fenceFor = (text: string): string => '`'.repeat(Math.max(3, ...[...text.matchAll(/`+/g)].map((m) => m[0].length + 1)));
 const anchor = (t: string): string => `table-${t.replace(/_/g, '-')}`;
 const link = (t: string): string => `[\`${t}\`](#${anchor(t)})`;
 const priv = (t: TableModel, r: string): string => (t.privileges[r]?.length ? (t.privileges[r] ?? []).join(', ') : '-');
@@ -254,9 +259,10 @@ export function renderDocument(input: RenderInput): string {
     if (t.isView) {
       out(`View options: ${code((t.options ?? []).join(', ')) || 'none'}.`);
       out();
-      out('```sql');
-      out((t.view ?? '').trim());
-      out('```');
+      const definition = (t.view ?? '').trim();
+      out(`${fenceFor(definition)}sql`);
+      out(definition);
+      out(fenceFor(definition));
       out();
       return;
     }
@@ -491,9 +497,9 @@ export function renderDocument(input: RenderInput): string {
     "Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.",
   );
   out();
-  out('```text');
+  out(`${fenceFor(input.crossCheck.trim())}text`);
   out(input.crossCheck.trim());
-  out('```');
+  out(fenceFor(input.crossCheck.trim()));
   out();
   out('## Approval');
   out();
