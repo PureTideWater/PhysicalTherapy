@@ -20,7 +20,7 @@ import {
   WITHIN_REDUCTION_RANGE,
   leftOutNote,
 } from '../../lib/screening/labels';
-import { type ScreeningGroup, type ScreeningRow, ScreeningAnomalies, ScreeningTopRows, anomaliesDescription } from './anomalies';
+import { type ScreeningGroup, type ScreeningGroupPage, type ScreeningRow, ScreeningAnomalies, ScreeningTopRows, anomaliesDescription } from './anomalies';
 import { type ScreeningCoverageRow, ScreeningCoverage } from './coverage';
 import { type ScreeningSummaryData, ScreeningHeading, ScreeningReleaseWithdrawn, ScreeningSummary, differenceWords } from './result-summary';
 
@@ -68,6 +68,7 @@ const SUMMARY: ScreeningSummaryData = {
 
 const GROUPS: ScreeningGroup[] = [
   {
+    groupNo: 1,
     payerProduct: 'ma_noncontracted',
     procedureCode: '97161',
     rows: 2,
@@ -83,6 +84,7 @@ const GROUPS: ScreeningGroup[] = [
     standing: 'anomaly',
   },
   {
+    groupNo: 2,
     payerProduct: 'medicare_ffs',
     procedureCode: '97140',
     rows: 1,
@@ -99,6 +101,7 @@ const GROUPS: ScreeningGroup[] = [
   },
   {
     // $34.00 a line, between $36.84 and $31.45: within the range of the reduction across codes, $2.84 a line below the figure before it.
+    groupNo: 3,
     payerProduct: 'medicare_ffs',
     procedureCode: '97110',
     rows: 1,
@@ -114,6 +117,7 @@ const GROUPS: ScreeningGroup[] = [
     standing: 'within_reduction_range',
   },
   {
+    groupNo: 4,
     payerProduct: 'medicare_ffs',
     procedureCode: '97035',
     rows: 1,
@@ -129,6 +133,7 @@ const GROUPS: ScreeningGroup[] = [
     standing: 'below_by_threshold_or_less',
   },
   {
+    groupNo: 5,
     payerProduct: 'medicare_ffs',
     procedureCode: '97530',
     rows: 1,
@@ -144,6 +149,46 @@ const GROUPS: ScreeningGroup[] = [
     standing: 'at_or_above',
   },
 ];
+
+const PATH = '/screening/results/abcdefghijklmnopqrstuvwxyzabcdef';
+
+/** The database's counts for groups that all fit on one page (screening_result_group_totals(), page 1 of 1). */
+function onePage(groups: readonly ScreeningGroup[]): ScreeningGroupPage {
+  return {
+    groups: groups.length,
+    anomalyGroups: groups.filter((group) => group.anomaly).length,
+    withinReductionGroups: groups.filter((group) => group.standing === 'within_reduction_range').length,
+    perPage: 50,
+    pages: 1,
+    page: 1,
+    firstGroup: groups.length === 0 ? 0 : 1,
+    lastGroup: groups.length,
+    others: { groups: 0, anomalyGroups: 0, rows: 0, claimLines: 0, expectedCents: c(0n), lowestCents: c(0n), observedCents: c(0n), differenceCents: c(0n), lowestDifferenceCents: c(0n) },
+  };
+}
+
+/** One page of 50 of the worst shape's 20,507 groups, page 2: groups 51 to 100, the other 20,457 summed by the database. */
+const LATER_PAGE: ScreeningGroupPage = {
+  groups: 20_507,
+  anomalyGroups: 12_345,
+  withinReductionGroups: 1_204,
+  perPage: 50,
+  pages: 411,
+  page: 2,
+  firstGroup: 51,
+  lastGroup: 100,
+  others: {
+    groups: 20_457,
+    anomalyGroups: 12_300,
+    rows: 49_870,
+    claimLines: 1_745_450,
+    expectedCents: c(9_876_543_210n),
+    lowestCents: c(8_765_432_100n),
+    observedCents: c(7_654_321_000n),
+    differenceCents: c(2_222_222_210n),
+    lowestDifferenceCents: c(1_111_111_100n),
+  },
+};
 
 const ROWS: ScreeningRow[] = [
   {
@@ -328,7 +373,7 @@ describe('the screening summary', () => {
 });
 
 describe('the anomalies by code and payer product', () => {
-  const html = renderToStaticMarkup(<ScreeningAnomalies groups={GROUPS} />);
+  const html = renderToStaticMarkup(<ScreeningAnomalies groups={GROUPS} page={onePage(GROUPS)} path={PATH} />);
 
   it('lists each group with both figures, allowed and both differences in that order, and its status in words', () => {
     const headers = [...html.matchAll(/<th class="[^"]*">([^<]*)<\/th>/g)].map((match) => match[1]);
@@ -336,8 +381,10 @@ describe('the anomalies by code and payer product', () => {
     expect(html).toMatch(/data-group="97110:medicare_ffs"[\s\S]*?\$368\.40[\s\S]*?\$314\.50[\s\S]*?\$340\.00[\s\S]*?\$28\.40[\s\S]*?-\$25\.50/);
     expect(html).toMatch(/data-group="97530:medicare_ffs"[\s\S]*?-\$20\.00[\s\S]*?data-tone="neutral"[^>]*>Allowed is at or above both Medicare figures</);
     // A code outside the reduction across codes has one figure, and its chip names it.
-    const outside = (differenceCents: Cents) =>
-      renderToStaticMarkup(<ScreeningAnomalies groups={[{ ...(GROUPS[3] as ScreeningGroup), observedCents: c(10_000n - differenceCents), differenceCents, standing: 'at_or_above' }]} />);
+    const outside = (differenceCents: Cents) => {
+      const group: ScreeningGroup = { ...(GROUPS[3] as ScreeningGroup), observedCents: c(10_000n - differenceCents), differenceCents, standing: 'at_or_above' };
+      return renderToStaticMarkup(<ScreeningAnomalies groups={[group]} page={onePage([group])} path={PATH} />);
+    };
     expect(outside(c(-100n))).toMatch(/data-group="97035:medicare_ffs"[\s\S]*?data-standing="at_or_above">Allowed is above the Medicare figure</);
     expect(outside(c(0n))).toMatch(/data-standing="at_or_above">Allowed is equal to the Medicare figure</);
     expect(text(html)).toContain('2 groups of 5 are anomalies.');
@@ -348,13 +395,13 @@ describe('the anomalies by code and payer product', () => {
     // 97110 is $2.84 a line below its figure before the reduction and above its fully reduced figure.
     expect(html).toMatch(new RegExp(`data-group="97110:medicare_ffs"[\\s\\S]*?data-tone="neutral"[^>]*data-anomaly="false" data-standing="within_reduction_range">${WITHIN_REDUCTION_RANGE}<`));
     expect(html.match(/data-anomaly="true"/g)).toHaveLength(2);
-    expect(anomaliesDescription(GROUPS)).toBe(
+    expect(anomaliesDescription(onePage(GROUPS))).toBe(
       `2 groups of 5 are anomalies. ${ANOMALY_RULE} 1 more group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
     );
-    expect(anomaliesDescription(GROUPS.filter((group) => !group.anomaly))).toBe(
+    expect(anomaliesDescription(onePage(GROUPS.filter((group) => !group.anomaly)))).toBe(
       `No group of 3 is an anomaly. ${ANOMALY_RULE} 1 group is within the range of the reduction across codes: between its two figures, which is not an anomaly. Largest difference from the lowest figure first.`,
     );
-    expect(anomaliesDescription([])).toBe('No row was priced under Medicare, so there is nothing to compare.');
+    expect(anomaliesDescription(onePage([]))).toBe('No row was priced under Medicare, so there is nothing to compare.');
   });
 
   it('calls a pooled code more than $5 a claim line below its fully reduced figure an anomaly, and says how many rows of a group are', () => {
@@ -413,9 +460,45 @@ describe('the anomalies by code and payer product', () => {
   });
 
   it('is an empty state when nothing was priced', () => {
-    const empty = renderToStaticMarkup(<ScreeningAnomalies groups={[]} />);
+    const empty = renderToStaticMarkup(<ScreeningAnomalies groups={[]} page={onePage([])} path={PATH} />);
     expect(empty).not.toContain('<table');
     expect(empty).toContain('data-slot="empty-state"');
+    expect(empty).not.toContain('data-slot="group-pages"');
+  });
+
+  it('shows one page of groups with the database’s counts over all of them, sums the others in the last row, and links the other pages (audit #53 part 1)', () => {
+    const page = GROUPS.map((group, at) => ({ ...group, groupNo: 51 + at }));
+    const later = renderToStaticMarkup(<ScreeningAnomalies groups={page} page={LATER_PAGE} path={PATH} />);
+    // Every group of the page, numbered as the database numbers it, and no other.
+    expect([...later.matchAll(/data-group-no="(\d+)"/g)].map((match) => match[1])).toEqual(['51', '52', '53', '54', '55']);
+    // The counts are the database's over all 20,507 groups, never the page's five.
+    expect(anomaliesDescription(LATER_PAGE)).toBe(
+      `12,345 groups of 20,507 are anomalies. ${ANOMALY_RULE} 1,204 more groups are within the range of the reduction across codes: between their two figures, which is not an anomaly. Largest difference from the lowest figure first. This page lists groups 51 to 100; the table’s last row sums the other 20,457, and the pages below list them.`,
+    );
+    expect(text(later)).toContain('12,345 groups of 20,507 are anomalies.');
+    // The other groups: the database's sums, in the table's columns, and how many of them are anomalies.
+    const others = /<tr[^>]*data-group="others"[^>]*>([\s\S]*?)<\/tr>/.exec(later)?.[1] ?? '';
+    expect(text(others)).toContain('The other 20,457 groups, summed');
+    const cells = [...others.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => text(match[1] ?? '').trim());
+    expect(cells.slice(1, 8)).toEqual(['49,870', '1,745,450', '$98,765,432.10', '$87,654,321.00', '$76,543,210.00', '$22,222,222.10', '$11,111,111.00']);
+    expect(cells[8]).toBe('12,300 groups among them are anomalies');
+    expect(others).toContain('data-tone="short"');
+    // The pages: first, previous, next and last, back at this card; the page and the count in words.
+    const pages = /<nav[^>]*data-slot="group-pages"[^>]*>([\s\S]*?)<\/nav>/.exec(later)?.[0] ?? '';
+    expect([...pages.matchAll(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((match) => [match[2], match[1]])).toEqual([
+      ['First', `${PATH}?groups=1#screening-anomalies`],
+      ['Previous', `${PATH}?groups=1#screening-anomalies`],
+      ['Next', `${PATH}?groups=3#screening-anomalies`],
+      ['Last', `${PATH}?groups=411#screening-anomalies`],
+    ]);
+    expect(text(pages)).toContain('Page 2 of 411 (20,507 groups)');
+    // The last page links back only; one page has no links and no last row.
+    const last = renderToStaticMarkup(<ScreeningAnomalies groups={page} page={{ ...LATER_PAGE, page: 411, firstGroup: 20_501, lastGroup: 20_507 }} path={PATH} />);
+    expect([...last.matchAll(/<a [^>]*>([^<]*)<\/a>/g)].map((match) => match[1])).toEqual(['First', 'Previous']);
+    expect(html).not.toContain('data-slot="group-pages"');
+    expect(html).not.toContain('data-group="others"');
+    const quiet = renderToStaticMarkup(<ScreeningAnomalies groups={page} page={{ ...LATER_PAGE, others: { ...LATER_PAGE.others, anomalyGroups: 0 } }} path={PATH} />);
+    expect(/<tr[^>]*data-group="others"[^>]*>([\s\S]*?)<\/tr>/.exec(quiet)?.[1]).toMatch(/data-tone="neutral"[^>]*>No group among them is an anomaly</);
   });
 
   it('lists the top rows with their one-line figures and the row’s, both labelled, and each row’s standing', () => {
@@ -452,7 +535,7 @@ describe('a screening’s words (SCR-05, the screens)', () => {
       <>
         <ScreeningHeading summary={SUMMARY} />
         <ScreeningSummary summary={SUMMARY} />
-        <ScreeningAnomalies groups={GROUPS} />
+        <ScreeningAnomalies groups={GROUPS} page={LATER_PAGE} path={PATH} />
         <ScreeningTopRows rows={ROWS} />
         <ScreeningCoverage coverage={COVERAGE} />
       </>,

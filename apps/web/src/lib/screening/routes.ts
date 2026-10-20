@@ -56,7 +56,11 @@ import { screeningRateAccount } from './rate';
  *   that is unknown, expired or not yet complete is not found. Every figure is the database's bigint sum of the
  *   engine's per-row results, before sequestration; a code in the reduction across codes has two figures (before
  *   the reduction, and fully reduced), and where each row and group stands is the database's (screening_standing()).
- *   A result under a release since withdrawn keeps its notice and may still be converted.
+ *   The groups by code and payer product come one page at a time (?groups=N, 50 a page, the largest difference
+ *   first), with the database's counts over every group and its sums of the groups the page does not show, so what
+ *   the page holds is bounded whatever the result's size (audit #53 part 1: a worst-shape result's 20,507 groups,
+ *   all at once, exhausted the web task's heap). A result under a release since withdrawn keeps its notice and may
+ *   still be converted.
  * - The conversion (/screening/results/[resultId], public action, the public form's rate limit): an audit request
  *   from the screening, with its attribution and from_screening, an audit event that outlives the screening's expiry;
  *   the database keeps the screening's summary with the request for 12 months from the screening.
@@ -557,6 +561,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
 }
 
 export interface ScreeningResultGroup {
+  /** Its place in the database's order: the largest difference from the lowest figures first, from 1. */
+  readonly groupNo: number;
   readonly payerProduct: string;
   readonly procedureCode: string;
   readonly rows: number;
@@ -609,6 +615,35 @@ export interface ScreeningResultRow {
   readonly standing: ScreeningStanding;
 }
 
+/** The groups not on the page shown, summed by the database (screening_result_group_totals()). */
+export interface ScreeningOtherGroups {
+  readonly groups: number;
+  readonly anomalyGroups: number;
+  readonly rows: number;
+  readonly claimLines: number;
+  readonly expectedCents: Cents;
+  /** The lowest figures: a pooled row's fully reduced figure, any other row's one figure. */
+  readonly lowestCents: Cents;
+  readonly observedCents: Cents;
+  readonly differenceCents: Cents;
+  readonly lowestDifferenceCents: Cents;
+}
+
+/** Every group of the result as the database counts them, and the page of them shown. */
+export interface ScreeningGroupPage {
+  readonly groups: number;
+  readonly anomalyGroups: number;
+  readonly withinReductionGroups: number;
+  readonly perPage: number;
+  readonly pages: number;
+  /** The page shown: the one asked for, or the last when that is past it. */
+  readonly page: number;
+  /** The page's first and last group by number; 0 and 0 when nothing was priced. */
+  readonly firstGroup: number;
+  readonly lastGroup: number;
+  readonly others: ScreeningOtherGroups;
+}
+
 export interface ScreeningResultData {
   /** The link's token, for the conversion form's hidden field; the page is reached by it anyway. */
   readonly resultId: string;
@@ -616,7 +651,9 @@ export interface ScreeningResultData {
   readonly requested: boolean;
   readonly converted: boolean;
   readonly summary: ScreeningSummary;
+  /** One page of the groups by code and payer product (at most SCREENING_GROUPS_PER_PAGE), in the database's order. */
   readonly groups: readonly ScreeningResultGroup[];
+  readonly groupPage: ScreeningGroupPage;
   readonly coverage: readonly ScreeningResultCoverage[];
   /** At most 25 rows, the largest difference from their lowest figure first. */
   readonly rows: readonly ScreeningResultRow[];
@@ -625,6 +662,12 @@ export interface ScreeningResultData {
 
 /** How many rows the result shows. */
 export const SCREENING_TOP_ROWS = 25;
+
+/** How many groups by code and payer product a page of the result shows (the database gives at most 100). */
+export const SCREENING_GROUPS_PER_PAGE = 50;
+
+/** The page of groups asked for (?groups=N): a whole number from 1, anything else the first page. */
+const groupsPage = z.preprocess((value) => (typeof value === 'string' && /^[1-9][0-9]{0,8}$/.test(value) ? Number(value) : 1), z.number().int().min(1));
 
 function standingOf(text: string): ScreeningStanding {
   if (!(SCREENING_STANDINGS as readonly string[]).includes(text)) {
@@ -680,7 +723,7 @@ export const screeningResult = publicRoute({
   kind: 'page',
   path: '/screening/results/[resultId]',
   phi: false,
-  params: z.object({ resultId, requested: optionalText(z.literal('1')) }),
+  params: z.object({ resultId, requested: optionalText(z.literal('1')), groups: groupsPage }),
   handle: async ({ params, services }): Promise<ScreeningResultData> => {
     const hash = screeningTokenHash(params.resultId);
     return withClient(services.pool, async (client) => {
@@ -688,7 +731,34 @@ export const screeningResult = publicRoute({
       if (summary === undefined) {
         throw new NotFoundError();
       }
+      // The counts over every group and the sums of those off the page first: the page shown is the one asked for, or
+      // the last when that is past it, as the database takes it.
+      const counted = (
+        await client.query<{
+          groups: number;
+          anomaly_groups: number;
+          within_reduction_groups: number;
+          page_size: number;
+          pages: number;
+          page_no: number;
+          first_group: number;
+          last_group: number;
+          other_groups: number;
+          other_anomaly_groups: number;
+          other_rows: number;
+          other_claim_lines: string;
+          other_expected_cents: string;
+          other_lowest_cents: string;
+          other_observed_cents: string;
+          other_difference_cents: string;
+          other_lowest_difference_cents: string;
+        }>('SELECT * FROM screening_result_group_totals($1, $2, $3)', [hash, params.groups, SCREENING_GROUPS_PER_PAGE])
+      ).rows[0];
+      if (counted === undefined) {
+        throw new NotFoundError();
+      }
       const groups = await client.query<{
+        group_no: number;
         payer_product: string;
         procedure_code: string;
         rows: number;
@@ -702,7 +772,7 @@ export const screeningResult = publicRoute({
         anomaly_rows: number;
         anomaly: boolean;
         standing: string;
-      }>('SELECT * FROM screening_result_groups($1)', [hash]);
+      }>('SELECT * FROM screening_result_groups($1, $2, $3)', [hash, counted.page_no, SCREENING_GROUPS_PER_PAGE]);
       const coverage = await client.query<{
         payer_product: string;
         disposition: string;
@@ -764,6 +834,7 @@ export const screeningResult = publicRoute({
           leftOut: totals('left_out_rows', 'left_out_claim_lines', 'left_out_observed_cents'),
         },
         groups: groups.rows.map((group) => ({
+          groupNo: group.group_no,
           payerProduct: group.payer_product,
           procedureCode: group.procedure_code,
           rows: group.rows,
@@ -778,6 +849,27 @@ export const screeningResult = publicRoute({
           anomaly: group.anomaly,
           standing: standingOf(group.standing),
         })),
+        groupPage: {
+          groups: counted.groups,
+          anomalyGroups: counted.anomaly_groups,
+          withinReductionGroups: counted.within_reduction_groups,
+          perPage: counted.page_size,
+          pages: counted.pages,
+          page: counted.page_no,
+          firstGroup: counted.first_group,
+          lastGroup: counted.last_group,
+          others: {
+            groups: counted.other_groups,
+            anomalyGroups: counted.other_anomaly_groups,
+            rows: counted.other_rows,
+            claimLines: count(counted.other_claim_lines),
+            expectedCents: money(counted.other_expected_cents),
+            lowestCents: money(counted.other_lowest_cents),
+            observedCents: money(counted.other_observed_cents),
+            differenceCents: money(counted.other_difference_cents),
+            lowestDifferenceCents: money(counted.other_lowest_difference_cents),
+          },
+        },
         coverage: coverage.rows.map((item) => ({
           payerProduct: item.payer_product,
           disposition: item.disposition,

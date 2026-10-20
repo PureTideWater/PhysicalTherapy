@@ -357,7 +357,7 @@ test('a specialist approves the split; a file with patient information is refuse
     // $5 a claim line below its fully reduced figure.
     const token = link.slice(link.lastIndexOf('/') + 1);
     const standings = await withDatabase(async (client) => (await client.query<{ grp: string; standing: string }>(
-      "SELECT procedure_code || ':' || payer_product AS grp, standing FROM screening_result_groups($1)",
+      "SELECT procedure_code || ':' || payer_product AS grp, standing FROM screening_result_groups($1, 1, 100)",
       [createHash('sha256').update(token).digest('hex')],
     )).rows);
     expect(standings).toEqual(expect.arrayContaining([{ grp: '97110:ma_noncontracted', standing: 'within_reduction_range' }, { grp: '97140:ma_noncontracted', standing: 'anomaly' }]));

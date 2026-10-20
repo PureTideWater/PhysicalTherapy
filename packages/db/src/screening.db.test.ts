@@ -485,6 +485,7 @@ describe('the roles reach the tables only through their functions', () => {
       'reject_screening_upload',
       'screening_result_summary',
       'screening_result_groups',
+      'screening_result_group_totals',
       'screening_result_coverage',
       'screening_result_rows',
       'convert_screening',

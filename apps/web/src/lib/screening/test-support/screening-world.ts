@@ -1,20 +1,19 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
 import { type MigratedDatabase, addMembership, createMigratedDatabase, createOrganization, createUser, endPool } from '@tp/db/testing';
 import { cents } from '@tp/money';
-import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
 import { type MailMessage, MemoryMailSender, type SweepResult, sweepScreeningRuns } from '@tp/worker/runtime';
 import { SCREENING_MIN_CLAIM_LINES, type ScreeningPayerProduct, type ScreeningRow, encodeScreeningRows } from '@tp/worker/screening';
 
-import { DevAuthProvider } from '../../auth/dev-provider';
-import { MemoryDevStore } from '../../auth/dev-store';
-import { Sealer } from '../../auth/seal';
-import type { CookieJar, Outcome, Route, RouteRequest } from '../../http/route';
-import { type Services, createServices } from '../../server/services';
+import type { Outcome, Route } from '../../http/route';
+import type { Services } from '../../server/services';
 import { type JobQueue, MemoryQueue } from '../../uploads/queue';
+import { type PageRequestOptions, SCREENING_ORIGIN, pageRequest, screeningServices } from './page-services';
+
+export { SCREENING_ORIGIN } from './page-services';
 
 /**
  * Test support for the free screening's routes (docs/adr/0062), against a scratch database with SYNTHETIC release
@@ -24,28 +23,11 @@ import { type JobQueue, MemoryQueue } from '../../uploads/queue';
  * practices at the SYNTHETIC ZIPs 00011 and 00012, addresses at synthetic.test domains.
  */
 
-export const SCREENING_ORIGIN = 'http://localhost:3100';
 export const SCREENING_SPLIT = { '11': 'non_facility', '22': 'facility' } as const;
 const RELEASE_DIR = path.resolve(import.meta.dirname, '../../../../../../fixtures/synthetic/rules/release-synth-900001');
 
 /** The header a clean upload has, in the format's own spellings. */
 export const SCREENING_HEADERS = ['procedure_code', 'modifiers', 'units', 'place_of_service', 'payer_product', 'service_band', 'allowed_total', 'claim_count'] as const;
-
-class MemoryJar implements CookieJar {
-  private readonly values: Map<string, string>;
-  constructor(initial: Readonly<Record<string, string>> = {}) {
-    this.values = new Map(Object.entries(initial));
-  }
-  get(name: string) {
-    return this.values.get(name);
-  }
-  set(name: string, value: string) {
-    this.values.set(name, value);
-  }
-  delete(name: string) {
-    this.values.delete(name);
-  }
-}
 
 /** A row of totals, written short: 11 claim lines (the fewest a row may sum) unless told otherwise. */
 export function screeningRow(
@@ -122,14 +104,7 @@ export function submitInput(overrides: SubmitOverrides = {}): Record<string, str
   };
 }
 
-export interface CallOptions {
-  readonly params?: Record<string, unknown>;
-  readonly input?: Record<string, unknown>;
-  /** The client's address, as the trusted proxy names it (the per-IP limit), or none. */
-  readonly address?: string | null;
-  /** The browser's cookies (the attribution cookie, audit #57). */
-  readonly cookies?: Readonly<Record<string, string>>;
-}
+export type CallOptions = PageRequestOptions;
 
 export class ScreeningWorld {
   readonly mail = new MemoryMailSender();
@@ -160,24 +135,9 @@ export class ScreeningWorld {
     await addMembership(owner, internal, specialistId, 'contract_specialist');
     const app = openPool(database.appUrl, 4);
     const operator = openPool(database.url, 4);
-    const sealer = new Sealer(randomBytes(32));
     const lines: Record<string, unknown>[] = [];
     const memory = new MemoryQueue();
-    const services = createServices({
-      origin: SCREENING_ORIGIN,
-      pool: app,
-      provider: new DevAuthProvider({
-        store: new MemoryDevStore(),
-        sealer: sealer.derive('dev-provider'),
-        webauthn: { rpId: 'localhost', rpName: 'Test', origin: SCREENING_ORIGIN },
-        deliverInvitation: () => Promise.resolve(),
-        scryptCost: { n: 1024, r: 8, p: 1 },
-      }),
-      keys: LocalKeyProvider.random(),
-      sealer,
-      logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }),
-      queue: options.queue ?? memory,
-    });
+    const services = screeningServices(app, { queue: options.queue ?? memory, sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) });
     const world = new ScreeningWorld(database, owner, app, operator, services, specialistId, memory, lines);
     if (options.open !== false) {
       await world.approveSplit(SCREENING_SPLIT);
@@ -204,17 +164,7 @@ export class ScreeningWorld {
 
   /** Calls a route as the application's own page would: same origin, no session. */
   call<R>(route: Route<R>, options: CallOptions = {}): Promise<Outcome<R>> {
-    const request: RouteRequest = {
-      cookies: new MemoryJar(options.cookies),
-      params: options.params ?? {},
-      input: options.input,
-      requestId: `test-${randomUUID()}`,
-      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0',
-      origin: SCREENING_ORIGIN,
-      fetchSite: 'same-origin',
-      clientAddress: options.address ?? null,
-    };
-    return route.invoke(request, this.services);
+    return route.invoke(pageRequest(options), this.services);
   }
 
   /** The minute's sweep, as the platform worker runs it, taking every queued run at once. */

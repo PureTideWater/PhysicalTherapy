@@ -307,7 +307,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
       reduced_cents: string | null;
       difference_cents: string;
       reduced_difference_cents: string | null;
-    }>('SELECT * FROM screening_result_groups($1)', [screeningTokenHash(token)]);
+    }>('SELECT * FROM screening_result_groups($1, 1, 100)', [screeningTokenHash(token)]);
     expect(groups.length).toBeGreaterThan(0);
     for (const group of groups) {
       const rows = priced.filter((row) => row.payer_product === group.payer_product && row.procedure_code === group.procedure_code);
@@ -370,7 +370,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     // figure over 13 lines, then the two anomalies).
     expect((await asApp<{ row_no: number }>('SELECT row_no FROM screening_result_rows($1, 100)', [hash])).map((row) => row.row_no)).toEqual([4, 2, 6, 5, 1, 3]);
     const groups = await asApp<{ payer_product: string; procedure_code: string; rows: number; anomaly_rows: number; anomaly: boolean; standing: string; reduced_cents: string | null; expected_cents: string }>(
-      'SELECT payer_product, procedure_code, rows, anomaly_rows, anomaly, standing, reduced_cents::text AS reduced_cents, expected_cents::text AS expected_cents FROM screening_result_groups($1) ORDER BY payer_product, procedure_code',
+      'SELECT payer_product, procedure_code, rows, anomaly_rows, anomaly, standing, reduced_cents::text AS reduced_cents, expected_cents::text AS expected_cents FROM screening_result_groups($1, 1, 100) ORDER BY payer_product, procedure_code',
       [hash],
     );
     expect(groups.map((group) => [group.payer_product, group.procedure_code, group.rows, group.anomaly_rows, group.anomaly, group.standing, group.reduced_cents])).toEqual([
@@ -416,7 +416,7 @@ describe('SCR-02: the screening prices each row with the unchanged engine and mu
     const stored = await results(runId);
     expect(stored.map((row) => row.in_reduction_pool)).toEqual([true, true, true]);
     const groups = await asApp<{ procedure_code: string; anomaly: boolean; standing: string; difference_cents: string; reduced_difference_cents: string }>(
-      'SELECT procedure_code, anomaly, standing, difference_cents::text AS difference_cents, reduced_difference_cents::text AS reduced_difference_cents FROM screening_result_groups($1) ORDER BY procedure_code',
+      'SELECT procedure_code, anomaly, standing, difference_cents::text AS difference_cents, reduced_difference_cents::text AS reduced_difference_cents FROM screening_result_groups($1, 1, 100) ORDER BY procedure_code',
       [screeningTokenHash(tokenOf(mail.sent[0]))],
     );
     // 97110 and 97140 follow 97530 in the visit, at their fully reduced figures: more than $5 a line below the figures

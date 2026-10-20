@@ -1188,17 +1188,20 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
    WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at
 $$;
 
--- The priced rows by payer product and code, the largest difference from the lowest figures first. The figure before
--- the reduction across codes is summed, and, when a row of the group is in that reduction, the fully reduced figure
--- (each row's lowest: the fully reduced figure for a pooled row, the one figure otherwise). A group is an anomaly when
--- one of its rows is (screening_standing(), row by row: more than $5 a claim line below its lowest figure), and says
--- how many; otherwise its standing is its sums'. Neither is ever computed outside these sums of the engine's figures.
-CREATE FUNCTION screening_result_groups(token_sha256 text)
-RETURNS TABLE (payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, reduced_cents bigint, observed_cents bigint,
-  difference_cents bigint, reduced_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, anomaly boolean, standing text)
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT g.product, g.code, g.row_total, g.claims, g.expected, CASE WHEN g.pooled THEN g.lowest END, g.observed,
-         g.difference, CASE WHEN g.pooled THEN g.lowest_difference END, g.pooled, g.anomalies, g.anomalies > 0,
+-- The priced rows by payer product and code, each group numbered in the order the result page lists them: the largest
+-- difference from the lowest figures first, then by payer product and code, so the order is total and the same on
+-- every read. The figure before the reduction across codes is summed, and the lowest figures (each row's: the fully
+-- reduced figure for a pooled row, the one figure otherwise). A group is an anomaly when one of its rows is
+-- (screening_standing(), row by row: more than $5 a claim line below its lowest figure), and says how many; otherwise
+-- its standing is its sums'. Neither is ever computed outside these sums of the engine's figures. It answers only for a
+-- complete run before it expires. Called only inside the two definer functions below (no grant), so it runs as the
+-- owner.
+CREATE FUNCTION screening_result_ranked_groups(token_sha256 text)
+RETURNS TABLE (group_no integer, payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, lowest_cents bigint,
+  observed_cents bigint, difference_cents bigint, lowest_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, standing text)
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT (row_number() OVER (ORDER BY g.lowest_difference DESC, g.product COLLATE "C", g.code COLLATE "C"))::integer,
+         g.product, g.code, g.row_total, g.claims, g.expected, g.lowest, g.observed, g.difference, g.lowest_difference, g.pooled, g.anomalies,
          CASE WHEN g.anomalies > 0 THEN 'anomaly' ELSE screening_standing(g.expected, CASE WHEN g.pooled THEN g.lowest END, g.observed, g.claims) END
     FROM (SELECT s.payer_product AS product, s.procedure_code AS code, count(*)::integer AS row_total, sum(s.claim_count)::bigint AS claims,
                  sum(s.expected_cents)::bigint AS expected, sum(coalesce(s.reduced_cents, s.expected_cents))::bigint AS lowest,
@@ -1207,9 +1210,58 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
                  bool_or(s.in_reduction_pool) AS pooled,
                  (count(*) FILTER (WHERE screening_standing(s.expected_cents, s.reduced_cents, s.observed_allowed_cents, s.claim_count) = 'anomaly'))::integer AS anomalies
             FROM screening_run r JOIN screening_result s ON s.run_id = r.id
-           WHERE r.result_token_sha256 = token_sha256 AND r.status = 'complete' AND now() < r.expires_at AND s.disposition = 'priced'
+           WHERE r.result_token_sha256 = $1 AND r.status = 'complete' AND now() < r.expires_at AND s.disposition = 'priced'
            GROUP BY s.payer_product, s.procedure_code) g
-   ORDER BY g.lowest_difference DESC, g.product, g.code
+$$;
+
+-- One page of those groups, in their order: pages numbered from 1, at most 100 groups a page (per_page is held to 1 to
+-- 100), and a page past the last is empty. The result page reads one page at a time, so what it holds is bounded
+-- whatever the result's size (the capacity test's worst shape has 20,507 groups, audit #53 part 1). The fully reduced
+-- sums are given only for a group with a row in the reduction across codes.
+CREATE FUNCTION screening_result_groups(token_sha256 text, page integer, per_page integer)
+RETURNS TABLE (group_no integer, payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, reduced_cents bigint,
+  observed_cents bigint, difference_cents bigint, reduced_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, anomaly boolean,
+  standing text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  SELECT g.group_no, g.payer_product, g.procedure_code, g.rows, g.claim_lines, g.expected_cents, CASE WHEN g.in_reduction_pool THEN g.lowest_cents END,
+         g.observed_cents, g.difference_cents, CASE WHEN g.in_reduction_pool THEN g.lowest_difference_cents END, g.in_reduction_pool, g.anomaly_rows,
+         g.anomaly_rows > 0, g.standing
+    FROM screening_result_ranked_groups($1) g
+   CROSS JOIN (SELECT greatest(coalesce($2, 1), 1)::bigint AS page, least(greatest(coalesce($3, 0), 1), 100)::bigint AS size) p
+   WHERE g.group_no > (p.page - 1) * p.size AND g.group_no <= p.page * p.size
+   ORDER BY g.group_no
+$$;
+
+-- What the result page says of every group, and of the groups a page of screening_result_groups() does not show (its
+-- arguments; a page past the last is taken as the last): how many groups, how many are anomalies and how many are within
+-- the range of the reduction across codes; the page's size, how many pages, the page shown and its first and last
+-- group (0 and 0 with no group); and the groups not on that page: how many, how many are anomalies, and their rows,
+-- claim lines and summed figures, the lowest figures summed as the result's summary sums them (the fully reduced figure
+-- for a pooled row, the one figure otherwise). Every figure is a bigint sum here. Nothing for a link that is unknown,
+-- expired or not complete.
+CREATE FUNCTION screening_result_group_totals(token_sha256 text, page integer, per_page integer)
+RETURNS TABLE (groups integer, anomaly_groups integer, within_reduction_groups integer, page_size integer, pages integer, page_no integer,
+  first_group integer, last_group integer, other_groups integer, other_anomaly_groups integer, other_rows integer, other_claim_lines bigint,
+  other_expected_cents bigint, other_lowest_cents bigint, other_observed_cents bigint, other_difference_cents bigint, other_lowest_difference_cents bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+  WITH ranked AS MATERIALIZED (SELECT * FROM screening_result_ranked_groups($1)),
+       sized AS (SELECT (SELECT count(*) FROM ranked)::integer AS total, least(greatest(coalesce($3, 0), 1), 100) AS size),
+       shown AS (SELECT z.total, z.size, greatest((z.total + z.size - 1) / z.size, 1) AS pages,
+                        least(greatest(coalesce($2, 1), 1), greatest((z.total + z.size - 1) / z.size, 1)) AS page
+                   FROM sized z),
+       placed AS (SELECT r.*, (r.group_no <= (s.page - 1) * s.size OR r.group_no > s.page * s.size) AS other FROM ranked r CROSS JOIN shown s)
+  SELECT s.total, (SELECT count(*) FROM placed p WHERE p.standing = 'anomaly')::integer,
+         (SELECT count(*) FROM placed p WHERE p.standing = 'within_reduction_range')::integer,
+         s.size, s.pages, s.page, least((s.page - 1) * s.size + 1, s.total), least(s.page * s.size, s.total),
+         o.groups, o.anomalies, o.row_total, o.claims, o.expected, o.lowest, o.observed, o.difference, o.lowest_difference
+    FROM shown s
+   CROSS JOIN (SELECT count(*)::integer AS groups, (count(*) FILTER (WHERE p.standing = 'anomaly'))::integer AS anomalies,
+                      coalesce(sum(p.rows), 0)::integer AS row_total, coalesce(sum(p.claim_lines), 0)::bigint AS claims,
+                      coalesce(sum(p.expected_cents), 0)::bigint AS expected, coalesce(sum(p.lowest_cents), 0)::bigint AS lowest,
+                      coalesce(sum(p.observed_cents), 0)::bigint AS observed, coalesce(sum(p.difference_cents), 0)::bigint AS difference,
+                      coalesce(sum(p.lowest_difference_cents), 0)::bigint AS lowest_difference
+                 FROM placed p WHERE p.other) o
+   WHERE EXISTS (SELECT 1 FROM screening_run r WHERE r.result_token_sha256 = $1 AND r.status = 'complete' AND now() < r.expires_at)
 $$;
 
 -- Every row by payer product and what became of it (and why a row could not be priced).
@@ -1776,7 +1828,8 @@ REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_va
   screening_zip_status(text),
   submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text, text, text, text, text, text, text, text, text),
   reject_screening_upload(text, text, text, text, integer, jsonb, text, text, text, text, text, text, text, text), screening_result_summary(text),
-  screening_result_groups(text), screening_result_coverage(text), screening_result_rows(text, integer), screening_freeze_lead(uuid, uuid, text, text),
+  screening_result_ranked_groups(text), screening_result_groups(text, integer, integer), screening_result_group_totals(text, integer, integer),
+  screening_result_coverage(text), screening_result_rows(text, integer), screening_freeze_lead(uuid, uuid, text, text),
   screening_result_opened(text), convert_screening(text, text, integer, text[], text, text), screening_lead_withdraw(text, text),
   submit_prospect_request(text, text, text, integer, text[], text, text, text, text, text, text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), console_register_marketing_campaign(text, text), operator_screening_due(integer, integer),
@@ -1789,7 +1842,8 @@ REVOKE ALL ON FUNCTION screening_rejection_valid(jsonb), screening_rejections_va
 GRANT EXECUTE ON FUNCTION screening_status(), screening_zip_status(text),
   submit_screening(text, text, text, text, text[], text[], integer[], text[], text[], text[], bigint[], integer[], integer, integer, bigint, text, text, text, text, text, text, text, text, text),
   reject_screening_upload(text, text, text, text, integer, jsonb, text, text, text, text, text, text, text, text), screening_result_summary(text),
-  screening_result_groups(text), screening_result_coverage(text), screening_result_rows(text, integer), screening_result_opened(text),
+  screening_result_groups(text, integer, integer), screening_result_group_totals(text, integer, integer), screening_result_coverage(text),
+  screening_result_rows(text, integer), screening_result_opened(text),
   convert_screening(text, text, integer, text[], text, text), screening_lead_withdraw(text, text),
   submit_prospect_request(text, text, text, integer, text[], text, text, text, text, text, text, text), console_screening_splits(),
   console_approve_screening_split(jsonb), console_register_marketing_campaign(text, text) TO tp_app;

@@ -1,7 +1,6 @@
 import type { Cents } from '@tp/money';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
-
-import { counted } from '../../lib/copy/words';
+import Link from 'next/link';
 import {
   ANOMALY_RULE,
   DIFFERENCE_LABEL,
@@ -29,9 +28,21 @@ import { ScreeningCount, ScreeningMoney, differenceWords } from './result-summar
  * never an anomaly; a group is an anomaly when one of its rows is. Every standing is the database's
  * (screening_standing()), never this screen's. Every figure is before sequestration. Status shows as a labelled chip,
  * never color alone. Expected, allowed and the difference appear in that order, each in the mono face.
+ *
+ * The groups come one page at a time (audit #53 part 1: a worst-shape result has 20,507, and all of them at once
+ * exhausted the web task's heap): the page's groups in the database's order, the database's counts over every group
+ * in the card's description, the database's sums of the groups the page does not show in the table's last row, and
+ * links to the other pages. Nothing here counts, adds or orders a group.
  */
 
+/** A count with its noun, its digits grouped as every other count on the result is. */
+function many(count: number, one: string, more = `${one}s`): string {
+  return `${count.toLocaleString('en-US')} ${count === 1 ? one : more}`;
+}
+
 export interface ScreeningGroup {
+  /** Its place in the database's order, from 1. */
+  readonly groupNo: number;
   readonly payerProduct: string;
   readonly procedureCode: string;
   readonly rows: number;
@@ -48,6 +59,34 @@ export interface ScreeningGroup {
   /** At least one row is an anomaly (the database's flag). */
   readonly anomaly: boolean;
   readonly standing: ScreeningStanding;
+}
+
+/** The groups a page does not show, summed by the database (screening_result_group_totals()). */
+export interface ScreeningOtherGroups {
+  readonly groups: number;
+  readonly anomalyGroups: number;
+  readonly rows: number;
+  readonly claimLines: number;
+  readonly expectedCents: Cents;
+  /** The lowest figures: a pooled row's fully reduced figure, any other row's one figure. */
+  readonly lowestCents: Cents;
+  readonly observedCents: Cents;
+  readonly differenceCents: Cents;
+  readonly lowestDifferenceCents: Cents;
+}
+
+/** Every group of the result as the database counts them, and the page of them shown. */
+export interface ScreeningGroupPage {
+  readonly groups: number;
+  readonly anomalyGroups: number;
+  readonly withinReductionGroups: number;
+  readonly perPage: number;
+  readonly pages: number;
+  readonly page: number;
+  /** The page's first and last group by number; 0 and 0 when nothing was priced. */
+  readonly firstGroup: number;
+  readonly lastGroup: number;
+  readonly others: ScreeningOtherGroups;
 }
 
 export interface ScreeningRow {
@@ -121,38 +160,127 @@ function Standing({ standing, children }: { readonly standing: ScreeningStanding
 /** A group's status: how many of its rows are anomalies, or where its totals stand, always in words. */
 function GroupStatus({ group }: { readonly group: ScreeningGroup }) {
   if (group.standing === 'anomaly' && group.rows > 1) {
-    return <Standing standing="anomaly">{`Anomaly: ${String(group.anomalyRows)} of ${counted(group.rows, 'row')} more than $5 a claim line below their lowest figure`}</Standing>;
+    return <Standing standing="anomaly">{`Anomaly: ${group.anomalyRows.toLocaleString('en-US')} of ${many(group.rows, 'row')} more than $5 a claim line below their lowest figure`}</Standing>;
   }
   return <Standing standing={group.standing}>{standingWords(group.standing, group.inReductionPool, group.differenceCents)}</Standing>;
 }
 
-/** What the anomalies card says above its table: how many groups are anomalies, and how many are within the range of the reduction across codes. */
-export function anomaliesDescription(groups: readonly ScreeningGroup[]): string {
-  if (groups.length === 0) {
+/**
+ * What the anomalies card says above its table, from the database's counts over every group (never the page's): how
+ * many groups are anomalies, and how many are within the range of the reduction across codes; with more than one
+ * page, which groups this page shows.
+ */
+export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | 'anomalyGroups' | 'withinReductionGroups' | 'pages' | 'firstGroup' | 'lastGroup' | 'others'>): string {
+  if (page.groups === 0) {
     return 'No row was priced under Medicare, so there is nothing to compare.';
   }
-  const anomalies = groups.filter((group) => group.anomaly).length;
-  const within = groups.filter((group) => group.standing === 'within_reduction_range').length;
-  const first =
-    anomalies === 0
-      ? `No group of ${String(groups.length)} is an anomaly.`
-      : `${counted(anomalies, 'group')} of ${String(groups.length)} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+  const anomalies = page.anomalyGroups;
+  const within = page.withinReductionGroups;
+  const all = page.groups.toLocaleString('en-US');
+  const first = anomalies === 0 ? `No group of ${all} is an anomaly.` : `${many(anomalies, 'group')} of ${all} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
   const second =
     within === 0
       ? ''
-      : ` ${counted(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
-  return `${first} ${ANOMALY_RULE}${second} Largest difference from the lowest figure first.`;
+      : ` ${many(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
+  const shown =
+    page.pages <= 1
+      ? ''
+      : ` This page lists groups ${page.firstGroup.toLocaleString('en-US')} to ${page.lastGroup.toLocaleString('en-US')}; the table’s last row sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them.`;
+  return `${first} ${ANOMALY_RULE}${second} Largest difference from the lowest figure first.${shown}`;
 }
 
-export function ScreeningAnomalies({ groups }: { readonly groups: readonly ScreeningGroup[] }) {
+/** The page's own address with another page of groups, back at the anomalies card. */
+function pageHref(path: string, page: number): string {
+  return `${path}?groups=${String(page)}#screening-anomalies`;
+}
+
+/** Links to the first, previous, next and last pages of groups; none with one page. Never prefetched: each is a read of the result. */
+function GroupPages({ path, page }: { readonly path: string; readonly page: ScreeningGroupPage }) {
+  if (page.pages <= 1) {
+    return null;
+  }
+  const link = (target: number, label: string, shown: boolean) =>
+    shown ? (
+      <Link className="underline" href={pageHref(path, target)} prefetch={false}>
+        {label}
+      </Link>
+    ) : (
+      <span className="text-muted-foreground">{label}</span>
+    );
   return (
-    <Card data-section="anomalies">
+    <nav aria-label="Pages of groups by code and payer product" className="flex flex-wrap items-center gap-3 text-sm" data-slot="group-pages">
+      {link(1, 'First', page.page > 1)}
+      {link(page.page - 1, 'Previous', page.page > 1)}
+      <span>
+        Page <span className="font-mono tabular-nums">{page.page.toLocaleString('en-US')}</span> of <span className="font-mono tabular-nums">{page.pages.toLocaleString('en-US')}</span> (
+        {many(page.groups, 'group')})
+      </span>
+      {link(page.page + 1, 'Next', page.page < page.pages)}
+      {link(page.pages, 'Last', page.page < page.pages)}
+    </nav>
+  );
+}
+
+/**
+ * The table's last row, when the page does not show every group: the other groups as the database sums them. Its
+ * fully reduced columns sum each row's lowest figure, as the summary's do: the fully reduced figure for a row of a
+ * code in the reduction across codes, the one figure otherwise.
+ */
+function OtherGroups({ others }: { readonly others: ScreeningOtherGroups }) {
+  if (others.groups === 0) {
+    return null;
+  }
+  return (
+    <tfoot>
+      <tr className="border-t align-top font-medium" data-group="others">
+        <td className={CELL} colSpan={2}>
+          {`The other ${many(others.groups, 'group')}, summed`}
+          <span className="block text-xs font-normal text-muted-foreground">Each row at its lowest figure in the fully reduced columns: fully reduced for a code in the reduction across codes, its one figure otherwise.</span>
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningCount value={others.rows} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningCount value={others.claimLines} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningMoney cents={others.expectedCents} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningMoney cents={others.lowestCents} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningMoney cents={others.observedCents} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningMoney cents={others.differenceCents} />
+        </td>
+        <td className={CELL_NUMBER}>
+          <ScreeningMoney cents={others.lowestDifferenceCents} />
+        </td>
+        <td className="py-1">
+          <StatusChip tone={others.anomalyGroups > 0 ? 'short' : 'neutral'} data-anomaly={String(others.anomalyGroups > 0)}>
+            {others.anomalyGroups === 0 ? 'No group among them is an anomaly' : `${many(others.anomalyGroups, 'group')} among them ${others.anomalyGroups === 1 ? 'is an anomaly' : 'are anomalies'}`}
+          </StatusChip>
+        </td>
+      </tr>
+    </tfoot>
+  );
+}
+
+/**
+ * The anomalies by code and payer product: one page of groups (`groups`, in the database's order), the database's
+ * counts and sums (`page`), and links to the other pages at `path`, the result's own address.
+ */
+export function ScreeningAnomalies({ groups, page, path }: { readonly groups: readonly ScreeningGroup[]; readonly page: ScreeningGroupPage; readonly path: string }) {
+  return (
+    <Card data-section="anomalies" data-groups={String(page.groups)} data-page={String(page.page)}>
       <CardHeader>
         <CardTitle id="screening-anomalies">Anomalies by code and payer product</CardTitle>
-        <CardDescription>{anomaliesDescription(groups)}</CardDescription>
+        <CardDescription>{anomaliesDescription(page)}</CardDescription>
       </CardHeader>
-      <CardContent>
-        {groups.length === 0 ? (
+      <CardContent className="flex flex-col gap-3">
+        {page.groups === 0 ? (
           <EmptyState title="Nothing priced under Medicare" nextStep="Rows of Original Medicare and Medicare Advantage without a contract are priced; the coverage below says why none was." />
         ) : (
           <div className="overflow-x-auto" role="region" aria-labelledby="screening-anomalies" tabIndex={0} data-scroll="anomalies">
@@ -173,7 +301,7 @@ export function ScreeningAnomalies({ groups }: { readonly groups: readonly Scree
               </thead>
               <tbody>
                 {groups.map((group) => (
-                  <tr key={`${group.payerProduct}:${group.procedureCode}`} className="border-t align-top" data-group={`${group.procedureCode}:${group.payerProduct}`}>
+                  <tr key={`${group.payerProduct}:${group.procedureCode}`} className="border-t align-top" data-group={`${group.procedureCode}:${group.payerProduct}`} data-group-no={String(group.groupNo)}>
                     <td className={`${CELL} font-mono tabular-nums`}>{group.procedureCode}</td>
                     <td className={CELL}>{productLabel(group.payerProduct)}</td>
                     <td className={CELL_NUMBER}>
@@ -203,9 +331,11 @@ export function ScreeningAnomalies({ groups }: { readonly groups: readonly Scree
                   </tr>
                 ))}
               </tbody>
+              <OtherGroups others={page.others} />
             </table>
           </div>
         )}
+        <GroupPages path={path} page={page} />
       </CardContent>
     </Card>
   );

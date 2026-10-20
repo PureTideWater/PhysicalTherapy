@@ -1,12 +1,7 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 
 import { PublicHeader } from '../../../../components/public-header';
-import { ScreeningAnomalies, ScreeningTopRows } from '../../../../components/screening/anomalies';
-import { ScreeningConvertForm } from '../../../../components/screening/convert-form';
-import { ScreeningCoverage } from '../../../../components/screening/coverage';
-import { ScreeningOpenedSignal } from '../../../../components/screening/opened-signal';
-import { ScreeningHeading, ScreeningReleaseWithdrawn, ScreeningSummary } from '../../../../components/screening/result-summary';
+import { ScreeningResultView } from '../../../../components/screening/result-view';
 import { loadPublicPage } from '../../../../lib/http/next';
 import { screeningResult } from '../../../../lib/screening/routes';
 import { convertScreeningAction } from './actions';
@@ -23,7 +18,9 @@ export const metadata: Metadata = { title: 'Your screening', robots: { index: fa
  * found; one priced under a rule release since withdrawn says so above its figures. Every figure is the database's sum
  * of the engine's per-row results. The lockup without the tagline (D11); never owed, underpaid or recovered. The page
  * says what is kept once the link closes (and, after an audit request, what is kept with it), and its opened signal
- * records a person's first open, never the GET (audit #57; the founder's rulings of 2026-10-20).
+ * records a person's first open, never the GET (audit #57; the founder's rulings of 2026-10-20). The groups by code
+ * and payer product come one page at a time (?groups=N), so the page holds a bounded part of any result
+ * (src/components/screening/result-view.tsx; audit #53 part 1).
  */
 export default async function ScreeningResultPage(props: {
   readonly params: Promise<Record<string, string | string[] | undefined>>;
@@ -33,27 +30,7 @@ export default async function ScreeningResultPage(props: {
   return (
     <>
       <PublicHeader />
-      <main className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 md:p-10" data-slot="screening-result">
-        <ScreeningOpenedSignal resultId={data.resultId} />
-        <ScreeningHeading summary={data.summary} converted={data.converted} />
-        <ScreeningReleaseWithdrawn summary={data.summary} />
-        <ScreeningSummary summary={data.summary} />
-        <ScreeningAnomalies groups={data.groups} />
-        <ScreeningCoverage coverage={data.coverage} />
-        <ScreeningTopRows rows={data.rows} />
-        <ScreeningConvertForm action={convertScreeningAction} resultId={data.resultId} arrangements={data.arrangements} requested={data.requested} converted={data.converted} />
-        <p className="text-sm text-muted-foreground">
-          Screen another file:{' '}
-          <Link className="underline" href="/screening">
-            free screening
-          </Link>
-          . Service status:{' '}
-          <Link className="underline" href="/status">
-            status page
-          </Link>
-          .
-        </p>
-      </main>
+      <ScreeningResultView data={data} convert={convertScreeningAction} />
     </>
   );
 }
