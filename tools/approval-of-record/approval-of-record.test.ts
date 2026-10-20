@@ -8,6 +8,7 @@ import { APPROVERS_FILE, readApproverRecords } from '../../packages/db/src/domai
 import { repositoryRoot } from '../content-files';
 import {
   APPROVERS,
+  BUILD_BRANCH,
   DOCUMENT,
   type DecisionInput,
   type Fetch,
@@ -28,6 +29,9 @@ import {
  */
 const HEAD = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
 const OLDER = '0f1e2d3c4b5a69788796a5b4c3d2e1f001234567';
+/** The base branch's tip as GET /git/ref/heads/{branch} gives it, which the pull request's base.sha (OLDER) is not. */
+const BASE_TIP = '9a8b7c6d5e4f30211203f4e5d6c7b8a990817263';
+const MAIN_TIP = '1234567890abcdef1234567890abcdef12345678';
 const SHA = 'e'.repeat(64);
 
 const list = (...approvers: readonly (readonly [string, string])[]): string =>
@@ -97,13 +101,16 @@ describe('the readers, held to packages/db', () => {
 });
 
 describe('readEnforcement', () => {
-  it('enforces only on true; unset, empty and false do not; anything else is refused', () => {
+  it('enforces only on true, in any case; unset, empty and false do not; anything else is refused', () => {
     expect(readEnforcement('true')).toEqual({ kind: 'enforced' });
     expect(readEnforcement(' true ')).toEqual({ kind: 'enforced' });
+    // A phone's keyboard capitalises the first letter.
+    for (const value of ['True', 'TRUE', 'tRUE']) expect(readEnforcement(value), value).toEqual({ kind: 'enforced' });
     expect(readEnforcement(undefined)).toEqual({ kind: 'not enforced', value: '' });
     expect(readEnforcement('')).toEqual({ kind: 'not enforced', value: '' });
     expect(readEnforcement('false')).toEqual({ kind: 'not enforced', value: 'false' });
-    for (const value of ['TRUE', 'yes', '1', 'on']) expect(readEnforcement(value), value).toEqual({ kind: 'invalid', value });
+    expect(readEnforcement('False')).toEqual({ kind: 'not enforced', value: 'False' });
+    for (const value of ['yes', '1', 'on', 'truee', 't rue']) expect(readEnforcement(value), value).toEqual({ kind: 'invalid', value });
   });
 });
 
@@ -182,6 +189,24 @@ describe('decide', () => {
     expect(decision.findings.at(-1)).toMatch(/^No review can count: the base branch's packages\/db\/domain-model\/approvers\.json is not in the format/);
   });
 
+  it('the launch pull request into main, which holds neither file: the build branch’s list decides, never the head’s', () => {
+    const launch = input({ base: { document: null, approvers: null }, head: { document: SIGNED('A. Signer'), approvers: APPROVERS_BASE }, reviews: [review('a-signer', 'APPROVED')] });
+    // Without the build branch's list no review could count, and the launch could never pass once enforced.
+    const alone = decide(launch);
+    expect(alone.satisfied).toBe(false);
+    expect(alone.findings.at(-1)).toBe(`No review can count: the base branch has no ${APPROVERS}.`);
+    const fallback = decide({ ...launch, buildBranchApprovers: APPROVERS_BASE });
+    expect(fallback.required).toBe(true);
+    expect(fallback.satisfied).toBe(true);
+    expect(fallback.findings).toContain(`The base branch has no ${APPROVERS}, so the approvers are those on ${BUILD_BRANCH}, the protected build branch, at its tip.`);
+    // The head cannot name its own approver there either: a name only the head's list holds does not count.
+    const added = list(['A. Signer', 'a-signer'], ['C. Newcomer', 'c-newcomer']);
+    expect(decide({ ...launch, head: { document: SIGNED('C. Newcomer'), approvers: added }, reviews: [review('c-newcomer', 'APPROVED')], buildBranchApprovers: APPROVERS_BASE }).satisfied).toBe(false);
+    // A base list that exists but cannot be read is a problem, not an absence: the build branch's list does not stand in.
+    expect(decide({ ...launch, base: { document: null, approvers: '{' }, buildBranchApprovers: APPROVERS_BASE }).satisfied).toBe(false);
+    expect(decide({ ...launch, buildBranchApprovers: null }).satisfied).toBe(false);
+  });
+
   it('on the committed list today: the founder authors every pull request, so the founder cannot be its review of record', () => {
     const committed = readFileSync(APPROVERS_FILE, 'utf8');
     const today = decide(input({ author: 'PureTideWater', base: { document: AWAITING, approvers: committed }, head: { document: SIGNED('Tyler Williams'), approvers: committed } }));
@@ -213,6 +238,7 @@ describe('run, against recorded API responses', () => {
     title: 'Synthetic pull request',
     user: { login: 'build-agent', id: 2, node_id: 'U_agent', type: 'User', site_admin: false },
     head: { label: 'example:co-001/pr-07', ref: 'co-001/pr-07', sha: HEAD, user: { login: 'example' }, repo: { full_name: REPO } },
+    // base.sha is the base branch's commit when the pull request was last updated, not necessarily its tip.
     base: { label: 'example:claude/build-platform', ref: 'claude/build-platform', sha: OLDER, user: { login: 'example' }, repo: { full_name: REPO } },
     author_association: 'COLLABORATOR',
   };
@@ -237,17 +263,25 @@ describe('run, against recorded API responses', () => {
 
   const ok = (body: unknown): Served => ({ status: 200, body: typeof body === 'string' ? body : JSON.stringify(body) });
   const content = (file: string, ref: string) => `${API}/repos/${REPO}/contents/${file}?ref=${encodeURIComponent(ref)}`;
+  const branch = (name: string) => `${API}/repos/${REPO}/git/ref/heads/${name}`;
+  /** GET /repos/{owner}/{repo}/git/ref/heads/{branch} (recorded shape, synthetic values). */
+  const ref = (name: string, sha: string): Served =>
+    ok({ ref: `refs/heads/${name}`, node_id: 'REF_synthetic', url: branch(name), object: { sha, type: 'commit', url: `${API}/repos/${REPO}/git/commits/${sha}` } });
+  const missingFile: Served = { status: 404, body: '{"message":"Not Found"}' };
   const routes = (reviews: readonly Review[], over: Record<string, Served> = {}): Record<string, Served> => ({
     [`${API}/repos/${REPO}/pulls/7`]: ok(pull),
     [`${API}/repos/${REPO}/pulls/7/reviews?per_page=100&page=1`]: ok(reviews),
-    [content(DOCUMENT, 'claude/build-platform')]: ok(AWAITING),
-    [content(APPROVERS, 'claude/build-platform')]: ok(APPROVERS_BASE),
+    [branch('claude/build-platform')]: ref('claude/build-platform', BASE_TIP),
+    [content(DOCUMENT, BASE_TIP)]: ok(AWAITING),
+    [content(APPROVERS, BASE_TIP)]: ok(APPROVERS_BASE),
     [content(DOCUMENT, HEAD)]: ok(SIGNED('A. Signer')),
     [content(APPROVERS, HEAD)]: ok(APPROVERS_BASE),
     ...over,
   });
+  /** The event payload's pull request (the fields read): its number and the head commit the run's check belongs to. */
+  const EVENT = { action: 'submitted', pull_request: { number: 7, head: { sha: HEAD } } };
 
-  async function runWith(variable: string | undefined, served: Record<string, Served>, event: unknown = { action: 'submitted', pull_request: { number: 7 } }) {
+  async function runWith(variable: string | undefined, served: Record<string, Served>, event: unknown = EVENT) {
     const fake = api(served);
     const log: string[] = [];
     const summary: string[] = [];
@@ -298,7 +332,7 @@ describe('run, against recorded API responses', () => {
     }
   });
 
-  it('reads the base branch by name and the head by its commit, every page of reviews, and a missing file as none', async () => {
+  it('reads the base branch at its tip, resolved as a branch, the head at the event’s commit, every page of reviews, and a missing file as none', async () => {
     const hundred = Array.from({ length: 100 }, (_, i) => review('b-second', 'COMMENTED', HEAD, i + 10));
     const served = routes([], {
       [`${API}/repos/${REPO}/pulls/7/reviews?per_page=100&page=1`]: ok(hundred),
@@ -310,15 +344,53 @@ describe('run, against recorded API responses', () => {
       `${API}/repos/${REPO}/pulls/7`,
       `${API}/repos/${REPO}/pulls/7/reviews?per_page=100&page=1`,
       `${API}/repos/${REPO}/pulls/7/reviews?per_page=100&page=2`,
-      content(DOCUMENT, 'claude/build-platform'),
-      content(APPROVERS, 'claude/build-platform'),
+      // refs/heads/, so a tag named like the branch cannot stand in for it; every file is read at a commit.
+      branch('claude/build-platform'),
+      content(DOCUMENT, BASE_TIP),
+      content(APPROVERS, BASE_TIP),
       content(DOCUMENT, HEAD),
       content(APPROVERS, HEAD),
     ]);
-    expect(result.requests[3]?.headers.Accept).toBe('application/vnd.github.raw+json');
+    expect(result.requests.some((r) => r.url.includes('?ref=claude'))).toBe(false);
+    expect(result.requests[4]?.headers.Accept).toBe('application/vnd.github.raw+json');
     // A base branch without the document (404) compares as none: the head's new approval line is a change.
-    const missing = await runWith('true', routes([review('a-signer', 'APPROVED')], { [content(DOCUMENT, 'claude/build-platform')]: { status: 404, body: '{"message":"Not Found"}' } }));
+    const missing = await runWith('true', routes([review('a-signer', 'APPROVED')], { [content(DOCUMENT, BASE_TIP)]: missingFile }));
     expect(missing.code).toBe(0);
+    // A base branch that does not exist is an error, not an empty base.
+    const gone = await runWith('true', routes([review('a-signer', 'APPROVED')], { [branch('claude/build-platform')]: missingFile }));
+    expect(gone.code).toBe(1);
+    expect(gone.log[0]).toContain('the base branch claude/build-platform does not exist');
+  });
+
+  it('judges the head commit the event names, the one its check belongs to, even when the API already shows a newer head', async () => {
+    const NEWER = 'fedcba9876543210fedcba9876543210fedcba98';
+    const moved = { ...pull, head: { ...pull.head, sha: NEWER } };
+    const result = await runWith('true', routes([review('a-signer', 'APPROVED', HEAD)], { [`${API}/repos/${REPO}/pulls/7`]: ok(moved) }));
+    expect(result.code).toBe(0);
+    expect(result.requests.map((r) => r.url)).not.toContain(content(DOCUMENT, NEWER));
+    // An approval of the newer head is not an approval of this commit.
+    const other = await runWith('true', routes([review('a-signer', 'APPROVED', NEWER)], { [`${API}/repos/${REPO}/pulls/7`]: ok(moved) }));
+    expect(other.code).toBe(1);
+    // An event that names no head commit is an error.
+    const headless = await runWith('true', routes([]), { action: 'opened', pull_request: { number: 7 } });
+    expect(headless.code).toBe(1);
+    expect(headless.log[0]).toContain('the event names no head commit');
+  });
+
+  it('the launch pull request into main: main has neither file, so the build branch’s list, at its tip, decides', async () => {
+    const launch = { ...pull, base: { ...pull.base, label: 'example:main', ref: 'main', sha: MAIN_TIP } };
+    const served = routes([review('a-signer', 'APPROVED')], {
+      [`${API}/repos/${REPO}/pulls/7`]: ok(launch),
+      [branch('main')]: ref('main', MAIN_TIP),
+      [content(DOCUMENT, MAIN_TIP)]: missingFile,
+      [content(APPROVERS, MAIN_TIP)]: missingFile,
+    });
+    const result = await runWith('true', served);
+    expect(result.code).toBe(0);
+    expect(result.requests.map((r) => r.url).slice(2)).toEqual([branch('main'), content(DOCUMENT, MAIN_TIP), content(APPROVERS, MAIN_TIP), content(DOCUMENT, HEAD), content(APPROVERS, HEAD), branch('claude/build-platform'), content(APPROVERS, BASE_TIP)]);
+    expect(result.summary).toContain(`the approvers are those on ${BUILD_BRANCH}, the protected build branch`);
+    // Without an approval of the head commit by a listed login, the launch fails like any other.
+    expect((await runWith('true', { ...served, [`${API}/repos/${REPO}/pulls/7/reviews?per_page=100&page=1`]: ok([]) })).code).toBe(1);
   });
 
   it('fails when enforced, and passes with a warning when not, on any error reading the API', async () => {
@@ -332,6 +404,7 @@ describe('run, against recorded API responses', () => {
     const forbidden = await runWith('true', routes([], { [content(APPROVERS, HEAD)]: { status: 403, body: '{"message":"Forbidden"}' } }));
     expect(forbidden.code).toBe(1);
     const noEvent = await runWith('true', routes([]), { action: 'opened' });
+    expect(noEvent.code).toBe(1);
     expect(noEvent.log[0]).toContain('the event is not about a pull request');
   });
 

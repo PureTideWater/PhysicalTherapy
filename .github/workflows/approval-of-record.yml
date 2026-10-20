@@ -2,8 +2,9 @@ name: approval-of-record
 
 # The founder's GitHub review is the approval of record (docs/adr/0063). A pull request that changes the
 # "Approved by:" line of docs/product/domain-model.md or packages/db/domain-model/approvers.json needs an APPROVED
-# review of its latest commit from an approver on the base branch's list (the person the line names) who is not its
-# author; a review re-runs this job. Until the repository variable APPROVAL_REVIEW_REQUIRED is true it passes and
+# review of its latest commit from an approver on the base branch's list (the person the line names; the protected
+# build branch's list when the base has none, as main has until launch) who is not its author; a review re-runs this
+# job. Until the repository variable APPROVAL_REVIEW_REQUIRED is true it passes and
 # says why (docs/runbooks/github-governance.md, step 5). It reads the API with the workflow's own read-only token,
 # installs nothing and runs tools/approval-of-record/approval-of-record.ts on Node 24.
 on:

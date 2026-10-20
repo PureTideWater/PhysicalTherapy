@@ -6,11 +6,15 @@ import { appendFileSync, readFileSync } from 'node:fs';
  * packages/db/domain-model/approvers.json, relative to its base branch's tip, needs an APPROVED review of its
  * latest commit from an approver on the BASE branch's list who is not its author: from the login of the person
  * the head's line names, or from any listed login when the line names no one. A reviewer's state is their latest
- * review that approves, requests changes or is dismissed; a comment changes nothing.
+ * review that approves, requests changes or is dismissed; a comment changes nothing. A base branch with no approver
+ * list at all (main, until the launch merge brings it one) takes the list on the protected build branch,
+ * claude/build-platform, never the head's. Every file is read at a commit: the base branch's tip, resolved as a branch
+ * (refs/heads/, so no tag of the same name stands in for it), and the head commit the event names, the one this
+ * run's check belongs to.
  *
- * Until the repository variable APPROVAL_REVIEW_REQUIRED is `true` the job passes and says that the requirement
- * is not yet enforced, why, and what it would decide; `false` or unset is the same; any other value fails it.
- * Enforced, it fails a pull request the rule refuses and any error reading the API.
+ * Until the repository variable APPROVAL_REVIEW_REQUIRED is `true` (in any case) the job passes and says that the
+ * requirement is not yet enforced, why, and what it would decide; `false` or unset is the same; any other value
+ * fails it. Enforced, it fails a pull request the rule refuses and any error reading the API.
  *
  * Run by Node 24 directly (`node tools/approval-of-record/approval-of-record.ts`), with no dependency and no
  * install: it uses only Node's own modules and erasable TypeScript. It reads the workflow token from
@@ -21,6 +25,8 @@ export const DOCUMENT = 'docs/product/domain-model.md';
 export const APPROVERS = 'packages/db/domain-model/approvers.json';
 export const VARIABLE = 'APPROVAL_REVIEW_REQUIRED';
 export const APPROVERS_FORMAT = 'tp-domain-model-approvers/2';
+/** The protected build branch, whose approver list decides for a base branch that has none (docs/adr/0063). */
+export const BUILD_BRANCH = 'claude/build-platform';
 const RUNBOOK = 'docs/runbooks/github-governance.md, step 5';
 
 /** A GitHub login as GitHub issues them (packages/db's GITHUB_LOGIN). */
@@ -53,6 +59,8 @@ export interface DecisionInput {
   readonly base: Side;
   readonly head: Side;
   readonly reviews: readonly Review[];
+  /** The build branch's approver list, read only when the base branch has none (and is not the build branch). */
+  readonly buildBranchApprovers?: string | null;
 }
 
 export interface Decision {
@@ -66,11 +74,14 @@ export interface Decision {
 
 export type Enforcement = { readonly kind: 'enforced' } | { readonly kind: 'not enforced'; readonly value: string } | { readonly kind: 'invalid'; readonly value: string };
 
-/** The repository variable: `true` enforces; unset, empty or `false` does not; anything else is refused. */
+/**
+ * The repository variable: `true` enforces; unset, empty or `false` does not, in any case (a phone's keyboard
+ * capitalises the first letter); anything else is refused.
+ */
 export function readEnforcement(value: string | undefined): Enforcement {
   const v = (value ?? '').trim();
-  if (v === 'true') return { kind: 'enforced' };
-  if (v === '' || v === 'false') return { kind: 'not enforced', value: v };
+  if (v.toLowerCase() === 'true') return { kind: 'enforced' };
+  if (v === '' || v.toLowerCase() === 'false') return { kind: 'not enforced', value: v };
   return { kind: 'invalid', value: v };
 }
 
@@ -161,7 +172,13 @@ export function decide(input: DecisionInput): Decision {
   }
   if (listChanged) findings.push(`This pull request changes ${APPROVERS}, the list of who may approve.`);
 
-  const { approvers, problem } = parseApprovers(input.base.approvers);
+  let listed = input.base.approvers;
+  if (listed === null && input.buildBranchApprovers !== undefined && input.buildBranchApprovers !== null) {
+    // main before the launch merge: no list of its own, so the protected build branch's decides (never the head's).
+    findings.push(`The base branch has no ${APPROVERS}, so the approvers are those on ${BUILD_BRANCH}, the protected build branch, at its tip.`);
+    listed = input.buildBranchApprovers;
+  }
+  const { approvers, problem } = parseApprovers(listed);
   if (problem !== null) return { required: true, satisfied: false, findings: [...findings, `No review can count: ${problem}.`] };
   let eligible: readonly Approver[] = approvers;
   if (name !== null) {
@@ -273,13 +290,19 @@ async function read(options: RunOptions): Promise<Decision> {
   if (token === '') throw new ApiError('GITHUB_TOKEN is not set');
   if (!/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(repository)) throw new ApiError('GITHUB_REPOSITORY is not owner/name');
   let number: unknown;
+  let eventHead: unknown;
   try {
-    const event = JSON.parse(options.readFile(env.GITHUB_EVENT_PATH ?? '')) as { pull_request?: { number?: unknown } };
+    const event = JSON.parse(options.readFile(env.GITHUB_EVENT_PATH ?? '')) as { pull_request?: { number?: unknown; head?: { sha?: unknown } } };
     number = event.pull_request?.number;
+    eventHead = event.pull_request?.head?.sha;
   } catch {
     throw new ApiError('the event payload could not be read');
   }
   if (typeof number !== 'number' || !Number.isInteger(number) || number <= 0) throw new ApiError('the event is not about a pull request');
+  // The head commit the event names: this run's check belongs to it, so it is the commit judged, whatever the
+  // pull request's head is by the time the API answers.
+  if (typeof eventHead !== 'string' || !/^[0-9a-f]{40}$/.test(eventHead)) throw new ApiError('the event names no head commit');
+  const headSha = eventHead;
 
   const get = async (path: string, accept = 'application/vnd.github+json'): Promise<ApiResponse> => {
     const response = await options.fetch(`${api}/repos/${repository}${path}`, {
@@ -300,15 +323,23 @@ async function read(options: RunOptions): Promise<Decision> {
     return response.text();
   };
 
+  /** A branch's tip, resolved as a branch (refs/heads/), so a tag of the same name cannot stand in for it. */
+  const tip = async (branch: string): Promise<string | null> => {
+    const response = await get(`/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`);
+    if (response.status === 404) return null;
+    if (response.status !== 200) throw new ApiError(`the branch ${shown(branch)}: HTTP ${String(response.status)}`);
+    const sha = (JSON.parse(await response.text()) as { object?: { sha?: unknown } }).object?.sha;
+    if (typeof sha !== 'string' || !/^[0-9a-f]{40}$/.test(sha)) throw new ApiError(`the branch ${shown(branch)}: unexpected shape`);
+    return sha;
+  };
+
   const pull = (await json(`/pulls/${String(number)}`, `pull request #${String(number)}`)) as {
     user?: { login?: unknown } | null;
-    head?: { sha?: unknown };
     base?: { ref?: unknown };
   };
   const author = pull.user?.login;
-  const headSha = pull.head?.sha;
   const baseRef = pull.base?.ref;
-  if (typeof author !== 'string' || typeof headSha !== 'string' || !/^[0-9a-f]{40}$/.test(headSha) || typeof baseRef !== 'string' || baseRef === '') {
+  if (typeof author !== 'string' || typeof baseRef !== 'string' || baseRef === '') {
     throw new ApiError(`pull request #${String(number)}: unexpected shape`);
   }
   const reviews: Review[] = [];
@@ -318,13 +349,16 @@ async function read(options: RunOptions): Promise<Decision> {
     reviews.push(...(batch as Review[]));
     if (batch.length < 100) break;
   }
-  return decide({
-    author,
-    headSha,
-    base: { document: await file(DOCUMENT, baseRef), approvers: await file(APPROVERS, baseRef) },
-    head: { document: await file(DOCUMENT, headSha), approvers: await file(APPROVERS, headSha) },
-    reviews,
-  });
+  const baseSha = await tip(baseRef);
+  if (baseSha === null) throw new ApiError(`the base branch ${shown(baseRef)} does not exist`);
+  const base: Side = { document: await file(DOCUMENT, baseSha), approvers: await file(APPROVERS, baseSha) };
+  const head: Side = { document: await file(DOCUMENT, headSha), approvers: await file(APPROVERS, headSha) };
+  let buildBranchApprovers: string | null | undefined;
+  if (base.approvers === null && baseRef !== BUILD_BRANCH) {
+    const buildSha = await tip(BUILD_BRANCH);
+    buildBranchApprovers = buildSha === null ? null : await file(APPROVERS, buildSha);
+  }
+  return decide({ author, headSha, base, head, reviews, ...(buildBranchApprovers === undefined ? {} : { buildBranchApprovers }) });
 }
 
 if (import.meta.main) {
