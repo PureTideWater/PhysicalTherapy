@@ -1,7 +1,8 @@
 <!--
 The build fills in every section before it asks for the founder's approval (docs/adr/0063; the change-management
 policy, rule 1). Write "None" rather than leave a section out. No PHI, no real file and no document text here: name
-records by their IDs.
+records by their IDs. GitHub offers this template only from main, which has none until launch; until then the build
+copies it into every pull request's description itself (CLAUDE.md).
 -->
 
 ## What changes
@@ -60,6 +61,7 @@ is the one that counts. The build posts the approval line as a suggested change 
 ## The founder's approval
 
 This pull request merges only after the founder's approving GitHub review of its latest commit and green required
-checks (`docs/runbooks/github-governance.md`, steps 5 and 6; until step 5 is set, on green checks alone). The review
-is the record of the approval, not anything written here; a new commit dismisses it. The build then merges, and never
-reviews.
+checks. The build waits for that review from the day it works under its own GitHub account
+(`docs/runbooks/github-governance.md`, 3i), and from step 5 GitHub requires it too; before 3i, on green checks alone
+(reconciliation 001, D4 (a)). The review is the record of the approval, not anything written here; a new commit
+dismisses it. The build then merges, and never reviews.
