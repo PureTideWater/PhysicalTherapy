@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # The repository's pre-push hook (docs/adr/0063, audit item #20 (e)). Before git sends a push, every commit it adds
 # to the remote goes through the fixture check (the writer's guard over every file the commits write) and gitleaks
-# (the repository's .gitleaks.toml and .gitleaksignore); a refusal stops the push. Turn it on once per clone, for
-# the clone and every linked worktree of it:
+# (the repository's .gitleaks.toml and .gitleaksignore); a refusal stops the push. Install it once per clone, for the
+# clone and every linked worktree of it, with
 #
-#   git config core.hooksPath .githooks
+#   pnpm hooks:install
 #
-# It needs the workspace installed (pnpm install) and gitleaks 8.19 or later on PATH, or GITLEAKS naming one; without
-# either it refuses the push and says what to install. The checks are tools/pre-push/pre-push.ts.
+# which puts a launcher in the clone's own hooks directory (tools/pre-push/install.sh); a Claude Code session does it
+# when it starts (.claude/hooks/session-start.sh). The launcher runs this file from the working tree a push is made
+# from, and refuses the push of a branch that has no such file.
+#
+# It needs the workspace installed (pnpm install) and gitleaks 8.19 or later: the pinned one tools/gitleaks/install.sh
+# installs (pnpm gitleaks:install), GITLEAKS naming one, or one on PATH; without it the push is refused with what to
+# install. The checks are tools/pre-push/pre-push.ts.
 set -euo pipefail
 
 hook="$(readlink -f "${BASH_SOURCE[0]}")"

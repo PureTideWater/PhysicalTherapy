@@ -1,0 +1,8 @@
+# The gitleaks release CI's secret scan and the pre-push hook run (docs/adr/0063), and the SHA-256 of each archive
+# tools/gitleaks/install.sh may download, copied from the release's gitleaks_<version>_checksums.txt. A new version
+# changes every line here in one pull request.
+version 8.24.3
+linux_x64 9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+linux_arm64 5f2edbe1f49f7b920f9e06e90759947d3c5dfc16f752fb93aaafc17e9d14cf07
+darwin_x64 41c44ae8ad1d6eef57d4526ad0fd67d8129eee9a856f55c2b3b9395fd3d9ec0f
+darwin_arm64 b90f13bb8c90ab72083d9b0c842e39dafb82c0e5c3f872f407366b7a58909013

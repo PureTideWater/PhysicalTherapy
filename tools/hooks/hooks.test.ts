@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -14,7 +14,7 @@ import { repositoryRoot } from '../content-files';
  * to refuse with the reason on stderr (docs/adr/0059). .claude/settings.json wires them (docs/adr/0063): the
  * three guards before every edit tool (Edit, Write, MultiEdit, NotebookEdit), the GitHub guard before every
  * connector tool that reviews a pull request or writes files, the typecheck after each edit tool that writes
- * text, and the last describe block runs them as it wires them, each edit tool allowed and refused. A hook
+ * text, the pre-push checks' installation when a session starts, and the last describe block runs them as it wires them, each edit tool allowed and refused. A hook
  * script with no cases here, or not wired, fails the suite. Nothing here writes into the worktree: the scratch
  * repositories and workspaces live in the system's temporary directory, and .claude/.allow-protected-edit is only
  * ever made there.
@@ -46,12 +46,13 @@ function gitRepository(prefix: string, files: Readonly<Record<string, string>> =
 
 interface Run {
   readonly status: number | null;
+  readonly stdout: string;
   readonly stderr: string;
 }
 
-function run(script: string, input: unknown, env: NodeJS.ProcessEnv = process.env): Run {
-  const result = spawnSync('/bin/bash', [script], { input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', env, timeout: 120_000 });
-  return { status: result.status, stderr: result.stderr };
+function run(script: string, input: unknown, env: NodeJS.ProcessEnv = process.env, cwd?: string): Run {
+  const result = spawnSync('/bin/bash', [script], { input: typeof input === 'string' ? input : JSON.stringify(input), encoding: 'utf8', env, cwd, timeout: 120_000 });
+  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 /** A PATH holding only the named commands (links to the real ones), to show a hook fail closed without the rest. */
@@ -408,29 +409,67 @@ const CASES: Readonly<Record<string, () => void>> = {
         expect(review.stderr).toContain('the build never submits a review');
       }
     }
-    // A file written through the GitHub API on a path the edit hooks guard, or that configures the hooks or CI, in any spelling.
-    for (const file of ['docs/product/domain-model.md', '/Docs/x/../product/Domain-Model.md', 'packages/db/domain-model/approvers.json', 'packages/db/migrations/0001.sql', 'content/releases/r.json', 'fixtures/synthetic/a.csv', './packages/synth/src/x.ts', '.claude/settings.json', '.github/workflows/x.yml', 'docs/../CLAUDE.md']) {
+    // A file written through the GitHub API, on any path: no edit hook, no pre-push hook and no gitleaks would read it.
+    for (const file of ['docs/notes.md', 'README.md', 'apps/web/a.ts', 'docs/product/domain-model.md', '.github/workflows/x.yml', 'fixtures/synthetic/a.csv']) {
       const written = call('mcp__github__create_or_update_file', { owner: 'o', repo: 'r', branch: 'b', path: file, content: 'x', message: 'm' });
       expect(written.status, file).toBe(2);
-      expect(written.stderr, file).toContain('through the GitHub API');
+      expect(written.stderr, file).toContain('through the GitHub API, where neither the edit hooks nor the pre-push hook');
       expect(call('mcp__github__delete_file', { owner: 'o', repo: 'r', branch: 'b', path: file, message: 'm' }).status, file).toBe(2);
-      expect(call('mcp__github__push_files', { owner: 'o', repo: 'r', branch: 'b', files: [{ path: 'README.md', content: 'x' }, { path: file, content: 'x' }], message: 'm' }).status, file).toBe(2);
+      expect(call('mcp__claude_ai_GitHub__push_files', { owner: 'o', repo: 'r', branch: 'b', files: [{ path: file, content: 'x' }], message: 'm' }).status, file).toBe(2);
     }
-    // Any other path passes, unless its text is an interchange from another sender; a write whose paths it cannot read is refused.
-    expect(call('mcp__github__create_or_update_file', { path: 'docs/notes.md', content: 'x' }).status).toBe(0);
-    expect(call('mcp__github__push_files', { files: [{ path: 'README.md', content: 'x' }, { path: 'apps/web/a.ts', content: 'y' }] }).status).toBe(0);
-    const x12 = call('mcp__github__push_files', { files: [{ path: 'docs/a.md', content: `see ${render835(minimalFile()).text.replace('SYNTHSENDER    ', 'OTHERSENDER    ')}` }] });
-    expect(x12.status).toBe(2);
-    expect(x12.stderr).toContain('whose sender is not SYNTHSENDER');
-    expect(call('mcp__github__push_files', { files: [{ path: 'docs/a.md', content: render835(minimalFile()).text }] }).status).toBe(0);
     expect(call('mcp__github__push_files', { files: 7 }).status).toBe(2);
-    expect(call('mcp__github__create_or_update_file', { path: 'docs/a\n/../../.github/x.yml', content: 'x' }).status).toBe(2);
     // Other tools pass: merging is bounded by the ruleset, whoever merges (docs/adr/0063).
     expect(call('mcp__github__merge_pull_request', { pullNumber: 1 }).status).toBe(0);
     expect(call('mcp__github__add_issue_comment', { body: 'x' }).status).toBe(0);
     // It fails closed: without jq, on input that is not JSON.
     expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
     expect(run(script, '{"tool_name":"mcp__github__push_files"').status).toBe(2);
+  },
+
+  'session-start.sh': () => {
+    const script = hook('session-start.sh');
+    /** A clone whose tools are this checkout's, as CLAUDE_PROJECT_DIR names it, and an empty cache for gitleaks. */
+    const project = () => {
+      const root = gitRepository('session');
+      symlinkSync(path.join(repositoryRoot, 'tools'), path.join(root, 'tools'));
+      return { root, cache: scratch('session-cache') };
+    };
+    const start = (root: string, env: NodeJS.ProcessEnv) => run(script, { hook_event_name: 'SessionStart', source: 'startup' }, { ...process.env, GITLEAKS: '', ...env, CLAUDE_PROJECT_DIR: root });
+    const launcher = readFileSync(path.join(repositoryRoot, 'tools/pre-push/launcher.sh'), 'utf8');
+    // It installs the launcher in the clone's own hooks directory, and names the gitleaks a push will use.
+    const ready = project();
+    const stub = path.join(scratch('session-gitleaks'), 'gitleaks');
+    writeFileSync(stub, '#!/bin/sh\necho 8.24.3\n');
+    chmodSync(stub, 0o755);
+    const named = start(ready.root, { GITLEAKS: stub, XDG_CACHE_HOME: ready.cache });
+    expect(named.status).toBe(0);
+    expect(named.stdout).toContain(`Pre-push hook: the hook is installed at ${path.join(ready.root, '.git/hooks/pre-push')}`);
+    expect(named.stdout).toContain(`gitleaks: ${stub}.`);
+    expect(named.stdout).toContain('never push with --no-verify');
+    expect(readFileSync(path.join(ready.root, '.git/hooks/pre-push'), 'utf8')).toBe(launcher);
+    expect(statSync(path.join(ready.root, '.git/hooks/pre-push')).mode & 0o111).not.toBe(0);
+    // The pinned gitleaks, once installed in the cache, is found there: nothing is downloaded again.
+    const pinned = path.join(ready.cache, 'paidwhole/gitleaks', /^version (\S+)$/m.exec(readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8'))?.[1] ?? '?', 'gitleaks');
+    mkdirSync(path.dirname(pinned), { recursive: true });
+    writeFileSync(pinned, `#!/bin/sh\necho ${path.basename(path.dirname(pinned))}\n`);
+    chmodSync(pinned, 0o755);
+    const cached = start(ready.root, { XDG_CACHE_HOME: ready.cache, GITLEAKS_DOWNLOAD_BASE: 'file:///nonexistent' });
+    expect(cached.stdout).toContain(`gitleaks: ${pinned}.`);
+    // What is missing is said in the session's context, and the session still starts.
+    const missing = project();
+    const notInstalled = start(missing.root, { XDG_CACHE_HOME: missing.cache, GITLEAKS_DOWNLOAD_BASE: 'file:///nonexistent' });
+    expect(notInstalled.status).toBe(0);
+    expect(notInstalled.stdout).toContain('WARNING from .claude/hooks/session-start.sh');
+    expect(notInstalled.stdout).toContain('The pinned gitleaks could not be installed, so the pre-push hook refuses every push that sends a commit');
+    expect(start(missing.root, { GITLEAKS: '/nonexistent/gitleaks' }).stdout).toContain('GITLEAKS is /nonexistent/gitleaks, which is not an executable file.');
+    spawnSync('git', ['-C', missing.root, 'config', 'core.hooksPath', '/elsewhere']);
+    const elsewhere = start(missing.root, { GITLEAKS: stub });
+    expect(elsewhere.status).toBe(0);
+    expect(elsewhere.stdout).toContain('The pre-push hook is not installed: pre-push: core.hooksPath is /elsewhere in your local git configuration');
+    // The hook's first instruction, core.hooksPath = .githooks, is taken out so the launcher runs.
+    spawnSync('git', ['-C', missing.root, 'config', 'core.hooksPath', '.githooks']);
+    expect(start(missing.root, { GITLEAKS: stub }).stdout).toContain('Pre-push hook: the hook is installed');
+    expect(spawnSync('git', ['-C', missing.root, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout).toBe('');
   },
 };
 
@@ -460,7 +499,7 @@ interface HookCommand {
   readonly timeout?: number;
 }
 interface Settings {
-  readonly hooks: Readonly<Record<string, readonly { readonly matcher: string; readonly hooks: readonly HookCommand[] }[]>>;
+  readonly hooks: Readonly<Record<string, readonly { readonly matcher?: string; readonly hooks: readonly HookCommand[] }[]>>;
 }
 
 describe('.claude/settings.json', () => {
@@ -472,11 +511,19 @@ describe('.claude/settings.json', () => {
   };
   /** The hooks an event runs for a tool, by script name, the matcher read as Claude Code may read it: whole, or anywhere in the name. */
   const wired = (event: string, toolName: string, anchored: boolean): string[] =>
-    (raw.hooks[event] ?? []).filter((m) => new RegExp(anchored ? `^(?:${m.matcher})$` : m.matcher).test(toolName)).flatMap((m) => m.hooks.map((h) => script(h.command)));
+    (raw.hooks[event] ?? []).filter((m) => new RegExp(anchored ? `^(?:${m.matcher ?? ''})$` : (m.matcher ?? '')).test(toolName)).flatMap((m) => m.hooks.map((h) => script(h.command)));
 
   it('holds the hooks only: no permission rules and no sandbox until the final pass', () => {
     expect(Object.keys(raw).sort()).toEqual(['$schema', 'hooks']);
-    expect(Object.keys(raw.hooks).sort()).toEqual(['PostToolUse', 'PreToolUse']);
+    expect(Object.keys(raw.hooks).sort()).toEqual(['PostToolUse', 'PreToolUse', 'SessionStart']);
+  });
+
+  it('installs the pre-push checks when any session starts: one hook, every source, with time for a download', () => {
+    const [entry, ...rest] = raw.hooks.SessionStart ?? [];
+    expect(rest).toEqual([]);
+    expect(entry?.matcher).toBeUndefined();
+    expect(entry?.hooks.map((h) => script(h.command))).toEqual(['session-start.sh']);
+    expect(entry?.hooks[0]?.timeout).toBe(120);
   });
 
   it('wires every hook script, each by the project directory, as a command', () => {
@@ -522,7 +569,7 @@ describe('.claude/settings.json', () => {
     const dispatch = (toolName: string, toolInput: Record<string, unknown>): Record<string, number | null> =>
       Object.fromEntries(
         (raw.hooks.PreToolUse ?? [])
-          .filter((m) => new RegExp(`^(?:${m.matcher})$`).test(toolName))
+          .filter((m) => new RegExp(`^(?:${m.matcher ?? ''})$`).test(toolName))
           .flatMap((m) => m.hooks)
           .map((h) => {
             const result = spawnSync('/bin/bash', ['-c', h.command], {

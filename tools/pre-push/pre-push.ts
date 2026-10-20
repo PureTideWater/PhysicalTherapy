@@ -15,12 +15,18 @@ import { checkCommits } from '../fixture-check/commits';
  * that sends a commit the remote lacks is refused and the message says why (a push that sends none, such as a
  * deletion, has nothing to scan and goes ahead).
  *
- * The commits checked are those reachable from what each ref update sends and from none of the remote's refs this
- * repository knows (`--remotes=<remote>`) or the commit each update replaces: a new branch, a push of a bare commit
- * (`git push origin <sha>:refs/heads/salvage/x`, a `git commit-tree` object no branch holds) and an update of a
- * branch alike. A deletion sends nothing and checks nothing. gitleaks reads each merge by its remerge diff (what the
- * merge holds beyond git's own automatic merge of its parents: an evil merge or a conflict's resolution), since
- * `git log -p` shows no diff for a merge at all.
+ * The commits checked are those reachable from what each ref update sends and from nothing the remote already has:
+ * its remote-tracking refs (`--remotes=<remote>`) when this repository has fetched it, otherwise every commit
+ * `git ls-remote` says it holds (a remote just added, or a push to a URL), and the commit each update replaces: a
+ * new branch, a push of a bare commit (`git push origin <sha>:refs/heads/salvage/x`, a `git commit-tree` object no
+ * branch holds) and an update of a branch alike. A deletion sends nothing and checks nothing. gitleaks reads each
+ * merge by its remerge diff (what the merge holds beyond git's own automatic merge of its parents: an evil merge or
+ * a conflict's resolution), since `git log -p` shows no diff for a merge at all.
+ *
+ * gitleaks reads the commits through `git log -p`, which a git setting can change into text it cannot parse (color,
+ * an external diff or a textconv driver): it then reads nothing and reports no leak. So the log options turn those
+ * off, the environment overrides the settings files' color and prefix settings, and the hook counts the commits that
+ * add a line; when gitleaks says it read fewer, the push is refused.
  */
 
 /** One line git hands a pre-push hook on its standard input. */
@@ -42,7 +48,23 @@ const REMOTE_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
 
 /** Where to get gitleaks, for every message that refuses a push for want of it. */
 export const GITLEAKS_INSTALL =
-  'Install gitleaks 8.19 or later (a release from https://github.com/gitleaks/gitleaks/releases, or `brew install gitleaks`) so it is on PATH, or set GITLEAKS to the path of a gitleaks binary, and push again.';
+  'Run tools/gitleaks/install.sh (pnpm gitleaks:install), which installs the pinned gitleaks after checking its SHA-256; or install gitleaks 8.19 or later so it is on PATH, or set GITLEAKS to the path of a gitleaks binary; and push again.';
+
+/**
+ * Where tools/gitleaks/install.sh keeps the pinned gitleaks: `<cache>/paidwhole/gitleaks/<version>/gitleaks`, the
+ * cache being XDG_CACHE_HOME or ~/.cache. Null when the release file names no version or the environment no cache.
+ */
+export function pinnedGitleaks(checkout: string, env: NodeJS.ProcessEnv): string | null {
+  let release: string;
+  try {
+    release = readFileSync(path.join(checkout, 'tools/gitleaks/release.txt'), 'utf8');
+  } catch {
+    return null;
+  }
+  const version = /^version (\d+\.\d+\.\d+)$/m.exec(release)?.[1];
+  const cache = env.XDG_CACHE_HOME !== undefined && env.XDG_CACHE_HOME !== '' ? env.XDG_CACHE_HOME : env.HOME !== undefined && env.HOME !== '' ? path.join(env.HOME, '.cache') : null;
+  return version === undefined || cache === null || !path.isAbsolute(cache) ? null : path.join(cache, 'paidwhole', 'gitleaks', version, 'gitleaks');
+}
 
 export class PrePushError extends Error {
   override readonly name = 'PrePushError';
@@ -65,19 +87,17 @@ export function parsePushUpdates(text: string): PushUpdate[] {
   return updates;
 }
 
-/** What the revision arguments need to know about the repository. */
+/** What the revision arguments need to know about the repository and the remote. */
 export interface RevisionContext {
-  /** The remote git names in $1: a configured remote's name, or the URL itself when the push names a URL. */
-  readonly remote: string;
-  /** True when `remote` is a configured remote (`git remote`), whose remote-tracking refs hold what it already has. */
-  readonly namedRemote: boolean;
+  /** What the remote already has, after `--not`: `--remotes=<remote>`, or the commits `git ls-remote` named. */
+  readonly known: readonly string[];
   /** True when this repository holds the object (a remote's old commit it has fetched). */
   readonly has: (object: string) => boolean;
 }
 
 /**
  * The `git rev-list` arguments for the commits the push adds to the remote: every object an update sends, and
- * `--not` the remote's known refs and every commit an update replaces that this repository holds. Null when the
+ * `--not` what the remote already has and every commit an update replaces that this repository holds. Null when the
  * push sends nothing (only deletions).
  */
 export function revisionsToCheck(updates: readonly PushUpdate[], context: RevisionContext): string[] | null {
@@ -86,8 +106,52 @@ export function revisionsToCheck(updates: readonly PushUpdate[], context: Revisi
     return null;
   }
   const replaced = [...new Set(updates.map((update) => update.remoteObject).filter((object) => !NULL_OBJECT.test(object) && context.has(object)))];
-  const known = context.namedRemote && REMOTE_NAME.test(context.remote) ? [`--remotes=${context.remote}`] : [];
-  return [...sent, '--not', ...known, ...replaced];
+  return [...sent, '--not', ...context.known, ...replaced.filter((object) => !context.known.includes(object))];
+}
+
+/** The object names `git ls-remote` prints, each once: a ref's object, and a tag's peeled commit. */
+export function advertisedObjects(output: string): string[] {
+  const objects = new Set<string>();
+  for (const line of output.split('\n')) {
+    const object = line.split('\t')[0] ?? '';
+    if (OBJECT_NAME.test(object)) {
+      objects.add(object);
+    }
+  }
+  return [...objects];
+}
+
+/**
+ * What the remote already has, for `--not`. A configured remote this repository has fetched: its remote-tracking refs.
+ * A remote with none (added and not yet fetched) or a URL: the commits `git ls-remote` says it holds that this
+ * repository has too, read now, since otherwise every commit the push reaches would be checked again, findings
+ * already published included. When the remote cannot be listed, the push is refused rather than checked whole.
+ */
+export function knownToRemote(root: string, remote: string, env: NodeJS.ProcessEnv): string[] {
+  const configured = new Set(git(root, ['remote'], env).split('\n'));
+  if (configured.has(remote) && REMOTE_NAME.test(remote) && git(root, ['for-each-ref', '--count=1', '--format=%(objectname)', `refs/remotes/${remote}/`], env).trim() !== '') {
+    return [`--remotes=${remote}`];
+  }
+  const listed = remote.startsWith('-') ? null : run('git', ['ls-remote', remote], root, env);
+  if (listed === null || listed.status !== 0) {
+    const reason = listed === null ? 'a remote whose name starts with "-"' : listed.stderr.trim().split('\n').slice(-1)[0] ?? `exit ${String(listed.status)}`;
+    throw new PrePushError(
+      `the hook could not list what ${remote} already has (${reason}), so this push is refused rather than checked from the first commit: add it as a remote and run git fetch for it, then push again.`,
+    );
+  }
+  const advertised = advertisedObjects(listed.stdout);
+  if (advertised.length === 0) {
+    return [];
+  }
+  const checked = git(root, ['cat-file', '--batch-check=%(objectname) %(objecttype)'], env, `${advertised.map((object) => `${object}^{commit}`).join('\n')}\n`);
+  const held = new Set<string>();
+  for (const line of checked.split('\n')) {
+    const [object, type] = line.split(' ');
+    if (object !== undefined && type === 'commit' && OBJECT_NAME.test(object)) {
+      held.add(object);
+    }
+  }
+  return [...held];
 }
 
 /** The first `major.minor.patch` in a tool's version output, or null. */
@@ -115,14 +179,21 @@ function executable(file: string): boolean {
   }
 }
 
-/** The gitleaks binary: GITLEAKS when set (it must be executable), otherwise the first `gitleaks` on PATH. */
-export function findGitleaks(env: NodeJS.ProcessEnv): string {
+/**
+ * The gitleaks binary: GITLEAKS when set (it must be executable), otherwise the pinned one tools/gitleaks/install.sh
+ * installed (the one CI runs), otherwise the first `gitleaks` on PATH.
+ */
+export function findGitleaks(env: NodeJS.ProcessEnv, checkout?: string): string {
   const named = env.GITLEAKS;
   if (named !== undefined && named !== '') {
     if (!path.isAbsolute(named) || !executable(named)) {
       throw new PrePushError(`GITLEAKS is set but does not name an executable file by its absolute path, so this push is refused. ${GITLEAKS_INSTALL}`);
     }
     return named;
+  }
+  const pinned = checkout === undefined ? null : pinnedGitleaks(checkout, env);
+  if (pinned !== null && executable(pinned)) {
+    return pinned;
   }
   for (const directory of (env.PATH ?? '').split(path.delimiter)) {
     const candidate = path.join(directory === '' ? '.' : directory, 'gitleaks');
@@ -173,6 +244,65 @@ interface Finding {
 /** Exit status gitleaks is told to use for findings, so a finding is told apart from an error (exit 1). */
 const LEAKS_FOUND = 3;
 
+/**
+ * `git log` options that keep the patch gitleaks reads as git prints it by default, whatever the user's settings:
+ * no color codes, no external diff program and no textconv driver (each of which leaves gitleaks a text it reads no
+ * commit from).
+ */
+export const PLAIN_PATCH = ['--no-color', '--no-ext-diff', '--no-textconv'] as const;
+
+/**
+ * Settings that change how a patch is printed, overridden for gitleaks and the hook's own count through
+ * GIT_CONFIG_COUNT, which outranks every settings file (a `git -c` on the push's command line still outranks it,
+ * and the count below catches what that leaves).
+ */
+const PLAIN_SETTINGS: readonly (readonly [string, string])[] = [
+  ['color.ui', 'never'],
+  ['color.diff', 'never'],
+  ['diff.noprefix', 'false'],
+  ['diff.mnemonicPrefix', 'false'],
+  ['log.showSignature', 'false'],
+];
+
+/** The environment with PLAIN_SETTINGS added after any GIT_CONFIG_COUNT entries it already holds. */
+export function plainPatchEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const given = Number.parseInt(env.GIT_CONFIG_COUNT ?? '0', 10);
+  const start = Number.isSafeInteger(given) && given > 0 ? given : 0;
+  const result: NodeJS.ProcessEnv = { ...env, GIT_CONFIG_COUNT: String(start + PLAIN_SETTINGS.length) };
+  PLAIN_SETTINGS.forEach(([key, value], index) => {
+    result[`GIT_CONFIG_KEY_${String(start + index)}`] = key;
+    result[`GIT_CONFIG_VALUE_${String(start + index)}`] = value;
+  });
+  return result;
+}
+
+/**
+ * How many of the commits the revisions name add at least one line of text (`git log --numstat`, merges by their
+ * remerge diff). gitleaks counts every commit whose patch holds a file it reads, so it can never honestly report
+ * fewer than this: a commit with no diff (an empty commit, a clean merge), or one that only deletes files or changes
+ * binary ones, it may skip.
+ */
+export function commitsAddingLines(root: string, revisions: readonly string[], env: NodeJS.ProcessEnv): number {
+  const output = git(root, ['log', ...PLAIN_PATCH, '--diff-merges=remerge', '--numstat', '--format=tp-commit %H', ...revisions], plainPatchEnvironment(env));
+  let count = 0;
+  let counted = true;
+  for (const line of output.split('\n')) {
+    if (line.startsWith('tp-commit ')) {
+      counted = false;
+    } else if (!counted && /^[1-9]\d*\t/.test(line)) {
+      counted = true;
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** The commit count gitleaks prints at log level info ("5 commits scanned."; a color code around it changes nothing), or null. */
+export function scannedCount(stderr: string): number | null {
+  const match = /(\d+) commits? scanned/.exec(stderr);
+  return match === null ? null : Number(match[1]);
+}
+
 /** Runs gitleaks over exactly the commits the revisions name, with the repository's configuration. */
 export function scanSecrets(options: { readonly root: string; readonly checkout: string; readonly gitleaks: string; readonly revisions: readonly string[]; readonly env: NodeJS.ProcessEnv }): string[] {
   const version = parseVersion(run(options.gitleaks, ['version'], options.root, options.env).stdout);
@@ -192,7 +322,7 @@ export function scanSecrets(options: { readonly root: string; readonly checkout:
       '--no-banner',
       '--no-color',
       '--log-level',
-      'error',
+      'info',
       '--redact',
       '--exit-code',
       String(LEAKS_FOUND),
@@ -204,11 +334,19 @@ export function scanSecrets(options: { readonly root: string; readonly checkout:
       '--report-path',
       report,
       '--log-opts',
-      ['--diff-merges=remerge', ...options.revisions].join(' '),
+      [...PLAIN_PATCH, '--diff-merges=remerge', ...options.revisions].join(' '),
       options.root,
     ];
-    const result = run(options.gitleaks, args, options.root, options.env);
+    const result = run(options.gitleaks, args, options.root, plainPatchEnvironment(options.env));
     if (result.status === 0) {
+      // No finding is only an answer when gitleaks read the commits: a patch it cannot parse also gives none.
+      const scanned = scannedCount(result.stderr);
+      const adding = commitsAddingLines(options.root, options.revisions, options.env);
+      if (scanned === null || scanned < adding) {
+        throw new PrePushError(
+          `gitleaks read ${scanned === null ? 'an unknown number' : String(scanned)} of the ${String(adding)} commit${adding === 1 ? '' : 's'} that add a line, so this push is refused: a git setting changes the patch it reads (color, an external diff, a textconv driver or a diff prefix, perhaps from git -c). Push without that setting.`,
+        );
+      }
       return [];
     }
     if (result.status !== LEAKS_FOUND || !existsSync(report)) {
@@ -243,10 +381,11 @@ export interface PrePushResult {
 export function prePush(options: PrePushOptions): PrePushResult {
   try {
     const updates = parsePushUpdates(options.input);
-    const remotes = new Set(git(options.root, ['remote'], options.env).split('\n'));
+    if (updates.every((update) => NULL_OBJECT.test(update.localObject))) {
+      return { allowed: true, lines: ['pre-push: the push only deletes refs; nothing to check.'] };
+    }
     const revisions = revisionsToCheck(updates, {
-      remote: options.remote,
-      namedRemote: remotes.has(options.remote),
+      known: knownToRemote(options.root, options.remote, options.env),
       has: (object) => run('git', ['cat-file', '-e', `${object}^{commit}`], options.root, options.env).status === 0,
     });
     if (revisions === null) {
@@ -261,7 +400,7 @@ export function prePush(options: PrePushOptions): PrePushResult {
     if (gitVersion === null || !atLeast(gitVersion, MINIMUM_GIT)) {
       throw new PrePushError(`git ${gitVersion?.join('.') ?? 'of an unknown version'} is older than 2.36, which the hook needs to read merges, so this push is refused: upgrade git and push again.`);
     }
-    const gitleaks = findGitleaks(options.env);
+    const gitleaks = findGitleaks(options.env, options.checkout);
     const fixtures = checkCommits(options.root, commits);
     const leaks = scanSecrets({ root: options.root, checkout: options.checkout, gitleaks, revisions, env: options.env });
     const refusals = [...fixtures.problems.map((problem) => `fixture check: ${problem.message}`), ...leaks.map((leak) => `secret scan: ${leak}`)];

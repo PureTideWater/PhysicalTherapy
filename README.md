@@ -44,23 +44,38 @@ pnpm synth --all     # regenerate every synthetic fixture (deterministic; --case
 pnpm test:oracle     # pyx12 and packages/edi835 read every synthetic 835 and must agree (TP_ORACLE_PYTHON: a python with pyx12)
 ```
 
-The pre-push hook (`.githooks/pre-push`; docs/adr/0063, audit item #20 (e)) stops a real file or a secret on your machine,
-before it reaches GitHub, where CI's gitleaks and fixture steps would only find it after the push. Turn it on once per
-clone, after `pnpm install`; it then runs for the clone and every linked worktree of it:
+The pre-push hook (`.githooks/pre-push`; docs/adr/0063, audit item #20 (e)) checks on your machine, before GitHub
+receives them, the files and secrets CI's fixture and gitleaks steps would only find after the push. Install it once
+per clone, after `pnpm install`, for the clone and every linked worktree of it:
 
 ```sh
-git config core.hooksPath .githooks
+pnpm hooks:install      # the launcher in the clone's own .git/hooks/pre-push (tools/pre-push/install.sh)
+pnpm gitleaks:install   # the pinned gitleaks CI runs, its SHA-256 checked (tools/gitleaks/install.sh)
 ```
 
-It needs gitleaks 8.19 or later on `PATH` (a release from github.com/gitleaks/gitleaks/releases, or `brew install
-gitleaks`), or `GITLEAKS` set to a gitleaks binary's absolute path; without one it refuses every push that sends a new
-commit and says so. For each push it takes the commits the remote does not have yet (a new branch, an update, or a bare
-commit pushed by its hash, as in `git push origin <sha>:refs/heads/salvage/x`) and runs the fixture check over every
-file they write, read from git's objects rather than the working tree (`tools/fixture-check/commits.ts`), and gitleaks
-over the same commits with `.gitleaks.toml` and `.gitleaksignore`, merges read by what they add beyond their parents.
-A refusal names the file, the commit and the rule, never the value; rewrite the commits without it. A deletion, or a
-push of commits the remote already has, checks nothing. `core.hooksPath` replaces `.git/hooks`, so a hook of your own
-moves into `.githooks` or is called from there. `tools/hooks/pre-push.test.ts` runs it through real pushes.
+A Claude Code session does both when it starts (`.claude/hooks/session-start.sh`) and says in its context what is
+missing. The launcher runs the `.githooks/pre-push` of the working tree a push is made from; a branch cut before the
+hook has none, so its push is refused until it merges `claude/build-platform`. It replaces the first instruction, a
+relative `core.hooksPath` of `.githooks`, which git skipped with no warning in any checkout of such a branch; the
+installer removes that setting, refuses any other `core.hooksPath`, and never overwrites a pre-push hook of your own.
+The hook finds gitleaks through `GITLEAKS` (an absolute path), then the pinned one, then `PATH`; it needs 8.19 or
+later, and without one it refuses every push that sends a new commit and says so.
+
+For each push it takes the commits the remote does not have yet (a new branch, an update, or a bare commit pushed by
+its hash, as in `git push origin <sha>:refs/heads/salvage/x`), judged by the remote's tracking refs or, for a remote
+you have not fetched or a URL, by what `git ls-remote` says it holds. It runs the fixture check over every file they
+write, read from git's objects rather than the working tree (`tools/fixture-check/commits.ts`), and gitleaks over the
+same commits with `.gitleaks.toml` and `.gitleaksignore`, merges read by what they add beyond their parents, with
+color, external diffs and textconv drivers off, and refuses the push when gitleaks says it read fewer commits than
+those that add a line. A refusal names the file, the commit and the rule, never the value; rewrite the commits without
+it, and never push with `--no-verify`. A deletion, or a push of commits the remote already has, checks nothing.
+
+The fixture check reads every CSV, TSV and spreadsheet; under `fixtures/` and `packages/synth/` every `.txt`, `.dat`
+or extensionless file; every `.835`, `.837`, `.edi`, `.x12` and `.era` file; and by content every X12 interchange
+(after white space or a UTF-8 or UTF-16 byte-order mark), zip, gzip, OLE2 file and PDF. A PDF passes only when
+packages/synth wrote it (its Producer names the synthetic exhibit or scan writer), so a real contract or EOB is
+refused. It cannot judge a picture: an image of a document is not read, and never belongs in the repository.
+`tools/hooks/pre-push.test.ts` runs the hook through real pushes.
 
 The domain model gate (CO-02; reconciliation-001, D1 and D2): `docs/product/domain-model.md` describes the schema the
 migrations build, by area: every table and view with its keys, PHI flag, row-level security, policies, invariants and
@@ -522,15 +537,17 @@ policies are drafts in `docs/policies/` for the security official; the incident 
 `SECURITY_EMAIL` (`SecurityEmail`), `TRUSTED_PROXY_HOPS` and `TP_ENVIRONMENT`, which the stack sets, and an https
 `APP_ORIGIN`.
 
-The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116) names `SECURITY_EMAIL` as its
-Contact, the public disclosure page `/security` as its Policy, English as its language and its own address under
-`APP_ORIGIN` as Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`;
-`disclosure.test.ts` fails 30 days before that date, when the address is checked and the date moved on, less than a
-year ahead. The page says how to report, what to include, what not to do and what to expect, with no sign-in and no
-form. Production refuses to start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens
-tickets only for accounts. Its response times and its good-faith research statement are drafts for the security
-official and counsel, listed in `docs/product/legal-surfaces.md` and marked where they render (`data-legal-surface`),
-which `tools/test/legal-surfaces.test.ts` holds together.
+The security contact (audit item #20 (f)): `/.well-known/security.txt` (RFC 9116) names `SECURITY_EMAIL` as its Contact,
+the public disclosure page `/security` as its Policy, English as its language and its own address under `APP_ORIGIN` as
+Canonical, with an `Expires` date set in `apps/web/src/lib/security/disclosure.ts`; `disclosure.test.ts` fails 30 days
+before that date, when the address is checked and the date moved on, less than a year ahead. That failure is in `pnpm
+test`, so from 30 days before the date (2027-03-31 for today's 2027-04-30) every pull request's `check` is red until the
+renewal merges; the change-management policy's quarterly review renews it when fewer than 120 days remain. The page says
+how to report, what to include, what not to do and what to expect, with no sign-in and no form. Production refuses to
+start without `SECURITY_EMAIL`, or with it equal to the support address, whose mail opens tickets only for accounts. Its
+response times and its good-faith research statement are drafts for the security official and counsel, listed in
+`docs/product/legal-surfaces.md` and marked where they render (`data-legal-surface`), which
+`tools/test/legal-surfaces.test.ts` holds together; a production server leaves both out until their review is recorded.
 
 Review fixes for milestones 10 and 11 (ADR 0055): a model call never waits on the connection its request holds (the
 gateway's store has its own small pool, every pool gives up on a connection after ten seconds, a server makes at most
@@ -545,8 +562,8 @@ inbox, the platform `support_mail` job; locally `.eml` files in `SUPPORT_MAIL_DI
 deployed intake reads scanned pages with Textract; and the deploy, restore-drill and key-rotation runbooks are in
 `docs/runbooks/`. `docs/runbooks/github-governance.md` is the founder's guide to the repository's GitHub settings: a
 company organization on GitHub Team, a private repository, the build agent's own account, the rulesets for
-`claude/build-platform` and `main` with the founder's approval on every pull request, `APPROVAL_REVIEW_REQUIRED`,
-approving from the GitHub app, the content publisher and the launch (docs/adr/0063).
+`claude/build-platform`, `main` and the release tags with the founder's approval on every pull request,
+`APPROVAL_REVIEW_REQUIRED`, approving from the GitHub app, the content publisher and the launch (docs/adr/0063).
 
 The brand and the product's words (ADRs 0056 to 0058; Change Order 001, CO-01 and CO-11): `packages/brand`
 (`@paidwhole/brand`; its README is the drop-in's wiring guide, headed by where this repository differs) holds the tokens,

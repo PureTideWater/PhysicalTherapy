@@ -2,30 +2,33 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, lstatSync, openSync, readFileSync, readSync } from 'node:fs';
 import path from 'node:path';
 
-import { SyntheticSenderError, assertSyntheticFixture } from '@tp/synth';
+import { SyntheticSenderError, assertSyntheticFixture, startsInterchange } from '@tp/synth';
 
 /**
  * The repository's fixture check (Change Order 001, CO-03: "no file without the SYNTHSENDER marker can enter
  * fixtures"; docs/adr/0059): every file git would commit, tracked or untracked and not ignored, anywhere in the
  * tree, goes through the writer's own guard (assertSyntheticFixture in packages/synth/src/write.ts) when it is
- * one the guard reads. By name, every CSV, TSV and spreadsheet, and under fixtures/ and packages/synth/ every
- * .txt, .dat or extensionless file (a table there whatever its name); by content, every X12 interchange (with
- * or without a byte-order mark), every zip (an .xlsx among them, read sheet by sheet), every gzip and every
- * OLE2 file (a legacy .xls). `pnpm test` runs it on the tree (check.test.ts) and CI runs it as a step of its own
+ * one the guard reads. By name, every CSV, TSV and spreadsheet, every .835, .837, .edi, .x12 and .era file, and
+ * under fixtures/ and packages/synth/ every .txt, .dat or extensionless file (a table there whatever its name); by
+ * content, every X12 interchange (ISA after white space or a UTF-8 or UTF-16 byte-order mark, within the first
+ * kilobyte), every zip (an .xlsx among them, read sheet by sheet), every gzip, every OLE2 file (a legacy .xls) and
+ * every PDF, which passes only when packages/synth wrote it. An image is not read: no rule can tell a picture of a
+ * real document from a synthetic one. `pnpm test` runs it on the tree (check.test.ts) and CI runs it as a step of its own
  * (`pnpm check:fixtures`) on the commit as it is, before `pnpm synth --all` regenerates the tree; after the
  * generation, CI fails unless fixtures/synthetic is unchanged.
  */
 
-/** Files the guard reads by their name: its tables and the spreadsheets it refuses. */
-const BY_NAME = /\.(?:csv|tsv|tab|psv|xlsx|xls|xlsm|xlsb|xltx|xltm|ods|fods|numbers)$/i;
+/** Files the guard reads by their name: its tables, the spreadsheets it refuses, and X12 files by their usual names. */
+const BY_NAME = /\.(?:csv|tsv|tab|psv|xlsx|xls|xlsm|xlsb|xltx|xltm|ods|fods|numbers|835|837|edi|x12|era)$/i;
 /**
  * Under fixtures/ and packages/synth/, text files whose name does not say what they hold (.txt, .dat, no
  * extension): the guard reads one as a table when its lines split as one. Elsewhere in the tree a .txt is prose.
  */
 const TEXT_BY_NAME = /^(?:fixtures|packages\/synth)\/(?:.*\/)?(?:[^/.]+|[^/]*\.(?:txt|text|dat|prn|asc))$/i;
-/** The first bytes of the files the guard reads by their content: X12, a zip, OLE2 and gzip. */
-const SIGNATURES = [Buffer.from('ISA'), Buffer.from('\uFEFFISA'), Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('d0cf11e0a1b11ae1', 'hex'), Buffer.from([0x1f, 0x8b])];
-const HEAD = 8;
+/** The first bytes of the files the guard reads by their content besides X12: a zip, OLE2, gzip and a PDF. */
+const SIGNATURES = [Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('d0cf11e0a1b11ae1', 'hex'), Buffer.from([0x1f, 0x8b]), Buffer.from('%PDF-', 'latin1')];
+/** How much of a file's start is read to decide: an interchange may follow white space or a byte-order mark. */
+export const HEAD = 1024;
 
 export interface FixtureProblem {
   /** The file's repository path. */
@@ -57,7 +60,7 @@ function head(file: string): Buffer {
 
 /** True when the guard reads `file` (a repository path) whose first bytes are `start`. */
 export function guardReads(file: string, start: Buffer): boolean {
-  return BY_NAME.test(file) || TEXT_BY_NAME.test(file) || SIGNATURES.some((signature) => start.subarray(0, signature.length).equals(signature));
+  return BY_NAME.test(file) || TEXT_BY_NAME.test(file) || SIGNATURES.some((signature) => start.subarray(0, signature.length).equals(signature)) || startsInterchange(start.subarray(0, HEAD));
 }
 
 /**

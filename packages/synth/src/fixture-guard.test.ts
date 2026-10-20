@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type GeneratedCase, render835 } from './cases/builder';
 import { minimalFile } from './cases/par';
+import { writePdf } from './formats/pdf';
+import { scannedPdf } from './formats/scan';
 import { VENDOR_FORMATS } from './formats/vendors/registry';
 import { writeZip } from './formats/zip';
 import { ARCHIVE_LIMITS, Archive, ArchiveReadError } from './guard/archive';
@@ -17,7 +19,7 @@ import { TableReadError, isIdentifierHeader, markerProblem, readTable, sniffedSe
 import { testWorkbook, testZip } from './guard/test-workbook';
 import { vendorFormatOf, vendorMarkerColumn } from './guard/vendors';
 import { workbookSheets } from './guard/xlsx';
-import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, writeCases } from './write';
+import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, startsInterchange, writeCases } from './write';
 
 /**
  * Test matrix SEC-14: a fixture with a non-synthetic sender is refused. The non-synthetic interchange
@@ -137,6 +139,36 @@ describe('the fixture writer guard', () => {
     expect(() => assertSyntheticX12(bytes(`\uFEFF${otherSender}`), 'bom')).toThrow(SyntheticSenderError);
     expect(() => assertSyntheticX12(writeZip([{ name: 'a.835', bytes: bytes(otherSender) }]), 'zip')).toThrow(/zip!a\.835/);
     expect(() => assertSyntheticX12(bytes('Code,Description\n'), 'csv')).not.toThrow();
+  });
+
+  it('reads an interchange after white space, and in UTF-16 by its byte-order mark, as a parser would', () => {
+    const utf16 = (text: string, bigEndian: boolean) => {
+      const body = Buffer.from(text, 'utf16le');
+      if (bigEndian) {
+        body.swap16();
+      }
+      return new Uint8Array(Buffer.concat([Buffer.from(bigEndian ? [0xfe, 0xff] : [0xff, 0xfe]), body]));
+    };
+    for (const [label, other, synthetic835] of [
+      ['white space', bytes(`\r\n \t${otherSender}`), bytes(`\r\n${synthetic}`)],
+      ['UTF-16 LE', utf16(otherSender, false), utf16(synthetic, false)],
+      ['UTF-16 BE', utf16(`\r\n${otherSender}`, true), utf16(synthetic, true)],
+      ['BOM then white space', bytes(`\uFEFF\n${otherSender}`), bytes(`\uFEFF\n${synthetic}`)],
+    ] as const) {
+      expect(() => assertSyntheticX12(other, label), label).toThrow(/ISA06/);
+      expect(() => assertSyntheticX12(synthetic835, label), label).not.toThrow();
+      expect(startsInterchange(other.subarray(0, 1024)), label).toBe(true);
+    }
+    expect(startsInterchange(bytes('Code,Description\n'))).toBe(false);
+    expect(startsInterchange(bytes('  # ISA is the header\n'))).toBe(false);
+  });
+
+  it('lets a PDF through only when packages/synth wrote it, an exhibit or a scan', () => {
+    expect(() => assertSyntheticFixture(writePdf([['Exhibit A']], 'Exhibit A'), 'fixtures/synthetic/CON-01/exhibit.pdf')).not.toThrow();
+    expect(() => assertSyntheticFixture(scannedPdf([['Exhibit A']], 'Exhibit A', 'seed'), 'fixtures/synthetic/MOD-01/scan.pdf')).not.toThrow();
+    const real = bytes('%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Producer (Some Office Suite) >>\nendobj\n%%EOF\n');
+    expect(refusal(real, 'docs/contract.pdf')).toMatch(/contract\.pdf: a PDF fixture is one packages\/synth writes/);
+    expect(refusal(testZip([{ name: 'eob.pdf', bytes: real }], true), 'fixtures/x/batch.zip')).toContain('batch.zip!eob.pdf: a PDF fixture');
   });
 
   it('reads each interchange with its own delimiters, so a second sender behind other delimiters is refused', () => {

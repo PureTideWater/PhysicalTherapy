@@ -9,12 +9,12 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { render835 } from '../../packages/synth/src/cases/builder';
 import { minimalFile } from '../../packages/synth/src/cases/par';
 import { repositoryRoot } from '../content-files';
-import { GITLEAKS_INSTALL, PrePushError, atLeast, findGitleaks, parsePushUpdates, parseVersion, revisionsToCheck } from '../pre-push/pre-push';
+import { GITLEAKS_INSTALL, PrePushError, advertisedObjects, atLeast, findGitleaks, parsePushUpdates, parseVersion, pinnedGitleaks, plainPatchEnvironment, prePush, revisionsToCheck, scannedCount } from '../pre-push/pre-push';
 
 /**
  * The committed pre-push hook (`.githooks/pre-push`; docs/adr/0063, audit item #20 (e)), run as git runs it: a real
  * `git push` from a scratch clone to a scratch bare repository, with `core.hooksPath` naming this checkout's
- * `.githooks`. The fixture check and the hook's plumbing run with a stand-in gitleaks that records how it was called;
+ * `.githooks`, and through the launcher `pnpm hooks:install` puts in a clone's own hooks directory. The fixture check and the hook's plumbing run with a stand-in gitleaks that records how it was called;
  * the secret scan runs with the real gitleaks when one is found (GITLEAKS, or `gitleaks` on PATH), and those cases
  * say they are skipped otherwise. Everything lives in the system's temporary directory and holds synthetic text only:
  * the refused interchange is the synthetic one with another sender (SEC-14), and the refused secret is a token shape
@@ -39,23 +39,29 @@ function scratch(prefix: string): string {
   return dir;
 }
 
-/** The real gitleaks, when this machine has one. */
+/** The real gitleaks, when this machine has one (GITLEAKS, the pinned one tools/gitleaks/install.sh installed, or PATH). */
 const REAL_GITLEAKS = ((): string | null => {
   try {
-    return findGitleaks(process.env);
+    return findGitleaks(process.env, repositoryRoot);
   } catch {
     return null;
   }
 })();
 const SKIP_REASON = REAL_GITLEAKS === null ? ' (skipped: no gitleaks binary here; set GITLEAKS or put gitleaks on PATH)' : '';
 
-/** A gitleaks stand-in: says it is `version` and records every call's arguments, one per line, then exits `status`. */
-function stubGitleaks(version = '8.24.3', status = 0): { readonly binary: string; readonly calls: () => string[][] } {
+/**
+ * A gitleaks stand-in: says it is `version`, records every call's arguments, one per line, says it scanned `scanned`
+ * commits (as gitleaks does at log level info), then exits `status`.
+ */
+function stubGitleaks(version = '8.24.3', status = 0, scanned = 1000): { readonly binary: string; readonly calls: () => string[][] } {
   const dir = scratch('stub');
   const log = path.join(dir, 'calls');
   const binary = path.join(dir, 'gitleaks');
   writeFileSync(log, '');
-  writeFileSync(binary, `#!/bin/bash\nif [ "$1" = version ]; then echo "${version}"; exit 0; fi\nprintf '%s\\n' "$@" >> '${log}'\nprintf '%s\\n' '--' >> '${log}'\nexit ${String(status)}\n`);
+  writeFileSync(
+    binary,
+    `#!/bin/bash\nif [ "$1" = version ]; then echo "${version}"; exit 0; fi\nprintf '%s\\n' "$@" >> '${log}'\nprintf '%s\\n' '--' >> '${log}'\necho "INF ${String(scanned)} commits scanned." >&2\nexit ${String(status)}\n`,
+  );
   chmodSync(binary, 0o755);
   return {
     binary,
@@ -87,9 +93,12 @@ const GLOBAL_CONFIG = (() => {
   return file;
 })();
 
+/** An empty cache, so no test finds a pinned gitleaks this machine installed unless it names one. */
+const EMPTY_CACHE = scratch('cache');
+
 /** The environment a push runs with: no system or personal git configuration, and the gitleaks given (or none). */
 function environment(gitleaks: string | null, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: GLOBAL_CONFIG, GIT_CONFIG_NOSYSTEM: '1', ...extra };
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_GLOBAL: GLOBAL_CONFIG, GIT_CONFIG_NOSYSTEM: '1', XDG_CACHE_HOME: EMPTY_CACHE, ...extra };
   delete env.GITLEAKS;
   if (gitleaks !== null) {
     env.GITLEAKS = gitleaks;
@@ -134,8 +143,20 @@ interface Pushed {
 }
 
 function push(cwd: string, env: NodeJS.ProcessEnv, ...args: string[]): Pushed {
-  const result = spawnSync('git', ['push', '-q', 'origin', ...args], { cwd, env, encoding: 'utf8', timeout: PUSH_TIMEOUT });
+  return pushTo(cwd, env, 'origin', ...args);
+}
+
+/** A push to the named remote, or to a URL. */
+function pushTo(cwd: string, env: NodeJS.ProcessEnv, remote: string, ...args: string[]): Pushed {
+  const result = spawnSync('git', ['push', '-q', remote, ...args], { cwd, env, encoding: 'utf8', timeout: PUSH_TIMEOUT });
   return { status: result.status, stderr: result.stderr };
+}
+
+/** A git configuration file holding `text` beside the scratch identity, for a push run under a user's own settings. */
+function globalConfig(text: string): string {
+  const file = path.join(scratch('config'), 'gitconfig');
+  writeFileSync(file, `${readFileSync(GLOBAL_CONFIG, 'utf8')}${text}`);
+  return file;
 }
 
 /** The commit the bare repository's ref names, or null. */
@@ -161,8 +182,8 @@ describe('the pre-push hook, step by step', () => {
   });
 
   it('checks what the push sends and the remote lacks: new refs, updates, bare commits; never a deletion', () => {
-    const [a, b, c] = ['a', 'b', 'c'].map((letter) => letter.repeat(40)) as [string, string, string];
-    const context = { remote: 'origin', namedRemote: true, has: (object: string) => object === b };
+    const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((letter) => letter.repeat(40)) as [string, string, string, string];
+    const context = { known: ['--remotes=origin'], has: (object: string) => object === b };
     const update = (localObject: string, remoteObject: string) => ({ localRef: 'refs/heads/x', localObject, remoteRef: 'refs/heads/x', remoteObject });
     expect(revisionsToCheck([update(a, ZERO)], context)).toEqual([a, '--not', '--remotes=origin']);
     expect(revisionsToCheck([update(a, b), update(c, b)], context)).toEqual([a, c, '--not', '--remotes=origin', b]);
@@ -170,9 +191,28 @@ describe('the pre-push hook, step by step', () => {
     expect(revisionsToCheck([update(a, c)], context)).toEqual([a, '--not', '--remotes=origin']);
     expect(revisionsToCheck([update(ZERO, b)], context)).toBeNull();
     expect(revisionsToCheck([], context)).toBeNull();
-    // A push to a URL has no remote-tracking refs: everything the sent commits reach is checked.
-    expect(revisionsToCheck([update(a, ZERO)], { ...context, remote: '/tmp/elsewhere.git', namedRemote: false })).toEqual([a, '--not']);
-    expect(revisionsToCheck([update(a, ZERO)], { ...context, remote: 'bad*name' })).toEqual([a, '--not']);
+    // A remote with no remote-tracking refs, or a URL: the commits ls-remote named, each once.
+    expect(revisionsToCheck([update(a, b)], { known: [b, d], has: () => true })).toEqual([a, '--not', b, d]);
+    // A remote that holds nothing yet: everything the sent commits reach is checked.
+    expect(revisionsToCheck([update(a, ZERO)], { known: [], has: () => false })).toEqual([a, '--not']);
+  });
+
+  it('reads what ls-remote advertises, a tag and its peeled commit alike', () => {
+    const [a, b] = ['a', 'b'].map((letter) => letter.repeat(40)) as [string, string];
+    expect(advertisedObjects(`${a}\tHEAD\n${a}\trefs/heads/main\n${b}\trefs/tags/v1\n${a}\trefs/tags/v1^{}\n\nwarning: x\n`)).toEqual([a, b]);
+    expect(advertisedObjects('')).toEqual([]);
+  });
+
+  it('reads how many commits gitleaks scanned, and keeps git from coloring or rewriting the patch it reads', () => {
+    expect(scannedCount('\u001b[90m6:48PM\u001b[0m \u001b[32mINF\u001b[0m \u001b[1m3 commits scanned.\u001b[0m\n')).toBe(3);
+    expect(scannedCount('INF 1 commits scanned.')).toBe(1);
+    expect(scannedCount('INF no leaks found')).toBeNull();
+    const env = plainPatchEnvironment({ GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'safe.directory', GIT_CONFIG_VALUE_0: '*' });
+    expect(env.GIT_CONFIG_KEY_0).toBe('safe.directory');
+    expect(env.GIT_CONFIG_KEY_1).toBe('color.ui');
+    expect(env.GIT_CONFIG_VALUE_1).toBe('never');
+    expect(Number(env.GIT_CONFIG_COUNT)).toBeGreaterThan(2);
+    expect(plainPatchEnvironment({}).GIT_CONFIG_KEY_0).toBe('color.ui');
   });
 
   it('reads tool versions and compares them', () => {
@@ -185,9 +225,21 @@ describe('the pre-push hook, step by step', () => {
     expect(atLeast([2, 35, 9], [2, 36, 0])).toBe(false);
   });
 
-  it('finds gitleaks through GITLEAKS or PATH, and says how to install it when there is none', () => {
+  it('finds gitleaks through GITLEAKS, the pinned install, or PATH, and says how to install it when there is none', () => {
     const stub = stubGitleaks();
     expect(findGitleaks({ GITLEAKS: stub.binary, PATH: '' })).toBe(stub.binary);
+    // The pinned one tools/gitleaks/install.sh keeps in the cache comes before PATH, so a push runs what CI runs.
+    const cache = scratch('pinned');
+    const pinned = pinnedGitleaks(repositoryRoot, { XDG_CACHE_HOME: cache });
+    const version = /^version (\S+)$/m.exec(readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8'))?.[1];
+    expect(pinned).toBe(path.join(cache, 'paidwhole', 'gitleaks', version ?? '?', 'gitleaks'));
+    expect(pinnedGitleaks(repositoryRoot, { HOME: '/home/someone' })).toBe(path.join('/home/someone/.cache/paidwhole/gitleaks', version ?? '?', 'gitleaks'));
+    expect(pinnedGitleaks(repositoryRoot, {})).toBeNull();
+    expect(findGitleaks({ XDG_CACHE_HOME: cache, PATH: path.dirname(stub.binary) }, repositoryRoot)).toBe(stub.binary);
+    mkdirSync(path.dirname(pinned ?? ''), { recursive: true });
+    copyFileSync(stub.binary, pinned ?? '');
+    chmodSync(pinned ?? '', 0o755);
+    expect(findGitleaks({ XDG_CACHE_HOME: cache, PATH: path.dirname(stub.binary) }, repositoryRoot)).toBe(pinned);
     expect(findGitleaks({ PATH: `/nonexistent${path.delimiter}${path.dirname(stub.binary)}` })).toBe(stub.binary);
     expect(() => findGitleaks({ PATH: '/nonexistent' })).toThrow(GITLEAKS_INSTALL);
     expect(() => findGitleaks({ GITLEAKS: '/nonexistent/gitleaks' })).toThrow('GITLEAKS is set but does not name an executable file');
@@ -243,7 +295,8 @@ describe('the pre-push hook, run by git push', () => {
       const option = (name: string) => call?.[(call.indexOf(name) ?? -2) + 1];
       expect(option('--config')).toBe(path.join(repositoryRoot, '.gitleaks.toml'));
       expect(option('--gitleaks-ignore-path')).toBe(path.join(repositoryRoot, '.gitleaksignore'));
-      expect(option('--log-opts')).toBe(`--diff-merges=remerge ${second} --not --remotes=origin ${first}`);
+      expect(option('--log-opts')).toBe(`--no-color --no-ext-diff --no-textconv --diff-merges=remerge ${second} --not --remotes=origin ${first}`);
+      expect(option('--log-level')).toBe('info');
       expect(call).toContain('--redact');
       expect(call?.at(-1)).toBe(w.work);
     },
@@ -322,15 +375,21 @@ describe('the pre-push hook, run by git push', () => {
   );
 
   it(
-    'runs from a linked worktree with the relative hooks path the README gives',
+    'runs, through the launcher pnpm hooks:install puts in the clone, the hook of each working tree, and refuses a branch that predates it',
     () => {
       const w = world();
-      // `.githooks` in each working tree is this checkout's directory, as a clone of the repository holds it.
-      git(w.work, 'config', 'core.hooksPath', '.githooks');
+      git(w.work, 'config', '--unset', 'core.hooksPath');
+      // `.githooks` in a working tree is this checkout's directory, as a branch that has the hook holds it.
       symlinkSync(HOOKS, path.join(w.work, '.githooks'));
       writeFileSync(path.join(w.work, '.git', 'info', 'exclude'), '.githooks\n');
+      const installed = spawnSync('bash', [path.join(repositoryRoot, 'tools/pre-push/install.sh')], { cwd: w.work, env: environment(null), encoding: 'utf8' });
+      expect(installed.status, installed.stderr).toBe(0);
+      expect(readFileSync(path.join(w.work, '.git/hooks/pre-push'), 'utf8')).toBe(readFileSync(path.join(repositoryRoot, 'tools/pre-push/launcher.sh'), 'utf8'));
       commit(w.work, { 'README.md': '# scratch\n' }, 'start');
-      expect(push(w.work, environment(stubGitleaks().binary), 'HEAD:refs/heads/main').status).toBe(0);
+      const first = push(w.work, environment(stubGitleaks().binary), 'HEAD:refs/heads/main');
+      expect(first.status, first.stderr).toBe(0);
+      expect(first.stderr).toContain('pre-push: 1 commit checked');
+      // A linked worktree whose branch has the hook: checked like the clone itself.
       const linked = path.join(path.dirname(w.work), 'linked');
       git(w.work, 'worktree', 'add', '-q', '-b', 'linked', linked);
       symlinkSync(HOOKS, path.join(linked, '.githooks'));
@@ -342,8 +401,95 @@ describe('the pre-push hook, run by git push', () => {
       const clean = commit(linked, { 'linked.txt': 'linked\n' }, 'clean');
       const allowed = push(linked, environment(REAL_GITLEAKS ?? stubGitleaks().binary), 'HEAD:refs/heads/linked');
       expect(allowed.status, allowed.stderr).toBe(0);
-      expect(allowed.stderr).toContain('pre-push: 1 commit checked');
       expect(remoteRef(w, 'refs/heads/linked')).toBe(clean);
+      // A linked worktree on a branch cut before the hook has no .githooks: its push is refused, not let through unchecked.
+      const old = path.join(path.dirname(w.work), 'old');
+      git(w.work, 'worktree', 'add', '-q', '-b', 'old', old);
+      commit(old, { 'old/remit.835': OTHER_SENDER }, 'foreign interchange on an old branch');
+      const predates = push(old, environment(stubGitleaks().binary), 'HEAD:refs/heads/old');
+      expect(predates.status).not.toBe(0);
+      expect(predates.stderr).toContain(`pre-push: ${old} has no .githooks/pre-push: this branch predates the pre-push hook, so this push is refused.`);
+      expect(remoteRef(w, 'refs/heads/old')).toBeNull();
+    },
+    PUSH_TIMEOUT,
+  );
+
+  it(
+    'refuses a push whose commits gitleaks did not read, when it says it read fewer than the commits that add a line',
+    () => {
+      const w = world();
+      commit(w.work, { 'README.md': '# scratch\n' }, 'start');
+      commit(w.work, { 'notes.txt': 'more\n' }, 'more');
+      git(w.work, 'commit', '-q', '--allow-empty', '-m', 'empty');
+      // Two commits add a line; the empty one has no patch, and gitleaks need not count it.
+      expect(push(w.work, environment(stubGitleaks('8.24.3', 0, 2).binary), 'HEAD:refs/heads/main').status).toBe(0);
+      commit(w.work, { 'later.txt': 'later\n' }, 'later');
+      const unread = push(w.work, environment(stubGitleaks('8.24.3', 0, 0).binary), 'HEAD:refs/heads/main');
+      expect(unread.status).not.toBe(0);
+      expect(unread.stderr).toContain('pre-push: gitleaks read 0 of the 1 commit that add a line, so this push is refused');
+    },
+    PUSH_TIMEOUT,
+  );
+
+  it.skipIf(REAL_GITLEAKS === null)(
+    `still finds a secret when the user's git colors, rewrites or converts the patch gitleaks reads${SKIP_REASON}`,
+    () => {
+      const settings: readonly (readonly [string, NodeJS.ProcessEnv, readonly string[]])[] = [
+        ['color.ui = always in the global configuration', { GIT_CONFIG_GLOBAL: globalConfig('[color]\n\tui = always\n') }, []],
+        ['color.diff = always on the command line', {}, ['-c', 'color.diff=always']],
+        ['diff.noprefix in the global configuration', { GIT_CONFIG_GLOBAL: globalConfig('[diff]\n\tnoprefix = true\n') }, []],
+      ];
+      for (const [label, extra, options] of settings) {
+        const w = world();
+        const token = syntheticToken();
+        const leaked = commit(w.work, { 'src/settings.ts': `export const token = '${token}';\n` }, 'a leak');
+        const result = spawnSync('git', [...options, 'push', '-q', 'origin', 'HEAD:refs/heads/main'], { cwd: w.work, env: environment(REAL_GITLEAKS, extra), encoding: 'utf8', timeout: PUSH_TIMEOUT });
+        expect(result.status, label).not.toBe(0);
+        expect(result.stderr, label).toContain(`pre-push: secret scan: src/settings.ts:1 in commit ${leaked.slice(0, 12)}: gitleaks rule github-pat`);
+        expect(remoteRef(w, 'refs/heads/main'), label).toBeNull();
+      }
+      // A textconv driver that hides the text, set in the clone's own attributes and configuration.
+      const w = world();
+      writeFileSync(path.join(w.work, '.git', 'info', 'attributes'), '*.ts diff=hide\n');
+      git(w.work, 'config', 'diff.hide.textconv', 'sh -c "echo hidden" --');
+      const leaked = commit(w.work, { 'src/settings.ts': `export const token = '${syntheticToken()}';\n` }, 'a leak');
+      const converted = push(w.work, environment(REAL_GITLEAKS), 'HEAD:refs/heads/main');
+      expect(converted.status).not.toBe(0);
+      expect(converted.stderr).toContain(`pre-push: secret scan: src/settings.ts:1 in commit ${leaked.slice(0, 12)}: gitleaks rule github-pat`);
+    },
+    PUSH_TIMEOUT * 2,
+  );
+
+  it(
+    'checks only what a remote added and never fetched, or a URL, lacks: it asks the remote what it has',
+    () => {
+      const w = world();
+      // A file the hook refuses, already on the remote (pushed past the hook), must not stop a clean commit on top.
+      commit(w.work, { 'old/remit.835': OTHER_SENDER }, 'published long ago');
+      expect(push(w.work, environment(null), '--no-verify', 'HEAD:refs/heads/main').status).toBe(0);
+      const copy = path.join(path.dirname(w.remote), 'copy.git');
+      execFileSync('git', ['clone', '-q', '--bare', w.remote, copy], { env: environment(null) });
+      git(w.work, 'remote', 'add', 'moved', copy);
+      commit(w.work, { 'README.md': '# scratch\n' }, 'clean');
+      const named = pushTo(w.work, environment(stubGitleaks().binary), 'moved', 'HEAD:refs/heads/next');
+      expect(named.status, named.stderr).toBe(0);
+      expect(named.stderr).toContain('pre-push: 1 commit checked');
+      // The remote now holds `clean` too, so a push by its URL checks only the commit after it.
+      const later = commit(w.work, { 'later.txt': 'later\n' }, 'later');
+      const url = pushTo(w.work, environment(stubGitleaks().binary), copy, 'HEAD:refs/heads/by-url');
+      expect(url.status, url.stderr).toBe(0);
+      expect(url.stderr).toContain('pre-push: 1 commit checked');
+      expect(git(copy, 'rev-parse', 'refs/heads/by-url')).toBe(later);
+      // A remote the hook cannot list is refused, never checked from the first commit.
+      const unlisted = prePush({
+        root: w.work,
+        checkout: repositoryRoot,
+        remote: path.join(path.dirname(w.remote), 'missing.git'),
+        input: `refs/heads/main ${later} refs/heads/main ${ZERO}\n`,
+        env: environment(stubGitleaks().binary),
+      });
+      expect(unlisted.allowed).toBe(false);
+      expect(unlisted.lines.join('\n')).toContain('so this push is refused rather than checked from the first commit: add it as a remote and run git fetch for it, then push again.');
     },
     PUSH_TIMEOUT,
   );
@@ -408,9 +554,15 @@ describe('the pre-push hook, run by git push', () => {
     PUSH_TIMEOUT,
   );
 
-  it('is committed executable, and the README says how to turn it on', () => {
-    expect(git(repositoryRoot, 'ls-files', '-s', '.githooks/pre-push').split(' ')[0]).toBe('100755');
+  it('is committed executable with its launcher and installers, and the README says how to install it', () => {
+    for (const file of ['.githooks/pre-push', 'tools/pre-push/install.sh', 'tools/pre-push/launcher.sh', 'tools/gitleaks/install.sh']) {
+      expect(git(repositoryRoot, 'ls-files', '-s', file).split(' ')[0], file).toBe('100755');
+    }
+    const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+    expect(scripts['hooks:install']).toBe('bash tools/pre-push/install.sh');
+    expect(scripts['gitleaks:install']).toBe('bash tools/gitleaks/install.sh');
     const readme = readFileSync(path.join(repositoryRoot, 'README.md'), 'utf8');
-    expect(readme).toContain('git config core.hooksPath .githooks');
+    expect(readme).toContain('pnpm hooks:install');
+    expect(readme).not.toContain('git config core.hooksPath .githooks');
   });
 });

@@ -68,6 +68,15 @@ describe('the fixture check over commits', () => {
     expect(checkCommits(root, [second, first]).checked).toBe(4);
   });
 
+  it('reads an interchange after white space and a PDF packages/synth did not write, whatever their names', () => {
+    const root = repository();
+    const pushed = commit(root, { 'b.835': `\r\n${OTHER_SENDER}`, 'contract.pdf': '%PDF-1.4\n1 0 obj\n<< /Producer (Some Office Suite) >>\nendobj\n%%EOF\n', 'docs/notes.md': 'notes\n' }, 'copied in');
+    const result = checkCommits(root, [pushed]);
+    expect(result.checked).toBe(2);
+    expect(result.problems.map((problem) => problem.file)).toEqual(['b.835', 'contract.pdf']);
+    expect(result.problems[0]?.message).toBe(`b.835: ISA06 is not SYNTHSENDER (in commit ${pushed.slice(0, 12)})`);
+  });
+
   it('reads a commit no branch holds (git commit-tree), a root commit included', () => {
     const root = repository();
     commit(root, { 'README.md': '# scratch\n' }, 'start');

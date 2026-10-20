@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { render835 } from '../../packages/synth/src/cases/builder';
 import { minimalFile } from '../../packages/synth/src/cases/par';
 import { Archive } from '../../packages/synth/src/guard/archive';
+import { writePdf } from '../../packages/synth/src/formats/pdf';
 import { PINNED_TABLES } from '../../packages/synth/src/guard/pinned';
 import { testWorkbook, testZip } from '../../packages/synth/src/guard/test-workbook';
 import { repositoryRoot } from '../content-files';
@@ -21,6 +22,7 @@ import { checkFixtures, committableFiles, guardReads } from './check';
  */
 const MARKED = 'Post Date,Check/EFT #,Paid Amount,Payee ID\r\n06/11/2026,880060040002,30.00,SYNTHSENDER\r\n';
 const UNMARKED = 'Post Date,Check/EFT #,Paid Amount\r\n06/11/2026,880060040002,30.00\r\n';
+const OTHER_SENDER = render835(minimalFile()).text.replace('SYNTHSENDER    ', 'OTHERSENDER    ');
 
 describe('the fixture check on this repository', () => {
   it('passes: every table git would commit carries SYNTHSENDER or is pinned, and every interchange is synthetic', () => {
@@ -122,6 +124,23 @@ describe('the fixture check on a scratch repository', () => {
     ]);
   });
 
+  it('refuses an interchange that does not start at its first byte, and a PDF packages/synth did not write', () => {
+    const root = repository({
+      'notes/b.835': `\r\n${OTHER_SENDER}`,
+      'notes/utf16.bin': Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(OTHER_SENDER, 'utf16le')]),
+      'docs/contract.pdf': '%PDF-1.4\n1 0 obj\n<< /Producer (Some Office Suite) >>\nendobj\n%%EOF\n',
+      'fixtures/synthetic/X/exhibit.pdf': Buffer.from(writePdf([['Exhibit A']], 'Exhibit A')),
+      'notes/ok.835': `\n${render835(minimalFile()).text}`,
+    });
+    const result = checkFixtures(root);
+    expect(result.checked).toBe(5);
+    expect(result.problems.map((problem) => problem.message)).toEqual([
+      expect.stringMatching(/^docs\/contract\.pdf: a PDF fixture is one packages\/synth writes/),
+      'notes/b.835: ISA06 is not SYNTHSENDER',
+      'notes/utf16.bin: ISA06 is not SYNTHSENDER',
+    ]);
+  });
+
   it('lets a pinned table through only at its path with its exact bytes', () => {
     const table = PINNED_TABLES[0];
     if (table === undefined) {
@@ -151,6 +170,15 @@ describe('the fixture check on a scratch repository', () => {
     expect(guardReads('a/b.json', Buffer.from('{"a":1}'))).toBe(false);
     expect(guardReads('a/b.png', Buffer.from([0x89, 0x50, 0x4e, 0x47]))).toBe(false);
     expect(guardReads('a/b.gz', Buffer.from([0x1f, 0x8b, 0x08]))).toBe(true);
+    // X12 by its usual names, and by its content after white space or a byte-order mark; a PDF by its header.
+    for (const file of ['a/b.835', 'a/B.837', 'a/b.edi', 'a/b.x12', 'a/b.era']) {
+      expect(guardReads(file, Buffer.from('')), file).toBe(true);
+    }
+    expect(guardReads('a/b.bin', Buffer.from('\r\n\r\nISA*00*'))).toBe(true);
+    expect(guardReads('a/b.bin', Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('\nISA*00*', 'utf16le')]))).toBe(true);
+    expect(guardReads('a/b.bin', Buffer.from('\uFEFF ISA*00*'))).toBe(true);
+    expect(guardReads('docs/contract.pdf', Buffer.from('%PDF-1.7\n'))).toBe(true);
+    expect(guardReads('a/b.md', Buffer.from('\n\nNot ISA at the start\n'))).toBe(false);
     // A text file is read as a possible table under fixtures/ and packages/synth/ only; elsewhere it is prose.
     for (const file of ['fixtures/x/export.txt', 'fixtures/x/export', 'packages/synth/x.DAT', 'fixtures/a/b/c.prn']) {
       expect(guardReads(file, Buffer.from('a')), file).toBe(true);

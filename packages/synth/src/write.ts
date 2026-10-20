@@ -9,6 +9,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
+import { EXHIBIT_PRODUCER } from './formats/pdf';
+import { SCAN_PRODUCER } from './formats/scan';
 import { readZip } from './formats/zip';
 import { ARCHIVE_LIMITS, Archive, ArchiveReadError, isZip } from './guard/archive';
 import { isPinnedTable, repositoryPath } from './guard/pinned';
@@ -24,6 +26,30 @@ export class SyntheticSenderError extends Error {
 
 const ISA_LENGTH = 106;
 const WHITESPACE = /[\r\n\t ]/;
+
+/**
+ * A file's text as an interchange reader takes it: UTF-16 decoded when it starts with a UTF-16 byte-order mark, a
+ * UTF-8 byte-order mark dropped, and otherwise byte for byte (Latin-1), so an interchange in any of them is read.
+ */
+function interchangeText(buffer: Buffer): string {
+  if (buffer.length >= 2 && ((buffer[0] === 0xff && buffer[1] === 0xfe) || (buffer[0] === 0xfe && buffer[1] === 0xff))) {
+    const body = Buffer.from(buffer.subarray(2, 2 + ((buffer.length - 2) & ~1)));
+    if (buffer[0] === 0xfe) {
+      body.swap16();
+    }
+    return body.toString('utf16le');
+  }
+  const text = buffer.toString('latin1');
+  return text.startsWith('\u00ef\u00bb\u00bf') ? text.slice(3) : text;
+}
+
+/**
+ * True when `head`, a file's first bytes, starts an X12 interchange: `ISA` after any white space, and after a UTF-8
+ * or UTF-16 byte-order mark (the fixture check reads such a file whatever its name; tools/fixture-check/check.ts).
+ */
+export function startsInterchange(head: Uint8Array): boolean {
+  return /^[\r\n\t ]*ISA/.test(interchangeText(Buffer.from(head.buffer, head.byteOffset, head.byteLength)));
+}
 
 function checkIsa(fields: readonly string[], label: string): void {
   // A header cut inside ISA06 must still be the start of the synthetic sender.
@@ -47,16 +73,14 @@ export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
     }
     return;
   }
-  let text = buffer.toString('latin1');
-  if (text.startsWith('ï»¿')) {
-    text = text.slice(3);
-  }
-  if (!text.startsWith('ISA')) {
+  // An interchange after white space or a byte-order mark, in UTF-16 too, is read as one: a parser takes it.
+  const text = interchangeText(buffer);
+  let position = text.search(/[^\r\n\t ]/);
+  if (position < 0 || !text.startsWith('ISA', position)) {
     return;
   }
   let element = '';
   let terminator = '';
-  let position = 0;
   while (position < text.length) {
     // No segment begins with whitespace (a blank line, a line break after a terminator).
     while (position < text.length && WHITESPACE.test(text.charAt(position))) {
@@ -95,6 +119,9 @@ const REFUSED_SPREADSHEETS = new Set(['xls', 'xlsm', 'xlsb', 'xltx', 'xltm', 'od
 const MAX_ARCHIVE_DEPTH = 3;
 const OLE2 = Buffer.from('d0cf11e0a1b11ae1', 'hex');
 const GZIP = Buffer.from([0x1f, 0x8b]);
+const PDF = Buffer.from('%PDF-', 'latin1');
+/** The Info dictionary entries of the PDFs packages/synth writes: an exhibit (formats/pdf.ts) or a scan (formats/scan.ts). */
+const SYNTHETIC_PDF_PRODUCERS = [EXHIBIT_PRODUCER, SCAN_PRODUCER].map((producer) => Buffer.from(`/Producer (${producer})`, 'latin1'));
 const utf8 = new TextDecoder('utf-8', { fatal: true });
 
 /** The repository directory writeCases writes; a file's label there is its repository path. */
@@ -249,6 +276,13 @@ function checkFixture(bytes: Uint8Array, file: Checked, depth: number): void {
     assertGzip(bytes, file, depth);
     return;
   }
+  if (head.length >= PDF.length && PDF.equals(head.subarray(0, PDF.length))) {
+    const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (!SYNTHETIC_PDF_PRODUCERS.some((producer) => buffer.includes(producer))) {
+      throw refuse(file.label, 'a PDF fixture is one packages/synth writes, whose Info dictionary names its synthetic exhibit or scan writer as the Producer; a real contract, EOB or letter never enters the repository');
+    }
+    return;
+  }
   assertSyntheticX12(bytes, file.label);
   const separator = TABULAR[extension] ?? (TEXT_TABLES.has(extension) ? textTableSeparator(bytes) : null);
   if (separator !== null) {
@@ -261,7 +295,10 @@ function checkFixture(bytes: Uint8Array, file: Checked, depth: number): void {
  * (fixtures/synthetic/LED-04/posting-export.csv) or a name for it; errors name it and the rule broken,
  * never a cell's value.
  *
- * - X12 content goes to assertSyntheticX12, whatever the file is called.
+ * - X12 content goes to assertSyntheticX12, whatever the file is called, after white space or a UTF-8 or UTF-16
+ *   byte-order mark too.
+ * - A PDF passes only when packages/synth wrote it: its Info dictionary names the synthetic exhibit or scan writer
+ *   as its Producer.
  * - A .csv, .tsv, .tab or .psv carries SYNTHSENDER in every data row of one identifier column (the column the
  *   vendor format registry names for a file under emr/<format_id>/, else a column whose header says ID): the
  *   marker rule in guard/tabular.ts. So does a .txt, .dat or extensionless file whose lines split as a table.

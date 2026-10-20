@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 import { SyntheticSenderError, assertSyntheticFixture } from '@tp/synth';
 
-import { type FixtureCheck, type FixtureProblem, guardReads } from './check';
+import { type FixtureCheck, type FixtureProblem, HEAD, guardReads } from './check';
 
 /**
  * The fixture check over commits instead of the working tree: the pre-push hook's half of it (`.githooks/pre-push`,
@@ -168,7 +168,7 @@ export function checkCommits(root: string, commits: readonly string[]): FixtureC
   let checked = 0;
   for (const [blob, bytes] of blobContents(root, [...byBlob.keys()])) {
     for (const entry of byBlob.get(blob) ?? []) {
-      if (!guardReads(entry.file, bytes.subarray(0, 8))) {
+      if (!guardReads(entry.file, bytes.subarray(0, HEAD))) {
         continue;
       }
       checked += 1;
