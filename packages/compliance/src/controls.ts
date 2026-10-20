@@ -215,7 +215,8 @@ export const CONTROLS: readonly Control[] = [
     soc2: ['CC6.1', 'CC6.7'],
     hipaa: ['164.312(a)(2)(iv)'],
     evidence: [
-      { kind: 'ci_job', workflow: CI, step: 'gitleaks/gitleaks-action@v2', what: 'the secret scan on every pull request' },
+      { kind: 'ci_job', workflow: CI, step: "Secret scan of the pull request's commits", what: 'the secret scan on every pull request: the pinned gitleaks, its SHA-256 checked, over the pull request’s commits' },
+      { kind: 'unit_test', file: 'tools/hooks/pre-push.test.ts', test: 'refuses a secret in a pushed commit' },
       { kind: 'cdk_assertion', file: 'infra/test/database.test.ts', test: 'rotates the owner login by itself' },
       { kind: 'cdk_assertion', file: 'infra/test/encryption.test.ts', test: 'rotates every 365 days' },
       { kind: 'runbook', file: 'docs/runbooks/key-rotation.md' },
@@ -289,7 +290,7 @@ export const CONTROLS: readonly Control[] = [
       {
         kind: 'external',
         system: 'github',
-        what: 'the rulesets of main and claude/build-platform as GitHub holds them (no bypass, no force push or deletion, a pull request for every change, the founder’s approval of its latest commit as code owner of every path, stale approvals dismissed, the required checks from GitHub Actions), and each merged pull request’s reviews and checks; collected by the compliance platform',
+        what: 'the rulesets of main, claude/build-platform and the release tags as GitHub holds them (no force push or deletion, a pull request for every change, the founder’s approval of its latest commit as code owner of every path, stale approvals dismissed, the required checks from GitHub Actions, release tags created only by the founder and never moved, and no bypass but the content publisher’s on main’s pull-request rule and content release tags), and each merged pull request’s reviews and checks; collected by the compliance platform',
       },
       { kind: 'ci_job', workflow: APPROVAL, step: 'node tools/approval-of-record/approval-of-record.ts', what: 'the approval of record on every pull request: a change to the domain model’s approval line or the approver list needs the approver’s review of its latest commit' },
       { kind: 'unit_test', file: 'tools/approval-of-record/approval-of-record.test.ts', test: 'refuses the author’s own approval' },

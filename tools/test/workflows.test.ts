@@ -306,7 +306,7 @@ describe('workflows', () => {
     const synth = stepIndex(steps, (step) => step.run === 'pnpm synth --all');
     // Right after the secret scan and before pnpm synth --all, which rewrites a hand-edited generated file and removes
     // an extra one, so the check reads the commit's own bytes.
-    expect(check).toBe(stepIndex(steps, (step) => step.uses?.startsWith('gitleaks/gitleaks-action@') === true) + 1);
+    expect(check).toBe(stepIndex(steps, (step) => step.name === "Secret scan of the pull request's commits") + 1);
     expect(check).toBeLessThan(synth);
     // Right after the generation, a clean tree under fixtures/synthetic: what the commit holds is what synth writes.
     expect(steps[synth + 1]?.run).toBe('git diff --exit-code -- fixtures/synthetic && test -z "$(git status --porcelain -- fixtures/synthetic)"');
@@ -314,6 +314,31 @@ describe('workflows', () => {
     expect(steps.filter((step) => step.run?.includes('check:fixtures') === true)).toHaveLength(1);
     const scripts = (JSON.parse(readFileSync(path.join(repositoryRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
     expect(scripts['check:fixtures']).toBe('tsx tools/fixture-check/index.ts');
+  });
+
+  it('scan the pull request’s commits with the pinned gitleaks the pre-push hook runs, never the gitleaks action, which an organization’s repository must license', () => {
+    const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).filter((file) => /\.ya?ml$/.test(file));
+    const actions = files.flatMap((file) => Object.values(workflow(file).jobs).flatMap((job) => (job.steps ?? []).map((step) => step.uses ?? '')));
+    expect(actions.filter((uses) => /gitleaks/i.test(uses))).toEqual([]);
+    const steps = workflow('ci.yml').jobs.check?.steps ?? [];
+    const step = steps[stepIndex(steps, (candidate) => candidate.name === "Secret scan of the pull request's commits")] as Step & { env?: Record<string, string> };
+    expect(step.env).toEqual({ BASE_REF: '${{ github.base_ref }}' });
+    const script = step.run ?? '';
+    expect(script).toContain('gitleaks="$(tools/gitleaks/install.sh)"');
+    expect(script).not.toContain('${{');
+    for (const option of ['git --no-banner --redact', '--config .gitleaks.toml', '--gitleaks-ignore-path .gitleaksignore', '--log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge origin/$BASE_REF..HEAD" .']) {
+      expect(script, option).toContain(option);
+    }
+    // The pin it installs: one version and a SHA-256 for each platform, the archive checked before anything in it runs.
+    const release = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/release.txt'), 'utf8');
+    expect(release).toMatch(/^version \d+\.\d+\.\d+$/m);
+    for (const platform of ['linux_x64', 'linux_arm64', 'darwin_x64', 'darwin_arm64']) {
+      expect(release, platform).toMatch(new RegExp(`^${platform} [0-9a-f]{64}$`, 'm'));
+    }
+    const installer = readFileSync(path.join(repositoryRoot, 'tools/gitleaks/install.sh'), 'utf8');
+    expect(installer.indexOf('if [ "$actual" != "$expected" ]')).toBeLessThan(installer.indexOf('tar -xzf'));
+    // The whole workflow reads the repository and nothing more.
+    expect((parse(readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8')) as { permissions?: unknown }).permissions).toEqual({ contents: 'read' });
   });
 
   it('write the changes since the last approved domain model into the check job’s summary, against the base branch, before any check can fail', () => {
@@ -372,6 +397,7 @@ describe('approval-of-record (docs/adr/0063)', () => {
   it.runIf(actionlint !== '')('every workflow passes actionlint', () => {
     const files = readdirSync(path.join(repositoryRoot, '.github/workflows')).map((name) => path.join(repositoryRoot, '.github/workflows', name));
     const result = spawnSync(actionlint, ['-shellcheck=', '-pyflakes=', ...files], { encoding: 'utf8' });
+    expect(result.error).toBeUndefined();
     expect(result.stdout + result.stderr).toBe('');
     expect(result.status).toBe(0);
   });

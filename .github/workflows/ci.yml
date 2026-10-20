@@ -1,6 +1,10 @@
 name: ci
 on: [pull_request]
 
+# The jobs read the repository and nothing else: no step calls the GitHub API (docs/adr/0063).
+permissions:
+  contents: read
+
 # A newer push to the same pull request cancels the older run, so superseded runs spend no minutes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -41,9 +45,16 @@ jobs:
           fi
       - run: pip install pyx12
       - run: pnpm audit --prod
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # The secret scan (docs/adr/0063): the pinned gitleaks the pre-push hook runs, its release archive checked against
+      # the SHA-256 in tools/gitleaks/release.txt, over this pull request's commits (each merge by what it adds beyond
+      # its parents), with the repository's configuration. It needs no licence and calls no API, so it runs the same in
+      # an organization's private repository.
+      - name: Secret scan of the pull request's commits
+        env: { BASE_REF: "${{ github.base_ref }}" }
+        run: |
+          gitleaks="$(tools/gitleaks/install.sh)"
+          "$gitleaks" git --no-banner --redact --log-level info --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore \
+            --log-opts "--no-color --no-ext-diff --no-textconv --diff-merges=remerge origin/$BASE_REF..HEAD" .
       # Every table, interchange and workbook in the commit, read before anything regenerates the tree, through the
       # writer's own fixture guard: SYNTHSENDER in an identifier column, or a pinned table (CO-03, docs/adr/0059).
       - run: pnpm check:fixtures
@@ -74,7 +85,7 @@ jobs:
             apps/web/test-results/
             brand-screenshots/
           if-no-files-found: ignore
-          # Up to 54 MB a run, against the private repository's 1 GB of Actions storage on GitHub Pro (docs/adr/0063).
+          # Up to 54 MB a run, against GitHub Team's 2 GB of Actions storage (docs/adr/0063).
           retention-days: 7
       # A failed run's screenshot comparisons, readable from the job's log alone: each diff and actual picture under
       # apps/web/test-results smaller than 300 KB, as its path and its base64 on one line (docs/adr/0058).
