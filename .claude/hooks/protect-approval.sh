@@ -3,16 +3,24 @@
 # (CO-02, reconciliation-001 D1): refuses any call whose result changes an "Approved by:" line of
 # docs/product/domain-model.md, and any change to packages/db/domain-model/approvers.json. The result is rebuilt
 # from the call and the file on disk, and a call it cannot rebuild exactly is refused, a NotebookEdit of either file
-# among them (it names its file notebook_path; docs/adr/0063). Paths resolve from the hook input's cwd (worktrees),
-# links followed. Fails closed without jq.
+# among them (it names its file notebook_path; docs/adr/0063). A relative path resolves from the hook input's cwd, as
+# Claude Code resolves it; links are followed; a path holding a control character is refused (a line break ends the
+# path this hook reads before the one the tool writes). Fails closed without jq.
 set -u
 command -v jq >/dev/null 2>&1 || { echo "protect-approval: jq is required" >&2; exit 2; }
 input=$(cat)
 file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty') || { echo "protect-approval: the hook input is not JSON" >&2; exit 2; }
+printf '%s' "$input" | jq -e '[.tool_input.file_path, .tool_input.notebook_path] | any(.[]; type == "string" and test("[[:cntrl:]]"))' >/dev/null
+case $? in
+  1) ;;
+  0)
+    echo "Blocked: the file path of this call holds a control character (a line break or a tab), so protect-approval cannot tell which file it writes, and refuses it." >&2
+    exit 2 ;;
+  *) echo "protect-approval: could not read the call's file path, so it is refused" >&2; exit 2 ;;
+esac
 [ -n "$file_path" ] || exit 0
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
-root=$(cd "${cwd:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || root="${cwd:-$PWD}"
-case "$file_path" in /*) abs="$file_path" ;; *) abs="$root/$file_path" ;; esac
+case "$file_path" in /*) abs="$file_path" ;; *) abs="${cwd:-$PWD}/$file_path" ;; esac
 # "." and ".." segments taken out, symbolic links resolved (the file itself, as a Write follows it, and the part of
 # its directory that exists), and the path compared in any case, so no spelling of either path slips past.
 clean_path() {

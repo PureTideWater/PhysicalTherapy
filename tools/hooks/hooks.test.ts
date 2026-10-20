@@ -12,8 +12,9 @@ import { repositoryRoot } from '../content-files';
 /**
  * Every Claude Code hook in .claude/hooks, run as Claude Code runs it: the hook input as JSON on stdin, exit 2
  * to refuse with the reason on stderr (docs/adr/0059). .claude/settings.json wires them (docs/adr/0063): the
- * three guards before every edit tool (Edit, Write, MultiEdit, NotebookEdit), the typecheck after each that
- * writes text, and the last describe block runs them as it wires them, each edit tool allowed and refused. A hook
+ * three guards before every edit tool (Edit, Write, MultiEdit, NotebookEdit), the GitHub guard before every
+ * connector tool that reviews a pull request or writes files, the typecheck after each edit tool that writes
+ * text, and the last describe block runs them as it wires them, each edit tool allowed and refused. A hook
  * script with no cases here, or not wired, fails the suite. Nothing here writes into the worktree: the scratch
  * repositories and workspaces live in the system's temporary directory, and .claude/.allow-protected-edit is only
  * ever made there.
@@ -137,6 +138,28 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(notebookX12.status).toBe(2);
     expect(notebookX12.stderr).toContain('contains an X12 interchange whose sender is not SYNTHSENDER');
     expect(notebook('docs/explore.ipynb', synthetic).status).toBe(0);
+    // The X12 rule finds every interchange header wherever it starts: after a newline, a byte-order mark or spaces, in
+    // the middle of an Edit's new string, in any edit of a MultiEdit, with any element separator.
+    const foreign = synthetic.replace('SYNTHSENDER    ', 'OTHERSENDER    ');
+    for (const text of [`\n${foreign}`, `\uFEFF${foreign}`, `   ${foreign}`, `const sample = \`${foreign}\`;\n`, foreign.replaceAll('*', '|')]) {
+      expect(write('anywhere/notes.ts', text).status, JSON.stringify(text.slice(0, 12))).toBe(2);
+      expect(run(script, { tool_name: 'Edit', cwd: repositoryRoot, tool_input: { file_path: 'docs/x.md', old_string: 'a', new_string: text } }).status).toBe(2);
+    }
+    expect(run(script, { tool_name: 'MultiEdit', cwd: repositoryRoot, tool_input: { file_path: 'docs/x.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: `x = '${foreign}'` }] } }).status).toBe(2);
+    expect(write('anywhere/notes.ts', `const sample = \`${synthetic}\`;\n`).status).toBe(0);
+    // Prose about the segment is not an interchange.
+    expect(write('docs/x12.md', 'ISA*00 opens an interchange; ISA06 is its sender.\n').status).toBe(0);
+    // A relative path is the session's: it resolves from the hook input's cwd, not from the repository's top.
+    const fromFixtures = run(script, { tool_name: 'Write', cwd: path.join(repositoryRoot, 'fixtures'), tool_input: { file_path: 'synthetic/zz/a.csv', content: 'Post Date,Paid\n06/11/2026,30.00\n' } });
+    expect(fromFixtures.status).toBe(2);
+    expect(fromFixtures.stderr).toContain('fixtures/synthetic/zz/a.csv');
+    expect(run(script, { tool_name: 'Write', cwd: path.join(repositoryRoot, 'apps'), tool_input: { file_path: 'web/scratch.csv', content: 'Post Date,Paid\n06/11/2026,30.00\n' } }).status).toBe(0);
+    // A path with a control character is refused: a line break ends the path the hook reads before the one written.
+    expect(run(script, { tool_name: 'Write', cwd: repositoryRoot, tool_input: { file_path: `${repositoryRoot}/x\n/../fixtures/synthetic/a.csv`, content: 'a\n' } }).status).toBe(2);
+    // A gitfile that makes a directory of fixtures/ its own repository leaves its files fixtures.
+    const nested = gitRepository('fixture-gitfile', { 'fixtures/synthetic/LED-99/keep.md': 'x\n' });
+    writeFileSync(path.join(nested, 'fixtures/.git'), `gitdir: ${path.join(nested, '.git')}\n`);
+    expect(run(script, { tool_name: 'Write', cwd: nested, tool_input: { file_path: path.join(nested, 'fixtures/synthetic/LED-99/a.csv'), content: 'Post Date,Paid\n06/11/2026,30.00\n' } }).status).toBe(2);
   },
 
   'protect-content.sh': () => {
@@ -181,6 +204,40 @@ const CASES: Readonly<Record<string, () => void>> = {
     writeFileSync(path.join(root, '.claude/.allow-protected-edit'), '');
     expect(edit('packages/db/migrations/0001.sql').status).toBe(0);
     expect(edit('content/releases/2026-01/manifest.json').status).toBe(2);
+    rmSync(path.join(root, '.claude/.allow-protected-edit'));
+    // A relative path is the session's: it resolves from the hook input's cwd (a Bash cd moves it), not the repository's top.
+    expect(call('Write', { file_path: 'migrations/0009.sql', content: 'select 1;' }, path.join(root, 'packages/db')).status).toBe(2);
+    expect(call('Edit', { file_path: 'releases/2026-01/manifest.json', old_string: '{}', new_string: '{ }' }, path.join(root, 'content')).status).toBe(2);
+    expect(call('Write', { file_path: '../db/migrations/0009.sql', content: 'select 1;' }, path.join(root, 'packages/x')).status).toBe(2);
+    expect(call('Write', { file_path: 'drafts/a.json', content: '{}' }, path.join(root, 'content')).status).toBe(0);
+    // A path with a control character is refused: a line break ends the path the hook reads before the one written.
+    const broken = call('Write', { file_path: `${root}/x\n/../content/releases/2026-01/manifest.json`, content: '{}' });
+    expect(broken.status).toBe(2);
+    expect(broken.stderr).toContain('control character');
+    expect(call('NotebookEdit', { notebook_path: `${root}/x\t.ipynb`, new_source: 'x' }).status).toBe(2);
+    // No edit tool writes git's own files: a gitfile would make a directory its own repository.
+    const gitfile = call('Write', { file_path: 'content/.git', content: `gitdir: ${root}/.git\n` });
+    expect(gitfile.status).toBe(2);
+    expect(gitfile.stderr).toContain("git's own file");
+    expect(call('Write', { file_path: '.git/hooks/pre-commit', content: 'exit 0\n' }).status).toBe(2);
+    expect(call('Write', { file_path: '.gitignore', content: 'node_modules\n' }).status).toBe(0);
+    // A gitfile already there (a shell made it) leaves a release a release and a migration a migration.
+    writeFileSync(path.join(root, 'content/.git'), `gitdir: ${path.join(root, '.git')}\n`);
+    writeFileSync(path.join(root, 'packages/db/.git'), `gitdir: ${path.join(root, '.git')}\n`);
+    mkdirSync(path.join(root, 'packages/db/.claude'), { recursive: true });
+    writeFileSync(path.join(root, 'packages/db/.claude/.allow-protected-edit'), '');
+    expect(call('Write', { file_path: path.join(root, 'content/releases/2026-01/manifest.json'), content: '{}' }).status).toBe(2);
+    expect(call('Write', { file_path: path.join(root, 'packages/db/migrations/0009.sql'), content: 'select 1;' }).status).toBe(2);
+    rmSync(path.join(root, 'content/.git'));
+    rmSync(path.join(root, 'packages/db/.git'));
+    // The hooks and their settings: no edit switches the guards off, in this repository or the user's own settings.
+    for (const file of ['.claude/settings.json', '.claude/settings.local.json', '.claude/hooks/protect-content.sh', '.claude/hooks/new.sh', '.claude/.allow-protected-edit', '.Claude/Settings.JSON']) {
+      const configured = call('Write', { file_path: file, content: '{"disableAllHooks": true}\n' });
+      expect(configured.status, file).toBe(2);
+      expect(configured.stderr, file).toContain('configures the hooks that guard every edit');
+    }
+    expect(call('Write', { file_path: path.join(scratch('home'), '.claude/settings.json'), content: '{"disableAllHooks": true}\n' }).status).toBe(2);
+    expect(call('Write', { file_path: '.claude/skills/x/SKILL.md', content: 'x\n' }).status).toBe(0);
     // It fails closed: without jq, on input that is not JSON.
     expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
     const garbled = run(script, `{"tool_name":"Edit","tool_input":{"file_path":"content/releases/2026-01/manifest.json"`);
@@ -233,6 +290,11 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(wrong.stderr).toContain('typecheck: packages/real does not type-check after this edit:');
     expect(wrong.stderr).toContain("src/a.ts(1,14): error TS2322: Type 'string' is not assignable to type 'number'.");
     expect(call('MultiEdit', typed, 'packages/real/src/a.ts').status).toBe(2);
+    // A relative path resolves from the hook input's cwd (a Bash cd moves it), so an edit made from the package's own
+    // directory checks that package.
+    const fromPackage = run(script, { tool_name: 'Edit', cwd: path.join(typed, 'packages/real'), tool_input: { file_path: 'src/a.ts' } });
+    expect(fromPackage.status).toBe(2);
+    expect(fromPackage.stderr).toContain('typecheck: packages/real does not type-check after this edit:');
     writeFileSync(source, 'export const n: number = 1;\n');
     expect(edit(typed, 'packages/real/src/a.ts').status).toBe(0);
     // The root's own files are the root project's; a file in installed dependencies or outside a repository is no package's.
@@ -311,6 +373,15 @@ const CASES: Readonly<Record<string, () => void>> = {
     // Another spelling of the same path is the same file.
     expect(call('Edit', { file_path: 'docs/../docs/./product/domain-model.md', old_string: 'Approved by: ________', new_string: 'Approved by: X' }).status).toBe(2);
     expect(call('Write', { file_path: path.join(root, 'packages/db/x/../domain-model/approvers.json'), content: '{}' }).status).toBe(2);
+    // A relative path resolves from the hook input's cwd (a Bash cd moves it), not from the repository's top.
+    const fromDocs = run(script, { tool_name: 'Write', cwd: path.join(root, 'docs'), tool_input: { file_path: 'product/domain-model.md', content: 'Approved by: Mallory  Date: 2026-10-18  Document SHA-256: `00`\n' } });
+    expect(fromDocs.status).toBe(2);
+    expect(fromDocs.stderr).toContain('"Approved by:" line');
+    expect(run(script, { tool_name: 'Edit', cwd: path.join(root, 'packages/db'), tool_input: { file_path: 'domain-model/approvers.json', old_string: '[]', new_string: '["M"]' } }).status).toBe(2);
+    expect(run(script, { tool_name: 'Write', cwd: path.join(root, 'docs/product'), tool_input: { file_path: 'other.md', content: 'Approved by: X\n' } }).status).toBe(0);
+    // A path with a control character is refused: a line break ends the path the hook reads before the one written.
+    expect(call('Write', { file_path: `${root}/x\n/../${model}`, content: 'Approved by: Mallory\n' }).status).toBe(2);
+    expect(call('Write', { file_path: `${root}/x\n/../${list}`, content: '{}' }).status).toBe(2);
     // Other files, other tools and a call with no file pass; without jq, or with input it cannot read, it fails closed.
     expect(call('Write', { file_path: 'docs/product/other.md', content: 'Approved by: X\n' }).status).toBe(0);
     expect(call('Read', { file_path: model }).status).toBe(0);
@@ -324,6 +395,42 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(call('NotebookEdit', { notebook_path: path.join(root, list), new_source: '{}' }).status).toBe(2);
     expect(call('NotebookEdit', { notebook_path: 'docs/explore.ipynb', new_source: 'Approved by: X' }).status).toBe(0);
     expect(readFileSync(path.join(root, model), 'utf8')).toBe(document);
+  },
+
+  'protect-github.sh': () => {
+    const script = hook('protect-github.sh');
+    const call = (toolName: string, toolInput: unknown) => run(script, { tool_name: toolName, cwd: repositoryRoot, tool_input: toolInput });
+    // The build never submits a review, in any of the GitHub connector's review tools, whichever event.
+    for (const toolName of ['mcp__github__pull_request_review_write', 'mcp__claude_ai_GitHub__pull_request_review_write', 'mcp__github__create_and_submit_pull_request_review', 'mcp__github__create_pending_pull_request_review', 'mcp__github__submit_pending_pull_request_review']) {
+      for (const event of ['APPROVE', 'REQUEST_CHANGES', 'COMMENT']) {
+        const review = call(toolName, { method: 'create', owner: 'o', repo: 'r', pullNumber: 1, event });
+        expect(review.status, `${toolName} ${event}`).toBe(2);
+        expect(review.stderr).toContain('the build never submits a review');
+      }
+    }
+    // A file written through the GitHub API on a path the edit hooks guard, or that configures the hooks or CI, in any spelling.
+    for (const file of ['docs/product/domain-model.md', '/Docs/x/../product/Domain-Model.md', 'packages/db/domain-model/approvers.json', 'packages/db/migrations/0001.sql', 'content/releases/r.json', 'fixtures/synthetic/a.csv', './packages/synth/src/x.ts', '.claude/settings.json', '.github/workflows/x.yml', 'docs/../CLAUDE.md']) {
+      const written = call('mcp__github__create_or_update_file', { owner: 'o', repo: 'r', branch: 'b', path: file, content: 'x', message: 'm' });
+      expect(written.status, file).toBe(2);
+      expect(written.stderr, file).toContain('through the GitHub API');
+      expect(call('mcp__github__delete_file', { owner: 'o', repo: 'r', branch: 'b', path: file, message: 'm' }).status, file).toBe(2);
+      expect(call('mcp__github__push_files', { owner: 'o', repo: 'r', branch: 'b', files: [{ path: 'README.md', content: 'x' }, { path: file, content: 'x' }], message: 'm' }).status, file).toBe(2);
+    }
+    // Any other path passes, unless its text is an interchange from another sender; a write whose paths it cannot read is refused.
+    expect(call('mcp__github__create_or_update_file', { path: 'docs/notes.md', content: 'x' }).status).toBe(0);
+    expect(call('mcp__github__push_files', { files: [{ path: 'README.md', content: 'x' }, { path: 'apps/web/a.ts', content: 'y' }] }).status).toBe(0);
+    const x12 = call('mcp__github__push_files', { files: [{ path: 'docs/a.md', content: `see ${render835(minimalFile()).text.replace('SYNTHSENDER    ', 'OTHERSENDER    ')}` }] });
+    expect(x12.status).toBe(2);
+    expect(x12.stderr).toContain('whose sender is not SYNTHSENDER');
+    expect(call('mcp__github__push_files', { files: [{ path: 'docs/a.md', content: render835(minimalFile()).text }] }).status).toBe(0);
+    expect(call('mcp__github__push_files', { files: 7 }).status).toBe(2);
+    expect(call('mcp__github__create_or_update_file', { path: 'docs/a\n/../../.github/x.yml', content: 'x' }).status).toBe(2);
+    // Other tools pass: merging is bounded by the ruleset, whoever merges (docs/adr/0063).
+    expect(call('mcp__github__merge_pull_request', { pullNumber: 1 }).status).toBe(0);
+    expect(call('mcp__github__add_issue_comment', { body: 'x' }).status).toBe(0);
+    // It fails closed: without jq, on input that is not JSON.
+    expect(run(script, {}, { PATH: pathWith([]) }).status).toBe(2);
+    expect(run(script, '{"tool_name":"mcp__github__push_files"').status).toBe(2);
   },
 };
 
@@ -390,6 +497,18 @@ describe('.claude/settings.json', () => {
     }
     // A notebook is not TypeScript: whether the matcher is read whole (no typecheck) or anywhere ("Edit" in "NotebookEdit"), nothing runs.
     expect(wired('PostToolUse', 'NotebookEdit', true)).toEqual([]);
+  });
+
+  it('runs the GitHub guard before every connector tool that reviews or writes files, and no other', () => {
+    for (const anchored of [true, false]) {
+      for (const server of ['github', 'claude_ai_GitHub']) {
+        for (const name of ['pull_request_review_write', 'create_pending_pull_request_review', 'submit_pending_pull_request_review', 'create_and_submit_pull_request_review', 'delete_pending_pull_request_review', 'create_or_update_file', 'push_files', 'delete_file']) {
+          expect(wired('PreToolUse', `mcp__${server}__${name}`, anchored), name).toEqual(['protect-github.sh']);
+        }
+        for (const name of ['merge_pull_request', 'get_file_contents', 'create_pull_request', 'add_issue_comment']) expect(wired('PreToolUse', `mcp__${server}__${name}`, anchored), name).toEqual([]);
+      }
+      for (const toolName of [...EDIT_TOOLS, 'Bash', 'Read']) expect(wired('PreToolUse', toolName, anchored)).not.toContain('protect-github.sh');
+    }
   });
 
   it('allows and refuses a call of each edit tool, its hooks run as settings.json runs them', () => {

@@ -11,9 +11,9 @@ command -v jq >/dev/null 2>&1 || { echo "typecheck: jq is required" >&2; exit 2;
 input=$(cat)
 file_path=$(printf '%s' "$input" | jq -r '.tool_input.file_path // empty') || { echo "typecheck: the hook input is not JSON" >&2; exit 2; }
 case "$file_path" in *.ts|*.tsx|*.mts|*.cts) ;; *) exit 0 ;; esac
+# A relative path resolves from the hook input's cwd, as Claude Code resolves it.
 cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
-root=$(cd "${cwd:-.}" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || root="${cwd:-$PWD}"
-case "$file_path" in /*) abs="$file_path" ;; *) abs="$root/$file_path" ;; esac
+case "$file_path" in /*) abs="$file_path" ;; *) abs="${cwd:-$PWD}/$file_path" ;; esac
 dir=$(dirname "$abs")
 while [ ! -d "$dir" ]; do dir=$(dirname "$dir"); done
 dir=$(cd "$dir" 2>/dev/null && pwd -P) || exit 0
