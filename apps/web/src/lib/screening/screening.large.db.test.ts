@@ -2,6 +2,7 @@ import { performance } from 'node:perf_hooks';
 
 import { formatCents } from '@tp/money';
 import { SCREENING_MAX_ROWS, SCREENING_MIN_CLAIM_LINES, SCREENING_PAYER_PRODUCTS, type ScreeningRow, encodeScreeningRows, screenTable } from '@tp/worker/screening';
+import { practiceShapeUpload } from '@tp/tools/screening-capacity/uploads';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { screeningResult, screeningSubmit } from './routes';
@@ -52,6 +53,10 @@ afterAll(async () => {
 });
 
 describe('a screening of 50,000 rows', () => {
+  it('uploads the practice shape the capacity test uploads (audit #53 part 1: packages/synth generates the same rows)', () => {
+    expect(rows()).toEqual(practiceShapeUpload());
+  });
+
   it('returns its result in under 60 seconds, from the upload to the emailed link', { timeout: 120_000 }, async () => {
     const upload = rows();
     expect(upload).toHaveLength(SCREENING_MAX_ROWS);

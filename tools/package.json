@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Repository tooling: the log lint, content checker, release scripts and CI guards.",
   "exports": {
-    "./workspace": "./release/workspace.ts"
+    "./workspace": "./release/workspace.ts",
+    "./screening-capacity/uploads": "./screening-capacity/uploads.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
