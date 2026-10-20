@@ -198,7 +198,7 @@ export function screeningReasonMessage(reason: ScreeningRejection): string {
       return 'The rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
-      const why = `a screening takes a row of at least ${floor}, so that no row can describe one patient’s care`;
+      const why = `a screening takes a row of at least ${floor} claim lines, so that no row can describe one patient’s care`;
       return reason.row === undefined ? `Every row sums fewer than ${floor} claim lines, so there is nothing to screen: ${why}` : `${row} sums fewer than ${floor} claim lines; ${why}: leave it out`;
     }
   }

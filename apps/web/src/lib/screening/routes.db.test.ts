@@ -185,7 +185,7 @@ describe('SCR-01: an upload holding patient information is refused with its colu
 describe('SCR-07: a row of fewer than 11 claim lines, which can be one patient’s service line', () => {
   const FLOOR_MESSAGE = (row: number) => ({
     field: 'upload',
-    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11, so that no row can describe one patient’s care: leave it out`,
+    message: `Row ${String(row)} sums fewer than 11 claim lines; a screening takes a row of at least 11 claim lines, so that no row can describe one patient’s care: leave it out`,
   });
 
   it('refuses a direct POST around the browser with a row of one claim line, by its row number, and stores nothing of the row', async () => {

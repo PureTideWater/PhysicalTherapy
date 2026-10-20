@@ -137,29 +137,31 @@ small-cell standard (CMS suppresses a count of 1 to 10), and it is one setting, 
   left out a row's number there is not its number in the file, and with both checks on one clock the server never
   refuses a row the page sent (a computer whose clock is wrong also refuses no quarter the server takes).
 - The server (`decodeScreeningRows`) refuses a row of fewer than 11 claim lines that a request sent around the
-  browser, by its row number ("Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11, so that
-  no row can describe one patient's care: leave it out"), named with the patient information ahead of any other
-  problem. The refusal is recorded as any other is, by the file's hash, the row count and the coded reasons, here
-  `too_few_claim_lines` with the row and the field `claim_count` alone: nothing of the row's code, claim count,
-  quarter or dollars is stored or logged. It takes the browser's three numbers only when they are ones the browser could
-  have counted beside the rows sent (`leftOutPlausible`), and records nothing otherwise; blank is none.
+  browser, by its row number ("Row 2 sums fewer than 11 claim lines; a screening takes a row of at least 11 claim
+  lines, so that no row can describe one patient's care: leave it out"), named with the patient information ahead of
+  any other problem. The refusal is recorded as any other is, by the file's hash, the row count and the coded reasons,
+  here `too_few_claim_lines` with the row and the field `claim_count` alone: nothing of the row's code, claim count,
+  quarter or dollars is stored or logged. It takes the browser's three numbers only when they are ones the browser
+  could have counted beside the rows sent (`leftOutPlausible`), and records nothing otherwise; blank is none.
 - The database refuses a stored row of fewer (`screening_result_claim_count`, `BETWEEN 11 AND 100000`), whoever
   writes it, and `format.test.ts` holds that CHECK and the upload's left-out CHECKs to the setting.
 
 The result shows the rows left out as the browser counted them ("Left out before sending": rows, claim lines and
-allowed in your file), apart from every other figure, when there are any. The template file and the upload page
-state the floor in plain words ("Each row sums at least 11 claim lines. A row of fewer could describe the care of one
-patient, so your browser leaves it out before anything is sent, and the page tells you how many rows, claim lines and
-dollars it left out"), and the column guide says it beside the claim count. The template states it where a prospect
-fills it, in a spreadsheet away from the page: its rules come first, each a note line above the header (a first cell
-beginning with #), in plain ASCII so a spreadsheet that reads a CSV without a byte-order mark shows them as written.
-The page's reader skips a note row above the header, as written or as a spreadsheet saves it (padded with empty
-cells, as CSV or tab-separated text), and a note's own commas never choose the delimiter; a header that begins with a
-`#` column has other cells and is checked as a header, so a patient-information column beside it is still refused,
-and a note below the header is a row, refused by its number. Counsel confirms the number, and whether it counts
-claim lines or patients: a plan of care can give one patient 11 lines in a quarter, and a row of totals cannot say
-how many patients its lines are. If counsel says patients, a patient-count column is added to the format and the
-row (a new migration) and the floor moves to it.
+allowed in your file), apart from every other figure, when there are any. The three numbers are sums over every row
+left out, with no code, modifier, units, place of service, payer product or quarter beside them, so none of them can
+describe one patient's care. The template file and the upload page state the floor in plain words ("Each row sums at
+least 11 claim lines. A row of fewer could describe the care of one patient, so your browser leaves it out before
+anything is sent, and the page tells you how many rows, claim lines and dollars it left out"), and the column guide
+says it beside the claim count. The template states it where a prospect fills it, in a spreadsheet away from the
+page: its rules come first, each a note line above the header (a first cell beginning with #), in plain ASCII so a
+spreadsheet that reads a CSV without a byte-order mark shows them as written. The page's reader skips a note row
+above the header, as written or as a spreadsheet saves it (padded with empty cells, as CSV or tab-separated text),
+and a note's own commas never choose the delimiter; a header that begins with a `#` column has other cells and is
+checked as a header, so a patient-information column beside it is still refused, and a note below the header is a
+row, refused by its number. Counsel confirms the number, and whether it counts claim lines or patients: a plan of
+care can give one patient 11 lines in a quarter, and a row of totals cannot say how many patients its lines are. If
+counsel says patients, a patient-count column is added to the format and the row (a new migration) and the floor
+moves to it.
 
 **Denied lines out of every total (the founder's ruling of 2026-10-18 on the best-option audit's item 1, the
 template's part).** A denied line pays nothing for a reason that is not a rate (no authorization, a visit limit
@@ -248,6 +250,7 @@ without a contract". The copy lint reads the screening paths, the worker's scree
 | Compare against the engine's final amount, after sequestration | What PR 6 first did: a payer's allowed amount is normally before sequestration, so a row allowed in full looked about 3% (SYNTHETIC; 2% real) above the figure and up to that much of a shortfall was hidden. The owner's ruling 2 compares before it. |
 | Ask for a ZIP+4 where the locality map needs one | The engine takes a five-digit ZIP alone (`PracticeSettings.zip`), so this pull request refuses such a ZIP. The founder's ruling of 11:47 UTC on 2026-10-18 supersedes ruling 3: PR 6b takes a ZIP+4 in practice settings and the screening and has the engine resolve the locality from it, before launch. |
 | Keep a row of fewer than 11 claim lines and hide it in the result | It would still be stored: one patient's service line in tables built as non-PHI, from a prospect with no BAA. |
+| Say what was left out in the browser alone, storing nothing of it | The result, opened later from the emailed link, could not say that its figures leave rows out, and its totals would not match the prospect's file. Three sums with no code or quarter beside them describe no one. |
 | Keep the template a header line alone, its rules only on the page | A prospect fills the template in a spreadsheet, away from the page; the floor and the denied-lines rule belong where the totals are typed. Note lines the reader skips put them there without a second file or format. |
 | Date the quarters by the computer's own clock | A wrong clock would refuse a quarter the server takes, or send one it refuses; and once small rows are left out, the server's row number would not be the file's. |
 | Refuse a whole file in the browser when a row is small | A practice's file of totals has many small cells (a rare code, a quarter's tail); refusing it would turn most prospects away for rows that are left out safely. The founder ruled to leave them out and say how much was left out. |
