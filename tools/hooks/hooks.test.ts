@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { render835 } from '../../packages/synth/src/cases/builder';
 import { minimalFile } from '../../packages/synth/src/cases/par';
+import { INTERCHANGE_HEADER } from '../../packages/synth/src/write';
 import { repositoryRoot } from '../content-files';
 
 /**
@@ -150,6 +151,11 @@ const CASES: Readonly<Record<string, () => void>> = {
     expect(write('anywhere/notes.ts', `const sample = \`${synthetic}\`;\n`).status).toBe(0);
     // Prose about the segment is not an interchange.
     expect(write('docs/x12.md', 'ISA*00 opens an interchange; ISA06 is its sender.\n').status).toBe(0);
+    // The pre-push hook and pnpm check:fixtures search committed text by this hook's pattern (INTERCHANGE_HEADER in
+    // packages/synth/src/write.ts), so what one refuses the other refuses too.
+    const pattern = /match\("((?:[^"\\]|\\.)*)"; "g"\)/.exec(readFileSync(script, 'utf8'))?.[1]?.replaceAll('\\\\', '\\');
+    expect(pattern).toBe(INTERCHANGE_HEADER.source);
+    expect(INTERCHANGE_HEADER.flags).toBe('g');
     // A relative path is the session's: it resolves from the hook input's cwd, not from the repository's top.
     const fromFixtures = run(script, { tool_name: 'Write', cwd: path.join(repositoryRoot, 'fixtures'), tool_input: { file_path: 'synthetic/zz/a.csv', content: 'Post Date,Paid\n06/11/2026,30.00\n' } });
     expect(fromFixtures.status).toBe(2);

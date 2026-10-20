@@ -54,10 +54,13 @@ pnpm gitleaks:install   # the pinned gitleaks CI runs, its SHA-256 checked (tool
 ```
 
 A Claude Code session does both when it starts (`.claude/hooks/session-start.sh`) and says in its context what is
-missing. The launcher runs the `.githooks/pre-push` of the working tree a push is made from; a branch cut before the
-hook has none, so its push is refused until it merges `claude/build-platform`. It replaces the first instruction, a
-relative `core.hooksPath` of `.githooks`, which git skipped with no warning in any checkout of such a branch; the
-installer removes that setting, refuses any other `core.hooksPath`, and never overwrites a pre-push hook of your own.
+missing. The launcher runs the `.githooks/pre-push` of the working tree a push is made from, whichever branch the push
+sends; a working tree whose branch has none (cut before the hook, or from `main`, which has none until launch) is
+refused. Push such a branch from a working tree of the clone that has the hook (`git push origin <branch>` there checks
+its commits); a branch cut from `main` for a pull request into `main` is always pushed that way, never by merging
+`claude/build-platform` into it. It replaces the first instruction, a relative `core.hooksPath` of `.githooks`, which
+git skipped with no warning in any checkout of such a branch; the installer removes that setting, refuses any other
+`core.hooksPath`, and never overwrites a pre-push hook of your own.
 The hook finds gitleaks through `GITLEAKS` (an absolute path), then the pinned one, then `PATH`; it needs 8.19 or
 later, and without one it refuses every push that sends a new commit and says so.
 
@@ -74,7 +77,11 @@ The fixture check reads every CSV, TSV and spreadsheet; under `fixtures/` and `p
 or extensionless file; every `.835`, `.837`, `.edi`, `.x12` and `.era` file; and by content every X12 interchange
 (after white space or a UTF-8 or UTF-16 byte-order mark), zip, gzip, OLE2 file and PDF. A PDF passes only when
 packages/synth wrote it (its Producer names the synthetic exhibit or scan writer), so a real contract or EOB is
-refused. It cannot judge a picture: an image of a document is not read, and never belongs in the repository.
+refused. It also searches every text file, whatever its name and wherever it is, for an X12 interchange header
+anywhere in it (after a line of other text, mid-line, in a Markdown code block) and refuses one whose ISA06 is not
+SYNTHSENDER, by the pattern the edit hook (`.claude/hooks/fixture-guard.sh`) applies to what a session writes; prose
+that only names the segment ("ISA*00 opens an interchange") passes. It cannot judge a picture: an image of a document
+is not read, and never belongs in the repository.
 `tools/hooks/pre-push.test.ts` runs the hook through real pushes.
 
 The domain model gate (CO-02; reconciliation-001, D1 and D2): `docs/product/domain-model.md` describes the schema the

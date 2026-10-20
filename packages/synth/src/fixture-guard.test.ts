@@ -19,7 +19,7 @@ import { TableReadError, isIdentifierHeader, markerProblem, readTable, sniffedSe
 import { testWorkbook, testZip } from './guard/test-workbook';
 import { vendorFormatOf, vendorMarkerColumn } from './guard/vendors';
 import { workbookSheets } from './guard/xlsx';
-import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticX12, startsInterchange, writeCases } from './write';
+import { SyntheticSenderError, assertSyntheticFixture, assertSyntheticHeaders, assertSyntheticX12, searchableText, startsInterchange, writeCases } from './write';
 
 /**
  * Test matrix SEC-14: a fixture with a non-synthetic sender is refused. The non-synthetic interchange
@@ -161,6 +161,35 @@ describe('the fixture writer guard', () => {
     }
     expect(startsInterchange(bytes('Code,Description\n'))).toBe(false);
     expect(startsInterchange(bytes('  # ISA is the header\n'))).toBe(false);
+  });
+
+  it('finds an interchange header anywhere in a text by the edit hook\'s rule, and lets prose about the segment through', () => {
+    const search = (text: Uint8Array) => {
+      const found = searchableText(text);
+      if (found === null) {
+        throw new Error('not text');
+      }
+      return () => assertSyntheticHeaders(found, 'docs/notes.md');
+    };
+    // After a line of other text, mid-line, in a code block, with another separator, in UTF-16 and in Latin-1.
+    for (const [label, text] of [
+      ['after a line', bytes(`Pasted from the clearinghouse:\n${otherSender}`)],
+      ['mid-line', bytes(`const sample = '${otherSender}';\n`)],
+      ['code block', bytes(`# Remittance\n\n\`\`\`\n${otherSender}\n\`\`\`\n`)],
+      ['pipes', bytes(`notes\n${otherSender.replaceAll('*', '|')}`)],
+      ['UTF-16', new Uint8Array(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`notes\n${otherSender}`, 'utf16le')]))],
+      ['Latin-1', new Uint8Array(Buffer.concat([Buffer.from('caf\u00e9\n', 'latin1'), Buffer.from(otherSender, 'latin1')]))],
+    ] as const) {
+      expect(search(text), label).toThrow(SyntheticSenderError);
+    }
+    expect(search(bytes(`Pasted from the clearinghouse:\n${otherSender}`))).toThrow('docs/notes.md: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER');
+    expect(search(bytes(`intro\n${otherSender}`))).not.toThrow(/OTHERSENDER/);
+    // The synthetic sender anywhere, and prose that names the segment, pass.
+    expect(search(bytes(`Example:\n${synthetic}\nconst x = '${synthetic}';\n`))).not.toThrow();
+    expect(search(bytes('ISA*00 opens an interchange; ISA06 is its sender.\nThe ISA segment is 106 characters, ISA*00*.\n'))).not.toThrow();
+    // A binary file (a NUL among its first 8,000 bytes) holds no text to search.
+    expect(searchableText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, ...Buffer.from(otherSender)]))).toBeNull();
+    expect(searchableText(bytes('\uFEFFtext'))).toBe('text');
   });
 
   it('lets a PDF through only when packages/synth wrote it, an exhibit or a scan', () => {

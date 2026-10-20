@@ -1,14 +1,14 @@
 import { spawnSync } from 'node:child_process';
 
-import { SyntheticSenderError, assertSyntheticFixture } from '@tp/synth';
-
-import { type FixtureCheck, type FixtureProblem, HEAD, guardReads } from './check';
+import { type FixtureCheck, type FixtureProblem, checkFile } from './check';
 
 /**
  * The fixture check over commits instead of the working tree: the pre-push hook's half of it (`.githooks/pre-push`,
  * docs/adr/0063, audit item #20 (e)). Every file a commit adds or changes, as git stores it in that commit, goes
  * through the writer's own guard (assertSyntheticFixture in packages/synth/src/write.ts) when it is one the guard
- * reads, by the same rules as `pnpm check:fixtures` (check.ts: by name, or by its first bytes). The bytes come from
+ * reads, by the same rules as `pnpm check:fixtures` (check.ts: by name, or by its first bytes), and every text file
+ * among them, whatever its name or directory, is searched for an X12 interchange header anywhere in it, by the edit
+ * hook's rule (only SYNTHSENDER's; assertSyntheticHeaders, check.ts checkFile). The bytes come from
  * git's object store, never from the working tree, so a commit made with `git commit-tree` from a tree the
  * working tree never held is read as it will be pushed.
  *
@@ -155,8 +155,8 @@ function* blobContents(root: string, blobs: readonly string[]): Generator<[strin
 }
 
 /**
- * Checks every file the commits write that the guard reads. Each refusal names the file, its commit and the
- * guard's rule, never a value from the file.
+ * Checks every file the commits write: the guard over each one it reads, and the header search over every text file.
+ * Each refusal names the file, its commit and the rule, never a value from the file.
  */
 export function checkCommits(root: string, commits: readonly string[]): FixtureCheck {
   const files = committedFiles(root, commits);
@@ -166,21 +166,16 @@ export function checkCommits(root: string, commits: readonly string[]): FixtureC
   }
   const problems: FixtureProblem[] = [];
   let checked = 0;
+  let searched = 0;
   for (const [blob, bytes] of blobContents(root, [...byBlob.keys()])) {
     for (const entry of byBlob.get(blob) ?? []) {
-      if (!guardReads(entry.file, bytes.subarray(0, HEAD))) {
-        continue;
-      }
-      checked += 1;
-      try {
-        assertSyntheticFixture(bytes, entry.file);
-      } catch (error) {
-        if (!(error instanceof SyntheticSenderError)) {
-          throw error;
-        }
-        problems.push({ file: entry.file, message: `${error.message} (in commit ${entry.commit.slice(0, 12)})` });
+      const result = checkFile(entry.file, bytes);
+      checked += result.read ? 1 : 0;
+      searched += result.searched ? 1 : 0;
+      if (result.problem !== null) {
+        problems.push({ file: entry.file, message: `${result.problem} (in commit ${entry.commit.slice(0, 12)})` });
       }
     }
   }
-  return { checked, problems };
+  return { checked, searched, problems };
 }

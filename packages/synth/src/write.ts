@@ -106,6 +106,55 @@ export function assertSyntheticX12(bytes: Uint8Array, label: string): void {
   }
 }
 
+/**
+ * An X12 interchange header wherever it starts in a text, by the rule the edit hook applies to every text a session
+ * writes (`.claude/hooks/fixture-guard.sh`, which holds the same pattern; tools/hooks/hooks.test.ts compares them):
+ * "ISA" not inside a word, its element separator (any character but a letter, a digit or white space), then ISA01 to
+ * ISA05 at their fixed widths and ISA06, the 15 characters after the sixth separator, each followed by the separator.
+ * Prose that names the segment ("ISA*00 opens an interchange; ISA06 is its sender") is not a header.
+ */
+export const INTERCHANGE_HEADER = /(?<![A-Za-z0-9])ISA([^A-Za-z0-9\s])[0-9]{2}\1.{10}\1[0-9]{2}\1.{10}\1.{2}\1(.{15})\1/g;
+/** How much of a file's start decides that it is binary and holds no text to search: git's own test (a NUL there). */
+const BINARY_PROBE = 8000;
+const utf8Text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+/**
+ * A file's text for the header search: UTF-16 by its byte-order mark, otherwise UTF-8 when it decodes as UTF-8 and
+ * Latin-1 when it does not, a UTF-8 byte-order mark dropped. Null for a binary file, one with a NUL among its first
+ * 8,000 characters (git's test), which holds no text to search: the fixture guard reads the binary kinds it knows
+ * (zip, gzip, OLE2, PDF) on its own.
+ */
+export function searchableText(bytes: Uint8Array): string | null {
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let text: string;
+  if (buffer.length >= 2 && ((buffer[0] === 0xff && buffer[1] === 0xfe) || (buffer[0] === 0xfe && buffer[1] === 0xff))) {
+    text = interchangeText(buffer);
+  } else {
+    try {
+      text = utf8Text.decode(buffer);
+    } catch {
+      text = buffer.toString('latin1');
+    }
+    text = text.startsWith('\uFEFF') ? text.slice(1) : text;
+  }
+  return text.slice(0, BINARY_PROBE).includes('\u0000') ? null : text;
+}
+
+/**
+ * Throws SyntheticSenderError when `text` (a file's, from searchableText) holds an X12 interchange header anywhere
+ * (after a line of other text, in the middle of a line, in a Markdown code block, in a file of any name) whose ISA06,
+ * its spaces taken out, is not SYNTHSENDER: the edit hook's rule, for the files a commit or the tree holds. The refusal
+ * names the file and the line, never a value.
+ */
+export function assertSyntheticHeaders(text: string, label: string): void {
+  for (const match of text.matchAll(INTERCHANGE_HEADER)) {
+    if ((match[2] ?? '').replaceAll(' ', '') !== SYNTH_SENDER_ID) {
+      const line = text.slice(0, match.index).split('\n').length;
+      throw new SyntheticSenderError(`${label}: line ${String(line)} holds an X12 interchange header whose ISA06 is not ${SYNTH_SENDER_ID}`);
+    }
+  }
+}
+
 /** The tables the marker rule reads by their name's extension, and the separator each is read with. */
 const TABULAR: Readonly<Record<string, Separator>> = { csv: ',', tsv: '\t', tab: '\t', psv: '|' };
 /**

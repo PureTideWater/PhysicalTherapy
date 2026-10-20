@@ -13,7 +13,7 @@ import { checkCommits } from '../fixture-check/commits';
  * tree, or a key pasted into one, is then refused on the contributor's machine instead of reaching GitHub before
  * CI looks. It fails closed: without gitleaks, with a gitleaks or git too old for the scan, or on any error, a push
  * that sends a commit the remote lacks is refused and the message says why (a push that sends none, such as a
- * deletion, has nothing to scan and goes ahead).
+ * deletion, or one whose every ref git rejected before running the hook, has nothing to scan and goes ahead).
  *
  * The commits checked are those reachable from what each ref update sends and from nothing the remote already has:
  * its remote-tracking refs (`--remotes=<remote>`) when this repository has fetched it, otherwise every commit
@@ -381,6 +381,11 @@ export interface PrePushResult {
 export function prePush(options: PrePushOptions): PrePushResult {
   try {
     const updates = parsePushUpdates(options.input);
+    if (updates.length === 0) {
+      // git leaves out of the hook's input every ref it refuses itself (a non-fast-forward it can see, a stale lease) or
+      // finds up to date, and runs the hook even when that leaves none: the push then sends nothing.
+      return { allowed: true, lines: ['pre-push: git hands the hook no ref to update (it rejected each one itself, such as a non-fast-forward, or each is up to date), so this push sends nothing; nothing to check.'] };
+    }
     if (updates.every((update) => NULL_OBJECT.test(update.localObject))) {
       return { allowed: true, lines: ['pre-push: the push only deletes refs; nothing to check.'] };
     }
@@ -414,7 +419,10 @@ export function prePush(options: PrePushOptions): PrePushResult {
         ],
       };
     }
-    return { allowed: true, lines: [`pre-push: ${counted} checked: ${String(fixtures.checked)} file(s) read by the fixture guard, and gitleaks found no secret.`] };
+    return {
+      allowed: true,
+      lines: [`pre-push: ${counted} checked: ${String(fixtures.checked)} file(s) read by the fixture guard, ${String(fixtures.searched)} text file(s) searched for an X12 header, and gitleaks found no secret.`],
+    };
   } catch (error) {
     if (error instanceof PrePushError) {
       return { allowed: false, lines: [`pre-push: ${error.message}`] };

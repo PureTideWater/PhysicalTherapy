@@ -256,7 +256,7 @@ describe('the pre-push hook, run by git push', () => {
       const head = commit(w.work, { 'README.md': '# scratch\n', 'fixtures/synthetic/LED-99/table.csv': 'Paid Amount,Payee ID\r\n30.00,SYNTHSENDER\r\n' }, 'clean');
       const pushed = push(w.work, environment(REAL_GITLEAKS ?? stubGitleaks().binary), 'HEAD:refs/heads/main');
       expect(pushed.status, pushed.stderr).toBe(0);
-      expect(pushed.stderr).toContain('pre-push: 1 commit checked: 1 file(s) read by the fixture guard, and gitleaks found no secret.');
+      expect(pushed.stderr).toContain('pre-push: 1 commit checked: 1 file(s) read by the fixture guard, 2 text file(s) searched for an X12 header, and gitleaks found no secret.');
       expect(remoteRef(w, 'refs/heads/main')).toBe(head);
     },
     PUSH_TIMEOUT,
@@ -274,6 +274,36 @@ describe('the pre-push hook, run by git push', () => {
       expect(pushed.stderr).toContain('pre-push: this push is refused (2 commits checked).');
       expect(pushed.stderr).not.toContain('OTHERSENDER');
       expect(remoteRef(w, 'refs/heads/main')).toBeNull();
+    },
+    PUSH_TIMEOUT,
+  );
+
+  it(
+    'refuses an interchange header after a line of text, in a .txt or .md anywhere, and lets prose and SYNTHSENDER through',
+    () => {
+      const w = world();
+      commit(w.work, { 'README.md': '# scratch\n' }, 'start');
+      const refused = commit(
+        w.work,
+        {
+          'notes/pasted.txt': `Pasted from the clearinghouse on Monday:\n${OTHER_SENDER}`,
+          'docs/remit.md': `# A remittance\n\nAs received:\n\n\`\`\`\n${OTHER_SENDER}\n\`\`\`\n`,
+        },
+        'pasted',
+      );
+      const pushed = push(w.work, environment(stubGitleaks().binary), 'HEAD:refs/heads/main');
+      expect(pushed.status).not.toBe(0);
+      expect(pushed.stderr).toContain(`pre-push: fixture check: notes/pasted.txt: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${refused.slice(0, 12)})`);
+      expect(pushed.stderr).toContain(`pre-push: fixture check: docs/remit.md: line 6 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${refused.slice(0, 12)})`);
+      expect(pushed.stderr).not.toContain('OTHERSENDER');
+      expect(remoteRef(w, 'refs/heads/main')).toBeNull();
+      // Rewritten: prose that names the segment, and the synthetic interchange after a line of text, pass.
+      git(w.work, 'reset', '-q', '--hard', 'HEAD~1');
+      const clean = commit(w.work, { 'docs/x12.md': 'ISA*00 opens an interchange; ISA06 is its sender.\n', 'notes/example.txt': `An example:\n${SYNTHETIC}` }, 'prose');
+      const allowed = push(w.work, environment(REAL_GITLEAKS ?? stubGitleaks().binary), 'HEAD:refs/heads/main');
+      expect(allowed.status, allowed.stderr).toBe(0);
+      expect(allowed.stderr).toContain('pre-push: 2 commits checked: 1 file(s) read by the fixture guard, 3 text file(s) searched for an X12 header');
+      expect(remoteRef(w, 'refs/heads/main')).toBe(clean);
     },
     PUSH_TIMEOUT,
   );
@@ -375,7 +405,7 @@ describe('the pre-push hook, run by git push', () => {
   );
 
   it(
-    'runs, through the launcher pnpm hooks:install puts in the clone, the hook of each working tree, and refuses a branch that predates it',
+    'runs, through the launcher pnpm hooks:install puts in the clone, the hook of each working tree, refuses a working tree without it, and checks such a branch pushed from one with it',
     () => {
       const w = world();
       git(w.work, 'config', '--unset', 'core.hooksPath');
@@ -408,8 +438,21 @@ describe('the pre-push hook, run by git push', () => {
       commit(old, { 'old/remit.835': OTHER_SENDER }, 'foreign interchange on an old branch');
       const predates = push(old, environment(stubGitleaks().binary), 'HEAD:refs/heads/old');
       expect(predates.status).not.toBe(0);
-      expect(predates.stderr).toContain(`pre-push: ${old} has no .githooks/pre-push: this branch predates the pre-push hook, so this push is refused.`);
+      expect(predates.stderr).toContain(`pre-push: ${old} has no .githooks/pre-push, so this push is refused: the branch checked out there was cut before the pre-push hook, or from main`);
+      expect(predates.stderr).toContain('Push it from a working tree of this clone that has the hook');
+      expect(predates.stderr).not.toContain('Merge claude/build-platform into it');
       expect(remoteRef(w, 'refs/heads/old')).toBeNull();
+      // Such a branch (a pull request into main is cut from main, which has no hook) is pushed from a working tree that
+      // has the hook: the hook runs there over the branch's commits, and refuses or sends them.
+      const fromHooked = push(w.work, environment(stubGitleaks().binary), 'old:refs/heads/old');
+      expect(fromHooked.status).not.toBe(0);
+      expect(fromHooked.stderr).toContain('old/remit.835: ISA06 is not SYNTHSENDER');
+      git(old, 'reset', '-q', '--hard', 'HEAD~1');
+      const oldClean = commit(old, { 'old.txt': 'old\n' }, 'clean on the old branch');
+      const sent = push(w.work, environment(stubGitleaks().binary), 'old:refs/heads/old');
+      expect(sent.status, sent.stderr).toBe(0);
+      expect(sent.stderr).toContain('pre-push: 1 commit checked');
+      expect(remoteRef(w, 'refs/heads/old')).toBe(oldClean);
     },
     PUSH_TIMEOUT,
   );
@@ -495,7 +538,7 @@ describe('the pre-push hook, run by git push', () => {
   );
 
   it(
-    'lets a deletion and a push of commits the remote holds through without gitleaks, since they send nothing new',
+    'lets a deletion, a push of commits the remote holds and a push git refuses itself through without gitleaks, since they send nothing new',
     () => {
       const w = world();
       const head = commit(w.work, { 'README.md': '# scratch\n' }, 'start');
@@ -510,6 +553,18 @@ describe('the pre-push hook, run by git push', () => {
       expect(deleted.stderr).toContain('pre-push: the push only deletes refs; nothing to check.');
       expect(remoteRef(w, 'refs/heads/spare')).toBeNull();
       expect(remoteRef(w, 'refs/heads/copy')).toBe(head);
+      // A push of a ref already up to date, and a non-fast-forward git refuses itself: git runs the hook with no ref.
+      const upToDate = push(w.work, bare, 'HEAD:refs/heads/main');
+      expect(upToDate.status, upToDate.stderr).toBe(0);
+      expect(upToDate.stderr).toContain('pre-push: git hands the hook no ref to update');
+      git(w.work, 'checkout', '-q', '--orphan', 'elsewhere');
+      commit(w.work, { 'other.txt': 'other\n' }, 'unrelated');
+      const rejected = push(w.work, bare, 'HEAD:refs/heads/main');
+      expect(rejected.status).not.toBe(0);
+      expect(rejected.stderr).toContain('pre-push: git hands the hook no ref to update (it rejected each one itself, such as a non-fast-forward, or each is up to date), so this push sends nothing; nothing to check.');
+      expect(rejected.stderr).not.toContain('only deletes refs');
+      expect(rejected.stderr).toContain('rejected');
+      expect(remoteRef(w, 'refs/heads/main')).toBe(head);
     },
     PUSH_TIMEOUT,
   );

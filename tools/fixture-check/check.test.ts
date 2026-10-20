@@ -141,6 +141,27 @@ describe('the fixture check on a scratch repository', () => {
     ]);
   });
 
+  it('finds an interchange header anywhere in any text file, outside fixtures/ too, by the edit hook\'s rule, and lets prose through', () => {
+    const synthetic = render835(minimalFile()).text;
+    const root = repository({
+      'notes/pasted.txt': `Pasted from the clearinghouse on Monday:\n${OTHER_SENDER}`,
+      'docs/remit.md': `# A remittance\n\nAs received:\n\n\`\`\`\n${OTHER_SENDER}\n\`\`\`\n`,
+      'apps/web/src/sample.ts': `export const header = 'x'; export const sample = '${OTHER_SENDER.replaceAll('*', '|')}';\n`,
+      'docs/x12.md': 'ISA*00 opens an interchange; ISA06 is its sender.\nThe ISA segment is 106 characters long.\n',
+      'docs/example.md': `An example:\n\n\`\`\`\n${synthetic}\n\`\`\`\n`,
+      'docs/image.png': Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]), Buffer.from(OTHER_SENDER)]),
+    });
+    const result = checkFixtures(root);
+    expect(result.problems).toEqual([
+      { file: 'apps/web/src/sample.ts', message: 'apps/web/src/sample.ts: line 1 holds an X12 interchange header whose ISA06 is not SYNTHSENDER' },
+      { file: 'docs/remit.md', message: 'docs/remit.md: line 6 holds an X12 interchange header whose ISA06 is not SYNTHSENDER' },
+      { file: 'notes/pasted.txt', message: 'notes/pasted.txt: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER' },
+    ]);
+    // Only docs/x12.md, which starts with ISA, is a file the guard reads; the header search reads every text file but the image.
+    expect(result.checked).toBe(1);
+    expect(result.searched).toBe(5);
+  });
+
   it('lets a pinned table through only at its path with its exact bytes', () => {
     const table = PINNED_TABLES[0];
     if (table === undefined) {
@@ -159,7 +180,7 @@ describe('the fixture check on a scratch repository', () => {
     rmSync(path.join(root, 'fixtures/gone.csv'));
     symlinkSync(path.join(root, 'ignored/unmarked.csv'), path.join(root, 'fixtures/link.csv'));
     expect(committableFiles(root)).toEqual(['.gitignore', 'fixtures/gone.csv', 'fixtures/link.csv', 'fixtures/tracked.csv']);
-    expect(checkFixtures(root)).toEqual({ checked: 1, problems: [] });
+    expect(checkFixtures(root)).toEqual({ checked: 1, searched: 2, problems: [] });
   });
 
   it('reads a file by its name or by its first bytes', () => {

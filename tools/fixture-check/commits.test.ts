@@ -77,6 +77,35 @@ describe('the fixture check over commits', () => {
     expect(result.problems[0]?.message).toBe(`b.835: ISA06 is not SYNTHSENDER (in commit ${pushed.slice(0, 12)})`);
   });
 
+  it('finds an interchange header anywhere in a text file a commit writes, in any directory, and lets prose through', () => {
+    const root = repository();
+    commit(root, { 'README.md': '# scratch\n' }, 'start');
+    const pushed = commit(
+      root,
+      {
+        'notes/pasted.txt': `Pasted from the clearinghouse on Monday:\n${OTHER_SENDER}`,
+        'docs/remit.md': `# A remittance\n\nSee the file below.\n\n\`\`\`\n${OTHER_SENDER}\n\`\`\`\n`,
+        'packages/edi835/src/sample.ts': `export const lines = 1;\nexport const sample = 'x ${OTHER_SENDER.replaceAll('*', '|')}';\n`,
+        'docs/x12.md': 'ISA*00 opens an interchange; ISA06 is its sender.\n',
+        'docs/example.md': `An example:\n${SYNTHETIC}`,
+      },
+      'pasted',
+    );
+    // A later commit that changes a clean file into one with a header is read too.
+    const changed = commit(root, { 'docs/x12.md': `The ISA segment opens an interchange:\n${OTHER_SENDER}` }, 'changed');
+    const result = checkCommits(root, [changed, pushed]);
+    expect(result.problems.map((problem) => problem.message).sort()).toEqual([
+      `docs/remit.md: line 6 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${pushed.slice(0, 12)})`,
+      `docs/x12.md: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${changed.slice(0, 12)})`,
+      `notes/pasted.txt: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${pushed.slice(0, 12)})`,
+      `packages/edi835/src/sample.ts: line 2 holds an X12 interchange header whose ISA06 is not SYNTHSENDER (in commit ${pushed.slice(0, 12)})`,
+    ]);
+    // Only docs/x12.md as first written (it starts with ISA) is a file the guard reads; the header search reads every text file.
+    expect(result.checked).toBe(1);
+    expect(result.searched).toBe(6);
+    expect(checkCommits(root, [pushed]).problems.map((problem) => problem.file)).not.toContain('docs/x12.md');
+  });
+
   it('reads a commit no branch holds (git commit-tree), a root commit included', () => {
     const root = repository();
     commit(root, { 'README.md': '# scratch\n' }, 'start');
