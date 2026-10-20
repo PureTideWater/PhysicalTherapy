@@ -513,6 +513,8 @@ test('a specialist approves the split; a file with patient information is refuse
       const row = console_.getByRole('row').filter({ hasText: organization });
       await row.getByLabel('Why declined').selectOption('not_now');
       await row.getByRole('button', { name: 'Decline' }).click();
+      // The action redirects to the same list, of new requests, so the declined row leaving it says the action is done.
+      await expect(row).toHaveCount(0);
       await expect(console_).toHaveURL(/\/console\/prospects$/);
       const declined = await withDatabase(async (client) => (await client.query<Record<string, unknown>>(query, [organization])).rows[0]);
       expect(declined).toMatchObject({ status: 'declined', declined_reason: 'not_now' });
