@@ -14,6 +14,7 @@ import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/
 import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../../../../../lib/cases/timeline';
 import { loadPage } from '../../../../../../lib/http/next';
 import { PRICING_CAUSE_TEXT } from '../../../../../../lib/packets/pricing';
+import { SENT_WITHOUT_SIGN_OFF, STALE_EXPORT_SUBMISSION, sentWithoutSignOffLine } from '../../../../../../lib/packets/unattested';
 import { DENIAL_CATEGORIES, PERSON_RESPONSE_KINDS, submissionsPage } from '../../../../../../lib/routes/submissions';
 import { logSubmissionFormAction, recordResponseFormAction } from './actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -44,7 +45,10 @@ const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', an
  * forms that log them. The product never submits; recording a response moves no money and no stage.
  * A submission of a version whose pricing is no longer current is logged, never refused (it already happened
  * outside the product), and flagged with its cause and the figures sent beside the pricing in effect now (audit
- * item #4); the form says so before it is logged.
+ * item #4); the form says so before it is logged. An export whose pricing went stale after it was made and before its
+ * attestation is never attested (the founder's ruling of 2026-10-20; docs/adr/0061): the form says so, and if it
+ * already went to the payer the person logs it, confirming it went without sign-off; it is recorded unattested with
+ * its reason, flagged with the cause, and the log shows it plainly, so reconciliation tracks the payer's answer.
  */
 export default async function SubmissionsPage(props: Props) {
   const page = await loadPage(submissionsPage, props);
@@ -69,13 +73,15 @@ export default async function SubmissionsPage(props: Props) {
         </p>
       </div>
       {notice === null ? null : (
-        <Alert data-notice={notice} variant={notice === 'logged_flagged' ? 'destructive' : undefined}>
+        <Alert data-notice={notice} variant={notice === 'logged_flagged' || notice === 'logged_unattested' ? 'destructive' : undefined}>
           <AlertDescription>
             {notice === 'logged'
               ? 'The submission is logged with the export’s SHA-256.'
               : notice === 'logged_flagged'
                 ? 'The submission is logged with the export’s SHA-256 and flagged: the version it sent is no longer on the pricing in effect. The submission log below shows why, with the figures sent and the pricing now.'
-                : 'The payer’s response is recorded.'}
+                : notice === 'logged_unattested'
+                  ? STALE_EXPORT_SUBMISSION.logged
+                  : 'The payer’s response is recorded.'}
           </AlertDescription>
         </Alert>
       )}
@@ -116,24 +122,37 @@ export default async function SubmissionsPage(props: Props) {
                     sent it yet, do not: write the stale line off on the case page and write, approve and export the packet again.
                   </AlertDescription>
                 </Alert>
+              ) : submittable.unattestedReason !== null ? (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status} data-attestation="never" data-unattested-reason={submittable.unattestedReason}>
+                  <AlertTitle>{STALE_EXPORT_SUBMISSION.title}</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-2">
+                    <span>{STALE_EXPORT_SUBMISSION.why(submittable.pricing.status)}</span>
+                    <span>{STALE_EXPORT_SUBMISSION.notSent}</span>
+                    <span>{STALE_EXPORT_SUBMISSION.sent}</span>
+                  </AlertDescription>
+                </Alert>
               ) : (
                 <Alert variant="destructive" data-pricing-check={submittable.pricing.status} data-attestation="refused">
                   <AlertTitle>This export will not be attested: its pricing is no longer current</AlertTitle>
                   <AlertDescription>
-                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. The reimbursement reviewer cannot attest an export whose pricing is no longer current, and a submission is logged only of an
-                    attested export, so this one is never logged. Do not send it: write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet
-                    again. If it already went to the payer, tell support: a submission of an export that was never attested cannot be logged yet.
+                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. The reimbursement reviewer cannot attest an export whose pricing is no longer current. Nothing records that this
+                    export’s pricing was current when it was made (it was made before the export’s checks were recorded), so it is not logged as sent without sign-off either. Do not send it:
+                    write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet again. If it already went to the payer, tell support.
                   </AlertDescription>
                 </Alert>
               )}
-              {submittable.attestedAt === null ? (
+              {submittable.attestedAt === null && submittable.unattestedReason === null ? (
                 submittable.pricing.status === 'current' ? (
                   <p className="text-sm" data-attestation="waiting">
                     Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
                   </p>
                 ) : null
               ) : (
-                <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
+                <ActionForm
+                  action={logSubmissionFormAction}
+                  submit={submittable.attestedAt === null ? STALE_EXPORT_SUBMISSION.submit : 'Log the submission'}
+                  className="flex max-w-xl flex-col gap-3"
+                >
                   <FormKeys />
                   <input type="hidden" name="practiceId" value={practiceId} />
                   <input type="hidden" name="caseId" value={item.id} />
@@ -162,6 +181,12 @@ export default async function SubmissionsPage(props: Props) {
                     <Label htmlFor="follow-up-on">Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
                     <Input id="follow-up-on" name="followUpOn" type="date" />
                   </div>
+                  {submittable.attestedAt === null ? (
+                    <label className="flex items-start gap-2 text-sm" data-confirm="sent-without-sign-off">
+                      <input type="checkbox" name="sentWithoutSignOff" required className="mt-1" />
+                      <span>{STALE_EXPORT_SUBMISSION.confirm}</span>
+                    </label>
+                  ) : null}
                 </ActionForm>
               )}
             </CardContent>
@@ -272,6 +297,12 @@ export default async function SubmissionsPage(props: Props) {
                   <p data-export-hash={submission.exportSha256}>
                     Export SHA-256: PDF <Hash value={submission.exportSha256} label="Submitted PDF SHA-256" />; CSV <Hash value={submission.exportCsvSha256} label="Submitted CSV SHA-256" />
                   </p>
+                  {submission.sent.kind === 'attested' ? null : (
+                    <p className="flex flex-wrap items-center gap-2 pt-1" data-submission-sent="unattested" data-unattested-reason={submission.sent.reason}>
+                      <StatusChip tone="danger">{SENT_WITHOUT_SIGN_OFF}</StatusChip>
+                      <span>{sentWithoutSignOffLine(submission.sent.reason)}</span>
+                    </p>
+                  )}
                   {submission.pricingCheck === null || submission.pricingCheck === 'current' ? null : (
                     <div className="flex flex-col gap-2 pt-1" data-submission-pricing={submission.pricingCheck}>
                       <p className="flex flex-wrap items-center gap-2">

@@ -1,7 +1,17 @@
 import { type KeyProvider, PRICING_CHECK_RESULTS, type PracticeScope, type PricingCheckResult, type ScopeClient } from '@tp/db/runtime';
 import { type Cents, centsToString } from '@tp/money';
 import { FOLLOW_UP_DAYS, type PacketContent, type PayerResponseKind, type SubmissionChannel, addDays } from '@tp/packets';
-import { type LogSubmissionInput, type RecordResponseInput, logSubmission, recordPayerResponse, submissionLog } from '@tp/worker/packets';
+import {
+  type LogSubmissionInput,
+  type RecordResponseInput,
+  type SubmissionSent,
+  type SubmissionUnattestedReason,
+  logSubmission,
+  packetVersionUnattestedReason,
+  recordPayerResponse,
+  submissionLog,
+  submissionSentOf,
+} from '@tp/worker/packets';
 
 import { peopleEmails } from '../cases/people';
 import { type PricingNowView, pricingNow } from './pricing';
@@ -21,6 +31,12 @@ import { type FollowUpState, followUpState } from './view';
  * something that already happened outside the product, so it is logged and the database flags it
  * (submission.pricing_check, read here with its own query), and the page shows the cause with the figures sent and
  * the pricing in effect now.
+ *
+ * A submission sends an attested export, with the one exception the founder ruled on 2026-10-20 (docs/adr/0061): an
+ * export whose pricing went stale after it was made and before its attestation is never attested, and its submission
+ * is logged sent without sign-off, recorded unattested with its reason (submission.unattested_reason, the database's),
+ * so reconciliation tracks the payer's answer. The page offers that log only when the database says the export is one
+ * (packet_version_unattested_reason()), with the person's confirmation that it went to the payer that way.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -60,6 +76,8 @@ export interface SubmissionView {
   readonly pricingCheck: PricingCheckResult | null;
   /** For a submission flagged so, the figures it sent and the pricing in effect now; null otherwise. */
   readonly pricing: PricingNowView | null;
+  /** An attested export, or one sent without sign-off with its reason, as the database recorded it (submission.unattested_reason). */
+  readonly sent: SubmissionSent;
 }
 
 const PRICING_RESULTS: ReadonlySet<string> = new Set(PRICING_CHECK_RESULTS);
@@ -118,6 +136,7 @@ export async function submissionsOf(scope: Scope, keys: KeyProvider, input: { re
     })),
     pricingCheck: checks.get(entry.submissionId)?.check ?? null,
     pricing: pricing.get(entry.submissionId) ?? null,
+    sent: entry.sent,
   }));
 }
 
@@ -134,6 +153,12 @@ export interface SubmittableVersion {
    * that already happened is logged either way (the database flags it); the form says so before it is logged.
    */
   readonly pricing: PricingNowView;
+  /**
+   * Why its export may be logged without the attestation: 'pricing_stale_after_export' when the export was made, not
+   * attested, and its pricing went stale since, so it is never attested (packet_version_unattested_reason()); null when
+   * only an attested export is logged (attested, or still current and waiting for the reviewer).
+   */
+  readonly unattestedReason: SubmissionUnattestedReason | null;
 }
 
 /**
@@ -169,14 +194,31 @@ export async function submittableVersion(scope: Scope, input: { readonly practic
         exportCsvSha256: row.export_csv_sha256,
         attestedAt: row.attested_at?.toISOString() ?? null,
         pricing: await pricingNow(scope, { practiceId: input.practiceId, content: row.content, requestId: input.requestId }),
+        unattestedReason: row.attested_at === null ? await packetVersionUnattestedReason(scope.client, { practiceId: input.practiceId, versionId: row.id }) : null,
       };
 }
 
 /** The pricing check the database recorded on a submission when it was logged (null for one it cannot see or logged before the check). */
 export async function loggedPricingCheck(scope: Scope, input: { readonly practiceId: string; readonly submissionId: string }): Promise<PricingCheckResult | null> {
-  const { rows } = await scope.client.query<{ pricing_check: string | null }>('SELECT pricing_check FROM submission WHERE id = $1 AND practice_id = $2', [input.submissionId, input.practiceId]);
-  const value = rows[0]?.pricing_check ?? null;
-  return value === null ? null : PRICING_RESULTS.has(value) ? (value as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT';
+  return (await loggedSubmission(scope, input))?.check ?? null;
+}
+
+/**
+ * What the database recorded on a submission as it was logged: its pricing check (null for one logged before the check)
+ * and whether it sent an attested export or one sent without sign-off, with its reason. Undefined for one the caller
+ * cannot see.
+ */
+export async function loggedSubmission(scope: Scope, input: { readonly practiceId: string; readonly submissionId: string }): Promise<{ readonly check: PricingCheckResult | null; readonly sent: SubmissionSent } | undefined> {
+  const { rows } = await scope.client.query<{ pricing_check: string | null; unattested_reason: string | null }>('SELECT pricing_check, unattested_reason FROM submission WHERE id = $1 AND practice_id = $2', [
+    input.submissionId,
+    input.practiceId,
+  ]);
+  const row = rows[0];
+  if (row === undefined) {
+    return undefined;
+  }
+  const value = row.pricing_check;
+  return { check: value === null ? null : PRICING_RESULTS.has(value) ? (value as PricingCheckResult) : 'PRICING_NOT_IN_EFFECT', sent: submissionSentOf(row.unattested_reason) };
 }
 
 export interface ResponseDocument {

@@ -341,6 +341,30 @@ recomputed: "Not priced again yet" when that is the same line or none (as after 
 re-run), "No longer priced" with the unpriced reason's words when the new line is unpriced, and no total when a line
 has no figure now. Cents are decimal integer text.
 
+*A submission sent without sign-off (the founder's ruling of 2026-10-20, Owner rulings).* When a version's pricing goes
+stale after its export and before its attestation, the attestation stays refused and the packet is never attested;
+a submission of that export can still be logged, recorded truthfully as unattested with its reason, so reconciliation
+tracks the payer's answer. Only that reason allows an unattested submission. `packet_version_unattested_reason()` is
+the one rule (an export the guard made, so its pricing was current then, not attested, whose lines the caller sees,
+whose pricing is no longer current), and `submission_pricing_check` writes `submission.unattested_reason`
+(`pricing_stale_after_export`) beside `pricing_check`, which still records the cause, under the pricing lock;
+`submission_needs_attested_export` refuses every other unattested export and records `submission_logged_unattested`
+in the submitter's name, once (`audit_event_submission_unattested` refuses any other); the attestation then refuses
+the version for good. `tp_app` writes neither column. `logSubmission()` asks `packetVersionUnattestedReason()` before
+the database decides again, and the log route requires the person's confirmation (`sentWithoutSignOff`) that the
+export went to the payer without the reviewer's sign-off, refusing without it. The founder's words are
+`SUBMISSION_UNATTESTED_WORDS` ("sent without sign-off: pricing went stale after export"), said everywhere the
+submission shows (`apps/web/src/lib/packets/unattested.ts`): the submissions page says the export is never attested,
+not to send it if it has not gone, and how to log it if it has, with the confirmation box and "Log the submission
+sent without sign-off"; the log marks it "Sent without sign-off"; the review page explains the refusal and what to do
+instead in three steps, re-price (already done when an accepted re-run priced the lines again; otherwise a re-run
+under what is in force now, accepted), a new version on the pricing in effect (the stale lines written off, since
+refreshing a case is PR 11's) and a new export that a reviewer attests, and says once the export was logged sent
+without sign-off; Reconciliation lists every such submission with its cause and the payer's latest answer; and the
+audit report's state column and its payer approved and recovered section count them per case
+(`unattested_submissions`, present only when there is one). The attest route's refusal says the same
+(`PRICING_BLOCKED_TEXT.attestation`).
+
 *Item #5: a contract window's unit and start, and the rule the product computes.* A contract window could only mean
 "N calendar days from the payment date", so "within 180 days of the date of service" was verified with a deadline
 weeks too late. `contract_version` gains `dispute_window_unit` (`calendar_days`, `business_days`, `months`) and
@@ -418,9 +442,11 @@ who approves packets approves it; ask with Request approval", and once asked, wi
 requested; a second person who approves packets approves it here") next to Request approval, and no working Approve form;
 a blocked or waiting version shows the button disabled with its blocked text. A version is written through one form
 (`components/packets/version-form.tsx`) holding the request keys, the hidden fields, the prompt-pay select, the
-attachment checkboxes and the narrative once, with unique IDs, and submit buttons named `intent` (`save`,
-`code_draft`, and `model_draft` only when the model may draft) that one server action routes, so no choice (the
-prompt-pay interest line among them) is dropped by another button. The builder's header counts the lines its
+attachment checkboxes and the narrative once, with unique IDs, and its submit buttons: `save` and `code_draft`, named
+`intent`, which the form's one write action routes, and `model_draft` only when the model may draft, sent to the
+model's draft action by its own function `formAction` with no name (React names such a button for its action; a name
+beside it was overridden and warned of, which the verification found), so no choice (the prompt-pay interest line
+among them) is dropped by another button. The builder's header counts the lines its
 actionable figure is over (`ACTIONABLE_NOW_LINES`, the figure's own predicate). Each wide table of the builder, the
 review and the submissions pages scrolls in a named region a keyboard reaches (`ScrollTable`, axe's
 scrollable-region-focusable), and the review and the abstraction pages do not scroll sideways at 390 px (the packets
@@ -446,7 +472,8 @@ becomes `unverified`), the CHECKs hold every existing row (no version has a cite
 and `rule_release_withdrawal` take only an advisory lock), and the replaced ones keep their signatures and accept
 tp-packet/1, a version with no window citation and a report of a release not withdrawn as before. For the previous
 image, its tp-packet/1 versions are written and approved but their export is refused, its submissions of unattested
-exports are refused and those it logs are flagged by the database, its approvals and exports of a version whose
+exports are refused (its service refuses each before the database, so it logs none sent without sign-off) and those it
+logs are flagged by the database, its approvals and exports of a version whose
 pricing is not current are refused, its report job fails a report on a withdrawn release when it makes it ready, its
 export job writes no attempt events (a refusal shows as in progress, then as failed with no result after an hour), its
 export route records its requests in the person's name as before, its
@@ -480,7 +507,9 @@ migrate first (ADR 0049).
 | Read the window's unit and start out of the quote (item #5) | A guessed parse would decide a dollar-bearing date; the specialist chooses both from fixed lists against the quote, and the screen shows the computed rule beside it. |
 | Compute business-day, month or date-of-service windows now | It changes the engine's window calculation, PR 6c's freeze exception; until then such a window stays unverified and its lines wait rather than show a later date. |
 | Verify Medicare Advantage deadlines from the L2 redetermination record | Q34 asks whether that route applies at all (MA payment disputes run through each plan's own policy), so a date from it could be wrong; `ma_dispute_route_confirmed()` stays false until the specialist confirms the route. |
-| Keep "the remittance date" meaning BPR16 and define it so on the screen (item #5) | The lists would offer one date under two names, the payment date unverifiable while the remittance date verified the same BPR16; and contracts that count from the remittance advice's own date would verify with an end counted from the later payment. Naming BPR16 the payment date keeps every verified end no later than the contract's. The founder may rule otherwise (Review fixes). |
+| Keep "the remittance date" meaning BPR16 and define it so on the screen (item #5) | The lists would offer one date under two names, the payment date unverifiable while the remittance date verified the same BPR16; and contracts that count from the remittance advice's own date would verify with an end counted from the later payment. Naming BPR16 the payment date keeps every verified end no later than the contract's. The founder ruled so on 2026-10-20 (Owner rulings). |
+| Attest a stale export with a flag of its own, so its submission is logged as attested | The attestation would say a reviewer signed off files that no longer show the pricing in effect. The founder ruled on 2026-10-20 that such a packet is never attested and its submission is recorded unattested with its reason (Owner rulings). |
+| Log any unattested export the person says was sent | The attestation is the export's release (D16); one reason, decided by the database from the export's own record, admits an unattested submission, and every other still needs the attestation. |
 | Serializable isolation for the steps that read the pricing (item #4) | A serialization failure surfaces as a retry the steps do not make, and every writer would need it too; two advisory locks taken in the triggers order exactly the writes that matter and nothing else. |
 | Leave a mapping correction to the same contract current (item #4) | A correction says the mapping the line's trace names was wrong; the pricing in effect under the corrected mapping is not computed until a re-run, so the check holds the line as not current, as a correction of the contract version does. |
 | An export attempts table (item #26) | The audit log already records each request; three coded actions and one trigger give every refusal and failure a durable, PHI-free record now. The optional table is PR 8's. |
@@ -557,6 +586,15 @@ migrate first (ADR 0049).
   is requested, generated, attested or released on a withdrawn release. An acceptance, a completion, a version's
   supersession or closed window, a mapping correction or a withdrawal waits for an approval, an export, an
   attestation or a submission of the same practice in progress (a withdrawal, of any practice), and they for it.
+- A submission sent without sign-off (the founder's ruling of 2026-10-20): an export whose pricing went stale after it
+  was made and before its attestation is never attested, and if it already went to the payer it is logged unattested
+  with its reason and flagged with the cause, so its follow-up, its responses and the ledger track the payer's answer
+  as for any submission; the review, submissions and Reconciliation pages and the audit report show it as sent without
+  sign-off. A version so logged is never attested and leaves the reviewer's list of exports waiting
+  (`exportsAwaitingAttestation()`); a stale export not logged stays there, its review saying why it is never attested.
+  Every other unattested export is still refused. The tests: `packages/db/src/pricing-check.db.test.ts`,
+  `apps/worker/src/packets/unattested-submission.db.test.ts`, `apps/web/src/lib/routes/unattested-submission-routes.db.test.ts`,
+  `apps/web/src/lib/packets/unattested.test.ts` and `apps/web/e2e/unattested.spec.ts`.
 - Item #5: a window cited in business days or months, or counted from the date of service, the remittance advice's
   own date or its receipt, is approved unverified and its lines wait (CONTRACT_WINDOW_RULE_NOT_COMPUTED) until PR 6c
   computes it, with no end stated or judged for them. Most contracts word their window "of the remittance date"; such a
@@ -629,7 +667,7 @@ whose reason no longer holds; the write that said "nothing changed" on stale pri
 focusable table scrollers and the review page's width at 390 px; and the withdrawn-release banner of an attested or
 released report.
 
-Open for the founder:
+Open for the founder then, and ruled on 2026-10-20 (Owner rulings (2026-10-20)):
 
 - **A stale export already sent before its attestation.** If a release is withdrawn, a re-run accepted or a mapping
   or version corrected after the export but before the attestation, the attestation is refused for good and so is the
@@ -640,6 +678,32 @@ Open for the founder:
 - **What "the remittance date" means.** The build names BPR16 the payment date and treats the remittance date as the
   advice's own date, which nothing verifies until PR 6c; the founder may instead rule that "the remittance date" means
   BPR16, in which case the lists stop offering both and the screen says which date is counted.
+
+## Owner rulings (2026-10-20)
+
+The founder, Tyler Williams, ruled on this pull request on 2026-10-20:
+
+- **A stale export sent before its attestation is logged unattested, with its reason.** When a version's pricing goes
+  stale after its export and before its attestation, the attestation stays refused, and a submission of that export
+  can still be logged, recorded truthfully as unattested with its reason ("sent without sign-off: pricing went stale
+  after export"), so reconciliation tracks the payer's answer. The packet is never attested. The submission's
+  `pricing_check` flag still records the cause. Only that reason allows an unattested submission; every other
+  submission still requires the attestation. Built as the Decision's "A submission sent without sign-off" says, in
+  this pull request's unmerged migration (`submission.unattested_reason`, `packet_version_unattested_reason()`, the
+  audit event `submission_logged_unattested`), which the founder confirms with the domain model's new hash (CO-02).
+  This answers the first question the review fixes left open.
+- **"The remittance date" is the remittance advice's own date.** A contract window measured from the remittance date
+  runs from the remittance advice's own date (the 835's DTM*405 production date, or the date printed on a paper
+  remittance), not the payment date (BPR16, the check's issue date or the EFT's effective date). Such windows stay
+  unverified until PR 6c computes that date, so their lines wait (CONTRACT_WINDOW_RULE_NOT_COMPUTED) and no end is
+  stated or judged for them; only a window counted from the payment date verifies now. The build already said so, and
+  says so in code and copy: `contract_window_rule_computed()` and its comment in the migration, `DISPUTE_WINDOW_STARTS`
+  (`packages/db/src/schema/contracts.ts`), `DISPUTE_WINDOW_START_DEFINITION` and `COMPUTED_CONTRACT_WINDOW_RULE`
+  (`packages/contracts/src/window-rule.ts`), `@tp/triage`'s `COMPUTED_CONTRACT_WINDOW`, the abstraction screen's
+  definitions of each start and its "not verified" line, and the e2e contracts journey, which cites "within 120 days
+  of the remittance date" from the remittance date and finds it unverified. The engine's trace still labels BPR16
+  `remittance_date` (`packages/pricing`, frozen until PR 6c); the line page and the journeys' setup now call that
+  date the payment date. This answers the second question the review fixes left open; the lists keep both dates.
 
 ## Owner rulings (2026-10-18)
 

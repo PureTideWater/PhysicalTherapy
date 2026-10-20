@@ -1,5 +1,5 @@
 import { rolesPermit } from '@tp/db/runtime';
-import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH } from '@tp/worker/packets';
+import { type ExportAwaitingAttestation, NARRATIVE_MAX_LENGTH, type SubmissionUnattestedReason, packetVersionUnattestedReason } from '@tp/worker/packets';
 import { z } from 'zod';
 
 import { underPacketRules } from '../cases/refusals';
@@ -11,6 +11,7 @@ import { modelFeatures } from '../models/path';
 import { exportRefusalText } from '../packets/export-attempts';
 import { type BuilderView, approveOnce, builderView, exportFile, requestExportOnce, versionOfCase, writeVersionOnce } from '../packets/queries';
 import { PACKET_CHECKLIST, type PacketReview, attestOnce, awaitingAttestation, packetReview } from '../packets/review';
+import { sentWithoutSignOffOf } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
@@ -322,6 +323,13 @@ export interface PacketReviewPageData {
   readonly review: PacketReview;
   readonly checklist: typeof PACKET_CHECKLIST;
   readonly notice: 'attested' | null;
+  /**
+   * The submission of this export logged sent without sign-off, once there is one (its pricing went stale after the
+   * export; the founder's ruling of 2026-10-20): the version is never attested.
+   */
+  readonly sentWithoutSignOff: Awaited<ReturnType<typeof sentWithoutSignOffOf>>;
+  /** Why its export may be logged without the attestation (its pricing went stale after the export); null otherwise. */
+  readonly unattestedReason: SubmissionUnattestedReason | null;
 }
 
 /** The reviewer's review of one export: its content, deadline, files and their SHA-256, and the checklist to attest over them. */
@@ -337,6 +345,8 @@ export const packetReviewPage = practiceRoute({
     review: await packetReview(scope, services, { practiceId, caseId: params.caseId, versionId: params.versionId, viewerId: actor.userId, requestId: request.requestId }),
     checklist: PACKET_CHECKLIST,
     notice: params.notice ?? null,
+    sentWithoutSignOff: await sentWithoutSignOffOf(scope, { practiceId, versionId: params.versionId }),
+    unattestedReason: await packetVersionUnattestedReason(scope.client, { practiceId, versionId: params.versionId }),
   }),
   sample: { params: (refs) => ({ practiceId: refs.practiceId, caseId: refs.submittedCaseId, versionId: refs.exportedVersionId }) },
 });

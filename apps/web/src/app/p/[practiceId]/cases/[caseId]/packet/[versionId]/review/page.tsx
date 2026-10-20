@@ -7,11 +7,12 @@ import { FormKeys } from '../../../../../../../../components/form-keys';
 import { utc } from '../../../../../../../../components/format';
 import { CalculationTable, Citation, DeadlineChip, DeadlineSummary, Hash, LineSchedule } from '../../../../../../../../components/packets/display';
 import { PricingNowPanel } from '../../../../../../../../components/packets/pricing';
+import { StaleExportReview } from '../../../../../../../../components/packets/unattested';
 import { Money } from '../../../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../../../components/shell';
 import { loadPage } from '../../../../../../../../lib/http/next';
-import { PRICING_BLOCKED_TEXT } from '../../../../../../../../lib/packets/pricing';
 import { PACKET_ATTESTATION_TEXT } from '../../../../../../../../lib/packets/review';
+import { STALE_EXPORT_REVIEW } from '../../../../../../../../lib/packets/unattested';
 import { packetReviewPage } from '../../../../../../../../lib/routes/packets';
 import { attestPacketFormAction } from './actions';
 
@@ -29,14 +30,17 @@ type Props = { readonly params: Promise<{ practiceId: string; caseId: string; ve
  * attestation is the only record the reviewer writes; the database refuses one by anyone who drafted, wrote
  * or approved the packet, and a submission is logged only after it. An export whose pricing is no longer
  * current (audit item #4) shows its stale lines with their figures then and now, and the attest button is
- * disabled with the reason. Identifiers show as placeholders on this screen.
+ * disabled with the reason: its pricing went stale after the export, so it is never attested, and the page says what
+ * to do instead (re-price, a new version, a new export) and how the practice logs it if it already went to the payer,
+ * sent without sign-off (the founder's ruling of 2026-10-20; docs/adr/0061), or that it was logged so. Identifiers
+ * show as placeholders on this screen.
  */
 export default async function PacketReviewPage(props: Props) {
   const page = await loadPage(packetReviewPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="packet_reviews" roles={page.roles} message={page.message} nextStep="A packet's export is attested by a reimbursement reviewer under a support grant." />;
   }
-  const { practiceId, review, checklist, notice } = page.data;
+  const { practiceId, review, checklist, notice, sentWithoutSignOff, unattestedReason } = page.data;
   const path = `/p/${practiceId}/cases/${review.caseId}/packet/${review.versionId}/review`;
   const { content } = review;
   const blocked =
@@ -163,8 +167,9 @@ export default async function PacketReviewPage(props: Props) {
               </ul>
               <p className="mt-2 text-sm">{PACKET_ATTESTATION_TEXT}</p>
             </div>
-          ) : blocked === 'pricing_not_current' ? (
+          ) : blocked === 'pricing_not_current' && review.pricingNow.status !== 'current' ? (
             <div data-attestation="blocked" data-reason={blocked} className="flex flex-col gap-3">
+              <StaleExportReview cause={review.pricingNow.status} unattestedReason={unattestedReason} sent={sentWithoutSignOff} />
               <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
                 {checklist.map((item) => (
                   <li key={item.id}>{item.text}</li>
@@ -175,7 +180,7 @@ export default async function PacketReviewPage(props: Props) {
                   Attest the export
                 </Button>
                 <p id="attest-pricing" className="pt-1 text-sm text-muted-foreground">
-                  Not ready to attest: {PRICING_BLOCKED_TEXT.attestation}. Pricing now, above, lists the lines and their figures then and now.
+                  {STALE_EXPORT_REVIEW.button} Pricing now, above, lists the lines and their figures then and now.
                 </p>
               </div>
             </div>

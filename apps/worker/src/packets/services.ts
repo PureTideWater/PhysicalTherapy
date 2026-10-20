@@ -34,7 +34,7 @@ import { packetExportDownloads } from './downloads';
 import { scheduleIdentifiers } from './identifiers';
 import { type ExportReadinessReason, exportReadiness } from './readiness';
 import { PacketRefusedError, loadAssembly } from './records';
-import { type SubmissionSent, submissionSentOf } from './submission-kinds';
+import { type SubmissionSent, packetVersionUnattestedReason, submissionSentOf } from './submission-kinds';
 
 /**
  * The packet workflow the web app's server actions call (PRD 5, J9 and J10; PRD 12), each in the
@@ -563,13 +563,16 @@ export interface ExportAwaitingAttestation {
 
 /**
  * The exports waiting for a reimbursement reviewer's attestation (D16): each packet's current version,
- * exported, not attested, oldest first. The version's own content only (identifiers are placeholders in it).
+ * exported, not attested, oldest first, except one whose submission was logged sent without sign-off (its pricing
+ * went stale after the export; the founder's ruling of 2026-10-20), which is never attested. The version's own
+ * content only (identifiers are placeholders in it).
  */
 export async function exportsAwaitingAttestation(scope: PracticeScope<ScopeClient>, input: { readonly practiceId: string }): Promise<ExportAwaitingAttestation[]> {
   const { rows } = await scope.client.query<{ id: string; case_id: string; version_no: number; exported_at: Date; export_sha256: string; export_csv_sha256: string; content: PacketContent }>(
     `SELECT v.id, p.case_id, v.version_no, v.exported_at, v.export_sha256, v.export_csv_sha256, v.content
        FROM packet_version v JOIN packet p ON p.current_version_id = v.id
       WHERE v.practice_id = $1 AND v.exported_at IS NOT NULL AND v.attested_by IS NULL
+        AND NOT EXISTS (SELECT 1 FROM submission s WHERE s.packet_version_id = v.id AND s.practice_id = v.practice_id AND s.unattested_reason IS NOT NULL)
       ORDER BY v.exported_at, v.id`,
     [input.practiceId],
   );
@@ -617,7 +620,12 @@ export interface LoggedSubmission {
  * carrying the export's SHA-256 into the log (CAS-12). The database refuses a version not exported, a
  * version an edit replaced (unless it was sent before the edit; CAS-13), a date before the export or
  * after today, a dispute the payer has answered (unless a denial reopened it, then within the next
- * level's window), and anyone who does not log submissions.
+ * level's window), and anyone who does not log submissions. A submission sends an attested export, with the one
+ * exception the founder ruled on 2026-10-20 (docs/adr/0061): an export whose pricing went stale after it was made and
+ * before its attestation, which is never attested, is logged sent without sign-off for that reason
+ * (packetVersionUnattestedReason(), asked here first; the database decides again under the pricing lock, records
+ * submission.unattested_reason beside pricing_check and the audit event submission_logged_unattested, and refuses
+ * every other unattested export).
  */
 export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: LogSubmissionInput): Promise<LoggedSubmission> {
   if (!isIsoDate(input.submittedOn) || (input.followUpOn !== undefined && input.followUpOn !== null && !isIsoDate(input.followUpOn))) {
@@ -639,8 +647,10 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   if (version.export_sha256 === null || version.export_csv_sha256 === null) {
     throw new PacketRuleError('23514', 'a packet is submitted once it is exported');
   }
-  // D16: the reviewer's attestation over the export is its release, as for an audit report.
-  if (!version.attested) {
+  // D16: the reviewer's attestation over the export is its release, as for an audit report; an export whose pricing
+  // went stale after it was made, and so is never attested, is logged sent without sign-off (the founder's ruling of
+  // 2026-10-20). Any other unattested export is refused.
+  if (!version.attested && (await packetVersionUnattestedReason(scope.client, { practiceId: input.practiceId, versionId: input.versionId })) === null) {
     throw new PacketRuleError('23514', 'a packet is submitted once a reimbursement reviewer has attested its export');
   }
   // An edit clears the approval (CAS-13): a version an edit replaced was sent only if it went before the edit.

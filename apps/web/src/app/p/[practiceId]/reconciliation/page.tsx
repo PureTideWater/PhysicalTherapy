@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { ActionForm } from '../../../../components/action-form';
 import { roleNames, utc } from '../../../../components/format';
 import { EVIDENCE_WORDS, KindBadge, LedgerTotals, entryStage, exportStatusText, levelWords, outcomeWords } from '../../../../components/reconciliation/display';
+import { UnattestedSubmissions } from '../../../../components/packets/unattested';
 import { Money, Pager } from '../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../components/shell';
 import { stageLabel } from '../../../../components/triage/display';
@@ -197,7 +198,8 @@ function LinkageItem({ line, practiceId, canReconcile, phi }: { readonly line: L
  * totals by stage, the uploads of posting and EFT exports and what became of each, what matches nothing
  * with its evidence and candidates side by side (counted in no total), each case line's linkage from its
  * remittance to its posting and deposit with its entries, and the ledger's entries. With ?case=, one
- * case's ledger.
+ * case's ledger. The submissions sent without sign-off (their pricing went stale after the export, so their export is
+ * never attested; the founder's ruling of 2026-10-20) are listed plainly with the payer's latest answer.
  */
 export default async function ReconciliationPage(props: Props) {
   const page = await loadPage(reconciliationPage, props);
@@ -234,6 +236,7 @@ export default async function ReconciliationPage(props: Props) {
         title={caseId === null ? 'Ledger totals' : 'This case’s ledger'}
         description="Each figure is its own stage, summed from the ledger’s entries; no figure adds two stages together."
       />
+      <UnattestedSubmissions practiceId={practiceId} unattested={data.unattested} />
       {caseId === null ? (
         <>
           <Card role="region" aria-label="Posting template">

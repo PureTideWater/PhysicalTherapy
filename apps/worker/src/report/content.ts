@@ -104,6 +104,12 @@ export interface ReportCase {
   readonly actionable_now_cents?: string;
   readonly payer_approved_cents?: string;
   readonly recovered_cents?: string;
+  /**
+   * How many of the case's submissions were sent without sign-off when the report was generated (the founder's ruling of
+   * 2026-10-20; docs/adr/0061): their export's pricing went stale after it was made, so it was never attested, and the
+   * payer's answer is tracked as for any submission. Present only when there is one.
+   */
+  readonly unattested_submissions?: number;
 }
 
 export interface ReportAnomaly {
@@ -321,6 +327,7 @@ interface CaseRow {
   readonly lines: string;
   readonly open_lines: string;
   readonly written_off_cents: string;
+  readonly unattested_submissions: number;
 }
 
 interface AnomalyRow {
@@ -403,7 +410,8 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
             c.materiality_cents::text, c.pursuit_cost_cents::text, u.email AS owner,
             count(cl.id) FILTER (WHERE p.pricing_run_id = $1)::text AS lines,
             count(cl.id) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NULL)::text AS open_lines,
-            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents
+            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents,
+            (SELECT count(*) FROM submission s WHERE s.case_id = c.id AND s.practice_id = c.practice_id AND s.unattested_reason IS NOT NULL)::int AS unattested_submissions
        FROM "case" c
        JOIN payer py ON py.id = c.payer_id
        JOIN plan pl ON pl.id = c.plan_id
@@ -650,6 +658,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       actionable_now_cents: text(stillCents),
       payer_approved_cents: text(totals.payerApprovedCents),
       recovered_cents: text(totals.recoveredCents),
+      ...(row.unattested_submissions > 0 ? { unattested_submissions: row.unattested_submissions } : {}),
     };
   });
   const openCases = cases.filter((item) => item.state === 'open');

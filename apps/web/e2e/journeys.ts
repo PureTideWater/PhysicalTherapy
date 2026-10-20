@@ -215,7 +215,7 @@ export interface ScheduleOptions {
   readonly managerKey: string;
   /** The plan the 835 names (REF CE), mapped to the contract from 2026-01-01. */
   readonly planKey: string;
-  /** Days from the remittance date the payer's dispute window runs. */
+  /** Calendar days from the payment date (BPR16) the payer's dispute window runs, as its quote says ("of the payment date"). */
   readonly disputeWindowDays?: number;
 }
 

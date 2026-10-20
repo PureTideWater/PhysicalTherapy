@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { acceptRun, createRerun } from '../price/rerun';
 import { type Practice, RELEASE, errorOf } from '../price/test-support/pricing-world';
-import { approvePacketVersion, submissionLog, writePacketVersion } from './services';
+import { approvePacketVersion, logSubmission, submissionLog, writePacketVersion } from './services';
 import { SUBMISSION_LOGGED_UNATTESTED, SUBMISSION_UNATTESTED_WORDS, packetVersionUnattestedReason, submissionSentOf } from './submission-kinds';
 import { FIXED_97110, PacketWorld } from './test-support/packet-world';
 
@@ -227,6 +227,29 @@ describe('an export made before the guard existed, whose pricing is stale now', 
     const refused = await errorOf(submit(setup));
     expect(refused).toMatchObject({ code: '23514', message: 'a packet is submitted once a reimbursement reviewer has attested its export' });
   }, 60_000);
+});
+
+describe('the submission service', () => {
+  let stale: Exported;
+  let current: Exported;
+  beforeAll(async () => {
+    stale = await exported('unattested-service-stale', false);
+    await staleAfterExport(stale);
+    current = await exported('unattested-service-current', false);
+  }, 360_000);
+
+  const log = (setup: Exported) =>
+    w.as(setup.practice, setup.practice.manager, (scope) =>
+      logSubmission(scope, w.keys, { practiceId: setup.practice.practiceId, versionId: setup.versionId, submittedOn: new Date().toISOString().slice(0, 10), channel: 'fax', reference: null, requestId: 'test-service' }),
+    );
+
+  it('logs an export whose pricing went stale after it was made as sent without sign-off, and refuses one still current before the database', async () => {
+    const logged = await log(stale);
+    expect(logged.sent).toEqual({ kind: 'unattested', reason: REASON });
+    expect(await unattestedEvents(logged.submissionId)).toHaveLength(1);
+    const refused = await errorOf(log(current));
+    expect(refused).toMatchObject({ name: 'PacketRuleError', message: 'a packet is submitted once a reimbursement reviewer has attested its export' });
+  }, 120_000);
 });
 
 describe('a submission kind read from the database', () => {

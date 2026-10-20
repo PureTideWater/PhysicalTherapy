@@ -384,7 +384,7 @@ interface PricedLineRow {
  * The line as a complete run priced it: the run asked for, or else the eligible run (a first run or an
  * accepted re-run) that priced it and took effect last. Undefined when no such run (or not that run)
  * priced it. The trace is read only for roles that read PHI (it carries the line's service and
- * remittance dates).
+ * payment dates: BPR16, which the engine's trace labels remittance_date).
  */
 export async function pricedLineOf(scope: Scope, practiceId: string, serviceLineId: string, runId: string | null, withTrace: boolean, requestId: string): Promise<PricedLineView | undefined> {
   const [row] = await readWithAudit(

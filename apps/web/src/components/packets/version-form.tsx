@@ -56,8 +56,11 @@ function Submit({
   readonly clicked: boolean;
   readonly onClick: () => void;
 }) {
+  // A button with a function formAction carries no name or value: React names the button for its action itself, and
+  // the model's draft action reads no intent. The others steer the form's write action by their intent.
+  const steer = formAction === undefined ? { name: 'intent', value: submit.intent } : {};
   return (
-    <Button type="submit" name="intent" value={submit.intent} variant={submit.variant ?? 'default'} disabled={pending} onClick={onClick} formAction={formAction}>
+    <Button type="submit" {...steer} variant={submit.variant ?? 'default'} disabled={pending} onClick={onClick} formAction={formAction}>
       {pending && clicked ? 'Working…' : submit.label}
     </Button>
   );

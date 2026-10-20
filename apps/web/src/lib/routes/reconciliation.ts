@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { practiceRoute } from '../http/invoke';
 import { pageParam, type ListPage } from '../http/paging';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { type UnattestedSubmissionView, submissionsSentWithoutSignOff } from '../packets/unattested';
 import { type EntryView, type ExportView, type LinkageLine, type TotalsView, type UnmatchedView, matchState, practiceExports, reconciliation, standingMatch, templateState } from '../reconciliation/queries';
 import { templateForm, templateOf } from '../reconciliation/template';
 import type { Services } from '../server/services';
@@ -28,6 +29,11 @@ import { NO_BAA, baaOnFile } from './uploads';
  * specialist's own ledger page (./specialist.ts, docs/adr/0047). Uploading the exports is the
  * Uploads screen's own (file.upload), embedded here; the worker's intake scans and sniffs each one and
  * queues the reconcile. The template is previewed on a sample in the browser, which never leaves it.
+ *
+ * The submissions sent without sign-off (the founder's ruling of 2026-10-20; docs/adr/0061: an export whose pricing
+ * went stale after it was made and before its attestation, never attested, logged unattested with its reason) are
+ * listed plainly, the practice's or the case's, each with the payer's latest answer: reconciliation tracks that answer
+ * as for any submission.
  */
 
 type Scope = PracticeScope<ScopeClient>;
@@ -47,6 +53,8 @@ export interface ReconciliationPageData {
   readonly entries: ListPage<EntryView>;
   readonly unmatched: UnmatchedView;
   readonly exports: ListPage<ExportView>;
+  /** The submissions sent without sign-off (its pricing went stale after the export), newest first, with how many there are. */
+  readonly unattested: { readonly total: number; readonly items: readonly UnattestedSubmissionView[] };
   readonly template: { readonly system: string | null; readonly waiting: number };
   readonly canReconcile: boolean;
   /** Whether the reader sees PHI columns (dates of service, codes, the people's reasons). */
@@ -94,6 +102,7 @@ export const reconciliationPage = practiceRoute({
       caseId,
       ...data,
       exports: await practiceExports(scope, practiceId, params.exports, request.requestId),
+      unattested: await submissionsSentWithoutSignOff(scope, { practiceId, caseId }),
       template: { system: template.settings.postingTemplate?.system ?? null, waiting: template.waiting },
       canReconcile: rolesPermit(access.roles, 'posting.reconcile'),
       phi,

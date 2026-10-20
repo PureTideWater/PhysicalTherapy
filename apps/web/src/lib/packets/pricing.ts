@@ -56,8 +56,9 @@ const REMEDY =
 export const PRICING_BLOCKED_TEXT = {
   approval: `This version cannot be approved: a line’s pricing is no longer current (see Pricing now), and a packet is approved only on the pricing in effect. ${REMEDY}.`,
   export: `This version cannot be exported: a line’s pricing is no longer current (see Pricing now), and a packet is exported only on the pricing in effect. ${REMEDY}.`,
+  // The founder's ruling of 2026-10-20 (docs/adr/0061): never attested; re-price, a new version, a new export; logged sent without sign-off if it already went.
   attestation:
-    'this export’s pricing is no longer current, so its files no longer show the pricing in effect and it is not attested; the practice writes the stale line off on the case page, then writes, approves and exports the packet again',
+    'this export’s pricing went stale after the export, so its files no longer show the pricing in effect and it is never attested; the stale lines are re-priced, the practice writes them off on the case page and writes, approves and exports a new version on the pricing in effect, and that export is attested; if this export already went to the payer, its submissions page says how the practice logs it (sent without sign-off)',
   write:
     'a line of the case is on pricing no longer current, and a packet is written only on the pricing in effect; nothing refreshes the case automatically yet: write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet again without it',
 } as const;

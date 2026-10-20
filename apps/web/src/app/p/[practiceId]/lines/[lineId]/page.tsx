@@ -135,7 +135,7 @@ export default async function LinePage(props: {
         <section aria-label="Trace" className="flex flex-col gap-2">
           <h2 className="text-xl font-bold tracking-display">Trace</h2>
           {!canReadPhi ? (
-            <p className="text-sm text-muted-foreground">The trace records the line’s service and remittance dates, so it shows to the roles that read PHI.</p>
+            <p className="text-sm text-muted-foreground">The trace records the line’s service and payment dates, so it shows to the roles that read PHI.</p>
           ) : (
             <ol className="flex flex-col gap-2" aria-label="Trace steps">
               {steps.map((item) => (

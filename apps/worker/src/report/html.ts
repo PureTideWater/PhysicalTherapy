@@ -2,6 +2,7 @@ import { DEFAULT_PROOF_LEVEL, type ProofLevel, type ReportReconciliation, recove
 import { formatUsd, parseCents } from '@tp/money';
 import { STAGE_LABELS, WRITE_OFF_TEXT, type WriteOffReason } from '@tp/triage';
 
+import { SUBMISSION_UNATTESTED_WORDS } from '../packets/submission-kinds';
 import { type FigureColumns, brandedDocument, figureColumns } from './brand';
 import type { AuditReportContent } from './content';
 import { escapeHtml, escapeWithFigures } from './escape';
@@ -48,6 +49,22 @@ const REASON_TEXT: Readonly<Record<string, string>> = {
   BELOW_CASE_MATERIALITY: 'Pattern below the case materiality (accumulating)',
   CASE_LINE_FROM_OTHER_RUN: 'In a case through another run’s pricing of the line (counted in that run’s report)',
 };
+
+/**
+ * A case's submissions sent without sign-off, in the founder's words (2026-10-20; docs/adr/0061), as the report's
+ * state column says them beside the case's state: "1 submission sent without sign-off: pricing went stale after
+ * export". The report and the Reports screen say it the same way.
+ */
+export function unattestedSubmissionsText(submissions: number): string {
+  const words = SUBMISSION_UNATTESTED_WORDS.pricing_stale_after_export;
+  return `${count(submissions, 'submission')} ${words}`;
+}
+
+/** A case's state in the report's words, with its submissions sent without sign-off when it has any. */
+export function caseStateText(item: { readonly state: string; readonly unattested_submissions?: number }): string {
+  const state = CASE_STATE_WORDS[item.state] ?? item.state;
+  return item.unattested_submissions === undefined || item.unattested_submissions === 0 ? state : `${state}; ${unattestedSubmissionsText(item.unattested_submissions)}`;
+}
 
 /** Why a validated line is not actionable, in words (the report and the Reports screen say it the same way). */
 export function reasonText(reason: string): string {
@@ -167,14 +184,21 @@ export function auditHtml(content: AuditReportContent, reconciliation: ReportRec
   );
 
   // Payer approved and recovered by case: the headline's two figures from the same cases' lines, the ledger's entries for them.
-  const ledgerRows = content.cases.map((item) => [item.payer, item.plan, CASE_STATE_WORDS[item.state] ?? item.state, usd(item.payer_approved_cents ?? '0'), usd(item.recovered_cents ?? '0')]);
+  const ledgerRows = content.cases.map((item) => [item.payer, item.plan, caseStateText(item), usd(item.payer_approved_cents ?? '0'), usd(item.recovered_cents ?? '0')]);
+  const unattested = content.cases.reduce((total, item) => total + (item.unattested_submissions ?? 0), 0);
   const ledgerNone = approvedNone && recoveredNone;
   sections.push(
     `<section aria-label="${escapeHtml(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}"><h2>${escapeWithFigures(`${labels.payer_approved} and ${recovered.toLowerCase()}`)}</h2><p>${escapeWithFigures(
       ledgerNone
         ? `Both come from the ledger's entries for these cases' lines: payer approved once a payer accepts a case's lines, ${recovered.toLowerCase()} only once their cash is ${level}. Neither had an entry when the report was generated.`
         : `Both come from the ledger's entries for these cases' lines this run priced: payer approved once a payer accepts them, ${recovered.toLowerCase()} only once their cash is ${level}, net of recoupments and reversals. The headline is the sum of each column.`,
-    )}</p>${table('By case', ['Payer', 'Plan', 'State', `${labels.payer_approved} (this run)`, `${recovered} (this run)`], ledgerRows, 'No pattern reaches the case materiality yet.', { id: [2], amount: [4, 5] })}</section>`,
+    )}</p>${table('By case', ['Payer', 'Plan', 'State', `${labels.payer_approved} (this run)`, `${recovered} (this run)`], ledgerRows, 'No pattern reaches the case materiality yet.', { id: [2], amount: [4, 5] })}${
+      unattested === 0
+        ? ''
+        : `<p data-unattested-submissions="${String(unattested)}">${escapeWithFigures(
+            `${unattestedSubmissionsText(unattested)}. Each sent an export whose pricing went stale after it was made, so no reimbursement reviewer attested it; the payer's answer to it counts here as any other's.`,
+          )}</p>`
+    }</section>`,
   );
 
   const gapRows = content.evidence_gaps.map((gap) => [gap.reason ?? gap.kind.replaceAll('_', ' '), gap.lines === 0 ? '' : String(gap.lines), gap.charge_cents === null ? '' : usd(gap.charge_cents), gap.detail, gap.remedy]);
