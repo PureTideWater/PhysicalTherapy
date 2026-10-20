@@ -5,17 +5,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { withPracticeScope } from './authz';
 import { readDatabaseUrl } from './config';
-import { DISPUTE_WINDOW_STARTS, DISPUTE_WINDOW_UNITS, PRICING_CHECK_RESULTS } from './schema';
+import { DISPUTE_WINDOW_STARTS, DISPUTE_WINDOW_UNITS, PRICING_CHECK_RESULTS, SUBMISSION_UNATTESTED_REASONS } from './schema';
 import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedDatabase, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * Whether a packet version's pricing is still current (migration 20261103090000; the best-option audit's item #4;
  * docs/adr/0061), as the schema states it: submission.pricing_check holds exactly PRICING_CHECK_RESULTS and the
  * application role never writes it; the contract window's unit and start hold exactly DISPUTE_WINDOW_UNITS and
- * DISPUTE_WINDOW_STARTS (item #5); and the checks fail closed on content that names nothing the caller can see.
- * The checks over real priced lines (an accepted re-run, a withdrawn release, a correction, a back-dated
- * amendment) are apps/worker/src/price/pricing-check.db.test.ts and apps/worker/src/packets/pricing-current.db.test.ts.
- * Synthetic data only.
+ * DISPUTE_WINDOW_STARTS (item #5); submission.unattested_reason holds exactly SUBMISSION_UNATTESTED_REASONS, only
+ * beside a pricing check that is not current, and the application role writes neither it nor the audit event of a
+ * submission sent without sign-off (the founder's ruling of 2026-10-20); and the checks fail closed on content that
+ * names nothing the caller can see. The checks over real priced lines (an accepted re-run, a withdrawn release, a
+ * correction, a back-dated amendment) are apps/worker/src/price/pricing-check.db.test.ts and
+ * apps/worker/src/packets/pricing-current.db.test.ts, and the submission sent without sign-off is
+ * apps/worker/src/packets/unattested-submission.db.test.ts. Synthetic data only.
  */
 
 let database: MigratedDatabase;
@@ -54,6 +57,7 @@ const asManager = <R extends object>(sql: string, values: unknown[]) =>
 describe('the schema of the pricing check and the window rule', () => {
   it('holds exactly the TypeScript lists, in their order', async () => {
     expect(await checkValues('submission_pricing_check_check')).toEqual([...PRICING_CHECK_RESULTS]);
+    expect(await checkValues('submission_unattested_reason_check')).toEqual([...SUBMISSION_UNATTESTED_REASONS]);
     expect(await checkValues('contract_version_dispute_window_unit_check')).toEqual([...DISPUTE_WINDOW_UNITS]);
     expect(await checkValues('contract_version_dispute_window_measured_from_check')).toEqual([...DISPUTE_WINDOW_STARTS]);
   });
@@ -65,6 +69,54 @@ describe('the schema of the pricing check and the window rule', () => {
               has_column_privilege('tp_app', 'submission', 'pricing_check', 'SELECT') AS select`,
     );
     expect(rows[0]).toEqual({ insert: false, update: false, select: true });
+  });
+
+  it('gives the application role no grant on submission.unattested_reason either, and refuses a write that names either column', async () => {
+    const { rows } = await owner.query<{ insert: boolean; update: boolean; select: boolean }>(
+      `SELECT has_column_privilege('tp_app', 'submission', 'unattested_reason', 'INSERT') AS insert,
+              has_column_privilege('tp_app', 'submission', 'unattested_reason', 'UPDATE') AS update,
+              has_column_privilege('tp_app', 'submission', 'unattested_reason', 'SELECT') AS select`,
+    );
+    expect(rows[0]).toEqual({ insert: false, update: false, select: true });
+    const refused = async (sql: string) => {
+      try {
+        await asManager(sql, []);
+      } catch (error) {
+        return (error as { code?: string }).code;
+      }
+      return 'written';
+    };
+    const values = `'${north.practiceId}', gen_random_uuid(), gen_random_uuid(), current_date, 'payer_portal', app_actor_id(), current_date, repeat('a', 64), repeat('b', 64)`;
+    const columns = 'practice_id, case_id, packet_version_id, submitted_on, channel, submitted_by, follow_up_on, export_sha256, export_csv_sha256';
+    expect(await refused(`INSERT INTO submission (${columns}, unattested_reason) VALUES (${values}, 'pricing_stale_after_export')`)).toBe('42501');
+    expect(await refused(`INSERT INTO submission (${columns}, pricing_check) VALUES (${values}, 'RELEASE_WITHDRAWN')`)).toBe('42501');
+    expect(await refused(`UPDATE submission SET unattested_reason = 'pricing_stale_after_export'`)).toBe('42501');
+    expect(await refused(`UPDATE submission SET pricing_check = 'current'`)).toBe('42501');
+  });
+
+  it('holds a reason only beside a pricing check that is not current', async () => {
+    const { rows } = await owner.query<{ definition: string }>("SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'submission_unattested_only_when_pricing_stale'");
+    expect(rows[0]?.definition).toBe("CHECK (((unattested_reason IS NULL) OR ((pricing_check IS NOT NULL) AND (pricing_check <> 'current'::text))))");
+  });
+
+  it('lets the application role ask whether an export may be sent without sign-off, which fails closed for a version it cannot see', async () => {
+    const { rows } = await owner.query<{ app: boolean; public: boolean }>(
+      `SELECT has_function_privilege('tp_app', 'packet_version_unattested_reason(uuid)', 'EXECUTE') AS app,
+              coalesce((SELECT bool_or(a.grantee = 0) FROM pg_proc p, aclexplode(p.proacl) a WHERE p.oid = 'packet_version_unattested_reason(uuid)'::regprocedure AND a.privilege_type = 'EXECUTE'), false) AS public`,
+    );
+    expect(rows[0]).toEqual({ app: true, public: false });
+    expect(await asManager<{ reason: string | null }>('SELECT packet_version_unattested_reason($1) AS reason', [randomUUID()])).toEqual({ reason: null });
+  });
+
+  it('refuses the application an audit event of a submission sent without sign-off that the database did not record', async () => {
+    const forged = withPracticeScope(app, { actorId: manager, practiceIds: [north.practiceId] }, (scope) =>
+      scope.client.query(
+        `INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, purpose, request_id)
+         VALUES (app_actor_id(), 'user', 'submission_logged_unattested', 'submission', $1, $2, 'pricing_stale_after_export', 'test-forged')`,
+        [randomUUID(), north.practiceId],
+      ),
+    );
+    await expect(forged).rejects.toMatchObject({ code: '23514' });
   });
 
   it('lets the application role run the four checks, and nobody else', async () => {
