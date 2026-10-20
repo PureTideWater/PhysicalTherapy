@@ -34,6 +34,7 @@ import { packetExportDownloads } from './downloads';
 import { scheduleIdentifiers } from './identifiers';
 import { type ExportReadinessReason, exportReadiness } from './readiness';
 import { PacketRefusedError, loadAssembly } from './records';
+import { type SubmissionSent, submissionSentOf } from './submission-kinds';
 
 /**
  * The packet workflow the web app's server actions call (PRD 5, J9 and J10; PRD 12), each in the
@@ -464,6 +465,7 @@ export const EXPORT_REQUEST_REFUSALS: Readonly<Record<ExportReadinessReason, str
   pricing_not_current: PRICING_NOT_CURRENT,
   deadline_unverified: DEADLINE_NOT_VERIFIED,
   inputs_differ: 'a packet version is exported only while it states its deadlines and calculations as its inputs give them now; write the packet again',
+  contact_missing: 'a packet is exported once the practice administrator has set the correspondence contact under Settings, Correspondence',
 };
 
 /**
@@ -606,6 +608,8 @@ export interface LoggedSubmission {
   readonly followUpOn: string;
   readonly exportSha256: string;
   readonly exportCsvSha256: string;
+  /** An attested export, or one sent without sign-off with its reason, as the database recorded it (submission.unattested_reason). */
+  readonly sent: SubmissionSent;
 }
 
 /**
@@ -646,15 +650,23 @@ export async function logSubmission(scope: PracticeScope<ScopeClient>, keys: Key
   const cipher = await loadPracticeCipher(scope, keys, input.practiceId);
   const reference = input.reference === null || input.reference.trim() === '' ? null : cipher.encrypt('submission.reference', input.reference.trim());
   const { rows } = await underRules(() =>
-    scope.client.query<{ id: string; dispute_level: number; follow_up_on: string; export_sha256: string; export_csv_sha256: string }>(
+    scope.client.query<{ id: string; dispute_level: number; follow_up_on: string; export_sha256: string; export_csv_sha256: string; unattested_reason: string | null }>(
       `INSERT INTO submission (practice_id, case_id, packet_version_id, submitted_on, channel, reference, submitted_by, follow_up_on, export_sha256, export_csv_sha256)
        VALUES ($1, $2, $3, $4, $5, $6, app_actor_id(), $7, $8, $9)
-       RETURNING id, dispute_level, follow_up_on::text, export_sha256, export_csv_sha256`,
+       RETURNING id, dispute_level, follow_up_on::text, export_sha256, export_csv_sha256, unattested_reason`,
       [input.practiceId, version.case_id, input.versionId, input.submittedOn, input.channel, reference, input.followUpOn ?? null, version.export_sha256, version.export_csv_sha256],
     ),
   );
-  const logged = rows[0] as { id: string; dispute_level: number; follow_up_on: string; export_sha256: string; export_csv_sha256: string };
-  return { submissionId: logged.id, caseId: version.case_id, disputeLevel: logged.dispute_level, followUpOn: logged.follow_up_on, exportSha256: logged.export_sha256, exportCsvSha256: logged.export_csv_sha256 };
+  const logged = rows[0] as { id: string; dispute_level: number; follow_up_on: string; export_sha256: string; export_csv_sha256: string; unattested_reason: string | null };
+  return {
+    submissionId: logged.id,
+    caseId: version.case_id,
+    disputeLevel: logged.dispute_level,
+    followUpOn: logged.follow_up_on,
+    exportSha256: logged.export_sha256,
+    exportCsvSha256: logged.export_csv_sha256,
+    sent: submissionSentOf(logged.unattested_reason),
+  };
 }
 
 export interface RecordResponseInput {
@@ -735,6 +747,8 @@ export interface SubmissionLogEntry {
   /** The export's SHA-256, as sent (CAS-12). */
   readonly exportSha256: string;
   readonly exportCsvSha256: string;
+  /** An attested export, or one sent without sign-off with its reason (submission.unattested_reason). */
+  readonly sent: SubmissionSent;
   readonly responses: readonly {
     readonly responseId: string;
     readonly kind: PayerResponseKind;
@@ -767,10 +781,11 @@ export async function submissionLog(scope: PracticeScope<ScopeClient>, keys: Key
           follow_up_on: string;
           export_sha256: string;
           export_csv_sha256: string;
+          unattested_reason: string | null;
           responses: { id: string; kind: PayerResponseKind; amount_cents: string | null; received_on: string; denial_category: string | null; reopens_case: boolean; next_window_ends_on: string | null; document_id: string | null }[];
         }>(
           `SELECT s.id, s.practice_id, s.packet_version_id, v.version_no, s.dispute_level, s.submitted_on::text, s.channel, s.reference, s.submitted_by, s.follow_up_on::text,
-                  s.export_sha256, s.export_csv_sha256,
+                  s.export_sha256, s.export_csv_sha256, s.unattested_reason,
                   coalesce((SELECT jsonb_agg(jsonb_build_object('id', r.id, 'kind', r.kind, 'amount_cents', r.amount_cents::text, 'received_on', r.received_on::text,
                                                                 'denial_category', r.denial_category, 'reopens_case', r.reopens_case,
                                                                 'next_window_ends_on', r.next_window_ends_on::text, 'document_id', r.document_id)
@@ -797,6 +812,7 @@ export async function submissionLog(scope: PracticeScope<ScopeClient>, keys: Key
     followUpOn: row.follow_up_on,
     exportSha256: row.export_sha256,
     exportCsvSha256: row.export_csv_sha256,
+    sent: submissionSentOf(row.unattested_reason),
     responses: row.responses.map((response) => ({
       responseId: response.id,
       kind: response.kind,

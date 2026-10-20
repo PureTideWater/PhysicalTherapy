@@ -60,6 +60,17 @@ export {
   writePacketVersion,
 } from './services';
 export {
+  SUBMISSION_KINDS,
+  SUBMISSION_LOGGED_UNATTESTED,
+  SUBMISSION_UNATTESTED_REASONS,
+  SUBMISSION_UNATTESTED_WORDS,
+  type SubmissionKind,
+  type SubmissionSent,
+  type SubmissionUnattestedReason,
+  packetVersionUnattestedReason,
+  submissionSentOf,
+} from './submission-kinds';
+export {
   PACKET_EXPORT_DOWNLOADED,
   PACKET_EXPORT_FILES,
   type PacketExportDownloadInput,

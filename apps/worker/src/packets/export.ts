@@ -210,6 +210,7 @@ export const EXPORT_REFUSALS = {
   pricing_not_current: 'PACKET_PRICING_NOT_CURRENT',
   deadline_unverified: 'PACKET_DEADLINE_UNVERIFIED',
   inputs_differ: 'PACKET_CONTENT_NOT_ITS_INPUTS',
+  contact_missing: 'PACKET_CORRESPONDENCE_CONTACT_MISSING',
   verifier_failed: 'PACKET_VERIFIER_FAILED',
 } as const satisfies Readonly<Record<PacketExportRefusal | 'missing', string>>;
 

@@ -26,7 +26,11 @@ import { statesItsInputs } from './records';
  * 8. pricing_not_current: packet_version_pricing_check() is not 'current' (audit item #4);
  * 9. deadline_unverified: the database (packet_version_deadline_status()) or @tp/triage, deriving the deadline
  *    again now, says unverified;
- * 10. inputs_differ: the version does not state its deadlines and calculations as its inputs give them now.
+ * 10. inputs_differ: the version does not state its deadlines and calculations as its inputs give them now;
+ * 11. contact_missing: the practice has no correspondence contact set (practice.settings.correspondence_contact,
+ *     read by @tp/packets correspondenceContactOf(): anything but `set` refuses), which the payer's copy prints
+ *     (audit item #37 part 1, the founder's ruling of 2026-10-20, D7 and Q6 (a)); the job reads the contact it prints
+ *     again in its own transaction and refuses with this code too if it is no longer set.
  *
  * A tp-packet/1 version states neither a deadline nor calculations, so 'outdated' stands for the last two (it is
  * written again either way). The verifier is not run here: it runs only in the job, over exactly what it prints
@@ -46,6 +50,7 @@ export const PACKET_EXPORT_REFUSALS = [
   'pricing_not_current',
   'deadline_unverified',
   'inputs_differ',
+  'contact_missing',
   'verifier_failed',
 ] as const;
 export type PacketExportRefusal = (typeof PACKET_EXPORT_REFUSALS)[number];

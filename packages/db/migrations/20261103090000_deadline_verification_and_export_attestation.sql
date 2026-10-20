@@ -66,7 +66,8 @@
 --   verifier over what it prints and refuses first.
 -- - The export's attempts (audit item #26): the export job records each refusal (packet_export_refused) and each
 --   failed try (packet_export_attempt_failed, packet_export_failed) as an audit event of the version whose purpose
---   is one fixed code (packet_export_refusal_codes(), packet_export_failure_codes()), written only by a service
+--   is one fixed code (packet_export_refusal_codes(), packet_export_failure_codes(); contact_missing, a practice with
+--   no correspondence contact for the payer's copy, among them, audit item #37 part 1), written only by a service
 --   actor (audit_event_packet_export_attempt), with no words and no patient data; packet_version_export_attempt()
 --   reads the latest attempt for the packet page (none, in progress, retrying, refused, failed, exported).
 -- - The attestation (D16, audit_report's pattern): once the export is made, a reimbursement reviewer
@@ -74,7 +75,16 @@
 --   attests once, in their own name, over the export's two SHA-256 and a checklist of codes (no words). The
 --   attester drafted, wrote and approved no version of the packet; the version is current, still its case's and
 --   of the case's dispute level, its pricing still current and its deadline still not unverified. A submission is
---   logged only of an attested export.
+--   logged only of an attested export, but for the one exception below.
+-- - A submission sent without sign-off (the founder's ruling of 2026-10-20): when a version's pricing goes stale after
+--   its export and before its attestation, the attestation stays refused, and a submission of that export is still
+--   logged, recorded truthfully as unattested with its reason, so reconciliation tracks the payer's answer:
+--   submission.unattested_reason 'pricing_stale_after_export' (sent without sign-off: pricing went stale after
+--   export), written by the database beside pricing_check, which still records the cause. packet_version_unattested_reason()
+--   is the one rule: an export the guard made (so its pricing was current then), not attested, whose lines the caller
+--   sees and whose pricing is no longer current. The database records the audit event submission_logged_unattested
+--   in the submitter's name (audit_event_submission_unattested admits only that one, once), and such a version is
+--   never attested. Every other submission still needs the attestation.
 -- - The reviewer's downloads (the owner's addition of 2026-10-18, ADR 0061's residual risk F9): an attestation
 --   also needs the attester's own download of both the PDF and the CSV of that version, at or after its export,
 --   each recorded by the web request that served it once its bytes hashed to the stored SHA-256. The evidence is
@@ -94,7 +104,8 @@
 -- Why tp_app cannot bypass the refusal: tp_owner owns the tables, triggers and functions, and tp_app owns
 -- nothing and has no BYPASSRLS, so it can neither ALTER the table nor DISABLE a trigger, and only a superuser
 -- sets session_replication_role. Its column grants are the only columns it writes: exported_at only through
--- packet_version_rules (for a job actor), deadline_verification_status and submission.pricing_check never. The
+-- packet_version_rules (for a job actor), deadline_verification_status, submission.pricing_check and
+-- submission.unattested_reason never. The
 -- guard reads rows that cannot change underneath it, or that fail it closed when they change: priced_line,
 -- rule_record and payer_response are immutable, a contract window is frozen from approval, a withdrawal, an
 -- accepted re-run, a mapping correction or a reopening denial only adds a row or moves a run out of effect (which
@@ -108,11 +119,13 @@
 -- Runs as tp_owner. Safe with the previous image running: yes. Added: nullable columns and a generated one
 -- (adding it rewrites the small packet_version table under a brief ACCESS EXCLUSIVE lock; every existing row is
 -- tp-packet/1 and becomes 'unverified', so nothing is backfilled), CHECKs every existing row meets (no version
--- has a cited window yet, and submission.pricing_check is null on every existing row), new functions and
--- triggers (three on audit_event, firing only for the two download actions, the three export-attempt actions,
--- which no earlier row carries, and an export request, which only a person's export route records; one on
--- submission, setting only the new column; one on packet_version, refusing only an approval of a version whose
--- pricing is not current; one each on pricing_run, contract_version, payer_plan_mapping and
+-- has a cited window yet, and submission.pricing_check and unattested_reason are null on every existing row), new
+-- functions and triggers (four on audit_event, firing only for the two download actions, the three export-attempt
+-- actions, which no earlier row carries, an export request, which only a person's export route records, and a
+-- submission sent without sign-off, which only the database records as it logs one; two on submission, one setting
+-- only the two new columns, the other refusing a submission of an unattested export unless its pricing went stale
+-- after the export, which every earlier submission was, and recording one that is; one on packet_version, refusing
+-- only an approval of a version whose pricing is not current; one each on pricing_run, contract_version, payer_plan_mapping and
 -- rule_release_withdrawal, taking only an advisory lock before an acceptance, a completion, a supersession or a
 -- closed window, a correction and a withdrawal); replaced: packet_content_valid() and
 -- contract_version_rules() with their signatures, accepting tp-packet/1 and a version with no window citation as
@@ -120,8 +133,12 @@
 -- and the two download actions, and audit_report_belongs() and audit_report_rules() with their signatures,
 -- refusing what they refused and a report on a withdrawn rule release. Removed: nothing. For the previous image:
 -- its tp-packet/1 versions are written and approved, but their export is refused (its export job fails them),
--- its submissions of unattested exports are refused and those it logs are flagged by pricing_check, which it
--- never writes, its approvals and exports of a version whose pricing is not current are refused, its report job
+-- its submissions of unattested exports are refused (its submission service refuses every one before the
+-- database, so it logs none sent without sign-off, and the export of a version whose pricing went stale after it waits
+-- for the new image to be logged) and those it logs are flagged by pricing_check and unattested_reason, which it
+-- never writes nor reads, its export job does not know contact_missing (it exports for a practice with no
+-- correspondence contact, printing its own copy, which names none), its approvals and exports of a version whose
+-- pricing is not current are refused, its report job
 -- fails a report on a withdrawn release when it makes it ready (the new image fails it as release_withdrawn
 -- first), its downloads are recorded as packet_export_downloaded, which no attestation counts (the reviewer
 -- downloads again under the new image), its export job writes no attempt events (its refusals show as in
@@ -143,7 +160,8 @@
 -- Remittances screen's Payment date), which the engine's trace labels measured_from 'remittance_date' and
 -- from_date. A window counted from the remittance advice's own date (the 835's DTM*405 production date, or the
 -- date printed on a paper RA), usually a day or more before BPR16, is not computed: verifying it would show an
--- end later than the contract's. @tp/contracts COMPUTED_CONTRACT_WINDOW_RULE and @tp/triage
+-- end later than the contract's. The founder ruled on 2026-10-20 that a window measured from the remittance date runs
+-- from that advice's own date, never the payment date, and stays unverified until PR 6c computes it. @tp/contracts COMPUTED_CONTRACT_WINDOW_RULE and @tp/triage
 -- COMPUTED_CONTRACT_WINDOW hold the same literal (a database test compares them over every unit and start).
 -- PR 6c, which computes the window from the cited unit and start, widens this body.
 CREATE FUNCTION contract_window_rule_computed(unit text, measured_from text) RETURNS boolean
@@ -1085,7 +1103,7 @@ $$;
 -- The attestation (D16): written unattested; once exported, attested once by a reimbursement reviewer in their
 -- own name, in a request on a connection that is not the worker's (app_session_is_job()), who drafted, wrote and
 -- approved no version of the packet, over the current version still asking for its case's lines at the case's
--- dispute level, while its pricing is current and its deadline not unverified, and once the reviewer has downloaded both its PDF and its
+-- dispute level, never once its export was logged sent without sign-off, while its pricing is current and its deadline not unverified, and once the reviewer has downloaded both its PDF and its
 -- CSV, each checked against its SHA-256 (packet_export_downloads_of_actor()). The time is the database's.
 CREATE FUNCTION packet_version_attestation_rules() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
@@ -1124,6 +1142,11 @@ BEGIN
     IF (NEW.content ->> 'dispute_level')::integer IS DISTINCT FROM 1 + case_reopened_levels(the_case) THEN
       RAISE EXCEPTION 'only a version of the case''s dispute level is attested' USING ERRCODE = 'check_violation';
     END IF;
+    -- A version whose export was logged sent without sign-off (its pricing went stale after the export; the founder's
+    -- ruling of 2026-10-20) is never attested: the submission records it as sent unattested.
+    IF EXISTS (SELECT 1 FROM submission s WHERE s.packet_version_id = NEW.id AND s.practice_id = NEW.practice_id AND s.unattested_reason IS NOT NULL) THEN
+      RAISE EXCEPTION 'a packet version whose export was sent without sign-off is never attested' USING ERRCODE = 'check_violation';
+    END IF;
     PERFORM pricing_current_read_lock(NEW.practice_id);
     IF packet_version_pricing_check(NEW.content) IS DISTINCT FROM 'current' THEN
       RAISE EXCEPTION 'a packet version whose pricing is no longer current is not attested' USING ERRCODE = 'check_violation';
@@ -1146,20 +1169,8 @@ $$;
 CREATE TRIGGER packet_version_attestation_rules BEFORE INSERT OR UPDATE ON packet_version FOR EACH ROW EXECUTE FUNCTION packet_version_attestation_rules();
 
 -- ---------------------------------------------------------------------------------------------------
--- submission: only of an attested export
+-- submission: only of an attested export, or sent without sign-off once its pricing went stale after the export
 -- ---------------------------------------------------------------------------------------------------
-
--- A submission is logged only once a reimbursement reviewer has attested the export it sends (D16: the
--- attestation is the release of audit_report's pattern). A version the caller cannot see is refused.
-CREATE FUNCTION submission_needs_attested_export() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM packet_version v WHERE v.id = NEW.packet_version_id AND v.practice_id = NEW.practice_id AND v.attested_by IS NOT NULL) THEN
-    RAISE EXCEPTION 'a packet is submitted once a reimbursement reviewer has attested its export' USING ERRCODE = 'check_violation';
-  END IF;
-  RETURN NULL;
-END;
-$$;
-CREATE TRIGGER submission_needs_attested_export AFTER INSERT ON submission FOR EACH ROW EXECUTE FUNCTION submission_needs_attested_export();
 
 -- A submission records whether the version it sends was still priced current when it was logged (audit item #4).
 -- It is never refused for that: a submission records something that already happened outside the product (the
@@ -1170,14 +1181,131 @@ ALTER TABLE submission
   ADD COLUMN pricing_check text CONSTRAINT submission_pricing_check_check
     CHECK (pricing_check IN ('current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'));
 
+-- Why a submission was logged without a reimbursement reviewer's attestation of the export it sends (the founder's
+-- ruling of 2026-10-20; docs/adr/0061): 'pricing_stale_after_export', sent without sign-off because the version's
+-- pricing went stale after its export and before its attestation, so the attestation is refused for that reason and
+-- stays refused, while the payer's answer to what was sent is still tracked. The one reason there is; null for a
+-- submission of an attested export, and on every row logged before this migration. The database writes it with
+-- pricing_check, which still records the cause, overwriting whatever an INSERT gave; the application role has no grant
+-- on it.
+ALTER TABLE submission
+  ADD COLUMN unattested_reason text CONSTRAINT submission_unattested_reason_check CHECK (unattested_reason IN ('pricing_stale_after_export')),
+  -- Sent without sign-off only while the pricing it sent is no longer current, its cause recorded beside it.
+  ADD CONSTRAINT submission_unattested_only_when_pricing_stale CHECK (unattested_reason IS NULL OR (pricing_check IS NOT NULL AND pricing_check <> 'current'));
+
+-- Why a packet version's export may be logged as sent without its attestation: 'pricing_stale_after_export' when the
+-- export guard made its export (only that export writes export_verifier_report, and the guard refused it unless its
+-- pricing was current then), no reimbursement reviewer has attested it, every line it names is a priced line of its
+-- practice the caller can see, and its pricing is no longer current (packet_version_pricing_check()): its pricing went
+-- stale after the export, so the attestation is refused for that reason, and always will be, since a stale line never
+-- becomes current again. Null otherwise, which leaves the attestation required: a version attested, unexported,
+-- exported before the guard existed, still current, or not visible to the caller (SECURITY INVOKER: it fails closed
+-- to the attestation). The submission's trigger reads it under the pricing lock; the submission service and the
+-- submissions page ask it before a submission is logged.
+CREATE FUNCTION packet_version_unattested_reason(target uuid) RETURNS text
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path = pg_catalog, public, pg_temp AS $$
+DECLARE
+  version record;
+BEGIN
+  SELECT v.practice_id, v.content, v.exported_at, v.export_verifier_report, v.attested_by INTO version FROM packet_version v WHERE v.id = target;
+  IF NOT FOUND OR version.exported_at IS NULL OR version.export_verifier_report IS NULL OR version.attested_by IS NOT NULL THEN
+    RETURN NULL;
+  END IF;
+  IF jsonb_typeof(version.content -> 'lines') IS DISTINCT FROM 'array' THEN
+    RETURN NULL;
+  END IF;
+  IF jsonb_array_length(version.content -> 'lines') = 0 THEN
+    RETURN NULL;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(version.content -> 'lines') l
+     WHERE NOT EXISTS (
+       SELECT 1 FROM priced_line p
+        WHERE p.practice_id = version.practice_id
+          AND p.id = CASE WHEN jsonb_typeof(l) = 'object' AND (l ->> 'priced_line_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (l ->> 'priced_line_id')::uuid END
+     )
+  ) THEN
+    RETURN NULL;
+  END IF;
+  IF packet_version_pricing_check(version.content) IS DISTINCT FROM 'current' THEN
+    RETURN 'pricing_stale_after_export';
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+-- The pricing check and the reason a submission is sent without sign-off, written by the database in one statement
+-- after the lock that orders it with the writes that make pricing stale, so the two read the same pricing.
 CREATE FUNCTION submission_pricing_check() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   PERFORM pricing_current_read_lock(NEW.practice_id);
-  NEW.pricing_check := packet_version_pricing_check((SELECT v.content FROM packet_version v WHERE v.id = NEW.packet_version_id AND v.practice_id = NEW.practice_id));
+  SELECT packet_version_pricing_check(v.content), packet_version_unattested_reason(v.id) INTO NEW.pricing_check, NEW.unattested_reason
+    FROM packet_version v WHERE v.id = NEW.packet_version_id AND v.practice_id = NEW.practice_id;
+  IF NOT FOUND THEN
+    -- No version of its practice the caller can see: submission_belongs refuses the row.
+    NEW.pricing_check := packet_version_pricing_check(NULL);
+    NEW.unattested_reason := NULL;
+  END IF;
   RETURN NEW;
 END;
 $$;
 CREATE TRIGGER submission_pricing_check BEFORE INSERT ON submission FOR EACH ROW EXECUTE FUNCTION submission_pricing_check();
+
+-- A submission is logged only once a reimbursement reviewer has attested the export it sends (D16: the attestation
+-- is the release of audit_report's pattern), with the one exception the founder ruled on 2026-10-20: an export whose
+-- pricing went stale after the export, whose attestation is refused for that reason (submission_pricing_check wrote
+-- unattested_reason from packet_version_unattested_reason()), is logged sent without sign-off, so reconciliation
+-- tracks the payer's answer. The database then records the audit event submission_logged_unattested in the
+-- submitter's name (submission_belongs, which fires first, held them to it), under the route their access rests on,
+-- with the reason as its purpose, so the application can neither omit it nor word it. A version the caller cannot
+-- see is refused.
+CREATE FUNCTION submission_needs_attested_export() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF NEW.unattested_reason IS NULL THEN
+    IF NOT EXISTS (SELECT 1 FROM packet_version v WHERE v.id = NEW.packet_version_id AND v.practice_id = NEW.practice_id AND v.attested_by IS NOT NULL) THEN
+      RAISE EXCEPTION 'a packet is submitted once a reimbursement reviewer has attested its export' USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+  END IF;
+  INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose)
+  VALUES (
+    app_actor_id(), 'user', 'submission_logged_unattested', 'submission', NEW.id, NEW.practice_id,
+    -- The route the access rests on, as the application's own events name it (ownership, then a grant, then a support grant).
+    (SELECT a.grant_id FROM effective_practice_access() a WHERE a.practice_id = NEW.practice_id
+      ORDER BY array_position(ARRAY['ownership', 'grant', 'support'], a.via), coalesce(a.grant_id::text, '') LIMIT 1),
+    NEW.unattested_reason
+  );
+  RETURN NULL;
+END;
+$$;
+CREATE TRIGGER submission_needs_attested_export AFTER INSERT ON submission FOR EACH ROW EXECUTE FUNCTION submission_needs_attested_export();
+
+-- The record of a submission sent without sign-off (submission_logged_unattested): the database's own, written once,
+-- as the submission is logged, by submission_needs_attested_export, for a person in their own name on a connection
+-- that is not the worker's, of a submission of the event's practice that this person logged sent without sign-off,
+-- with its reason as the purpose. Any other (a second one, one of a submission of an attested export, another
+-- person's) is refused, so the audit log holds exactly one per such submission. Definer's rights over the audit log,
+-- whose own policy admits the practice's administrators alone, to see an earlier one; the caller's scope is kept.
+-- Every role meets it, the owner included.
+CREATE FUNCTION audit_event_submission_unattested() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_session_is_job() OR NOT app_actor_is_person() OR NEW.actor_kind IS DISTINCT FROM 'user' OR NEW.actor_id IS DISTINCT FROM app_actor_id() THEN
+    RAISE EXCEPTION 'a submission sent without sign-off is recorded in the name of the person who logged it, never on the worker''s login' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF NEW.object_type IS DISTINCT FROM 'submission' OR NEW.practice_id IS NULL OR NOT practice_in_scope(NEW.practice_id) OR NOT EXISTS (
+       SELECT 1 FROM submission s
+        WHERE s.id = NEW.object_id AND s.practice_id = NEW.practice_id AND s.submitted_by = NEW.actor_id AND s.unattested_reason IS NOT DISTINCT FROM NEW.purpose AND s.unattested_reason IS NOT NULL) THEN
+    RAISE EXCEPTION 'a submission sent without sign-off is recorded of a submission of its practice that its person logged without the attestation, with its reason' USING ERRCODE = 'check_violation';
+  END IF;
+  IF EXISTS (SELECT 1 FROM audit_event e WHERE e.object_type = 'submission' AND e.object_id = NEW.object_id AND e.action = 'submission_logged_unattested') THEN
+    RAISE EXCEPTION 'a submission sent without sign-off is recorded once, as it is logged' USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER audit_event_submission_unattested BEFORE INSERT ON audit_event FOR EACH ROW
+  WHEN (NEW.action = 'submission_logged_unattested')
+  EXECUTE FUNCTION audit_event_submission_unattested();
 
 -- ---------------------------------------------------------------------------------------------------
 -- audit_report: never on a withdrawn rule release (audit item #4)
@@ -1283,10 +1411,13 @@ $$;
 
 -- The codes an export job's refusal names (the readiness reasons in their order, then the verifier's), and the
 -- codes its failure names. @tp/worker/packets PACKET_EXPORT_REFUSALS and PACKET_EXPORT_FAILURES equal them (a
--- database test compares them).
+-- database test compares them). contact_missing (audit item #37 part 1, the founder's ruling of 2026-10-20, D7 and
+-- Q6 (a)): the practice has no correspondence contact set (practice.settings.correspondence_contact), which the
+-- payer's copy prints, so the export is refused with its fix and never retried.
 CREATE FUNCTION packet_export_refusal_codes() RETURNS text[]
 LANGUAGE sql IMMUTABLE PARALLEL SAFE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT ARRAY['not_approved', 'not_current', 'outdated', 'case_changed', 'not_case_level', 'window_passed', 'next_window_passed', 'pricing_not_current', 'deadline_unverified', 'inputs_differ', 'verifier_failed']
+  SELECT ARRAY['not_approved', 'not_current', 'outdated', 'case_changed', 'not_case_level', 'window_passed', 'next_window_passed', 'pricing_not_current', 'deadline_unverified', 'inputs_differ',
+               'contact_missing', 'verifier_failed']
 $$;
 
 CREATE FUNCTION packet_export_failure_codes() RETURNS text[]
@@ -1396,16 +1527,17 @@ REVOKE ALL ON FUNCTION contract_window_rule_computed(text, text), ma_dispute_rou
   service_line_priced_in_effect(uuid), payer_plan_mapping_in_force(uuid, date), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid),
   pricing_current_read_lock(uuid), pricing_current_change_lock(), packet_version_approval_pricing(), audit_event_packet_export_requested(),
   priced_line_calculation(jsonb), packet_version_deadline_stated(), packet_version_export_guard(), packet_version_attestation_rules(), submission_needs_attested_export(),
-  submission_pricing_check(), app_session_is_job(), audit_event_packet_download(), packet_export_downloads_of_actor(uuid),
+  submission_pricing_check(), packet_version_unattested_reason(uuid), audit_event_submission_unattested(), app_session_is_job(), audit_event_packet_download(), packet_export_downloads_of_actor(uuid),
   packet_export_refusal_codes(), packet_export_failure_codes(), audit_event_packet_export_attempt(), packet_version_export_attempt(uuid) FROM PUBLIC;
 -- Called by the triggers, which run as the application role, and by the export job and the screens (the review
 -- reads the viewer's own downloads; the attestation service asks before it attests; the builder, the export
 -- request and the job ask whether a version's pricing is current, and triage whether a line's mapping is still in
 -- force; the triggers that read the pricing take its lock; the packet page reads the latest attempt; the contract
--- window's CHECK and the deadline's derivation ask whether a window's rule is computed and the route confirmed).
+-- window's CHECK and the deadline's derivation ask whether a window's rule is computed and the route confirmed; the
+-- submission service and the submissions page ask whether an export may be logged sent without sign-off).
 GRANT EXECUTE ON FUNCTION contract_window_rule_computed(text, text), ma_dispute_route_confirmed(),
   priced_line_deadline_status(uuid, text), case_next_window_deadline_status(uuid, text), packet_version_deadline_status(uuid, jsonb),
   service_line_priced_in_effect(uuid), payer_plan_mapping_in_force(uuid, date), priced_line_pricing_check(uuid), packet_version_pricing_check(jsonb), pricing_run_release_withdrawn(uuid),
-  pricing_current_read_lock(uuid),
+  pricing_current_read_lock(uuid), packet_version_unattested_reason(uuid),
   priced_line_calculation(jsonb), app_session_is_job(), packet_export_downloads_of_actor(uuid),
   packet_export_refusal_codes(), packet_export_failure_codes(), packet_version_export_attempt(uuid) TO tp_app;

@@ -42,6 +42,8 @@ export const EXPORT_REFUSAL_TEXT: Readonly<Record<PacketExportRefusal, string>> 
   deadline_unverified: DEADLINE_NOT_EXPORTABLE,
   inputs_differ:
     'This version no longer states its deadlines and calculations as its records give them now (a window’s evidence, a rule release or a reopening denial changed since it was written), so it is not printed. Write a new version of the packet and approve it.',
+  contact_missing:
+    'The payer’s copy names who answers for this dispute, and your practice has no correspondence contact yet, so nothing is printed. Your practice administrator sets the correspondence contact under Settings, Correspondence; then export it.',
   verifier_failed:
     'The verifier, run again over what the export prints with the identifiers read from the records now, failed it, so nothing was printed. Write a new version of the packet, which the verifier checks as it is written, and approve it.',
 };
@@ -221,5 +223,6 @@ const REFUSAL_SUMMARY: Readonly<Record<PacketExportRefusal, string>> = {
   pricing_not_current: 'a line’s pricing was no longer current',
   deadline_unverified: 'the deadline was not verified',
   inputs_differ: 'the version no longer stated its inputs',
+  contact_missing: 'the practice had no correspondence contact',
   verifier_failed: 'the verifier failed what the export printed',
 };

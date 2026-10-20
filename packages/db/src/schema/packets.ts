@@ -34,6 +34,14 @@ export type PacketExportFile = (typeof PACKET_EXPORT_FILES)[number];
  */
 export const PRICING_CHECK_RESULTS = ['current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'] as const;
 export type PricingCheckResult = (typeof PRICING_CHECK_RESULTS)[number];
+/**
+ * Why a submission was logged without a reimbursement reviewer's attestation of the export it sends
+ * (submission.unattested_reason; migration 20261103090000; the founder's ruling of 2026-10-20), in the CHECK's order:
+ * the one reason there is, 'pricing_stale_after_export' (sent without sign-off: pricing went stale after export). The
+ * database writes it, from packet_version_unattested_reason(), beside pricing_check, which records the cause.
+ */
+export const SUBMISSION_UNATTESTED_REASONS = ['pricing_stale_after_export'] as const;
+export type SubmissionUnattestedReason = (typeof SUBMISSION_UNATTESTED_REASONS)[number];
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -156,6 +164,12 @@ export const submission = pgTable(
      * never written by the application. Null only on a row logged before that migration.
      */
     pricingCheck: text('pricing_check', { enum: PRICING_CHECK_RESULTS }),
+    /**
+     * Why it was logged without the attestation (migration 20261103090000): 'pricing_stale_after_export' for an export
+     * whose pricing went stale after it was made, so its attestation is refused; null for a submission of an attested
+     * export. Set by the database, never written by the application.
+     */
+    unattestedReason: text('unattested_reason', { enum: SUBMISSION_UNATTESTED_REASONS }),
   },
   (table) => [index('submission_by_case').on(table.practiceId, table.caseId, table.submittedOn.desc()), index('submission_by_follow_up').on(table.practiceId, table.followUpOn)],
 );

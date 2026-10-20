@@ -192,9 +192,11 @@ const FIXED_VALUES: Readonly<Record<string, () => unknown>> = {
 
 /**
  * Columns the factory never writes: the database stamps them itself, and the application may not write them.
- * A practice's deleted_at is set as its status moves to deleted (migration 20261101090000).
+ * A practice's deleted_at is set as its status moves to deleted (migration 20261101090000); a submission's pricing
+ * check and the reason it was sent without sign-off are written as it is logged (migration 20261103090000; the
+ * factory's submission sends an attested export, so its reason is null).
  */
-const DATABASE_STAMPED: ReadonlySet<string> = new Set(['practice.deleted_at']);
+const DATABASE_STAMPED: ReadonlySet<string> = new Set(['practice.deleted_at', 'submission.pricing_check', 'submission.unattested_reason']);
 
 /**
  * Columns that must equal a column of the row another of their columns references: a case's payer is
