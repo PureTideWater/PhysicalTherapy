@@ -440,8 +440,8 @@ the founder confirms by doing the runbook's steps, then what is recorded so the 
 founder confirms the others by doing their runbook steps, or rules otherwise.
 
 7. **The content publisher** (above; runbook step 7): how `publish-content.yml` pushes to a protected `main`, which item
-   #20 does not say. The founder confirms it by doing step 7, and again by approving the workflow's own pull request
-   under the change order's rule 4.
+   #20 does not say. The founder confirmed it on 2026-10-20, sets it up in step 7, and confirms it again by approving the
+   workflow's own pull request under the change order's rule 4.
 8. **Two rulesets on `main` and two on the release tags** (above; runbook steps 4 and 7): `main`'s history rules with no
    bypass at all, so the content publisher's bypass reaches only the pull-request rule; and `v*` tags created only by
    the founder and never moved, with the deploy runbook's check that a tag's commit is on `main`.

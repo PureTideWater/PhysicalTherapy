@@ -29,8 +29,8 @@ github.com/<organization>/PhysicalTherapy.
 | 7 | The content publisher | before launch | 20 minutes |
 | 8 | Launch: `claude/build-platform` into `main` | when you decide to launch | 10 minutes |
 
-Dependabot's settings on `main`, and the pull request template there, wait for a ruling of yours; see the section after
-step 8.
+On 2026-10-20 you ruled for one pull request into `main` that sets Dependabot's settings there and adds the pull request
+template; the build opens it after this guide's pull request merges and before step 5 (the section after step 8).
 
 ## 1. Create the company's organization on GitHub Team, and set an Actions budget
 
@@ -443,8 +443,8 @@ Protects against: content releases that cannot be published once `main` refuses 
 `main` to anyone else.
 
 This is the build's choice under your standing rule (item #20 asks that `main` stay protected, not how releases reach
-it); doing this step confirms it, and the workflow's own pull request asks for your confirmation again under the change
-order's rule 4.
+it); you confirmed it on 2026-10-20, and the workflow's own pull request asks for your confirmation again under the
+change order's rule 4.
 
 Why: after launch, when a merged pull request adds a release under `content/outgoing/`, the `publish-content` workflow
 on `main` runs the content checks again, moves the release to `content/releases/<n>`, commits and tags it, and pushes to
