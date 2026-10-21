@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
@@ -78,7 +78,11 @@ export function sesMailSender(from: string, staticOrigin: string | null): SesMai
   return new SesMailSender({ client: new SESv2Client({}), from, staticOrigin });
 }
 
-/** Development: each message is a JSON file in a directory, named by opaque IDs. */
+/**
+ * Development: each message is a JSON file in a directory, named by opaque IDs. It is written under a hidden name and
+ * renamed into place, so a reader of the outbox (the e2e monitoring journey polls it) never reads a message half
+ * written.
+ */
 export class LocalMailSender implements MailSender {
   constructor(
     private readonly dir: string,
@@ -89,7 +93,10 @@ export class LocalMailSender implements MailSender {
     const body = mailBody(message);
     const html = mailBodyHtml(message, this.staticOrigin);
     await mkdir(this.dir, { recursive: true });
-    await writeFile(path.join(this.dir, `${String(Date.now())}-${randomUUID()}.json`), `${JSON.stringify({ to: message.to, subject: brandedSubject(message.subject), body, html })}\n`, { mode: 0o600 });
+    const name = `${String(Date.now())}-${randomUUID()}`;
+    const partial = path.join(this.dir, `.${name}.partial`);
+    await writeFile(partial, `${JSON.stringify({ to: message.to, subject: brandedSubject(message.subject), body, html })}\n`, { mode: 0o600 });
+    await rename(partial, path.join(this.dir, `${name}.json`));
   }
 }
 

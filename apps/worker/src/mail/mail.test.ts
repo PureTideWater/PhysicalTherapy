@@ -68,7 +68,10 @@ describe('the local outbox', () => {
   it('writes each message to a file named by opaque IDs', async () => {
     dir = mkdtempSync(path.join(tmpdir(), 'tp-mail-'));
     await new LocalMailSender(path.join(dir, 'outbox'), null).send(MESSAGE);
-    const [file = ''] = readdirSync(path.join(dir, 'outbox'));
+    const files = readdirSync(path.join(dir, 'outbox'));
+    // Renamed into place once written: no partial file is left beside it.
+    expect(files).toHaveLength(1);
+    const [file = ''] = files;
     expect(file).toMatch(/^\d+-[0-9a-f-]{36}\.json$/);
     expect(JSON.parse(readFileSync(path.join(dir, 'outbox', file), 'utf8'))).toEqual({ to: MESSAGE.to, subject: `${MESSAGE.subject} | PaidWhole`, body: mailBody(MESSAGE), html: mailBodyHtml(MESSAGE, null) });
   });
