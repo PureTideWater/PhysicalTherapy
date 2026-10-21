@@ -4,8 +4,29 @@ This branch (`claude/build-ops`) holds the build's operating state. It has no hi
 
 ## How to resume in a new session
 1. Read this file, then `CLAUDE.md`, `docs/product/change-order-001.md` and `docs/product/reconciliation-001.md` on `claude/build-platform`.
-2. Set up the environment (below). Check open pull requests and the branches listed under "Where things stand".
+2. Set up the environment ("Fresh session", next). Check open pull requests and the branches listed under "Where things stand".
 3. Update the tracker (below) and tell the founder where things stand before starting new work.
+
+## Fresh session: tools/setup-container.sh
+A new cloud session gets a fresh container, and only what is on GitHub survives. Before anything else, run `tools/setup-container.sh` from this branch once, as root. Pass every open `co-001/*` branch as an argument. Each one gets a worktree: `co-001/pr-06b-…` goes to `/home/user/pr6b`, and `co-001/<name>` goes to `/home/user/<name>`.
+```
+git -C /home/user/PhysicalTherapy fetch -q origin claude/build-ops
+git -C /home/user/PhysicalTherapy show origin/claude/build-ops:tools/setup-container.sh > /tmp/setup-container.sh
+bash /tmp/setup-container.sh co-001/<open branch> ...
+```
+- **If the repository is not cloned yet,** use `git clone -q --depth 1 -b claude/build-ops https://github.com/PureTideWater/PhysicalTherapy /tmp/ops-boot`, then run `bash /tmp/ops-boot/tools/setup-container.sh …`. The script clones the repository itself.
+- **What it sets up:** the same paths and ports as the environment recipe below.
+  - PostgreSQL 18.4 in `/opt/pg18`, cluster `/root/pgdata18`, port 5433, superuser `postgres:test`, trust on the `/tmp` socket.
+  - PostgreSQL 16 in `/root/pgdata`, port 5432.
+  - Node v24.22.0 in `/opt/node24`.
+  - Python 3.12 and pyx12 4.0.0 in `/opt/py312-ci`.
+  - gitleaks 8.24.3 at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, also linked at `/tmp/claude-0/gitleaks/gitleaks`.
+  - actionlint 1.7.7 in `/opt/actionlint`, on PATH as `/usr/local/bin/actionlint`. This is a new home: in the old container, actionlint lived only in that session's scratchpad.
+  - It also starts both servers, checks out `claude/build-platform`, runs `pnpm install --frozen-lockfile`, and adds `/home/user/ops` and the PR worktrees.
+- **Checks:** every download is checked by version and SHA-256. nodejs.org is refused by the proxy, so Node comes from the npm package `node-linux-x64@24.22.0` (the same binary as before), checked against a pinned SHA-256 and the registry's SHA-512. When the proxy allows nodejs.org, the script uses it and checks against SHASUMS256.txt.
+- **Result:** it prints one line per tool with its version, then `OK`, or `FAILED` with exactly what failed. Running it again changes nothing that is already in place.
+- **Check without changing anything:** `SETUP_CHECK=1 bash /home/user/ops/tools/setup-container.sh <same branches>`. Then `export PATH=/opt/node24/bin:/opt/py312-ci/bin:$PATH` as before.
+- **Testing:** `SETUP_PREFIX`, `PG18_PORT`, `PG16_PORT`, `PG16_SKIP=1`, `CLONE_DIR`, `OPS_DIR` and `WORKTREE_ROOT` let you test it elsewhere. The postgres user must be able to enter `SETUP_PREFIX`. The scratchpad cannot be used directly, because `/tmp/claude-0` is 0700 and Claude Code resets it, so bind-mount the scratchpad directory (for example at `/mnt/setup-test`). Tested on 2026-10-21: a fresh install, a rerun, check mode, and check mode on this machine.
 
 ## Standing rule from the founder (2026-10-18)
 Recommend and build only the best option, whatever the effort to build it. The app must be a well-oiled, incredible product focused on quality, accuracy and user experience, and set up to become a multi-million-dollar business. Judge every option on:
@@ -104,7 +125,7 @@ The org's spend limit stopped several agents mid-run; the founder raised it. The
 ## Environment recipe (cloud container)
 - Postgres 16 on 5432: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /root/pgdata -o '-p 5432 -k /tmp' -l /tmp/pg16.log start"`.
 - Postgres 18 on 5433 (CI parity): `su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp' -l /tmp/pg18.log start"`, superuser `postgres:test`.
-- Node 24 is at `/opt/node24/bin`; Python 3.12 with pyx12 is at `/opt/py312-ci/bin`; gitleaks 8.24.3 is at `/tmp/claude-0/gitleaks/gitleaks`. If the container is replaced, reinstall them (see the CI workflow for versions).
+- Node 24 is at `/opt/node24/bin`; Python 3.12 with pyx12 is at `/opt/py312-ci/bin`; gitleaks 8.24.3 is at `/root/.cache/paidwhole/gitleaks/8.24.3/gitleaks`, and also at `/tmp/claude-0/gitleaks/gitleaks`; actionlint 1.7.7 is at `/opt/actionlint/actionlint`. If the container is replaced, run `tools/setup-container.sh` (see "Fresh session").
 - One worktree per PR (`/home/user/prN`). Each agent role gets its own database (`tp_prN_<role>_<n>`) and its own E2E port.
 - `pnpm lint` needs about 6 GiB of heap.
 - **Disk:** keep more than 5 GB free. Delete only clones that belong to merged PRs or finished workflows, after checking nothing running uses them.
