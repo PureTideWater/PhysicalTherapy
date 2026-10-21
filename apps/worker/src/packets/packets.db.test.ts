@@ -275,9 +275,10 @@ describe('CAS-11: identifiers in a draft', () => {
     const csv = (await w.stored(setup.practice, detail?.exportCsvKey ?? '')).toString('utf8');
     expect(csv).toContain('SYNCCNCAS080001');
     expect(csv).toContain('SYNCCNCAS080003');
-    // The payer's schedule (audit item #37 part 1, D3): no patient control number, trace or SHA-256 column.
+    // The payer's schedule (audit item #37 part 1, D3): no patient control number, trace or SHA-256 column; every row
+    // led by the packet's reference (the founder's ruling of 2026-10-21).
     expect(csv.split('\r\n')[0]).toBe(
-      'row,payer_claim_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,window_ends_on,calculation_method,unrounded,rounded,patient_share',
+      'packet_reference,row,payer_claim_control_number,patient_name,member_id,service_date,procedure_code,modifiers,units,expected,observed,variance,paid,paid_on,received_on,interest,window_ends_on,calculation_method,unrounded,rounded,patient_share',
     );
     expect(csv).not.toContain('SYNPCNCAS08');
     // The version itself still holds only placeholders.

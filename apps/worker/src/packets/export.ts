@@ -170,13 +170,15 @@ export async function exportPacketVersion(
     }
     const exported = insertIdentifiers(version.content, narrative, identifiers.rows);
     // The payer's copy: the approval's UTC date, the reference its approved hash gives, the contact (D4 to D6, D13).
-    // A copy the renderer refuses (a code it has no words for, a window without its last day) is a print failure, as
-    // Chromium's is: nothing is printed.
+    // One reference for both files: the PDF prints it, and every row of the CSV carries it (the founder's ruling of
+    // 2026-10-21). A copy the renderer refuses (a code it has no words for, a window without its last day) is a print
+    // failure, as Chromium's is: nothing is printed.
     let pdf: Uint8Array;
     let csv: Buffer;
     try {
-      const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference: packetReference(version.approved_sha256), contact: contact.contact });
-      csv = Buffer.from(packetCsv(exported), 'utf8');
+      const reference = packetReference(version.approved_sha256);
+      const html = packetHtml(exported, { approvedOn: version.approved_at.toISOString().slice(0, 10), reference, contact: contact.contact });
+      csv = Buffer.from(packetCsv(exported, reference), 'utf8');
       pdf = await services.pdf.render(html);
     } catch (error) {
       throw new PacketExportRenderError(error);

@@ -33,7 +33,16 @@ const PRACTICE = content.practice.name;
 const APPROVAL_LINE = `Approved for submission by ${PRACTICE} on 2026-05-02, reference SK6CS-K6CSK.`;
 const CONTACT_LINE = `Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`;
 const SECRETS = [INTERNAL_RECORD.drafter, INTERNAL_RECORD.approver, INTERNAL_RECORD.specialist, INTERNAL_RECORD.versionSha256];
-const scanOf = (packet: PacketContent, text: string, rows: typeof identifiers) => ({ content: packet, narrative: text, allowedEmail: SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? null, identifiers: rows, secrets: SECRETS });
+/** The packet's reference both files carry: the PDF prints it, and every row of the CSV leads with it (the founder's ruling of 2026-10-21). */
+const REFERENCE = payerCopy.reference;
+const scanOf = (packet: PacketContent, text: string, rows: typeof identifiers) => ({
+  content: packet,
+  narrative: text,
+  allowedEmail: SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? null,
+  identifiers: rows,
+  reference: REFERENCE,
+  secrets: SECRETS,
+});
 /** The phrases the interest and timeliness rulings keep off the payer's copy (Q3 (a), Q4 (a)). */
 const FORBIDDEN = [/cannot be computed/i, /can be computed/i, /in all/i, /not claimed/i, /filed within/i, /No dispute window/i];
 
@@ -126,7 +135,7 @@ describe('packetHtml: the payer’s copy', () => {
         const scan = { ...scanOf(packet, text, rows), allowedEmail: contact.email ?? null };
         expect(payerCopyLeaks(htmlText(printedOf(packet, text, rows, { ...payerCopy, contact })), scan), `${name}, HTML`).toEqual([]);
       }
-      expect(payerCopyLeaks(packetCsv(insertIdentifiers(packet, text, rows)), scanOf(packet, text, rows)), `${name}, CSV`).toEqual([]);
+      expect(payerCopyLeaks(packetCsv(insertIdentifiers(packet, text, rows), REFERENCE), scanOf(packet, text, rows)), `${name}, CSV`).toEqual([]);
     }
     for (const printed of [html, maximal]) {
       expect(printed).not.toMatch(/<footer|data-deadline/);
@@ -144,7 +153,7 @@ describe('packetHtml: the payer’s copy', () => {
     const found = payerCopyLeaks(`${htmlText(maximal)} ${codes.join(' ')}`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers));
     expect([...found].sort()).toEqual(codes.map((code) => `code:${code}`).sort());
     // The CSV's own header row is the payer's schedule, not a code.
-    expect(payerCopyLeaks(packetCsv(maximalExported), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+    expect(payerCopyLeaks(packetCsv(maximalExported, REFERENCE), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
   });
 
   it('T2: closes with the approval line, its reference, and the correspondence contact; the cover names the reference', () => {
@@ -273,7 +282,7 @@ describe('packetHtml: the payer’s copy', () => {
     expect(window).toContain('<caption>How each line’s expected amount is computed</caption>');
     expect(window).toContain('<thead><tr><th scope="col">Row</th><th scope="col">Method</th><th scope="col">Steps</th><th scope="col">Rounding</th><th scope="col">Patient share</th></tr></thead>');
     expect(window).toContain('<tr><td>1</td><td>Fixed schedule</td><td>base $100.00</td><td>half up to the cent: $100.00 to $100.00</td><td>$14.00</td></tr>');
-    const secondCsv = packetCsv(insertIdentifiers(level2, draftNarrative(level2), rowsOf(level2))).split('\r\n');
+    const secondCsv = packetCsv(insertIdentifiers(level2, draftNarrative(level2), rowsOf(level2)), REFERENCE).split('\r\n');
     expect(secondCsv[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('');
     expect(secondCsv.join('\n')).not.toContain('2036-04-05');
     for (const printed of [html, maximal, second]) {
@@ -297,7 +306,7 @@ describe('packetHtml: the payer’s copy', () => {
     const window = printed.slice(printed.indexOf('<h2>Dispute window</h2>'), printed.indexOf('</table>', printed.indexOf('<h2>Dispute window</h2>')));
     expect(window).not.toContain('$123456');
     // The CSV keeps plain decimal dollars, the fraction of a cent with them.
-    expect(packetCsv(insertIdentifiers(packet, draftNarrative(packet), rowsOf(packet))).split('\r\n')[1]).toContain(',Fixed schedule,123456.785,123456.79,');
+    expect(packetCsv(insertIdentifiers(packet, draftNarrative(packet), rowsOf(packet)), REFERENCE).split('\r\n')[1]).toContain(',Fixed schedule,123456.785,123456.79,');
   });
 
   it('counts one line, one claim and one day in the singular', () => {
@@ -348,7 +357,7 @@ describe('packetHtml: the payer’s copy', () => {
     expect(htmlText(zeroHtml)).not.toMatch(/Interest by line|Interest stated in this request|prompt-pay interest stated|\$0\.00/i);
     expect(zeroInterest.requested_action).not.toMatch(/interest/i);
     expect(draftNarrative(zeroInterest)).not.toMatch(/interest/i);
-    const zeroRows = packetCsv(insertIdentifiers(zeroInterest, draftNarrative(zeroInterest), rowsOf(zeroInterest))).split('\r\n');
+    const zeroRows = packetCsv(insertIdentifiers(zeroInterest, draftNarrative(zeroInterest), rowsOf(zeroInterest)), REFERENCE).split('\r\n');
     expect(zeroRows[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('');
     // A version with a line above zero beside a line at $0.00 lists and totals the first alone.
     const mixed = assemblePacket(
@@ -373,7 +382,7 @@ describe('packetHtml: the payer’s copy', () => {
     }
     // The CSV's interest cell is empty for a line whose interest code did not compute (each row's patient name holds a
     // comma, so the cells after it are one further along a plain split).
-    const rows = packetCsv(exported).split('\r\n');
+    const rows = packetCsv(exported, REFERENCE).split('\r\n');
     expect(rows[1]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('0.57');
     expect(rows[2]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('interest') + 1)).toBe('');
     expect(rows[2]?.split(',').at(PACKET_CSV_COLUMNS.indexOf('window_ends_on') + 1)).toBe('2036-04-05');
@@ -408,7 +417,7 @@ describe('packetHtml: the payer’s copy', () => {
     const unknown: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, steps: [{ step: 'ncci_bundle', amount_cents: '10000' }] } }, ...rest] };
     expect(() => printedOf(unknown, narrative, identifiers)).toThrow(PayerCopyWordsError);
     const method: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, method: 'CAPITATION' } }, ...rest] };
-    expect(() => packetCsv(insertIdentifiers(method, narrative, identifiers))).toThrow(PayerCopyWordsError);
+    expect(() => packetCsv(insertIdentifiers(method, narrative, identifiers), REFERENCE)).toThrow(PayerCopyWordsError);
   });
 
   it('prints an earlier tp-packet/1 version without a dispute window section', () => {
@@ -421,10 +430,11 @@ describe('packetHtml: the payer’s copy', () => {
 });
 
 describe('packetCsv: the payer’s schedule', () => {
-  it('T6: lists each line with its identifiers but the patient control number, amounts in dollars, interest apart, the window and the calculation in words, formulas refused, and nothing internal', () => {
-    const csv = packetCsv(exported);
+  it('T6: lists each line led by the packet’s reference, with its identifiers but the patient control number, amounts in dollars, interest apart, the window and the calculation in words, formulas refused, and nothing internal', () => {
+    const csv = packetCsv(exported, REFERENCE);
     const rows = csv.split('\r\n');
     expect(PACKET_CSV_COLUMNS).toEqual([
+      'packet_reference',
       'row',
       'payer_claim_control_number',
       'patient_name',
@@ -447,11 +457,33 @@ describe('packetCsv: the payer’s schedule', () => {
       'patient_share',
     ]);
     expect(rows[0]).toBe(PACKET_CSV_COLUMNS.join(','));
-    expect(rows[1]).toBe(`1,SYNCCN0001,"'=SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,2036-04-05,Fixed schedule,100.00,100.00,14.00`);
+    expect(rows[1]).toBe(`SK6CS-K6CSK,1,SYNCCN0001,"'=SYNTHETIC, PATIENT <ONE>",SYNMBR1,2026-03-05,97110,,2,100.00,70.00,30.00,56.00,2026-05-01,2026-03-02,0.57,2036-04-05,Fixed schedule,100.00,100.00,14.00`);
     expect(rows[2]).toContain(',not on the remittance,');
     expect(rows.at(-1)).toBe('');
+    // The reference on every row is the one the PDF's approval line prints and the file names carry (the founder's
+    // ruling of 2026-10-21), so the schedule still matches its letter if a portal drops the file's name.
+    expect(REFERENCE).toBe('SK6CS-K6CSK');
+    expect(APPROVAL_LINE).toContain(`reference ${REFERENCE}.`);
+    expect(rows.slice(1, -1)).toHaveLength(exported.lines.length);
+    for (const row of rows.slice(1, -1)) {
+      expect(row.startsWith(`${REFERENCE},`)).toBe(true);
+    }
+    // And on every row of every version the leak scan prints (T1's routes through the renderer).
+    for (const [name, packet] of Object.entries(VERSIONS)) {
+      const text = name === 'maximal' ? maximalNarrative : draftNarrative(packet);
+      const inserted = name === 'maximal' ? maximalIdentifiers : rowsOf(packet);
+      const body = packetCsv(insertIdentifiers(packet, text, inserted), REFERENCE).split('\r\n').slice(1, -1);
+      expect(body, name).toHaveLength(packet.lines.length);
+      expect(body.every((row) => row.startsWith(`${REFERENCE},`)), name).toBe(true);
+    }
     expect(csv).not.toMatch(/SYNPCN|trace|sha256|deadline_status|deadline_source|FIXED_SCHEDULE/i);
     expect(payerCopyLeaks(csv, scanOf(content, narrative, identifiers))).toEqual([]);
-    expect(payerCopyLeaks(packetCsv(maximalExported), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+    expect(payerCopyLeaks(packetCsv(maximalExported, REFERENCE), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+  });
+
+  it('refuses a reference not in its printed form rather than print it (the export records a print failure)', () => {
+    for (const reference of ['', 'sk6cs-k6csk', 'SK6CSK6CSK', 'SK6CS-K6CSL', 'c'.repeat(64)]) {
+      expect(() => packetCsv(exported, reference), reference).toThrow(TypeError);
+    }
   });
 });

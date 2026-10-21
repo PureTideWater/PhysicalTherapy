@@ -48,8 +48,9 @@ type Scope = PracticeScope<ScopeClient>;
 /**
  * What the reviewer confirms, item by item, before attesting (the attestation names each code; the founder's wording,
  * Q5 (a)). Two items say what each file carries, since the CSV is the line schedule alone (review of 2026-10-21): the
- * PDF closes with the approval line, the reference and the contact, the CSV file is named by the reference; and above
- * the first level the files state the level's own window without a clause. The founder confirms that wording.
+ * PDF closes with the approval line, the reference and the contact, the CSV file is named by the reference (and each
+ * of its rows leads with it, the founder's ruling of 2026-10-21); and above the first level the files state the
+ * level's own window without a clause. The founder confirmed that wording as written on 2026-10-21 (docs/adr/0061).
  */
 export const PACKET_CHECKLIST = [
   {

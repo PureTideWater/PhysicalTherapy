@@ -105,13 +105,21 @@ async function exportedCopy(practice: Practice, caseId: string, promptPayState: 
   const secrets = await secretsOf(practice);
   // The one email the payer's copy may print is the contact's, and it is no login of the world.
   expect(secrets.emails.map((email) => email.toLowerCase())).not.toContain(SYNTHETIC_CORRESPONDENCE_CONTACT.email);
-  const scan = { content: detail.content, narrative: detail.narrative, allowedEmail: SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? null, identifiers, secrets: [...secrets.emails, ...secrets.ids, ...secrets.hashes] };
+  const reference = packetReference(approvedSha256);
+  const scan = {
+    content: detail.content,
+    narrative: detail.narrative,
+    allowedEmail: SYNTHETIC_CORRESPONDENCE_CONTACT.email ?? null,
+    identifiers,
+    reference,
+    secrets: [...secrets.emails, ...secrets.ids, ...secrets.hashes],
+  };
 
   // DB1: the HTML the job printed.
   expect(renderer.printed).toHaveLength(1);
   const html = renderer.printed[0] ?? '';
   expect(payerCopyLeaks(htmlText(html), scan)).toEqual([]);
-  const approvalLine = `Approved for submission by ${detail.content.practice.name} on ${detail.approvedAt.toISOString().slice(0, 10)}, reference ${packetReference(approvedSha256)}.`;
+  const approvalLine = `Approved for submission by ${detail.content.practice.name} on ${detail.approvedAt.toISOString().slice(0, 10)}, reference ${reference}.`;
   const contactLine = `Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`;
   expect(htmlText(html)).toContain(approvalLine);
   expect(htmlText(html)).toContain(contactLine);
@@ -120,6 +128,13 @@ async function exportedCopy(practice: Practice, caseId: string, promptPayState: 
   // The stored CSV.
   const csv = (await w.stored(practice, detail.exportCsvKey ?? '')).toString('utf8');
   expect(payerCopyLeaks(csv, scan)).toEqual([]);
+  // Every row leads with the reference the approval line prints (the founder's ruling of 2026-10-21), one row a line.
+  const [header, ...rows] = csv.split('\r\n').filter((row) => row !== '');
+  expect(header?.split(',')[0]).toBe('packet_reference');
+  expect(rows).toHaveLength(detail.content.lines.length);
+  for (const row of rows) {
+    expect(row.startsWith(`${reference},`)).toBe(true);
+  }
 
   // The printed PDF's text and metadata, where Chromium printed it.
   let pdfText: string | null = null;

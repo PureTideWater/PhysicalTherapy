@@ -10,8 +10,10 @@ import { narrativeParagraphs } from '../html';
 
 /**
  * For the tests (audit item #37 part 1, T1, T5, T6, DB1 and E3; docs/adr/0061): what in a payer's copy, PDF or CSV,
- * is not the payer's. The identifiers the copy prints (claim control numbers, patient names, member IDs) are taken out
- * first, so a long claim number is not mistaken for a hash; then it finds
+ * is not the payer's. The identifiers the copy prints (claim control numbers, patient names, member IDs) and the
+ * packet's reference (which the PDF prints and every row of the CSV carries, the founder's ruling of 2026-10-21) are
+ * taken out first, so a long claim number is not mistaken for a hash, nor a reference's letters for a term; then it
+ * finds
  *
  * - any email other than the correspondence contact's (the one email the payer's copy prints);
  * - a UUID, and a run of 16 or more hex digits holding a letter a to f (a hash or part of one);
@@ -80,6 +82,8 @@ export interface PayerCopyScan {
   /** The contact's email, the one the copy may print. */
   readonly allowedEmail: string | null;
   readonly identifiers: ReadonlyMap<number, RowIdentifiers>;
+  /** The packet's reference (packetReference(approved_sha256)), the copy's own: the PDF prints it, every CSV row carries it. */
+  readonly reference?: string;
   readonly secrets?: readonly string[];
 }
 
@@ -97,9 +101,8 @@ export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
   for (const passage of quoted) {
     words = without(words, passage);
   }
-  // The identifiers the copy prints, longest first, so none is cut by a shorter one inside it.
-  const printed = [...scan.identifiers.values()]
-    .flatMap((row) => PRINTED_IDENTIFIERS.map((kind) => row[kind]))
+  // The identifiers the copy prints and its reference, longest first, so none is cut by a shorter one inside it.
+  const printed = [...[...scan.identifiers.values()].flatMap((row) => PRINTED_IDENTIFIERS.map((kind) => row[kind])), scan.reference ?? null]
     .filter((value): value is string => value !== null && value.trim() !== '')
     .sort((a, b) => b.length - a.length);
   for (const value of printed) {

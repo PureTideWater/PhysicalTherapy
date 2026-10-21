@@ -300,7 +300,14 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       expect(csv.headers()['content-disposition']).toBe(`attachment; filename="payment-dispute-${reference}-schedule.csv"`);
       expect(createHash('sha256').update(await csv.body()).digest('hex')).toBe(csvSha256);
       expect(await csv.text()).toContain('SYNCCNCAS080001');
-      expect((await csv.text()).split('\r\n')[0]).not.toMatch(/trace|sha256|patient_control_number/);
+      const [header, ...schedule] = (await csv.text()).split('\r\n').filter((row) => row !== '');
+      expect(header).not.toMatch(/trace|sha256|patient_control_number/);
+      // Every row of the schedule leads with the reference the PDF prints (the founder's ruling of 2026-10-21).
+      expect(header?.split(',')[0]).toBe('packet_reference');
+      expect(schedule.length).toBeGreaterThan(0);
+      for (const row of schedule) {
+        expect(row.startsWith(`${reference},`)).toBe(true);
+      }
       // The submission waits for the reviewer's attestation.
       await expect(approver.locator('[data-attestation="waiting"]')).toBeVisible();
     });

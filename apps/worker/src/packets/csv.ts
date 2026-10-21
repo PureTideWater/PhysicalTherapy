@@ -1,5 +1,5 @@
 import { decimal, formatCents, parseCents } from '@tp/money';
-import { type ExportedPacket, lineInterestStated } from '@tp/packets';
+import { type ExportedPacket, PACKET_REFERENCE_PATTERN, lineInterestStated } from '@tp/packets';
 
 import { type CsvCell, csvDocument } from '../report/csv';
 import { METHOD_TEXT, wordsOf } from './words';
@@ -7,18 +7,20 @@ import { METHOD_TEXT, wordsOf } from './words';
 /**
  * A packet's CSV schedule (PRD 12: "Export produces a PDF and a CSV schedule, hashed and stored"), the payer's as the
  * PDF is (audit item #37 part 1, D3; the founder's rulings of 2026-10-20; docs/adr/0061): the practice sends both
- * files, and the reviewer attests both. One row per schedule line with the identifiers inserted at export (the claim
- * control number, the patient and the member ID; the patient control number is not printed, Q2 (a)), its amounts in
- * dollars, what the payer paid and when, the line's interest only where code computed it above zero (its own column,
- * never added to expected; empty otherwise, Q4 (a)), the line's window's last day (at the first level only), and its calculation
- * as its trace recorded it:
- * the method in the PDF's words, the unrounded and rounded amounts and the patient share (reported, never
- * subtracted). No trace reference, deadline status or source, or SHA-256: those stay on the reviewer's review page.
- * Line-level PHI: stored sealed with the practice's key, downloaded only by roles that export PHI. Fields go through
- * the one CSV encoder (formula prefixes refused).
+ * files, and the reviewer attests both. One row per schedule line, each led by the packet's reference (the
+ * packetReference(approved_sha256) the PDF prints and both file names carry, D5 and D8), so the schedule still matches
+ * its letter if a payer's portal drops the file's name (the founder's ruling of 2026-10-21); then the identifiers
+ * inserted at export (the claim control number, the patient and the member ID; the patient control number is not
+ * printed, Q2 (a)), its amounts in dollars, what the payer paid and when, the line's interest only where code computed
+ * it above zero (its own column, never added to expected; empty otherwise, Q4 (a)), the line's window's last day (at
+ * the first level only), and its calculation as its trace recorded it: the method in the PDF's words, the unrounded
+ * and rounded amounts and the patient share (reported, never subtracted). No trace reference, deadline status or
+ * source, or SHA-256: those stay on the reviewer's review page. Line-level PHI: stored sealed with the practice's key,
+ * downloaded only by roles that export PHI. Fields go through the one CSV encoder (formula prefixes refused).
  */
 
 export const PACKET_CSV_COLUMNS = [
+  'packet_reference',
   'row',
   'payer_claim_control_number',
   'patient_name',
@@ -60,13 +62,22 @@ function windowEndsOn(exported: ExportedPacket, line: ExportedPacket['lines'][nu
   return exported.content.deadline.basis === 'next_level_window' ? '' : (line.deadline?.ends_on ?? '');
 }
 
-export function packetCsv(exported: ExportedPacket): string {
+/**
+ * The schedule of an export whose approved version's reference is `reference` (packetReference(approved_sha256), the
+ * one the PDF prints). A reference not in its printed form is refused rather than printed (the export records a print
+ * failure).
+ */
+export function packetCsv(exported: ExportedPacket, reference: string): string {
+  if (!PACKET_REFERENCE_PATTERN.test(reference)) {
+    throw new TypeError('a packet reference is two groups of five Crockford digits');
+  }
   // Only stated interest (computed, above zero; Q4 (a)): a line whose interest code did not compute, or computed as
   // $0.00, has an empty cell, as the PDF lists neither.
   const interest = new Map((exported.content.interest?.lines ?? []).filter((line) => lineInterestStated(line)).map((line) => [line.row, line.interest_cents]));
   return csvDocument(
     PACKET_CSV_COLUMNS,
     exported.lines.map((line) => [
+      text(reference),
       { number: String(line.row) },
       text(line.claim_control_number),
       text(line.patient_name),
