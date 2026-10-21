@@ -386,6 +386,243 @@ class BaseAmount(unittest.TestCase):
                 gw.base_amount(case, line, fake_release(**records))
 
 
+def zip9(zip_code, plus_four, locality="01", state="ZZ", carrier="99999", rural="R", flag="1", quarter="20261"):
+    """One record of a ZIP9 file in the CMS layout: state 1-2, ZIP 3-7, carrier 8-12, pricing locality 13-14, rural
+    indicator 15, plus-four flag 21, plus-four 22-25, year and quarter 76-80; the rest blank."""
+    row = f"{state}{zip_code}{carrier}{locality}{rural}{' ' * 5}{flag}{plus_four}{' ' * 50}{quarter}"
+    assert len(row) == 80
+    return row
+
+
+# A ZIP9 file for the tests (never a fixture): ZIP 00012's codes 0000-0002 in locality 01, 5000, 5001 and 8999 in
+# locality 02; 9100 is not listed. A line of another ZIP shows the lookup is by the whole nine digits.
+ZIP9_ROWS = [zip9("00012", code) for code in ("0000", "0001", "0002")] + [zip9("00012", code, "02") for code in ("5000", "5001", "8999")] + [zip9("00013", "9100", "02")]
+ZIP9_NAME = "fixtures/test/ZIP9_TEST.txt"
+
+
+def with_records(release, **changes):
+    """A copy of a release's records with whole record types replaced, as a fake release."""
+    records = copy.deepcopy(release.records)
+    records.update(changes)
+    return gw.Release(900099, "fixtures/fake", "0" * 64, records)
+
+
+class PlusFour(unittest.TestCase):
+    """The ZIP9 step: a ZIP whose locality_map record is flagged is priced at the locality its ZIP+4's ZIP9 record names."""
+
+    def setUp(self):
+        self.base = gw.load_release(golden("G02")["inputs"]["release"])
+        self.locked_base = gw.load_release(golden("G09")["inputs"]["release"])
+        self.directory = tempfile.TemporaryDirectory()
+        self.saved, gw.REPOSITORY = gw.REPOSITORY, Path(self.directory.name).resolve()
+        gw.ZIP9_FILES.clear()
+        self.write_zip9(ZIP9_ROWS)
+
+    def tearDown(self):
+        gw.REPOSITORY = self.saved
+        gw.ZIP9_FILES.clear()
+        self.directory.cleanup()
+
+    def write_zip9(self, rows, ending="\n", data=None):
+        path = gw.REPOSITORY / ZIP9_NAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data if data is not None else "".join(row + ending for row in rows).encode("ascii"))
+        gw.ZIP9_FILES.clear()
+        self.digest = gw.sha256_of(path)
+
+    def plus_four_record(self, start="2026-01-01", end="2026-12-31", source=None):
+        return {
+            "record_type": "locality_map_plus_four", "key": {"zip": "00012"},
+            "value": {"state": "ZZ", "ranges": [{"from": "0000", "to": "9999", "carrier": "00000", "locality": "77", "rural_indicator": "R"}]},
+            "effective_from": start, "effective_to": end,
+            "source": {"path": ZIP9_NAME, "sha256": self.digest} if source is None else source,
+        }
+
+    def gpci_02(self, start="2026-01-01", end="2026-12-31"):
+        return record("pfs_gpci", {"carrier": "99999", "locality": "02"}, {"work_gpci": "1.000", "pe_gpci": "1.050", "mp_gpci": "0.700"}, start, end)
+
+    def split_release(self, base=None, plus_four=None, gpci_02=None):
+        base = base or self.base
+        records = [self.plus_four_record()] if plus_four is None else plus_four
+        return with_records(base, locality_map_plus_four=records, pfs_gpci=base.records["pfs_gpci"] + [gpci_02 or self.gpci_02()])
+
+    def as_locality_02(self, base=None, gpci_02=None):
+        """The release with ZIP 00011's own locality_map record moved to locality 02: what a ZIP+4 in locality 02 must equal."""
+        base = base or self.base
+        moved = copy.deepcopy(base.records["locality_map"])
+        next(item for item in moved if item["key"] == {"zip": "00011"})["value"]["locality"] = "02"
+        return with_records(base, locality_map=moved, pfs_gpci=base.records["pfs_gpci"] + [gpci_02 or self.gpci_02()])
+
+    def priced(self, release, zip_code="00011", plus_four=None, name="G02"):
+        case = golden(name)
+        case["inputs"]["practice_settings"]["zip"] = zip_code
+        if plus_four is not None:
+            case["inputs"]["practice_settings"]["zip_plus_four"] = plus_four
+        gw.validate(case)
+        line = gw.Line(case["inputs"]["claim"]["lines"][0])
+        gw.resolve_agreement(case, line)
+        gw.base_amount(case, line, release)
+        return line
+
+    def test_a_zip_plus_four_in_locality_02_prices_there_and_the_ranges_of_the_release_are_never_read(self):
+        # The fake record's own ranges name carrier 00000 locality 77, which has no GPCI: only the ZIP9 file decides.
+        split = self.split_release()
+        for code in ("5000", "5001", "8999"):
+            with self.subTest(code=code):
+                line = self.priced(split, "00012", code)
+                self.assertEqual(line.unit_parts, self.priced(self.as_locality_02()).unit_parts)
+                self.assertNotEqual(line.unit_total, self.priced(self.base).unit_total)
+        # 97110 at 110%: (0.31 x 1.000 + 0.71 x 1.050 + 0.11 x 0.700) x $20.0000 x 1.1 = 2491.5 cents a unit.
+        self.assertEqual(self.priced(split, "00012", "5000").unit_total, D("2491.5"))
+
+    def test_a_zip_plus_four_in_the_five_digit_locality_prices_as_the_five_digit_zip(self):
+        line = self.priced(self.split_release(), "00012", "0001")
+        self.assertEqual((line.unit_parts, line.unit_total), (self.priced(self.base).unit_parts, D("2323.2")))
+
+    def test_a_flagged_zip_without_its_zip_plus_four_is_not_a_golden_line(self):
+        with self.assertRaisesRegex(gw.InputError, r"ZIP 00012 needs its ZIP\+4 .* settings give none.*locality_needs_zip_plus_four"):
+            self.priced(self.split_release(), "00012")
+
+    def test_a_zip_plus_four_the_file_does_not_list_is_not_a_golden_line(self):
+        for code in ("9100", "0003", "4999", "9999"):
+            with self.subTest(code=code), self.assertRaisesRegex(gw.InputError, f"does not list 00012-{code}: .*zip_plus_four_not_in_locality_map"):
+                self.priced(self.split_release(), "00012", code)
+
+    def test_a_release_with_no_plus_four_record_in_force_is_not_a_golden_line(self):
+        for release in (self.base, self.split_release(plus_four=[self.plus_four_record("2027-01-01", None)])):
+            with self.subTest(release=release.number), self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-03-10.*zip_plus_four_not_in_locality_map"):
+                self.priced(release, "00012", "0001")
+        overlapping = self.split_release(plus_four=[self.plus_four_record(), self.plus_four_record("2026-03-01", None)])
+        with self.assertRaisesRegex(gw.InputError, "two locality_map_plus_four records"):
+            self.priced(overlapping, "00012", "0001")
+
+    def test_the_plus_four_record_is_read_on_the_date_of_service_under_a_locked_basis(self):
+        # G09 prices 2026-04-14 under LOCKED:2025: the GPCI is the 2025 one, the ZIP+4 record the one in force on the date.
+        gpci_2025 = self.gpci_02("2025-01-01", "2025-12-31")
+        line = self.priced(self.split_release(self.locked_base, gpci_02=gpci_2025), "00012", "5000", name="G09")
+        self.assertEqual(line.unit_parts, self.priced(self.as_locality_02(self.locked_base, gpci_2025), name="G09").unit_parts)
+        only_2025 = self.split_release(self.locked_base, plus_four=[self.plus_four_record("2025-01-01", "2025-12-31")], gpci_02=gpci_2025)
+        with self.assertRaisesRegex(gw.InputError, "holds no locality_map_plus_four record for ZIP 00012 in force on 2026-04-14"):
+            self.priced(only_2025, "00012", "5000", name="G09")
+
+    def test_the_worksheet_names_the_record_its_zip9_line_and_the_locality(self):
+        log = "\n".join(self.priced(self.split_release(), "00012", "5000").log)
+        self.assertIn("practice ZIP 00012 spans localities. Its locality_map record (in force on 2026-03-10, 2026-01-01 to 2026-12-31) names carrier 99999 locality 01", log)
+        self.assertIn(f"was read from {ZIP9_NAME}, whose SHA-256 {self.digest} matched. Its line 4, `{zip9('00012', '5000', '02')}`", log)
+        self.assertIn("plus-four flag 21, plus-four 22-25, year and quarter 76-80), gives state ZZ, carrier 99999, pricing locality 02, rural indicator R", log)
+        self.assertIn("- Locality: practice ZIP 00012-5000 maps to carrier 99999 locality 02.", log)
+        self.assertIn("- pfs_gpci 99999-02 (2026-01-01 to 2026-12-31): work 1.000, PE 1.050, MP 0.700.", log)
+
+    def test_a_crlf_file_reads_the_same(self):
+        self.write_zip9(ZIP9_ROWS, "\r\n")
+        self.assertEqual(self.priced(self.split_release(), "00012", "5000").unit_total, D("2491.5"))
+
+    def test_refuses_a_zip9_file_that_does_not_fit_the_cms_layout(self):
+        def replaced(position, text, row=3):
+            rows = list(ZIP9_ROWS)
+            rows[row] = rows[row][: position - 1] + text + rows[row][position - 1 + len(text):]
+            return rows
+
+        cases = [
+            (ZIP9_ROWS[:3] + [ZIP9_ROWS[3][:79]], "line 4: is 79 characters long; a ZIP9 record is 80"),
+            (ZIP9_ROWS[:3] + [ZIP9_ROWS[3] + " "], "line 4: is 81 characters long"),
+            (replaced(21, "0"), "line 4: the plus-four flag at 21 is \"0\""),
+            (replaced(22, "50A0"), "line 4: the plus-four at 22-25 is \"50A0\""),
+            (replaced(3, "0001 "), "line 4: the ZIP at 3-7 is \"0001 \""),
+            (replaced(8, "9999X"), "line 4: the carrier at 8-12 is \"9999X\""),
+            (replaced(13, "2 "), "line 4: the pricing locality at 13-14 is \"2 \""),
+            (replaced(15, "U"), "line 4: the rural indicator at 15 is \"U\""),
+            (replaced(1, "zz"), "line 4: the state at 1-2 is \"zz\""),
+            (replaced(80, "5"), "line 4: the year and quarter at 76-80 is \"20265\""),
+            (ZIP9_ROWS + [zip9("00012", "5000", "02")], "line 8: lists 00012-5000 again \\(first at line 4\\)"),
+            (ZIP9_ROWS + [zip9("00012", "5000", "01")], "line 8: lists 00012-5000 again"),
+            (ZIP9_ROWS[:3] + [""] + ZIP9_ROWS[3:], "line 4: is 0 characters long"),
+        ]
+        for rows, message in cases:
+            with self.subTest(message=message):
+                self.write_zip9(rows)
+                with self.assertRaisesRegex(gw.InputError, f"{ZIP9_NAME} {message}"):
+                    self.priced(self.split_release(), "00012", "5000")
+        self.write_zip9([], data="".join(row + "\n" for row in ZIP9_ROWS).encode("ascii") + b"\xff\n")
+        with self.assertRaisesRegex(gw.InputError, "is not ASCII text"):
+            self.priced(self.split_release(), "00012", "5000")
+
+    def test_refuses_a_zip9_line_of_another_state(self):
+        self.write_zip9(ZIP9_ROWS[:3] + [zip9("00012", "5000", "02", state="YY")] + ZIP9_ROWS[4:])
+        with self.assertRaisesRegex(gw.InputError, "line 4: lists 00012-5000 in state YY, but the ZIP's locality_map record is in state ZZ"):
+            self.priced(self.split_release(), "00012", "5000")
+
+    def test_reads_only_the_source_file_the_record_names_by_path_and_hash(self):
+        cases = [
+            ({"path": ZIP9_NAME, "sha256": "0" * 64}, f"its source {ZIP9_NAME} does not match the SHA-256 the record gives"),
+            ({"path": "fixtures/test/missing.txt", "sha256": "0" * 64}, "its source fixtures/test/missing.txt is not a file inside the repository"),
+            ({"path": "../outside.txt", "sha256": "0" * 64}, "its source ../outside.txt is not a file inside the repository"),
+            ({"path": "/etc/hostname", "sha256": "0" * 64}, "its source /etc/hostname is not a file inside the repository"),
+            ({"path": None, "sha256": "0" * 64}, "names no source file and SHA-256"),
+            ({"url": "https://example.invalid/zip9.txt"}, "names no source file and SHA-256"),
+            ("ZIP9_TEST.txt", "names no source file and SHA-256"),
+        ]
+        for source, message in cases:
+            with self.subTest(message=message):
+                gw.ZIP9_FILES.clear()
+                release = self.split_release(plus_four=[self.plus_four_record(source=source)])
+                with self.assertRaisesRegex(gw.InputError, f"the locality_map_plus_four record of ZIP 00012: {message}"):
+                    self.priced(release, "00012", "5000")
+        without = self.plus_four_record()
+        del without["source"]
+        with self.assertRaisesRegex(gw.InputError, "names no source file"):
+            self.priced(self.split_release(plus_four=[without]), "00012", "5000")
+
+    def test_a_file_read_once_is_kept_by_its_path_and_hash(self):
+        split = self.split_release()
+        self.priced(split, "00012", "5000")
+        (gw.REPOSITORY / ZIP9_NAME).write_text("changed\n", encoding="ascii")
+        self.assertEqual(self.priced(split, "00012", "5000").unit_total, D("2491.5"))
+        gw.ZIP9_FILES.clear()
+        with self.assertRaisesRegex(gw.InputError, "does not match the SHA-256"):
+            self.priced(split, "00012", "5000")
+
+
+class PlusFourCases(unittest.TestCase):
+    """Whole golden cases with a ZIP+4 in their settings, under the committed releases."""
+
+    def test_settings_take_an_optional_four_digit_zip_plus_four(self):
+        case = golden("G02")
+        case["inputs"]["practice_settings"]["zip_plus_four"] = "1234"
+        gw.validate(case)
+        for value in ("12a4", "123", "", "12345", "1234\n", "١٢٣٤", 1234, None):
+            with self.subTest(value=value), self.assertRaisesRegex(gw.InputError, "inputs.practice_settings.zip_plus_four"):
+                case["inputs"]["practice_settings"]["zip_plus_four"] = value
+                gw.validate(case)
+        case["inputs"]["practice_settings"].update(zip_plus_four="1234", plus_four="1234")
+        with self.assertRaisesRegex(gw.InputError, "unknown key plus_four"):
+            gw.validate(case)
+
+    def test_an_unflagged_zip_ignores_its_zip_plus_four(self):
+        case = golden("G02")
+        case["inputs"]["practice_settings"]["zip_plus_four"] = "1234"
+        expected, worksheet = gw.price_case(case)
+        original = golden("G02")
+        self.assertEqual(expected, original["expected"])
+        added = [item for item in worksheet if item not in original["worksheet"]]
+        removed = [item for item in original["worksheet"] if item not in worksheet]
+        self.assertEqual(removed, ["- Practice settings: ZIP 00011; default rounding HALF_UP_CENT."])
+        self.assertEqual(added[0], "- Practice settings: ZIP 00011; ZIP+4 1234; default rounding HALF_UP_CENT.")
+        self.assertEqual(set(added[1:]), {"- ZIP+4 1234: not read. The ZIP's locality_map record does not flag it as spanning localities, so the five-digit ZIP names the locality."})
+
+    def test_a_line_that_never_reads_the_locality_needs_no_zip_plus_four(self):
+        case = golden("G101")
+        case["inputs"]["practice_settings"]["zip"] = "00012"
+        expected, _ = gw.price_case(case)
+        self.assertEqual(expected, golden("G101")["expected"])
+
+    def test_a_flagged_zip_under_a_release_without_a_plus_four_record_is_not_a_golden_line(self):
+        case = golden("G02")
+        case["inputs"]["practice_settings"].update(zip="00012", zip_plus_four="0001")
+        with self.assertRaisesRegex(gw.InputError, "release 900001 holds no locality_map_plus_four record for ZIP 00012"):
+            gw.price_case(case)
+
+
 class Adjustments(unittest.TestCase):
     def adjustments(self, case, number):
         return {item["name"]: (item["before_cents"], item["after_cents"]) for item in outcome(case, number)["adjustments"]}
