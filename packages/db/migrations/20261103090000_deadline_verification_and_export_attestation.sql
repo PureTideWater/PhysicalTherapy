@@ -60,7 +60,9 @@
 --   canonical JSON, which the export job checks with every other field by stating the version again.
 -- - The export (packet_version_export_guard): refused for a version not of the case's dispute level now
 --   (1 + case_reopened_levels(): a version written before a denial reopened the case states the earlier level's
---   deadline), while its pricing is not current, and while the deadline, derived now, is unverified. SQL cannot
+--   deadline), while its pricing is not current, while the deadline, derived now, is unverified, and while the
+--   practice holds no correspondence contact with a name or office and a 10-digit phone for the payer's copy to
+--   print (contact_missing, audit item #37 part 1). SQL cannot
 --   run the verifier (it is TypeScript): it holds the report the job writes (export_verifier_report) to the
 --   verifier's format, a passing result and the version's own narrative SHA-256. The export job runs the
 --   verifier over what it prints and refuses first.
@@ -991,10 +993,14 @@ CREATE TRIGGER packet_version_deadline_stated AFTER INSERT ON packet_version FOR
 -- now, from the content and the rows it names (never from the stored status), and the export carries the
 -- verifier's report over the narrative it rendered, which SQL holds to the verifier's format, a pass and the
 -- version's narrative SHA-256 (the verifier itself is the job's). Its report is written with the export and
--- never changes.
+-- never changes. The practice holds a correspondence contact the payer's copy can print (audit item #37 part 1,
+-- D7 and Q6 (a), contact_missing): an object with the two fields the founder made required (Q1 (a)), a name or
+-- office and a 10-digit North American phone, so no code on the worker's login exports a copy without one; the
+-- job reads the whole contact (correspondenceContactOf()) in the same transaction before anything is decrypted.
 CREATE FUNCTION packet_version_export_guard() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog, public, pg_temp AS $$
 DECLARE
   the_case uuid;
+  contact jsonb;
 BEGIN
   IF OLD.export_sha256 IS NULL AND NEW.export_sha256 IS NOT NULL THEN
     SELECT p.case_id INTO the_case FROM packet p WHERE p.id = NEW.packet_id AND p.practice_id = NEW.practice_id;
@@ -1011,6 +1017,12 @@ BEGIN
     END IF;
     IF packet_version_deadline_status(the_case, NEW.content) = 'unverified' THEN
       RAISE EXCEPTION 'a packet version whose deadline is not verified is not exported' USING ERRCODE = 'check_violation';
+    END IF;
+    SELECT pr.settings -> 'correspondence_contact' INTO contact FROM practice pr WHERE pr.id = NEW.practice_id;
+    IF NOT coalesce(jsonb_typeof(contact) = 'object'
+                    AND jsonb_typeof(contact -> 'name') = 'string' AND btrim(contact ->> 'name') <> ''
+                    AND jsonb_typeof(contact -> 'phone') = 'string' AND (contact ->> 'phone') ~ '^[2-9][0-9]{2}[2-9][0-9]{6}$', false) THEN
+      RAISE EXCEPTION 'a packet version is exported only once its practice has a correspondence contact the payer''s copy can print: a name or office and a phone' USING ERRCODE = 'check_violation';
     END IF;
     IF NOT coalesce(packet_verifier_report_valid(NEW.export_verifier_report) AND NEW.export_verifier_report ->> 'format' = 'tp-packet-verifier/2'
                     AND (NEW.export_verifier_report ->> 'passed')::boolean AND NEW.export_verifier_report ->> 'narrative_sha256' = NEW.verifier_report ->> 'narrative_sha256', false) THEN

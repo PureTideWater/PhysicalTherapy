@@ -491,6 +491,27 @@ describe('CO-05: the export runs the verifier again over what it prints, and rec
     expect(detail).toMatchObject({ exportSha256: null, exportVerifier: null, exportedAt: null });
   });
 
+  it('Postgres refuses an export of a practice with no correspondence contact the payer’s copy can print, whatever the job’s own reads (contact_missing; Q1 (a), Q6 (a))', async () => {
+    const setup = await cas08('export-guard-contact');
+    const version = await write(setup, setup.practice.manager);
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    const words = "a packet version is exported only once its practice has a correspondence contact the payer's copy can print: a name or office and a phone";
+    const contact = (value: unknown) =>
+      w.superuser("UPDATE practice SET settings = CASE WHEN $2::jsonb IS NULL THEN settings - 'correspondence_contact' ELSE jsonb_set(settings, '{correspondence_contact}', $2::jsonb) END WHERE id = $1", [
+        setup.practice.practiceId,
+        value === undefined ? null : JSON.stringify(value),
+      ]);
+    // None, a value of another kind, a blank name, a phone that is not a 10-digit North American number: each refused.
+    for (const value of [undefined, 'BILLING OFFICE', { phone: '9195550100' }, { name: '   ', phone: '9195550100' }, { name: 'BILLING OFFICE', phone: '1195550100' }, { name: 'BILLING OFFICE', phone: 9195550100 }]) {
+      await contact(value);
+      expect((await refusal(jobExport(setup, version.versionId, version.packetId))).message, JSON.stringify(value ?? null)).toBe(words);
+    }
+    // The SYNTHETIC contact, and a name and phone alone (Q1 (a): the rest is optional): the guard passes it.
+    await contact({ name: 'BILLING OFFICE', phone: '9195550100' });
+    await expect(jobExport(setup, version.versionId, version.packetId)).resolves.toBeDefined();
+    await contact(SYNTHETIC_CORRESPONDENCE_CONTACT);
+  });
+
   it('fails when the store seals other bytes than the export printed, and records nothing', async () => {
     const setup = await cas08('export-integrity');
     const version = await write(setup, setup.practice.manager);

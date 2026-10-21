@@ -214,15 +214,20 @@ const SAME_AS: Readonly<Record<string, { readonly via: string; readonly column: 
  */
 const PREPARED_REFERENCES: Readonly<Record<string, (client: OwnerClient, world: TenantWorld, referenced: Row) => Promise<void>>> = {
   // A submission sends an exported, attested version: a second billing manager approves the factory's version
-  // (its drafter cannot), the export job records its files with the verifier's report over the narrative it
-  // rendered (the version's own), and a reimbursement reviewer under a support grant downloads both files (the
-  // two events the download routes record once a file's bytes match its SHA-256) and attests the export
-  // (migration 20261103090000).
+  // (its drafter cannot), the practice has the correspondence contact the export prints, the export job records its
+  // files with the verifier's report over the narrative it rendered (the version's own), and a reimbursement reviewer
+  // under a support grant downloads both files (the two events the download routes record once a file's bytes match
+  // its SHA-256) and attests the export (migration 20261103090000).
   'submission.packet_version_id': async (client, world, version) => {
     const approver = await createUser(client);
     await addMembership(client, world.organizationId, approver, 'billing_manager');
     await asOwner(client, [world.practiceId], () => client.query('UPDATE packet_version SET approved_by = $2, approved_sha256 = content_sha256 WHERE id = $1', [version.id, approver]), approver);
     const key = (file: string) => `practices/${world.practiceId}/packets/${String(version.packet_id)}/${randomUUID()}.${file}`;
+    // The export guard needs the practice's correspondence contact the payer's copy prints (a SYNTHETIC name or office
+    // and phone, the fields Q1 (a) requires; @tp/packets' SYNTHETIC_CORRESPONDENCE_CONTACT holds them and more).
+    await asOwner(client, [world.practiceId], () =>
+      client.query(`UPDATE practice SET settings = jsonb_set(settings, '{correspondence_contact}', '{"name": "SYNTHETIC BILLING OFFICE", "phone": "9195550100"}'::jsonb) WHERE id = $1`, [world.practiceId]),
+    );
     await asOwner(
       client,
       [world.practiceId],
