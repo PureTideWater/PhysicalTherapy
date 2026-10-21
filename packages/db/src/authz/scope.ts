@@ -13,7 +13,9 @@ import { ScopeError, isUuid, requireUuid } from './ids';
  * - withPracticeScope: a request. The database computes the practices the actor may reach right now
  *   (effective_practice_access(): memberships intersected with the grants in force, the actor's own
  *   group's practices, an unexpired support grant) and the scope is the requested ones among them, so
- *   a revoked or expired grant yields nothing on the next transaction.
+ *   a revoked or expired grant yields nothing on the next transaction. A request that asks for one
+ *   snapshot (oneSnapshot) runs at REPEATABLE READ, so every statement in it reads the database as it
+ *   stood at the first; every other transaction runs at READ COMMITTED.
  * - withJobScope: a job. Exactly one practice (test matrix SEC-06): a bulk job spanning practices is
  *   refused before any connection is taken. The actor is the job, of kind service, and a job ID that names
  *   a person is refused before the job's work runs, so no job acts in a person's name through this API.
@@ -86,10 +88,15 @@ export class JobActorIsPersonError extends ScopeError {
  * Runs `open` then `run` in one transaction on one connection. A failure anywhere rolls back; a
  * connection whose rollback fails is destroyed rather than returned to the pool.
  */
-async function transaction<P extends ScopePool<ScopeClient>, S, T>(pool: P, open: (client: ClientOf<P> & ScopeClient) => Promise<S>, run: (scope: S) => Promise<T>): Promise<T> {
+async function transaction<P extends ScopePool<ScopeClient>, S, T>(
+  pool: P,
+  open: (client: ClientOf<P> & ScopeClient) => Promise<S>,
+  run: (scope: S) => Promise<T>,
+  begin: 'BEGIN' | 'BEGIN ISOLATION LEVEL REPEATABLE READ' = 'BEGIN',
+): Promise<T> {
   const client = (await pool.connect()) as ClientOf<P> & ScopeClient;
   try {
-    await client.query('BEGIN');
+    await client.query(begin);
   } catch (error) {
     client.release(true);
     throw error;
@@ -179,6 +186,14 @@ export interface PracticeScopeRequest {
   readonly actorId: string;
   /** The practices the request is about; the scope is those the actor may reach right now. */
   readonly practiceIds: readonly string[];
+  /**
+   * Every statement reads one snapshot: the transaction runs at REPEATABLE READ, so what it reads in its
+   * first statement and its last agree, whatever commits in between. For a page whose figures sit beside
+   * the rows they come from (the ledger's totals beside its lines' stages and entries), whose only writes
+   * are its audit events. A step that writes stays at READ COMMITTED, where the pricing locks hold and are
+   * required (docs/adr/0061).
+   */
+  readonly oneSnapshot?: boolean;
 }
 
 /** A request's transaction, scoped to the requested practices the actor may reach right now. */
@@ -205,6 +220,7 @@ export function withPracticeScope<P extends ScopePool<ScopeClient>, T>(
       };
     },
     run,
+    request.oneSnapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN',
   );
 }
 

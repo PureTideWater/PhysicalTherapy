@@ -35,11 +35,11 @@ export const correspondenceSettingsPath = (practiceId: string) => `/p/${practice
 
 /** What the exported files are, on the packet page's Export card. */
 export const PAYER_COPY_TEXT =
-  'The PDF and the CSV are the payer’s copy. The PDF is the practice’s letter with its figures, citations and evidence, closed by the approval line with the packet’s reference and the practice’s correspondence contact; the CSV is its line schedule, its file named by the reference. Neither carries a login, record ID, SHA-256 or internal note; those stay on the reviewer’s review page.';
+  'The PDF and the CSV are the payer’s copy. The PDF is the practice’s letter with its figures, citations and evidence, closed by the approval line with the packet’s reference and the practice’s correspondence contact; the CSV is its line schedule, each row led by the reference and its file named by it. Neither carries a login, record ID, SHA-256 or internal note; those stay on the reviewer’s review page.';
 
 /** What the review page's Payer's copy card says the exported files carry for the payer, file by file. */
 export const PAYER_COPY_REVIEW_TEXT =
-  'What the exported files carry for the payer besides the letter’s figures, citations and evidence: the PDF closes with the approval line, the reference and the correspondence contact; the CSV is the line schedule, its file named by the reference. Neither carries a login, record ID, SHA-256 or internal note: those are on this page.';
+  'What the exported files carry for the payer besides the letter’s figures, citations and evidence: the PDF closes with the approval line, the reference and the correspondence contact; the CSV is the line schedule, each row led by the reference and its file named by it. Neither carries a login, record ID, SHA-256 or internal note: those are on this page.';
 
 /** What a missing contact means, beside a disabled Export button. */
 export const CONTACT_MISSING_TEXT = 'The practice’s administrator sets the correspondence contact under Settings, Correspondence; the export prints it.';

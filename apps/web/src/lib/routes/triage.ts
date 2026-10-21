@@ -350,6 +350,8 @@ export const casePage = practiceRoute({
   path: '/p/[practiceId]/cases/[caseId]',
   phi: true,
   permission: 'practice.open',
+  // The case's ledger figures beside its lines' stages and its timeline: one snapshot, as the Reconciliation screen reads.
+  oneSnapshot: true,
   params: z.object({ practiceId: opaqueId, caseId: opaqueId, page: pageParam }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<CasePageData> => {
     const asOf = today(services.now());

@@ -342,6 +342,13 @@ export interface OrganizationSpec<P extends { readonly organizationId: string },
 
 export interface PracticeSpec<P extends { readonly practiceId: string }, I, R> extends CommonSpec<P, I> {
   readonly permission: Permission;
+  /**
+   * Every read in one snapshot (REPEATABLE READ; withPracticeScope's oneSnapshot): for a page whose figures sit
+   * beside the rows they come from, the ledger's totals beside its lines' stages and entries, so a reconcile that
+   * commits while the page reads never shows a figure beside a stage it contradicts. A mutation never asks for it:
+   * it writes at READ COMMITTED, where the pricing locks hold (docs/adr/0061). Refused at definition otherwise.
+   */
+  readonly oneSnapshot?: boolean;
   readonly handle: (context: PracticeContext<P, I>) => Promise<R>;
 }
 

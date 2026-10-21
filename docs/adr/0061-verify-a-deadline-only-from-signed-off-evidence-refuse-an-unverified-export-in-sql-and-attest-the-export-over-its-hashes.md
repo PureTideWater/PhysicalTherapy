@@ -708,8 +708,8 @@ copy only, and the internal record stays where it lives and is shown on the revi
 - **D3. The CSV is the payer's too** (`csv.ts`): no `patient_control_number`, `trace_ref`, `deadline_status`,
   `deadline_source` or `trace_sha256` column; the method in the PDF's words; interest empty where code did not
   compute it. Both files take their words from one module (`words.ts`). Every row leads with the packet's reference,
-  its first column `packet_reference` (the founder's ruling of 2026-10-21): the same 10-character reference the PDF
-  prints and the file names carry (D5, D8), derived once by the export job and handed to both writers, so the
+  its first column `packet_reference` (the founder's ruling of 2026-10-21): the same reference (10 Crockford digits,
+  D5) the PDF prints and the file names carry (D8), derived once by the export job and handed to both writers, so the
   schedule still matches its letter if a payer's portal drops the file's name. `packetCsv()` refuses a reference not
   in its printed form (a print failure), and the leak scan sets the reference aside as the copy's own, as it does the
   identifiers the copy prints.
@@ -905,6 +905,29 @@ support. No production export exists (PR 5 is unmerged); whether a staging envir
 sent, and the remedy if one does, were open for the founder, who ruled on 2026-10-21 that no remedy is needed (Owner
 rulings (2026-10-21)).
 
+## Review fixes (2026-10-21, third round)
+
+The review of `921b6ca` found, and this pull request fixes: the Reconciliation screen read its case lines and their
+stages first and its totals last, at READ COMMITTED, where each statement takes its own snapshot. The reconcile writes
+the entries, the matches and the lines' stages in one transaction, so the database never holds a deposited figure
+beside a line still at payer_approved, but a reconcile that committed between those reads gave one render of both:
+"Deposited $30.00" beside a line reading Payer approved, or after a recoupment, "Recovered $12.00" beside a line still
+Recovered. That was the reconciliation journey's flake, which the second round put down to the worker. The
+Reconciliation screen, the specialist's ledger page, the case page and the practice dashboard, each showing the
+ledger's figures beside the stages and entries they come from, now read in one snapshot (amending ADR 0043's
+screens): a page route that sets `oneSnapshot` opens its transaction at REPEATABLE READ (`withPracticeScope`), its
+only writes its audit events; a mutation that asks for it is refused at definition, since it writes at READ COMMITTED,
+where the pricing locks hold; and `reconciliation()` refuses a scope that reads statement by statement. The journey's
+separate wait for the line's stage is gone: each step waits for its figure, and every assertion after it reads the
+same consistent render. Also fixed: the packet page's Export card and the review page's "Payer's copy" card now say
+that each CSV row is led by the reference; a code comment no longer calls the CSV the line schedule alone;
+reconciliation-001's record of the 2026-10-18 rulings says the domain model's text was approved on 2026-10-21; the
+rulings of 2026-10-21 stand apart from the build's notes on them; and the reference is counted as 10 Crockford digits
+(D5), not 10 characters. Tests: the Reconciliation screen read while the recoupment's reconcile commits after its case
+lines (at READ COMMITTED it shows recovered of 12.00 beside the line still Recovered, and fails), the refusal of a
+statement-by-statement read, the transaction's isolation, and the definition's refusal of a mutation asking for one
+snapshot.
+
 ## Owner rulings (2026-10-21)
 
 The founder, Tyler Williams, ruled on this pull request on 2026-10-21:
@@ -912,27 +935,31 @@ The founder, Tyler Williams, ruled on this pull request on 2026-10-21:
 - **The domain model's text is approved.** The founder approved the text of `docs/product/domain-model.md` as
   regenerated from a fresh PostgreSQL 18 database at `20261103090000`, its SHA-256
   `6f72ea56563c379e05a601f3af019ad4ce3358f55cc02b06fcec17ea23d830a0` (every line but the approval line and the
-  provenance line, CO-02). That confirms what the rulings of 2026-10-18 and 2026-10-20 left to the domain model's new
-  hash: the reviewer's downloads, the worker's own login (`tp_job`), the audit items' columns, checks, functions and
-  triggers, `contact_missing` in the refusal codes and the export guard (Q6 (a)), and the unattested submission. The
-  founder adds the approval line with a commit of their own; nothing in this change touches the document, its
-  approval line, `approvers.json` or a migration.
+  provenance line, CO-02), and adds the approval line with a commit of their own.
 - **The reviewer's checklist wording is confirmed as written.** The seven items of D10, `payer_copy` and `deadline` in
   the words review of 2026-10-21 gave them (`PACKET_CHECKLIST`, `apps/web/src/lib/packets/review.ts`), unchanged.
 - **The CSV carries the packet's reference on every row** (a D3 change). The payer's CSV schedule leads each row with
-  a `packet_reference` column holding the same 10-character reference the PDF prints and the file names carry, so the
-  schedule still matches its letter if a payer's portal drops the file's name. Built as D3 now says: the export job
-  derives the reference once from the approved SHA-256 and hands it to the PDF and the CSV writer; the unit tests pin
-  the column first and the reference on every row of every version the leak scan prints, the export job's database
-  tests read the header and the reference on each row of the stored schedule, the packet journey on each row of the
-  downloaded one, and the leak scan sets it aside as the copy's own. No schema change: the reference is derived, never
-  stored. The checklist's `payer_copy` item names the CSV as the line schedule, its file named by the reference, which
-  stays true, so its wording does not change.
-- **No remedy for an export made before the guard whose pricing went stale since.** Review fixes (2026-10-21,
-  second round) named such an export as one that can be neither attested nor logged. No environment has sent a real
-  export, so no such export has reached a payer and no remedy is built: the submissions page keeps its words for the
-  case, and every export the guard admits stores the `export_verifier_report` that lets its submission be logged
-  unattested if its pricing goes stale after it.
+  a `packet_reference` column holding the same reference (10 Crockford digits, D5) the PDF prints and the file names
+  carry, so the schedule still matches its letter if a payer's portal drops the file's name.
+- **No remedy for an export made before the guard whose pricing went stale since.** No environment has sent a real
+  export, so no such export has reached a payer, and no remedy is built.
+
+What the build holds against these rulings (a build note of 2026-10-21, not a ruling):
+
+- The approved text holds what the rulings of 2026-10-18 and 2026-10-20 left to the domain model's new hash: the
+  reviewer's downloads, the worker's own login (`tp_job`), the audit items' columns, checks, functions and triggers,
+  `contact_missing` in the refusal codes and the export guard (Q6 (a)), and the unattested submission. Nothing built
+  after the approval touches the document, its approval line, `approvers.json` or a migration.
+- The CSV is built as D3 now says: the export job derives the reference once from the approved SHA-256 and hands it to
+  the PDF and the CSV writer; the unit tests pin the column first and the reference on every row of every version the
+  leak scan prints, the export job's database tests read the header and the reference on each row of the stored
+  schedule, the packet journey on each row of the downloaded one, and the leak scan sets it aside as the copy's own.
+  No schema change: the reference is derived, never stored. The checklist's `payer_copy` item names the CSV as the
+  line schedule, its file named by the reference, which stays true, so its confirmed wording stands; the packet page's
+  Export card and the review page's "Payer's copy" card say that each row is led by the reference.
+- Review fixes (2026-10-21, second round) named such an export as one that can be neither attested nor logged. The
+  submissions page keeps its words for the case, and every export the guard admits stores the
+  `export_verifier_report` that lets its submission be logged unattested if its pricing goes stale after it.
 
 ## Owner rulings (2026-10-20)
 
@@ -997,7 +1024,8 @@ The founder, Tyler Williams, ruled on this pull request on 2026-10-18:
   the worker runs on that login, and F9 is closed to that extent; it stays open against a process holding the web's
   own application login (What it does not hold against). This adds a sixth login and secret and changes the worker
   task's login and the shared task role (Consequences), beyond the migration the founder approved: the founder
-  confirms it with the domain model's new hash, which waits for the founder (CO-02). No table is added.
+  confirms it with the domain model's new hash (CO-02), approved on 2026-10-21 (Owner rulings (2026-10-21)). No
+  table is added.
 - **D16 (a) for a practice with no other packet approver is not built here.** The analyst-only and lone billing
   manager cases are left to the pull request that carries D27 (the founder named PR 10 "or wherever D27's work
   lands"; reconciliation-001 lists D27 under PR 9 and PR 14), since the reviewer's attestation already blocks every
@@ -1018,4 +1046,5 @@ The founder, Tyler Williams, ruled on this pull request on 2026-10-18:
   reason and one form for the builder (#61, the page). The parts the items give to PR 6c, PR 7, PR 8 and PR 11 stay
   there. The founder's standing rule of the same day: choose the best option for accuracy, quality, user experience,
   security, compliance and dispute success, never weighted by build effort. This extends the migration the founder
-  approved, so the domain model's new SHA-256 waits for the founder's confirmation (CO-02).
+  approved, so the domain model's new SHA-256 waits for the founder's confirmation (CO-02), given on 2026-10-21 (Owner
+  rulings (2026-10-21)).

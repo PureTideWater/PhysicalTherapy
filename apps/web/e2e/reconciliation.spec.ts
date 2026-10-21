@@ -58,22 +58,16 @@ async function uploadExport(page: Page, kind: 'posting_export' | 'eft_export', f
   await expect(uploads.getByRole('region', { name: 'This batch' }).getByRole('status')).toContainText('1 of 1 sent; 1 of 1 taken in', { timeout: 90_000 });
 }
 
-/** The ledger's figure on the Reconciliation screen, once the worker has written it. */
+/**
+ * The ledger's figure on the Reconciliation screen, once the worker has written it. The reconcile writes the figure,
+ * the matches and the lines' stages in one transaction, and the screen reads them all in one snapshot, so the
+ * assertions that follow on the same render (a line's stage, its evidence, the entries) hold as soon as the figure
+ * does; read statement by statement, a render could show the new figure beside the line's old stage.
+ */
 async function expectFigure(page: Page, practiceId: string, figure: string, text: string): Promise<void> {
   await expect(async () => {
     await page.goto(`/p/${practiceId}/reconciliation`);
     await expect(page.locator(`[data-figure="${figure}"]`)).toContainText(text, { timeout: 1_000 });
-  }).toPass({ timeout: 90_000 });
-}
-
-/**
- * The first case line's stage on the Reconciliation screen, once the worker has moved it: the stage can follow the
- * ledger's figure by a moment under load (the figure read deposited while the line still read Payer approved).
- */
-async function expectLineStage(page: Page, practiceId: string, stage: string): Promise<void> {
-  await expect(async () => {
-    await page.goto(`/p/${practiceId}/reconciliation`);
-    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText(stage, { timeout: 1_000 });
   }).toPass({ timeout: 90_000 });
 }
 
@@ -148,7 +142,6 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await withWorker(async () => {
       await uploadExport(page, 'eft_export', 'eft-export.csv', 'text/csv');
       await expectFigure(page, practiceId, 'deposited', '$30.00');
-      await expectLineStage(page, practiceId, 'Recovered (posted or deposited)');
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
     await expect(page.locator('[data-figure="recovered"]')).toContainText('Recovered (deposited)');

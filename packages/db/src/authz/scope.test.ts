@@ -113,6 +113,17 @@ describe('withPracticeScope', () => {
     });
   });
 
+  it('reads one snapshot when the request asks for it (REPEATABLE READ from its first statement), and READ COMMITTED otherwise', async () => {
+    const snapshot = fakePool();
+    await withPracticeScope(snapshot.pool, { actorId: ACTOR, practiceIds: [PRACTICE_A], oneSnapshot: true }, () => Promise.resolve());
+    expect(snapshot.texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ', expect.stringContaining("set_config('app.actor_id'"), expect.stringContaining('open_practice_scope'), 'COMMIT']);
+    for (const request of [{ actorId: ACTOR, practiceIds: [PRACTICE_A] }, { actorId: ACTOR, practiceIds: [PRACTICE_A], oneSnapshot: false }]) {
+      const plain = fakePool();
+      await withPracticeScope(plain.pool, request, () => Promise.resolve());
+      expect(plain.texts()[0]).toBe('BEGIN');
+    }
+  });
+
   it('is empty when the actor may reach none of the requested practices', async () => {
     const { pool } = fakePool();
     await withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A] }, (scope) => {

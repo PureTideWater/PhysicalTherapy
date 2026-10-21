@@ -80,6 +80,9 @@ export const reconciliationPage = practiceRoute({
   path: '/p/[practiceId]/reconciliation',
   phi: true,
   permission: 'report.read',
+  // The totals, read last, beside the case lines' stages and entries, read first: one snapshot, so a reconcile that
+  // commits between them never shows a figure beside a stage it contradicts.
+  oneSnapshot: true,
   params: z.object({
     practiceId: opaqueId,
     case: opaqueId.optional(),

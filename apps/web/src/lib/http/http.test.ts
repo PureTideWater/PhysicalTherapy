@@ -23,6 +23,14 @@ describe('route definitions', () => {
     ).toThrow('names no audit event');
   });
 
+  it('refuse one snapshot for a route that changes records: a mutation writes at READ COMMITTED, where the pricing locks hold', () => {
+    const params = z.object({ practiceId: z.string() });
+    expect(() =>
+      practiceRoute({ id: 'test.snapshot', kind: 'action', path: '/p/[practiceId]/x', phi: false, permission: 'practice.open', oneSnapshot: true, params, audit: { action: 'x', objectType: 'y' }, handle: () => Promise.resolve({}) }),
+    ).toThrow('only a read takes one snapshot');
+    expect(practiceRoute({ id: 'test.snapshot.page', kind: 'page', path: '/p/[practiceId]', phi: true, permission: 'practice.open', oneSnapshot: true, params, handle: () => Promise.resolve(1) })).toMatchObject({ mutation: false });
+  });
+
   it('record their access, method and whether they change records', () => {
     const page = practiceRoute({ id: 'test.page', kind: 'page', path: '/p/[practiceId]', phi: true, permission: 'practice.open', params: z.object({ practiceId: z.string() }), handle: () => Promise.resolve(1) });
     expect(page).toMatchObject({ method: 'GET', mutation: false, access: { kind: 'practice', permission: 'practice.open' } });

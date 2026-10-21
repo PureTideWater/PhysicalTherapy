@@ -32,7 +32,8 @@ describe('PACKET_CHECKLIST', () => {
     expect(text.calculation).toBe(
       'Each line’s calculation in the PDF and the CSV is its trace’s: the method, the steps, the one rounding and the patient share, shown apart from expected; each trace’s SHA-256 is on this page.',
     );
-    // What each file carries: the CSV is the line schedule alone, its file named by the reference (review of 2026-10-21).
+    // What each file carries: the CSV is the line schedule, its file named by the reference (review of 2026-10-21; each
+    // row also leads with it, and the founder confirmed this wording as written on 2026-10-21).
     expect(text.payer_copy).toBe(
       'The PDF and the CSV are fit to send to the payer: the PDF names the practice and closes with its approval line, this reference and its correspondence contact; the CSV is its line schedule, its file named by this reference; neither carries a login, record ID, SHA-256 or internal note (those are on this page).',
     );
