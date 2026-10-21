@@ -21,6 +21,17 @@ import { ScreeningWorld, submitInput } from './test-support/screening-world';
  * read, not the engine, which the capacity test runs at this shape). Synthetic data only.
  */
 
+/**
+ * Each step's time limit, measured, with room for GitHub's 4-core runner, where test:db runs three files at once beside
+ * PostgreSQL. At 7bcb5fc the first test took 109.6 s there against its 120 s, so it timed out under load: every page read
+ * ranks all 20,507 groups from the 50,000 rows (0.47 s a read), and that test reads 214 pages, 206 of them one after
+ * another in the sweep; the setup took about 11 s and was never the cost. Two changes cut the reads, and nothing asserted
+ * changed: screening_standing() is inlined (0.2 s a read; migration 20261104090000), and the sweep reads four pages at a
+ * time. Measured on PostgreSQL 18 on 4 cores at a load of 9 to 10, beside three other db test files: setup 10 s, the
+ * paging test 17 to 22 s, the route 3 to 4 s, the render 6 to 11 s. Each limit is about five times that, rounded up.
+ */
+const TIMEOUTS = { setup: 90_000, paging: 120_000, route: 30_000, render: 60_000 } as const;
+
 const exec = promisify(execFile);
 const REPOSITORY = path.resolve(import.meta.dirname, '../../../../..');
 const WEB = path.join(REPOSITORY, 'apps/web');
@@ -112,7 +123,7 @@ beforeAll(async () => {
     .slice(0, 32);
   hash = screeningTokenHash(token);
   expect((await owner.query('SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [run, hash, 'engine/synthetic', 'test-worst-shape', attempt])).rows).toHaveLength(1);
-}, 300_000);
+}, TIMEOUTS.setup);
 
 afterAll(async () => {
   await world.close();
@@ -169,7 +180,7 @@ const groupsOf = async (page: number, perPage: number = SCREENING_GROUPS_PER_PAG
 const big = (rows: readonly Group[], pick: (group: Group) => string | null) => rows.reduce((total, group) => total + BigInt(pick(group) ?? '0'), 0n);
 
 describe('the result page at the worst shape (audit #53 part 1)', () => {
-  it('pages the groups in the database, in one total order, and counts and sums every group the page does not show', { timeout: 120_000 }, async () => {
+  it('pages the groups in the database, in one total order, and counts and sums every group the page does not show', { timeout: TIMEOUTS.paging }, async () => {
     // Every group, as the owner reads them straight from the stored rows, beside what the functions give.
     const all = (
       await world.owner.query<{ product: string; code: string; lowest_difference: string }>(
@@ -210,21 +221,44 @@ describe('the result page at the worst shape (audit #53 part 1)', () => {
     expect(await groupsOf(1, 100_000)).toHaveLength(100);
     expect((await totalsOf(1, 100_000))[0]).toMatchObject({ page_size: 100, pages: Math.ceil(WORST_GROUPS / 100) });
     expect(await groupsOf(0, 0)).toHaveLength(1);
-    // Every page in turn lists every group once, in one order (pages of 100, the largest the database gives).
-    const numbers = new Set<string>();
-    for (let at = 1; at <= Math.ceil(WORST_GROUPS / 100); at += 1) {
-      for (const group of await groupsOf(at, 100)) {
-        numbers.add(`${group.payer_product}:${group.procedure_code}:${String(group.group_no)}`);
+    // Every page in turn lists every group once, in one order (pages of 100, the largest the database gives): each page
+    // holds the next 100 numbers, no group is listed twice, and the largest difference from the lowest figures comes
+    // first throughout. The pages are read four at a time over the application's pool (its four connections), as
+    // visitors reading at once would: each read ranks every group, so 206 of them one after another are most of this
+    // test's time (see TIMEOUTS).
+    const pagesOf100 = Math.ceil(WORST_GROUPS / 100);
+    const pages: Group[][] = [];
+    const waiting = Array.from({ length: pagesOf100 }, (_, at) => at + 1);
+    await Promise.all(
+      Array.from({ length: 4 }, async () => {
+        for (let at = waiting.shift(); at !== undefined; at = waiting.shift()) {
+          pages[at - 1] = await groupsOf(at, 100);
+        }
+      }),
+    );
+    const listed = new Map<string, number>();
+    pages.forEach((onPage, index) => {
+      const firstNo = index * 100 + 1;
+      expect(
+        onPage.map((group) => group.group_no),
+        `page ${String(index + 1)}`,
+      ).toEqual(Array.from({ length: Math.min(100, WORST_GROUPS - index * 100) }, (_, at) => firstNo + at));
+      for (const group of onPage) {
+        const key = `${group.payer_product}:${group.procedure_code}`;
+        expect(listed.get(key), key).toBeUndefined();
+        listed.set(key, group.group_no);
       }
-    }
-    expect(numbers.size).toBe(WORST_GROUPS);
+    });
+    expect(listed.size).toBe(WORST_GROUPS);
+    const inOrder = pages.flat();
+    expect(inOrder.every((group, at) => at === 0 || lowest(group) <= lowest(inOrder[at - 1] as Group))).toBe(true);
     // An unknown link has no groups and no counts.
     const unknown = screeningTokenHash('abcdefghijklmnopqrstuvwxyzabcdef');
     expect(await asApp('SELECT * FROM screening_result_group_totals($1, 1, 50)', [unknown])).toEqual([]);
     expect(await asApp('SELECT * FROM screening_result_groups($1, 1, 50)', [unknown])).toEqual([]);
   });
 
-  it('reads one page of groups through the route, the first unless another is asked, the last for a page past it', { timeout: 60_000 }, async () => {
+  it('reads one page of groups through the route, the first unless another is asked, the last for a page past it', { timeout: TIMEOUTS.route }, async () => {
     const read = async (groups?: string): Promise<ScreeningResultData> => {
       const outcome = await world.call(screeningResult, { params: { resultId: token, ...(groups === undefined ? {} : { groups }) } });
       if (outcome.status !== 'ok') {
@@ -245,7 +279,7 @@ describe('the result page at the worst shape (audit #53 part 1)', () => {
     expect(last.groups.map((group) => group.groupNo)).toEqual(Array.from({ length: WORST_GROUPS - (PAGES - 1) * 50 }, (_, at) => (PAGES - 1) * 50 + at + 1));
   });
 
-  it('reads and renders any page of the worst shape in a process under a 512 MiB heap, listing 50 groups and holding little', { timeout: 180_000 }, async () => {
+  it('reads and renders any page of the worst shape in a process under a 512 MiB heap, listing 50 groups and holding little', { timeout: TIMEOUTS.render }, async () => {
     const middle = String(Math.ceil(PAGES / 2));
     const support = path.join(WEB, 'src/lib/screening/test-support');
     const args = ['--tsconfig', path.join(support, 'render-result.tsconfig.json'), path.join(support, 'render-result.tsx'), world.database.appUrl, token, `1,${middle},${String(PAGES)},999999`];
@@ -255,7 +289,8 @@ describe('the result page at the worst shape (audit #53 part 1)', () => {
       // (V8's heap_size_limit, which --max-old-space-size=512 alone would put at 704 MiB).
       env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=464 --max-semi-space-size=16 --expose-gc' },
       maxBuffer: 1024 * 1024,
-      timeout: 170_000,
+      // The child's own limit, inside the test's, so a hung render ends with its output rather than as a bare timeout.
+      timeout: TIMEOUTS.render - 5_000,
     });
     const measured = JSON.parse(stdout.trim().split('\n').at(-1) ?? '{}') as {
       heapLimitMiB: number;

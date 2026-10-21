@@ -1227,15 +1227,19 @@ $$;
 -- the fully reduced one for a code in the reduction across codes and the one figure otherwise; 'at_or_above' at or
 -- above the figure before that reduction; 'within_reduction_range' from the fully reduced figure up to below the
 -- figure before the reduction; and 'below_by_threshold_or_less' below the lowest figure by $5 a claim line or less.
+-- A SQL-standard body (RETURN), so PostgreSQL parses it once, here, binding its operators to pg_catalog's whatever
+-- search_path a caller has, and inlines it into each query that calls it: the reads below call it for every row and
+-- every group (50,000 rows and 20,507 groups at the capacity test's worst shape), and a function with its own SET
+-- search_path is never inlined, so each call ran through the function executor (466 ms a ranking of the worst shape,
+-- 197 ms inlined; measured on PostgreSQL 18, result-page.large.db.test.ts). The same CASE, the same answers.
 CREATE FUNCTION screening_standing(expected bigint, reduced bigint, observed bigint, claim_lines bigint) RETURNS text
-LANGUAGE sql IMMUTABLE SET search_path = pg_catalog, public, pg_temp AS $$
-  SELECT CASE
-           WHEN coalesce(reduced, expected) - observed > 500 * claim_lines THEN 'anomaly'
-           WHEN observed >= expected THEN 'at_or_above'
-           WHEN reduced IS NOT NULL AND observed >= reduced THEN 'within_reduction_range'
-           ELSE 'below_by_threshold_or_less'
-         END
-$$;
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+RETURN CASE
+         WHEN coalesce(reduced, expected) - observed > 500 * claim_lines THEN 'anomaly'
+         WHEN observed >= expected THEN 'at_or_above'
+         WHEN reduced IS NOT NULL AND observed >= reduced THEN 'within_reduction_range'
+         ELSE 'below_by_threshold_or_less'
+       END;
 
 CREATE FUNCTION screening_result_summary(token_sha256 text)
 RETURNS TABLE (
