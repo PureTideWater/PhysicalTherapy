@@ -32,8 +32,14 @@ COPY --from=build --chown=node:node /repo/apps/worker/dist ./dist
 COPY --from=build --chown=node:node /repo/packages/db/migrations ./migrations
 # Amazon RDS's certificate bundle: every database connection verifies the server (sslmode=verify-full)
 # and the task definitions point Node at this file (NODE_EXTRA_CA_CERTS; infra/lib/launch.ts).
-ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+# It is added without --chmod and its modes are set as root: BuildKit gives an ADD's --chmod to the directories it
+# creates and to its existing parent (moby/buildkit#5943), so --chmod=644 left /etc/ssl untraversable, and Node, which
+# reads /etc/ssl/openssl.cnf as it starts, could not start as node (screening-capacity run 39536429652).
+ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+RUN chmod 0755 /etc/ssl /etc/ssl/certs && chmod 0644 /etc/ssl/certs/rds-global-bundle.pem
 USER node
+# Node starts as the image's user and reads the bundle, or the build fails here rather than the deploy.
+RUN ["node", "-e", "require('node:fs').readFileSync('/etc/ssl/certs/rds-global-bundle.pem')"]
 # ECS sends SIGTERM before stopping a task; the worker drains active jobs and exits.
 STOPSIGNAL SIGTERM
 CMD ["node", "--enable-source-maps", "dist/main.js"]
