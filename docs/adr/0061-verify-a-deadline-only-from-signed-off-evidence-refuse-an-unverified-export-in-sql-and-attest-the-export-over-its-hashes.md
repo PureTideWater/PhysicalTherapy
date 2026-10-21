@@ -1027,7 +1027,9 @@ What the build holds against the ruling (a build note of 2026-10-21, not a rulin
 - The verifier's facts quote the plan exactly as the copy prints it (`planText()`, `packages/packets/src/facts.ts`),
   so a narrative may quote "plan type Preferred Provider Organization (PPO)", whose words hold no figure, and one
   stating "plan identifier 12" fails (`figure_not_in_input`), since 12 is no input of the plan's any more; for ZZ or a
-  code with no words the facts quote nothing of the plan.
+  code with no words the facts quote nothing of the plan. Only a code with digits (12 to 17) is a figure: a letter
+  code (MC, HM, ZZ and the rest) is none, so the verifier does not catch one in a narrative's prose ("plan identifier
+  MC" passes it). The copy's own text prints no code in its identification or on its cover.
 - Tests: `apps/worker/src/packets/words.test.ts` holds the table and the parser's `claim_filing_indicator` set to each
   other both ways, so the two lists cannot drift, and every code to its printed words (none for ZZ) and an unknown code
   to the refusal; `packages/packets/src/payer.test.ts` pins the table word for word and every key form (`CLP06:12`,
