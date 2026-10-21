@@ -217,7 +217,7 @@ MANUAL = {
   "Images fix: Node starts as user node (#32)": ("Done", "2026-10-21T12:32:00Z", "2026-10-21T13:04:49Z"),
   "PR 5b: the payer's copy prints the plan type in words (#34)": ("Done", "2026-10-21T13:15:00Z", "2026-10-21T19:01:28Z"),
   "Fresh session: setup script, handoff, machine rebuilt": ("Done", "2026-10-21T18:40:00Z", "2026-10-21T19:50:00Z"),
-  "You approve the consumer's monthly cost and the design questions": ("Running", "2026-10-21T22:30:00Z", None),
+  "You approve the consumer's monthly cost and the design questions": ("Running", "2026-10-21T22:00:00Z", None),
 }
 # Steps whose label repeats across batches ("fix review findings"), kept by hand: (batch, label) -> (status, started, finished).
 BATCH_MANUAL = {
