@@ -5,6 +5,7 @@ import {
   type PacketContent,
   type PacketContentV1,
   type PacketContentV2,
+  type PayerIdentification,
   SYNTHETIC_CORRESPONDENCE_CONTACT,
   assemblePacket,
   correspondenceText,
@@ -20,7 +21,7 @@ import { amountsNotInMono } from '../report/test-support/figures';
 import { PACKET_CSV_COLUMNS, packetCsv } from './csv';
 import { packetHtml } from './html';
 import { INTERNAL_RECORD, content, exported, identifiers, maximalContent, maximalExported, maximalIdentifiers, maximalNarrative, narrative, payerCopy } from './test-support/exported-packet';
-import { holdsLoosely, htmlText, narrativeBlock, outsideNarrative, payerCopyLeaks, printedPdfText } from './test-support/payer-copy';
+import { QUALIFIED_IDENTIFIER, holdsLoosely, htmlText, narrativeBlock, outsideNarrative, payerCopyLeaks, printedPdfText } from './test-support/payer-copy';
 import { PayerCopyWordsError, releaseText } from './words';
 
 /**
@@ -92,6 +93,27 @@ const METHOD_VERSIONS: Readonly<Record<string, PacketContent>> = {
     }),
   ),
 };
+/**
+ * A payer and plan of each remittance-key form the loaders write besides the default's REF 2U payer and REF CE plan
+ * (the verification of 2026-10-21), each with the identification the payer's copy prints for it: an N103 XV payer
+ * and a plan keyed by its claim filing indicator, a TRN03 payer and a named plan, and an ERA export's NAME: payer and
+ * PLAN: plan.
+ */
+const KEY_FORMS: Readonly<Record<string, { readonly payer: PayerIdentification; readonly printed: string }>> = {
+  'an XV payer and a CLP06 plan': {
+    payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'XV:SYNPAYERXV', plan_id: IDS.plan, plan_key: 'CLP06:12', plan_name: null },
+    printed: 'SYNTHETIC PAYER Q (payer ID SYNPAYERXV), plan identifier 12',
+  },
+  'a TRN03 payer and a named plan': {
+    payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'TRN03:1999999999', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-FIX-ONE', plan_name: 'SYNTHETIC PLAN NAME' },
+    printed: 'SYNTHETIC PAYER Q (payer ID 1999999999), plan SYNTHETIC PLAN NAME',
+  },
+  'an ERA export’s payer and plan': {
+    payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'NAME:SYNTHETIC PAYER Q', plan_id: IDS.plan, plan_key: 'PLAN:SYNTHETIC PPO 01', plan_name: null },
+    printed: 'SYNTHETIC PAYER Q, plan identifier SYNTHETIC PPO 01',
+  },
+};
+const KEY_FORM_VERSIONS: Readonly<Record<string, PacketContent>> = Object.fromEntries(Object.entries(KEY_FORMS).map(([name, form]) => [name, assemblePacket(assemblyInput({ payer: form.payer }))]));
 /** Paid on time and dated before the due date: every line computes $0.00, which is not stated (Q4 (a)). */
 const zeroInterest = assemblePacket(
   assemblyInput({ asOf: '2026-03-10', lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' }), line(2, { receivedOn: '2026-03-03', paidOn: '2026-03-09' })], interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() } }),
@@ -109,6 +131,7 @@ const VERSIONS: Readonly<Record<string, PacketContent>> = {
   'level 2': level2,
   'a practice with an NPI and tax ID': assemblePacket(assemblyInput({ practice: { practice_id: IDS.practice, name: 'SYNTHETIC THERAPY GROUP 01', npi: '1234567893', tax_id_last4: '6789' } })),
   ...METHOD_VERSIONS,
+  ...KEY_FORM_VERSIONS,
   maximal: maximalContent,
 };
 /** The contacts a practice may set: the full SYNTHETIC one, a name and phone only, an address without an email, an email without an address. */
@@ -148,12 +171,50 @@ describe('packetHtml: the payer’s copy', () => {
     expect(payerCopyLeaks(planted, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual(
       expect.arrayContaining([`email:${INTERNAL_RECORD.approver}`, expect.stringMatching(/^uuid:/), expect.stringMatching(/^hex:/), 'secret:SYNPCN0002']),
     );
+    // A payer part in its remittance-key form: the content's own payer and plan keys, and any identifier led by a
+    // qualifier code (the verification of 2026-10-21).
+    const keyed = payerCopyLeaks(`${htmlText(maximal)} To SYNTHETIC PAYER Q (2U:SYNPAYERQ), plan CE:SYNPLAN-FIX-ONE; XV:SYNOTHER`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers));
+    expect([...keyed].sort()).toEqual(['payer_key:2U:SYNPAYERQ', 'payer_key:CE:SYNPLAN-FIX-ONE', 'qualified:2U:SYNPAYERQ', 'qualified:CE:SYNPLAN-FIX-ONE', 'qualified:XV:SYNOTHER']);
+    // A key the PDF wrapped at its colon is still the content's key.
+    expect(payerCopyLeaks(`${htmlText(maximal)} 2U:\nSYNPAYERQ`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual(['payer_key:2U:SYNPAYERQ']);
     // And a code printed as a code: a pattern's behavior, an observed basis, a release's default, a deadline cause or basis, an exclusion.
     const codes = ['BELOW_CONTRACT_RATE', 'paid_plus_pr', 'COMMERCIAL_DEFAULT', 'NEXT_LEVEL_UNCITED', 'line_windows', 'next_level_window', 'self_funded_erisa_plans'];
     const found = payerCopyLeaks(`${htmlText(maximal)} ${codes.join(' ')}`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers));
     expect([...found].sort()).toEqual(codes.map((code) => `code:${code}`).sort());
     // The CSV's own header row is the payer's schedule, not a code.
     expect(payerCopyLeaks(packetCsv(maximalExported, REFERENCE), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
+  });
+
+  it('T10: names the payer by its name with its ID in words and the plan by its name, or its identifier when none is known, never in a remittance key’s form, in the identification and on the cover (the verification of 2026-10-21)', () => {
+    expect(html).toContain('<p><strong>To:</strong> SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE</p>');
+    expect(html).toContain('<p>To SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE</p>');
+    const named = METHOD_VERSIONS['a release record of no program, a window of no stated days, an end date and a plan name'];
+    if (named === undefined) {
+      throw new Error('the version with a plan name is listed');
+    }
+    expect(printedOf(named, draftNarrative(named), rowsOf(named))).toContain('<p><strong>To:</strong> SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan SYNTHETIC PLAN NAME</p>');
+    for (const [name, form] of Object.entries(KEY_FORMS)) {
+      const packet = KEY_FORM_VERSIONS[name];
+      if (packet === undefined) {
+        throw new Error(`the version of ${name} is listed`);
+      }
+      const printed = printedOf(packet, draftNarrative(packet), rowsOf(packet));
+      expect(printed, name).toContain(`<p><strong>To:</strong> ${form.printed}</p>`);
+      expect(printed, name).toContain(`<p>To ${form.printed}</p>`);
+    }
+    // Every route through the renderer, in both files: no payer or plan key, and no identifier led by a qualifier code.
+    for (const [name, packet] of Object.entries(VERSIONS)) {
+      const text = name === 'maximal' ? maximalNarrative : draftNarrative(packet);
+      const rows = name === 'maximal' ? maximalIdentifiers : rowsOf(packet);
+      const inserted = insertIdentifiers(packet, text, rows);
+      for (const printed of [htmlText(packetHtml(inserted, payerCopy)), packetCsv(inserted, REFERENCE)]) {
+        expect(printed.match(QUALIFIED_IDENTIFIER), name).toBeNull();
+        expect(printed, name).not.toContain(packet.payer.payer_id_raw);
+        expect(printed, name).not.toContain(packet.payer.plan_key);
+      }
+    }
+    // The release number stays printed as it is (D14): narratives cite it.
+    expect(html).toContain('release 900001');
   });
 
   it('T2: closes with the approval line, its reference, and the correspondence contact; the cover names the reference', () => {

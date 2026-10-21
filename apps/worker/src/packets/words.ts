@@ -6,7 +6,10 @@ import { type CitedMethod, type ContractCitation, type PacketContent, type Packe
  * PDF, ./html.ts, and the CSV schedule, ./csv.ts; audit item #37 part 1, D3 and D14; docs/adr/0061): a trace's
  * method, step and rounding codes, a release record's program and a prompt-pay rule's exclusions are never printed as
  * codes, and [2] names what the rule releases supplied. A code of a closed list without its words refuses the copy
- * (PayerCopyWordsError); words.test.ts holds every list's codes to their words.
+ * (PayerCopyWordsError); words.test.ts holds every list's codes to their words. The payer and the plan are named in
+ * words by @tp/packets (payerAndPlanText(): "payer ID <id>", the plan's name or "plan identifier <id>", never a
+ * remittance key's qualifier code; the verification of 2026-10-21), since the verifier's facts quote the plan as the
+ * copy prints it.
  */
 
 /** The calculation's methods, steps and rounding rules in words. */

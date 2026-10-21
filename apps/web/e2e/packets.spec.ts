@@ -6,7 +6,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { assertNoPhi } from '@tp/observability';
 import { PACKET_REFERENCE_PATTERN, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText } from '@tp/packets';
-import { holdsLoosely, printedPdfText } from '@tp/worker/testing/payer-copy';
+import { QUALIFIED_IDENTIFIER, holdsLoosely, printedPdfText } from '@tp/worker/testing/payer-copy';
 
 import { atPhoneWidth, expectAccessible } from './a11y';
 import { attemptEvents, reopenLine, shownVersionId, writeOffFirstLine } from './export-attempts';
@@ -292,6 +292,13 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
         expect(holdsLoosely(printed, login)).toBe(false);
       }
       expect(printed).not.toContain('SHA-256');
+      // The payer by its ID in words and the plan by its identifier, never in their remittance-key form (2U:, CE:), which
+      // the internal record keeps (the verification of 2026-10-21).
+      expect(holdsLoosely(text, 'To: SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan')).toBe(true);
+      expect(printed.match(QUALIFIED_IDENTIFIER)).toBeNull();
+      for (const key of ['2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE']) {
+        expect(holdsLoosely(printed, key)).toBe(false);
+      }
       expect(holdsLoosely(printed, shownVersion)).toBe(false);
       expect(holdsLoosely(printed, pdfSha256.slice(0, 16))).toBe(false);
       const csvSha256 = (await approver.getByLabel('CSV SHA-256', { exact: true }).getAttribute('data-sha256')) ?? '';
@@ -300,6 +307,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       expect(csv.headers()['content-disposition']).toBe(`attachment; filename="payment-dispute-${reference}-schedule.csv"`);
       expect(createHash('sha256').update(await csv.body()).digest('hex')).toBe(csvSha256);
       expect(await csv.text()).toContain('SYNCCNCAS080001');
+      expect((await csv.text()).match(QUALIFIED_IDENTIFIER)).toBeNull();
       const [header, ...schedule] = (await csv.text()).split('\r\n').filter((row) => row !== '');
       expect(header).not.toMatch(/trace|sha256|patient_control_number/);
       // Every row of the schedule leads with the reference the PDF prints (the founder's ruling of 2026-10-21).

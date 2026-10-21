@@ -1,5 +1,6 @@
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
 import { interestStated, lineInterestStated } from './interest';
+import { planName } from './payer';
 import { readableText } from './readable';
 import { type FigureKind, canonicalNumber, scanText } from './scan';
 
@@ -8,7 +9,8 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * draftPacketNarrative: "every number, date, code and count in the text must match the inputs
  * exactly"). Built from the stored version, so anyone can check a stored narrative again. Amounts are
  * cents as integer text, numbers and percentages plain decimals, dates ISO. The contract's quoted
- * clause, the statute, the identification of practice, payer and plan, and the contract's title are
+ * clause, the statute, the identification of practice, payer and plan (the plan as the payer's copy names it, by its
+ * name or its identifier without the remittance key's qualifier, ./payer.ts), and the contract's title are
  * read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it.
  * No identifier of a patient or a claim is ever an input: they are placeholders, one per schedule row.
  *
@@ -156,8 +158,9 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
 
   sets.quoted(content.practice.name);
   sets.quoted(content.payer.name);
-  sets.quoted(content.payer.plan_key);
-  sets.quoted(content.payer.plan_name);
+  // The plan as the payer's copy names it (./payer.ts): its name, or its identifier without the remittance key's
+  // qualifier when no name is known. The key itself ("CE:SYNPLAN-63") is the record's, and no figure of the copy.
+  sets.quoted(planName(content.payer).text);
 
   for (const percent of pattern.contract_percentages) {
     sets.percents.add(canonicalNumber(percent));

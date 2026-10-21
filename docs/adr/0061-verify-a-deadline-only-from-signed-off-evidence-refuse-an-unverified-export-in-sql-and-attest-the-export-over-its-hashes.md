@@ -688,7 +688,11 @@ copy only, and the internal record stays where it lives and is shown on the revi
   approval columns and its regulation confirmation never change after approval, the audit log is append-only, and the
   review page renders all of it (the Internal record card).
 - **D2. What the payer's copy prints** (`apps/worker/src/packets/html.ts`): the title and running header as before, the
-  practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); [1] the contract's
+  practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); the payer by its
+  name with its identifier in words (`SYNTHETIC PAYER Q (payer ID SYNPAYERQ)`, an ERA export's payer, keyed by its name,
+  by its name alone) and the plan by its name, or `plan identifier <id>` when no name is known, never in the
+  remittance-key form the internal record and the review page keep (`2U:`, `CE:`; `payerAndPlanText()`,
+  `packages/packets/src/payer.ts`; Verification fix (2026-10-21)); [1] the contract's
   title, version, effective dates and page with the quoted clause (no document ID or SHA-256) under "Contract citation",
   or the regulation under "Regulation cited"; [2]
   what the payment rules in effect supplied, by release (D14); the narrative alone in its block; the line schedule
@@ -927,6 +931,36 @@ rulings of 2026-10-21 stand apart from the build's notes on them; and the refere
 lines (at READ COMMITTED it shows recovered of 12.00 beside the line still Recovered, and fails), the refusal of a
 statement-by-statement read, the transaction's isolation, and the definition's refusal of a mutation asking for one
 snapshot.
+
+## Verification fix (2026-10-21)
+
+The verification of `7618f1d` in a fresh clone found the payer's PDF printing the payer and the plan in their
+remittance-key form, "SYNTHETIC PAYER Q (2U:SYNPAYERQ), plan CE:SYNPLAN-FIX-ONE", against #37 part 1 (the payer's copy
+carries no internal detail): `2U:` and `CE:` are X12 qualifier codes the loaders write into the record's keys
+(`payer.payer_id_raw`, `plan.plan_key`), not anything the payer's examiner reads. This pull request fixes it:
+
+- The copy names the payer by its name with its identifier in words ("SYNTHETIC PAYER Q (payer ID SYNPAYERQ)"), a payer
+  an ERA export keys by its name (`NAME:<payer>`) by its name alone, and the plan by its name, or "plan identifier
+  SYNPLAN-FIX-ONE" when no name is known, in the identification ("To: ...") and on the cover ("To ..."): one function,
+  `payerAndPlanText()` (`packages/packets/src/payer.ts`), over every key form the loaders write (`2U:`, `XV:` and
+  `TRN03:` payers, `CE:` and `CLP06:` plans, an ERA export's `NAME:` and `PLAN:`). The CSV prints neither. The internal
+  record, the review page and the mapping screens keep the key form. Record numbers stay printed (D14).
+- A narrative states only what the copy prints beside it (D11 to D13), so the verifier's facts quote the plan as the
+  copy names it (its name, or its identifier without the qualifier) where they quoted its key: a narrative citing
+  "CE:SYNPLAN-63" now fails the verifier, and one citing "SYNPLAN-63" for a plan with no name passes.
+- The leak scan also finds a payer part in its key form: the content's own payer and plan keys anywhere in a copy, the
+  narrative too (matched across a printed line's end), and, outside the narrative and the quoted clauses, any
+  identifier led by a qualifier code (two characters and a colon, or the loaders' `TRN03:`, `CLP06:`, `NAME:` and
+  `PLAN:`), over every route it already covered: each version T1 prints with each contact, in the HTML and the CSV,
+  T1's routes now with an `XV:` payer and a `CLP06:` plan, a `TRN03:` payer and a named plan, and an ERA export's payer
+  and plan; the printed PDF (T5); and the export job's HTML, printed PDF and stored CSV (DB1). T10 pins the printed
+  words for each key form; the packet journey checks the downloaded PDF and CSV for them.
+
+No schema or domain-model change. Named, not changed: a plan the remittance identifies only by its claim filing
+indicator (`CLP06:`, no REF CE) prints as "plan identifier 12", the code as sent; printing the indicator in words
+("Preferred Provider Organization") would be the copy's words for an X12 code list, left for the founder. A person
+may still type a key form holding no digit ("CE:SYNPLAN-FIX-ONE") into a narrative, which the verifier, reading
+figures, does not refuse; no draft holds one, since `draftNarrative()` and the model are given no key.
 
 ## Owner rulings (2026-10-21)
 

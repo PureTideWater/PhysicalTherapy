@@ -165,10 +165,26 @@ describe('narrativeFacts', () => {
       // Not the lines' first-level contract window either (its days, its clause's numbers, its page), for the same reason.
       dayCounts: [],
       pages: [],
-      identifiers: ['1-2-3', '7-8-9', 'CE:SYNPLAN-63', 'month:2026-05', 'month_day:06-03'], // the statute, the quote, the plan key, the quote's month and day
+      // The statute, the quote, the quote's month and day; not the plan's key, since the payer's copy names the plan by its name.
+      identifiers: ['1-2-3', '7-8-9', 'month:2026-05', 'month_day:06-03'],
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6, 7, 8],
     });
+  });
+
+  it('holds the plan as the payer’s copy names it, never its remittance key’s qualifier (audit item #37 part 1, the verification of 2026-10-21)', () => {
+    const payer = { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: '2U:SYNPAYER7', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-63', plan_name: null };
+    // No name is known: the copy prints "plan identifier SYNPLAN-63", so that identifier is a figure and the key is not.
+    const unnamed = narrativeFacts(assemblePacket(assemblyInput({ payer })));
+    expect(unnamed.identifiers.has('SYNPLAN-63')).toBe(true);
+    expect(unnamed.identifiers.has('CE:SYNPLAN-63')).toBe(false);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', unnamed, []).passed).toBe(true);
+    expect(verifyNarrative('The plan is CE:SYNPLAN-63 [1].', unnamed, []).passed).toBe(false);
+    // Named: the copy prints the name alone, so neither the identifier nor the key is one; the payer's ID never was.
+    const named = narrativeFacts(assemblePacket(assemblyInput({ payer: { ...payer, plan_name: 'SYNTHETIC PLAN 64' } })));
+    expect(named.numbers.has('64')).toBe(true);
+    expect([...named.identifiers].filter((value) => value.includes('SYNPLAN') || value.includes('SYNPAYER'))).toEqual([]);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, []).passed).toBe(false);
   });
 
   it('holds the lines’ windows and the clause behind them at the first level only, as the payer’s copy prints them (audit item #37 part 1)', () => {

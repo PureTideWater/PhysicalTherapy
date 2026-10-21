@@ -2,7 +2,8 @@
  * @tp/packets: packet assembly, the deterministic verifier, identifier placeholders and their insertion
  * at export, prompt-pay interest, the next dispute window, and (tp-packet/2, CO-05) each line's deadline
  * with its status and its calculation summary copied from its trace (PRD 12; milestone 8), and (audit item #37 part 1)
- * the packet's reference derived from its approved hash and the practice's correspondence contact. Pure functions over
+ * the packet's reference derived from its approved hash, the practice's correspondence contact, and the payer and plan as
+ * the payer's copy names them (never in their remittance-key form). Pure functions over
  * the records a case and its approved contract hold: no database, network or model inside. The
  * verifier is a hard gate with no bypass; the database refuses an approval of a version it failed.
  * Printing the export (PDF and CSV) is the worker's (apps/worker/src/packets).
@@ -99,6 +100,7 @@ export {
   lineHoldsOnlyPlaceholders,
   placeholder,
 } from './placeholders';
+export { type RemittanceKey, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
 export { type ReadableText, type TextSpan, readableText } from './readable';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
 export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';

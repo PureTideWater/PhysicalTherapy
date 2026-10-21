@@ -1,4 +1,4 @@
-import { type IdentifierKind, type PacketContent, type RowIdentifiers, fillPlaceholders } from '@tp/packets';
+import { type IdentifierKind, type PacketContent, type RowIdentifiers, fillPlaceholders, remittanceKey } from '@tp/packets';
 import { PAYER_COPY_INTERNAL_TERMS } from '@tp/packets/testing';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // pdf.js runs its worker in this thread from the module that registers itself (as report/test-support/printed-text.ts).
@@ -24,7 +24,12 @@ import { narrativeParagraphs } from '../html';
  *   control numbers are always among them, since the payer's copy does not print them (Q2 (a));
  * - outside the narrative and the quoted clauses, the internal terms (PAYER_COPY_INTERNAL_TERMS), and anything shaped
  *   like a code (CODE_SHAPES: words joined by underscores, in lower or in upper case, such as a pattern's behavior, an
- *   observed basis, a deadline cause, a deadline basis or a release's exclusion), the CSV's own header row set aside.
+ *   observed basis, a deadline cause, a deadline basis or a release's exclusion), the CSV's own header row set aside;
+ * - a payer part in its remittance-key form (the verification of 2026-10-21): the content's payer and plan keys
+ *   (`2U:SYNPAYERQ`, `CE:SYNPLAN-FIX-ONE`) anywhere, the narrative too, and, outside the narrative and the quoted
+ *   clauses, any identifier led by a qualifier code (QUALIFIED_IDENTIFIER: two characters and a colon, or one of the
+ *   loaders' longer qualifiers), since the copy names the payer by its ID in words and the plan by its name or
+ *   identifier, and only the internal record and the review page keep the key form.
  *
  * A printed PDF wraps text where its lines end, inside an identifier or a hash too, so every value is matched with any
  * whitespace allowed between its characters. Each leak is named by its kind and what was found.
@@ -39,6 +44,17 @@ const INTERNAL_KEYS: ReadonlySet<string> = new Set(['hash', 'trace_ref', 'verifi
 export const CODE_SHAPES: readonly RegExp[] = [/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/, /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/];
 /** The CSV's header row: its column names are the schedule's own, the one place a code's shape is the payer's. */
 const CSV_HEADER = PACKET_CSV_COLUMNS.join(',');
+/**
+ * An identifier led by a remittance key's qualifier code: two characters and a colon (`2U:`, `XV:`, `CE:`), or one of
+ * the longer qualifiers the loaders write (`TRN03:`, `CLP06:`, an ERA export's `NAME:` and `PLAN:`;
+ * apps/worker/src/parse/plan.ts and era/normalize.ts), with the identifier after it.
+ */
+export const QUALIFIED_IDENTIFIER = /(?<![A-Za-z0-9])(?:[A-Z0-9]{2}|TRN03|CLP06|NAME|PLAN):[A-Za-z0-9][^\s,;)]*/g;
+
+/** The content's payer and plan keys that carry a qualifier, as the record holds them: none is ever printed. */
+export function payerKeys(content: PacketContent): string[] {
+  return [content.payer.payer_id_raw, content.payer.plan_key].filter((key) => remittanceKey(key).qualifier !== null);
+}
 
 /** Every string the content holds under an internal key, and every evidence gap's code. */
 export function internalValues(content: PacketContent): string[] {
@@ -147,6 +163,14 @@ export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
     for (const match of unheaded.matchAll(new RegExp(shape.source, 'g'))) {
       leaks.push(`code:${match[0]}`);
     }
+  }
+  for (const key of payerKeys(scan.content)) {
+    if (loose(key, '').test(rest)) {
+      leaks.push(`payer_key:${key}`);
+    }
+  }
+  for (const match of words.matchAll(QUALIFIED_IDENTIFIER)) {
+    leaks.push(`qualified:${match[0]}`);
   }
   return leaks;
 }

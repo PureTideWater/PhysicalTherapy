@@ -1,6 +1,6 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
 import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
-import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated } from '@tp/packets';
+import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated, payerAndPlanText } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
@@ -12,8 +12,10 @@ import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusion
  * the practice's own letter to its payer, which the practice sends with the CSV schedule through its own channel, so
  * it prints only what the payer's examiner needs and what code knows when it prints:
  *
- * - the practice and payer, the contract's cited clause with its title, version, effective dates and page (or the
- *   regulation), and [2], what the payment rules in effect supplied, by release (D14);
+ * - the practice and payer, the payer by its name with its identifier in words ("payer ID SYNPAYERQ") and the plan by
+ *   its name, or "plan identifier <id>" when no name is known, never a remittance key's qualifier code (2U:, CE:; the
+ *   verification of 2026-10-21; @tp/packets payerAndPlanText()), the contract's cited clause with its title, version,
+ *   effective dates and page (or the regulation), and [2], what the payment rules in effect supplied, by release (D14);
  * - the pattern statement, exactly the approved narrative the export's verifier passed, identifiers inserted, and
  *   nothing else in its block;
  * - the line schedule (claim control number, patient and member ID; the patient control number is not printed,
@@ -179,10 +181,12 @@ export function narrativeParagraphs(narrative: string): string[] {
 export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, reconciliation: ReportReconciliation = packetReconciliation(payerCopy.reference)): string {
   const { content, lines, narrative } = exported;
   const { citation, practice, payer, pattern } = content;
-  const plan = payer.plan_name ?? payer.plan_key;
+  // The payer and plan in words, never in their remittance-key form ("2U:SYNPAYERQ", "CE:SYNPLAN-FIX-ONE"), which the
+  // internal record and the review page keep.
+  const addressee = payerAndPlanText(payer);
   const identification = [
     `<p><strong>From:</strong> ${escapeHtml(practice.name)}${practice.npi === null ? '' : `, NPI ${escapeHtml(practice.npi)}`}${practice.tax_id_last4 === null ? '' : `, tax ID ending ${escapeHtml(practice.tax_id_last4)}`}</p>`,
-    `<p><strong>To:</strong> ${escapeHtml(payer.name)} (${escapeHtml(payer.payer_id_raw)}), plan ${escapeHtml(plan)}</p>`,
+    `<p><strong>To:</strong> ${escapeHtml(addressee)}</p>`,
     `<p class="meta">Dispute level ${String(content.dispute_level)}; prepared ${escapeHtml(content.as_of)}; reference ${escapeHtml(payerCopy.reference)}.</p>`,
   ].join('');
   const cited =
@@ -232,7 +236,7 @@ export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, recon
       kicker: 'Payment dispute',
       heading: 'Request to reprocess underpaid claims',
       practiceName: practice.name,
-      meta: [`To ${payer.name} (${payer.payer_id_raw}), plan ${plan}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Reference ${payerCopy.reference}`],
+      meta: [`To ${addressee}`, `Dispute level ${String(content.dispute_level)}; prepared ${content.as_of}`, `Reference ${payerCopy.reference}`],
       reference: `Reference ${payerCopy.reference}`,
       reconciliation,
       // The practice's own letter to its payer: its name leads, not the vendor's.

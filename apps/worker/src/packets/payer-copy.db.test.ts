@@ -1,7 +1,7 @@
 import { readDatabaseUrl } from '@tp/db';
 import { loadPracticeCipher } from '@tp/db/runtime';
 import { asOwner } from '@tp/db/testing';
-import { type RowIdentifiers, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText, draftNarrative, fillPlaceholders, packetReference, packetReferencePrefix } from '@tp/packets';
+import { type RowIdentifiers, SYNTHETIC_CORRESPONDENCE_CONTACT, correspondenceText, draftNarrative, fillPlaceholders, packetReference, packetReferencePrefix, payerAndPlanText, remittanceKey } from '@tp/packets';
 import { formatCents, formatUsd, parseCents } from '@tp/money';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -18,7 +18,8 @@ import { PacketWorld } from './test-support/packet-world';
  * 2026-10-20; docs/adr/0061): the job's real export in the packet world, its renderer wrapped so the HTML it printed
  * is kept. The HTML always, and the printed PDF's text where Chromium is installed, and the stored CSV hold no login of
  * the world, no ID of its rows and no SHA-256 it stores; they hold the approval line with the practice's name, the
- * approval's UTC date and the reference of the approved hash, and the contact; the PDF holds every sentence of the
+ * approval's UTC date and the reference of the approved hash, and the contact; they name the payer and plan in words,
+ * never in their remittance-key form (the verification of 2026-10-21); the PDF holds every sentence of the
  * narrative the verifier passed, whose report the export stores unchanged. Staff then find the packet by its
  * reference. SYNTHETIC CAS-08, and CAS-15 for a copy that states the interest code computed.
  */
@@ -123,6 +124,12 @@ async function exportedCopy(practice: Practice, caseId: string, promptPayState: 
   const contactLine = `Correspondence about this dispute: ${correspondenceText(SYNTHETIC_CORRESPONDENCE_CONTACT)}.`;
   expect(htmlText(html)).toContain(approvalLine);
   expect(htmlText(html)).toContain(contactLine);
+  // The payer and plan in words, never in the remittance-key form the record keeps (the verification of 2026-10-21).
+  expect(remittanceKey(detail.content.payer.payer_id_raw).qualifier).not.toBeNull();
+  expect(remittanceKey(detail.content.payer.plan_key).qualifier).not.toBeNull();
+  const addressee = `To: ${payerAndPlanText(detail.content.payer)}`;
+  expect(addressee).toContain(`(payer ID ${remittanceKey(detail.content.payer.payer_id_raw).identifier})`);
+  expect(htmlText(html).replace(/\s+/g, ' ')).toContain(addressee);
   expect(narrativeBlock(html)).toEqual(fillPlaceholders(detail.narrative, identifiers).split(/\n\s*\n/).map((paragraph) => paragraph.trim()));
 
   // The stored CSV.
@@ -144,6 +151,7 @@ async function exportedCopy(practice: Practice, caseId: string, promptPayState: 
     expect(payerCopyLeaks(`${text}\n${Object.values(metadata).join('\n')}`, scan)).toEqual([]);
     expect(holdsLoosely(text, approvalLine)).toBe(true);
     expect(holdsLoosely(text, contactLine)).toBe(true);
+    expect(holdsLoosely(text, addressee)).toBe(true);
     for (const sentence of fillPlaceholders(detail.narrative, identifiers).split(/(?<=\.)\s+/)) {
       expect(holdsLoosely(text, sentence), sentence).toBe(true);
     }
