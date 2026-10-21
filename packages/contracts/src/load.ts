@@ -2,8 +2,9 @@ import { type PracticeScope, type ScopeClient, readWithAudit } from '@tp/db/runt
 import { type Cents, parseCents } from '@tp/money';
 
 import { type MappedLine, assertPricingAllowed } from './coverage';
-import type { AgreementRecords, ContractVersionRecord, PlanMappingRecord, RateRecord } from './records';
-import { evidenceSchema, parseRateTerms } from './terms';
+import type { AgreementRecords, ContractVersionRecord, DisputeWindowRecord, PlanMappingRecord, RateRecord } from './records';
+import { citationSchema, evidenceSchema, parseRateTerms } from './terms';
+import { type DisputeWindowRule, disputeWindowRuleSchema } from './window-rule';
 
 /**
  * Reads for the workflow, pricing and coverage, under the practice's policies. Every row returned is
@@ -84,6 +85,43 @@ export function versionRecord(row: VersionRow): ContractVersionRecord {
   };
 }
 
+export interface DisputeWindowRow {
+  readonly id: string;
+  readonly practice_id: string;
+  readonly dispute_window_days: number | null;
+  readonly dispute_window_evidence: unknown;
+  readonly dispute_window_unit: string | null;
+  readonly dispute_window_measured_from: string | null;
+  readonly dispute_window_verified_by: string | null;
+  readonly dispute_window_verified_at: Date | null;
+}
+
+export const DISPUTE_WINDOW_COLUMNS =
+  'v.id, v.practice_id, v.dispute_window_days, v.dispute_window_evidence, v.dispute_window_unit, v.dispute_window_measured_from, v.dispute_window_verified_by, v.dispute_window_verified_at';
+
+export function disputeWindowRecord(row: DisputeWindowRow): DisputeWindowRecord {
+  let citation = null;
+  let rule: DisputeWindowRule | null = null;
+  if (row.dispute_window_evidence !== null) {
+    const parsed = citationSchema.safeParse(row.dispute_window_evidence);
+    // The database holds the rule exactly with the citation (contract_version_window_rule_with_citation).
+    const parsedRule = disputeWindowRuleSchema.safeParse({ unit: row.dispute_window_unit, measuredFrom: row.dispute_window_measured_from });
+    if (!parsed.success || !parsedRule.success) {
+      throw new ContractDataError('a stored dispute window citation does not match its schema');
+    }
+    citation = parsed.data;
+    rule = parsedRule.data;
+  }
+  return {
+    versionId: row.id,
+    days: row.dispute_window_days,
+    citation,
+    rule,
+    verifiedBy: row.dispute_window_verified_by,
+    verifiedAt: row.dispute_window_verified_at?.toISOString() ?? null,
+  };
+}
+
 export interface RateRecordRow {
   readonly id: string;
   readonly practice_id: string;
@@ -156,6 +194,26 @@ export async function loadVersions(scope: PracticeScope<ScopeClient>, request: R
     target,
   );
   return rows.map(versionRecord);
+}
+
+/** The dispute windows of some versions: their days, citations and verifications (D17 a). */
+export async function loadDisputeWindows(scope: PracticeScope<ScopeClient>, request: ReadRequest, versionIds: readonly string[]): Promise<DisputeWindowRecord[]> {
+  if (versionIds.length === 0) {
+    return [];
+  }
+  const rows = await readWithAudit(
+    scope,
+    { objectType: 'contract_version', purpose: request.purpose, requestId: request.requestId },
+    async (client) =>
+      (
+        await client.query<DisputeWindowRow>(`SELECT ${DISPUTE_WINDOW_COLUMNS} FROM contract_version v WHERE v.practice_id = $1 AND v.id = ANY ($2::uuid[]) ORDER BY v.id`, [
+          request.practiceId,
+          versionIds,
+        ])
+      ).rows,
+    target,
+  );
+  return rows.map(disputeWindowRecord);
 }
 
 /** Rate records of some versions. */

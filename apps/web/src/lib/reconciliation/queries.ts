@@ -358,8 +358,17 @@ export interface ReconciliationData {
  * The case lines the ledger holds anything for (a match or an entry), a page at a time, each with its
  * linkage and entries; the practice's entries newest first; and what matches nothing, with its evidence
  * and candidates. For one case when `caseId` names one: that case's ledger.
+ *
+ * The case lines and their stages are read first and the totals last, so the scope must read one snapshot (the
+ * routes that call this take oneSnapshot), and a scope that does not is refused: the reconcile writes entries and
+ * stages in one transaction, and at READ COMMITTED one that commits between those statements would show its figure
+ * beside the lines' earlier stages.
  */
 export async function reconciliation(scope: Scope, services: Services, practiceId: string, query: ReconciliationQuery, phi: boolean, requestId: string): Promise<ReconciliationData> {
+  const { rows: isolation } = await scope.client.query<{ level: string }>("SELECT current_setting('transaction_isolation') AS level");
+  if (isolation[0]?.level !== 'repeatable read' && isolation[0]?.level !== 'serializable') {
+    throw new Error('the ledger is read in one snapshot: open the scope with oneSnapshot');
+  }
   const cipher = phi ? await loadPracticeCipher(scope, services.keys, practiceId) : null;
   const { rows: lineCount } = await scope.client.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM case_line cl

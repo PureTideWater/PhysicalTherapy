@@ -18,10 +18,30 @@ import { caseTable } from './triage';
  */
 
 export const SUBMISSION_CHANNEL_VALUES = ['payer_portal', 'fax', 'mail', 'provider_relations_email'] as const;
+/** packet_version.deadline_verification_status (CO-12; migration 20261103090000), in the CHECK's order. */
+export const DEADLINE_VERIFICATION_STATUS_VALUES = ['verified', 'unverified', 'not_applicable'] as const;
 export const PAYER_RESPONSE_KIND_VALUES = ['accepted', 'partial', 'denied', 'info_requested', 'reprocessed_no_change'] as const;
 export const DENIAL_CATEGORY_VALUES = ['authorization', 'visit_limit', 'modifier', 'medical_necessity', 'timely_filing', 'bundling', 'other'] as const;
 export const PACKET_EXPORT_FILES = ['pdf', 'csv'] as const;
 export type PacketExportFile = (typeof PACKET_EXPORT_FILES)[number];
+/**
+ * Whether a packet version's pricing is still current (audit item #4; migration 20261103090000's
+ * packet_version_pricing_check() and submission.pricing_check), in the CHECK's order: 'current', then each
+ * cause from the most severe. A stale line's pricing is no longer in effect (an accepted re-run, a later first
+ * run), its rule release was withdrawn, the plan mapping it priced under is no longer the plan's mapping in force
+ * on its service date (a correction since, MAP-03), or its contract version is no longer signed off or no longer
+ * covers the service date.
+ */
+export const PRICING_CHECK_RESULTS = ['current', 'PRICING_NOT_IN_EFFECT', 'RELEASE_WITHDRAWN', 'MAPPING_NOT_IN_FORCE', 'CONTRACT_VERSION_NOT_SIGNED_OFF', 'CONTRACT_VERSION_NOT_IN_FORCE'] as const;
+export type PricingCheckResult = (typeof PRICING_CHECK_RESULTS)[number];
+/**
+ * Why a submission was logged without a reimbursement reviewer's attestation of the export it sends
+ * (submission.unattested_reason; migration 20261103090000; the founder's ruling of 2026-10-20), in the CHECK's order:
+ * the one reason there is, 'pricing_stale_after_export' (sent without sign-off: pricing went stale after export). The
+ * database writes it, from packet_version_unattested_reason(), beside pricing_check, which records the cause.
+ */
+export const SUBMISSION_UNATTESTED_REASONS = ['pricing_stale_after_export'] as const;
+export type SubmissionUnattestedReason = (typeof SUBMISSION_UNATTESTED_REASONS)[number];
 
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -55,7 +75,7 @@ export const packetVersion = pgTable(
       .notNull()
       .references(() => packet.id),
     versionNo: integer('version_no').notNull(),
-    /** tp-packet/1 (@tp/packets PacketContent). */
+    /** tp-packet/2, or tp-packet/1 written before 20261103090000 (@tp/packets PacketContent). */
     content: jsonb('content').$type<Readonly<Record<string, unknown>>>().notNull(),
     /** Generated from the content. */
     citation: jsonb('citation')
@@ -96,6 +116,19 @@ export const packetVersion = pgTable(
     exportedAt: timestamp('exported_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Generated from the content (CO-12; migration 20261103090000): tp-packet/2's content.deadline.status, and
+     * unverified for every tp-packet/1 version. What the version stated when written; the export derives it again.
+     */
+    deadlineVerificationStatus: text('deadline_verification_status', { enum: DEADLINE_VERIFICATION_STATUS_VALUES })
+      .notNull()
+      .generatedAlwaysAs(sql`CASE WHEN content ->> 'format' = 'tp-packet/2' THEN content -> 'deadline' ->> 'status' ELSE 'unverified' END`),
+    /** The verifier's report over the narrative the export rendered (tp-packet-verifier/2), written with the export. */
+    exportVerifierReport: jsonb('export_verifier_report').$type<Readonly<Record<string, unknown>>>(),
+    /** The reimbursement reviewer's attestation over the export's two SHA-256 (D16): who, when and tp-attestation/1. */
+    attestedBy: uuid('attested_by').references(() => user.id),
+    attestedAt: timestamp('attested_at', { withTimezone: true }),
+    attestation: jsonb('attestation').$type<Readonly<Record<string, unknown>>>(),
   },
   (table) => [unique('packet_version_numbered').on(table.packetId, table.versionNo), index('packet_version_by_packet').on(table.practiceId, table.packetId, table.versionNo.desc())],
 );
@@ -125,6 +158,18 @@ export const submission = pgTable(
     disputeLevel: integer('dispute_level').notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /**
+     * Whether the version sent was still priced current when the submission was logged (migration
+     * 20261103090000): set by the database from packet_version_pricing_check(), never refused for it, and
+     * never written by the application. Null only on a row logged before that migration.
+     */
+    pricingCheck: text('pricing_check', { enum: PRICING_CHECK_RESULTS }),
+    /**
+     * Why it was logged without the attestation (migration 20261103090000): 'pricing_stale_after_export' for an export
+     * whose pricing went stale after it was made, so its attestation is refused; null for a submission of an attested
+     * export. Set by the database, never written by the application.
+     */
+    unattestedReason: text('unattested_reason', { enum: SUBMISSION_UNATTESTED_REASONS }),
   },
   (table) => [index('submission_by_case').on(table.practiceId, table.caseId, table.submittedOn.desc()), index('submission_by_follow_up').on(table.practiceId, table.followUpOn)],
 );

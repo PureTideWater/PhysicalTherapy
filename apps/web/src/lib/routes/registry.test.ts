@@ -19,6 +19,7 @@ import * as mapping from './mapping';
 import * as models from './models';
 import * as monitoring from './monitoring';
 import * as onboarding from './onboarding';
+import * as packetReference from './packet-reference';
 import * as packets from './packets';
 import * as practice from './practice';
 import * as pricing from './pricing';
@@ -69,6 +70,7 @@ const EXPORTED = new Map<string, Route>(
     models,
     monitoring,
     onboarding,
+    packetReference,
     packets,
     practice,
     pricing,

@@ -69,6 +69,25 @@ export function formatUsd(amount: Cents, locale = 'en-US'): string {
   return formatter.format(formatCents(amount) as Intl.StringNumericLiteral);
 }
 
+// Unrounded cents as decimal text: an optional minus sign, integer digits and an optional fraction of a cent.
+const UNROUNDED_CENTS_TEXT = /^(-?)(\d+)(?:\.(\d+))?$/;
+
+/**
+ * Formats an unrounded amount, cents as decimal text that may keep a fraction of a cent ("12345678.5"), as US dollars
+ * in formatUsd's own form, its whole cents grouped and signed as formatUsd's are, with its fraction of a cent after
+ * them: "$123,456.785", "-$1.505"; a whole number of cents reads exactly as formatUsd's. Never through a float.
+ */
+export function formatUnroundedUsd(text: string): string {
+  const match = UNROUNDED_CENTS_TEXT.exec(text);
+  if (match === null) {
+    throw new MoneyError('an unrounded amount is cents as decimal text');
+  }
+  const magnitude = BigInt(match[2] ?? '0');
+  const fraction = (match[3] ?? '').replace(/0+$/, '');
+  const negative = match[1] === '-' && (magnitude !== 0n || fraction !== '');
+  return `${negative ? '-' : ''}${formatUsd(cents(magnitude))}${fraction}`;
+}
+
 export function addCents(a: Cents, b: Cents): Cents {
   return cents(a + b);
 }

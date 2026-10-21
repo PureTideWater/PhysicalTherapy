@@ -90,7 +90,6 @@ export class PlatformStack extends Stack {
       key,
       documents: this.storage.documents,
       packets: this.storage.packets,
-      appSecret: this.database.appSecret,
       userPool: this.identity.userPool,
     });
     this.supportMail = new SupportMail(this, 'SupportMail', { environmentName, key, supportEmail: parameters.supportEmail });
@@ -172,6 +171,7 @@ export class PlatformStack extends Stack {
       RestoreDrillInstanceId: this.database.restoreDrillInstanceId,
       OwnerLoginSecretArn: this.database.ownerSecret.secretArn,
       AppLoginSecretArn: this.database.appSecret.secretArn,
+      WorkerLoginSecretArn: this.database.workerSecret.secretArn,
       OperatorLoginSecretArn: this.database.operatorSecret.secretArn,
       UserPoolId: this.identity.userPool.userPoolId,
       WebClientId: this.identity.webClient.userPoolClientId,

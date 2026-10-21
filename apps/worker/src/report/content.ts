@@ -5,6 +5,7 @@ import { type UnpricedReason, parseTrace } from '@tp/pricing';
 import {
   type AdjustmentBehavior,
   BEHAVIOR_TEXT,
+  type DeadlineUnverifiedCause,
   INVESTIGATORY,
   NOT_ACTIONABLE_REASONS,
   STAGE_LABELS,
@@ -23,6 +24,7 @@ import { parseCoverage } from '../price/coverage';
 import { RUN_IN_EFFECT } from '../price/in-effect';
 import { loadRuleRelease } from '../price/release';
 import { ledgerEntries, practiceLedgerSettings } from '../reconcile/ledger';
+import { lineDeadlines } from '../triage/deadline';
 import { UNPRICED_REMEDIES } from './remedies';
 
 /**
@@ -102,6 +104,12 @@ export interface ReportCase {
   readonly actionable_now_cents?: string;
   readonly payer_approved_cents?: string;
   readonly recovered_cents?: string;
+  /**
+   * How many of the case's submissions were sent without sign-off when the report was generated (the founder's ruling of
+   * 2026-10-20; docs/adr/0061): their export's pricing went stale after it was made, so it was never attested, and the
+   * payer's answer is tracked as for any submission. Present only when there is one.
+   */
+  readonly unattested_submissions?: number;
 }
 
 export interface ReportAnomaly {
@@ -122,8 +130,42 @@ export interface ReportAnomaly {
   readonly validation_requested: boolean;
 }
 
+/**
+ * What makes the deadlines of a report's DEADLINE_UNVERIFIED lines verified, by what holds them back (D17 a; audit item
+ * #5): a contract window is cited and checked on a corrected version; a contract window cited with a rule the product
+ * does not compute yet (business days, months, or counted from another date than the payment date) waits, and the
+ * report states no date for it, since the date the engine counts may be earlier or later than the contract's; a
+ * contract silent on its window has its window entered and cited there too, since the release's commercial default is
+ * never verified; a Medicare window needs a rule release whose record is verified to L2; and a Medicare Advantage
+ * non-contracted window waits for the product-wide answer on its dispute route (golden QUESTIONS Q34). Each remedy that
+ * applies, in that order, once.
+ */
+export function deadlineRemedy(causes: readonly (DeadlineUnverifiedCause | null)[]): string {
+  const contract = causes.some((cause) => cause === null || (cause.startsWith('CONTRACT_') && cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED') || cause === 'NEXT_LEVEL_UNCITED');
+  const notComputed = causes.includes('CONTRACT_WINDOW_RULE_NOT_COMPUTED');
+  const silent = causes.includes('COMMERCIAL_DEFAULT');
+  const release = causes.some((cause) => cause === 'RECORD_NOT_IN_RELEASE' || cause === 'RECORD_BELOW_LEVEL' || cause === 'RELEASE_WITHDRAWN' || cause === 'NEXT_LEVEL_DIFFERS');
+  const route = causes.includes('MA_ROUTE_UNCONFIRMED');
+  const remedies = [
+    ...(contract ? ['For a contract window, have the contract specialist cite the contract’s dispute window on its page and check it on a corrected version, then sign the version off and price the lines again'] : []),
+    ...(notComputed
+      ? [
+          'For a contract window counted in business days or months, or from a date other than the payment date, the product does not compute that rule yet, so it states no deadline for these lines (the date it would count may be earlier or later than the contract’s): keep the contract’s own deadline; these lines wait until the product computes that rule',
+        ]
+      : []),
+    ...(silent ? ['For a contract silent on its window, the release’s default is never verified: have the contract specialist enter the window the contract states, cite it and check it on a corrected version'] : []),
+    ...(release ? ['For a Medicare window, the lines are priced again under a rule release whose Medicare dispute windows a second reader verified to level L2'] : []),
+    ...(route
+      ? [
+          'For a Medicare Advantage non-contracted line, the deadline waits for the product-wide answer on which dispute route applies (the plan’s own payment dispute policy or a Medicare redetermination; golden question Q34), which the contract specialist is answering and a later release of the product applies; nothing in this practice changes it, and no packet of such a line goes out until then: work the plan’s own dispute policy outside the product',
+        ]
+      : []),
+  ];
+  return remedies.join('. ');
+}
+
 export interface EvidenceGap {
-  readonly kind: 'unpriced' | 'no_window' | 'ma_confirmation' | 'pursuit_settings';
+  readonly kind: 'unpriced' | 'no_window' | 'deadline_unverified' | 'ma_confirmation' | 'pursuit_settings';
   readonly reason: string | null;
   readonly lines: number;
   readonly charge_cents: string | null;
@@ -236,7 +278,13 @@ interface LineRow {
   readonly contract_version_id: string | null;
   readonly rate_record_id: string | null;
   readonly mapping_kind: string | null;
+  /** Whether the mapping it priced under is still the plan's mapping in force on its service date (payer_plan_mapping_in_force()). */
+  readonly mapping_in_force: boolean;
   readonly version_status: string | null;
+  /** Whether the version still covers the line's service date (true without a version). */
+  readonly version_covers_service: boolean;
+  /** Whether the run's rule release has been withdrawn since. */
+  readonly release_withdrawn: boolean;
   readonly line_no: number;
   readonly procedure_code: string;
   readonly modifiers: readonly string[] | null;
@@ -279,6 +327,7 @@ interface CaseRow {
   readonly lines: string;
   readonly open_lines: string;
   readonly written_off_cents: string;
+  readonly unattested_submissions: number;
 }
 
 interface AnomalyRow {
@@ -318,6 +367,10 @@ async function runLines(scope: PracticeScope<ScopeClient>, input: GatherInput): 
            )
            SELECT p.id AS priced_line_id, p.practice_id, p.service_line_id, p.expected_allowed_cents::text, p.observed_allowed_cents::text, p.variance_cents::text,
                   p.unpriced_reason, p.window_ends_on::text, p.contract_version_id, p.rate_record_id, m.mapping_kind, v.status AS version_status,
+                  coalesce(payer_plan_mapping_in_force(l.payer_plan_key, coalesce(l.service_date, c.service_from)) = p.mapping_id, false) AS mapping_in_force,
+                  (p.contract_version_id IS NULL OR coalesce(v.effective_from <= coalesce(l.service_date, c.service_from)
+                     AND (v.effective_to IS NULL OR coalesce(l.service_date, c.service_from) < v.effective_to), false)) AS version_covers_service,
+                  EXISTS (SELECT 1 FROM pricing_run r JOIN rule_release_withdrawal w ON w.release_no = r.release_no WHERE r.id = p.pricing_run_id) AS release_withdrawn,
                   l.line_no, l.procedure_code, l.modifiers, trim_scale(coalesce(l.units, 1))::text AS units, coalesce(l.service_date, c.service_from)::text AS service_date,
                   l.charge_cents::text, c.payer_claim_control_number, py.id AS payer_id, py.name_raw AS payer_name, pl.id AS plan_id, coalesce(pl.name, pl.plan_key) AS plan_name,
                   (c.claim_status_code = '22' OR EXISTS (SELECT 1 FROM claim x WHERE x.reversal_of_claim_id = c.id)) AS reversed,
@@ -357,7 +410,8 @@ async function runCases(client: ScopeClient, input: GatherInput): Promise<CaseRo
             c.materiality_cents::text, c.pursuit_cost_cents::text, u.email AS owner,
             count(cl.id) FILTER (WHERE p.pricing_run_id = $1)::text AS lines,
             count(cl.id) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NULL)::text AS open_lines,
-            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents
+            coalesce(sum(p.variance_cents) FILTER (WHERE p.pricing_run_id = $1 AND cl.written_off_reason IS NOT NULL), 0)::text AS written_off_cents,
+            (SELECT count(*) FROM submission s WHERE s.case_id = c.id AND s.practice_id = c.practice_id AND s.unattested_reason IS NOT NULL)::int AS unattested_submissions
        FROM "case" c
        JOIN payer py ON py.id = c.payer_id
        JOIN plan pl ON pl.id = c.plan_id
@@ -418,18 +472,30 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
   }
   const caseRows = await runCases(client, input);
   const rows = await runLines(scope, input);
+  // Whether each line's deadline is verified (D17 a), as triage judged it.
+  const deadlines = await lineDeadlines(
+    client,
+    rows.map((row) => row.priced_line_id),
+  );
 
   const lines: ReportLine[] = rows.map((row) => {
+    // A contract window cited in a rule the engine does not compute yet has no end the report can state or judge.
+    const windowRuleComputed = deadlines.get(row.priced_line_id)?.cause !== 'CONTRACT_WINDOW_RULE_NOT_COMPUTED';
     const variance = row.variance_cents === null ? null : parseCents(row.variance_cents);
     const visit = row.visit_variance_cents === null ? null : parseCents(row.visit_variance_cents);
     const judged = judgeLine(
       {
         varianceCents: variance,
         windowEndsOn: row.window_ends_on,
+        deadlineStatus: deadlines.get(row.priced_line_id)?.status ?? 'unverified',
+        windowRuleComputed,
         claimReversed: row.reversed,
         claimSuperseded: row.superseded,
         mappingKind: row.mapping_kind,
+        mappingInForce: row.mapping_in_force,
         contractVersionStatus: row.version_status,
+        contractVersionCoversService: row.version_covers_service,
+        releaseWithdrawn: row.release_withdrawn,
         writtenOff: false,
         visitVarianceCents: visit,
         reviewFlags: row.review_flags.map((flag) => flag.flag),
@@ -480,7 +546,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       validated_cents: status === 'with_visit' || validatedCents === null ? null : centsToString(validatedCents),
       visit_variance_cents: row.visit_variance_cents,
       unpriced_reason: row.unpriced_reason,
-      window_ends_on: row.window_ends_on,
+      window_ends_on: windowRuleComputed ? row.window_ends_on : null,
       stage: row.stage ?? '',
       status,
       reasons,
@@ -592,6 +658,7 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       actionable_now_cents: text(stillCents),
       payer_approved_cents: text(totals.payerApprovedCents),
       recovered_cents: text(totals.recoveredCents),
+      ...(row.unattested_submissions > 0 ? { unattested_submissions: row.unattested_submissions } : {}),
     };
   });
   const openCases = cases.filter((item) => item.state === 'open');
@@ -648,6 +715,18 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       remedy: 'Obtain the contract’s dispute terms',
     });
   }
+  const unverified = validated.filter((line) => line.reasons.includes('DEADLINE_UNVERIFIED'));
+  if (unverified.length > 0) {
+    gaps.push({
+      kind: 'deadline_unverified',
+      reason: 'DEADLINE_UNVERIFIED',
+      lines: unverified.length,
+      charge_cents: text(sum(unverified.map((line) => line.charge_cents))),
+      detail:
+        'The dispute deadline of these validated lines is not verified (D17 a): their contract’s window is not cited and verified on its page or cites a rule the product does not compute yet, the release’s window is its commercial default or below L2, or the Medicare Advantage dispute route is not confirmed, so they are not actionable',
+      remedy: deadlineRemedy(unverified.map((line) => deadlines.get(line.priced_line_id)?.cause ?? null)),
+    });
+  }
   const maCases = openCases.filter((item) => item.mapping_kind === 'ma_noncontracted');
   if (maCases.length > 0) {
     gaps.push({
@@ -655,8 +734,9 @@ export async function gatherReport(scope: PracticeScope<ScopeClient>, input: Gat
       reason: null,
       lines: maCases.reduce((total, item) => total + item.actionable_lines, 0),
       charge_cents: null,
-      detail: `${String(maCases.length)} Medicare Advantage non-contracted case(s) price from the public fee schedule under 42 CFR 422.214`,
-      remedy: 'A reimbursement specialist confirms the regulation applies to each case before a packet goes out',
+      detail: `${String(maCases.length)} Medicare Advantage non-contracted case(s) price from the public fee schedule under 42 CFR 422.214; their dispute deadline is not verified until the product-wide question of which dispute route applies is answered (golden question Q34), so no packet of theirs is exported until then`,
+      remedy:
+        'Which dispute route Medicare Advantage non-contracted lines take (the plan’s own payment dispute policy or a Medicare redetermination) is a product-wide question the contract specialist is answering, which a later release of the product applies; nothing in this practice changes it. Until then, work the plan’s own dispute policy outside the product; a reimbursement specialist also confirms the regulation applies to each case before a packet goes out',
     });
   }
   if (settings.pursuit === null) {

@@ -8,10 +8,12 @@ import {
   addRateRecord,
   approveRateRecordField,
   approveVersion,
+  citeDisputeWindow,
   createContract,
   createDraftVersion,
   serializePageText,
   signOffVersion,
+  verifyDisputeWindow,
 } from '@tp/contracts';
 import { documentPages, readDocumentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
@@ -21,14 +23,21 @@ import type { DocumentStore } from '@tp/worker/documents';
 
 /**
  * Test support: a practice's contract records as the people of the plan make them (a contract
- * specialist under a support grant abstracts and approves, the practice administrator signs off),
+ * specialist under a support grant abstracts, cites and verifies the dispute window, and approves; the
+ * practice administrator signs off; the signed-off version's lines' deadlines are verified, D17 a),
  * through packages/contracts' own services, over SYNTHETIC documents sealed with the practice's key in
  * the document store the web app reads. Used by the route tests; synthetic data only.
  */
 
-/** The synthetic agreement's pages: the second holds its fee schedule. */
+/** Where the synthetic agreement states its dispute window (page 1), which the specialist cites and verifies (D17 a). */
+export const WINDOW_QUOTE = 'Disputes are raised within 3650 days of the payment date.';
+export const WINDOW_DAYS = 3650;
+/** The rule WINDOW_QUOTE states (best-option audit #5): calendar days after the payment date (BPR16), the rule the product computes. */
+export const WINDOW_RULE = { unit: 'calendar_days', measuredFrom: 'payment_date' } as const;
+
+/** The synthetic agreement's pages: the first states its notice and dispute window, the second holds its fee schedule. */
 export const CONTRACT_PAGES: readonly (readonly string[])[] = [
-  ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Effective January 1, 2026. Compensation is set out in Exhibit A.', 'Either party gives 90 days notice before an anniversary.'],
+  ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Effective January 1, 2026. Compensation is set out in Exhibit A.', 'Either party gives 90 days notice before an anniversary.', WINDOW_QUOTE],
   ['SYNTHETIC EXHIBIT A FEE SCHEDULE', '97110 Therapeutic exercise $32.00 per unit', '97140 Manual therapy $30.50 per unit', '97530 Therapeutic activities at 110% of the Medicare fee schedule'],
 ];
 
@@ -97,34 +106,49 @@ export async function seedContractWorld(options: ContractWorldOptions): Promise<
     withPracticeScope(app, { actorId, practiceIds: [practiceId] }, (scope) => run({ scope, requestId: `seed-${randomUUID()}`, evidence }));
   const specialist = <T>(run: (context: WorkflowContext) => Promise<T>) => as(options.specialistId, run);
 
-  /** A contract with one draft version naming the document, and one rate record citing its page. */
+  /**
+   * A contract with one draft version naming the document, its 3650-day dispute window cited on page 1 (D17 a), and
+   * one rate record citing its page.
+   */
   const draft = (title: string) =>
     specialist(async (context) => {
       const { contractId } = await createContract(context, { practiceId, payerId, title });
-      const { versionId } = await createDraftVersion(context, { practiceId, contractId, effectiveFrom: '2026-01-01', sourceDocumentIds: [contractDocumentId], timelyFilingDays: 180, noticeDays: 90 });
+      const { versionId } = await createDraftVersion(context, {
+        practiceId,
+        contractId,
+        effectiveFrom: '2026-01-01',
+        sourceDocumentIds: [contractDocumentId],
+        timelyFilingDays: 180,
+        disputeWindowDays: WINDOW_DAYS,
+        noticeDays: 90,
+      });
+      await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId: contractDocumentId, page: 1, quote: WINDOW_QUOTE }, rule: WINDOW_RULE });
       const { rateRecordId } = await addRateRecord(context, { practiceId, versionId, terms: FIXED_97110, citation: { documentId: contractDocumentId, page: 2, quote: QUOTE_97110 } });
       return { contractId, versionId, rateRecordId };
     });
-  const verify = (rateRecordId: string) =>
+  /** The specialist approves each field of the record, and verifies the version's window against its page. */
+  const verify = (versionId: string, rateRecordId: string) =>
     specialist(async (context) => {
       for (const field of RATE_RECORD_FIELDS) {
         await approveRateRecordField(context, { practiceId, rateRecordId, field });
       }
+      await verifyDisputeWindow(context, { practiceId, versionId });
     });
   const approve = (versionId: string) => specialist((context) => approveVersion(context, { practiceId, versionId }));
 
   const signed = await draft('SYNTHETIC SIGNED-OFF AGREEMENT');
-  await verify(signed.rateRecordId);
+  await verify(signed.versionId, signed.rateRecordId);
   await approve(signed.versionId);
   await as(options.customerId, (context) => signOffVersion(context, { practiceId, versionId: signed.versionId }));
 
   const approved = await draft('SYNTHETIC APPROVED AGREEMENT');
-  await verify(approved.rateRecordId);
+  await verify(approved.versionId, approved.rateRecordId);
   await approve(approved.versionId);
 
   const ready = await draft('SYNTHETIC VERIFIED AGREEMENT');
-  await verify(ready.rateRecordId);
+  await verify(ready.versionId, ready.rateRecordId);
 
+  // In abstraction: its window cited, not yet verified (the window routes' samples cite and verify it).
   const inProgress = await draft('SYNTHETIC AGREEMENT IN ABSTRACTION');
 
   const ask = (question: string) =>

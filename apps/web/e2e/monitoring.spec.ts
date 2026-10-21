@@ -58,7 +58,9 @@ function outboxFor(email: string): OutboxMessage[] {
   if (!existsSync(E2E_MAIL_OUTBOX_DIR)) {
     return [];
   }
+  // Only messages renamed into place: the local sender writes each under a hidden name first.
   return readdirSync(E2E_MAIL_OUTBOX_DIR)
+    .filter((file) => file.endsWith('.json'))
     .map((file) => JSON.parse(readFileSync(path.join(E2E_MAIL_OUTBOX_DIR, file), 'utf8')) as OutboxMessage)
     .filter((message) => message.to.includes(email));
 }

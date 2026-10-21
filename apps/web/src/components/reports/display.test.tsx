@@ -1,4 +1,4 @@
-import type { AuditReportContent } from '@tp/worker/reports';
+import { type AuditReportContent, unattestedSubmissionsNote } from '@tp/worker/reports';
 import { STAGE_LABELS } from '@tp/triage';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -105,5 +105,22 @@ describe('the audit report on screen after a recovery (N4)', () => {
     expect(shown).toContain('Paid below the contract rateOpen1 of 1$30.002036-03-29');
     expect(shown).toContain('SYNTHETIC PAYER LCE:SYNPLAN-FIX-LEDOpen$0.00$0.00');
     expect(shown).toContain('Neither had an entry for these cases’ lines when the report was generated.');
+  });
+});
+
+describe('the submissions sent without sign-off on the Reports screen (the founder’s ruling of 2026-10-20)', () => {
+  it('says beside the case’s state how many there were, and under By case the report’s own sentence, only when there are any', () => {
+    const sent = { ...CONTENT, cases: [{ ...CASE, state: 'awaiting_response', unattested_submissions: 2 }] };
+    const markup = renderToStaticMarkup(<ReportSections content={sent} practiceId="p" />);
+    const shown = text(markup);
+    expect(shown).toContain('Awaiting response; 2 submissions sent without sign-off: pricing went stale after export');
+    expect(markup).toContain('data-unattested-submissions="2"');
+    // The PDF's own sentence (the markup's apostrophes read back as the text helper reads them).
+    expect(shown).toContain(unattestedSubmissionsNote(2).replaceAll("'", '’'));
+    expect(unattestedSubmissionsNote(2)).toBe(
+      "2 submissions sent without sign-off: pricing went stale after export. Each sent an export whose pricing went stale after it was made, so no reimbursement reviewer attested it; the payer's answer to it counts here as any other's.",
+    );
+    // None: no sentence.
+    expect(renderToStaticMarkup(<ReportSections content={CONTENT} practiceId="p" />)).not.toContain('data-unattested-submissions');
   });
 });

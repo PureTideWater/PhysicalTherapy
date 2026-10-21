@@ -47,6 +47,18 @@ describe('the synthetic audits', () => {
       expect(() => readAuditInputs(write({ ...inputs, payer: { key: 'AUD', name: 'A REAL PAYER' } }))).toThrow(/SYNTHETIC/);
       expect(() => readAuditInputs(write({ ...inputs, groups: [{ plan: 'NOPLAN', code: '97110', units: 1, unit_charge_cents: '100', allowed_cents: '100', count: 1, first_service_date: '2026-03-02', note: '' }] }))).toThrow(/unknown plan/);
       expect(() => readAuditInputs(write({ ...inputs, format: 'other' }))).toThrow(/tp-audit-inputs/);
+      // A contract window's evidence names a page and quotes the contract's own days (D17 a).
+      const [fixed, ...others] = inputs.plans as { readonly contract?: object }[];
+      const withEvidence = (evidence: object) => ({ ...inputs, plans: [{ ...fixed, contract: { ...fixed?.contract, dispute_window_evidence: evidence } }, ...others] });
+      expect(() => readAuditInputs(write(withEvidence({ page: 0, quote: 'Disputes are raised within 3650 days of the payment date.', unit: 'calendar_days', measured_from: 'remittance_date' })))).toThrow(/names a page/);
+      const quote = 'Disputes are raised within 3650 days of the payment date.';
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote: 'Disputes are raised within 90 days of the payment date.', unit: 'calendar_days', measured_from: 'remittance_date' })))).toThrow(/own days/);
+      // And the rule its words state, from the fixed lists (best-option audit #5).
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote, measured_from: 'remittance_date' })))).toThrow(/names its unit/);
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote, unit: 'days', measured_from: 'remittance_date' })))).toThrow(/names its unit/);
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote, unit: 'calendar_days' })))).toThrow(/counts from/);
+      expect(() => readAuditInputs(write(withEvidence({ page: 1, quote, unit: 'calendar_days', measured_from: 'claim_date' })))).toThrow(/counts from/);
+      expect(readAuditInputs(write(withEvidence({ page: 1, quote, unit: 'business_days', measured_from: 'date_of_service' }))).plans[0]?.contract?.dispute_window_evidence).toMatchObject({ unit: 'business_days' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

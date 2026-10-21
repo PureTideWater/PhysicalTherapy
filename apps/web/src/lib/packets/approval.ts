@@ -6,6 +6,12 @@
  * holds; the database decides every approval again (a passing verifier, the current version, the case's
  * lines unchanged, the regulation confirmed, the approver's role, the two-person rule and the delay), so
  * this only says ahead what it will answer.
+ *
+ * Since the best-option audit's item #4 (the founder's ruling of 2026-10-18; docs/adr/0061) the database
+ * also refuses an approval while the version's pricing is not current (packet_version_approval_pricing),
+ * which the panel says ahead as 'pricing_not_current' (after case_changed, before the regulation). The
+ * words for each blocked reason are BLOCKED_TEXT in ./queries (server code, beside the pricing check's
+ * words): this module stays free of server code, since the client's Countdown imports waitText from it.
  */
 
 /** The single-user delay: the version's writer approves it alone only this long after writing it. */
@@ -19,6 +25,8 @@ export interface ApprovalFacts {
   readonly current: boolean;
   /** Whether it still asks for exactly the case's lines not written off, at their priced amounts. */
   readonly matchesCase: boolean;
+  /** Whether its pricing is still current (packet_version_pricing_check() = 'current'; audit item #4). */
+  readonly pricingCurrent: boolean;
   /** A Medicare Advantage non-contracted citation, and whether a contract specialist confirmed it applies. */
   readonly regulationCitation: boolean;
   readonly regulationConfirmed: boolean;
@@ -40,9 +48,13 @@ export interface ApprovalViewer {
   readonly othersApprove: boolean;
 }
 
+/** Why no one may approve the version now, in the order the panel checks them. */
+export const BLOCKED_REASONS = ['verifier', 'verifier_outdated', 'not_current', 'case_changed', 'pricing_not_current', 'regulation'] as const;
+export type BlockedReason = (typeof BLOCKED_REASONS)[number];
+
 export type ApprovalState =
   | { readonly status: 'approved'; readonly by: string | null; readonly at: string; readonly alone: boolean }
-  | { readonly status: 'blocked'; readonly reason: 'verifier' | 'verifier_outdated' | 'not_current' | 'case_changed' | 'regulation' }
+  | { readonly status: 'blocked'; readonly reason: BlockedReason }
   /** The viewer does not approve packets: a billing manager or firm principal does. */
   | { readonly status: 'not_approver' }
   /** The viewer drafted or last edited the packet, and someone else may approve it: the database refuses them. */
@@ -68,6 +80,9 @@ export function approvalState(facts: ApprovalFacts, viewer: ApprovalViewer, now:
   if (!facts.matchesCase) {
     return { status: 'blocked', reason: 'case_changed' };
   }
+  if (!facts.pricingCurrent) {
+    return { status: 'blocked', reason: 'pricing_not_current' };
+  }
   if (facts.regulationCitation && !facts.regulationConfirmed) {
     return { status: 'blocked', reason: 'regulation' };
   }
@@ -85,16 +100,6 @@ export function approvalState(facts: ApprovalFacts, viewer: ApprovalViewer, now:
   const remainingMs = until - now.getTime();
   return remainingMs > 0 ? { status: 'waiting', until: new Date(until).toISOString(), remainingMs } : { status: 'ready', alone: true };
 }
-
-/** Why approval is blocked, in words, with the next step. */
-export const BLOCKED_TEXT: Readonly<Record<Extract<ApprovalState, { status: 'blocked' }>['reason'], string>> = {
-  verifier: 'Approval is blocked: the verifier failed this version (its mismatches are listed above). Correct the narrative and save a new version; only a version that passes can be approved.',
-  verifier_outdated: 'An earlier verifier checked this version. Save it again as a new version so the current verifier checks it; only a version the current verifier passed can be approved.',
-  not_current: 'A later version of this packet was written since; only the current version can be approved.',
-  case_changed: 'The case’s lines changed since this version was written (a line was written off or reopened); write a new version first.',
-  regulation:
-    'A contract specialist confirms the Medicare Advantage regulation applies to this case before its packet can be approved: they do it on their Regulations to confirm page, under the practice’s support grant (the platform administrator opens one from a ticket).',
-};
 
 /** A wait as hours and minutes, rounded up to the minute ("23 h 59 min"). */
 export function waitText(remainingMs: number): string {

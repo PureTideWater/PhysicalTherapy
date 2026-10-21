@@ -2,11 +2,34 @@
  * @tp/triage: turning priced lines into work a person can finish (PRD 12; milestone 6). Pure functions
  * over the facts a pricing run and the case records hold: anomaly cohorts with their minimum size and
  * investigatory label, the five-stage line status with monotonic moves and explicit reopens, the
- * judgement from validated to actionable on a triage date, the adjustment behavior detected from a
- * trace, case grouping by payer pattern with case materiality, case totals and deadlines, pursuit-cost
- * estimates, write-off reasons and the three-number headline. No database, clock or network inside.
+ * judgement from validated to actionable on a triage date, whether a line's deadline is verified (D17 a),
+ * the adjustment behavior detected from a trace, case grouping by payer pattern with case materiality, case
+ * totals and deadlines, pursuit-cost estimates, write-off reasons and the three-number headline. No
+ * database, clock or network inside.
  */
 export { type Judgement, NOT_ACTIONABLE_REASONS, type NotActionableReason, type TriageFacts, judgeLine, shortfallOf, windowOpen } from './actionable';
+export {
+  COMPUTED_CONTRACT_WINDOW,
+  type ContractWindowEvidence,
+  type ContractWindowFacts,
+  DEADLINE_STATUSES,
+  DEADLINE_UNVERIFIED_CAUSES,
+  DEFAULT_DEADLINE_LEVEL,
+  type DeadlineInput,
+  type DeadlineMinimumLevel,
+  type DeadlineStatus,
+  type DeadlineTrace,
+  type DeadlineUnverifiedCause,
+  type DeadlineVerification,
+  MA_DISPUTE_ROUTE_CONFIRMED,
+  type NextLevelDeadlineInput,
+  contractWindowRuleComputed,
+  deadlineVerification,
+  levelAtLeast,
+  nextLevelDeadlineVerification,
+  packetDeadlineStatus,
+  windowEvidenceComplete,
+} from './deadline';
 export {
   ANOMALY_STATS_FORMAT,
   type AnomalyCohort,

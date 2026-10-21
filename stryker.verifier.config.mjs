@@ -19,6 +19,9 @@ export default {
     'packages/packets/src/readable.ts',
     'packages/packets/src/scan.ts',
     'packages/packets/src/facts.ts',
+    // The payer and plan as the payer's copy names them, which the facts quote, and the pattern the scanner reads a
+    // remittance key by.
+    'packages/packets/src/payer.ts',
     'packages/packets/src/placeholders.ts',
     '!**/*.test.ts',
   ],

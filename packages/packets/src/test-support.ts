@@ -1,12 +1,14 @@
-import { cents } from '@tp/money';
+import { type Cents, cents, centsToString, subtractCents } from '@tp/money';
 
 import type { AssemblyInput, AssemblyLine } from './assemble';
-import type { ContractCitation, RegulationCitation } from './format';
+import type { ContractCitation, DeadlineSource, LineCalculation, RegulationCitation } from './format';
 import type { PromptPayRecord } from './interest';
 
 /**
  * SYNTHETIC inputs for the packet tests: a fixed-schedule contract that pays 97110 at 50.00 per unit
- * and three 97110 x 2 lines allowed 70.00 each (test matrix CAS-08), invented identifiers only.
+ * and three 97110 x 2 lines allowed 70.00 each (test matrix CAS-08), invented identifiers only. Each
+ * line's window is the contract's own 3650 days, cited from page 1 of its document and verified (D17),
+ * and its calculation summary is the fixed schedule's (its patient share the observed amount less paid).
  */
 
 export const IDS = {
@@ -20,6 +22,7 @@ export const IDS = {
   remittanceDocument: '00000000-0000-4000-8000-000000000008',
   run: '00000000-0000-4000-8000-000000000009',
   case: '00000000-0000-4000-8000-00000000000a',
+  verifier: '00000000-0000-4000-8000-00000000000b',
 } as const;
 
 export const SHA = 'a'.repeat(64);
@@ -52,9 +55,40 @@ export const REGULATION: RegulationCitation = {
   statement: 'A non-contracting provider accepts as payment in full what it could collect under Original Medicare.',
 };
 
+/** The contract's own dispute window, cited and verified: what each SYNTHETIC line's deadline rests on. */
+export function contractWindowSource(overrides: Partial<Extract<DeadlineSource, { kind: 'contract_window' }>> = {}): DeadlineSource {
+  return {
+    kind: 'contract_window',
+    contract_version_id: IDS.version,
+    days: 3650,
+    document_id: IDS.document,
+    page: 1,
+    quote: 'Disputes are raised within 3650 days of the payment date.',
+    hash: SHA,
+    verified_by: IDS.verifier,
+    verified_at: '2026-01-02T09:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A fixed-schedule line's calculation summary: the base and the one rounding at the expected amount. */
+export function calculation(expected: Cents, observed: Cents, paid: Cents, overrides: Partial<LineCalculation> = {}): LineCalculation {
+  const amount = centsToString(expected);
+  return {
+    method: 'FIXED_SCHEDULE',
+    release_no: 900001,
+    steps: [{ step: 'base', amount_cents: amount }],
+    rounding: { rule: 'HALF_UP_CENT', unrounded_cents: amount, rounded_cents: amount },
+    observed_basis: 'paid_plus_pr',
+    patient_share_cents: centsToString(subtractCents(observed, paid)),
+    trace_sha256: SHA,
+    ...overrides,
+  };
+}
+
 export function line(n: number, overrides: Partial<AssemblyLine> = {}): AssemblyLine {
   const hex = n.toString(16).padStart(12, '0');
-  return {
+  const base = {
     serviceLineId: `10000000-0000-4000-8000-${hex}`,
     claimId: `20000000-0000-4000-8000-${hex}`,
     pricedLineId: `30000000-0000-4000-8000-${hex}`,
@@ -72,6 +106,11 @@ export function line(n: number, overrides: Partial<AssemblyLine> = {}): Assembly
     receivedOn: null,
     windowEndsOn: '2036-04-05',
     ...overrides,
+  };
+  return {
+    ...base,
+    deadline: overrides.deadline ?? { status: 'verified', source: 'contract', endsOn: base.windowEndsOn, cause: null },
+    calculation: overrides.calculation ?? calculation(base.expectedCents, base.observedCents, base.paidCents),
   };
 }
 
@@ -105,6 +144,47 @@ export function assemblyInput(overrides: Partial<AssemblyInput> = {}): AssemblyI
     contractDocuments: [{ documentId: IDS.document, sha256: SHA }],
     remittances: [{ documentId: IDS.remittanceDocument, sha256: SHA, paidOn: '2026-04-08' }],
     attachedDocuments: [],
+    nextLevelDeadline: null,
+    deadlineSources: [contractWindowSource()],
     ...overrides,
   };
+}
+
+/**
+ * The internal terms the payer's copy never prints outside its narrative and its quoted clauses, and a draft never
+ * writes (audit item #37 part 1, T1, T5, T6 and T10; docs/adr/0061): the record's own vocabulary (hashes, traces,
+ * verification, the audit flag, evidence gaps, the specialist line, releases as records), the vendor's name, and the
+ * interest and timeliness wording the founder ruled out on 2026-10-20 (Q3 (a), Q4 (a)).
+ */
+export const PAYER_COPY_INTERNAL_TERMS: readonly RegExp[] = [
+  /SHA-256/i,
+  /hash/i,
+  /trace/i,
+  /verif/i,
+  /audit/i,
+  /evidence gap/i,
+  /computed by code/i,
+  /specialist/i,
+  /PaidWhole/i,
+  /tp-packet/i,
+  /priced line/i,
+  /pricing run/i,
+  /rule release/i,
+  /manifest/i,
+  /placeholder/i,
+  /approved alone/i,
+  /written by/i,
+  /Approval record/i,
+  /level L\d/i,
+  /\bL[1-3]\b/,
+  /\bc(?:an|ould) ?not be computed\b/i,
+  /can be computed/i,
+  /not claimed/i,
+  /filed within/i,
+  /Version \d+, SHA/i,
+];
+
+/** The internal terms `text` holds, by their patterns' source. */
+export function internalTermsIn(text: string): string[] {
+  return PAYER_COPY_INTERNAL_TERMS.filter((term) => term.test(text)).map((term) => term.source);
 }

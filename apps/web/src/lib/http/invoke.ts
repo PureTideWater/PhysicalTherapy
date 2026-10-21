@@ -437,6 +437,10 @@ export function platformRoute<P, I, R>(spec: PlatformSpec<P, I, R>): Route<R> {
 /** A practice's workspace: the practice named by params.practiceId, in its scope, under the route's permission. */
 export function practiceRoute<P extends { readonly practiceId: string }, I, R>(spec: PracticeSpec<P, I, R>): Route<R> {
   const shape = common(spec, { kind: 'practice', permission: spec.permission });
+  const oneSnapshot = spec.oneSnapshot === true;
+  if (oneSnapshot && shape.mutation) {
+    throw new Error(`route ${spec.id} changes records: only a read takes one snapshot`);
+  }
   return {
     ...shape,
     invoke: async (request, services) => {
@@ -459,7 +463,7 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
       }
       const practiceId = parsed.params.practiceId;
       try {
-        return await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId] }, async (scope) => {
+        return await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot }, async (scope) => {
           await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if (scope.access(practiceId) === undefined) {
             throw new NotFoundError();

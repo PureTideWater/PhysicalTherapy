@@ -3,7 +3,7 @@ import { lineFacts, pricingInput, syntheticRelease } from '@tp/pricing/testing';
 import { describe, expect, it } from 'vitest';
 
 import { firstDayOf, lastDayOf } from '../routes/pricing';
-import { lineStatusOf, shareOf, traceOrder, traceSteps } from './view';
+import { TRACE_REMITTANCE_DATE_NOTE, lineStatusOf, shareOf, traceOrder, traceSteps } from './view';
 
 /** How pricing results read on screen: stages, shares, the trace's steps in order, and run periods by month. SYNTHETIC inputs only. */
 
@@ -59,6 +59,18 @@ describe('the trace’s steps', () => {
     const release = views.find((item) => item.key === 'release');
     expect(release?.recorded).toContain('"number": 900001');
     expect(release?.recorded).toContain('manifest_sha256');
+  });
+
+  it('say beside the claim facts and the dispute window that the engine’s remittance_date is the payment date, not the remittance advice’s own date (the founder’s ruling of 2026-10-20)', () => {
+    const views = traceSteps(trace);
+    const noted = views.filter((item) => item.note !== null).map((item) => item.key);
+    expect(noted).toEqual(expect.arrayContaining(['claim', 'window']));
+    expect(views.find((item) => item.key === 'window')?.recorded).toContain('"measured_from": "remittance_date"');
+    expect(views.find((item) => item.key === 'claim')?.note).toBe(TRACE_REMITTANCE_DATE_NOTE);
+    expect(TRACE_REMITTANCE_DATE_NOTE).toContain('payment date (BPR16');
+    expect(TRACE_REMITTANCE_DATE_NOTE).toContain('not the remittance advice’s own date');
+    // A step that does not name it carries no note.
+    expect(views.find((item) => item.key === 'fee_schedule')?.note).toBeNull();
   });
 
   it('mark a step the line never reached, and keep a part of a trace it does not know', () => {

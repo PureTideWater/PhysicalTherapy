@@ -7,7 +7,12 @@ report must say: every line's expected allowed amount under its plan's fixed sch
 and dispute window; the anomaly cohorts of the lines that cannot be priced (same payer and plan, code
 and modifier set, place of service and quarter, at least the minimum cohort; the mode per unit; the
 lines short of the mode by more than the threshold; an investigatory range); the judgement from
-validated to actionable on the triage date (per-line materiality, the window open on that date);
+validated to actionable on the triage date (per-line materiality, the window open on that date, and its
+deadline verified: a contract line's only when its contract states where its dispute window is written,
+the page and its words, which the specialist cites and verifies, reconciliation-001 D17 a, and only when
+the rule those words state is the one the product computes, calendar days after the payment date (BPR16): a
+window counted another way stays unverified until the engine computes it, and no end is stated or judged for it,
+best-option audit #5);
 cases by payer pattern at or above the case materiality; the pursuit-cost estimate from the
 practice's settings; and the headline of three numbers with flagged and validated below.
 
@@ -50,7 +55,16 @@ NUMBER_COLUMNS = {"line_no", "units", "billed", "observed_allowed", "expected_al
 MODIFIERS = ["GP"]
 PLACE_OF_SERVICE = "11"
 BEHAVIOR = "BELOW_CONTRACT_RATE"  # a fixed schedule paid below its amount: no other behavior applies
-NOT_ACTIONABLE_ORDER = ["BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "VERSION_NOT_SIGNED_OFF", "BELOW_CASE_MATERIALITY"]
+NOT_ACTIONABLE_ORDER = [
+    "BELOW_LINE_MATERIALITY", "WINDOW_PASSED", "NO_WINDOW", "DEADLINE_UNVERIFIED", "CLAIM_REVERSED", "CLAIM_SUPERSEDED", "MAPPING_NOT_IN_FORCE",
+    "VERSION_NOT_SIGNED_OFF", "VERSION_NOT_IN_FORCE", "RELEASE_WITHDRAWN", "BELOW_CASE_MATERIALITY",
+]
+# A contract window's evidence names its unit and what it counts from, from these lists (best-option audit #5);
+# the product computes one rule, its days as calendar days after the payment date (BPR16, the check or EFT date;
+# remittance_date is the remittance advice's own date, which it does not count from yet).
+WINDOW_UNITS = ["calendar_days", "business_days", "months"]
+WINDOW_STARTS = ["date_of_service", "remittance_date", "payment_date", "receipt_date"]
+COMPUTED_WINDOW_RULE = ("calendar_days", "payment_date")
 
 
 class InputsError(Exception):
@@ -96,6 +110,29 @@ def read_inputs(directory):
     if inputs.get("format") != INPUTS_FORMAT or inputs.get("synthetic") is not True:
         raise InputsError(f"{directory}: not synthetic {INPUTS_FORMAT}")
     return inputs
+
+
+def cited_rule(plan):
+    """The rule a contract plan's window evidence states, as (unit, start); None while the window is not cited."""
+    evidence = plan["contract"].get("dispute_window_evidence")
+    if evidence is None:
+        return None
+    unit, start = evidence.get("unit"), evidence.get("measured_from")
+    if unit not in WINDOW_UNITS or start not in WINDOW_STARTS:
+        raise InputsError(f"plan {plan['key']}: the window's evidence names its unit ({', '.join(WINDOW_UNITS)}) and what it counts from ({', '.join(WINDOW_STARTS)})")
+    return (unit, start)
+
+
+def window_verified(plan):
+    """Whether a contract plan's dispute window is verified: cited, with the rule the product computes."""
+    return cited_rule(plan) == COMPUTED_WINDOW_RULE
+
+
+def window_judged(plan):
+    """Whether the window's end is judged: not for a window cited in a rule the product does not compute, whose
+    calendar-day end from the payment date is not the contract's (no end is stated for it, nor WINDOW_PASSED)."""
+    rule = cited_rule(plan)
+    return rule is None or rule == COMPUTED_WINDOW_RULE
 
 
 def expand_lines(inputs):
@@ -146,6 +183,12 @@ def compute(inputs):
         line["expected"] = rates[line["code"]] * line["units"]
         line["variance"] = line["expected"] - line["allowed"]
         line["window"] = paid_on + datetime.timedelta(days=plan["contract"]["dispute_window_days"])
+        # A contract window is a verified deadline only when the contract says where it is written (D17 a), and
+        # its words state the rule the product computes (best-option audit #5).
+        line["deadline_verified"] = window_verified(plan)
+        if not window_judged(plan):
+            line["window"] = None
+            continue
         # The report must not depend on the triage date within the stable range.
         if stable_from <= line["window"] < stable_to:
             raise InputsError(f"{line['claim']}: its window ends inside the stable range")
@@ -196,8 +239,10 @@ def compute(inputs):
             continue
         if line["variance"] < line_materiality:
             line["reasons"].append("BELOW_LINE_MATERIALITY")
-        if line["window"] < judged_on:
+        if line["window"] is not None and line["window"] < judged_on:
             line["reasons"].append("WINDOW_PASSED")
+        if not line["deadline_verified"]:
+            line["reasons"].append("DEADLINE_UNVERIFIED")
         # One rate record per code under a fixed schedule: the pattern is the plan and the code.
         patterns.setdefault((line["plan_name"], line["code"]), []).append(line)
     cases = []
@@ -296,6 +341,9 @@ def compute(inputs):
     ]
     overpaid = [line for line in lines if line["variance"] is not None and line["variance"] < 0]
     gaps = [{"kind": "unpriced", "reason": entry["reason"], "lines": entry["lines"], "charge_cents": str(entry["charge_cents"])} for entry in reasons.values()]
+    unverified = [line for line in validated if "DEADLINE_UNVERIFIED" in line["reasons"]]
+    if unverified:
+        gaps.append({"kind": "deadline_unverified", "reason": "DEADLINE_UNVERIFIED", "lines": len(unverified), "charge_cents": str(sum(line["charge"] for line in unverified))})
     if pursuit is None:
         gaps.append({"kind": "pursuit_settings", "reason": None, "lines": 0, "charge_cents": None})
     report = OrderedDict([
@@ -360,11 +408,16 @@ def main(argv):
             if args.command == "write":
                 with open(target, "w", encoding="utf-8", newline="") as handle:
                     handle.write(content)
-                print(f"wrote {target.relative_to(REPOSITORY)}")
+                print(f"wrote {shown(target)}")
             elif not target.exists() or read_exact(target) != content:
                 differs += 1
-                print(f"differs: {target.relative_to(REPOSITORY)}")
+                print(f"differs: {shown(target)}")
     return 1 if differs else 0
+
+
+def shown(path: Path) -> str:
+    """A path as the repository names it, or as it is when it lies outside (a scratch copy of the inputs)."""
+    return str(path.relative_to(REPOSITORY)) if path.is_relative_to(REPOSITORY) else str(path)
 
 
 def read_exact(path: Path) -> str:

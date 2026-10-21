@@ -14,9 +14,11 @@ import { type AdjustmentBehavior } from './behavior';
  *
  * Which lines a case holds: its pattern's actionable lines, and its lines that would be actionable but
  * for a window that has passed, which join it struck through (written off, window passed) and out of
- * its actionable total (J8). Lines below the line materiality, of a reversed or superseded claim, of a
- * version no longer signed off, of a per-visit visit or with an NCCI review flag (for a person's review,
- * docs/adr/0040), or written off already stay validated and join no case.
+ * its actionable total (J8). Lines below the line materiality, whose deadline is not verified (D17 a: a
+ * passed window that is not verified either waits too, since it is not shown to be the line's window), of
+ * a reversed or superseded claim, of a version no longer signed off, of a per-visit visit or with an NCCI
+ * review flag (for a person's review, docs/adr/0040), or written off already stay validated and join no
+ * case.
  */
 
 /** A payer pattern (stored as case.pattern_key). */

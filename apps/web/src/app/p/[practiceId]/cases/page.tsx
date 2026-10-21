@@ -13,6 +13,7 @@ import { casesPage } from '../../../../lib/routes/triage';
 import { MATERIALITY_CONSEQUENCE } from '../../../../lib/routes/workbench';
 import { openCaseFormAction, setMaterialityFormAction, triageRunFormAction } from './actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { ReferenceSearch } from '../../../../components/packets/reference-search';
 
 export const metadata: Metadata = { title: 'Cases' };
 
@@ -39,7 +40,7 @@ export default async function CasesPage(props: Props) {
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, workers, total, waiting, materiality, notice } = page.data;
+  const { practiceId, cases, actionableCents, openCases, runs, canTriage, asOf, filters, payers, workers, total, waiting, deadlineUnverified, materiality, notice } = page.data;
   const path = `/p/${practiceId}/cases`;
   const filtered = filters.state !== undefined || filters.payer !== undefined || filters.owner !== undefined || filters.deadline !== undefined;
   return (
@@ -96,6 +97,15 @@ export default async function CasesPage(props: Props) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {deadlineUnverified.lines === 0 ? null : (
+              <p className="pb-3 text-sm" data-waiting="deadline_unverified">
+                {deadlineUnverified.lines} validated {deadlineUnverified.lines === 1 ? 'line waits' : 'lines wait'} for a verified deadline (<Money value={deadlineUnverified.validatedCents} />, DEADLINE_UNVERIFIED): their contract’s dispute window is not
+                cited and verified on its page yet, or is counted in business days, in months or from a date other than the payment date, which the product does not compute yet; or
+                they are Medicare Advantage non-contracted lines, whose deadline is not verified until the product applies the answer to which dispute route they take (golden
+                question Q34, a product-wide question the contract specialist is answering), so no packet of a Medicare Advantage non-contracted line is exported until then. A
+                Medicare Advantage plan mapped to a contract is not held: its contract’s window is cited and verified like any other. They join no case until the deadline is verified.
+              </p>
+            )}
             {waiting.length === 0 ? (
               <p className="text-sm text-muted-foreground">No validated line is waiting for a case. Triage a run to judge its lines.</p>
             ) : (
@@ -176,6 +186,7 @@ export default async function CasesPage(props: Props) {
           </CardContent>
         ) : null}
       </Card>
+      <ReferenceSearch practiceId={practiceId} />
       <section aria-label="Case list" className="flex flex-col gap-3">
         <h2 className="text-xl font-bold tracking-display">By deadline</h2>
         <form method="get" action={path} className="flex flex-wrap items-end gap-3 text-sm" aria-label="Filter the cases">

@@ -18,7 +18,8 @@ import { startLocalWorker } from './worker';
  * manager, no page scrolls sideways (document.documentElement.scrollWidth is 1280): the contract version's rate record
  * fields, the packet's line schedule and the claims table (the billing manager's, with its PHI columns) each fit their
  * card with their last column inside it; the pricing runs' compare form fits its card; each table's headers stand apart
- * (the uploads, an upload, a contract and the coverage report's too); a trace's step reads NCCI PTP; and a run that
+ * (the uploads, an upload, a contract and the coverage report's too); Settings, Correspondence and a packet found by
+ * its reference fit the window too; a trace's step reads NCCI PTP; and a run that
  * priced every line shows its unpriced reasons as an empty state. Each check is soft, so one run reports every
  * screen that fails. Synthetic data only.
  */
@@ -175,7 +176,7 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expectFitsItsCard(fields, 'the rate record’s fields');
   });
 
-  await test.step('the packet builder: the line schedule fits its card, “Window ends” and the trace column inside it (L2)', async () => {
+  await test.step('the packet builder: the line schedule fits its card, its window column (“Deadline” since tp-packet/2) and the trace column inside it (L2)', async () => {
     await page.goto(at(`/cases/${caseId}/packet`));
     // A retry finds the version the attempt before wrote.
     const first = page.getByRole('region', { name: 'First version' });
@@ -189,7 +190,8 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expect(schedule.locator('thead th').last()).toHaveText('Trace');
     await expectNoSidewaysScroll(page, 'the packet builder');
     await expectFitsItsCard(schedule, 'the line schedule');
-    await expect.soft(schedule.locator('thead th', { hasText: 'Window ends' })).toBeInViewport();
+    // A tp-packet/2 version's window column is its deadline, with the window's end and its status (CO-05).
+    await expect.soft(schedule.locator('thead th', { hasText: 'Deadline' })).toBeInViewport();
     await expectHeadersApart(schedule, 'the line schedule');
   });
 
@@ -254,6 +256,15 @@ test('at 1280 px no page scrolls sideways, each wide table fits its card, and ev
     await expect(page).toHaveURL(/\/reports\/documents\/[0-9a-f-]{36}$/);
     await expectHeadersApart(page.getByRole('table', { name: 'Unpriced reasons and their remedies' }), 'the coverage report’s unpriced reasons');
     await expectNoSidewaysScroll(page, 'the coverage report');
+  });
+
+  await test.step('Settings, Correspondence (read-only for the billing manager) and Cases, a packet by its reference, fit the window (audit item #37 part 1)', async () => {
+    await page.goto(at('/settings/correspondence'));
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expectNoSidewaysScroll(page, 'Settings, Correspondence');
+    await page.goto(at('/cases/by-reference?reference=ZZZZZ-ZZZZZ'));
+    await expect(page.getByRole('region', { name: 'Packets with this reference' })).toBeVisible();
+    await expectNoSidewaysScroll(page, 'a packet by its reference');
   });
 
   await test.step('a line’s trace names its code-pair step NCCI PTP, never “Ncci ptp” (C1)', async () => {

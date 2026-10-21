@@ -85,6 +85,23 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   { id: 'CAS-13', title: 'Edit after approval', assertion: 'New version; approval cleared' },
   { id: 'CAS-14', title: 'Submission with no response in 45 days', assertion: 'Follow-up surfaces' },
   { id: 'CAS-15', title: 'Interest line where state rule applies', assertion: 'Separate line; not in expected' },
+  {
+    id: 'CAS-26',
+    title: 'Payer copy of an export',
+    assertion:
+      'No login, record ID, SHA-256, verification, internal note, code, interest not computed or $0.00 interest; above the first level the level’s own window alone; approval line, reference and contact printed; the internal record on the review page',
+  },
+  {
+    id: 'CAS-27',
+    title: 'Export with no correspondence contact',
+    assertion: 'Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing; Postgres refuses the export without a name and phone',
+  },
+  { id: 'CAS-28', title: 'Packet found by its reference', assertion: 'Every version of the practice whose reference matches, none of another practice' },
+  {
+    id: 'CAS-29',
+    title: 'Submission of an export whose pricing went stale after it was made',
+    assertion: 'Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

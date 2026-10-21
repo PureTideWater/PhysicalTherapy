@@ -106,6 +106,22 @@ describe('verifyNarrative', () => {
     expect(verify('Section 4.3 pays within 91 days [1].', quoted).passed).toBe(false);
   });
 
+  it('accepts the contract window’s days only as days and its page only as a page, never as a count (tp-packet/2)', () => {
+    const window = assemblePacket(
+      assemblyInput({
+        deadlineSources: [{ kind: 'contract_window', contract_version_id: '0b9a7c55-5f0e-4d43-8d2c-6a1f00000009', days: 3650, document_id: '0b9a7c55-5f0e-4d43-8d2c-6a1f00000008', page: 9, quote: 'Disputes are raised within 3650 days, or thirty (30) days after notice.', hash: 'c'.repeat(64), verified_by: null, verified_at: null }],
+      }),
+    );
+    for (const passes of ['The contract allows 3650 days to dispute [1].', 'Its window is 3,650 calendar days [1].', 'Disputes follow within thirty (30) days after notice [1].', 'The window is cited on page 9 [1].']) {
+      expect(verify(passes, window), passes).toMatchObject({ passed: true });
+    }
+    for (const fails of ['There were 3650 units [3].', 'The payer paid 30 lines short [3].', 'Nine units were billed [3].', 'There were 9 claims [3].', 'Disputes are raised within 3651 days [1].', 'The window is on page 10 [1].']) {
+      expect(flagged(fails, verify(fails, window)), fails).toHaveLength(1);
+    }
+    // The schedule's own counts pass as before.
+    expect(verify('There were 3 claims [3].', window).passed).toBe(true);
+  });
+
   it('reports codes and positions only, never the narrative', () => {
     const narrative = 'Jane Synthetic paid short by 1234.56 on claim SYNCLAIM9 [3]. No citation here.';
     const report = verify(narrative);
@@ -302,7 +318,7 @@ const lineArbitrary = fc
     claim: fc.integer({ min: 1, max: 4 }),
   })
   .map(
-    (draw): Omit<AssemblyLine, 'serviceLineId' | 'pricedLineId'> => {
+    (draw): Omit<AssemblyLine, 'serviceLineId' | 'pricedLineId' | 'deadline' | 'calculation'> => {
       const expected = BigInt(draw.perUnit * draw.units);
       const observed = expected - BigInt(draw.short * draw.units);
       return {
@@ -328,8 +344,7 @@ const contentArbitrary = fc.array(lineArbitrary, { minLength: 1, maxLength: 8 })
   assemblePacket(
     assemblyInput({
       lines: lines.map((item, index) => ({
-        ...line(index + 1),
-        ...item,
+        ...line(index + 1, item),
         serviceLineId: `10000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
         pricedLineId: `30000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, '0')}`,
       })),

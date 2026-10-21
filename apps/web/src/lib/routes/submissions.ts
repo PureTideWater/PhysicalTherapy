@@ -1,4 +1,5 @@
 import { rolesPermit } from '@tp/db/runtime';
+import { PacketRuleError, SENT_WITHOUT_SIGN_OFF_UNCONFIRMED, packetVersionUnattestedReason } from '@tp/worker/packets';
 import { parseAmount } from '@tp/money';
 import { SUBMISSION_CHANNELS } from '@tp/packets';
 import { z } from 'zod';
@@ -6,7 +7,21 @@ import { z } from 'zod';
 import { underPacketRules } from '../cases/refusals';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
-import { type ResponseDocument, type SubmissionView, defaultFollowUpOn, logSubmissionOnce, recordResponseOnce, responseDocuments, submissionsOf, submittableVersion } from '../packets/submissions';
+import {
+  type EarlierExport,
+  type ResponseDocument,
+  type SubmissionView,
+  type SubmittableVersion,
+  defaultFollowUpOn,
+  earlierExports,
+  logSubmissionOnce,
+  loggedSubmission,
+  recordResponseOnce,
+  responseDocuments,
+  submissionsOf,
+  submittableVersion,
+} from '../packets/submissions';
+import { STALE_EXPORT_SUBMISSION } from '../packets/unattested';
 import { type CaseSummary, caseOf } from '../triage/queries';
 import { opaqueId, optionalText } from './schemas';
 
@@ -20,6 +35,16 @@ import { opaqueId, optionalText } from './schemas';
  * Reading is practice.open (the payer's references show to the roles that read PHI); logging a
  * submission and recording a response are submission.log (the billing manager and the firm
  * principal), checked again by the database, in the person's own name, with an audit event, once.
+ * A submission whose version's pricing is no longer current is never refused for it (it already happened
+ * outside the product): it is logged, the database flags it (submission.pricing_check), and the page says so
+ * with the figures sent and the pricing in effect now (audit item #4).
+ *
+ * A submission sends an attested export, with the one exception the founder ruled on 2026-10-20 (docs/adr/0061):
+ * when a version's pricing went stale after its export and before its attestation, the export is never attested,
+ * and its submission is logged sent without sign-off, recorded unattested with its reason ('sent without sign-off:
+ * pricing went stale after export') and flagged with the cause, so reconciliation tracks the payer's answer. The
+ * person confirms it went that way; the database decides whether the export is one (and refuses every other
+ * unattested export) and records the audit event submission_logged_unattested in their name.
  */
 
 const isoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'a date, YYYY-MM-DD');
@@ -29,15 +54,30 @@ export interface SubmissionsPageData {
   readonly asOf: string;
   readonly case: CaseSummary;
   readonly submissions: readonly SubmissionView[];
-  /** The exported current version a submission sends now, with its hashes; null before an export. */
-  readonly submittable: Awaited<ReturnType<typeof submittableVersion>>;
+  /** The exported current version a submission sends now, with its hashes and whether its pricing is current; null before an export. */
+  readonly submittable: SubmittableVersion | null;
+  /**
+   * Exports an edit replaced that may still be logged as sent before the edit (attested, or never attested because
+   * their pricing went stale after the export), newest first: an export that went to the payer is still logged after
+   * its stale lines were written off and a new version written.
+   */
+  readonly earlier: readonly EarlierExport[];
+  /** The case is closed written off: the database takes no submission on it, so the page shows how to log one instead of a form. */
+  readonly closed: boolean;
   /** Today's default follow-up date (45 days on). */
   readonly defaultFollowUpOn: string;
   readonly documents: readonly ResponseDocument[];
-  readonly notice: 'logged' | 'recorded' | null;
+  /**
+   * What was just done: logged, logged and flagged because the version's pricing is no longer current, logged sent
+   * without sign-off (its pricing went stale after the export, so it is never attested), or a response recorded.
+   */
+  readonly notice: SubmissionNotice | null;
   readonly canLog: boolean;
   readonly canReadPhi: boolean;
 }
+
+export const SUBMISSION_NOTICES = ['logged', 'logged_flagged', 'logged_unattested', 'recorded'] as const;
+export type SubmissionNotice = (typeof SUBMISSION_NOTICES)[number];
 
 export const submissionsPage = practiceRoute({
   id: 'practice.cases.submissions',
@@ -45,7 +85,7 @@ export const submissionsPage = practiceRoute({
   path: '/p/[practiceId]/cases/[caseId]/submissions',
   phi: true,
   permission: 'practice.open',
-  params: z.object({ practiceId: opaqueId, caseId: opaqueId, notice: optionalText(z.enum(['logged', 'recorded'])) }),
+  params: z.object({ practiceId: opaqueId, caseId: opaqueId, notice: optionalText(z.enum(SUBMISSION_NOTICES)) }),
   handle: async ({ scope, practiceId, params, request, access, services }): Promise<SubmissionsPageData> => {
     const asOf = services.now().toISOString().slice(0, 10);
     const found = await caseOf(scope, practiceId, params.caseId, asOf, request.requestId);
@@ -59,7 +99,9 @@ export const submissionsPage = practiceRoute({
       asOf,
       case: found,
       submissions: await submissionsOf(scope, services.keys, { practiceId, caseId: params.caseId, readsPhi: canReadPhi, asOf, requestId: request.requestId }),
-      submittable: await submittableVersion(scope, { practiceId, caseId: params.caseId }),
+      submittable: await submittableVersion(scope, { practiceId, caseId: params.caseId, requestId: request.requestId }),
+      earlier: await earlierExports(scope, { practiceId, caseId: params.caseId }),
+      closed: found.state === 'closed_written_off',
       defaultFollowUpOn: defaultFollowUpOn(asOf),
       documents: canLog ? await responseDocuments(scope, practiceId) : [],
       notice: params.notice ?? null,
@@ -76,7 +118,12 @@ export const submissionsPage = practiceRoute({
  * the export's SHA-256 into the log (CAS-12). The database refuses a version not exported, a date
  * before the export or after today, a dispute the payer answered (unless a denial reopened it, within
  * the next level's window), and anyone who does not log submissions. The same submission again does
- * nothing.
+ * nothing. It is never refused because the version's pricing is no longer current: the database records the
+ * check on it, and the page says it was logged and flagged. An export whose pricing went stale after it was made and
+ * before its attestation is logged sent without sign-off only with the person's confirmation that it went to the payer
+ * that way (sentWithoutSignOff); the database records the reason and the audit event. The confirmation is asked before
+ * the service runs and checked again against what the database recorded, so a re-price committed in between never logs
+ * one unconfirmed.
  */
 export const logSubmissionAction = practiceRoute({
   id: 'practice.cases.submissions.log',
@@ -92,30 +139,50 @@ export const logSubmissionAction = practiceRoute({
     channel: z.enum(SUBMISSION_CHANNELS),
     reference: optionalText(z.string().max(200, 'at most 200 characters')),
     followUpOn: optionalText(isoDate),
+    /** The person's confirmation that an export never attested (its pricing went stale after the export) went to the payer without sign-off. */
+    sentWithoutSignOff: optionalText(z.literal('on')),
   }),
   audit: { action: 'submission_logged', objectType: 'submission' },
   handle: async ({ scope, practiceId, input, request, services }): Promise<MutationResult> => {
-    const { rowCount } = await scope.client.query('SELECT 1 FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND p.case_id = $2 AND v.practice_id = $3', [
-      input.versionId,
-      input.caseId,
-      practiceId,
-    ]);
-    if (rowCount !== 1) {
+    const { rows: versions } = await scope.client.query<{ attested: boolean }>(
+      'SELECT v.attested_by IS NOT NULL AS attested FROM packet_version v JOIN packet p ON p.id = v.packet_id WHERE v.id = $1 AND p.case_id = $2 AND v.practice_id = $3',
+      [input.versionId, input.caseId, practiceId],
+    );
+    const version = versions[0];
+    if (version === undefined) {
       throw new NotFoundError();
     }
-    const logged = await underPacketRules(() =>
-      logSubmissionOnce(scope, services.keys, {
-        practiceId,
-        caseId: input.caseId,
-        versionId: input.versionId,
-        submittedOn: input.submittedOn,
-        channel: input.channel,
-        reference: input.reference ?? null,
-        followUpOn: input.followUpOn ?? null,
-        requestId: request.requestId,
-      }),
-    );
-    return { objectId: logged.submissionId, redirect: `/p/${practiceId}/cases/${input.caseId}/submissions?notice=logged` };
+    // An export never attested because its pricing went stale after it was made is logged only as the person says it
+    // went: without sign-off. Every other unattested export is refused below, by the service and the database.
+    if (!version.attested && input.sentWithoutSignOff === undefined && (await packetVersionUnattestedReason(scope.client, { practiceId, versionId: input.versionId })) !== null) {
+      throw new InputError([{ field: 'sentWithoutSignOff', message: STALE_EXPORT_SUBMISSION.confirmRequired }]);
+    }
+    const logged = await underPacketRules(async () => {
+      try {
+        return await logSubmissionOnce(scope, services.keys, {
+          practiceId,
+          caseId: input.caseId,
+          versionId: input.versionId,
+          submittedOn: input.submittedOn,
+          channel: input.channel,
+          reference: input.reference ?? null,
+          followUpOn: input.followUpOn ?? null,
+          sentWithoutSignOff: input.sentWithoutSignOff === 'on',
+          requestId: request.requestId,
+        });
+      } catch (error) {
+        // The database recorded it sent without sign-off (its pricing went stale since the page was read), and the
+        // person did not confirm it went that way: nothing is logged, and the form asks for the confirmation.
+        if (error instanceof PacketRuleError && error.message === SENT_WITHOUT_SIGN_OFF_UNCONFIRMED) {
+          throw new InputError([{ field: 'sentWithoutSignOff', message: STALE_EXPORT_SUBMISSION.confirmRequired }]);
+        }
+        throw error;
+      }
+    });
+    const recorded = await loggedSubmission(scope, { practiceId, submissionId: logged.submissionId });
+    const notice: SubmissionNotice =
+      recorded?.sent.kind === 'unattested' ? 'logged_unattested' : recorded === undefined || recorded.check === null || recorded.check === 'current' ? 'logged' : 'logged_flagged';
+    return { objectId: logged.submissionId, redirect: `/p/${practiceId}/cases/${input.caseId}/submissions?notice=${notice}` };
   },
   sample: {
     params: (refs) => ({ practiceId: refs.practiceId }),

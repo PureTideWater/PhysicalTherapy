@@ -1,3 +1,4 @@
+import { MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@tp/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -7,6 +8,7 @@ import { utc } from '../../../../../components/format';
 import { Money } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
 import { loadPage } from '../../../../../lib/http/next';
+import { MA_ROUTE_NOTICE } from '../../../../../lib/packets/view';
 import { CONFIRMATION_CONSEQUENCE, regulationsPage } from '../../../../../lib/routes/specialist';
 import { confirmRegulationFormAction } from './actions';
 import { FormKeys } from '../../../../../components/form-keys';
@@ -19,7 +21,9 @@ type Props = { readonly params: Promise<{ practiceId: string }>; readonly search
  * The regulations a contract specialist confirms (PRD 2, step 5; Rules reference, Medicare Advantage
  * non-contracting): each packet's current version that cites the regulation, with the case's pattern in
  * counts and dollars and the regulation's words, and the confirmation the database requires before anyone
- * approves the packet. Opaque IDs only; the version holds no identifier.
+ * approves the packet. Until the dispute route for these lines is confirmed (MA_DISPUTE_ROUTE_CONFIRMED, golden
+ * QUESTIONS Q34; best-option audit #5), the page says that an approved packet is still not exported. Opaque IDs
+ * only; the version holds no identifier.
  */
 export default async function RegulationsPage(props: Props) {
   const page = await loadPage(regulationsPage, props);
@@ -49,6 +53,15 @@ export default async function RegulationsPage(props: Props) {
           before anyone can approve it.
         </p>
       </div>
+      {MA_DISPUTE_ROUTE_CONFIRMED ? null : (
+        // Best-option audit #5: confirming the regulation lets a packet be approved; none is exported until the route is confirmed (golden QUESTIONS Q34).
+        <Alert role="note" data-deadline-route="unconfirmed">
+          <AlertTitle>Approved packets wait for the dispute route</AlertTitle>
+          <AlertDescription>
+            Confirming the regulation here lets a person who approves packets approve the version; it does not confirm the dispute route. {MA_ROUTE_NOTICE}
+          </AlertDescription>
+        </Alert>
+      )}
       {notice === 'confirmed' ? (
         <Alert>
           <AlertTitle>Confirmed</AlertTitle>

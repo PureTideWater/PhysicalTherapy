@@ -22,7 +22,12 @@ import type { PdfRenderer } from './pdf';
  * generated is left as it is (JOB-01). The run must still be the run in effect for its period (a
  * re-run accepted since the request replaces it, docs/adr/0037): otherwise the report is marked failed,
  * run_not_in_effect, at once, since no attempt can change that, and a new report is requested of the
- * run in effect. The database refuses a request, and a ready report, of any other run.
+ * run in effect. The database refuses a request, and a ready report, of any other run. Its rule release
+ * must not have been withdrawn since the request (audit item #4: a withdrawal records that the release's
+ * content was wrong): otherwise the report is marked failed, release_withdrawn, at once and without a retry,
+ * and a new report is requested once the period is priced again under the release in force and that re-run
+ * accepted. The database refuses a request, a ready report, an attestation and a release on a withdrawn
+ * release too.
  */
 
 export interface ReportServices {
@@ -37,6 +42,8 @@ export type ReportOutcome =
   | { readonly outcome: 'not_complete' }
   /** The run is no longer the run in effect for its period: the report is failed, run_not_in_effect. */
   | { readonly outcome: 'not_in_effect' }
+  /** The run's rule release was withdrawn since the request: the report is failed, release_withdrawn. */
+  | { readonly outcome: 'release_withdrawn' }
   | { readonly outcome: 'missing' };
 
 export interface ReportOptions {
@@ -57,6 +64,11 @@ export async function generateAuditReport(context: TriageJobContext, services: R
     }
     if (report.status !== 'queued') {
       return { outcome: 'already_finished', status: report.status };
+    }
+    const { rows: withdrawn } = await scope.client.query<{ withdrawn: boolean }>('SELECT pricing_run_release_withdrawn($1) AS withdrawn', [report.pricing_run_id]);
+    if (withdrawn[0]?.withdrawn === true) {
+      await scope.client.query("UPDATE audit_report SET status = 'failed', failure_code = 'release_withdrawn' WHERE id = $1 AND practice_id = $2 AND status = 'queued'", [auditReportId, practiceId]);
+      return { outcome: 'release_withdrawn' };
     }
     const triaged = await triageInScope(scope, practiceId, report.pricing_run_id, context.jobId, asOf);
     if (triaged.outcome === 'not_in_effect') {
@@ -93,13 +105,18 @@ async function failReport(context: TriageJobContext, practiceId: string, auditRe
 }
 
 /** The error code a report not generated is logged with, by outcome. */
-const REPORT_REFUSALS = { missing: 'AUDIT_REPORT_NOT_FOUND', not_complete: 'AUDIT_REPORT_RUN_NOT_COMPLETE', not_in_effect: 'AUDIT_REPORT_RUN_NOT_IN_EFFECT' } as const;
+const REPORT_REFUSALS = {
+  missing: 'AUDIT_REPORT_NOT_FOUND',
+  not_complete: 'AUDIT_REPORT_RUN_NOT_COMPLETE',
+  not_in_effect: 'AUDIT_REPORT_RUN_NOT_IN_EFFECT',
+  release_withdrawn: 'AUDIT_REPORT_RELEASE_WITHDRAWN',
+} as const;
 
 export function auditReportHandler(services: ReportServices, options: ReportOptions = {}): JobHandler<'audit_report'> {
   return async (payload, context) => {
     try {
       const outcome = await generateAuditReport(context, services, payload.practice_id, payload.audit_report_id, options);
-      if (outcome.outcome === 'missing' || outcome.outcome === 'not_complete' || outcome.outcome === 'not_in_effect') {
+      if (outcome.outcome === 'missing' || outcome.outcome === 'not_complete' || outcome.outcome === 'not_in_effect' || outcome.outcome === 'release_withdrawn') {
         context.logger.warn('audit report not generated', { audit_report_id: payload.audit_report_id, error_code: REPORT_REFUSALS[outcome.outcome] });
       }
     } catch (error) {

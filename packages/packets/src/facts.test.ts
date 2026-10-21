@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest';
 
 import { assemblePacket } from './assemble';
 import { type NarrativeFacts, narrativeFacts } from './facts';
-import type { RegulationCitation } from './format';
-import { IDS, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
+import type { PacketContentV1, RegulationCitation } from './format';
+import { verifyNarrative } from './verifier';
+import { IDS, SHA, assemblyInput, contractCitation, line, promptPayRecord } from './test-support';
 
 /**
  * The inputs a narrative may state (./facts.ts): exactly the figures the version's own content holds,
@@ -20,6 +21,8 @@ const sorted = (facts: NarrativeFacts) => ({
   codes: [...facts.codes].sort(),
   modifiers: [...facts.modifiers].sort(),
   numbers: [...facts.numbers].sort(),
+  dayCounts: [...facts.dayCounts].sort(),
+  pages: [...facts.pages].sort(),
   identifiers: [...facts.identifiers].sort(),
   rows: facts.rows,
   markers: [...facts.markers].sort((a, b) => a - b),
@@ -80,6 +83,7 @@ describe('narrativeFacts', () => {
           line(3, { units: '10' }),
         ],
         interest: { state: 'ZZ', releaseNo: 900003, record: promptPayRecord() },
+        nextLevelDeadline: { status: 'unverified', source: 'contract', endsOn: '2027-01-15', cause: 'NEXT_LEVEL_UNCITED' },
       }),
     );
     expect(sorted(narrativeFacts(content))).toEqual({
@@ -89,7 +93,9 @@ describe('narrativeFacts', () => {
         '1200', // parameters: tiers[0].floor_cents
         '12000', // line 2 expected (and 97140's)
         '131', // interest, row 1: 30.00 at 9% for 177 days
+        '1400', // lines 1 and 3: the calculation's patient share (tp-packet/2)
         '14000', // 97110 observed
+        '1600', // line 2: the calculation's patient share (tp-packet/2)
         '174', // interest, row 2: 40.00 at 9% for 176 days
         '20000', // 97110 expected
         '22000', // the pattern's observed
@@ -119,9 +125,10 @@ describe('narrativeFacts', () => {
         '2026-04-22',
         '2026-04-23', // interest due
         '2026-10-16', // as of
+        '2027-01-15', // the next level's window (tp-packet/2's deadline at dispute level 5)
         '2027-06-30', // effective to
-        '2036-04-05',
-        '2036-04-06', // windows end
+        // Not the lines' first-level windows (2036-04-05, 2036-04-06): above the first level the copy states the
+        // level's own window alone.
       ],
       codes: ['97110', '97140', '97530'], // the lines' codes and the quote's
       modifiers: ['59', 'GO', 'GP'], // line 1's and the quote's
@@ -138,8 +145,7 @@ describe('narrativeFacts', () => {
         '2024', // the contract's title
         '2025',
         '2026',
-        '2027',
-        '2036', // the dates' years
+        '2027', // the dates' years
         '25', // the pattern's units
         '3', // the schedule's lines, claims and patients
         '33', // interest: days to pay
@@ -156,26 +162,127 @@ describe('narrativeFacts', () => {
         '900002', // the rule releases
         '900003', // the interest's release
       ],
-      identifiers: ['1-2-3', '7-8-9', 'CE:SYNPLAN-63', 'month:2026-05', 'month_day:06-03'], // the statute, the quote, the plan key, the quote's month and day
+      // Not the lines' first-level contract window either (its days, its clause's numbers, its page), for the same reason.
+      dayCounts: [],
+      pages: [],
+      // The statute, the quote, the quote's month and day; not the plan's key, since the payer's copy names the plan by its name.
+      identifiers: ['1-2-3', '7-8-9', 'month:2026-05', 'month_day:06-03'],
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6, 7, 8],
     });
   });
 
+  it('holds the plan as the payer’s copy names it, never its remittance key’s qualifier (audit item #37 part 1, the verification of 2026-10-21)', () => {
+    const payer = { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: '2U:SYNPAYER7', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-63', plan_name: null };
+    // No name is known: the copy prints "plan identifier SYNPLAN-63", so that identifier is a figure and the key is not.
+    const unnamed = narrativeFacts(assemblePacket(assemblyInput({ payer })));
+    expect(unnamed.identifiers.has('SYNPLAN-63')).toBe(true);
+    expect(unnamed.identifiers.has('CE:SYNPLAN-63')).toBe(false);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', unnamed, []).passed).toBe(true);
+    expect(verifyNarrative('The plan is CE:SYNPLAN-63 [1].', unnamed, []).passed).toBe(false);
+    // Named: the copy prints the name alone, so neither the identifier nor the key is one; the payer's ID never was.
+    const named = narrativeFacts(assemblePacket(assemblyInput({ payer: { ...payer, plan_name: 'SYNTHETIC PLAN 64' } })));
+    expect(named.numbers.has('64')).toBe(true);
+    expect([...named.identifiers].filter((value) => value.includes('SYNPLAN') || value.includes('SYNPAYER'))).toEqual([]);
+    expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, []).passed).toBe(false);
+  });
+
+  it('fails a remittance key in a narrative, digit or not, as a figure no input holds (the verification of 2026-10-21)', () => {
+    const facts = narrativeFacts(assemblePacket(assemblyInput()));
+    const failed = (narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind]);
+    // The content's own keys, another payer's, an ERA export's, and the loaders' longer qualifiers: no input holds one.
+    for (const key of ['CE:SYNPLAN-FIX-ONE', '2U:SYNPAYERQ', 'XV:SYNPAYERXV', 'NAME:SYNTHETIC', 'PLAN:SYNTHETIC', 'TRN03:SYNPAYER', 'CLP06:HM']) {
+      expect(failed(`The claims were paid under plan ${key} [1].`), key).toEqual([['figure_not_in_input', 'identifier']]);
+    }
+    // Read whole, so no part of it passes as a figure an input holds ("CE:3" is no count of 3 lines).
+    expect(facts.numbers.has('3')).toBe(true);
+    expect(failed('The plan is CE:3 [1].')).toEqual([['figure_not_in_input', 'identifier']]);
+    // The plan as the copy names it passes, and so does the payer's name.
+    expect(failed('The claims were paid by SYNTHETIC PAYER Q under plan identifier SYNPLAN-FIX-ONE [1].')).toEqual([]);
+    // A key an input the verifier quotes holds may be repeated as it holds it.
+    const quoting = narrativeFacts(assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit under schedule FS:SYNTHETIC' }) })));
+    expect(quoting.identifiers.has('FS:SYNTHETIC')).toBe(true);
+    expect(verifyNarrative('The contract pays 97110 under schedule FS:SYNTHETIC [1].', quoting, []).passed).toBe(true);
+  });
+
+  it('holds the lines’ windows and the clause behind them at the first level only, as the payer’s copy prints them (audit item #37 part 1)', () => {
+    const first = assemblePacket(assemblyInput());
+    const second = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));
+    // The contract window, its days as days and its page as a page, and each line's window: at the first level.
+    expect(narrativeFacts(first).dates.has('2036-04-05')).toBe(true);
+    expect([...narrativeFacts(first).dayCounts]).toEqual(['3650']);
+    expect([...narrativeFacts(first).pages]).toEqual(['1']);
+    // Above it, the level's own window alone; the line's first-level window and its clause are no figure.
+    expect(narrativeFacts(second).dates.has('2026-12-01')).toBe(true);
+    expect(narrativeFacts(second).dates.has('2036-04-05')).toBe(false);
+    expect(narrativeFacts(second).dayCounts.size + narrativeFacts(second).pages.size).toBe(0);
+    const window = 'Each line’s dispute window ends on 2036-04-05 [3].';
+    expect(verifyNarrative(window, narrativeFacts(first), []).passed).toBe(true);
+    expect(verifyNarrative(window, narrativeFacts(second), []).passed).toBe(false);
+    expect(verifyNarrative('The contract’s dispute window is 3650 days [1].', narrativeFacts(second), []).passed).toBe(false);
+    expect(verifyNarrative('The window for this level ends on 2026-12-01 [3].', narrativeFacts(second), []).passed).toBe(true);
+  });
+
+  it('holds interest only where it is stated, above zero: no $0.00 total, and no due date, days or amount of a line not stated', () => {
+    // Paid on time and dated before the due date: every line computes $0.00.
+    const onTime = assemblePacket(
+      assemblyInput({
+        asOf: '2026-03-10',
+        lines: [line(1, { receivedOn: '2026-03-02', paidOn: '2026-03-09' })],
+        interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord() },
+      }),
+    );
+    expect(onTime.interest).toMatchObject({ computed: true, total_cents: '0' });
+    expect(onTime.interest?.lines[0]).toMatchObject({ interest_cents: '0', due_on: '2026-04-04' });
+    const facts = narrativeFacts(onTime);
+    expect(facts.dates.has('2026-04-04')).toBe(false);
+    expect(facts.amounts.has('0')).toBe(false);
+    expect(verifyNarrative('Prompt-pay interest of $0.00 is stated as its own line [4].', facts, []).passed).toBe(false);
+    // The rule's own figures stay: its release, its days and its rate.
+    expect(facts.numbers.has('33')).toBe(true);
+    expect(facts.percents.has('9')).toBe(true);
+  });
+
   it('holds the regulation’s figures, and no figure for what the version does not state', () => {
     const regulation: RegulationCitation = { kind: 'regulation', method: 'MA_NONCONTRACTED', reference: 'SYNTHETIC RULE 71', statement: 'SYNTHETIC: a plan pays within 72 days.' };
-    const content = assemblePacket(assemblyInput({ citation: regulation, interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) } }));
+    const fromRelease = { status: 'verified', source: 'release', endsOn: '2036-04-05', cause: null } as const;
+    const content = assemblePacket(
+      assemblyInput({
+        citation: regulation,
+        interest: { state: 'ZZ', releaseNo: 900001, record: promptPayRecord({ annual_rate_percent: null }) },
+        lines: [line(1, { deadline: fromRelease }), line(2, { deadline: fromRelease }), line(3, { deadline: fromRelease })],
+        deadlineSources: [{ kind: 'release_record', release_no: 900001, sha256: SHA, program: 'medicare', level: 'L2' }],
+      }),
+    );
     expect(sorted(narrativeFacts(content))).toEqual({
-      amounts: ['10000', '21000', '3000', '30000', '5600', '7000', '9000'],
+      // The calculations' patient share (1400) besides the schedule's figures.
+      amounts: ['10000', '1400', '21000', '3000', '30000', '5600', '7000', '9000'],
       // No rate, so no interest is computed: no percentage, due date, day count or interest amount.
       percents: [],
       dates: ['2026-03-05', '2026-03-06', '2026-03-07', '2026-04-08', '2026-10-16', '2036-04-05'],
       codes: ['97110'],
       modifiers: [],
       numbers: ['1', '2', '2026', '2036', '3', '33', '6', '71', '72', '900001'],
+      dayCounts: [],
+      pages: [],
       identifiers: ['1-2-3'],
       rows: 3,
       markers: [1, 2, 3, 4, 5, 6],
     });
+  });
+
+  it('holds none of the deadline and calculation figures for a tp-packet/1 version, which states none', () => {
+    const current = assemblePacket(assemblyInput());
+    const { deadline: _deadline, lines, ...rest } = current;
+    const earlier: PacketContentV1 = { ...rest, format: 'tp-packet/1', lines: lines.map(({ deadline: _line, calculation: _calculation, ...item }) => item) };
+    const facts = narrativeFacts(earlier);
+    expect(facts.amounts.has('1400')).toBe(false);
+    expect(facts.numbers.has('3650')).toBe(false);
+    expect(facts.dayCounts.size + facts.pages.size).toBe(0);
+    expect(narrativeFacts(current).amounts.has('1400')).toBe(true);
+    // A tp-packet/2 version's window days are days only, never a number of any other kind.
+    expect(narrativeFacts(current).numbers.has('3650')).toBe(false);
+    expect(narrativeFacts(current).dayCounts.has('3650')).toBe(true);
+    expect([...facts.dates].sort()).toEqual([...narrativeFacts(current).dates].sort());
   });
 });

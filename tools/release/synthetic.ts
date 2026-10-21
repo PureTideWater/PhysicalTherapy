@@ -143,10 +143,76 @@ export function renderRerunRelease(root: string = repositoryRoot): Map<string, s
   return generated;
 }
 
+/**
+ * The SYNTHETIC release of the deadline tests (reconciliation-001 D17 a; docs/adr/0061): every file of release
+ * 900001 unchanged but its dispute windows. The three Medicare records there (timely filing, redetermination and
+ * reconsideration) keep their values, source and quotes, are raised to L2 by a SYNTHETIC second reader who read
+ * them against fixtures/synthetic/cms/synthetic-rules.md, and carry that reader's independent second pass. A
+ * Medicare or Medicare Advantage line priced under it has a verified deadline; releases 900001 to 900004 stay as
+ * they are (110 of the golden claims pin 900001's manifest, and a record's level is part of its hash). Only the
+ * tests that need it load it, since current_rule_release() picks the highest release loaded.
+ */
+export const DEADLINE_RELEASE_DIR = 'fixtures/synthetic/rules/release-synth-900005';
+export const DEADLINE_RELEASE_NUMBER = 900_005;
+const DEADLINE_WINDOWS = 'dispute_window/2026/records.json';
+const DEADLINE_READ_ON = '2026-10-18';
+const SECOND_READER = 'SYNTHETIC second reader (an invented person, for the deadline tests)';
+
+/** A hand-typed file as the fixtures write them: two-space JSON and a final newline. */
+const handTyped = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
+/** Every file of release 900005, from release 900001 on disk with its Medicare dispute windows read at L2. */
+export function renderDeadlineRelease(root: string = repositoryRoot): Map<string, string> {
+  const first = path.join(root, SYNTHETIC_RELEASE_DIR);
+  const generated = new Map<string, string>();
+  const records: RuleRecord[] = [];
+  const windowsSecondPass = DEADLINE_WINDOWS.replace(/\.json$/, '.second-pass.json');
+  const carried = listContentFiles(first)
+    .map((file) => file.path)
+    .filter((file) => file !== MANIFEST_FILE && file !== RELEASE_NOTES_FILE && file !== DEADLINE_WINDOWS && file !== windowsSecondPass);
+  for (const file of carried) {
+    generated.set(file, readFileSync(path.join(first, file), 'utf8'));
+    if (isRecordFile(file)) {
+      records.push(...readRecordFile(path.join(first, file), file).records.map((located) => located.record));
+    }
+  }
+  const windows = (JSON.parse(readFileSync(path.join(first, DEADLINE_WINDOWS), 'utf8')) as Record<string, unknown>[]).map((record) => ({
+    ...record,
+    verification: {
+      level: 'L2',
+      by: SECOND_READER,
+      on: DEADLINE_READ_ON,
+      questions: ['SYNTHETIC fixture: read against its synthetic source by an invented second reader, never by a specialist, and never used to price a real line.'],
+    },
+  }));
+  generated.set(DEADLINE_WINDOWS, handTyped(windows));
+  records.push(...readRecordFile(path.join(first, DEADLINE_WINDOWS), DEADLINE_WINDOWS).records.map((located) => ({ ...located.record, verification: windows[0]?.verification as RuleRecord['verification'] })));
+  const secondPass = JSON.parse(readFileSync(path.join(first, windowsSecondPass), 'utf8')) as Record<string, unknown>;
+  generated.set(windowsSecondPass, handTyped({ ...secondPass, transcribed_by: `${SECOND_READER}, independent second pass`, transcribed_on: DEADLINE_READ_ON }));
+  generated.set(
+    RELEASE_NOTES_FILE,
+    releaseNotes({
+      title: `SYNTHETIC test release ${String(DEADLINE_RELEASE_NUMBER)}`,
+      summary: [
+        `Built ${BUILT_ON} by \`tsx tools/release/synthetic.ts\`: every file of release 900001 unchanged but its dispute windows, whose three`,
+        `Medicare records keep their values, source and quotes and are read at L2 by a SYNTHETIC second reader on ${DEADLINE_READ_ON}, with that`,
+        'reader’s independent second pass. The release of the deadline tests (D17 a): a Medicare or Medicare Advantage line priced under it has a',
+        'verified deadline. Invented values for tests: never published, never loaded outside a scratch test database, never used to price a real line.',
+      ].join('\n'),
+      records,
+      impact: ['SYNTHETIC fixture: loaded only into scratch test databases, by the tests that judge a verified Medicare deadline.'],
+    }),
+  );
+  const hashes = new Map<string, string>([...generated.entries()].map(([file, text]): [string, string] => [file, sha256(text)]));
+  generated.set(MANIFEST_FILE, serializeManifest(buildManifest(DEADLINE_RELEASE_NUMBER, hashes)));
+  return generated;
+}
+
 if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
   for (const [dir, files] of [
     [SYNTHETIC_RELEASE_DIR, renderSyntheticRelease()],
     [RERUN_RELEASE_DIR, renderRerunRelease()],
+    [DEADLINE_RELEASE_DIR, renderDeadlineRelease()],
   ] as const) {
     for (const [file, text] of files) {
       const target = path.join(repositoryRoot, dir, file);

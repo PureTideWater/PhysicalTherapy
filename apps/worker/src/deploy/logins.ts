@@ -1,4 +1,4 @@
-import { APP_ROLE, BILLING_ROLE, OPERATOR_ROLE } from '@tp/db';
+import { APP_ROLE, BILLING_ROLE, JOB_ROLE, OPERATOR_ROLE } from '@tp/db';
 
 /**
  * The deploy job's logins (docs/adr/0019: "the deploy job creates tp_operator_login from its secret as
@@ -12,6 +12,11 @@ import { APP_ROLE, BILLING_ROLE, OPERATOR_ROLE } from '@tp/db';
  *   each a member of its role (tp_app, tp_operator, QUEUE_ROLE) and nothing else. A login that exists
  *   keeps its password: after its creation Secrets Manager's rotation owns it (the alternating-users
  *   scheme creates the `_clone` login itself and grants it the original).
+ * - The worker's own login (the practice jobs; docs/adr/0061): a member of tp_app, which it inherits as the
+ *   web's login does, and of the marker role tp_job, which it neither inherits nor may SET ROLE to. The
+ *   database reads that membership from session_user, so a job's connection, or a compromised worker
+ *   setting app.actor_id to a person's ID, records no download of a packet export and attests none. The
+ *   rotation's `_clone` is granted the original, and so is marked too.
  * - Billing's login (the webhook route and the organization's billing screens; docs/adr/0055), which may
  *   SET ROLE tp_billing without inheriting it and holds nothing else: the application's login may not
  *   switch to billing, so no other route can write an invoice.
@@ -28,6 +33,8 @@ export interface Login {
 
 export interface DeployLogins {
   readonly app: Login;
+  /** The worker's own login: tp_app's privileges, marked as a job's by tp_job. */
+  readonly worker: Login;
   readonly operator: Login;
   readonly queue: Login;
   readonly billing: Login;
@@ -60,18 +67,27 @@ async function canSetRole(client: LoginClient, role: string): Promise<void> {
 END $$`);
 }
 
-/** How a login holds its role: inheriting it, or only able to SET ROLE to it. */
-type Membership = 'inherit' | 'switch';
+/** How a login holds its role: inheriting it, only able to SET ROLE to it, or only marked by it (neither). */
+type Membership = 'inherit' | 'switch' | 'mark';
 
-/** Creates the queue role and schema and the four logins; returns the logins it created. */
+const GRANT_OPTIONS: Readonly<Record<Membership, string>> = {
+  inherit: '',
+  switch: ' WITH INHERIT FALSE, SET TRUE',
+  mark: ' WITH INHERIT FALSE, SET FALSE',
+};
+
+/** Creates the queue role and schema and the five logins; returns the logins it created. */
 export async function provisionLogins(client: LoginClient, logins: DeployLogins): Promise<{ readonly created: string[] }> {
+  const all = [logins.app, logins.worker, logins.operator, logins.queue, logins.billing];
   const members: [Login, string, Membership][] = [
     [logins.app, APP_ROLE, 'inherit'],
+    [logins.worker, APP_ROLE, 'inherit'],
+    [logins.worker, JOB_ROLE, 'mark'],
     [logins.operator, OPERATOR_ROLE, 'inherit'],
     [logins.queue, QUEUE_ROLE, 'inherit'],
     [logins.billing, BILLING_ROLE, 'switch'],
   ];
-  for (const [login] of members) {
+  for (const login of all) {
     if (!LOGIN_NAME.test(login.username)) {
       throw new LoginProvisionError('a login name is lowercase letters, digits and underscores');
     }
@@ -79,10 +95,10 @@ export async function provisionLogins(client: LoginClient, logins: DeployLogins)
       throw new LoginProvisionError(`the password of ${login.username} is shorter than 16 characters`);
     }
   }
-  if (new Set(members.map(([login]) => login.username)).size !== members.length) {
-    throw new LoginProvisionError('the four logins have four different names');
+  if (new Set(all.map((login) => login.username)).size !== all.length) {
+    throw new LoginProvisionError('the five logins have five different names');
   }
-  for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE]) {
+  for (const role of [APP_ROLE, JOB_ROLE, OPERATOR_ROLE, BILLING_ROLE]) {
     if (!(await roleExists(client, role))) {
       throw new LoginProvisionError(`role ${role} does not exist; the migrations run first`);
     }
@@ -103,26 +119,28 @@ END $$`);
   await client.query(`DO $$ BEGIN EXECUTE format('GRANT CONNECT, CREATE ON DATABASE %I TO ${QUEUE_ROLE}', current_database()); END $$`);
 
   const created: string[] = [];
-  for (const [login, role, membership] of members) {
-    const name = client.escapeIdentifier(login.username);
+  for (const login of all) {
     if (!(await roleExists(client, login.username))) {
-      await client.query(`CREATE ROLE ${name} LOGIN ${NOTHING} PASSWORD ${client.escapeLiteral(login.password)}`);
+      await client.query(`CREATE ROLE ${client.escapeIdentifier(login.username)} LOGIN ${NOTHING} PASSWORD ${client.escapeLiteral(login.password)}`);
       created.push(login.username);
     }
-    await client.query(membership === 'inherit' ? `GRANT ${role} TO ${name}` : `GRANT ${role} TO ${name} WITH INHERIT FALSE, SET TRUE`);
+  }
+  for (const [login, role, membership] of members) {
+    await client.query(`GRANT ${role} TO ${client.escapeIdentifier(login.username)}${GRANT_OPTIONS[membership]}`);
   }
   return { created };
 }
 
-/** The eight secret fields the migration task is given (infra/lib/constructs/compute.ts). */
+/** The ten secret fields the migration task is given (infra/lib/constructs/compute.ts). */
 export const LOGIN_VARIABLES = {
   app: { username: 'TP_APP_LOGIN_USERNAME', password: 'TP_APP_LOGIN_PASSWORD' },
+  worker: { username: 'TP_WORKER_LOGIN_USERNAME', password: 'TP_WORKER_LOGIN_PASSWORD' },
   operator: { username: 'TP_OPERATOR_LOGIN_USERNAME', password: 'TP_OPERATOR_LOGIN_PASSWORD' },
   queue: { username: 'TP_QUEUE_LOGIN_USERNAME', password: 'TP_QUEUE_LOGIN_PASSWORD' },
   billing: { username: 'TP_BILLING_LOGIN_USERNAME', password: 'TP_BILLING_LOGIN_PASSWORD' },
 } as const;
 
-/** Reads the four logins from the environment; a missing field is named, never a value. */
+/** Reads the five logins from the environment; a missing field is named, never a value. */
 export function readDeployLogins(env: Readonly<Record<string, string | undefined>> = process.env): DeployLogins {
   const read = (name: string): string => {
     const value = env[name];
@@ -132,5 +150,11 @@ export function readDeployLogins(env: Readonly<Record<string, string | undefined
     return value;
   };
   const login = (variables: { readonly username: string; readonly password: string }): Login => ({ username: read(variables.username), password: read(variables.password) });
-  return { app: login(LOGIN_VARIABLES.app), operator: login(LOGIN_VARIABLES.operator), queue: login(LOGIN_VARIABLES.queue), billing: login(LOGIN_VARIABLES.billing) };
+  return {
+    app: login(LOGIN_VARIABLES.app),
+    worker: login(LOGIN_VARIABLES.worker),
+    operator: login(LOGIN_VARIABLES.operator),
+    queue: login(LOGIN_VARIABLES.queue),
+    billing: login(LOGIN_VARIABLES.billing),
+  };
 }

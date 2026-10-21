@@ -1,22 +1,27 @@
 import { type Cents, centsToString, decimal, formatCents, parseCents, sumCents } from '@tp/money';
+import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
 
 import {
   type CodeSummary,
+  type DeadlineSource,
   type EvidenceGap,
   type EvidenceItem,
   IDENTIFIER_KINDS,
   type InterestSection,
+  type LineCalculation,
+  type LineDeadline,
   PACKET_FORMAT,
   type PacketCitation,
-  type PacketContent,
+  type PacketContentV2,
+  type PacketDeadline,
   type PatternFacts,
   type PayerIdentification,
   type PracticeIdentification,
   type RuleReleaseReference,
-  type ScheduleLine,
+  type ScheduleLineV2,
   type Source,
 } from './format';
-import { type PromptPayRecord, promptPayInterest } from './interest';
+import { type PromptPayRecord, interestStated, promptPayInterest } from './interest';
 import { placeholder } from './placeholders';
 import { canonicalNumber } from './scan';
 
@@ -26,6 +31,11 @@ import { canonicalNumber } from './scan';
  * signed-off contract version and its verified rate record (or the Medicare Advantage regulation), the
  * rule releases the lines were priced under and the state prompt-pay record; this function is pure and
  * computes every figure the version holds from them. The schedule's identifiers are placeholders.
+ *
+ * Each line's deadline and its status are what @tp/triage's deadlineVerification() derived from the
+ * line's trace and the evidence behind its window (D17); each line's calculation is copied from its
+ * stored trace (./calculation.ts). The version's deadline is the lines' (the earliest window, verified
+ * only when every line's is) or, after a denial reopened the case, the next level's.
  */
 
 export class PacketAssemblyError extends Error {
@@ -50,6 +60,18 @@ export interface AssemblyLine {
   readonly paidOn: string;
   readonly receivedOn: string | null;
   readonly windowEndsOn: string | null;
+  /** The line's deadline as @tp/triage's deadlineVerification() derived it (D17). */
+  readonly deadline: DeadlineInput;
+  /** The line's calculation summary, copied from its stored trace (lineCalculation). */
+  readonly calculation: LineCalculation;
+}
+
+/** A deadline as @tp/triage derives it (DeadlineVerification): its status, source, last day and cause. */
+export interface DeadlineInput {
+  readonly status: DeadlineStatus;
+  readonly source: 'contract' | 'release' | null;
+  readonly endsOn: string | null;
+  readonly cause: DeadlineUnverifiedCause | null;
 }
 
 export interface DocumentReference {
@@ -73,6 +95,10 @@ export interface AssemblyInput {
   readonly contractDocuments: readonly DocumentReference[];
   readonly remittances: readonly (DocumentReference & { readonly paidOn: string })[];
   readonly attachedDocuments: readonly DocumentReference[];
+  /** At dispute level 2 and above, the next level's window and its verification (nextLevelDeadlineVerification); null at level 1. */
+  readonly nextLevelDeadline: DeadlineInput | null;
+  /** The evidence behind the lines' windows (or the next level's): the contract's cited window, the release records. */
+  readonly deadlineSources: readonly DeadlineSource[];
 }
 
 /** The pattern's fixed amount per unit (or per visit) for a code, when the contract states one. */
@@ -166,10 +192,47 @@ export function requestedAction(citation: PacketCitation, disputeLevel: number, 
   return `${level}${reprocess}${interest}`;
 }
 
+/** A line's deadline as a tp-packet/2 version states it. */
+export const lineDeadline = (deadline: DeadlineInput): LineDeadline => ({ ends_on: deadline.endsOn, status: deadline.status, source: deadline.source, cause: deadline.cause });
+
+const sourceKey = (source: DeadlineSource) =>
+  source.kind === 'contract_window' ? `contract_window:${source.contract_version_id}:${source.document_id}` : `release_record:${String(source.release_no)}:${source.sha256}`;
+
+/**
+ * The version's deadline: the lines' own windows at the first level (the earliest ends first; verified
+ * only when every line's is), the next level's window after a denial reopened the case. The export job
+ * states it again from the inputs as they stand (apps/worker/src/packets/records.ts) and compares.
+ */
+export function packetDeadline(
+  input: Pick<AssemblyInput, 'disputeLevel' | 'nextLevelDeadline' | 'deadlineSources'>,
+  lines: readonly { readonly deadline: LineDeadline }[],
+): PacketDeadline {
+  const sources = [...new Map(input.deadlineSources.map((source) => [sourceKey(source), source])).values()].sort((a, b) => sourceKey(a).localeCompare(sourceKey(b)));
+  const linesVerified = lines.filter((line) => line.deadline.status === 'verified').length;
+  if (input.disputeLevel > 1) {
+    const next = input.nextLevelDeadline;
+    if (next === null) {
+      throw new PacketAssemblyError('a dispute after the first level states its next window and whether it is verified');
+    }
+    return { basis: 'next_level_window', ends_on: next.endsOn, status: next.status, lines_verified: linesVerified, lines: lines.length, causes: next.cause === null ? [] : [next.cause], sources };
+  }
+  const ends = lines.map((line) => line.deadline.ends_on).filter((date): date is string => date !== null).sort();
+  const causes = [...new Set(lines.map((line) => line.deadline.cause).filter((cause): cause is DeadlineUnverifiedCause => cause !== null))].sort();
+  return {
+    basis: 'line_windows',
+    ends_on: ends[0] ?? null,
+    status: linesVerified === lines.length ? 'verified' : 'unverified',
+    lines_verified: linesVerified,
+    lines: lines.length,
+    causes,
+    sources,
+  };
+}
+
 const byLine = (a: AssemblyLine, b: AssemblyLine) =>
   a.serviceDate.localeCompare(b.serviceDate) || a.procedureCode.localeCompare(b.procedureCode) || a.claimId.localeCompare(b.claimId) || a.serviceLineId.localeCompare(b.serviceLineId);
 
-export function assemblePacket(input: AssemblyInput): PacketContent {
+export function assemblePacket(input: AssemblyInput): PacketContentV2 {
   if (input.lines.length === 0) {
     throw new PacketAssemblyError('a packet asks for at least one line of its case that is not written off');
   }
@@ -180,7 +243,7 @@ export function assemblePacket(input: AssemblyInput): PacketContent {
     throw new PacketAssemblyError('a dispute level is a whole number from 1');
   }
   const ordered = [...input.lines].sort(byLine);
-  const lines = ordered.map((line, index): ScheduleLine => {
+  const lines = ordered.map((line, index): ScheduleLineV2 => {
     const row = index + 1;
     const identifiers = Object.fromEntries(IDENTIFIER_KINDS.map((kind) => [kind, placeholder(kind, row)])) as Record<(typeof IDENTIFIER_KINDS)[number], string>;
     return {
@@ -202,6 +265,8 @@ export function assemblePacket(input: AssemblyInput): PacketContent {
       paid_on: line.paidOn,
       received_on: line.receivedOn,
       window_ends_on: line.windowEndsOn,
+      deadline: lineDeadline(line.deadline),
+      calculation: line.calculation,
     };
   });
 
@@ -273,8 +338,9 @@ export function assemblePacket(input: AssemblyInput): PacketContent {
     interest,
     evidence,
     evidence_gaps: gaps,
-    requested_action: requestedAction(input.citation, input.disputeLevel, interest !== null && interest.total_cents !== null),
+    requested_action: requestedAction(input.citation, input.disputeLevel, interestStated(interest)),
     sources,
+    deadline: packetDeadline(input, lines),
   };
 }
 

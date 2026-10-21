@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { addDays, daysFrom, isIsoDate } from './dates';
-import { promptPayInterest } from './interest';
+import { INTEREST_EXCLUSION_TEXT, interestExclusionText, promptPayInterest } from './interest';
 import { promptPayRecord } from './test-support';
 
 /**
@@ -78,5 +78,16 @@ describe('calendar dates', () => {
     expect(isIsoDate('2026-3-1')).toBe(false);
     expect(isIsoDate('2026-03-01')).toBe(true);
     expect(() => addDays('2026-13-01', 1)).toThrow(RangeError);
+  });
+});
+
+describe('a prompt-pay rule’s exclusions in words', () => {
+  it('reads each code the releases hold in words, and any other code with no underscore, never as a code', () => {
+    expect(interestExclusionText('self_funded_erisa_plans')).toBe('self-funded ERISA plans');
+    expect(interestExclusionText('self_funded_plans')).toBe('self-funded plans');
+    expect(interestExclusionText('FEDERAL_EMPLOYEE_PLANS')).toBe('federal employee plans');
+    for (const words of Object.values(INTEREST_EXCLUSION_TEXT)) {
+      expect(words).not.toContain('_');
+    }
   });
 });

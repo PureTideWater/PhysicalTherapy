@@ -28,5 +28,5 @@ export {
   reportDocumentCsv,
   shareText,
 } from './documents';
-export { reasonText } from './html';
+export { caseStateText, reasonText, unattestedSubmissionsNote, unattestedSubmissionsOf, unattestedSubmissionsText } from './html';
 export { NO_RECOVERED_CASH, RECOVERED_PRINCIPAL_LABELS } from './recovered-words';

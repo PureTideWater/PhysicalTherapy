@@ -1,4 +1,6 @@
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
+import { interestStated, lineInterestStated } from './interest';
+import { planName } from './payer';
 import { readableText } from './readable';
 import { type FigureKind, canonicalNumber, scanText } from './scan';
 
@@ -7,9 +9,25 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * draftPacketNarrative: "every number, date, code and count in the text must match the inputs
  * exactly"). Built from the stored version, so anyone can check a stored narrative again. Amounts are
  * cents as integer text, numbers and percentages plain decimals, dates ISO. The contract's quoted
- * clause, the statute, the identification of practice, payer and plan, and the contract's title are
- * read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it.
+ * clause, the statute, the identification of practice, payer and plan (the plan as the payer's copy names it, by its
+ * name or its identifier without the remittance key's qualifier, ./payer.ts), and the contract's title are
+ * read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it. No
+ * remittance key is among them: the payer's ID and the plan's key are the record's, and the scanner reads a key
+ * as an identifier whether or not it holds a digit, so a narrative cannot state one.
  * No identifier of a patient or a claim is ever an input: they are placeholders, one per schedule row.
+ *
+ * A tp-packet/2 version also states each line's deadline, its calculation summary and the evidence
+ * behind the deadline, so a narrative may repeat those too: the deadline dates, the contract window's
+ * page and day count, its quoted clause (read as quoted text), and the calculation's whole-cent amounts
+ * (an unrounded amount with a fraction of a cent is not a figure a narrative states). The window's day
+ * count and every number its quote holds are day counts, and its page a page: each is a number of its
+ * own kind, which a narrative states only as days ("3650 days") or as a page ("page 4"), so it never
+ * stands in for a count of units, lines or claims. A tp-packet/1 version has none of them.
+ *
+ * A narrative states only what the payer's copy prints beside it (audit item #37 part 1; docs/adr/0061): above the
+ * first level the copy states the level's own window alone, so the lines' first-level windows and the contract window
+ * behind them are no figure there; and interest is stated only where code computed it above zero
+ * (interestStated()), so no $0.00 total and no due date, day count or amount of a line not stated is one either.
  */
 export interface NarrativeFacts {
   readonly amounts: ReadonlySet<string>;
@@ -19,6 +37,10 @@ export interface NarrativeFacts {
   readonly modifiers: ReadonlySet<string>;
   /** Counts, units, version, page, release and dispute-level numbers, day counts and years. */
   readonly numbers: ReadonlySet<string>;
+  /** The contract window's days and the numbers its quote holds (tp-packet/2): a number among them only as days, before "day" or "days". */
+  readonly dayCounts: ReadonlySet<string>;
+  /** The contract window's pages (tp-packet/2): a number among them only as a page, after "page". */
+  readonly pages: ReadonlySet<string>;
   /** Figures written as identifiers in the texts the version quotes (a statute section). */
   readonly identifiers: ReadonlySet<string>;
   /** The schedule's rows: a placeholder names one of 1 to rows. */
@@ -34,10 +56,19 @@ class FactSets {
   readonly codes = new Set<string>();
   readonly modifiers = new Set<string>();
   readonly numbers = new Set<string>();
+  readonly dayCounts = new Set<string>();
+  readonly pages = new Set<string>();
   readonly identifiers = new Set<string>();
 
   amount(value: string | null | undefined): void {
     if (value !== null && value !== undefined) {
+      this.amounts.add(value);
+    }
+  }
+
+  /** An amount in cents, when it is whole cents (the trace writes unrounded amounts with their fraction). */
+  wholeCents(value: string | null | undefined): void {
+    if (value !== null && value !== undefined && /^-?\d+$/.test(value)) {
       this.amounts.add(value);
     }
   }
@@ -55,8 +86,8 @@ class FactSets {
     }
   }
 
-  /** Every figure a quoted text holds, each as its own kind. */
-  quoted(text: string | null | undefined): void {
+  /** Every figure a quoted text holds, each as its own kind; its numbers into `numbers`, or the set named. */
+  quoted(text: string | null | undefined, numbers: Set<string> = this.numbers): void {
     if (text === null || text === undefined) {
       return;
     }
@@ -69,7 +100,7 @@ class FactSets {
       month_day: (value) => this.identifiers.add(`month_day:${value}`),
       code: (value) => this.codes.add(value),
       modifier: (value) => this.modifiers.add(value),
-      number: (value) => this.numbers.add(value),
+      number: (value) => numbers.add(value),
       identifier: (value) => this.identifiers.add(value),
     };
     // Read as the narrative is read (./readable.ts), so a figure is the same figure in both.
@@ -104,6 +135,7 @@ function parameterFigures(value: unknown, sets: FactSets): void {
 export function narrativeFacts(content: PacketContent): NarrativeFacts {
   const sets = new FactSets();
   const { pattern, citation, interest } = content;
+  const nextLevel = content.format === 'tp-packet/2' && content.deadline.basis === 'next_level_window';
 
   sets.date(content.as_of);
   sets.number(content.dispute_level);
@@ -128,8 +160,11 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
 
   sets.quoted(content.practice.name);
   sets.quoted(content.payer.name);
-  sets.quoted(content.payer.plan_key);
-  sets.quoted(content.payer.plan_name);
+  // The plan as the payer's copy names it (./payer.ts): its name (an ERA export's plan as the export names it), or its
+  // identifier without the remittance key's qualifier when no name is known. The key itself ("CE:SYNPLAN-63",
+  // "CE:SYNPLAN-FIX-ONE") is the record's: the scanner reads any token led by a qualifier code as an identifier, digit
+  // or not (./scan.ts), and no input holds one, so a narrative stating a key fails.
+  sets.quoted(planName(content.payer).text);
 
   for (const percent of pattern.contract_percentages) {
     sets.percents.add(canonicalNumber(percent));
@@ -163,8 +198,39 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     for (const value of [line.expected_cents, line.observed_cents, line.variance_cents, line.paid_cents]) {
       sets.amount(value);
     }
-    for (const value of [line.service_date, line.paid_on, line.received_on, line.window_ends_on]) {
+    for (const value of [line.service_date, line.paid_on, line.received_on]) {
       sets.date(value);
+    }
+    // A line's first-level window, which the payer's copy states at the first level only.
+    if (!nextLevel) {
+      sets.date(line.window_ends_on);
+    }
+  }
+
+  if (content.format === 'tp-packet/2') {
+    for (const line of content.lines) {
+      if (!nextLevel) {
+        sets.date(line.deadline.ends_on);
+      }
+      const { calculation } = line;
+      for (const step of calculation.steps) {
+        sets.wholeCents(step.amount_cents);
+      }
+      sets.wholeCents(calculation.rounding?.unrounded_cents);
+      sets.wholeCents(calculation.rounding?.rounded_cents);
+      sets.wholeCents(calculation.patient_share_cents);
+    }
+    sets.date(content.deadline.ends_on);
+    // Above the first level the payer's copy states the level's own window alone: the lines' first-level windows and
+    // the clauses behind them are not this level's deadline, are not printed, and so are no figure a narrative states.
+    for (const source of nextLevel ? [] : content.deadline.sources) {
+      if (source.kind === 'contract_window') {
+        sets.pages.add(canonicalNumber(String(source.page)));
+        if (source.days !== null) {
+          sets.dayCounts.add(canonicalNumber(String(source.days)));
+        }
+        sets.quoted(source.quote, sets.dayCounts);
+      }
     }
   }
 
@@ -174,15 +240,21 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     if (interest.annual_rate_percent !== null) {
       sets.percents.add(canonicalNumber(interest.annual_rate_percent));
     }
-    sets.amount(interest.total_cents);
     sets.quoted(interest.statute);
+    // Interest is stated only where code computed an amount above zero (Q4 (a); interestStated()): the payer's copy
+    // lists and totals those lines alone, so a narrative states no other line's interest, due date or days.
+    if (interestStated(interest)) {
+      sets.amount(interest.total_cents);
+    }
     for (const line of interest.lines) {
       sets.date(line.received_on);
-      sets.date(line.due_on);
       sets.date(line.paid_on);
-      sets.number(line.days_late);
-      sets.number(line.days_unpaid);
-      sets.amount(line.interest_cents);
+      if (lineInterestStated(line)) {
+        sets.date(line.due_on);
+        sets.number(line.days_late);
+        sets.number(line.days_unpaid);
+        sets.amount(line.interest_cents);
+      }
     }
   }
 
@@ -193,6 +265,8 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
     codes: sets.codes,
     modifiers: sets.modifiers,
     numbers: sets.numbers,
+    dayCounts: sets.dayCounts,
+    pages: sets.pages,
     identifiers: sets.identifiers,
     rows: content.lines.length,
     markers: new Set(content.sources.map((source) => source.marker)),

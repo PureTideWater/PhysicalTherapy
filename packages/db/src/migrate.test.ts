@@ -12,16 +12,19 @@ import {
   BILLING_ROLE,
   ESIGN_DEV_LOGIN,
   ESIGN_ROLE,
+  JOB_ROLE,
   OPERATOR_ROLE,
   OWNER_ROLE,
   type RoleAttributes,
   RoleBootstrapError,
   WANTED_ROLES,
+  WORKER_DEV_LOGIN,
   appDevLoginUrl,
   createRoleStatement,
   grantStatements,
   managedRoles,
   roleAlteration,
+  workerDevLoginUrl,
 } from './roles';
 
 let dir = '';
@@ -88,12 +91,16 @@ describe('roles', () => {
   const owner = WANTED_ROLES[OWNER_ROLE] as RoleAttributes;
 
   it('creates the dev logins only when asked', () => {
-    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE]);
-    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]);
-    for (const login of [APP_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]) {
+    expect(managedRoles({ devLogin: false })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE]);
+    expect(managedRoles({ devLogin: true })).toEqual([OWNER_ROLE, APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]);
+    for (const login of [APP_DEV_LOGIN, WORKER_DEV_LOGIN, BILLING_DEV_LOGIN, ESIGN_DEV_LOGIN]) {
       expect(grantStatements({ devLogin: false }).join('\n')).not.toContain(login);
     }
-    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN}`);
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${APP_DEV_LOGIN};`);
+    // The worker's dev login inherits the application role and is marked as a job's; the web's is not (docs/adr/0061).
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${APP_ROLE} TO ${WORKER_DEV_LOGIN};`);
+    expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${JOB_ROLE} TO ${WORKER_DEV_LOGIN} WITH INHERIT FALSE, SET FALSE;`);
+    expect(grantStatements({ devLogin: true }).join('\n')).not.toContain(`GRANT ${JOB_ROLE} TO ${APP_DEV_LOGIN}`);
     expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${BILLING_ROLE} TO ${BILLING_DEV_LOGIN} WITH INHERIT FALSE, SET TRUE;`);
     expect(grantStatements({ devLogin: true }).join('\n')).toContain(`GRANT ${ESIGN_ROLE} TO ${ESIGN_DEV_LOGIN} WITH INHERIT FALSE, SET TRUE;`);
     expect(() => createRoleStatement('someone_else')).toThrow(RoleBootstrapError);
@@ -110,8 +117,8 @@ describe('roles', () => {
     expect(statements).toContain(`REVOKE ${BILLING_ROLE} FROM ${APP_ROLE};`);
   });
 
-  it('never gives the application, operator, billing, e-signature or owner role superuser, bypass or login', () => {
-    for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, OWNER_ROLE]) {
+  it('never gives the application, operator, billing, e-signature, job or owner role superuser, bypass or login', () => {
+    for (const role of [APP_ROLE, OPERATOR_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OWNER_ROLE]) {
       expect(createRoleStatement(role)).toContain(`CREATE ROLE ${role} NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`);
       expect(WANTED_ROLES[role]).toEqual({ rolcanlogin: false, rolinherit: true, rolsuper: false, rolcreatedb: false, rolcreaterole: false, rolreplication: false, rolbypassrls: false });
     }
@@ -136,5 +143,6 @@ describe('roles', () => {
 
   it('builds the dev login URL on the same server and database', () => {
     expect(appDevLoginUrl('postgres://postgres:test@localhost:5432/tp_test_x')).toBe('postgres://tp_app_dev:tp_app_dev@localhost:5432/tp_test_x');
+    expect(workerDevLoginUrl('postgres://postgres:test@localhost:5432/tp_test_x')).toBe('postgres://tp_worker_dev:tp_worker_dev@localhost:5432/tp_test_x');
   });
 });

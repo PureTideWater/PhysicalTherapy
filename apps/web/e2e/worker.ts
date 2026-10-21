@@ -1,4 +1,6 @@
-import { appDevLoginUrl, developmentMasterKey, openPool } from '@tp/db';
+import { setTimeout } from 'node:timers/promises';
+
+import { databaseClient, developmentMasterKey, openPool, workerDevLoginUrl } from '@tp/db';
 import { createLogger } from '@tp/observability';
 import {
   ChromiumPdfRenderer,
@@ -49,6 +51,63 @@ function onlyFor<T extends 'monitor' | 'digest'>(practices: ReadonlySet<string>,
   }) as JobHandlers[T];
 }
 
+/** The advisory lock a spec holds (holdExports) while an export it asked for must wait, whichever spec's worker takes it. */
+function exportHoldKey(practiceId: string): string {
+  return `e2e_packet_export_hold:${practiceId}`;
+}
+
+/**
+ * The packet export, once no spec holds its practice's exports: every spec's worker takes any practice's export, so a
+ * journey that needs its export to wait (the line written off before the job runs, e2e/packets.spec.ts) holds it
+ * instead of relying on no other spec's worker running at the same time. The worker asks for the hold without waiting
+ * on it, so it holds no connection meanwhile; a worker that stops while the export is held leaves it to pg-boss's retry
+ * (the attempt records no event: the export's own handler has not run).
+ */
+function heldWhileAsked(real: JobHandlers['packet_export'], stopping: () => boolean): JobHandlers['packet_export'] {
+  return async (payload: Parameters<JobHandlers['packet_export']>[0], context: JobContext) => {
+    for (;;) {
+      const free = await context.transaction(async (scope) => {
+        const { rows } = await scope.client.query<{ free: boolean }>('SELECT pg_try_advisory_xact_lock_shared(hashtextextended($1, 0)) AS free', [exportHoldKey(payload.practice_id)]);
+        return rows[0]?.free === true;
+      });
+      if (free) {
+        break;
+      }
+      if (stopping()) {
+        throw new Error('the export is held, and this worker is stopping');
+      }
+      await setTimeout(200);
+    }
+    await real(payload, context);
+  };
+}
+
+/**
+ * Holds every packet export of the practice until `release`: a worker that takes one waits, then exports or refuses it
+ * as the version stands then; `release` may be called again, and does nothing then. The lock is the e2e database
+ * superuser's, on a connection of its own.
+ */
+export async function holdExports(practiceId: string): Promise<{ release: () => Promise<void> }> {
+  const client = databaseClient(e2eDatabaseUrl());
+  await client.connect();
+  await client.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [exportHoldKey(practiceId)]);
+  let released = false;
+  return {
+    // Once: the journey releases it when its export may run, and again on its way out whatever happened.
+    release: async () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      try {
+        await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [exportHoldKey(practiceId)]);
+      } finally {
+        await client.end();
+      }
+    },
+  };
+}
+
 /**
  * The worker, as main.ts wires it in development, for the length of a test. The monitoring chain's
  * planning step (monitor; docs/adr/0039) is real for the monitoring and recovery journeys' practices
@@ -61,9 +120,11 @@ function onlyFor<T extends 'monitor' | 'digest'>(practices: ReadonlySet<string>,
  * so every worker takes them.
  */
 export async function startLocalWorker(): Promise<{ worker: RunningWorker; close: () => Promise<void> }> {
-  const pool = openPool(appDevLoginUrl(e2eDatabaseUrl()), 4);
+  // The worker's own login, as in development and production (docs/adr/0061).
+  const pool = openPool(workerDevLoginUrl(e2eDatabaseUrl()), 4);
   const boss = new PgBoss(e2eDatabaseUrl());
   boss.on('error', () => undefined);
+  let stopping = false;
   const services = intakeServices({ documents: { kind: 'local', dir: E2E_DOCUMENTS_DIR }, keys: { kind: 'local', masterKey: developmentMasterKey() }, scanWaitMs: 10_000 });
   const worker = await startWorker({
     boss,
@@ -81,7 +142,7 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
       reconcile: reconcileHandler({ documents: services.documents, keys: services.keys }),
       roi_statement: roiStatementHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
       // A packet's export is real too (docs/adr/0041): it prints only a version a person approved and exports.
-      packet_export: packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
+      packet_export: heldWhileAsked(packetExportHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }), () => stopping),
       report_document: reportDocumentHandler({ documents: services.documents, keys: services.keys, pdf: new ChromiumPdfRenderer() }),
     },
     runs: databaseJobRuns(pool),
@@ -91,6 +152,7 @@ export async function startLocalWorker(): Promise<{ worker: RunningWorker; close
   return {
     worker,
     close: async () => {
+      stopping = true;
       await worker.stop();
       await pool.end();
     },

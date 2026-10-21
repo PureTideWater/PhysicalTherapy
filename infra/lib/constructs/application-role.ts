@@ -1,4 +1,4 @@
-import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3, type aws_secretsmanager as secretsmanager } from 'aws-cdk-lib';
+import { Stack, type aws_cognito as cognito, aws_iam as iam, type aws_kms as kms, type aws_s3 as s3 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
 import { bedrockModelArns, pinnedBedrockModels } from '../models';
@@ -23,7 +23,6 @@ export interface ApplicationRoleProps {
   readonly key: kms.IKey;
   readonly documents: s3.IBucket;
   readonly packets: s3.IBucket;
-  readonly appSecret: secretsmanager.ISecret;
   readonly userPool: cognito.IUserPool;
 }
 
@@ -43,8 +42,10 @@ export interface ApplicationRoleProps {
  *   multipart uploads it may abort) and read their scan tags. Packets: write and read. No delete and
  *   no Object Lock bypass on any bucket: uploads' intake copies expire by lifecycle rule.
  *   The audit copies are the operator role's (OperatorRole), not the application's.
- * - The application login's secret, decrypted only through Secrets Manager. The owner and operator
- *   logins' secrets are not readable by the application.
+ * - No database login's secret (docs/adr/0061). ECS injects each task's own logins at its start through
+ *   that task definition's execution role (Compute), so neither task reads a secret at run time; the web and
+ *   the worker share this role, and with it the worker could otherwise read the web's application login and
+ *   connect as it, where the database tells the worker's own login from the web's (tp_job).
  * - Digest email (PRD 5, J17; docs/adr/0039): the worker sends a practice's digests through SES
  *   (SESv2 SendEmail) from this account's verified identities in this region only. A digest carries
  *   counts and a sign-in link, never a patient's data.
@@ -68,7 +69,7 @@ export class ApplicationRole extends Construct {
     const buckets = [props.documents, props.packets];
 
     this.role = new iam.Role(this, 'Role', {
-      description: 'Web and worker tasks: practice data keys, documents, packets, application login, digest email, pinned models, scanned pages',
+      description: 'Web and worker tasks: practice data keys, documents, packets, digest email, pinned models, scanned pages',
       assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com', {
         conditions: { StringEquals: { 'aws:SourceAccount': stack.account } },
       }),
@@ -104,11 +105,6 @@ export class ApplicationRole extends Construct {
         resources: [props.packets.arnForObjects('*')],
       }),
       new iam.PolicyStatement({
-        sid: 'ApplicationLogin',
-        actions: ['secretsmanager:GetSecretValue', 'secretsmanager:DescribeSecret'],
-        resources: [props.appSecret.secretArn],
-      }),
-      new iam.PolicyStatement({
         sid: 'DigestEmail',
         actions: ['ses:SendEmail'],
         resources: [`arn:${stack.partition}:ses:${stack.region}:${stack.account}:identity/*`],
@@ -127,17 +123,6 @@ export class ApplicationRole extends Construct {
         sid: 'ScannedPages',
         actions: [...TEXTRACT_ACTIONS],
         resources: ['*'],
-      }),
-      new iam.PolicyStatement({
-        sid: 'ApplicationLoginDecrypt',
-        actions: ['kms:Decrypt'],
-        resources: [props.key.keyArn],
-        conditions: {
-          StringEquals: {
-            'kms:ViaService': `secretsmanager.${stack.region}.amazonaws.com`,
-            'kms:EncryptionContext:SecretARN': props.appSecret.secretArn,
-          },
-        },
       }),
     ];
     for (const statement of statements) {

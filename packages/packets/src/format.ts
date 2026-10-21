@@ -1,3 +1,5 @@
+import type { DeadlineStatus, DeadlineUnverifiedCause } from '@tp/triage';
+
 /**
  * What a packet version holds (PRD 12, The packet; Data dictionary, packet_version): the practice and
  * payer identification, the contract citation (version, document, page, quoted clause) and the rule
@@ -10,9 +12,20 @@
  * Identifiers are never in a version: the schedule's claim numbers, patient names and member IDs are
  * placeholders ({{claim_control_number:3}}) that code fills in from the canonical record only at export
  * (CAS-11), so no draft can carry the wrong patient's identifiers.
+ *
+ * tp-packet/2 (CO-05, docs/adr/0061) adds, per line, the deadline with its verification status (D17:
+ * derived from the trace's window and the evidence behind it, never set by a person or a model) and a
+ * calculation summary copied from the stored trace; and, for the version, the deadline the dispute is
+ * filed against with its status and sources. tp-packet/1 versions stay readable: every reader switches
+ * on the format. A /1 version is never exported or attested (the database refuses it): it is written
+ * again as a /2.
  */
 
-export const PACKET_FORMAT = 'tp-packet/1';
+/** The format @tp/packets writes. */
+export const PACKET_FORMAT = 'tp-packet/2';
+/** Every format a stored version may hold. */
+export const PACKET_FORMATS = ['tp-packet/1', 'tp-packet/2'] as const;
+export type PacketFormat = (typeof PACKET_FORMATS)[number];
 export const VERIFIER_FORMAT = 'tp-packet-verifier/2';
 
 /** Kinds of payer response a submission can receive (Data dictionary, `payer_response.kind`). */
@@ -118,6 +131,90 @@ export interface ScheduleLine {
   readonly window_ends_on: string | null;
 }
 
+/**
+ * A line's deadline (tp-packet/2): the last day of its window, whether that window is verified (D17: a
+ * Medicare or Medicare Advantage window whose rule record is at L2 or higher; a contract's window with its
+ * own signed-off page, quote and hash), where the window came from, and why it is not verified.
+ */
+export interface LineDeadline {
+  readonly ends_on: string | null;
+  readonly status: DeadlineStatus;
+  readonly source: 'contract' | 'release' | null;
+  readonly cause: DeadlineUnverifiedCause | null;
+}
+
+/** One step of a line's calculation, as the stored trace records it: its name and its amount (cents as decimal text). */
+export interface CalculationStep {
+  readonly step: string;
+  readonly amount_cents: string;
+}
+
+/**
+ * A line's calculation summary (tp-packet/2), copied from its stored trace and never computed again:
+ * the method, the rule release, each step's amount in the order they applied, the one rounding (the
+ * unrounded amount kept beside the rounded one), how the observed amount was read, the patient share
+ * (reported, never subtracted) and the SHA-256 of the trace it was copied from.
+ */
+export interface LineCalculation {
+  readonly method: string;
+  readonly release_no: number;
+  readonly steps: readonly CalculationStep[];
+  readonly rounding: { readonly rule: string; readonly unrounded_cents: string; readonly rounded_cents: string } | null;
+  readonly observed_basis: string;
+  readonly patient_share_cents: string | null;
+  readonly trace_sha256: string;
+}
+
+/** A tp-packet/2 schedule row: the /1 row, its deadline and its calculation summary. */
+export interface ScheduleLineV2 extends ScheduleLine {
+  readonly deadline: LineDeadline;
+  readonly calculation: LineCalculation;
+}
+
+/** Where a deadline's window comes from, as its evidence names it. */
+export type DeadlineSource =
+  | {
+      /** A contract version's own dispute window, cited from its document (D17). */
+      readonly kind: 'contract_window';
+      readonly contract_version_id: string;
+      readonly days: number | null;
+      readonly document_id: string;
+      readonly page: number;
+      readonly quote: string;
+      /** The SHA-256 of the cited page's text. */
+      readonly hash: string;
+      /** The person who verified the citation (opaque ID) and when; null until verified. */
+      readonly verified_by: string | null;
+      readonly verified_at: string | null;
+    }
+  | {
+      /** A dispute_window record of a rule release (Medicare, or the release's commercial default). */
+      readonly kind: 'release_record';
+      readonly release_no: number;
+      readonly sha256: string;
+      readonly program: string | null;
+      /** The record's verification level (L1 to L3); null when the release does not hold it. */
+      readonly level: string | null;
+    };
+
+/**
+ * The deadline the dispute is filed against (tp-packet/2): at the first dispute level the lines' own
+ * windows (the earliest ends first), after a denial that reopened the case the next level's window. Its
+ * status is verified only when every line's is (or the next level's is), and the database computes it
+ * again before any export.
+ */
+export interface PacketDeadline {
+  readonly basis: 'line_windows' | 'next_level_window';
+  readonly ends_on: string | null;
+  readonly status: DeadlineStatus;
+  /** How many of the schedule's lines have a verified deadline, of how many. */
+  readonly lines_verified: number;
+  readonly lines: number;
+  /** Why some deadline is not verified, each cause once, sorted. */
+  readonly causes: readonly DeadlineUnverifiedCause[];
+  readonly sources: readonly DeadlineSource[];
+}
+
 export interface CodeSummary {
   readonly procedure_code: string;
   readonly lines: number;
@@ -219,8 +316,9 @@ export interface Source {
   readonly evidence_index: number | null;
 }
 
-export interface PacketContent {
-  readonly format: typeof PACKET_FORMAT;
+/** A version written before tp-packet/2 (readable; never exported or attested). */
+export interface PacketContentV1 {
+  readonly format: 'tp-packet/1';
   /** The date (UTC) the version was assembled: interest accrues to it. */
   readonly as_of: string;
   /** 1 for the first dispute; one more after each denial that reopened the case for the next level. */
@@ -236,4 +334,19 @@ export interface PacketContent {
   readonly evidence_gaps: readonly EvidenceGap[];
   readonly requested_action: string;
   readonly sources: readonly Source[];
+}
+
+/** What @tp/packets writes now: the /1 content with each line's deadline and calculation, and the version's deadline. */
+export interface PacketContentV2 extends Omit<PacketContentV1, 'format' | 'lines'> {
+  readonly format: 'tp-packet/2';
+  readonly lines: readonly ScheduleLineV2[];
+  readonly deadline: PacketDeadline;
+}
+
+/** A stored version's content, by its format. */
+export type PacketContent = PacketContentV1 | PacketContentV2;
+
+/** Whether a version's content is tp-packet/2 (the only format that is exported). */
+export function isPacketV2(content: PacketContent): content is PacketContentV2 {
+  return content.format === 'tp-packet/2';
 }

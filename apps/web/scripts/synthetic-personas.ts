@@ -19,7 +19,8 @@ import { totpCode, totpSecretFromBytes } from '../src/lib/auth/totp';
  * journey; and two billing managers of the other group, a contract specialist and a platform
  * administrator (who turns the kill switch on in the console) for the model features' journey, in a
  * practice of its own; and three billing managers of the other group for the ERA export journeys, in
- * practices of their own).
+ * practices of their own; and two billing managers of the other group and a reimbursement reviewer for the journey of a
+ * submission sent without sign-off, in a practice of its own).
  * Their passwords and TOTP secrets are derived from their keys here rather than written down, and
  * exist only in the local identity provider's store.
  * Synthetic accounts on a development machine; never a real person.
@@ -74,6 +75,11 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'ledger-viewer', organization: 'other_group', role: 'viewer' },
   { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
+  // The packet's export attestation (D16; docs/adr/0061): the reimbursement reviewer, under a support grant on the journey's practice.
+  { key: 'packet-reviewer', organization: 'internal', role: 'reviewer' },
+  // The deadline journey (CO-05, D17): billing managers of the other group, in a practice of its own.
+  { key: 'packet-deadline-drafter', organization: 'other_group', role: 'billing_manager' },
+  { key: 'packet-deadline-approver', organization: 'other_group', role: 'billing_manager' },
   { key: 'triage-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'monitoring-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'reports-manager', organization: 'other_group', role: 'billing_manager' },
@@ -93,6 +99,11 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'era-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'era-coverage-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'era-duplicates-manager', organization: 'other_group', role: 'billing_manager' },
+  // A submission sent without sign-off (the founder's ruling of 2026-10-20; docs/adr/0061): two billing managers of the
+  // other group, one who writes and logs and one who approves, and a reimbursement reviewer, in a practice of its own.
+  { key: 'unattested-manager', organization: 'other_group', role: 'billing_manager' },
+  { key: 'unattested-approver', organization: 'other_group', role: 'billing_manager' },
+  { key: 'unattested-reviewer', organization: 'internal', role: 'reviewer' },
 ];
 
 export const SYNTHETIC_PRACTICES = {

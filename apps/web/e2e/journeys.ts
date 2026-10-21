@@ -2,7 +2,20 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import { test } from '@playwright/test';
 
-import { EvidenceResolver, RATE_RECORD_FIELDS, type WorkflowContext, addRateRecord, approveRateRecordField, approveVersion, createContract, createDraftVersion, mapPlan, signOffVersion } from '@tp/contracts';
+import {
+  EvidenceResolver,
+  RATE_RECORD_FIELDS,
+  type WorkflowContext,
+  addRateRecord,
+  approveRateRecordField,
+  approveVersion,
+  citeDisputeWindow,
+  createContract,
+  createDraftVersion,
+  mapPlan,
+  signOffVersion,
+  verifyDisputeWindow,
+} from '@tp/contracts';
 import { documentPages } from '@tp/contracts/pages';
 import { syntheticPdf } from '@tp/contracts/testing';
 import { LocalKeyProvider, appDevLoginUrl, developmentMasterKey, openPool, provisionPracticeKey, withPracticeScope } from '@tp/db';
@@ -40,6 +53,12 @@ function retrying(): boolean {
 export async function userId(key: string): Promise<string> {
   return withDatabase(async (client) => (await client.query<{ id: string }>('SELECT id FROM "user" WHERE email = $1', [personaEmail(key)])).rows[0]?.id ?? '');
 }
+
+/**
+ * The practice administrator persona of the journeys' practices (the other group's, which owns them by ownership): the
+ * one who sets a practice's correspondence contact (audit item #37 part 1, D6; the packets journey's E2).
+ */
+export const JOURNEY_PRACTICE_ADMIN = 'other-admin';
 
 export interface JourneyPracticeOptions {
   readonly name: string;
@@ -202,7 +221,7 @@ export interface ScheduleOptions {
   readonly managerKey: string;
   /** The plan the 835 names (REF CE), mapped to the contract from 2026-01-01. */
   readonly planKey: string;
-  /** Days from the remittance date the payer's dispute window runs. */
+  /** Calendar days from the payment date (BPR16) the payer's dispute window runs, as its quote says ("of the payment date"). */
   readonly disputeWindowDays?: number;
 }
 
@@ -236,8 +255,9 @@ async function scheduleEarlier(practiceId: string, documentId: string, planId: s
 }
 
 /**
- * The payer's SYNTHETIC fixed schedule (97110 at 50.00 a unit, timed units per code) abstracted by the
- * contract specialist and signed off by the billing manager, and the plan mapped to it. The payer is
+ * The payer's SYNTHETIC fixed schedule (97110 at 50.00 a unit, timed units per code, its dispute window cited on
+ * page 1 and verified) abstracted by the contract specialist and signed off by the billing manager, and the plan
+ * mapped to it. The payer is
  * the practice's first (its first 835's). On a retry, only the steps the attempt before left undone.
  */
 export async function signedOffSchedule(options: ScheduleOptions): Promise<void> {
@@ -260,8 +280,10 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
         return { payerId: payer, planId: plan };
       }),
     );
+    const disputeWindowDays = options.disputeWindowDays ?? 3650;
+    const windowQuote = `Disputes are raised within ${String(disputeWindowDays)} days of the payment date.`;
     const pdf = syntheticPdf([
-      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.'],
+      ['SYNTHETIC PROVIDER AGREEMENT - INVENTED TERMS', 'Compensation is set out in Exhibit A.', windowQuote],
       ['SYNTHETIC EXHIBIT A FEE SCHEDULE', QUOTE],
     ]);
     const as = <T>(actorId: string, run: (context: WorkflowContext) => Promise<T>) =>
@@ -273,8 +295,7 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
       earlier?.versionId ??
       (await as(manager, async (context) => {
         const contract = await createContract(context, { practiceId, payerId, title: 'SYNTHETIC FIXED SCHEDULE AGREEMENT' });
-        return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays: options.disputeWindowDays ?? 3650 }))
-          .versionId;
+        return (await createDraftVersion(context, { practiceId, contractId: contract.contractId, effectiveFrom: '2026-01-01', effectiveTo: null, sourceDocumentIds: [documentId], disputeWindowDays })).versionId;
       }));
     // The specialist's abstraction ends approved; a draft is one the attempt before left before it.
     if (earlier === null || earlier.status === 'draft') {
@@ -288,6 +309,9 @@ export async function signedOffSchedule(options: ScheduleOptions): Promise<void>
         for (const field of RATE_RECORD_FIELDS) {
           await approveRateRecordField(context, { practiceId, rateRecordId, field });
         }
+        // The window as the contract states it, cited on page 1 and verified, so the lines' deadlines are (D17 a).
+        await citeDisputeWindow(context, { practiceId, versionId, citation: { documentId, page: 1, quote: windowQuote }, rule: { unit: 'calendar_days', measuredFrom: 'payment_date' } });
+        await verifyDisputeWindow(context, { practiceId, versionId });
         await approveVersion(context, { practiceId, versionId });
       });
     }

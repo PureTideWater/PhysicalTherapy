@@ -6,11 +6,15 @@ import Link from 'next/link';
 import { ActionForm } from '../../../../../../components/action-form';
 import { utc } from '../../../../../../components/format';
 import { Hash } from '../../../../../../components/packets/display';
+import { PricingNowPanel } from '../../../../../../components/packets/pricing';
+import { StatusChip } from '../../../../../../components/status';
 import { Money } from '../../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../../components/shell';
 import { CaseStateBadge, stageLabel } from '../../../../../../components/triage/display';
 import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../../../../../lib/cases/timeline';
 import { loadPage } from '../../../../../../lib/http/next';
+import { PRICING_CAUSE_TEXT } from '../../../../../../lib/packets/pricing';
+import { CLOSED_CASE_SUBMISSION, EARLIER_EXPORT_SUBMISSION, NEVER_ATTESTED_LIST, SENT_WITHOUT_SIGN_OFF, STALE_EXPORT_SUBMISSION, everyLineStale, sentWithoutSignOffLine } from '../../../../../../lib/packets/unattested';
 import { DENIAL_CATEGORIES, PERSON_RESPONSE_KINDS, submissionsPage } from '../../../../../../lib/routes/submissions';
 import { logSubmissionFormAction, recordResponseFormAction } from './actions';
 import { FormKeys } from '../../../../../../components/form-keys';
@@ -34,18 +38,93 @@ const KIND_TEXT: Readonly<Record<string, string>> = { payer_letter: 'Payer lette
 const FOLLOW_UP_TEXT = { due: 'Follow-up due', waiting: 'Awaiting the payer', answered: 'Answered' } as const;
 
 /**
+ * The form that logs one export's submission as it happened: its date (from its export to the last day it may be
+ * logged), channel, the payer's reference and the follow-up date; for an export never attested (its pricing went stale
+ * after the export), the person's confirmation that it went without sign-off. Its fields' IDs carry `idPrefix`, so two
+ * forms on the page never share one.
+ */
+function SubmissionForm({
+  idPrefix,
+  practiceId,
+  caseId,
+  versionId,
+  minOn,
+  maxOn,
+  withoutSignOff,
+  defaultFollowUpOn,
+}: {
+  readonly idPrefix: string;
+  readonly practiceId: string;
+  readonly caseId: string;
+  readonly versionId: string;
+  readonly minOn: string;
+  readonly maxOn: string;
+  readonly withoutSignOff: boolean;
+  readonly defaultFollowUpOn: string;
+}) {
+  const id = (name: string) => `${idPrefix}-${name}`;
+  return (
+    <ActionForm action={logSubmissionFormAction} submit={withoutSignOff ? STALE_EXPORT_SUBMISSION.submit : 'Log the submission'} className="flex max-w-xl flex-col gap-3">
+      <FormKeys />
+      <input type="hidden" name="practiceId" value={practiceId} />
+      <input type="hidden" name="caseId" value={caseId} />
+      <input type="hidden" name="versionId" value={versionId} />
+      <div className="flex flex-wrap gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={id('submitted-on')}>Submitted on</Label>
+          <Input id={id('submitted-on')} name="submittedOn" type="date" defaultValue={maxOn} min={minOn} max={maxOn} required />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={id('channel')}>Channel</Label>
+          <select id={id('channel')} name="channel" className="h-9 rounded-md border bg-background px-2 text-sm" required>
+            {SUBMISSION_CHANNELS.map((channel) => (
+              <option key={channel} value={channel}>
+                {CHANNEL_TEXT[channel]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={id('reference')}>Payer’s reference (a portal confirmation, a fax receipt)</Label>
+        <Input id={id('reference')} name="reference" maxLength={200} />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={id('follow-up-on')}>Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
+        <Input id={id('follow-up-on')} name="followUpOn" type="date" />
+      </div>
+      {withoutSignOff ? (
+        <label className="flex items-start gap-2 text-sm" data-confirm="sent-without-sign-off">
+          <input type="checkbox" name="sentWithoutSignOff" required className="mt-1" />
+          <span>{STALE_EXPORT_SUBMISSION.confirm}</span>
+        </label>
+      ) : null}
+    </ActionForm>
+  );
+}
+
+/**
  * Submissions and responses (PRD 7: "Per case: submissions, responses, follow-ups, documents"; "log a
  * submission or response; set a follow-up"; "overdue follow-ups surface on the dashboard"; PRD 5, J9 and
  * J10; PRD 12; test matrix CAS-12, CAS-14): the submission log with each export's SHA-256 as sent, each
  * submission's follow-up (45 days unless set), the payer's responses with their documents, and the
  * forms that log them. The product never submits; recording a response moves no money and no stage.
+ * A submission of a version whose pricing is no longer current is logged, never refused (it already happened
+ * outside the product), and flagged with its cause and the figures sent beside the pricing in effect now (audit
+ * item #4); the form says so before it is logged. An export whose pricing went stale after it was made and before its
+ * attestation is never attested (the founder's ruling of 2026-10-20; docs/adr/0061): the form says so, and that an
+ * export that already went to the payer is logged first, before any line is written off or a new version is written;
+ * the person logs it, confirming it went without sign-off; it is recorded unattested with its reason, flagged with the
+ * cause, and the log shows it plainly, so reconciliation tracks the payer's answer. An export an edit replaced is still
+ * offered, logged only as sent before the edit; on a case closed written off, which takes no submission, the page says
+ * how to log one instead of offering a form.
  */
 export default async function SubmissionsPage(props: Props) {
   const page = await loadPage(submissionsPage, props);
   if (page.kind === 'forbidden') {
     return <Forbidden shell={page.shell} section="cases" roles={page.roles} message={page.message} nextStep="Ask the practice's administrator for access." />;
   }
-  const { practiceId, case: item, submissions, submittable, defaultFollowUpOn, documents, notice, canLog, canReadPhi, asOf } = page.data;
+  const { practiceId, case: item, submissions, submittable, earlier, closed, defaultFollowUpOn, documents, notice, canLog, canReadPhi, asOf } = page.data;
   const casePath = `/p/${practiceId}/cases/${item.id}`;
   const latest = submissions[0];
   return (
@@ -63,8 +142,16 @@ export default async function SubmissionsPage(props: Props) {
         </p>
       </div>
       {notice === null ? null : (
-        <Alert data-notice={notice}>
-          <AlertDescription>{notice === 'logged' ? 'The submission is logged with the export’s SHA-256.' : 'The payer’s response is recorded.'}</AlertDescription>
+        <Alert data-notice={notice} variant={notice === 'logged_flagged' || notice === 'logged_unattested' ? 'destructive' : undefined}>
+          <AlertDescription>
+            {notice === 'logged'
+              ? 'The submission is logged with the export’s SHA-256.'
+              : notice === 'logged_flagged'
+                ? 'The submission is logged with the export’s SHA-256 and flagged: the version it sent is no longer on the pricing in effect. The submission log below shows why, with the figures sent and the pricing now.'
+                : notice === 'logged_unattested'
+                  ? STALE_EXPORT_SUBMISSION.logged
+                  : 'The payer’s response is recorded.'}
+          </AlertDescription>
         </Alert>
       )}
       {latest?.followUp === 'due' ? (
@@ -85,7 +172,19 @@ export default async function SubmissionsPage(props: Props) {
                 : `Packet version ${String(submittable.versionNo)}, dispute level ${String(submittable.disputeLevel)}, exported ${submittable.exportedOn}. Its SHA-256 goes into the log.`}
             </CardDescription>
           </CardHeader>
-          {submittable === null ? (
+          {closed ? (
+            <CardContent>
+              <Alert data-case-closed="true">
+                <AlertTitle>No submission is logged on a closed case</AlertTitle>
+                <AlertDescription>
+                  {CLOSED_CASE_SUBMISSION}{' '}
+                  <Link className="underline" href={casePath}>
+                    The case
+                  </Link>
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          ) : submittable === null ? (
             <CardContent>
               <Link className="text-sm underline" href={`${casePath}/packet`}>
                 The packet
@@ -95,37 +194,91 @@ export default async function SubmissionsPage(props: Props) {
             <CardContent className="flex flex-col gap-3">
               <p className="text-sm">
                 PDF SHA-256 <Hash value={submittable.exportSha256} label="Export SHA-256" />; CSV SHA-256 <Hash value={submittable.exportCsvSha256} label="CSV SHA-256" />
+                {submittable.packetReference === null ? null : (
+                  <>
+                    ; reference <span className="font-mono" data-reference={submittable.packetReference}>{submittable.packetReference}</span> (printed in the export’s approval line)
+                  </>
+                )}
               </p>
-              <ActionForm action={logSubmissionFormAction} submit="Log the submission" className="flex max-w-xl flex-col gap-3">
-                <FormKeys />
-                <input type="hidden" name="practiceId" value={practiceId} />
-                <input type="hidden" name="caseId" value={item.id} />
-                <input type="hidden" name="versionId" value={submittable.versionId} />
-                <div className="flex flex-wrap gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="submitted-on">Submitted on</Label>
-                    <Input id="submitted-on" name="submittedOn" type="date" defaultValue={asOf} min={submittable.exportedOn} max={asOf} required />
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="channel">Channel</Label>
-                    <select id="channel" name="channel" className="h-9 rounded-md border bg-background px-2 text-sm" required>
-                      {SUBMISSION_CHANNELS.map((channel) => (
-                        <option key={channel} value={channel}>
-                          {CHANNEL_TEXT[channel]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="reference">Payer’s reference (a portal confirmation, a fax receipt)</Label>
-                  <Input id="reference" name="reference" maxLength={200} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="follow-up-on">Follow up on (blank: 45 days after the submission, {defaultFollowUpOn} for today’s)</Label>
-                  <Input id="follow-up-on" name="followUpOn" type="date" />
-                </div>
-              </ActionForm>
+              {submittable.pricing.status === 'current' ? null : submittable.attestedAt !== null ? (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status}>
+                  <AlertTitle>This export’s pricing is no longer current</AlertTitle>
+                  <AlertDescription>
+                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. If you already sent it to the payer, log the submission as it happened: it is logged and flagged, never refused. If you have not
+                    sent it yet, do not: write the stale line off on the case page and write, approve and export the packet again.
+                  </AlertDescription>
+                </Alert>
+              ) : submittable.unattestedReason !== null ? (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status} data-attestation="never" data-unattested-reason={submittable.unattestedReason}>
+                  <AlertTitle>{STALE_EXPORT_SUBMISSION.title}</AlertTitle>
+                  <AlertDescription className="flex flex-col gap-2">
+                    <span>{STALE_EXPORT_SUBMISSION.why(submittable.pricing)}</span>
+                    <span data-if-sent="first">{STALE_EXPORT_SUBMISSION.sent}</span>
+                    <span>{STALE_EXPORT_SUBMISSION.notSent(everyLineStale(submittable.pricing, submittable.versionLines))}</span>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <Alert variant="destructive" data-pricing-check={submittable.pricing.status} data-attestation="refused">
+                  <AlertTitle>This export will not be attested: its pricing is no longer current</AlertTitle>
+                  <AlertDescription>
+                    {PRICING_CAUSE_TEXT[submittable.pricing.status]}. The reimbursement reviewer cannot attest an export whose pricing is no longer current. Nothing records that this
+                    export’s pricing was current when it was made (it was made before the export’s checks were recorded), so it is not logged as sent without sign-off either. Do not send it:
+                    write the stale line off on the case page (it leaves this dispute), then write, approve and export the packet again. If it already went to the payer, tell support.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {submittable.attestedAt === null && submittable.unattestedReason === null ? (
+                submittable.pricing.status === 'current' ? (
+                  <p className="text-sm" data-attestation="waiting">
+                    Waiting for the reimbursement reviewer’s attestation of this export. A submission is logged once the reviewer has attested the PDF and CSV over their SHA-256.
+                  </p>
+                ) : null
+              ) : (
+                <SubmissionForm
+                  idPrefix="current"
+                  practiceId={practiceId}
+                  caseId={item.id}
+                  versionId={submittable.versionId}
+                  minOn={submittable.exportedOn}
+                  maxOn={asOf}
+                  withoutSignOff={submittable.attestedAt === null}
+                  defaultFollowUpOn={defaultFollowUpOn}
+                />
+              )}
+            </CardContent>
+          )}
+          {closed || earlier.length === 0 ? null : (
+            <CardContent className="flex flex-col gap-4 border-t pt-4" data-earlier-exports={String(earlier.length)}>
+              {earlier.map((export_) => (
+                <section key={export_.versionId} className="flex flex-col gap-2" aria-label={EARLIER_EXPORT_SUBMISSION.title(export_.versionNo, export_.replacedOn)} data-earlier-export={export_.versionId}>
+                  <h3 className="text-base font-semibold">{EARLIER_EXPORT_SUBMISSION.title(export_.versionNo, export_.replacedOn)}</h3>
+                  <p className="text-sm">
+                    {EARLIER_EXPORT_SUBMISSION.description(export_.replacedOn)} Exported {export_.exportedOn}; PDF SHA-256 <Hash value={export_.exportSha256} label={`Version ${String(export_.versionNo)} PDF SHA-256`} />
+                    {export_.packetReference === null ? null : (
+                      <>
+                        ; reference <span className="font-mono">{export_.packetReference}</span>
+                      </>
+                    )}
+                    .
+                  </p>
+                  {export_.unattestedReason === null ? null : (
+                    <p className="flex flex-wrap items-center gap-2 text-sm" data-unattested-reason={export_.unattestedReason}>
+                      <StatusChip tone="danger">{NEVER_ATTESTED_LIST.mark}</StatusChip>
+                      <span>{STALE_EXPORT_SUBMISSION.sent}</span>
+                    </p>
+                  )}
+                  <SubmissionForm
+                    idPrefix={`v${String(export_.versionNo)}`}
+                    practiceId={practiceId}
+                    caseId={item.id}
+                    versionId={export_.versionId}
+                    minOn={export_.exportedOn}
+                    maxOn={export_.lastDay < asOf ? export_.lastDay : asOf}
+                    withoutSignOff={!export_.attested}
+                    defaultFollowUpOn={defaultFollowUpOn}
+                  />
+                </section>
+              ))}
             </CardContent>
           )}
         </Card>
@@ -229,11 +382,31 @@ export default async function SubmissionsPage(props: Props) {
                     </Badge>
                   </p>
                   <p>
-                    Reference: {canReadPhi ? (submission.reference ?? '—') : 'shown to the roles that read PHI'}; follow up on {submission.followUpOn}.
+                    Payer’s reference: {canReadPhi ? (submission.reference ?? '—') : 'shown to the roles that read PHI'}; follow up on {submission.followUpOn}.
                   </p>
                   <p data-export-hash={submission.exportSha256}>
                     Export SHA-256: PDF <Hash value={submission.exportSha256} label="Submitted PDF SHA-256" />; CSV <Hash value={submission.exportCsvSha256} label="Submitted CSV SHA-256" />
+                    {submission.packetReference === null ? null : (
+                      <>
+                        ; packet reference <span className="font-mono" data-reference={submission.packetReference}>{submission.packetReference}</span>
+                      </>
+                    )}
                   </p>
+                  {submission.sent.kind === 'attested' ? null : (
+                    <p className="flex flex-wrap items-center gap-2 pt-1" data-submission-sent="unattested" data-unattested-reason={submission.sent.reason}>
+                      <StatusChip tone="danger">{SENT_WITHOUT_SIGN_OFF}</StatusChip>
+                      <span>{sentWithoutSignOffLine(submission.sent.reason)}</span>
+                    </p>
+                  )}
+                  {submission.pricingCheck === null || submission.pricingCheck === 'current' ? null : (
+                    <div className="flex flex-col gap-2 pt-1" data-submission-pricing={submission.pricingCheck}>
+                      <p className="flex flex-wrap items-center gap-2">
+                        <StatusChip tone="danger">Logged with pricing not current</StatusChip>
+                        <span>{PRICING_CAUSE_TEXT[submission.pricingCheck]}, when the submission was logged.</span>
+                      </p>
+                      {submission.pricing === null ? null : <PricingNowPanel pricing={submission.pricing} sent label={`Pricing now, submission of ${submission.submittedOn}`} />}
+                    </div>
+                  )}
                   {submission.responses.length === 0 ? (
                     <p className="text-muted-foreground">No response yet.</p>
                   ) : (

@@ -6,6 +6,7 @@ import { ActionForm } from '../../../../../components/action-form';
 import { utc } from '../../../../../components/format';
 import { Fact, LineStatusChip, Money, basisName, claimStatusName, period } from '../../../../../components/remittances/display';
 import { AppShell, Forbidden } from '../../../../../components/shell';
+import { notComputedWindowText } from '../../../../../lib/contracts/display';
 import { loadPage } from '../../../../../lib/http/next';
 import { linePage } from '../../../../../lib/routes/remittances';
 import { addLineNoteAction } from './actions';
@@ -74,7 +75,15 @@ export default async function LinePage(props: {
                   <Fact label="Adjustments">
                     {pricing.adjustmentsApplied.length === 0 ? 'None' : pricing.adjustmentsApplied.map((item) => `${item.name} (${item.before_cents} to ${item.after_cents} cents)`).join('; ')}
                   </Fact>
-                  {canReadPhi ? <Fact label="Dispute window ends">{pricing.windowEndsOn ?? 'No window known'}</Fact> : null}
+                  {canReadPhi ? (
+                    <Fact label="Dispute window ends">
+                      {pricing.windowRuleNotComputed === null ? (
+                        (pricing.windowEndsOn ?? 'No window known')
+                      ) : (
+                        <span data-window-rule="not_computed">{notComputedWindowText(pricing.windowRuleNotComputed.length, pricing.windowRuleNotComputed.rule)}</span>
+                      )}
+                    </Fact>
+                  ) : null}
                 </>
               ) : (
                 <Fact label="Unpriced">
@@ -126,7 +135,7 @@ export default async function LinePage(props: {
         <section aria-label="Trace" className="flex flex-col gap-2">
           <h2 className="text-xl font-bold tracking-display">Trace</h2>
           {!canReadPhi ? (
-            <p className="text-sm text-muted-foreground">The trace records the line’s service and remittance dates, so it shows to the roles that read PHI.</p>
+            <p className="text-sm text-muted-foreground">The trace records the line’s service and payment dates, so it shows to the roles that read PHI.</p>
           ) : (
             <ol className="flex flex-col gap-2" aria-label="Trace steps">
               {steps.map((item) => (
@@ -146,6 +155,11 @@ export default async function LinePage(props: {
                         </ul>
                       )}
                       <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">{item.recorded}</pre>
+                      {item.note === null ? null : (
+                        <p className="pt-1 text-xs text-muted-foreground" data-trace-note={item.key}>
+                          {item.note}
+                        </p>
+                      )}
                     </>
                   )}
                 </li>
