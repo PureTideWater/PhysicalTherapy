@@ -434,13 +434,34 @@ describe('workflows', () => {
       ['apps/web/Dockerfile', true, 'tp-web:capacity'],
       ['apps/worker/Dockerfile', true, 'tp-worker:capacity'],
     ]);
+    // Every run reads the layer cache; only a push to the build branch writes it, and only its final layers.
+    expect(builds.map((step) => [step.with?.['cache-from'], step.with?.['cache-to']])).toEqual(
+      ['web', 'worker'].map((image) => [
+        `type=gha,scope=screening-capacity-${image}`,
+        `\${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-${image}' || '' }}`,
+      ]),
+    );
+    // The scale release: restored, built in a step of its own when missing, and saved straight after, before the
+    // measurement, so a failing measurement still caches it.
+    const restore = stepIndex(steps, (step) => step.uses === 'actions/cache/restore@v4');
+    const build = stepIndex(steps, (step) => step.run?.includes('tools/release/scale.ts') === true);
+    const save = stepIndex(steps, (step) => step.uses === 'actions/cache/save@v4');
+    expect([restore < build, build < save]).toEqual([true, true]);
+    expect(steps.some((step) => step.uses === 'actions/cache@v4')).toBe(false);
+    expect((steps[build] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
+    expect((steps[save] as Step & { if?: string }).if).toBe("steps.scale-release.outputs.cache-hit != 'true'");
     const run = stepIndex(steps, (step) => step.run?.includes('pnpm screening:capacity') === true);
     expect(stepIndex(steps, (step) => step.uses === 'docker/build-push-action@v6')).toBeLessThan(run);
+    expect(save).toBeLessThan(run);
     expect(steps[run]?.run).toContain('taskset -c');
     const upload = stepIndex(steps, (step) => step.uses === 'actions/upload-artifact@v4');
     expect(upload).toBe(run + 1);
     expect((steps[upload] as Step & { if?: string }).if).toBe('always()');
-    expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual(['${{ runner.temp }}/screening-capacity/screening-capacity.json', '${{ runner.temp }}/screening-capacity/summary.md']);
+    expect(String(steps[upload]?.with?.path).trim().split('\n')).toEqual([
+      '${{ runner.temp }}/screening-capacity/screening-capacity.json',
+      '${{ runner.temp }}/screening-capacity/summary.md',
+      '${{ runner.temp }}/screening-capacity/logs/',
+    ]);
     expect(steps[upload]?.with?.['retention-days']).toBe(90);
     // The issue: a job of its own, the only one that may write, that needs the measurement, skips pull requests and runs no repository code.
     const notify = capacity.jobs.notify;

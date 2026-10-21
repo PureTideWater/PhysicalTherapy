@@ -7,14 +7,25 @@ import type { CpuThrottling, MemoryEvents, PhaseName } from './measure';
  * founder's rulings of 2026-10-20, decisions 13 to 16).
  *
  * The split verdict: the run fails on everything PR 6 controls (an OOM kill, a restart or exit the harness did not
- * cause, anonymous memory above 90% of a task's limit, a limit not applied, a runner too small, a wrong or unfinished
- * result, a stalled run, an oracle mismatch). Time is measured always and judged by timeVerdict(): "open, PR 6b"
+ * cause, Postgres's included, anonymous memory above 90% of a task's limit, a limit or a cold start not applied, a
+ * runner too small, a wrong or unfinished result, a stalled run, a small upload not queued behind the large ones, a
+ * submission time not captured, an oracle mismatch or an oracle that compared fewer rows than the upload's Medicare
+ * rows, and a partial run: every one of S1 to S5 must be measured). Time is measured always and judged by timeVerdict(): "open, PR 6b"
  * while environments.ts declares no screening consumer, so it cannot fail the run; once PR 6b declares one, above 48 s
  * on the runner fails ("allowance") until the runner-to-Fargate factor is measured, then above 60 s scaled by it
  * ("promise"). The report holds counts, times and hashes only: no row, link, token or address.
  */
 
-export const REPORT_FORMAT = 'tp-screening-capacity/2';
+export const REPORT_FORMAT = 'tp-screening-capacity/3';
+
+/** The scenarios a passing run measures, every one of them. */
+export const ALL_SCENARIOS = ['S1', 'S2', 'S3', 'S4', 'S5'] as const;
+
+/**
+ * The uploads compared with the oracle: the worst shape priced from a fresh platform's first read (S1-1), the practice
+ * shape the same way (S2-1), and the practice shape priced from the shared types the platform held from S2 (S3-1).
+ */
+export const ORACLE_UPLOADS = ['S1-1', 'S2-1', 'S3-1'] as const;
 
 /** How the time is judged: whether the screening's consumer is declared, and the runner-to-Fargate factor once known. */
 export interface TimeRule {
@@ -121,6 +132,11 @@ export interface UploadMeasure {
   readonly id: string;
   readonly shape: 'practice' | 'worst' | 'small';
   readonly rows: number;
+  /** Sent behind the scenario's large uploads, once their runs exist. */
+  readonly behind: boolean;
+  /** Milliseconds from the scenario's start to its pricing job's creation and start (pg-boss's created_on, started_on): its place in the queue. */
+  readonly jobCreatedMs: number | null;
+  readonly jobStartedMs: number | null;
   /** Milliseconds from the scenario's start to the submission (the server action's request start), and to the email; null when none. */
   readonly submittedMs: number | null;
   readonly emailedMs: number | null;
@@ -161,8 +177,12 @@ export interface ContainerMeasure {
 export interface ScenarioMeasure {
   readonly id: string;
   readonly what: string;
+  /** The cold start asked for before it (null when none was): whether Postgres was restarted and the page cache dropped. */
+  readonly coldStart: { readonly restarted: boolean; readonly cacheDropped: boolean } | null;
   readonly uploads: readonly UploadMeasure[];
   readonly containers: readonly ContainerMeasure[];
+  /** Postgres's OOM kills during the scenario, its restarts and whether it ran at the end (null where not read). */
+  readonly postgres: { readonly oomKills: number | null; readonly restarts: number | null; readonly running: boolean | null };
   /** Platform jobs that ran during the scenario, from pg-boss's job table, with their seconds. */
   readonly platformJobs: readonly { readonly name: string; readonly count: number; readonly seconds: number }[];
 }
@@ -171,6 +191,8 @@ export interface OracleComparison {
   readonly scenario: string;
   readonly upload: string;
   readonly rows: number;
+  /** The upload's Medicare rows (original Medicare and Medicare Advantage without a contract): what the oracle must compare. */
+  readonly expectedRows: number;
   readonly storedSha256: string;
   readonly oracleSha256: string;
 }
@@ -188,6 +210,10 @@ export interface Measurements {
   readonly shapes: Readonly<Record<string, unknown>>;
   readonly scenarios: readonly ScenarioMeasure[];
   readonly oracle: readonly OracleComparison[];
+  /** The scenarios asked for with --scenarios (empty: all). */
+  readonly only: readonly string[];
+  /** The scenarios the harness's own deadline left unstarted (limits.ts, SCENARIO_START_DEADLINE_MS). */
+  readonly notStarted: readonly string[];
   /** A step that could not finish, with what stopped it (a code and a short reason of the harness's own). */
   readonly aborted: string | null;
 }
@@ -204,9 +230,39 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
   if (measured.aborted !== null) {
     reasons.push(`run not finished: ${measured.aborted}`);
   }
+  const ids = measured.scenarios.map((scenario) => scenario.id);
+  if (ids.join(',') !== ALL_SCENARIOS.join(',')) {
+    reasons.push(`partial run: measured ${ids.length === 0 ? 'no scenario' : ids.join(', ')}; a verdict needs ${ALL_SCENARIOS.join(', ')}${measured.only.length === 0 ? '' : ` (asked for ${measured.only.join(', ')})`}`);
+  }
+  if (measured.notStarted.length > 0) {
+    reasons.push(`deadline: ${measured.notStarted.join(', ')} not started inside the harness's budget`);
+  }
   reasons.push(...measured.runnerProblems.map((problem) => `runner too small: ${problem}`));
   reasons.push(...limitProblems(measured.applied, measured.expected).map((problem) => `limit not applied: ${problem}`));
   for (const scenario of measured.scenarios) {
+    if (scenario.coldStart !== null && (!scenario.coldStart.restarted || !scenario.coldStart.cacheDropped)) {
+      reasons.push(`cold start not applied: ${scenario.id} (Postgres restarted: ${scenario.coldStart.restarted ? 'yes' : 'no'}, page cache dropped: ${scenario.coldStart.cacheDropped ? 'yes' : 'no'})`);
+    }
+    const database = scenario.postgres;
+    if ((database.oomKills ?? 0) > 0) {
+      reasons.push(`OOM kill: ${scenario.id} postgres`);
+    }
+    if ((database.restarts ?? 0) > 0 || database.running === false) {
+      reasons.push(`restart or exit: ${scenario.id} postgres`);
+    }
+    if (measured.runtime === 'docker' && (database.oomKills === null || database.restarts === null || database.running === null)) {
+      reasons.push(`postgres's state not read: ${scenario.id}`);
+    }
+    const large = scenario.uploads.filter((item) => !item.behind);
+    for (const small of scenario.uploads.filter((item) => item.behind)) {
+      const times = [small, ...large].map((item) => [item.jobCreatedMs, item.jobStartedMs]);
+      if (times.some(([created, started]) => created === null || started === null)) {
+        reasons.push(`queue order not recorded: ${small.id}`);
+      } else if (large.some((item) => (item.jobCreatedMs ?? 0) > (small.jobCreatedMs ?? 0) || (item.jobStartedMs ?? 0) > (small.jobStartedMs ?? 0))) {
+        // One run at a time (the platform's consumer): the small one is queued, and starts, after every large one.
+        reasons.push(`queue order: ${small.id} was not queued and started behind the scenario's large uploads`);
+      }
+    }
     for (const container of scenario.containers) {
       const where = `${scenario.id} ${container.name}`;
       if (container.oomKilled || container.events.oomKill > 0) {
@@ -240,6 +296,9 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       if (upload.stalled) {
         reasons.push(`stalled: ${where} recorded no batch for five minutes`);
       }
+      if (upload.emailedMs !== null && upload.submittedMs === null) {
+        reasons.push(`submission time not captured: ${where}`);
+      }
       if (upload.submittedMs !== null && upload.emailedMs !== null) {
         const time = timeVerdict(upload.emailedMs - upload.submittedMs, rule);
         if (time.status === 'fail') {
@@ -248,9 +307,17 @@ export function verdict(measured: Measurements, rule: TimeRule): Verdict {
       }
     }
   }
-  for (const comparison of measured.oracle) {
+  for (const upload of ORACLE_UPLOADS) {
+    const comparison = measured.oracle.find((item) => item.upload === upload);
+    if (comparison === undefined) {
+      reasons.push(`oracle not compared: ${upload}`);
+      continue;
+    }
+    if (comparison.rows <= 0 || comparison.rows !== comparison.expectedRows) {
+      reasons.push(`oracle compared ${String(comparison.rows)} rows of ${upload}, not its ${String(comparison.expectedRows)} Medicare rows`);
+    }
     if (comparison.storedSha256 !== comparison.oracleSha256) {
-      reasons.push(`oracle mismatch: ${comparison.upload}`);
+      reasons.push(`oracle mismatch: ${upload}`);
     }
   }
   return { pass: reasons.length === 0, time: rule.consumerDeclared ? 'enforced' : 'open, PR 6b', reasons };
@@ -274,15 +341,15 @@ export function markdown(full: Report, rule: TimeRule): string {
     '',
     `Commit \`${full.commit}\`, ${full.runtime} runtime, runner ${String(full.runner.cpus)} CPUs and ${String(full.runner.memoryMiB)} MiB (${full.runner.cpuModel}), load average ${full.runner.loadAverage.map((value) => value.toFixed(2)).join(' ')}. Release ${String(full.release.releaseNo)} (${String(full.release.records)} records).`,
     '',
-    '| Upload | Shape | Rows | Seconds to email | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Time |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Upload | Shape | Rows | Seconds to email | Shared load | Keyed read (records) | Pricing | Recording | Queue wait | Job queued, started | Time |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
   for (const scenario of full.scenarios) {
     for (const upload of scenario.uploads) {
       const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? upload.emailedMs - upload.submittedMs : null;
       const shared = upload.phases.shared_load ?? upload.phases.shared_held;
       lines.push(
-        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
+        `| ${upload.id} | ${upload.shape} | ${String(upload.rows)} | ${seconds(elapsed)} | ${seconds(shared?.elapsedMs)} | ${seconds(upload.phases.keyed_read?.elapsedMs)} (${String(upload.phases.keyed_read?.recordCount ?? '—')}) | ${seconds(upload.phases.pricing?.elapsedMs)} | ${seconds(upload.phases.recording?.elapsedMs)} | ${seconds(upload.queueWaitMs)} | ${seconds(upload.jobCreatedMs)}, ${seconds(upload.jobStartedMs)} | ${elapsed === null ? '—' : timeLabel(timeVerdict(elapsed, rule))} |`,
       );
     }
   }

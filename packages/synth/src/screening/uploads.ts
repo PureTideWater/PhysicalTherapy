@@ -23,6 +23,10 @@ import {
  *   least a tenth of the rows on a code whose relative values the release corrects inside that row's quarter; 11 to 60
  *   claim lines a row and at most $25,000 a line.
  * - The small upload: 25 rows across all six products, submitted behind three large ones.
+ *
+ * The worst shape has variants (0 the one the large tests and S1 upload): each starts its other codes at its own
+ * quarter of the release's codes, so three concurrent worst uploads differ in most of their codes and in their rows,
+ * and share only the release's pooled and corrected codes, which every variant prices (audit #53 part 1).
  */
 
 export const SYNTH_SCREENING_PAYER_PRODUCTS = ['medicare_ffs', 'ma_noncontracted', 'ma_contracted', 'commercial', 'medicaid', 'other'] as const;
@@ -108,14 +112,26 @@ export interface WorstShapePlan {
 
 export const WORST_SHAPE_PLAN: WorstShapePlan = { pooledRows: 25_000, changeRows: 5_400, codes: 15_000 };
 
+/** How many worst-shape variants there are: each starts its other codes a quarter of the way further round. */
+export const WORST_SHAPE_VARIANTS = 4;
+
 /**
  * The worst shape, deterministic, for the release's shape: the pooled codes' rows first (every combination of the
  * eight modifier sets, units 1 to 8, both places and the eight quarters, round the codes), then the corrected codes'
  * second-quarter rows, then one row for each of as many other codes as the plan needs and, with what is left, more
  * rows round those codes. Every line is distinct; the products alternate. Each loop stops when its combinations run
- * out, so a shape too small for the plan gives fewer rows rather than none (the tests count them).
+ * out, so a shape too small for the plan gives fewer rows rather than none (the tests count them). A variant (0 to 3)
+ * takes its other codes from its own quarter of the release's other codes onward, round to the start.
  */
-export function worstShapeRows(shape: ScaleReleaseShape = SCALE_RELEASE_SHAPE, plan: WorstShapePlan = WORST_SHAPE_PLAN, total: number = SYNTH_SCREENING_MAX_ROWS): SynthScreeningRow[] {
+export function worstShapeRows(
+  shape: ScaleReleaseShape = SCALE_RELEASE_SHAPE,
+  plan: WorstShapePlan = WORST_SHAPE_PLAN,
+  total: number = SYNTH_SCREENING_MAX_ROWS,
+  variant = 0,
+): SynthScreeningRow[] {
+  if (!Number.isInteger(variant) || variant < 0 || variant >= WORST_SHAPE_VARIANTS) {
+    throw new RangeError(`a worst-shape variant is 0 to ${String(WORST_SHAPE_VARIANTS - 1)}`);
+  }
   const rows: SynthScreeningRow[] = [];
   const keys = new Set<string>();
   const add = (code: string, combination: number, band: string): boolean => {
@@ -160,7 +176,9 @@ export function worstShapeRows(shape: ScaleReleaseShape = SCALE_RELEASE_SHAPE, p
     add(code, Math.floor(round / changeBands.length) % combinations, changeBands[round % changeBands.length] as string);
   }
   const taken = new Set([...pooled, ...corrected]);
-  const others = scaleCodes(shape).filter((code) => !taken.has(code));
+  const all = scaleCodes(shape).filter((code) => !taken.has(code));
+  const start = Math.floor((variant * all.length) / WORST_SHAPE_VARIANTS);
+  const others = [...all.slice(start), ...all.slice(0, start)];
   const needed = Math.max(0, plan.codes - new Set(rows.map((item) => item.procedureCode)).size);
   const spread = others.slice(0, Math.max(needed, 1));
   for (let step = 0; rows.length < total && step < spread.length * combinations * bands.length; step += 1) {

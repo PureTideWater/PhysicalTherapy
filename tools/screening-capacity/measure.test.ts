@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { MIB, postgresLimit, productionLimits } from './limits';
+import { MIB, MIN_ROUND_TRIP_MS, NETWORK_DELAY_MS, postgresLimit, productionLimits } from './limits';
 import { anonBytes, cpuThrottling, ioMax, median, memoryEvents, phaseLines, phasesByRun, psqlTimings, workerStarted } from './measure';
-import { ROUND_TRIP_SCRIPT, dockerRunArgs, postgresRunArgs } from './containers';
+import { CommandError, ROUND_TRIP_SCRIPT, delayedRoundTripMs, dockerRunArgs, interfaceByIndex, masked, netemCommands, peerIndex, postgresRunArgs, stderrTail } from './containers';
 
 /**
  * The capacity test's readers (audit #53 part 1): cgroup files of both versions, the platform's phase lines, psql's
@@ -80,8 +80,36 @@ describe('Docker’s arguments', () => {
         '--device-write-iops=/dev/sda:3000',
         `--device-read-bps=/dev/sda:${String(125 * MIB)}`,
         `--device-write-bps=/dev/sda:${String(125 * MIB)}`,
+        // RDS has no 64 MiB cap on parallel queries' shared memory, so neither does the harness's Postgres.
+        '--shm-size=1g',
         'postgres:18',
       ]),
     );
+  });
+
+  it('delay both directions of Postgres’s link, so the delays add up to the round trip the verdict asks for', () => {
+    const commands = netemCommands(NETWORK_DELAY_MS, '4242', 'veth3a1b2c4');
+    expect(commands).toEqual([
+      ['sudo', 'nsenter', '-t', '4242', '-n', 'tc', 'qdisc', 'replace', 'dev', 'eth0', 'root', 'netem', 'delay', '1ms'],
+      ['sudo', 'tc', 'qdisc', 'replace', 'dev', 'veth3a1b2c4', 'root', 'netem', 'delay', '1ms'],
+    ]);
+    expect(delayedRoundTripMs(NETWORK_DELAY_MS)).toBe(MIN_ROUND_TRIP_MS);
+    // The host's end of the link, from the container's eth0 and the host's links.
+    expect(peerIndex('12: eth0@if13: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP mode DEFAULT')).toBe(13);
+    expect(peerIndex('1: lo: <LOOPBACK,UP>')).toBeNull();
+    const links = ['1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536', '4: docker0: <BROADCAST,MULTICAST,UP> mtu 1500', '13: veth3a1b2c4@if12: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 master br-1'].join('\n');
+    expect(interfaceByIndex(links, 13)).toBe('veth3a1b2c4');
+    expect(interfaceByIndex(links, 14)).toBeNull();
+  });
+});
+
+describe('a failed command', () => {
+  it('keeps the last lines of its stderr, bounded, with credentials and result tokens masked', () => {
+    const stderr = ['node:internal/modules/run_main:123', '    at async main', 'db:migrate: connect ECONNREFUSED 172.18.0.2:5432 (postgres://postgres:test@db:5432/tp_capacity)', ''].join('\n');
+    const error = new CommandError('the migration task (dist/migrate.js)', stderr);
+    expect(error.message).toBe('the migration task (dist/migrate.js) failed: node:internal/modules/run_main:123 | at async main | db:migrate: connect ECONNREFUSED 172.18.0.2:5432 (postgres://***@db:5432/tp_capacity)');
+    expect(stderrTail('x'.repeat(1_000)).length).toBe(400);
+    expect(stderrTail('')).toBe('no stderr');
+    expect(masked('GET /screening/results/abcdefghijklmnopqrstuvwxyzabcdef 200')).toBe('GET /screening/results/<token> 200');
   });
 });

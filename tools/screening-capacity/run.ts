@@ -13,11 +13,22 @@ import { type Browser, type BrowserContext, type Page, chromium } from 'playwrig
 
 import { environmentSettings } from '../../infra/lib/environments';
 import { repositoryRoot } from '../content-files';
-import { DockerRuntime, ProcessRuntime, type Runtime, type ServiceName, type ServiceSpec } from './containers';
+import { type ColdStart, CommandError, DockerRuntime, type PostgresStatus, ProcessRuntime, type Runtime, type ServiceName, type ServiceSpec, masked, stderrTail } from './containers';
 import { DEPARTURES, HARNESS_LOGINS, type HarnessDirectories, harnessLogins, loginsEnvironment, platformEnvironment, webEnvironment } from './env';
-import { MIB, NETWORK_DELAY_MS, RUNNER_TO_FARGATE, SCENARIO_CAP_MS, STALL_MS, postgresLimit, productionLimits, runnerTooSmall } from './limits';
+import {
+  HARNESS_DEADLINE_MS,
+  MIB,
+  NETWORK_DELAY_MS,
+  RUNNER_TO_FARGATE,
+  SCENARIO_CAP_MS,
+  SCENARIO_START_DEADLINE_MS,
+  STALL_MS,
+  postgresLimit,
+  productionLimits,
+  runnerTooSmall,
+} from './limits';
 import { anonBytes, cpuThrottling, memoryEvents, peak, phaseLines, phasesByRun, workerStarted } from './measure';
-import { type AppliedLimits, type ContainerMeasure, type Measurements, type OracleComparison, type ScenarioMeasure, type UploadMeasure, markdown, report, timeRule } from './report';
+import { type AppliedLimits, type ContainerMeasure, type Measurements, ORACLE_UPLOADS, type OracleComparison, type ScenarioMeasure, type UploadMeasure, markdown, report, timeRule } from './report';
 import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, uploadCsv } from './uploads';
 
 /**
@@ -27,19 +38,25 @@ import { type ScenarioSpec, type UploadSpec, scenarios, shapeFacts, shapeRows, u
  *  1. read the limits and the runner; stop as "runner too small" if it is;
  *  2. build the SYNTHETIC scale release in a child process (or take one already built);
  *  3. start Postgres with its limits, io.max and netem (Docker), or take a scratch database on the caller's server;
- *  4. run the migration task (migrations, then logins), load the release in a child process, approve the place-of-
- *     service split as a synthetic contract specialist, and restart Postgres so S1 starts with a cold cache;
+ *  4. run the migration task (migrations, then logins; a failure's stderr goes to the job's log and its last lines to
+ *     the report), load the release in a child process, approve the place-of-service split as a synthetic contract
+ *     specialist;
  *  5. start web and platform and wait for the health route and the worker's start line; read the limits back;
- *  6. run S1 to S5: each upload's page parses its file first (not timed), then the uploads are submitted (three at once
- *     and a small one behind them in S4 and S5); memory sampled every 500 ms, the outbox polled every 250 ms, a run in
- *     pricing that records no batch for five minutes called stalled, a 30-minute cap; then the cgroups' peaks, events
- *     and throttling, the phase lines, the platform jobs that ran, the stored rows; a fresh platform where it says;
- *  7. open every result link, then its last page of groups;  8. close the browsers;
- *  9. compare upload 1 of S1 and of S2 with the oracle in a child process;
- * 10. write screening-capacity.json and summary.md (and the job summary in CI); exit non-zero on any failing check.
+ *  6. run S1 to S5: S1, S4 and S5 first stop web and platform, restart Postgres with the page cache dropped (recorded)
+ *     and start both again; a fresh platform where a scenario says; each upload's page parses its file first (not
+ *     timed), then the uploads are submitted (three at once in S4 and S5, and the small one once the three runs exist);
+ *     memory sampled every 500 ms, the outbox polled every 250 ms, a run in pricing that records no batch for five
+ *     minutes, or a run still queued while nothing in its scenario moved for five minutes, called stalled, a 30-minute
+ *     cap; then the cgroups' peaks, events and throttling, Postgres's OOM kills and restarts, the phase lines, each
+ *     pricing job's place in the queue, the platform jobs that ran, the stored rows; the report is written after each;
+ *     no scenario starts after 60 minutes, and one still running at 70 ends there (limits.ts);
+ *  7. open every result link, then its last page of groups;  8. close the browsers, stop web and platform;
+ *  9. compare S1-1, S2-1 and S3-1 with the oracle in a child process, against the running Postgres;
+ * 10. remove Postgres; write screening-capacity.json and summary.md (and the job summary in CI); exit non-zero on any
+ *     failing check.
  *
  * The harness and Chromium run on the CPUs the workflow gives them (taskset), never the tasks' CPU. Nothing it writes
- * carries a link, a token or a row.
+ * carries a link, a token or a row; the services' saved logs (<out>/logs) hold IDs, codes and numbers, links masked.
  */
 
 const exec = promisify(execFile);
@@ -116,10 +133,46 @@ async function child(script: string, args: readonly string[], heapMiB: number): 
     });
     return stdout;
   } catch (error) {
-    // The child's own last error line (a code or a short message of this repository's), never its arguments' URLs.
+    // The child's whole stderr to the job's log, and its last lines in the report, URLs' credentials masked.
     const stderr = (error as { stderr?: string }).stderr ?? '';
-    const last = stderr.split('\n').filter((line) => /Error|error:/.test(line)).at(-1) ?? 'exited non-zero';
-    throw new HarnessStop(`${path.basename(script, '.ts').toUpperCase()}_FAILED: ${last.trim().slice(0, 200)}`);
+    printStderr(path.basename(script), stderr);
+    throw new HarnessStop(`${path.basename(script, '.ts').toUpperCase()}_FAILED: ${stderrTail(stderr, 300)}`);
+  }
+}
+
+/** A failed command's stderr in the job's log, line by line, masked. */
+function printStderr(what: string, stderr: string): void {
+  for (const line of masked(stderr).split('\n')) {
+    process.stdout.write(`[capacity] ${what} stderr: ${line}\n`);
+  }
+}
+
+/**
+ * The harness's own connection to the database as the owner (run facts, the queue), with an error listener: a server
+ * that goes away (a restart, the end) drops it, never the process, and the next use connects again.
+ */
+class OwnerConnection {
+  private current: pg.Client | null = null;
+  constructor(private readonly url: string) {}
+
+  async client(): Promise<pg.Client> {
+    if (this.current === null) {
+      const client = new pg.Client({ connectionString: this.url });
+      client.on('error', () => {
+        if (this.current === client) {
+          this.current = null;
+        }
+      });
+      await client.connect();
+      this.current = client;
+    }
+    return this.current;
+  }
+
+  async end(): Promise<void> {
+    const client = this.current;
+    this.current = null;
+    await client?.end().catch(() => undefined);
   }
 }
 
@@ -221,6 +274,8 @@ interface Prepared {
   emailedAt: number | null;
   link: string | null;
   failedNotice: boolean;
+  /** The page took the upload (its "sent" page); one it did not is not waited for. */
+  accepted: boolean;
 }
 
 interface RunFacts {
@@ -247,15 +302,40 @@ async function runFacts(owner: pg.Client, email: string): Promise<RunFacts | nul
 interface Context {
   readonly runtime: Runtime;
   readonly browser: Browser;
-  readonly owner: pg.Client;
+  readonly owner: OwnerConnection;
   readonly outbox: string;
   readonly web: ServiceSpec;
   readonly platform: ServiceSpec;
+  /** When the harness's deadline ends a scenario still running (limits.ts, HARNESS_DEADLINE_MS). */
+  readonly until: number;
 }
 
-async function startPlatform(runtime: Runtime, spec: ServiceSpec): Promise<void> {
-  await runtime.startService(spec);
+async function startWeb(runtime: Runtime, spec: ServiceSpec, label: string): Promise<void> {
+  await runtime.startService(spec, label);
+  await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
+}
+
+async function startPlatform(runtime: Runtime, spec: ServiceSpec, label: string): Promise<void> {
+  await runtime.startService(spec, label);
   await waitUntil('PLATFORM', async () => workerStarted(await runtime.logs('platform')), 180_000);
+}
+
+/** A run's pricing job in pg-boss: when it was created (its place in the queue) and started, null when not found. */
+async function queueTimes(owner: pg.Client, runId: string): Promise<{ readonly created: number | null; readonly started: number | null }> {
+  const { rows } = await owner
+    .query<{ created: Date | null; started: Date | null }>(
+      `SELECT created_on AS created, started_on AS started FROM pgboss.job
+        WHERE name = 'screening_price' AND data ->> 'screening_run_id' = $1 ORDER BY created_on LIMIT 1`,
+      [runId],
+    )
+    .catch(() => ({ rows: [] as { created: Date | null; started: Date | null }[] }));
+  return { created: rows[0]?.created?.getTime() ?? null, started: rows[0]?.started?.getTime() ?? null };
+}
+
+/** Postgres's OOM kills and restarts over a scenario: the counts at its end less those at its start. */
+function postgresOver(before: PostgresStatus, after: PostgresStatus): ScenarioMeasure['postgres'] {
+  const delta = (start: number | null, end: number | null) => (start === null || end === null ? null : end >= start ? end - start : end);
+  return { oomKills: delta(before.oomKills, after.oomKills), restarts: delta(before.restarts, after.restarts), running: after.running };
 }
 
 async function readContainer(runtime: Runtime, name: ServiceName, limitMiB: number, samples: readonly number[], stopped: boolean): Promise<ContainerMeasure> {
@@ -282,26 +362,39 @@ const clientAddress = (scenario: number, upload: number) => `198.51.100.${String
 
 async function runScenario(spec: ScenarioSpec, index: number, context: Context, limits: { readonly web: number; readonly platform: number }): Promise<{ readonly measure: ScenarioMeasure; readonly runs: Map<string, string> }> {
   const { runtime, browser, owner } = context;
-  // A service that exited in an earlier scenario (counted there) is started again, as production's service would
-  // start a new task, so one failure does not leave the later scenarios unmeasured.
-  if (!(await runtime.status('web')).running) {
-    say(`${spec.id}: web had exited; starting it again`);
-    await runtime.startService(context.web);
-    await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
+  let coldStart: ColdStart | null = null;
+  if (spec.freshPostgres) {
+    // A cold database: the services stop first (their pools would lose every connection), the harness lets go of its
+    // own, Postgres restarts with the page cache dropped and the delay applied again, and both services start fresh.
+    say(`${spec.id}: a cold Postgres (restarted, page cache dropped), then web and platform fresh`);
+    await runtime.stopServices();
+    await owner.end();
+    coldStart = await runtime.restartPostgres();
+    await startWeb(runtime, context.web, spec.id);
+    await startPlatform(runtime, context.platform, spec.id);
+  } else {
+    // A service that exited in an earlier scenario (counted there) is started again, as production's service would
+    // start a new task, so one failure does not leave the later scenarios unmeasured.
+    if (!(await runtime.status('web')).running) {
+      say(`${spec.id}: web had exited; starting it again`);
+      await startWeb(runtime, context.web, spec.id);
+    }
+    if (spec.freshPlatform || !(await runtime.status('platform')).running) {
+      say(`${spec.id}: a fresh platform container`);
+      await runtime.stopService('platform');
+      await startPlatform(runtime, context.platform, spec.id);
+    }
   }
-  if (spec.freshPlatform || !(await runtime.status('platform')).running) {
-    say(`${spec.id}: a fresh platform container`);
-    await runtime.stopService('platform');
-    await startPlatform(runtime, context.platform);
-  }
+  const postgresBefore = await runtime.postgresStatus();
   const scenarioStart = Date.now();
+  const capUntil = Math.min(scenarioStart + SCENARIO_CAP_MS, context.until);
   const since = new Date(scenarioStart);
   const prepared: Prepared[] = [];
   for (const [at, upload] of spec.uploads.entries()) {
-    const rows = shapeRows(upload.shape);
+    const rows = shapeRows(upload.shape, undefined, upload.variant);
     const browserContext = await browser.newContext({ extraHTTPHeaders: { 'X-Forwarded-For': clientAddress(index, at) } });
     const page = await browserContext.newPage();
-    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, submittedAt: null, emailedAt: null, link: null, failedNotice: false };
+    const entry: Prepared = { upload, rows: rows.length, context: browserContext, page, submittedAt: null, emailedAt: null, link: null, failedNotice: false, accepted: true };
     page.on('request', (request) => {
       if (entry.submittedAt === null && request.method() === 'POST' && new URL(request.url()).pathname === '/screening') {
         entry.submittedAt = Date.now();
@@ -332,23 +425,45 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     }
   })();
   const click = (entry: Prepared) => entry.page.getByRole('button', { name: 'Screen the file' }).click({ timeout: 60_000 });
-  await Promise.all(prepared.filter((entry) => !entry.upload.behind).map(click));
+  const sentPage = (entry: Prepared) => entry.page.waitForURL(/\/screening\?sent=1$/, { timeout: Math.max(1_000, Math.min(600_000, capUntil - Date.now())) });
+  const large = prepared.filter((entry) => !entry.upload.behind);
   const behind = prepared.filter((entry) => entry.upload.behind);
+  await Promise.all(large.map(click));
+  const largeSent = Promise.allSettled(large.map(sentPage));
   if (behind.length > 0) {
-    await sleep(500);
+    // The small upload is sent once the large ones' runs exist, so its run is queued behind theirs: a run is queued
+    // only when the web has taken its upload in, and 25 rows are taken in long before 50,000.
+    const waitUntilRuns = Date.now();
+    while (Date.now() < capUntil) {
+      const client = await owner.client();
+      let found = 0;
+      for (const entry of large) {
+        found += (await runFacts(client, entry.upload.contactEmail)) === null ? 0 : 1;
+      }
+      if (found === large.length) {
+        break;
+      }
+      await sleep(500);
+    }
+    say(`${spec.id}: the large uploads' runs exist after ${((Date.now() - waitUntilRuns) / 1000).toFixed(1)} s; sending the small one behind them`);
     await Promise.all(behind.map(click));
   }
-  const sent = await Promise.allSettled(prepared.map((entry) => entry.page.waitForURL(/\/screening\?sent=1$/, { timeout: 600_000 })));
+  const sent = [...(await largeSent), ...(await Promise.allSettled(behind.map(sentPage)))];
+  const order = [...large, ...behind];
   sent.forEach((result, at) => {
-    if (result.status === 'rejected') {
-      say(`${spec.id}: upload ${prepared[at]?.upload.id ?? ''} was not accepted by the page`);
+    const entry = order[at];
+    if (result.status === 'rejected' && entry !== undefined) {
+      entry.accepted = false;
+      say(`${spec.id}: upload ${entry.upload.id} was not accepted by the page`);
     }
   });
   const mails = new Map<string, Mail>();
   const progress = new Map<string, { readonly done: number; readonly at: number }>();
+  const lastSeen = new Map<string, string>();
+  let lastMove = Date.now();
   const stalled = new Set<string>();
   let lastStallCheck = 0;
-  while (Date.now() - scenarioStart < SCENARIO_CAP_MS) {
+  while (Date.now() < capUntil) {
     readOutbox(context.outbox, mails);
     for (const entry of prepared) {
       if (entry.emailedAt !== null || entry.failedNotice) {
@@ -356,6 +471,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       }
       const mail = [...mails.values()].find((message) => message.to.includes(entry.upload.contactEmail));
       if (mail !== undefined) {
+        lastMove = Date.now();
         const link = RESULT_LINK.exec(mail.body)?.[0] ?? null;
         if (link === null) {
           entry.failedNotice = true;
@@ -365,22 +481,36 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
         }
       }
     }
-    const open = prepared.filter((entry) => entry.emailedAt === null && !entry.failedNotice && !stalled.has(entry.upload.id));
+    const open = prepared.filter((entry) => entry.accepted && entry.emailedAt === null && !entry.failedNotice && !stalled.has(entry.upload.id));
     if (open.length === 0) {
       break;
     }
     if (Date.now() - lastStallCheck >= 30_000) {
       lastStallCheck = Date.now();
+      const client = await owner.client();
+      const facts = new Map<string, RunFacts | null>();
       for (const entry of open) {
-        const facts = await runFacts(owner, entry.upload.contactEmail);
-        if (facts?.status === 'pricing') {
-          const done = facts.stored - facts.pending;
+        const found = await runFacts(client, entry.upload.contactEmail);
+        facts.set(entry.upload.id, found);
+        const seen = found === null ? 'none' : `${found.status}:${String(found.stored - found.pending)}`;
+        if (lastSeen.get(entry.upload.id) !== seen) {
+          lastSeen.set(entry.upload.id, seen);
+          lastMove = Date.now();
+        }
+      }
+      for (const entry of open) {
+        const found = facts.get(entry.upload.id) ?? null;
+        if (found?.status === 'pricing') {
+          const done = found.stored - found.pending;
           const before = progress.get(entry.upload.id);
           if (before === undefined || before.done !== done) {
             progress.set(entry.upload.id, { done, at: Date.now() });
           } else if (Date.now() - before.at >= STALL_MS) {
             stalled.add(entry.upload.id);
           }
+        } else if ((found === null || found.status === 'queued') && Date.now() - lastMove >= STALL_MS) {
+          // Still queued (or no run yet) while nothing in the scenario moved: no job is taking it.
+          stalled.add(entry.upload.id);
         }
       }
     }
@@ -406,14 +536,17 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   sampling = false;
   await sampler;
   const containers = [await readContainer(runtime, 'web', limits.web, samples.web, false), await readContainer(runtime, 'platform', limits.platform, samples.platform, false)];
+  const postgres = postgresOver(postgresBefore, await runtime.postgresStatus());
   const phases = phasesByRun(phaseLines(await runtime.logs('platform')));
   const runs = new Map<string, string>();
   const uploads: UploadMeasure[] = [];
+  const client = await owner.client();
   for (const entry of prepared) {
-    const facts = await runFacts(owner, entry.upload.contactEmail);
+    const facts = await runFacts(client, entry.upload.contactEmail);
     if (facts !== null) {
       runs.set(entry.upload.id, facts.id);
     }
+    const queue = facts === null ? { created: null, started: null } : await queueTimes(client, facts.id);
     const lines = facts === null ? undefined : phases.get(facts.id);
     const opened = resultStatuses.get(entry.upload.id);
     const phaseLog = phaseLines(await runtime.logs('platform')).filter((line) => line.runId === facts?.id);
@@ -422,6 +555,9 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
       id: entry.upload.id,
       shape: entry.upload.shape,
       rows: entry.rows,
+      behind: entry.upload.behind,
+      jobCreatedMs: queue.created === null ? null : queue.created - scenarioStart,
+      jobStartedMs: queue.started === null ? null : queue.started - scenarioStart,
       submittedMs: entry.submittedAt === null ? null : entry.submittedAt - scenarioStart,
       emailedMs: entry.emailedAt === null ? null : entry.emailedAt - scenarioStart,
       queueWaitMs: firstPhase === null || entry.submittedAt === null ? null : Math.max(0, firstPhase - entry.submittedAt),
@@ -438,7 +574,7 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
   for (const entry of prepared) {
     await entry.context.close();
   }
-  const jobs = await owner
+  const jobs = await client
     .query<{ name: string; count: number; seconds: number }>(
       `SELECT name, count(*)::int AS count, coalesce(sum(extract(epoch FROM (completed_on - started_on))), 0)::float8 AS seconds
          FROM pgboss.job WHERE started_on >= $1 GROUP BY name ORDER BY name`,
@@ -446,10 +582,11 @@ async function runScenario(spec: ScenarioSpec, index: number, context: Context, 
     )
     .then((result) => result.rows)
     .catch(() => []);
-  return { measure: { id: spec.id, what: spec.what, uploads, containers, platformJobs: jobs }, runs };
+  return { measure: { id: spec.id, what: spec.what, coldStart, uploads, containers, postgres, platformJobs: jobs }, runs };
 }
 
 async function main(): Promise<number> {
+  const harnessStart = Date.now();
   const opts = options(process.argv.slice(2));
   mkdirSync(opts.out, { recursive: true });
   const loadAverage = os.loadavg();
@@ -463,10 +600,11 @@ async function main(): Promise<number> {
   const logins = opts.runtime === 'process' ? harnessLogins(randomBytes(4).toString('hex')) : HARNESS_LOGINS;
   const runtime: Runtime =
     opts.runtime === 'docker'
-      ? new DockerRuntime({ web: opts.webImage, worker: opts.workerImage }, dataHost)
+      ? new DockerRuntime({ web: opts.webImage, worker: opts.workerImage }, dataHost, path.join(opts.out, 'logs'))
       : new ProcessRuntime({ worker: path.join(opts.images ?? '', 'worker'), web: path.join(opts.images ?? '', 'web') }, dataHost, opts.adminUrl ?? '', opts.database);
   const scenarioMeasures: ScenarioMeasure[] = [];
   const oracle: OracleComparison[] = [];
+  const notStarted: string[] = [];
   let applied: AppliedLimits = { containers: [], ioMax: null, roundTripMedianMs: null };
   let release = { releaseNo: SCALE_RELEASE_NUMBER, manifestSha256: '', records: 0 };
   let aborted: string | null = null;
@@ -474,9 +612,44 @@ async function main(): Promise<number> {
   const measuredCheckout = opts.runtime === 'process' && opts.images !== null ? path.join(opts.images, 'worker') : repositoryRoot;
   const commit = (await exec('git', ['rev-parse', 'HEAD'], { cwd: measuredCheckout }).catch(() => ({ stdout: 'unknown' }))).stdout.trim();
   const affinity = /Cpus_allowed_list:\s*(\S+)/.exec(readFileSync('/proc/self/status', 'utf8'))?.[1] ?? 'unknown';
+  const imageDigests =
+    opts.runtime === 'docker'
+      ? Object.fromEntries(await Promise.all([opts.webImage, opts.workerImage].map(async (image) => [image, (await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', image]).catch(() => ({ stdout: 'unknown' }))).stdout.trim()] as const)))
+      : {};
+  const specs = scenarios().filter((spec) => opts.only.length === 0 || opts.only.includes(spec.id));
+  // The report as it stands, written after every scenario as well as at the end, so a run that stops leaves its figures.
+  const write = (final: boolean): ReturnType<typeof report> => {
+    const measured: Measurements = {
+      commit,
+      runtime: opts.runtime,
+      imageDigests,
+      runner,
+      expected,
+      applied,
+      runnerProblems,
+      departures: [...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
+      release,
+      shapes: {
+        practice: shapeFacts('practice'),
+        worst: shapeFacts('worst'),
+        ...Object.fromEntries([1, 2, 3].map((variant) => [`worst_variant_${String(variant)}`, shapeFacts('worst', undefined, variant)])),
+        small: shapeFacts('small'),
+      },
+      scenarios: scenarioMeasures,
+      oracle,
+      only: opts.only,
+      notStarted,
+      aborted: final ? aborted : (aborted ?? 'run in progress: the report is written again after each scenario and at the end'),
+    };
+    const full = report(measured, rule);
+    const json = JSON.stringify(full, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value), 2);
+    writeFileSync(path.join(opts.out, 'screening-capacity.json'), `${json}\n`);
+    writeFileSync(path.join(opts.out, 'summary.md'), markdown(full, rule));
+    return full;
+  };
   say(`runner ${String(runner.cpus)} CPUs, ${String(runner.memoryMiB)} MiB, load ${loadAverage.map((value) => value.toFixed(2)).join(' ')}; harness on CPUs ${affinity}; runtime ${opts.runtime}`);
   let browser: Browser | null = null;
-  let owner: pg.Client | null = null;
+  let owner: OwnerConnection | null = null;
   try {
     if (runnerProblems.length > 0) {
       throw new HarnessStop('RUNNER_TOO_SMALL');
@@ -489,6 +662,7 @@ async function main(): Promise<number> {
     let ownerHarness = urls.harnessUrl;
     if (opts.runtime === 'docker') {
       const admin = new pg.Client({ connectionString: urls.harnessUrl });
+      admin.on('error', () => undefined);
       await admin.connect();
       await admin.query(`CREATE DATABASE ${admin.escapeIdentifier(opts.database)}`).finally(() => admin.end());
       ownerHarness = withDatabase(urls.harnessUrl, opts.database);
@@ -499,7 +673,6 @@ async function main(): Promise<number> {
     say('loading the release');
     say(`loaded: ${(await child('tools/screening-capacity/load.ts', [ownerHarness, built.dir], 6144)).trim()}`);
     await approveSplit(ownerHarness);
-    await runtime.restartPostgres();
     const hostDirs = directories(runtime.dataDir.host);
     for (const dir of Object.values(hostDirs) as string[]) {
       mkdirSync(dir, { recursive: true });
@@ -510,18 +683,25 @@ async function main(): Promise<number> {
     const web: ServiceSpec = { name: 'web', env: webEnvironment(ownerService, runtime.webOrigin, serviceDirs, secrets, logins), limit: limits.web, cpuset: pgLimit.taskCpuset };
     const platform: ServiceSpec = { name: 'platform', env: platformEnvironment(ownerService, runtime.webOrigin, serviceDirs, logins), limit: limits.platform, cpuset: pgLimit.taskCpuset };
     say('starting web and platform');
-    await runtime.startService(web);
-    await waitUntil('WEB', async () => (await fetch(`${runtime.webOrigin}/api/health`)).status === 200, 300_000);
-    await startPlatform(runtime, platform);
+    await startWeb(runtime, web, 'setup');
+    await startPlatform(runtime, platform, 'setup');
     applied = await runtime.applied(ownerHarness);
-    owner = new pg.Client({ connectionString: ownerHarness });
-    await owner.connect();
+    owner = new OwnerConnection(ownerHarness);
     browser = await chromium.launch({ headless: true });
-    const all = scenarios().filter((spec) => opts.only.length === 0 || opts.only.includes(spec.id));
     const runIds = new Map<string, string>();
-    for (const [index, spec] of all.entries()) {
+    for (const [index, spec] of specs.entries()) {
+      if (Date.now() - harnessStart > SCENARIO_START_DEADLINE_MS) {
+        notStarted.push(...specs.slice(index).map((item) => item.id));
+        say(`deadline: ${notStarted.join(', ')} not started`);
+        break;
+      }
       say(`${spec.id}: ${spec.what}`);
-      const { measure, runs } = await runScenario(spec, index, { runtime, browser, owner, outbox: hostDirs.outbox, web, platform }, { web: limits.web.memoryMiB, platform: limits.platform.memoryMiB });
+      const { measure, runs } = await runScenario(
+        spec,
+        index,
+        { runtime, browser, owner, outbox: hostDirs.outbox, web, platform, until: harnessStart + HARNESS_DEADLINE_MS },
+        { web: limits.web.memoryMiB, platform: limits.platform.memoryMiB },
+      );
       scenarioMeasures.push(measure);
       for (const [upload, run] of runs) {
         runIds.set(upload, run);
@@ -530,21 +710,31 @@ async function main(): Promise<number> {
         const elapsed = upload.submittedMs !== null && upload.emailedMs !== null ? ((upload.emailedMs - upload.submittedMs) / 1000).toFixed(1) : 'none';
         say(`${upload.id} (${upload.shape}): ${elapsed} s to email; run ${upload.runStatus ?? 'none'}`);
       }
+      write(false);
     }
     await browser.close();
     browser = null;
-    await runtime.stopAll();
-    const compared = ['S1-1', 'S2-1'].filter((upload) => runIds.has(upload));
+    // The services stop and the harness lets go of its connection; Postgres keeps running for the oracle and is
+    // removed after it.
+    await runtime.stopServices();
+    await owner.end();
+    const uploads = new Map(specs.flatMap((spec) => spec.uploads).map((upload) => [upload.id, upload] as const));
+    const compared = ORACLE_UPLOADS.filter((upload) => runIds.has(upload));
     if (compared.length > 0) {
-      say('comparing with the oracle');
+      say(`comparing ${compared.join(', ')} with the oracle`);
       const results = JSON.parse(await child('tools/screening-capacity/oracle.ts', [ownerHarness, ...compared.map((upload) => runIds.get(upload) ?? '')], 8192)) as { runId: string; rows: number; storedSha256: string; oracleSha256: string }[];
       results.forEach((result, at) => {
-        const upload = compared[at] ?? '';
-        oracle.push({ scenario: upload.split('-')[0] ?? '', upload, rows: result.rows, storedSha256: result.storedSha256, oracleSha256: result.oracleSha256 });
+        const id = compared[at] ?? '';
+        const spec = uploads.get(id);
+        const expectedRows = spec === undefined ? 0 : shapeFacts(spec.shape, undefined, spec.variant).pricedRows;
+        oracle.push({ scenario: id.split('-')[0] ?? '', upload: id, rows: result.rows, expectedRows, storedSha256: result.storedSha256, oracleSha256: result.oracleSha256 });
       });
     }
   } catch (error) {
-    aborted = error instanceof HarnessStop ? error.code : `HARNESS_ERROR: ${(error instanceof Error ? error.message : String(error)).split('\n')[0]?.slice(0, 200) ?? ''}`;
+    if (error instanceof CommandError) {
+      printStderr(error.command, error.stderr);
+    }
+    aborted = error instanceof HarnessStop ? error.code : `HARNESS_ERROR: ${masked(error instanceof Error ? error.message : String(error)).split('\n')[0]?.slice(0, 500) ?? ''}`;
     say(`stopped: ${aborted}`);
   } finally {
     await browser?.close().catch(() => undefined);
@@ -554,6 +744,7 @@ async function main(): Promise<number> {
   if (opts.runtime === 'process' && !opts.keepDatabase && opts.adminUrl !== null) {
     // The scratch database, then the run's own logins (roles outlive a database; their names carry the run's suffix).
     const admin = new pg.Client({ connectionString: opts.adminUrl });
+    admin.on('error', () => undefined);
     await admin.connect();
     try {
       await admin.query(`DROP DATABASE IF EXISTS ${admin.escapeIdentifier(opts.database)} WITH (FORCE)`);
@@ -564,29 +755,8 @@ async function main(): Promise<number> {
   } else if (opts.runtime === 'process') {
     say(`kept database ${opts.database} and its logins ${Object.values(logins).map((login) => login.username).join(', ')}; drop all of them when done`);
   }
-  const measured: Measurements = {
-    commit,
-    runtime: opts.runtime,
-    imageDigests:
-      opts.runtime === 'docker'
-        ? Object.fromEntries(await Promise.all([opts.webImage, opts.workerImage].map(async (image) => [image, (await exec('docker', ['image', 'inspect', '-f', '{{.Id}}', image]).catch(() => ({ stdout: 'unknown' }))).stdout.trim()] as const)))
-        : {},
-    runner,
-    expected,
-    applied,
-    runnerProblems,
-    departures: [...DEPARTURES, ...(opts.runtime === 'process' ? [{ what: 'process runtime: the build outputs as processes in cgroups, against an unlimited shared Postgres with a warm cache and no network delay', direction: 'gentler' }] : [])],
-    release,
-    shapes: { practice: shapeFacts('practice'), worst: shapeFacts('worst'), small: shapeFacts('small') },
-    scenarios: scenarioMeasures,
-    oracle,
-    aborted,
-  };
-  const full = report(measured, rule);
-  const json = JSON.stringify(full, (_, value: unknown) => (typeof value === 'bigint' ? value.toString() : value), 2);
-  writeFileSync(path.join(opts.out, 'screening-capacity.json'), `${json}\n`);
+  const full = write(true);
   const summary = markdown(full, rule);
-  writeFileSync(path.join(opts.out, 'summary.md'), summary);
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   }

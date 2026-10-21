@@ -83,7 +83,10 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # The production images, from their Dockerfiles, as supply-chain.yml builds them; layers kept in the Actions cache.
+      # The production images, from their Dockerfiles, as supply-chain.yml builds them. Every run reads the layer cache;
+      # only a push to the build branch writes it, and only the final layers (mode=min): both Dockerfiles copy the whole
+      # checkout before installing, so the install and build layers change with every commit and exporting them each run
+      # would churn the repository's 10 GB of Actions cache (audit #53 part 1's capacity review).
       - name: Build the web image
         uses: docker/build-push-action@v6
         with:
@@ -93,7 +96,7 @@ jobs:
           push: false
           tags: tp-web:capacity
           cache-from: type=gha,scope=screening-capacity-web
-          cache-to: type=gha,mode=max,scope=screening-capacity-web
+          cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-web' || '' }}
 
       - name: Build the worker image
         uses: docker/build-push-action@v6
@@ -104,7 +107,7 @@ jobs:
           push: false
           tags: tp-worker:capacity
           cache-from: type=gha,scope=screening-capacity-worker
-          cache-to: type=gha,mode=max,scope=screening-capacity-worker
+          cache-to: ${{ github.event_name == 'push' && github.ref == 'refs/heads/claude/build-platform' && 'type=gha,mode=min,scope=screening-capacity-worker' || '' }}
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -113,11 +116,25 @@ jobs:
       # The browser the uploads are sent from: Playwright's own Chromium, as ci.yml installs it.
       - run: pnpm --filter @tp/web exec playwright install --with-deps chromium
 
-      # The SYNTHETIC scale release, kept between runs by the SHA-256 of what generates it.
-      - uses: actions/cache@v4
+      # The SYNTHETIC scale release, kept between runs by the SHA-256 of what generates it: built in a step of its own
+      # and saved straight after, so a measurement that fails still leaves it cached for the next run.
+      - name: Restore the scale release
+        id: scale-release
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/scale-release
           key: screening-scale-release-${{ hashFiles('packages/synth/src/release/**', 'tools/release/scale.ts', 'packages/rules/src/**', 'fixtures/synthetic/rules/release-synth-900001/**') }}
+      - name: Build the scale release
+        if: steps.scale-release.outputs.cache-hit != 'true'
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: pnpm exec tsx tools/release/scale.ts --out "$RUNNER_TEMP/scale-release"
+      - name: Save the scale release
+        if: steps.scale-release.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/scale-release
+          key: ${{ steps.scale-release.outputs.cache-primary-key }}
 
       # The harness, its child processes and Chromium on every CPU but the last, which web and platform share.
       - name: Measure under production limits
@@ -129,6 +146,8 @@ jobs:
             --web-image tp-web:capacity \
             --worker-image tp-worker:capacity
 
+      # The report (written after every scenario, so a run that stops still has its figures) and the services' logs
+      # (IDs, codes and numbers by the logger's allowlist, synthetic data, result links masked).
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -136,6 +155,7 @@ jobs:
           path: |
             ${{ runner.temp }}/screening-capacity/screening-capacity.json
             ${{ runner.temp }}/screening-capacity/summary.md
+            ${{ runner.temp }}/screening-capacity/logs/
           if-no-files-found: ignore
           retention-days: 90
 

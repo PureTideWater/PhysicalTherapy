@@ -148,9 +148,13 @@ export function runnerTooSmall(runner: Runner, limits: ProductionLimits): string
   return reasons;
 }
 
-/** Each way, the network delay put on Postgres's interface: a 2 ms round trip, more than an in-VPC trip with Multi-AZ's commit. */
+/**
+ * Each way, the network delay put on Postgres's link (netem on its own interface, which delays what it sends, and on the
+ * host's end of its link, which delays what it receives; containers.ts, netemCommands): a 2 ms round trip, more than an
+ * in-VPC trip with Multi-AZ's commit.
+ */
 export const NETWORK_DELAY_MS = 1;
-/** The least median round trip from the platform container that proves the delay applied. */
+/** The least median round trip from a client container on the services' network that proves the delay applied both ways. */
 export const MIN_ROUND_TRIP_MS = 2;
 /** A sampled anonymous memory above this share of a task's limit fails the run. */
 export const MEMORY_LIMIT_PERCENT = 90;
@@ -165,5 +169,16 @@ export const TIME_PROMISE_MS = 60_000;
 export const RUNNER_TO_FARGATE: number | null = null;
 /** A scenario stops at this cap; an upload not emailed by then fails. */
 export const SCENARIO_CAP_MS = 30 * 60_000;
-/** A run in pricing that records no batch for this long has stalled. */
+/**
+ * A run in pricing that records no batch for this long has stalled, and so has a run still queued while nothing in its
+ * scenario moved (no batch recorded, no run claimed or finished, no email) for this long.
+ */
 export const STALL_MS = 5 * 60_000;
+/**
+ * The harness's own deadlines inside the job's 90 minutes (screening-capacity.yml's timeout-minutes; the image builds,
+ * the install, the browser and the release take up to about 15 before the harness starts): no scenario starts after 60
+ * minutes of the harness, and one still running at 70 ends there, its uploads not emailed by then failing, so the oracle
+ * and the report always have time to be written. The report is also written after every scenario.
+ */
+export const SCENARIO_START_DEADLINE_MS = 60 * 60_000;
+export const HARNESS_DEADLINE_MS = 70 * 60_000;

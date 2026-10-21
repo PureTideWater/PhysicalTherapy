@@ -18,7 +18,10 @@ import { SCREENING_COLUMNS, type ScreeningRow } from '@tp/worker/screening-forma
  * The capacity test's uploads and scenarios (audit #53 part 1; docs/adr/0062, "Capacity under production limits"):
  * the SYNTHETIC rows packages/synth generates as the screening's own rows, as the CSV a prospect uploads (the
  * template's eight columns), and the five scenarios with each upload's ZIP, practice name and address, distinct across
- * scenarios so no screening replaces another. Synthetic data only: invented practices at synthetic.test addresses.
+ * scenarios so no screening replaces another. S1, S4 and S5 start from a cold Postgres (restarted, the page cache
+ * dropped); S4's three worst uploads are worst-shape variants 1 to 3, so they differ from S1's rows and from each other
+ * in most of their codes, sharing the release's pooled and corrected codes, which every worst upload prices. Synthetic
+ * data only: invented practices at synthetic.test addresses.
  */
 
 export type UploadShape = 'practice' | 'worst' | 'small';
@@ -33,12 +36,12 @@ export function practiceShapeUpload(): ScreeningRow[] {
   return screeningRows(practiceShapeRows());
 }
 
-export function shapeRows(shape: UploadShape, release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): SynthScreeningRow[] {
+export function shapeRows(shape: UploadShape, release: ScaleReleaseShape = SCALE_RELEASE_SHAPE, variant = 0): SynthScreeningRow[] {
   switch (shape) {
     case 'practice':
       return practiceShapeRows();
     case 'worst':
-      return worstShapeRows(release);
+      return worstShapeRows(release, undefined, undefined, variant);
     case 'small':
       return smallUploadRows();
   }
@@ -67,16 +70,19 @@ export interface UploadSpec {
   readonly zip: string;
   readonly practiceName: string;
   readonly contactEmail: string;
-  /** Submitted behind the scenario's large uploads (within a second of the last). */
+  /** Submitted behind the scenario's large uploads, once their runs exist. */
   readonly behind: boolean;
+  /** The worst shape's variant (0 for the other shapes). */
+  readonly variant: number;
 }
 
 export interface ScenarioSpec {
   readonly id: 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
   readonly what: string;
   readonly uploads: readonly UploadSpec[];
-  /** Start a fresh platform container (and, for S1, a fresh Postgres) before the scenario. */
+  /** Start a fresh platform container before the scenario. */
   readonly freshPlatform: boolean;
+  /** Restart Postgres and drop the page cache before it (web and platform start again after it). */
   readonly freshPostgres: boolean;
 }
 
@@ -91,13 +97,14 @@ function practiceName(scenario: string, upload: number): string {
 export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): ScenarioSpec[] {
   // Five ZIPs per scenario at most (three large, one small; S1 to S3 use one), each set in distinct localities.
   const zips = uploadZips(release, 5, 4);
-  const upload = (scenario: string, index: number, shape: UploadShape, behind = false): UploadSpec => ({
+  const upload = (scenario: string, index: number, shape: UploadShape, behind = false, variant = 0): UploadSpec => ({
     id: `${scenario}-${String(index + 1)}`,
     shape,
     zip: zips[Number.parseInt(scenario.slice(1), 10) - 1]?.[index] ?? '',
     practiceName: practiceName(scenario, index + 1),
     contactEmail: `capacity.${scenario.toLowerCase()}.upload${String(index + 1)}@capacity-${scenario.toLowerCase()}.synthetic.test`,
     behind,
+    variant,
   });
   return [
     { id: 'S1', what: 'worst shape, one upload alone: fresh Postgres, fresh platform container', uploads: [upload('S1', 0, 'worst')], freshPlatform: true, freshPostgres: true },
@@ -105,23 +112,23 @@ export function scenarios(release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): Sce
     { id: 'S3', what: 'practice shape again in the same container (shared types held)', uploads: [upload('S3', 0, 'practice')], freshPlatform: false, freshPostgres: false },
     {
       id: 'S4',
-      what: 'worst shape, three at once, a small one behind them: fresh platform container',
-      uploads: [upload('S4', 0, 'worst'), upload('S4', 1, 'worst'), upload('S4', 2, 'worst'), upload('S4', 3, 'small', true)],
+      what: 'worst shape, three at once (variants 1 to 3), a small one behind them: fresh Postgres, fresh platform container',
+      uploads: [upload('S4', 0, 'worst', false, 1), upload('S4', 1, 'worst', false, 2), upload('S4', 2, 'worst', false, 3), upload('S4', 3, 'small', true)],
       freshPlatform: true,
-      freshPostgres: false,
+      freshPostgres: true,
     },
     {
       id: 'S5',
-      what: 'practice shape, three at once, a small one behind them: fresh platform container',
+      what: 'practice shape, three at once, a small one behind them: fresh Postgres, fresh platform container',
       uploads: [upload('S5', 0, 'practice'), upload('S5', 1, 'practice'), upload('S5', 2, 'practice'), upload('S5', 3, 'small', true)],
       freshPlatform: true,
-      freshPostgres: false,
+      freshPostgres: true,
     },
   ];
 }
 
 /** What the report records of each shape: its counts against the release, never a row. */
-export function shapeFacts(shape: UploadShape, release: ScaleReleaseShape = SCALE_RELEASE_SHAPE): UploadShapeFacts & { readonly sha256: string } {
-  const rows = shapeRows(shape, release);
+export function shapeFacts(shape: UploadShape, release: ScaleReleaseShape = SCALE_RELEASE_SHAPE, variant = 0): UploadShapeFacts & { readonly sha256: string } {
+  const rows = shapeRows(shape, release, variant);
   return { ...uploadShapeFacts(rows, release), sha256: createHash('sha256').update(uploadCsv(rows)).digest('hex') };
 }

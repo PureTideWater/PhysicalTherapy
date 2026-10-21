@@ -48,6 +48,27 @@ describe('the worst shape', () => {
     expect(new Set(rows.map(lineKey)).size).toBe(rows.length);
   });
 
+  it('has variants that keep the plan and differ in most of their codes and in every row of them', () => {
+    const base = worstShapeRows();
+    const codesOf = (rows: readonly { readonly procedureCode: string }[]) => new Set(rows.map((row) => row.procedureCode));
+    const pooled = new Set(scalePooledCodes(SCALE_RELEASE_SHAPE));
+    for (const variant of [1, 2, 3]) {
+      const rows = worstShapeRows(SCALE_RELEASE_SHAPE, undefined, undefined, variant);
+      const facts = uploadShapeFacts(rows);
+      expect([facts.rows, facts.pricedRows, facts.distinctPricedLines]).toEqual([50_000, 50_000, 50_000]);
+      expect(facts.distinctCodes).toBeGreaterThanOrEqual(15_000);
+      expect(facts.pooledRows).toBeGreaterThanOrEqual(25_000);
+      expect(facts.changeRows).toBeGreaterThanOrEqual(5_000);
+      const codes = codesOf(rows);
+      expect([...pooled].every((code) => codes.has(code))).toBe(true);
+      // Outside the pooled and corrected codes every variant shares, it starts its other codes a quarter further round.
+      const baseKeys = new Set(base.map(lineKey));
+      expect(rows.filter((row) => !baseKeys.has(lineKey(row))).length).toBeGreaterThan(5_000);
+    }
+    expect(worstShapeRows(SCALE_RELEASE_SHAPE, undefined, undefined, 0)).toEqual(base);
+    expect(() => worstShapeRows(SCALE_RELEASE_SHAPE, undefined, undefined, 4)).toThrow(RangeError);
+  });
+
   it('is the same every time', () => {
     expect(worstShapeRows(SMALL_SCALE_RELEASE_SHAPE, { pooledRows: 500, changeRows: 100, codes: 300 }, 1_000)).toEqual(worstShapeRows(SMALL_SCALE_RELEASE_SHAPE, { pooledRows: 500, changeRows: 100, codes: 300 }, 1_000));
   });

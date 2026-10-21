@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 import pg from 'pg';
 
-import { type ContainerLimit, MIB, type PostgresLimit } from './limits';
+import { type ContainerLimit, MIB, NETWORK_DELAY_MS, type PostgresLimit } from './limits';
 import { type CgroupVersion, ioMax, median, psqlTimings } from './measure';
 import type { AppliedContainer, AppliedLimits } from './report';
 
@@ -13,9 +13,12 @@ import type { AppliedContainer, AppliedLimits } from './report';
  * Where the capacity test's three services run (audit #53 part 1; docs/adr/0062, "Capacity under production limits").
  *
  * DockerRuntime (CI, the measurement): the production images as containers under cgroup v2 limits equal to production's
- * task sizes; Postgres 18 with its CPUs, memory, gp3's I/O baseline on the device behind Docker's data root (io.max) and
- * a 1 ms delay each way on its interface (netem, set from the host in its network namespace); limits read back with
- * docker inspect and the container's own io.max, and the round trip measured from a client container.
+ * task sizes; Postgres 18 with its CPUs, memory, a 1 GiB /dev/shm (its parallel queries' shared memory; RDS has no 64
+ * MiB cap), gp3's I/O baseline on the device behind Docker's data root (io.max) and a 1 ms delay each way on its link
+ * (netem on its own interface and on the host's end of the link: netemCommands); ready once a client container on the
+ * services' network reaches it over TCP; limits read back with docker inspect and the container's own io.max, and the
+ * round trip measured from a client container. Each container's log (stdout and stderr) is saved under <out>/logs
+ * before the container is removed, result links' tokens masked.
  *
  * ProcessRuntime (a developer machine without Docker): the same build outputs laid out as the images lay them out
  * (dist and migrations for the worker, the standalone server for the web), run as processes in cgroups with the same
@@ -26,12 +29,63 @@ import type { AppliedContainer, AppliedLimits } from './report';
 
 const exec = promisify(execFile);
 
+/** A command that failed, with the tail of what it wrote to stderr (credentials in a URL masked). */
+export class CommandError extends Error {
+  override readonly name = 'CommandError';
+  constructor(
+    readonly command: string,
+    readonly stderr: string,
+  ) {
+    super(`${command} failed: ${stderrTail(stderr)}`);
+  }
+}
+
+/** A URL's credentials masked, and a result link's token, so neither reaches a log line, an error or the report. */
+export function masked(text: string): string {
+  return text.replace(/(\b[a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1***@').replace(/\/screening\/results\/[a-z]{32}/g, '/screening/results/<token>');
+}
+
+/** The last lines of a command's stderr, at most 400 characters, masked: what the report's "run not finished" names. */
+export function stderrTail(stderr: string, characters = 400): string {
+  const lines = masked(stderr)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+  const tail = lines.slice(-4).join(' | ');
+  return tail === '' ? 'no stderr' : tail.length <= characters ? tail : `…${tail.slice(tail.length - characters + 1)}`;
+}
+
+/** Runs a command, its stdout returned; a failure is a CommandError with its stderr. */
+async function run(command: string, args: readonly string[], options: { readonly env?: NodeJS.ProcessEnv; readonly cwd?: string } = {}): Promise<string> {
+  try {
+    const { stdout } = await exec(command, [...args], { maxBuffer: 256 * MIB, ...options });
+    return stdout;
+  } catch (error) {
+    const stderr = (error as { stderr?: unknown }).stderr;
+    const shown = [command, ...args.slice(0, 1)].join(' ');
+    throw new CommandError(masked(shown), typeof stderr === 'string' && stderr !== '' ? stderr : error instanceof Error ? error.message : String(error));
+  }
+}
+
 export type ServiceName = 'web' | 'platform';
 
 export interface ServiceStatus {
   readonly restarts: number;
   readonly oomKilled: boolean;
   readonly running: boolean;
+}
+
+/** Postgres's own state: its cgroup's oom_kill count and Docker's restart count (null where they cannot be read). */
+export interface PostgresStatus {
+  readonly oomKills: number | null;
+  readonly restarts: number | null;
+  readonly running: boolean | null;
+}
+
+/** A cold start: whether Postgres was restarted and the operating system's page cache dropped. */
+export interface ColdStart {
+  readonly restarted: boolean;
+  readonly cacheDropped: boolean;
 }
 
 /** One service's environment and limits. */
@@ -49,12 +103,17 @@ export interface Runtime {
   readonly dataDir: { readonly host: string; readonly service: string };
   /** Starts Postgres; its admin URL as the harness reaches it and as the services do. */
   startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }>;
-  /** Restarts Postgres with a cold cache (the operating system's page cache dropped where the runner allows). */
-  restartPostgres(): Promise<void>;
-  /** The migration task: the migrations, then the logins, as the owner. */
+  /** Restarts Postgres with a cold cache (the operating system's page cache dropped where the runner allows); what was done. */
+  restartPostgres(): Promise<ColdStart>;
+  /** The migration task: the migrations, then the logins, as the owner. A failure is a CommandError with its stderr. */
   migrate(ownerServiceUrl: string, loginsEnv: Readonly<Record<string, string>>): Promise<void>;
-  startService(spec: ServiceSpec): Promise<void>;
+  /** Starts a service; `label` names the part of the run it serves (setup, or a scenario), as its saved log is named. */
+  startService(spec: ServiceSpec, label: string): Promise<void>;
   stopService(name: ServiceName): Promise<void>;
+  /** Stops web and platform, leaving Postgres running (the oracle reads it after the services stop). */
+  stopServices(): Promise<void>;
+  /** Postgres's own OOM kills and restarts. */
+  postgresStatus(): Promise<PostgresStatus>;
   /** The service's log lines so far. */
   logs(name: ServiceName): Promise<string[]>;
   /** A file of the service's cgroup (memory.stat and the like), or null when it cannot be read. */
@@ -117,6 +176,8 @@ export function postgresRunArgs(limit: PostgresLimit, storage: { readonly iops: 
     `--device-write-iops=${options.device}:${String(storage.iops)}`,
     `--device-read-bps=${options.device}:${String(storage.bytesPerSecond)}`,
     `--device-write-bps=${options.device}:${String(storage.bytesPerSecond)}`,
+    // Parallel queries' dynamic shared memory lives in /dev/shm; Docker's default 64 MiB is not RDS's.
+    '--shm-size=1g',
     '-p',
     `127.0.0.1:${String(options.port)}:5432`,
     '-e',
@@ -136,9 +197,44 @@ export function postgresRunArgs(limit: PostgresLimit, storage: { readonly iops: 
 /** psql's input for 50 timed round trips. */
 export const ROUND_TRIP_SCRIPT = ['\\timing on', ...Array.from({ length: 50 }, () => 'SELECT 1;')].join('\n');
 
+/**
+ * The commands that put the delay on both directions of Postgres's link: netem on its own eth0 (from the host, in its
+ * network namespace) delays what Postgres sends, and netem on the host's end of its veth pair delays what it receives,
+ * so every client (the services, the probe, the harness) sees the delay twice in a round trip. One alone delays one
+ * direction only (audit #53 part 1's capacity review).
+ */
+export function netemCommands(delayMs: number, postgresPid: string, hostInterface: string): string[][] {
+  const netem = ['root', 'netem', 'delay', `${String(delayMs)}ms`];
+  return [
+    ['sudo', 'nsenter', '-t', postgresPid, '-n', 'tc', 'qdisc', 'replace', 'dev', 'eth0', ...netem],
+    ['sudo', 'tc', 'qdisc', 'replace', 'dev', hostInterface, ...netem],
+  ];
+}
+
+/** The round trip the commands give: the delay once per direction they cover. */
+export function delayedRoundTripMs(delayMs: number = NETWORK_DELAY_MS): number {
+  return delayMs * netemCommands(delayMs, '1', 'veth0').length;
+}
+
+/** The host's index of the peer of a container's eth0, from `ip -o link show eth0` in its namespace ("12: eth0@if13: ..."). */
+export function peerIndex(ipLinkShow: string): number | null {
+  const found = /^\d+:\s+eth0@if(\d+):/m.exec(ipLinkShow);
+  return found === null ? null : Number.parseInt(found[1] ?? '', 10);
+}
+
+/** The interface with an index in the host's `ip -o link` ("13: veth3a1b2c4@if12: ..."), its name without the peer. */
+export function interfaceByIndex(ipLink: string, index: number): string | null {
+  for (const line of ipLink.split('\n')) {
+    const found = /^(\d+):\s+([^:@\s]+)(?:@[^:\s]+)?:/.exec(line.trim());
+    if (found !== null && Number.parseInt(found[1] ?? '', 10) === index) {
+      return found[2] ?? null;
+    }
+  }
+  return null;
+}
+
 async function docker(...args: string[]): Promise<string> {
-  const { stdout } = await exec('docker', args, { maxBuffer: 256 * MIB });
-  return stdout;
+  return run('docker', args);
 }
 
 async function waitFor(what: string, check: () => Promise<boolean>, timeoutMs: number): Promise<void> {
@@ -160,10 +256,12 @@ export class DockerRuntime implements Runtime {
   readonly dataDir: { readonly host: string; readonly service: string };
   readonly webOrigin = 'http://localhost:3000';
   private readonly network = 'tp-capacity';
+  private readonly labels = new Map<string, string>();
 
   constructor(
     private readonly images: { readonly web: string; readonly worker: string },
     dataHost: string,
+    private readonly logDir: string,
     private readonly postgresPort = 55_432,
   ) {
     this.dataDir = { host: dataHost, service: '/data' };
@@ -172,49 +270,111 @@ export class DockerRuntime implements Runtime {
   /** The block device behind Docker's data root (its whole disk). */
   private async dataDevice(): Promise<string> {
     const root = (await docker('info', '-f', '{{.DockerRootDir}}')).trim();
-    const { stdout: source } = await exec('df', ['--output=source', root]);
+    const source = await run('df', ['--output=source', root]);
     const partition = source.trim().split('\n').at(-1)?.trim() ?? '';
-    const { stdout: parent } = await exec('lsblk', ['-no', 'pkname', partition]).catch(() => ({ stdout: '' }));
+    const parent = await run('lsblk', ['-no', 'pkname', partition]).catch(() => '');
     return parent.trim() === '' ? partition : `/dev/${parent.trim()}`;
   }
 
   private postgresLimit: PostgresLimit | null = null;
-  private storage: { readonly iops: number; readonly bytesPerSecond: number } | null = null;
   private delayMs = 0;
+
+  private get harnessUrl(): string {
+    return `postgres://postgres:test@127.0.0.1:${String(this.postgresPort)}/postgres`;
+  }
 
   async startPostgres(limit: PostgresLimit, storage: { readonly iops: number; readonly bytesPerSecond: number }, delayMs: number): Promise<{ readonly harnessUrl: string; readonly serviceUrl: string }> {
     this.postgresLimit = limit;
-    this.storage = storage;
     this.delayMs = delayMs;
+    this.labels.set('postgres', 'run');
     await docker('network', 'create', this.network).catch(() => '');
     await docker(...postgresRunArgs(limit, storage, { network: this.network, device: await this.dataDevice(), port: this.postgresPort }));
-    await waitFor('Postgres', async () => (await exec('docker', ['exec', 'tp-capacity-postgres', 'pg_isready', '-U', 'postgres'])).stdout.includes('accepting'), 120_000);
+    await this.waitForPostgres();
     await this.delay();
-    return { harnessUrl: `postgres://postgres:test@127.0.0.1:${String(this.postgresPort)}/postgres`, serviceUrl: 'postgres://postgres:test@db:5432/postgres' };
+    return { harnessUrl: this.harnessUrl, serviceUrl: 'postgres://postgres:test@db:5432/postgres' };
   }
 
-  /** netem on Postgres's interface, set from the host in its network namespace. */
+  /**
+   * Ready once a client container on the services' network reaches Postgres over TCP, as web, platform and the
+   * migration task do, and the harness through the published port. pg_isready inside the container would also call the
+   * image's initialisation server ready, which listens on its Unix socket alone and is then stopped.
+   */
+  private async waitForPostgres(): Promise<void> {
+    await waitFor(
+      'Postgres on the services’ network',
+      async () => {
+        await docker('run', '--rm', '--network', this.network, 'postgres:18', 'pg_isready', '-q', '-h', 'db', '-p', '5432', '-U', 'postgres', '-t', '5');
+        return true;
+      },
+      180_000,
+    );
+    await waitFor(
+      'Postgres from the harness',
+      async () => {
+        const client = new pg.Client({ connectionString: this.harnessUrl });
+        client.on('error', () => undefined);
+        await client.connect();
+        try {
+          await client.query('SELECT 1');
+        } finally {
+          await client.end();
+        }
+        return true;
+      },
+      60_000,
+    );
+  }
+
+  /** netem on both ends of Postgres's link (netemCommands). */
   private async delay(): Promise<void> {
     const pid = (await docker('inspect', '-f', '{{.State.Pid}}', 'tp-capacity-postgres')).trim();
-    await exec('sudo', ['nsenter', '-t', pid, '-n', 'tc', 'qdisc', 'replace', 'dev', 'eth0', 'root', 'netem', 'delay', `${String(this.delayMs)}ms`]);
+    const peer = peerIndex(await run('sudo', ['nsenter', '-t', pid, '-n', 'ip', '-o', 'link', 'show', 'eth0']));
+    const host = peer === null ? null : interfaceByIndex(await run('ip', ['-o', 'link']), peer);
+    if (host === null) {
+      throw new Error('the host’s end of Postgres’s link was not found, so the delay cannot be applied both ways');
+    }
+    for (const command of netemCommands(this.delayMs, pid, host)) {
+      await run(command[0] ?? 'sudo', command.slice(1));
+    }
   }
 
-  async restartPostgres(): Promise<void> {
+  async restartPostgres(): Promise<ColdStart> {
     await docker('restart', 'tp-capacity-postgres');
-    await exec('sudo', ['sh', '-c', 'sync && echo 3 > /proc/sys/vm/drop_caches']).catch(() => undefined);
-    await waitFor('Postgres', async () => (await exec('docker', ['exec', 'tp-capacity-postgres', 'pg_isready', '-U', 'postgres'])).stdout.includes('accepting'), 120_000);
+    const cacheDropped = await run('sudo', ['sh', '-c', 'sync && echo 3 > /proc/sys/vm/drop_caches']).then(
+      () => true,
+      () => false,
+    );
+    await this.waitForPostgres();
+    // A restarted container has a new link: the delay goes on again.
     await this.delay();
+    return { restarted: true, cacheDropped };
   }
 
   async migrate(ownerServiceUrl: string, loginsEnv: Readonly<Record<string, string>>): Promise<void> {
-    const run = (command: string, env: Readonly<Record<string, string>>) =>
-      docker('run', '--rm', '--network', this.network, ...Object.entries(env).flatMap(([name, value]) => ['-e', `${name}=${value}`]), this.images.worker, 'node', command);
-    await run('dist/migrate.js', { DATABASE_URL: ownerServiceUrl });
-    await run('dist/logins.js', loginsEnv);
+    const once = (command: string, env: Readonly<Record<string, string>>) =>
+      docker('run', '--rm', '--network', this.network, ...Object.entries(env).flatMap(([name, value]) => ['-e', `${name}=${value}`]), this.images.worker, 'node', command).catch((error: unknown) => {
+        throw error instanceof CommandError ? new CommandError(`the migration task (${command})`, error.stderr) : error;
+      });
+    await once('dist/migrate.js', { DATABASE_URL: ownerServiceUrl });
+    await once('dist/logins.js', loginsEnv);
   }
 
-  async startService(spec: ServiceSpec): Promise<void> {
+  /** The container's log (stdout, then stderr) appended to <out>/logs/<label>-<name>.log, tokens and credentials masked. */
+  private async saveLogs(name: string): Promise<void> {
+    const container = `tp-capacity-${name}`;
+    const output = await exec('docker', ['logs', container], { maxBuffer: 256 * MIB }).catch(() => null);
+    if (output === null) {
+      return;
+    }
+    mkdirSync(this.logDir, { recursive: true });
+    const file = path.join(this.logDir, `${this.labels.get(name) ?? 'run'}-${name}.log`);
+    appendFileSync(file, `${masked(output.stdout)}${output.stderr === '' ? '' : `\n[harness] ${name}'s stderr:\n${masked(output.stderr)}`}`);
+  }
+
+  async startService(spec: ServiceSpec, label: string): Promise<void> {
+    await this.saveLogs(spec.name);
     await docker('rm', '-f', `tp-capacity-${spec.name}`).catch(() => '');
+    this.labels.set(spec.name, label);
     await docker(
       ...dockerRunArgs(spec, {
         image: spec.name === 'web' ? this.images.web : this.images.worker,
@@ -229,7 +389,14 @@ export class DockerRuntime implements Runtime {
 
   async stopService(name: ServiceName): Promise<void> {
     await docker('stop', '-t', '30', `tp-capacity-${name}`).catch(() => '');
+    await this.saveLogs(name);
     await docker('rm', '-f', `tp-capacity-${name}`).catch(() => '');
+    this.labels.delete(name);
+  }
+
+  async stopServices(): Promise<void> {
+    await this.stopService('web');
+    await this.stopService('platform');
   }
 
   async logs(name: ServiceName): Promise<string[]> {
@@ -266,6 +433,26 @@ export class DockerRuntime implements Runtime {
     return { restarts: Number.parseInt(restarts ?? '0', 10), oomKilled: oom === 'true', running: running === 'true' };
   }
 
+  async postgresStatus(): Promise<PostgresStatus> {
+    const text = (await docker('inspect', '-f', '{{.RestartCount}} {{.State.Running}}', 'tp-capacity-postgres').catch(() => '')).trim();
+    const [restarts, running] = text.split(' ');
+    const dir = await this.cgroupDir('postgres');
+    const readEvents = (): string | null => {
+      try {
+        return dir === null ? null : readFileSync(path.join(dir, 'memory.events'), 'utf8');
+      } catch {
+        return null;
+      }
+    };
+    const events = readEvents();
+    const kills = events === null ? null : /^oom_kill (\d+)$/m.exec(events)?.[1];
+    return {
+      oomKills: kills === undefined || kills === null ? null : Number.parseInt(kills, 10),
+      restarts: restarts === undefined || restarts === '' ? null : Number.parseInt(restarts, 10),
+      running: running === undefined ? null : running === 'true',
+    };
+  }
+
   async applied(_postgresServiceUrl?: string): Promise<AppliedLimits> {
     const inspect = async (name: 'web' | 'platform' | 'postgres'): Promise<AppliedContainer> => {
       const text = (await docker('inspect', '-f', '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpusetCpus}}', `tp-capacity-${name}`)).trim();
@@ -285,7 +472,9 @@ export class DockerRuntime implements Runtime {
 
   async stopAll(): Promise<void> {
     for (const name of ['web', 'platform', 'postgres']) {
+      await this.saveLogs(name);
       await docker('rm', '-f', `tp-capacity-${name}`).catch(() => '');
+      this.labels.delete(name);
     }
     await docker('network', 'rm', this.network).catch(() => '');
   }
@@ -336,14 +525,19 @@ export class ProcessRuntime implements Runtime {
     return { harnessUrl: url.toString(), serviceUrl: url.toString() };
   }
 
-  async restartPostgres(): Promise<void> {
+  restartPostgres(): Promise<ColdStart> {
     // A shared server is never restarted here: its cache stays as it is (reported among the run's departures).
+    return Promise.resolve({ restarted: false, cacheDropped: false });
   }
 
   async migrate(ownerServiceUrl: string, loginsEnv: Readonly<Record<string, string>>): Promise<void> {
     const node = process.execPath;
-    await exec(node, [path.join(this.images.worker, 'dist/migrate.js')], { env: { ...process.env, DATABASE_URL: ownerServiceUrl }, cwd: this.images.worker });
-    await exec(node, [path.join(this.images.worker, 'dist/logins.js')], { env: { ...process.env, ...loginsEnv }, cwd: this.images.worker });
+    const once = (script: string, env: NodeJS.ProcessEnv) =>
+      run(node, [path.join(this.images.worker, script)], { env, cwd: this.images.worker }).catch((error: unknown) => {
+        throw error instanceof CommandError ? new CommandError(`the migration task (${script})`, error.stderr) : error;
+      });
+    await once('dist/migrate.js', { ...process.env, DATABASE_URL: ownerServiceUrl });
+    await once('dist/logins.js', { ...process.env, ...loginsEnv });
   }
 
   /** Creates the service's cgroups with its limits; the directories it is in. */
@@ -379,7 +573,7 @@ export class ProcessRuntime implements Runtime {
     return [cpu, cpuset, memory];
   }
 
-  async startService(spec: ServiceSpec): Promise<void> {
+  async startService(spec: ServiceSpec, label: string): Promise<void> {
     await this.stopService(spec.name);
     const dirs = this.limit(spec);
     this.cgroups.set(spec.name, dirs);
@@ -393,6 +587,7 @@ export class ProcessRuntime implements Runtime {
     // only (the services' logger allowlist), synthetic data, never uploaded with the report.
     const logFile = path.join(path.dirname(this.dataDir.host), 'logs', `${spec.name}.log`);
     mkdirSync(path.dirname(logFile), { recursive: true });
+    appendFileSync(logFile, `[harness] ${spec.name} started for ${label}\n`);
     let partial = '';
     child.stdout.on('data', (chunk: Buffer) => {
       appendFileSync(logFile, chunk);
@@ -434,6 +629,16 @@ export class ProcessRuntime implements Runtime {
         // Still holding a process for a moment; the next start writes over its limits.
       }
     }
+  }
+
+  async stopServices(): Promise<void> {
+    await this.stopService('web');
+    await this.stopService('platform');
+  }
+
+  postgresStatus(): Promise<PostgresStatus> {
+    // The caller's server: neither its cgroup nor a restart count is the harness's to read.
+    return Promise.resolve({ oomKills: null, restarts: null, running: null });
   }
 
   logs(name: ServiceName): Promise<string[]> {
@@ -517,7 +722,6 @@ export class ProcessRuntime implements Runtime {
   }
 
   async stopAll(): Promise<void> {
-    await this.stopService('web');
-    await this.stopService('platform');
+    await this.stopServices();
   }
 }
