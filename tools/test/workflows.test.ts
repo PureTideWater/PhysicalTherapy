@@ -210,6 +210,21 @@ describe('workflows', () => {
     }
   });
 
+  it('leave /etc/ssl traversable in both runtime images and prove Node starts as their user', () => {
+    // BuildKit gives an ADD's --chmod to the directories it creates (moby/buildkit#5943): --chmod=644 on the RDS bundle
+    // left /etc/ssl untraversable, and Node, which reads /etc/ssl/openssl.cnf as it starts, could not start as node.
+    for (const app of ['web', 'worker']) {
+      const dockerfile = readFileSync(path.join(repositoryRoot, 'apps', app, 'Dockerfile'), 'utf8');
+      const runtime = dockerfile.slice(dockerfile.indexOf('AS runtime'));
+      const instructions = runtime.split('\n').filter((line) => /^(ADD|COPY)\s/.test(line));
+      expect(instructions.filter((line) => line.includes('--chmod')), app).toEqual([]);
+      expect(runtime, app).toContain('RUN chmod 0755 /etc/ssl /etc/ssl/certs && chmod 0644 /etc/ssl/certs/rds-global-bundle.pem');
+      const user = runtime.indexOf('\nUSER node\n');
+      expect(user, app).toBeGreaterThan(0);
+      expect(runtime.indexOf(`RUN ["node", "-e", "require('node:fs').readFileSync('/etc/ssl/certs/rds-global-bundle.pem')"]`), app).toBeGreaterThan(user);
+    }
+  });
+
   it('check production licenses against the allowlist on every pull request', () => {
     const steps = workflow('supply-chain.yml').jobs.licenses?.steps ?? [];
     expect(steps.some((step) => step.run === 'pnpm licenses:check')).toBe(true);
