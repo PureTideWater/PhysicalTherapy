@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `5492d3dc6bc8bc9e1643d7f4deef1e5f52f6ab33` on branch `co-001/pr-05-packet-deadline` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `04f09010ce635b4e7717a82b92535ad0ea488220` on branch `co-001/pr-05-packet-deadline` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -3131,6 +3131,7 @@ Invariants enforced by triggers:
   - "only a version of the case's dispute level is exported; write the packet again at this level"
   - "a packet version is exported only while its pricing is current: every line on the pricing in effect, under a rule release not withdrawn and the mapping in force for its plan, with its contract version signed off and covering the service date"
   - "a packet version whose deadline is not verified is not exported"
+  - "a packet version is exported only once its practice has a correspondence contact the payer's copy can print: a name or office and a phone"
   - "a packet version is exported with the verifier's passing report over the narrative it rendered"
   - "an export's verifier report is written with the export, once"
 - `packet_version_export_refused_while_suspended`: `BEFORE UPDATE OF exported_at ON packet_version FOR EACH ROW WHEN (old.exported_at IS NULL AND new.exported_at IS NOT NULL) EXECUTE FUNCTION refuse_new_work_while_suspended()`
@@ -5765,7 +5766,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packet_version_deadline_stated()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6c614d04965a83e4` |
 | `packet_version_deadline_status(uuid,jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1341aa1b7f092b15` |
 | `packet_version_export_attempt(uuid)` | `TABLE(state text, code text, requested_at timestamp with time zone, at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4a69c934296ccd37` |
-| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `db4a988fd2a8f926` |
+| `packet_version_export_guard()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d2abcd182a2a48a` |
 | `packet_version_matches_case(uuid,jsonb)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b119012e56d45e9c` |
 | `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
 | `packet_version_pricing_check(jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc57d582efc46783` |
@@ -5938,7 +5939,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `7f8cb29ff42adcc4c6d24a93cbc9990461cf2cc6e9b4c7d3ca11a49d78e39d3e` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `96f983c0c1ce8b6e50c16b532dd4b668488ddcb7a9919a320af178bae9c3ca30` |
 
 ## Cross-checks
 
@@ -5956,4 +5957,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `cf0542d2f9e202ae2a2e4938f5f0a3ebfb20e9c5105a791336dc2311cb451b6c`
+Approved by: ________  Date: ________  Document SHA-256: `6f72ea56563c379e05a601f3af019ad4ce3358f55cc02b06fcec17ea23d830a0`
