@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { QUALIFIED_IDENTIFIER, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
+import { CLAIM_FILING_INDICATOR_TEXT, QUALIFIED_IDENTIFIER, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
 import { IDS } from './test-support';
 
 /**
@@ -72,8 +72,9 @@ describe('the payer and plan in the payer’s copy', () => {
 
   it('names the plan by its name (an ERA export’s plan as the export names it), or by "plan identifier <id>" when no name is known', () => {
     expect(planText(payer('2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE'))).toBe('plan identifier SYNPLAN-FIX-ONE');
-    // The claim filing indicator as sent, with no words, until the founder rules on them (ADR 0061, open).
-    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:12'))).toBe('plan identifier 12');
+    expect(planName(payer('2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE'))).toEqual({ kind: 'identifier', text: 'SYNPLAN-FIX-ONE' });
+    // A value written without a qualifier is the plan's identifier as it is.
+    expect(planText(payer('2U:SYNPAYERQ', 'SYNPLAN-BARE'))).toBe('plan identifier SYNPLAN-BARE');
     // An ERA export's Plan column holds the plan as the practice-management system names it, not an identifier.
     expect(planText(payer('NAME:SYNTHETIC PAYER Q', 'PLAN:SYNTHETIC PPO 01'))).toBe('plan SYNTHETIC PPO 01');
     expect(planName(payer('NAME:SYNTHETIC PAYER Q', 'PLAN:SYNTHETIC PPO 01'))).toEqual({ kind: 'name', text: 'SYNTHETIC PPO 01' });
@@ -85,10 +86,65 @@ describe('the payer and plan in the payer’s copy', () => {
     expect(planName(payer('2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE', ' SYNTHETIC PLAN NAME '))).toEqual({ kind: 'name', text: 'SYNTHETIC PLAN NAME' });
   });
 
+  it('names a plan known only by its claim filing indicator by its type in words, never by the code (the founder’s ruling of 2026-10-21)', () => {
+    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:12'))).toBe('plan type Preferred Provider Organization (PPO)');
+    expect(planName(payer('2U:SYNPAYERQ', 'CLP06:12'))).toEqual({ kind: 'type', text: 'Preferred Provider Organization (PPO)' });
+    expect(payerAndPlanText(payer('XV:SYNPAYERXV', 'CLP06:12'))).toBe('SYNTHETIC PAYER Q (payer ID SYNPAYERXV), plan type Preferred Provider Organization (PPO)');
+    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:HM'))).toBe('plan type Health Maintenance Organization');
+    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:MB'))).toBe('plan type Medicare Part B');
+    // The plan's mapped name still comes first.
+    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:12', 'SYNTHETIC PLAN NAME'))).toBe('plan SYNTHETIC PLAN NAME');
+    // ZZ (Mutually Defined) names no type: the plan is left off the "To:" line (option (b)).
+    expect(planName(payer('2U:SYNPAYERQ', 'CLP06:ZZ'))).toEqual({ kind: 'untyped' });
+    expect(planText(payer('2U:SYNPAYERQ', 'CLP06:ZZ'))).toBeNull();
+    expect(payerAndPlanText(payer('2U:SYNPAYERQ', 'CLP06:ZZ'))).toBe('SYNTHETIC PAYER Q (payer ID SYNPAYERQ)');
+    // A code with no words is never printed, as a code or in words: the worker refuses the copy (words.ts there).
+    for (const code of ['Q9', 'C1', 'zz', '', 'toString', 'constructor', '__proto__']) {
+      expect(planName(payer('2U:SYNPAYERQ', `CLP06:${code}`)), code).toEqual({ kind: 'no_words', code });
+      expect(planText(payer('2U:SYNPAYERQ', `CLP06:${code}`)), code).toBeNull();
+      expect(payerAndPlanText(payer('2U:SYNPAYERQ', `CLP06:${code}`)), code).toBe('SYNTHETIC PAYER Q (payer ID SYNPAYERQ)');
+    }
+    // Only the loader's CLP06 qualifier names a claim filing indicator: another key holding 12 is an identifier.
+    expect(planText(payer('2U:SYNPAYERQ', 'CE:12'))).toBe('plan identifier 12');
+  });
+
+  it('holds the X12 005010X221A1 words for every claim filing indicator, exactly as the founder’s ruling gives them', () => {
+    expect(CLAIM_FILING_INDICATOR_TEXT).toStrictEqual({
+      '12': 'Preferred Provider Organization (PPO)',
+      '13': 'Point of Service (POS)',
+      '14': 'Exclusive Provider Organization (EPO)',
+      '15': 'Indemnity Insurance',
+      '16': 'Health Maintenance Organization (HMO) Medicare Risk',
+      '17': 'Dental Maintenance Organization',
+      AM: 'Automobile Medical',
+      CH: 'Champus',
+      DS: 'Disability',
+      HM: 'Health Maintenance Organization',
+      LM: 'Liability Medical',
+      MA: 'Medicare Part A',
+      MB: 'Medicare Part B',
+      MC: 'Medicaid',
+      OF: 'Other Federal Program',
+      TV: 'Title V',
+      VA: 'Veterans Affairs Plan',
+      WC: "Workers' Compensation Health Claim",
+      ZZ: 'Mutually Defined',
+    });
+    // Every code but ZZ prints as its type; no printed type holds a figure, a code or a qualifier.
+    for (const [code, words] of Object.entries(CLAIM_FILING_INDICATOR_TEXT)) {
+      const printed = planText(payer('2U:SYNPAYERQ', `CLP06:${code}`));
+      expect(printed, code).toBe(code === 'ZZ' ? null : `plan type ${words}`);
+      expect(printed ?? '', code).not.toContain('CLP06');
+      expect((printed ?? '').match(QUALIFIED_IDENTIFIER), code).toBeNull();
+    }
+  });
+
   it('prints no qualifier code for any key form: two characters and a colon, or the loaders’ longer qualifiers', () => {
     for (const [payerIdRaw, planKey] of [
       ['2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE'],
       ['XV:SYNPAYERXV', 'CLP06:12'],
+      ['XV:SYNPAYERXV', 'CLP06:ZZ'],
+      ['XV:SYNPAYERXV', 'CLP06:Q9'],
       ['TRN03:1999999999', 'CE:SYNPLAN-FIX-ONE'],
       ['NAME:SYNTHETIC PAYER Q', 'PLAN:SYNTHETIC PPO 01'],
     ] as const) {

@@ -96,13 +96,18 @@ const METHOD_VERSIONS: Readonly<Record<string, PacketContent>> = {
 /**
  * A payer and plan of each remittance-key form the loaders write besides the default's REF 2U payer and REF CE plan
  * (the verification of 2026-10-21), each with the identification the payer's copy prints for it: an N103 XV payer
- * and a plan keyed by its claim filing indicator (printed as sent until the founder rules on its words; ADR 0061), a
- * TRN03 payer and a named plan, and an ERA export's NAME: payer and PLAN: plan (the plan as the export names it).
+ * and a plan keyed by its claim filing indicator, printed as its type in words, and one whose indicator is ZZ
+ * (Mutually Defined), which names no type, so the plan is left off (the founder's ruling of 2026-10-21; ADR 0061); a
+ * TRN03 payer and a named plan; and an ERA export's NAME: payer and PLAN: plan (the plan as the export names it).
  */
 const KEY_FORMS: Readonly<Record<string, { readonly payer: PayerIdentification; readonly printed: string }>> = {
   'an XV payer and a CLP06 plan': {
     payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'XV:SYNPAYERXV', plan_id: IDS.plan, plan_key: 'CLP06:12', plan_name: null },
-    printed: 'SYNTHETIC PAYER Q (payer ID SYNPAYERXV), plan identifier 12',
+    printed: 'SYNTHETIC PAYER Q (payer ID SYNPAYERXV), plan type Preferred Provider Organization (PPO)',
+  },
+  'an XV payer and a CLP06 ZZ plan': {
+    payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'XV:SYNPAYERXV', plan_id: IDS.plan, plan_key: 'CLP06:ZZ', plan_name: null },
+    printed: 'SYNTHETIC PAYER Q (payer ID SYNPAYERXV)',
   },
   'a TRN03 payer and a named plan': {
     payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'TRN03:1999999999', plan_id: IDS.plan, plan_key: 'CE:SYNPLAN-FIX-ONE', plan_name: 'SYNTHETIC PLAN NAME' },
@@ -194,7 +199,7 @@ describe('packetHtml: the payer’s copy', () => {
     expect(payerCopyLeaks(packetCsv(maximalExported, REFERENCE), scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual([]);
   });
 
-  it('T10: names the payer by its name with its ID in words and the plan by its name, or its identifier when none is known, never in a remittance key’s form, in the identification and on the cover (the verification of 2026-10-21)', () => {
+  it('T10: names the payer by its name with its ID in words and the plan by its name, its identifier when none is known, or its type in words when the remittance names only its claim filing indicator (none for ZZ), never in a remittance key’s form, in the identification and on the cover (the verification and the founder’s ruling of 2026-10-21)', () => {
     expect(html).toContain('<p><strong>To:</strong> SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE</p>');
     expect(html).toContain('<p>To SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE</p>');
     const named = METHOD_VERSIONS['a release record of no program, a window of no stated days, an end date and a plan name'];
@@ -210,6 +215,8 @@ describe('packetHtml: the payer’s copy', () => {
       const printed = printedOf(packet, draftNarrative(packet), rowsOf(packet));
       expect(printed, name).toContain(`<p><strong>To:</strong> ${form.printed}</p>`);
       expect(printed, name).toContain(`<p>To ${form.printed}</p>`);
+      // The claim filing indicator is never printed as a plan identifier.
+      expect(htmlText(printed), name).not.toMatch(/plan identifier (?:12|ZZ)\b/);
     }
     // Every route through the renderer, in both files: no payer or plan key, and no identifier led by a qualifier code.
     for (const [name, packet] of Object.entries(VERSIONS)) {
@@ -488,6 +495,13 @@ describe('packetHtml: the payer’s copy', () => {
     expect(() => printedOf(unknown, narrative, identifiers)).toThrow(PayerCopyWordsError);
     const method: PacketContentV2 = { ...content, lines: [{ ...first, calculation: { ...first.calculation, method: 'CAPITATION' } }, ...rest] };
     expect(() => packetCsv(insertIdentifiers(method, narrative, identifiers), REFERENCE)).toThrow(PayerCopyWordsError);
+    // A plan known only by a claim filing indicator with no words (the founder's ruling of 2026-10-21): the copy is not
+    // printed, rather than print the code as a plan identifier or drop the plan unnoticed.
+    for (const plan_key of ['CLP06:Q9', 'CLP06:C1', 'CLP06:toString']) {
+      const unworded = assemblePacket(assemblyInput({ payer: { ...content.payer, plan_key, plan_name: null } }));
+      expect(() => printedOf(unworded, draftNarrative(unworded), rowsOf(unworded)), plan_key).toThrow(new PayerCopyWordsError('claim filing indicator'));
+      expect(() => printedOf(unworded, draftNarrative(unworded), rowsOf(unworded)), plan_key).toThrow(/no words for a claim filing indicator/);
+    }
   });
 
   it('prints an earlier tp-packet/1 version without a dispute window section', () => {

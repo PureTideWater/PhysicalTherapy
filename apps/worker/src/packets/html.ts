@@ -1,10 +1,10 @@
 import { DEFAULT_PROOF_LEVEL, type ReportReconciliation, reportReconciliation } from '@tp/ledger';
 import { formatUnroundedUsd, formatUsd, parseCents } from '@tp/money';
-import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated, payerAndPlanText } from '@tp/packets';
+import { type CorrespondenceContact, type ExportedPacket, type PacketContent, type PacketContentV2, correspondenceText, interestStated, lineInterestStated } from '@tp/packets';
 
 import { type FigureColumns, brandedDocument, figureColumns } from '../report/brand';
 import { escapeHtml, escapeWithFigures } from '../report/escape';
-import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusionWords, releaseText, wordsOf } from './words';
+import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusionWords, payerAndPlanWords, releaseText, wordsOf } from './words';
 
 /**
  * The payer's copy of a packet (audit item #37 part 1; the founder's rulings of 2026-10-20; docs/adr/0061): one
@@ -13,8 +13,9 @@ import { METHOD_TEXT, PROGRAM_TEXT, ROUNDING_TEXT, STEP_TEXT, counted, exclusion
  * it prints only what the payer's examiner needs and what code knows when it prints:
  *
  * - the practice and payer, the payer by its name with its identifier in words ("payer ID SYNPAYERQ") and the plan by
- *   its name, or "plan identifier <id>" when no name is known, never a remittance key's qualifier code (2U:, CE:; the
- *   verification of 2026-10-21; @tp/packets payerAndPlanText()), the contract's cited clause with its title, version,
+ *   its name, or "plan identifier <id>" when no name is known, or, known only by its claim filing indicator, "plan type
+ *   <words>" (none for ZZ; the founder's ruling of 2026-10-21), never a remittance key's qualifier code (2U:, CE:,
+ *   CLP06:; the verification of 2026-10-21; words.ts payerAndPlanWords()), the contract's cited clause with its title, version,
  *   effective dates and page (or the regulation), and [2], what the payment rules in effect supplied, by release (D14);
  * - the pattern statement, exactly the approved narrative the export's verifier passed, identifiers inserted, and
  *   nothing else in its block;
@@ -181,9 +182,9 @@ export function narrativeParagraphs(narrative: string): string[] {
 export function packetHtml(exported: ExportedPacket, payerCopy: PayerCopy, reconciliation: ReportReconciliation = packetReconciliation(payerCopy.reference)): string {
   const { content, lines, narrative } = exported;
   const { citation, practice, payer, pattern } = content;
-  // The payer and plan in words, never in their remittance-key form ("2U:SYNPAYERQ", "CE:SYNPLAN-FIX-ONE"), which the
-  // internal record and the review page keep.
-  const addressee = payerAndPlanText(payer);
+  // The payer and plan in words, never in their remittance-key form ("2U:SYNPAYERQ", "CE:SYNPLAN-FIX-ONE", "CLP06:12"),
+  // which the internal record and the review page keep; a claim filing indicator with no words refuses the copy.
+  const addressee = payerAndPlanWords(payer);
   const identification = [
     `<p><strong>From:</strong> ${escapeHtml(practice.name)}${practice.npi === null ? '' : `, NPI ${escapeHtml(practice.npi)}`}${practice.tax_id_last4 === null ? '' : `, tax ID ending ${escapeHtml(practice.tax_id_last4)}`}</p>`,
     `<p><strong>To:</strong> ${escapeHtml(addressee)}</p>`,

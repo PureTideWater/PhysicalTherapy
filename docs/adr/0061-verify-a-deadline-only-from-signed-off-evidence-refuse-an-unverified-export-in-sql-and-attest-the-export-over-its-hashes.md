@@ -691,8 +691,9 @@ copy only, and the internal record stays where it lives and is shown on the revi
   practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); the payer by its
   name with its identifier in words (`SYNTHETIC PAYER Q (payer ID SYNPAYERQ)`, an ERA export's payer, keyed by its name,
   by its name alone) and the plan by its name (an ERA export's plan as the export names it), or `plan identifier <id>`
-  when no name is known, never in the remittance-key form the internal record and the review page keep (`2U:`, `CE:`;
-  `payerAndPlanText()`,
+  when no name is known, or `plan type <words>` when the remittance names only its claim filing indicator (none for
+  ZZ, and a code without words refusing the copy; the founder's ruling of 2026-10-21), never in the remittance-key
+  form the internal record and the review page keep (`2U:`, `CE:`, `CLP06:`; `payerAndPlanText()`,
   `packages/packets/src/payer.ts`; Verification fix (2026-10-21)); [1] the contract's
   title, version, effective dates and page with the quoted clause (no document ID or SHA-256) under "Contract citation",
   or the regulation under "Regulation cited"; [2]
@@ -969,16 +970,74 @@ carries no internal detail): `2U:` and `CE:` are X12 qualifier codes the loaders
   the printed words for each key form; the packet journey checks the downloaded PDF's whole "To:" line and both files
   for them. Mutation testing covers `payer.ts` in both Stryker configurations.
 
-No schema or domain-model change. Open for the founder: a plan the remittance identifies only by its claim filing
-indicator (`CLP06:`, no REF CE, the common case for a commercial claim) prints as "plan identifier 12", the code as
-sent, which is no plan identifier but a code of the 835's closed claim filing indicator list (`claim_filing_indicator`
-in `packages/edi835/src/code-lists.ts`; 12 is a PPO). Either (a) the copy prints the indicator in words from a table
-of that list ("plan type Preferred Provider Organization (PPO)"), every code held to its words by `words.test.ts` and a
-code without words refusing the copy as D3 does, or (b) the "To:" line leaves the plan out when only CLP06 is known.
-The recommendation is (a), with ZZ (mutually defined, which tells an examiner nothing) left out as in (b): the plan's
-type helps the payer route the dispute to the product it was paid under. The words need a source the founder accepts,
-since `code-lists.ts` takes its codes from pyx12's map, which holds none. Until the ruling the copy prints the code
-as sent.
+No schema or domain-model change. The verification left one item open for the founder, now closed by the ruling
+below: a plan the remittance identifies only by its claim filing indicator (`CLP06:`, no REF CE, the common case for a
+commercial claim) printed as "plan identifier 12", the code as sent, which is no plan identifier but a code of the
+835's closed claim filing indicator list (`claim_filing_indicator` in `packages/edi835/src/code-lists.ts`; 12 is a
+PPO). Either (a) the copy prints the indicator in words from a table of that list ("plan type Preferred Provider
+Organization (PPO)"), every code held to its words and a code without words refusing the copy as D3 does, or (b) the
+"To:" line leaves the plan out when only CLP06 is known. The recommendation was (a), with ZZ (Mutually Defined, which
+tells an examiner nothing) left out as in (b): the plan's type helps the payer route the dispute to the product it was
+paid under.
+
+### The founder's ruling: the plan type in words (2026-10-21; audit item #37 part 1)
+
+The founder, Tyler Williams, ruled on 2026-10-21 for option (a):
+
+- **A plan known only by its claim filing indicator prints its type in words**, "plan type Preferred Provider
+  Organization (PPO)", in the identification ("To: ...") and on the cover ("To ..."), never the code.
+- **ZZ (Mutually Defined) names no type**, so the plan is left off the "To:" line, as in option (b): "To: SYNTHETIC
+  PAYER Q (payer ID SYNPAYERXV)".
+- **A code with no words refuses the copy**, fail-closed, as the copy's own rule for a closed list's code already
+  requires (D3 and D14): `PayerCopyWordsError` (`apps/worker/src/packets/words.ts`), which the export job records as a
+  print failure (`render_failed`), so nothing is printed.
+- **The words are the descriptions of the X12 005010X221A1 code list for CLP06**, element 1032 (claim filing indicator
+  code), as the ruling gives them: 12 Preferred Provider Organization (PPO); 13 Point of Service (POS); 14 Exclusive
+  Provider Organization (EPO); 15 Indemnity Insurance; 16 Health Maintenance Organization (HMO) Medicare Risk; 17
+  Dental Maintenance Organization; AM Automobile Medical; CH Champus; DS Disability; HM Health Maintenance
+  Organization; LM Liability Medical; MA Medicare Part A; MB Medicare Part B; MC Medicaid; OF Other Federal Program; TV
+  Title V; VA Veterans Affairs Plan; WC Workers' Compensation Health Claim; ZZ Mutually Defined. `code-lists.ts` keeps
+  the codes only (from pyx12's map, which holds no descriptions), so the source of the words is the implementation
+  guide's code list as the founder's ruling transcribes it.
+
+Cross-check of the words (2026-10-21, a build note, not a ruling): the session could open no source page (its fetches
+of `developer.optum.com`, `www.cms.gov` and `www.stedi.com` failed to resolve), so it could check only the summaries
+web searches returned. Those name the Optum developer documentation, "How to use claim filing indicator code"
+(<https://developer.optum.com/eligibilityandclaims/docs/how-to-use-claim-filing-indicator-code>), as listing 12
+Preferred Provider Organization (PPO) and 16 Health Maintenance Organization (HMO) Medicare Risk, the ruling's words;
+and they quote 835 companion guides, among them Blue Cross and Blue Shield of Florida's
+(<http://www.bcbsfl.com/DocumentLibrary/Providers/Content/835_CompanionGuide.pdf>), for 12 Preferred Provider
+Organization, 13 Point of Service, HM Health Maintenance Organization, OF Other Federal Program, MC Medicaid and MA
+Medicare Part A, which agree with the ruling's words (a summary's capitals and a guide's dropped abbreviation aside).
+No word was found to differ, and none was changed. The other codes (14, 15, 17, AM, CH, DS, LM, MB, TV, VA, WC and ZZ)
+were not shown, so their words rest on the ruling alone; a reading of the TR3's own code list, or of a companion guide
+that reprints it, remains the check of record.
+
+What the build holds against the ruling (a build note of 2026-10-21, not a ruling):
+
+- One table of the words, `CLAIM_FILING_INDICATOR_TEXT` in `packages/packets/src/payer.ts` (pure and browser-safe),
+  serves both the payer's copy and the verifier: `planName()` names a `CLP06:<code>` plan by its type (`type`), by
+  nothing for ZZ (`untyped`), or `no_words` with the code; `planText()` prints "plan type <words>", or nothing (null)
+  for ZZ or a code with no words, and `payerAndPlanText()` then prints the payer alone. A plan's mapped name still
+  comes first, and only the loader's `CLP06:` qualifier names an indicator (`CE:12` is a plan identifier).
+- The worker's copy prints the identification through `payerAndPlanWords()` (`apps/worker/src/packets/words.ts`, used
+  by `html.ts`), which refuses a `CLP06:` code with no words with `PayerCopyWordsError` ("the payer's copy has no words
+  for a claim filing indicator it would print") rather than print the code or drop the plan unnoticed. The CSV prints
+  neither payer nor plan, as before.
+- The verifier's facts quote the plan exactly as the copy prints it (`planText()`, `packages/packets/src/facts.ts`),
+  so a narrative may quote "plan type Preferred Provider Organization (PPO)", whose words hold no figure, and one
+  stating "plan identifier 12" fails (`figure_not_in_input`), since 12 is no input of the plan's any more; for ZZ or a
+  code with no words the facts quote nothing of the plan. Only a code with digits (12 to 17) is a figure: a letter
+  code (MC, HM, ZZ and the rest) is none, so the verifier does not catch one in a narrative's prose ("plan identifier
+  MC" passes it). The copy's own text prints no code in its identification or on its cover.
+- Tests: `apps/worker/src/packets/words.test.ts` holds the table and the parser's `claim_filing_indicator` set to each
+  other both ways, so the two lists cannot drift, and every code to its printed words (none for ZZ) and an unknown code
+  to the refusal; `packages/packets/src/payer.test.ts` pins the table word for word and every key form (`CLP06:12`,
+  `CLP06:ZZ`, unknown codes, a named `CLP06:` plan, `CE:12`); `export.test.ts` T10 pins the printed "To:" line and the
+  cover for `CLP06:12` and `CLP06:ZZ`, T1's key-form routes now include both and its leak scan still finds no qualifier
+  code, and the refusal test refuses `CLP06:Q9`; `facts.test.ts` passes a narrative quoting "plan type Preferred
+  Provider Organization (PPO)" and fails one quoting "plan identifier 12". Mutation testing covers `payer.ts`,
+  `facts.ts` and the package's `index.ts` in both Stryker configurations. No schema, migration or domain-model change.
 
 ## Owner rulings (2026-10-21)
 

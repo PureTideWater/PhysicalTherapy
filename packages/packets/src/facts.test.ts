@@ -187,6 +187,28 @@ describe('narrativeFacts', () => {
     expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, []).passed).toBe(false);
   });
 
+  it('holds a plan known only by its claim filing indicator as the copy prints it, its type in words, never the code (the founder’s ruling of 2026-10-21)', () => {
+    const payer = { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'XV:SYNPAYERXV', plan_id: IDS.plan, plan_key: 'CLP06:12', plan_name: null };
+    const typed = narrativeFacts(assemblePacket(assemblyInput({ payer })));
+    const failed = (facts: NarrativeFacts, narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind, narrative.slice(mismatch.start, mismatch.end)]);
+    // The code is no figure of the plan's, so 12 is no input at all here: "plan identifier 12" states a number from nowhere.
+    expect(typed.numbers.has('12')).toBe(false);
+    expect(typed.identifiers.has('12')).toBe(false);
+    expect(failed(typed, 'The claims were paid by SYNTHETIC PAYER Q under plan type Preferred Provider Organization (PPO) [1].')).toEqual([]);
+    expect(failed(typed, 'The claims were paid by SYNTHETIC PAYER Q under plan identifier 12 [1].')).toEqual([['figure_not_in_input', 'number', '12']]);
+    expect(failed(typed, 'The claims were paid under plan CLP06:12 [1].')).toEqual([['figure_not_in_input', 'identifier', 'CLP06:12']]);
+    // ZZ names no type and an indicator with no words is printed by no copy: neither quotes anything, so neither is a figure.
+    for (const plan_key of ['CLP06:ZZ', 'CLP06:Q9']) {
+      const left = narrativeFacts(assemblePacket(assemblyInput({ payer: { ...payer, plan_key } })));
+      expect(sorted(left), plan_key).toEqual(sorted(typed));
+      expect(failed(left, 'The claims were paid under plan identifier 12 [1].'), plan_key).toEqual([['figure_not_in_input', 'number', '12']]);
+    }
+    // A plan whose quoted text holds a figure is held to it as printed: a named plan's 64, never the indicator's 12.
+    const named = narrativeFacts(assemblePacket(assemblyInput({ payer: { ...payer, plan_name: 'SYNTHETIC PLAN 64' } })));
+    expect(named.numbers.has('64')).toBe(true);
+    expect(named.numbers.has('12')).toBe(false);
+  });
+
   it('fails a remittance key in a narrative, digit or not, as a figure no input holds (the verification of 2026-10-21)', () => {
     const facts = narrativeFacts(assemblePacket(assemblyInput()));
     const failed = (narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind]);

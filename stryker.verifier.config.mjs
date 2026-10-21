@@ -19,9 +19,11 @@ export default {
     'packages/packets/src/readable.ts',
     'packages/packets/src/scan.ts',
     'packages/packets/src/facts.ts',
-    // The payer and plan as the payer's copy names them, which the facts quote, and the pattern the scanner reads a
-    // remittance key by.
+    // The payer and plan as the payer's copy names them, which the facts quote (a plan known only by its claim filing
+    // indicator by the table of its words), and the pattern the scanner reads a remittance key by.
     'packages/packets/src/payer.ts',
+    // The package's surface, which exports that table to the payer's copy (re-exports only, so no mutant of its own).
+    'packages/packets/src/index.ts',
     'packages/packets/src/placeholders.ts',
     '!**/*.test.ts',
   ],
