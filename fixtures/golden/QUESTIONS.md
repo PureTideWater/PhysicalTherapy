@@ -8,7 +8,7 @@ golden claims whose cents depend on it. Milestones 5 and 7 close only after the 
 verified each worksheet; a changed answer changes the inputs or the worksheet, then `write`, then a reviewed diff.
 
 All reference values are SYNTHETIC (release 900001; 900002 adds 2025; 900003 varies sequestration, the general
-reduction rate and the dispute windows). Their percentages are deliberately not the real ones: assistant 77% (real
+reduction rate and the dispute windows; 900006 adds a second locality and the ZIP+4 file of a ZIP that spans two). Their percentages are deliberately not the real ones: assistant 77% (real
 85%), sequestration 3% (real 2%), MPPR 40% (real 50%; 45% for the general rate in 900003).
 
 **The three that move the most cents:** Q21 (sequestration against observed allowed from AMT B6), Q13 (ties in
@@ -224,9 +224,15 @@ can be marked yet; every such line takes Q05's terms. ADR 0033 defers the mark t
 and on what evidence.
 
 **Q37. A ZIP that needs its ZIP+4 to name a locality.** The ZIP-to-locality file flags ZIPs that span localities.
-*Choice:* the engine stops such a line with `ENGINE_ERROR` (`locality_needs_zip_plus_four`) and records the flag in
-the trace; the settings carry no ZIP+4 and no per-site locality override yet. No golden line uses one. *For the
-specialist:* the override the practice settings should carry.
+*Choice* (amended in PR 6b under the founder's ruling of 2026-10-18 11:47 UTC and answer of 2026-10-21 to its Q4 (a);
+docs/adr/0064): the practice settings carry an optional ZIP+4, read only when the ZIP's `locality_map` record flags
+it; the locality is then the one the ZIP+4 file (CMS's ZIP9 file) lists for that ZIP+4, read in force on the service
+date whatever the year basis, and the trace records the range. With no ZIP+4 the engine stops the line with
+`ENGINE_ERROR` (`locality_needs_zip_plus_four`); with one the ZIP+4 file does not list, with `ENGINE_ERROR`
+(`zip_plus_four_not_in_locality_map`): never a neighbouring range's locality or the ZIP5 record's. Neither stop is a
+golden line. A ZIP the record does not flag ignores its ZIP+4. *Claims:* G196 to G199. *For the specialist:* does
+Medicare apply the ZIP5 locality to a ZIP+4 the ZIP9 file does not list, or return the claim? (An answer of "the
+ZIP5 locality" changes the importer, not the engine.)
 
 **Q38. A bound on units.** *Choice:* more than 999 units on one line is malformed input (`ENGINE_ERROR`
 `units_above_limit`); it is never ranked. No golden line comes near it. *For the specialist:* whether a lower bound,

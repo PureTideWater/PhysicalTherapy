@@ -121,4 +121,33 @@ describe('golden lines priced by the engine', () => {
       expect(result.trace.release, run.claim.id).toEqual({ number: run.claim.inputs.release.number, manifest_sha256: run.claim.inputs.release.manifest_sha256 });
     }
   });
+
+  it('price a ZIP that spans localities at the range holding its ZIP+4, and read no ZIP+4 of a ZIP with one locality (PRC-21; docs/adr/0064)', () => {
+    const given = results.filter(({ run }) => run.claim.inputs.practice_settings.zip_plus_four !== undefined);
+    // G196-G199: 0001 and 5000 open a range, 8999 closes one, and 1234 is on a ZIP the ZIP5 record does not flag.
+    expect(new Set(given.map(({ run }) => run.claim.id))).toEqual(new Set(['G196', 'G197', 'G198', 'G199']));
+    const read: string[] = [];
+    for (const { run, result } of given) {
+      const zipPlusFour = run.claim.inputs.practice_settings.zip_plus_four;
+      expect(result.trace.settings.zip_plus_four, run.claim.id).toBe(zipPlusFour);
+      expect(result.outcome, run.claim.id).toBe('priced');
+      const locality = result.trace.steps.fee_schedule?.locality;
+      expect(locality, run.claim.id).toBeDefined();
+      if (locality?.plus_four_required === true) {
+        const range = locality.plus_four;
+        expect(range?.zip_plus_four, run.claim.id).toBe(zipPlusFour);
+        expect(range !== undefined && zipPlusFour !== undefined && range.from <= zipPlusFour && zipPlusFour <= range.to, run.claim.id).toBe(true);
+        expect(result.trace.steps.fee_schedule?.gpci?.record.key, run.claim.id).toEqual({ carrier: range?.carrier, locality: range?.locality });
+        read.push(`${run.claim.id} ${range?.locality ?? ''}`);
+      } else {
+        expect(locality?.plus_four, run.claim.id).toBeUndefined();
+      }
+    }
+    expect(read.sort()).toEqual(['G196 01', 'G197 02', 'G199 02']);
+    // Every other golden line's trace is as the engine wrote it before the ZIP+4: no ZIP+4 in the settings, no range.
+    for (const { run, result } of results.filter(({ run }) => run.claim.inputs.practice_settings.zip_plus_four === undefined)) {
+      expect(result.trace.settings, run.claim.id).not.toHaveProperty('zip_plus_four');
+      expect(result.trace.steps.fee_schedule?.locality?.plus_four, run.claim.id).toBeUndefined();
+    }
+  });
 });

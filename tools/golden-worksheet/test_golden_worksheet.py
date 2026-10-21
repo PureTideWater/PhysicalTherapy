@@ -1007,7 +1007,8 @@ class Files(unittest.TestCase):
     def test_checks_every_committed_file_by_default(self):
         status, out, _ = self.run_main("check", "--json")
         report = json.loads(out)
-        self.assertEqual((status, report["lines"], report["differences"]), (0, 326, []))
+        # 150 claims and 326 lines, and G196-G199 under release 900006 (PR 6b's Q4 (a), 2026-10-21; docs/adr/0064).
+        self.assertEqual((status, report["cases"], report["lines"], report["differences"]), (0, 154, 330, []))
 
     def test_trims_blank_lines_at_both_ends(self):
         self.assertEqual(gw.trim(["", "a", "", "b", ""]), ["a", "", "b"])
