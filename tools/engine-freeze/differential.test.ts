@@ -279,7 +279,7 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
   };
 
   /** Why the base engine could not be loaded, if it could not: every test then fails with it, none is skipped. */
-  let setupError: unknown = null;
+  let setupError: Error | null = null;
   const ready = () => {
     if (setupError !== null) throw setupError;
   };
@@ -291,7 +291,7 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
       base = (await import(/* @vite-ignore */ pathToFileURL(path.join(extracted, 'src/index.ts')).href)) as Engine;
       for (const number of RELEASES) headReleases.set(RELEASE_DIRS[number], indexRelease(readRuleRelease(RELEASE_DIRS[number])));
     } catch (error) {
-      setupError = error;
+      setupError = error instanceof Error ? error : new Error(String(error));
     }
   }, 120_000);
 
