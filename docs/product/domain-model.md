@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `2a075057997840676328015db5eca6a6fa911131` on branch `co-001/pr-05-packet-deadline`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `5492d3dc6bc8bc9e1643d7f4deef1e5f52f6ab33` on branch `co-001/pr-05-packet-deadline` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
 - PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 267 (112 SECURITY DEFINER); triggers: 225, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 269 (113 SECURITY DEFINER); triggers: 226, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 31 tables and 146 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 31 tables and 147 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -66,7 +66,7 @@
 | [`agreement`](#table-agreement) | Tenancy and access | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 4 | 1 | SELECT, INSERT(cols) | - | - |
 | [`agreement_event`](#table-agreement-event) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 1 | - | - | - |
 | [`anomaly`](#table-anomaly) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 5 | SELECT, INSERT(cols) | - | SELECT |
+| [`audit_event`](#table-audit-event) | Operations | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 5 | 6 | SELECT, INSERT(cols) | - | SELECT |
 | [`audit_report`](#table-audit-report) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 3 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`audit_report_download`](#table-audit-report-download) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 4 | SELECT, INSERT(cols) | - | - |
 | [`billing_event`](#table-billing-event) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | SELECT, INSERT, UPDATE | - |
@@ -3105,6 +3105,7 @@ Invariants enforced by triggers:
   - "the person who drafted, wrote or approved a packet does not attest its export"
   - "only a packet's current version, still asking for its case's lines, is attested"
   - "only a version of the case's dispute level is attested"
+  - "a packet version whose export was sent without sign-off is never attested"
   - "a packet version whose pricing is no longer current is not attested"
   - "a packet version whose deadline is not verified is not attested"
   - "a packet's export is attested once its reviewer has downloaded both its PDF and its CSV, each checked against its SHA-256"
@@ -3188,6 +3189,7 @@ Maintains `updated_at`: `packet_version_updated_at`.
 | 13 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
 | 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023090000` |  |
 | 15 | `pricing_check` | `text` | null |  |  | `20261103090000` | one of current, PRICING_NOT_IN_EFFECT, RELEASE_WITHDRAWN, MAPPING_NOT_IN_FORCE, CONTRACT_VERSION_NOT_SIGNED_OFF, CONTRACT_VERSION_NOT_IN_FORCE; not in the dictionary |
+| 16 | `unattested_reason` | `text` | null |  |  | `20261103090000` | not in the dictionary |
 
 Keys:
 - Primary: (id)
@@ -3215,9 +3217,12 @@ Invariants enforced by constraints:
 - `submission_follow_up_after`: `CHECK (follow_up_on >= submitted_on)`
 - `submission_pricing_check_check`: `CHECK (pricing_check = ANY (ARRAY['current'::text, 'PRICING_NOT_IN_EFFECT'::text, 'RELEASE_WITHDRAWN'::text, 'MAPPING_NOT_IN_FORCE'::text, 'CONTRACT_VERSION_NOT_SIGNED_OFF'::text, 'CONTRACT_VERSION_NOT_IN_FORCE'::text]))`
 - `submission_reference_check`: `CHECK (reference ~ '^enc:v1:[A-Za-z0-9_-]+$'::text)`
+- `submission_unattested_only_when_pricing_stale`: `CHECK (unattested_reason IS NULL OR pricing_check IS NOT NULL AND pricing_check <> 'current'::text)`
+- `submission_unattested_reason_check`: `CHECK (unattested_reason = 'pricing_stale_after_export'::text)`
 
 Invariants enforced by triggers:
 - `submission_belongs`: `AFTER INSERT ON submission FOR EACH ROW EXECUTE FUNCTION submission_belongs()`
+  - "a submission is logged in the person's own request, never on the worker's login"
   - "a submission is logged by a person who logs submissions, in their own name"
   - "a submission is of a version of its case's packet"
   - "a packet is submitted once it is exported"
@@ -4670,6 +4675,10 @@ Invariants enforced by triggers:
   - "a packet export is requested by a person, in their own name, never on the worker's login"
   - "a packet export is requested by a person who may export PHI in its practice"
   - "a packet export is requested of a packet version of its practice"
+- `audit_event_submission_unattested`: `BEFORE INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'submission_logged_unattested'::text) EXECUTE FUNCTION audit_event_submission_unattested()`
+  - "a submission sent without sign-off is recorded in the name of the person who logged it, never on the worker's login"
+  - "a submission sent without sign-off is recorded of a submission of its practice that its person logged without the attestation, with its reason"
+  - "a submission sent without sign-off is recorded once, as it is logged"
 
 ### Table `job_run`
 
@@ -5471,7 +5480,7 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | [`line_status`](#table-line-status) | `seq`, `priced_line_id` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`case_line`](#table-case-line) | `written_off_text`, `written_off_at`, `reopen_reason`, `reopened_by`, `reopened_at` (`20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038)) |
 | [`packet_version`](#table-packet-version) | `content`, `dispute_level`, `content_sha256`, `regulation_confirmed_by`, `regulation_confirmed_at`, `approved_sha256`, `approved_alone`, `export_csv_sha256` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`deadline_verification_status`, `export_verifier_report`, `attested_by`, `attested_at`, `attestation` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0038, ADR 0041, ADR 0049, ADR 0061)) |
-| [`submission`](#table-submission) | `export_sha256`, `export_csv_sha256`, `dispute_level` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`pricing_check` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0038, ADR 0041, ADR 0049, ADR 0061)) |
+| [`submission`](#table-submission) | `export_sha256`, `export_csv_sha256`, `dispute_level` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`pricing_check`, `unattested_reason` (`20261103090000_deadline_verification_and_export_attestation` (ADR 0038, ADR 0041, ADR 0049, ADR 0061)) |
 | [`payer_response`](#table-payer-response) | `remittance_id`, `denial_category`, `reopens_case`, `next_window_ends_on`, `recorded_by` (`20261023090000_packets_submissions_and_responses` (ADR 0041)) |
 | [`posting_row`](#table-posting-row) | `row_no`, `procedure_code`, `service_date`, `payer_name`, `batch`, `template`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`eft_row`](#table-eft-row) | `row_no`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
@@ -5637,6 +5646,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d9ff171f092c4f1` |
 | `audit_event_packet_export_attempt()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `980bc6bb1ce69ba4` |
 | `audit_event_packet_export_requested()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `41846c4e697780b0` |
+| `audit_event_submission_unattested()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8d18da3beb942ba9` |
 | `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3e46c1342db1a9db` |
 | `audit_report_download_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1ab1a28f01764be6` |
 | `audit_report_download_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `dcc9fa8b0d88cd5c` |
@@ -5744,11 +5754,11 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packet_content_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `619ece8c25a26b04` |
 | `packet_export_downloads_of_actor(uuid)` | `text[]` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc26a79c8d0152e2` |
 | `packet_export_failure_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fb4f86f1d8355c05` |
-| `packet_export_refusal_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `260d9b7102648366` |
+| `packet_export_refusal_codes()` | `text[]` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c04b1fb3fd5f66af` |
 | `packet_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7085f6474417523f` |
 | `packet_verifier_report_valid(jsonb)` | `boolean` | plpgsql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `47fde3846263f974` |
 | `packet_version_approval_pricing()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0513475dbcaa671` |
-| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f2dc90599c92a784` |
+| `packet_version_attestation_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2ce013b23d374234` |
 | `packet_version_becomes_current()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3842998ab0d8a17a` |
 | `packet_version_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5f8e981349178774` |
 | `packet_version_current_verifier()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cc472bdc3162e89` |
@@ -5760,6 +5770,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `packet_version_people(uuid)` | `TABLE(drafted_by_email text, approved_by_email text, regulation_confirmed_by_email text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fef22ffd1c2ffb18` |
 | `packet_version_pricing_check(jsonb)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc57d582efc46783` |
 | `packet_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d6f5841a2aadbeea` |
+| `packet_version_unattested_reason(uuid)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `05ff40e2f2b243ae` |
 | `packets_never_deleted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0444f4a36978439f` |
 | `packets_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d55baaa259f73fa7` |
 | `parse_report_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `377d9e5cdfe2b80c` |
@@ -5801,7 +5812,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `priced_line_shortfall_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1980a29c53080675` |
 | `priced_line_visit_variance_cents(uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ff2bbd148b2eb4ad` |
 | `pricing_current_change_lock()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `98a437bbce011d67` |
-| `pricing_current_read_lock(uuid)` | `void` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2f28dedb65c6c558` |
+| `pricing_current_read_lock(uuid)` | `void` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `8d7f18dc2fe222ae` |
 | `pricing_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `66bbf3bfbb28631b` |
 | `pricing_run_changed_lines(uuid,uuid)` | `bigint` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `5ddaf57baabe280e` |
 | `pricing_run_in_effect(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `886a648f977b072d` |
@@ -5847,10 +5858,10 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82c436362d600ad2` |
 | `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `92eec267bf1252eb` |
 | `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
-| `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `744c87f0a23fd1c1` |
+| `submission_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c05aaefa59906f3b` |
 | `submission_latest_response(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9a044fc6cae7cf96` |
-| `submission_needs_attested_export()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `75d65919587f1492` |
-| `submission_pricing_check()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `451fadea7f142344` |
+| `submission_needs_attested_export()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `20d7fd6636be6827` |
+| `submission_pricing_check()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e7191244a18fc56c` |
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
@@ -5927,7 +5938,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 38 | `20261101110000_console_models_and_invitations.sql` | ADR 0055 | `9191314d2fd78415b8c360995730273dcdda6a6cd1f80bb13b71e32311ed783b` |
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
-| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `195d92ff4dcfd3e99f807000bc3fed45bad59825dbbb33881c0ed43cd7a3b650` |
+| 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `7f8cb29ff42adcc4c6d24a93cbc9990461cf2cc6e9b4c7d3ca11a49d78e39d3e` |
 
 ## Cross-checks
 
@@ -5945,4 +5956,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `372fa545c9d183e690389a06a94fb05002597d5f54fa42f2347296df05d2a1bc`
+Approved by: ________  Date: ________  Document SHA-256: `cf0542d2f9e202ae2a2e4938f5f0a3ebfb20e9c5105a791336dc2311cb451b6c`
