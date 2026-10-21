@@ -1,17 +1,24 @@
 import { decimal, parseAmount } from '@tp/money';
 
+import { QUALIFIED_IDENTIFIER } from './payer';
 import { PLACEHOLDER_PATTERN } from './placeholders';
 
 /**
  * Reading a narrative the way the verifier checks it (PRD 12: "the verifier then checks every date,
  * code, unit, amount, count and identifier in the text against the canonical record"; PRD 14,
  * draftPacketNarrative: "a citation marker on every sentence"). Deterministic and conservative: every
- * run of text that holds a digit, and every number written in words from "two" up, is a figure of some
- * kind, so nothing numeric slips past as prose. Figures carry their kind, a canonical value and their
- * position; the narrative's own text never leaves this module in a report.
+ * run of text that holds a digit, every number written in words from "two" up, and every remittance key
+ * led by its qualifier code is a figure of some kind, so nothing numeric slips past as prose, nor a key
+ * the payer's copy never prints. Figures carry their kind, a canonical value and their position; the
+ * narrative's own text never leaves this module in a report.
  *
  * Kinds, in the order they are read (each consumes its text before the next looks):
  * - placeholders {{claim_control_number:3}} and citation markers [1] or [1, 3];
+ * - remittance keys: a token led by a qualifier code, two capital letters or digits and a colon, or TRN03:,
+ *   CLP06:, NAME: or PLAN: (2U:SYNPAYERQ, CE:SYNPLAN-FIX-ONE, NAME:SYNTHETIC; QUALIFIED_IDENTIFIER,
+ *   ./payer.ts), is an identifier, digit or not, read whole before a later kind takes part of it (CE:12 is
+ *   the key, not the number 12): the payer's copy names the payer and plan in words, never by their keys
+ *   (audit item #37 part 1, the verification of 2026-10-21);
  * - dates: "March 5, 2026", "5 March 2026", "March 2026" (a month), "March 5" (a day of a month),
  *   2026-03-05 and 3/5/2026; an impossible date is an identifier;
  * - percentages: 120%, 120 percent, 9.5 per cent;
@@ -355,6 +362,11 @@ export function scanText(text: string): Scan {
   each(new RegExp(MARKER_PATTERN.source, 'g'), (match) => {
     markers.push({ sources: (match[1] ?? '').split(',').map((part) => int(part.trim())), start: match.index, end: match.index + match[0].length });
     masked.take(match.index, match.index + match[0].length);
+  });
+  // Remittance keys, digit or not, whole: their closing punctuation is the sentence's.
+  each(new RegExp(QUALIFIED_IDENTIFIER.source, 'g'), (match) => {
+    const value = match[0].replace(TRIM_TRAILING, '');
+    figure('identifier', value, match.index, match.index + value.length);
   });
 
   // A day of a month written as an ordinal word, with or without its year: "March fifth", "the

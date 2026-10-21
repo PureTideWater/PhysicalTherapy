@@ -1,4 +1,4 @@
-import { type IdentifierKind, type PacketContent, type RowIdentifiers, fillPlaceholders, remittanceKey } from '@tp/packets';
+import { type IdentifierKind, type PacketContent, QUALIFIED_IDENTIFIER, type RowIdentifiers, fillPlaceholders, narrativeFacts, remittanceKey } from '@tp/packets';
 import { PAYER_COPY_INTERNAL_TERMS } from '@tp/packets/testing';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // pdf.js runs its worker in this thread from the module that registers itself (as report/test-support/printed-text.ts).
@@ -26,10 +26,11 @@ import { narrativeParagraphs } from '../html';
  *   like a code (CODE_SHAPES: words joined by underscores, in lower or in upper case, such as a pattern's behavior, an
  *   observed basis, a deadline cause, a deadline basis or a release's exclusion), the CSV's own header row set aside;
  * - a payer part in its remittance-key form (the verification of 2026-10-21): the content's payer and plan keys
- *   (`2U:SYNPAYERQ`, `CE:SYNPLAN-FIX-ONE`) anywhere, the narrative too, and, outside the narrative and the quoted
- *   clauses, any identifier led by a qualifier code (QUALIFIED_IDENTIFIER: two characters and a colon, or one of the
- *   loaders' longer qualifiers), since the copy names the payer by its ID in words and the plan by its name or
- *   identifier, and only the internal record and the review page keep the key form.
+ *   (`2U:SYNPAYERQ`, `CE:SYNPLAN-FIX-ONE`) anywhere, the narrative too, and, outside the quoted clauses, any identifier
+ *   led by a qualifier code (QUALIFIED_IDENTIFIER, @tp/packets: two capital letters or digits and a colon, or one of
+ *   the loaders' longer qualifiers), in the narrative too unless an input the verifier quotes holds it (as the
+ *   verifier allows; its scanner reads one as an identifier), since the copy names the payer by its ID in words and
+ *   the plan by its name or identifier, and only the internal record and the review page keep the key form.
  *
  * A printed PDF wraps text where its lines end, inside an identifier or a hash too, so every value is matched with any
  * whitespace allowed between its characters. Each leak is named by its kind and what was found.
@@ -44,12 +45,10 @@ const INTERNAL_KEYS: ReadonlySet<string> = new Set(['hash', 'trace_ref', 'verifi
 export const CODE_SHAPES: readonly RegExp[] = [/\b[a-z0-9]+(?:_[a-z0-9]+)+\b/, /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/];
 /** The CSV's header row: its column names are the schedule's own, the one place a code's shape is the payer's. */
 const CSV_HEADER = PACKET_CSV_COLUMNS.join(',');
-/**
- * An identifier led by a remittance key's qualifier code: two characters and a colon (`2U:`, `XV:`, `CE:`), or one of
- * the longer qualifiers the loaders write (`TRN03:`, `CLP06:`, an ERA export's `NAME:` and `PLAN:`;
- * apps/worker/src/parse/plan.ts and era/normalize.ts), with the identifier after it.
- */
-export const QUALIFIED_IDENTIFIER = /(?<![A-Za-z0-9])(?:[A-Z0-9]{2}|TRN03|CLP06|NAME|PLAN):[A-Za-z0-9][^\s,;)]*/g;
+/** The verifier's own pattern (@tp/packets, ./payer.ts there), for the tests that look for one in a printed copy. */
+export { QUALIFIED_IDENTIFIER };
+/** A sentence's closing punctuation after a figure, which the verifier's scanner leaves out of its value. */
+const CLOSING = /[\s)\]}"'”’>,.;:!?]+$/;
 
 /** The content's payer and plan keys that carry a qualifier, as the record holds them: none is ever printed. */
 export function payerKeys(content: PacketContent): string[] {
@@ -107,15 +106,20 @@ export interface PayerCopyScan {
 export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
   const leaks: string[] = [];
   let rest = collapse(text);
-  // The narrative and the quoted clauses (a person's or a contract's own words), set aside for the term scan only.
+  // The narrative and the quoted clauses (a person's or a contract's own words), set aside for the term scan only; the
+  // quoted clauses alone, for the qualifier scan of the narrative.
   let words = rest;
-  const quoted = [
-    ...narrativeParagraphs(fillPlaceholders(scan.narrative, scan.identifiers)),
+  const clauses = [
     scan.content.citation.kind === 'contract' ? scan.content.citation.quote : scan.content.citation.statement,
     ...(scan.content.format === 'tp-packet/2' ? scan.content.deadline.sources.flatMap((source) => (source.kind === 'contract_window' ? [source.quote] : [])) : []),
-  ].sort((a, b) => b.length - a.length);
+  ];
+  const quoted = [...narrativeParagraphs(fillPlaceholders(scan.narrative, scan.identifiers)), ...clauses].sort((a, b) => b.length - a.length);
   for (const passage of quoted) {
     words = without(words, passage);
+  }
+  let unquoted = rest;
+  for (const passage of [...clauses].sort((a, b) => b.length - a.length)) {
+    unquoted = without(unquoted, passage);
   }
   // The identifiers the copy prints and its reference, longest first, so none is cut by a shorter one inside it.
   const printed = [...[...scan.identifiers.values()].flatMap((row) => PRINTED_IDENTIFIERS.map((kind) => row[kind])), scan.reference ?? null]
@@ -124,6 +128,7 @@ export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
   for (const value of printed) {
     rest = without(rest, value);
     words = without(words, value);
+    unquoted = without(unquoted, value);
   }
   const withheld = [...scan.identifiers.values()].map((row) => row.patient_control_number).filter((value): value is string => value !== null && value.trim() !== '');
   for (const email of rest.match(EMAIL) ?? []) {
@@ -169,8 +174,16 @@ export function payerCopyLeaks(text: string, scan: PayerCopyScan): string[] {
       leaks.push(`payer_key:${key}`);
     }
   }
-  for (const match of words.matchAll(QUALIFIED_IDENTIFIER)) {
-    leaks.push(`qualified:${match[0]}`);
+  // Outside the narrative and the quoted clauses, every one; in the narrative, one no input the verifier quotes holds.
+  const qualified = new Set([...words.matchAll(QUALIFIED_IDENTIFIER)].map((match) => match[0]));
+  const quotable = narrativeFacts(scan.content).identifiers;
+  for (const match of unquoted.matchAll(QUALIFIED_IDENTIFIER)) {
+    if (!quotable.has(match[0].replace(CLOSING, ''))) {
+      qualified.add(match[0]);
+    }
+  }
+  for (const value of qualified) {
+    leaks.push(`qualified:${value}`);
   }
   return leaks;
 }

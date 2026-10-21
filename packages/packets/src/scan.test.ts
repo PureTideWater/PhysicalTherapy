@@ -134,6 +134,32 @@ describe('scanText', () => {
     ]);
     expect(scan.markers.map((item) => item.sources)).toEqual([[1, 3]]);
   });
+
+  it('reads a remittance key led by its qualifier code as one identifier, digit or not, before any figure takes part of it (the verification of 2026-10-21)', () => {
+    expect(figures('Plan CE:SYNPLAN-FIX-ONE. Payer (2U:SYNPAYERQ), XV:SYNPAYERXV; TRN03:1999999999 and CLP06:12 [1].')).toEqual([
+      ['identifier', 'CE:SYNPLAN-FIX-ONE', 'CE:SYNPLAN-FIX-ONE'],
+      ['identifier', '2U:SYNPAYERQ', '2U:SYNPAYERQ'],
+      ['identifier', 'XV:SYNPAYERXV', 'XV:SYNPAYERXV'],
+      ['identifier', 'TRN03:1999999999', 'TRN03:1999999999'],
+      ['identifier', 'CLP06:12', 'CLP06:12'],
+    ]);
+    // An ERA export's keys, up to the space; a key holding a figure's shape is the key, not the figure.
+    expect(figures('NAME:SYNTHETIC PAYER Q, PLAN:SYNTHETIC PPO, CE:12 and CE:2026-05-01 and FS:97110-GP')).toEqual([
+      ['identifier', 'NAME:SYNTHETIC', 'NAME:SYNTHETIC'],
+      ['identifier', 'PLAN:SYNTHETIC', 'PLAN:SYNTHETIC'],
+      ['identifier', 'CE:12', 'CE:12'],
+      ['identifier', 'CE:2026-05-01', 'CE:2026-05-01'],
+      ['identifier', 'FS:97110-GP', 'FS:97110-GP'],
+    ]);
+    // Two capitals or digits and a colon lead a key: 10:30 is one identifier.
+    expect(figures('At 10:30.')).toEqual([['identifier', '10:30', '10:30']]);
+    // Not a key: a lower-case or longer unlisted qualifier, a colon before a space, one character before it, a placeholder.
+    expect(figures('ce:synplan, ABC:DEF, Re: the claim, RE: SYNPLAN, xCE:SYNPLAN, {{member_id:1}}')).toEqual([]);
+    expect(figures('A ratio of 1:2.')).toEqual([
+      ['number', '1', '1'],
+      ['number', '2', '2'],
+    ]);
+  });
 });
 
 describe('every word, form and abbreviation the scanner knows', () => {

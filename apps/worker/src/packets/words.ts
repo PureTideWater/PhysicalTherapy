@@ -9,7 +9,9 @@ import { type CitedMethod, type ContractCitation, type PacketContent, type Packe
  * (PayerCopyWordsError); words.test.ts holds every list's codes to their words. The payer and the plan are named in
  * words by @tp/packets (payerAndPlanText(): "payer ID <id>", the plan's name or "plan identifier <id>", never a
  * remittance key's qualifier code; the verification of 2026-10-21), since the verifier's facts quote the plan as the
- * copy prints it.
+ * copy prints it and its scanner reads a key as an identifier no input holds. A plan named only by its claim filing
+ * indicator still prints the indicator as sent ("plan identifier 12"), with no words, until the founder rules on them
+ * (ADR 0061, Verification fix (2026-10-21), open).
  */
 
 /** The calculation's methods, steps and rounding rules in words. */

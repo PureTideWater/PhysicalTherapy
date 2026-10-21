@@ -294,7 +294,7 @@ test('a figure not in the input blocks approval, the drafter cannot approve, a s
       expect(printed).not.toContain('SHA-256');
       // The payer by its ID in words and the plan by its identifier, never in their remittance-key form (2U:, CE:), which
       // the internal record keeps (the verification of 2026-10-21).
-      expect(holdsLoosely(text, 'To: SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan')).toBe(true);
+      expect(holdsLoosely(text, 'To: SYNTHETIC PAYER Q (payer ID SYNPAYERQ), plan identifier SYNPLAN-FIX-ONE')).toBe(true);
       expect(printed.match(QUALIFIED_IDENTIFIER)).toBeNull();
       for (const key of ['2U:SYNPAYERQ', 'CE:SYNPLAN-FIX-ONE']) {
         expect(holdsLoosely(printed, key)).toBe(false);

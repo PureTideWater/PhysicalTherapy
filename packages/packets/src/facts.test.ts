@@ -187,6 +187,24 @@ describe('narrativeFacts', () => {
     expect(verifyNarrative('The plan identifier is SYNPLAN-63 [1].', named, []).passed).toBe(false);
   });
 
+  it('fails a remittance key in a narrative, digit or not, as a figure no input holds (the verification of 2026-10-21)', () => {
+    const facts = narrativeFacts(assemblePacket(assemblyInput()));
+    const failed = (narrative: string) => verifyNarrative(narrative, facts, []).mismatches.map((mismatch) => [mismatch.code, mismatch.kind]);
+    // The content's own keys, another payer's, an ERA export's, and the loaders' longer qualifiers: no input holds one.
+    for (const key of ['CE:SYNPLAN-FIX-ONE', '2U:SYNPAYERQ', 'XV:SYNPAYERXV', 'NAME:SYNTHETIC', 'PLAN:SYNTHETIC', 'TRN03:SYNPAYER', 'CLP06:HM']) {
+      expect(failed(`The claims were paid under plan ${key} [1].`), key).toEqual([['figure_not_in_input', 'identifier']]);
+    }
+    // Read whole, so no part of it passes as a figure an input holds ("CE:3" is no count of 3 lines).
+    expect(facts.numbers.has('3')).toBe(true);
+    expect(failed('The plan is CE:3 [1].')).toEqual([['figure_not_in_input', 'identifier']]);
+    // The plan as the copy names it passes, and so does the payer's name.
+    expect(failed('The claims were paid by SYNTHETIC PAYER Q under plan identifier SYNPLAN-FIX-ONE [1].')).toEqual([]);
+    // A key an input the verifier quotes holds may be repeated as it holds it.
+    const quoting = narrativeFacts(assemblePacket(assemblyInput({ citation: contractCitation({ quote: '97110 is paid 50.00 per unit under schedule FS:SYNTHETIC' }) })));
+    expect(quoting.identifiers.has('FS:SYNTHETIC')).toBe(true);
+    expect(verifyNarrative('The contract pays 97110 under schedule FS:SYNTHETIC [1].', quoting, []).passed).toBe(true);
+  });
+
   it('holds the lines’ windows and the clause behind them at the first level only, as the payer’s copy prints them (audit item #37 part 1)', () => {
     const first = assemblePacket(assemblyInput());
     const second = assemblePacket(assemblyInput({ disputeLevel: 2, nextLevelDeadline: { status: 'verified', source: 'release', endsOn: '2026-12-01', cause: null } }));

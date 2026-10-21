@@ -96,8 +96,8 @@ const METHOD_VERSIONS: Readonly<Record<string, PacketContent>> = {
 /**
  * A payer and plan of each remittance-key form the loaders write besides the default's REF 2U payer and REF CE plan
  * (the verification of 2026-10-21), each with the identification the payer's copy prints for it: an N103 XV payer
- * and a plan keyed by its claim filing indicator, a TRN03 payer and a named plan, and an ERA export's NAME: payer and
- * PLAN: plan.
+ * and a plan keyed by its claim filing indicator (printed as sent until the founder rules on its words; ADR 0061), a
+ * TRN03 payer and a named plan, and an ERA export's NAME: payer and PLAN: plan (the plan as the export names it).
  */
 const KEY_FORMS: Readonly<Record<string, { readonly payer: PayerIdentification; readonly printed: string }>> = {
   'an XV payer and a CLP06 plan': {
@@ -110,7 +110,7 @@ const KEY_FORMS: Readonly<Record<string, { readonly payer: PayerIdentification; 
   },
   'an ERA export’s payer and plan': {
     payer: { payer_id: IDS.payer, name: 'SYNTHETIC PAYER Q', payer_id_raw: 'NAME:SYNTHETIC PAYER Q', plan_id: IDS.plan, plan_key: 'PLAN:SYNTHETIC PPO 01', plan_name: null },
-    printed: 'SYNTHETIC PAYER Q, plan identifier SYNTHETIC PPO 01',
+    printed: 'SYNTHETIC PAYER Q, plan SYNTHETIC PPO 01',
   },
 };
 const KEY_FORM_VERSIONS: Readonly<Record<string, PacketContent>> = Object.fromEntries(Object.entries(KEY_FORMS).map(([name, form]) => [name, assemblePacket(assemblyInput({ payer: form.payer }))]));
@@ -175,6 +175,15 @@ describe('packetHtml: the payer’s copy', () => {
     // qualifier code (the verification of 2026-10-21).
     const keyed = payerCopyLeaks(`${htmlText(maximal)} To SYNTHETIC PAYER Q (2U:SYNPAYERQ), plan CE:SYNPLAN-FIX-ONE; XV:SYNOTHER`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers));
     expect([...keyed].sort()).toEqual(['payer_key:2U:SYNPAYERQ', 'payer_key:CE:SYNPLAN-FIX-ONE', 'qualified:2U:SYNPAYERQ', 'qualified:CE:SYNPLAN-FIX-ONE', 'qualified:XV:SYNOTHER']);
+    // In the narrative too: a key no input the verifier quotes holds (which the verifier refuses, so no approved
+    // narrative has one), another payer's as much as the content's own.
+    const keyedNarrative = `${maximalNarrative}\n\nThe plan is XV:SYNOTHER under CE:SYNPLAN-FIX-ONE [1].`;
+    const keyedCopy = htmlText(printedOf(maximalContent, keyedNarrative, maximalIdentifiers));
+    expect([...payerCopyLeaks(keyedCopy, scanOf(maximalContent, keyedNarrative, maximalIdentifiers))].sort()).toEqual([
+      'payer_key:CE:SYNPLAN-FIX-ONE',
+      'qualified:CE:SYNPLAN-FIX-ONE',
+      'qualified:XV:SYNOTHER',
+    ]);
     // A key the PDF wrapped at its colon is still the content's key.
     expect(payerCopyLeaks(`${htmlText(maximal)} 2U:\nSYNPAYERQ`, scanOf(maximalContent, maximalNarrative, maximalIdentifiers))).toEqual(['payer_key:2U:SYNPAYERQ']);
     // And a code printed as a code: a pattern's behavior, an observed basis, a release's default, a deadline cause or basis, an exclusion.

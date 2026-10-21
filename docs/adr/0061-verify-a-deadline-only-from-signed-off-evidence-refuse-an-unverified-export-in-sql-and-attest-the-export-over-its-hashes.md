@@ -690,8 +690,9 @@ copy only, and the internal record stays where it lives and is shown on the revi
 - **D2. What the payer's copy prints** (`apps/worker/src/packets/html.ts`): the title and running header as before, the
   practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); the payer by its
   name with its identifier in words (`SYNTHETIC PAYER Q (payer ID SYNPAYERQ)`, an ERA export's payer, keyed by its name,
-  by its name alone) and the plan by its name, or `plan identifier <id>` when no name is known, never in the
-  remittance-key form the internal record and the review page keep (`2U:`, `CE:`; `payerAndPlanText()`,
+  by its name alone) and the plan by its name (an ERA export's plan as the export names it), or `plan identifier <id>`
+  when no name is known, never in the remittance-key form the internal record and the review page keep (`2U:`, `CE:`;
+  `payerAndPlanText()`,
   `packages/packets/src/payer.ts`; Verification fix (2026-10-21)); [1] the contract's
   title, version, effective dates and page with the quoted clause (no document ID or SHA-256) under "Contract citation",
   or the regulation under "Regulation cited"; [2]
@@ -943,24 +944,41 @@ carries no internal detail): `2U:` and `CE:` are X12 qualifier codes the loaders
   an ERA export keys by its name (`NAME:<payer>`) by its name alone, and the plan by its name, or "plan identifier
   SYNPLAN-FIX-ONE" when no name is known, in the identification ("To: ...") and on the cover ("To ..."): one function,
   `payerAndPlanText()` (`packages/packets/src/payer.ts`), over every key form the loaders write (`2U:`, `XV:` and
-  `TRN03:` payers, `CE:` and `CLP06:` plans, an ERA export's `NAME:` and `PLAN:`). The CSV prints neither. The internal
-  record, the review page and the mapping screens keep the key form. Record numbers stay printed (D14).
+  `TRN03:` payers, `CE:` and `CLP06:` plans, an ERA export's `NAME:` and `PLAN:`). An ERA export's plan (`PLAN:<plan>`)
+  is named as the export names it, "plan SYNTHETIC PPO 01", not "plan identifier": the export's Plan, Insurance Plan
+  or Benefit Plan column (`apps/worker/src/parse/era/formats.ts`) holds the plan as the practice-management system
+  names it (the review of `6563d51`). The CSV prints neither. The internal record, the review page and the mapping
+  screens keep the key form. Release numbers stay printed (D14).
 - A narrative states only what the copy prints beside it (D11 to D13), so the verifier's facts quote the plan as the
-  copy names it (its name, or its identifier without the qualifier) where they quoted its key: a narrative citing
-  "CE:SYNPLAN-63" now fails the verifier, and one citing "SYNPLAN-63" for a plan with no name passes.
+  copy names it (its name, or its identifier without the qualifier) where they quoted its key, and the verifier's
+  scanner reads a remittance key as one identifier, digit or not (the review of `6563d51`): a token led by a qualifier
+  code (`QUALIFIED_IDENTIFIER`, now in `packages/packets/src/payer.ts`: two capital letters or digits and a colon, or
+  `TRN03:`, `CLP06:`, `NAME:` or `PLAN:`) is read right after the placeholders and markers, before any other figure
+  takes part of it (`packages/packets/src/scan.ts`). A narrative holding a key no input quotes ("CE:SYNPLAN-FIX-ONE",
+  "XV:SYNPAYERXV", "NAME:SYNTHETIC", "CE:3") fails with the existing `figure_not_in_input` while it is typed, in the
+  builder and on the server, so it cannot be approved, and the export's verifier refuses it again; one citing
+  "SYNPLAN-63" for a plan with no name passes, and a key a quoted input holds may be repeated as it holds it. No new
+  mismatch code and no schema change. A time written "10:30" now reads as one identifier, which only a quoted input
+  may hold, where it read as the numbers 10 and 30.
 - The leak scan also finds a payer part in its key form: the content's own payer and plan keys anywhere in a copy, the
-  narrative too (matched across a printed line's end), and, outside the narrative and the quoted clauses, any
-  identifier led by a qualifier code (two characters and a colon, or the loaders' `TRN03:`, `CLP06:`, `NAME:` and
-  `PLAN:`), over every route it already covered: each version T1 prints with each contact, in the HTML and the CSV,
-  T1's routes now with an `XV:` payer and a `CLP06:` plan, a `TRN03:` payer and a named plan, and an ERA export's payer
-  and plan; the printed PDF (T5); and the export job's HTML, printed PDF and stored CSV (DB1). T10 pins the printed
-  words for each key form; the packet journey checks the downloaded PDF and CSV for them.
+  narrative too (matched across a printed line's end), and, outside the quoted clauses, any identifier led by a
+  qualifier code (the verifier's own pattern), in the narrative too unless an input the verifier quotes holds it (the
+  review of `6563d51`), over every route it already covered: each version T1 prints with each contact, in the HTML and
+  the CSV, T1's routes now with an `XV:` payer and a `CLP06:` plan, a `TRN03:` payer and a named plan, and an ERA
+  export's payer and plan; the printed PDF (T5); and the export job's HTML, printed PDF and stored CSV (DB1). T10 pins
+  the printed words for each key form; the packet journey checks the downloaded PDF's whole "To:" line and both files
+  for them. Mutation testing covers `payer.ts` in both Stryker configurations.
 
-No schema or domain-model change. Named, not changed: a plan the remittance identifies only by its claim filing
-indicator (`CLP06:`, no REF CE) prints as "plan identifier 12", the code as sent; printing the indicator in words
-("Preferred Provider Organization") would be the copy's words for an X12 code list, left for the founder. A person
-may still type a key form holding no digit ("CE:SYNPLAN-FIX-ONE") into a narrative, which the verifier, reading
-figures, does not refuse; no draft holds one, since `draftNarrative()` and the model are given no key.
+No schema or domain-model change. Open for the founder: a plan the remittance identifies only by its claim filing
+indicator (`CLP06:`, no REF CE, the common case for a commercial claim) prints as "plan identifier 12", the code as
+sent, which is no plan identifier but a code of the 835's closed claim filing indicator list (`claim_filing_indicator`
+in `packages/edi835/src/code-lists.ts`; 12 is a PPO). Either (a) the copy prints the indicator in words from a table
+of that list ("plan type Preferred Provider Organization (PPO)"), every code held to its words by `words.test.ts` and a
+code without words refusing the copy as D3 does, or (b) the "To:" line leaves the plan out when only CLP06 is known.
+The recommendation is (a), with ZZ (mutually defined, which tells an examiner nothing) left out as in (b): the plan's
+type helps the payer route the dispute to the product it was paid under. The words need a source the founder accepts,
+since `code-lists.ts` takes its codes from pyx12's map, which holds none. Until the ruling the copy prints the code
+as sent.
 
 ## Owner rulings (2026-10-21)
 
