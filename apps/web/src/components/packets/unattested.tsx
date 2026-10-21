@@ -1,45 +1,48 @@
 import { Alert, AlertDescription, AlertTitle, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import type { SubmissionUnattestedReason } from '@tp/worker/packets';
-import type { PricingCheckCause } from '@tp/worker/pricing';
 import Link from 'next/link';
 
 import { CHANNEL_TEXT, RESPONSE_TEXT } from '../../lib/cases/timeline';
 import { PRICING_CAUSE_TEXT } from '../../lib/packets/pricing';
-import { RECONCILIATION_UNATTESTED, SENT_WITHOUT_SIGN_OFF, STALE_EXPORT_REVIEW, type UnattestedSubmissionView, staleExportSteps, unattestedReasonText } from '../../lib/packets/unattested';
+import { RECONCILIATION_UNATTESTED, SENT_WITHOUT_SIGN_OFF, STALE_EXPORT_REVIEW, type StalePricing, type UnattestedSubmissionView, staleExportSteps, unattestedReasonText } from '../../lib/packets/unattested';
 import { StatusChip } from '../status';
 
 /**
  * Why the review refuses to attest an export whose pricing went stale after it was made, and what to do instead
- * (the founder's ruling of 2026-10-20; docs/adr/0061): the cause, that the export is never attested, the three steps
- * that replace it (re-price, a new version, a new export), and, when it may already have gone to the payer, how the
- * practice logs it sent without sign-off; once it has been logged so, that instead.
+ * (the founder's ruling of 2026-10-20; docs/adr/0061): the cause of each stale line, that the export is never attested,
+ * then, when it may already have gone to the payer, that the practice logs it first, sent without sign-off, before any
+ * step changes what can be logged; then the three steps that replace it (re-price, a new version, a new export), built
+ * from each line's cause. Once it has been logged so, that instead of the first.
  */
 export function StaleExportReview({
-  cause,
+  pricing,
+  versionLines,
   unattestedReason,
   sent,
 }: {
-  readonly cause: PricingCheckCause;
+  readonly pricing: StalePricing;
+  /** How many lines the version has (a version whose every line is stale cannot be written again yet). */
+  readonly versionLines: number;
   /** Whether a submission of this export may be logged sent without sign-off (its pricing went stale after the export). */
   readonly unattestedReason: SubmissionUnattestedReason | null;
   /** The submission of this export already logged sent without sign-off, if any. */
   readonly sent: { readonly submittedOn: string } | null;
 }) {
   return (
-    <Alert variant="destructive" data-stale-export={cause} data-sent={sent === null ? 'no' : 'without_sign_off'}>
+    <Alert variant="destructive" data-stale-export={pricing.status} data-sent={sent === null ? 'no' : 'without_sign_off'}>
       <AlertTitle>{STALE_EXPORT_REVIEW.title}</AlertTitle>
       <AlertDescription className="flex flex-col gap-2">
-        <p>{STALE_EXPORT_REVIEW.why(cause)}</p>
+        <p>{STALE_EXPORT_REVIEW.why(pricing)}</p>
         {sent === null ? null : <p data-sent-without-sign-off={sent.submittedOn}>{STALE_EXPORT_REVIEW.sent(sent.submittedOn)}</p>}
+        {sent === null && unattestedReason !== null ? <p data-if-sent="without_sign_off">{STALE_EXPORT_REVIEW.ifSent}</p> : null}
         <p>{STALE_EXPORT_REVIEW.whatToDo}</p>
         <ol className="flex list-decimal flex-col gap-1 pl-5" aria-label="What to do instead">
-          {staleExportSteps(cause).map((step) => (
+          {staleExportSteps(pricing, versionLines).map((step) => (
             <li key={step.id} data-step={step.id}>
               {step.text}
             </li>
           ))}
         </ol>
-        {sent === null && unattestedReason !== null ? <p data-if-sent="without_sign_off">{STALE_EXPORT_REVIEW.ifSent}</p> : null}
       </AlertDescription>
     </Alert>
   );

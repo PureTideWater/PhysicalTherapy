@@ -92,6 +92,11 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
   },
   { id: 'CAS-27', title: 'Export with no correspondence contact', assertion: 'Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing' },
   { id: 'CAS-28', title: 'Packet found by its reference', assertion: 'Every version of the practice whose reference matches, none of another practice' },
+  {
+    id: 'CAS-29',
+    title: 'Submission of an export whose pricing went stale after it was made',
+    assertion: 'Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused',
+  },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
   { id: 'LED-03', title: 'Adjusted remittance matching no case', assertion: 'Listed for manual match; no entry' },

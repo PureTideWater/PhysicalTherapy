@@ -177,8 +177,8 @@ export default async function CasePage(props: Props) {
                   <StatusChip tone="danger">Pricing not current</StatusChip>
                   <span>
                     {PRICING_CAUSE_TEXT[line.pricingCheck]}. It is out of the actionable figure, and a packet is written, approved, exported and attested only on the pricing in effect. Nothing refreshes
-                    the case automatically yet, and the line does not become current again: write it off below (it leaves this dispute), then write, approve and export the packet again
-                    without it.
+                    the case automatically yet, and the line does not become current again: if the packet’s export already went to the payer, log that submission on the submissions page
+                    first; then write the line off below (it leaves this dispute), and write, approve and export the packet again without it.
                   </span>
                 </p>
               )}

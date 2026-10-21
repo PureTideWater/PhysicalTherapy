@@ -1,4 +1,4 @@
-import type { LineDeadline, PacketContent, VerifierReport } from '@tp/packets';
+import { type LineDeadline, type PacketContent, type VerifierReport, interestExclusionText } from '@tp/packets';
 import { type DeadlineStatus, MA_DISPUTE_ROUTE_CONFIRMED } from '@tp/triage';
 import { Alert, AlertDescription, AlertTitle, Badge } from '@tp/ui';
 import Link from 'next/link';
@@ -342,6 +342,10 @@ export function InterestSection({ content }: { readonly content: PacketContent }
         {interest.state} prompt-pay rule{interest.statute === null ? '' : ` (${interest.statute})`}, rule release {interest.release_no}: {interest.days_to_pay === null ? 'days to pay not stated' : `${String(interest.days_to_pay)} days to pay`},{' '}
         {interest.annual_rate_percent === null ? 'no interest rate stated' : `${interest.annual_rate_percent}% a year`}. Interest is its own line and never part of expected.
       </p>
+      {interest.exclusions.length === 0 ? null : (
+        // In the payer's copy's own words (@tp/packets interestExclusionText), never the release's codes.
+        <p data-interest-exclusions={String(interest.exclusions.length)}>The rule does not apply to: {interest.exclusions.map(interestExclusionText).join(', ')}.</p>
+      )}
       <p>
         Interest total: {interest.total_cents === null ? 'not computed' : <Money value={interest.total_cents} />}
         {interest.computed ? '' : ' (some lines could not be computed; see the evidence gaps)'}

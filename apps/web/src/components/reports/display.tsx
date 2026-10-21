@@ -1,4 +1,4 @@
-import { type AuditReportContent, reasonText, unattestedSubmissionsText } from '@tp/worker/reports';
+import { type AuditReportContent, reasonText, unattestedSubmissionsNote, unattestedSubmissionsOf, unattestedSubmissionsText } from '@tp/worker/reports';
 import { STAGE_LABELS } from '@tp/triage';
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from '@tp/ui';
 import Link from 'next/link';
@@ -294,6 +294,12 @@ export function ReportSections({ content, practiceId }: { readonly content: Audi
             ])}
             empty="No pattern reaches the case materiality yet."
           />
+          {unattestedSubmissionsOf(content) === 0 ? null : (
+            // The report's own sentence under its By case table (the founder's ruling of 2026-10-20; docs/adr/0061).
+            <p className="pt-2 text-sm" data-unattested-submissions={String(unattestedSubmissionsOf(content))}>
+              {unattestedSubmissionsNote(unattestedSubmissionsOf(content))}
+            </p>
+          )}
         </CardContent>
       </Card>
       <Card role="region" aria-label="Evidence gaps">

@@ -15,7 +15,7 @@ import { opaqueId, optionalText } from './schemas';
  */
 
 /** What a reference looks like, said when one typed is not. */
-export const REFERENCE_FORMAT = 'A packet’s reference is ten letters and digits, printed in two groups of five such as SK6CS-K6CSK (the letters I, L, O and U are not used).';
+export const REFERENCE_FORMAT = 'A packet’s reference is ten letters and digits, printed in two groups of five such as SK6CS-K6CSK, without I, L, O or U; a typed I or L reads as 1, and O as 0.';
 
 export interface ByReferencePageData {
   readonly practiceId: string;

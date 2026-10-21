@@ -198,6 +198,9 @@ describe('W3: the correspondence contact’s page and action (D6)', () => {
     expect(await call(setCorrespondenceContactAction, admin, P, { ...CONTACT_FORM, address_zip: '' })).toMatchObject({ status: 'invalid', issues: [{ field: 'address_zip' }] });
     expect(await call(setCorrespondenceContactAction, admin, P, { ...CONTACT_FORM, address_state: 'ZZ' })).toMatchObject({ status: 'invalid', issues: [{ field: 'address_state' }] });
     expect(await call(setCorrespondenceContactAction, admin, P, { ...CONTACT_FORM, email: 'disputes at synthetic' })).toMatchObject({ status: 'invalid', issues: [{ field: 'email' }] });
+    // The email field holds the one email the payer's copy prints: the name and the address lines hold no @ (Q1 (a)).
+    expect(await call(setCorrespondenceContactAction, admin, P, { ...CONTACT_FORM, name: 'J. DOE (jdoe@practice.test)' })).toMatchObject({ status: 'invalid', issues: [{ field: 'name' }] });
+    expect(await call(setCorrespondenceContactAction, admin, P, { ...CONTACT_FORM, address_line2: 'ATTN billing@practice.test' })).toMatchObject({ status: 'invalid', issues: [{ field: 'address_line2' }] });
     // A billing manager is refused (403) by the setter's role check, as Postgres would refuse their UPDATE.
     expect((await call(setCorrespondenceContactAction, practice.manager, P, CONTACT_FORM)).status).toBe('forbidden');
     expect((await call(setCorrespondenceContactAction, support, P, CONTACT_FORM)).status).toBe('forbidden');

@@ -149,6 +149,13 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/e2e/packets.spec.ts',
   ]),
   'CAS-28': none(8, 'Looks up any approved packet by its reference: no file.', ['packages/packets/src/reference.test.ts', 'apps/web/src/lib/routes/payer-copy-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  // The founder's ruling of 2026-10-20 (ADR 0061): a stale export sent before its attestation is logged unattested.
+  'CAS-29': none(8, 'Prices CAS-08 again after its export: an action on its lines, no file of its own.', [
+    'apps/worker/src/packets/unattested-submission.db.test.ts',
+    'apps/web/src/lib/routes/unattested-submission-routes.db.test.ts',
+    'apps/web/src/lib/packets/unattested.test.ts',
+    'apps/web/e2e/unattested.spec.ts',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

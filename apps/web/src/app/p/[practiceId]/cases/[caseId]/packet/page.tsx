@@ -21,7 +21,7 @@ import { CONTACT_MALFORMED_TEXT, CONTACT_MISSING_TEXT, type ContactNow, PAYER_CO
 import { ATTEMPT_REFRESH_MS, exportAttemptWords, exportRefusalText } from '../../../../../../lib/packets/export-attempts';
 import { BLOCKED_TEXT, DRAFTER_APPROVAL_TEXT, DRAFTER_REQUESTED_TEXT, type AttachableDocument, type BuilderView, type VersionView } from '../../../../../../lib/packets/queries';
 import { DEADLINE_CAUSE_TEXT } from '../../../../../../lib/packets/view';
-import { STALE_EXPORT_BUILDER } from '../../../../../../lib/packets/unattested';
+import { everyLineStale, staleExportBuilder } from '../../../../../../lib/packets/unattested';
 import { REQUEST_MESSAGE_MAX_LENGTH, packetPage } from '../../../../../../lib/routes/packets';
 import { approveFormAction, draftNarrativeFormAction, exportFormAction, requestApprovalFormAction, writeVersionFormAction } from './actions';
 
@@ -66,7 +66,20 @@ function DisabledApprove({ describedBy }: { readonly describedBy: string }) {
  * What the export prints for the payer (audit item #37 part 1): the payer's copy, and the correspondence contact it
  * closes with as set now, or that none is set, linking the administrator to where it is set.
  */
-function PayerCopyNote({ contact, exported, practiceId, canSetContact }: { readonly contact: ContactNow; readonly exported: boolean; readonly practiceId: string; readonly canSetContact: boolean }) {
+function PayerCopyNote({
+  contact,
+  exported,
+  practiceId,
+  canSetContact,
+  refusedForContact,
+}: {
+  readonly contact: ContactNow;
+  readonly exported: boolean;
+  readonly practiceId: string;
+  readonly canSetContact: boolean;
+  /** The export's refusal names the missing contact already, with its remedy: the note does not say it a second time. */
+  readonly refusedForContact: boolean;
+}) {
   const settings = canSetContact ? (
     <>
       {' '}
@@ -83,7 +96,7 @@ function PayerCopyNote({ contact, exported, practiceId, canSetContact }: { reado
           {exported ? 'The correspondence contact set now (an export already made keeps the one it was printed with): ' : 'Correspondence contact it prints: '}
           {contact.text}.{settings}
         </p>
-      ) : (
+      ) : refusedForContact ? null : (
         <p data-contact={contact.state}>
           {contact.state === 'missing' ? CONTACT_MISSING_TEXT : CONTACT_MALFORMED_TEXT}
           {settings}
@@ -99,7 +112,8 @@ function ExportBlocked({ version }: { readonly version: VersionView }) {
     return null;
   }
   const { reasons } = version.exportReadiness;
-  const notYet = reasons.includes('not_approved') || reasons.includes('not_current');
+  // Not approved yet, a later version written, or only the correspondence contact to set (a setup step, not a fault in the packet).
+  const notYet = reasons.includes('not_approved') || reasons.includes('not_current') || reasons.every((reason) => reason === 'contact_missing');
   const causes = version.content.format === 'tp-packet/2' ? version.content.deadline.causes : [];
   return (
     <Alert variant={notYet ? 'default' : 'destructive'} data-export={notYet ? 'not_yet' : 'blocked'} data-reason={reasons[0]}>
@@ -435,7 +449,13 @@ export default async function PacketPage(props: Props) {
               <CardDescription>The export prints the approved version as a PDF and a CSV schedule with the identifiers inserted from the claim and patient records, stores both sealed, and records their SHA-256.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2 text-sm">
-              <PayerCopyNote contact={builder.contact} exported={version.exportedAt !== null} practiceId={practiceId} canSetContact={canSetContact} />
+              <PayerCopyNote
+                contact={builder.contact}
+                exported={version.exportedAt !== null}
+                practiceId={practiceId}
+                canSetContact={canSetContact}
+                refusedForContact={version.exportedAt === null && version.exportReadiness.outcome === 'refused' && version.exportReadiness.reasons.includes('contact_missing')}
+              />
               {version.exportedAt !== null ? (
                 <>
                   <p data-export="done">
@@ -448,7 +468,7 @@ export default async function PacketPage(props: Props) {
                     ) : (
                       // Its pricing went stale after the export: never attested (the founder's ruling of 2026-10-20).
                       <p data-attestation="never">
-                        {STALE_EXPORT_BUILDER}{' '}
+                        {staleExportBuilder(everyLineStale(version.pricingNow, version.content.lines.length))}{' '}
                         <Link className="underline" href={`${casePath}/submissions`}>
                           Submissions
                         </Link>

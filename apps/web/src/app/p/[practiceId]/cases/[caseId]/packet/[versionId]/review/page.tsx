@@ -249,7 +249,7 @@ export default async function PacketReviewPage(props: Props) {
             </div>
           ) : blocked === 'pricing_not_current' && review.pricingNow.status !== 'current' ? (
             <div data-attestation="blocked" data-reason={blocked} className="flex flex-col gap-3">
-              <StaleExportReview cause={review.pricingNow.status} unattestedReason={unattestedReason} sent={sentWithoutSignOff} />
+              <StaleExportReview pricing={{ status: review.pricingNow.status, lines: review.pricingNow.lines }} versionLines={content.lines.length} unattestedReason={unattestedReason} sent={sentWithoutSignOff} />
               <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
                 {checklist.map((item) => (
                   <li key={item.id}>{item.text}</li>

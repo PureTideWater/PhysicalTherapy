@@ -15,12 +15,15 @@ import { startLocalWorker } from './worker';
  * 20261103090000): in a practice of its own, a billing manager uploads the SYNTHETIC CAS-08 remittance, whose case the
  * worker prices and triages; its packet is written, approved and exported, and then March is priced again and the
  * re-run accepted, so the export's pricing went stale after it was made and before any attestation (e2e/unattested.ts).
- * The reimbursement reviewer, under a support grant, finds the attestation refused for good, with why and what to do
- * instead (re-price, a new version, a new export) and how an export already sent is logged. The builder tells the
+ * The reimbursement reviewer, under a support grant, finds the export listed apart as never attested and the
+ * attestation refused for good, with why, that an export already sent is logged first, and what to do instead
+ * (re-price, a new version, a new export). The builder tells the
  * billing manager the export is never attested, rather than waiting for the reviewer, and the submissions page says the export is never attested, not to send it if it has not gone, and logs it, once the manager
  * confirms it went without sign-off, recorded unattested with its reason and flagged with the cause, the database
  * recording it once in the manager's name. The log, Reconciliation (the practice's and the case's) and the review then
- * show it plainly as sent without sign-off, and it leaves the reviewer's list of exports waiting. Synthetic data only.
+ * show it plainly as sent without sign-off; then, in the order the pages give, every stale line is written off, which
+ * closes the case, and the submissions page says a closed case takes no submission; and it leaves the reviewer's list.
+ * Synthetic data only.
  */
 
 const REMITTANCE = readFileSync(path.resolve(import.meta.dirname, '../../../fixtures/synthetic/CAS-08/remit.835'));
@@ -53,9 +56,13 @@ test('an export whose pricing went stale after it was made is never attested, an
   try {
     await registerKeyAndSignIn(reviewer, 'unattested-reviewer');
 
-    await test.step('the reviewer finds the attestation refused for good, with why, the three steps instead and how an export already sent is logged', async () => {
+    await test.step('the reviewer finds the export listed apart as never attested, and its attestation refused for good, with why, that an export already sent is logged first, and the three steps instead', async () => {
       await reviewer.goto(`/p/${practiceId}/packet-reviews`);
-      await reviewer.getByRole('table', { name: 'Exports waiting' }).getByRole('link').first().click();
+      // Not work waiting: listed apart, marked never attested.
+      await expect(reviewer.getByRole('region', { name: 'Exports waiting' })).toContainText('No export is waiting');
+      const never = reviewer.getByRole('table', { name: 'Exports never attested' });
+      await expect(never.locator('[data-never-attested="true"]')).toContainText('Never attested: pricing went stale after the export');
+      await never.getByRole('link').first().click();
       await expect(reviewer).toHaveURL(new RegExp(`${reviewPath}$`));
       const attestation = reviewer.getByRole('region', { name: 'Attestation' });
       await expect(attestation.locator('[data-attestation="blocked"][data-reason="pricing_not_current"]')).toBeVisible();
@@ -64,12 +71,15 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expect(why).toContainText('Not attested: this export’s pricing went stale after the export');
       await expect(why).toContainText('Priced again since it joined the case');
       await expect(why).toContainText('so this export is never attested');
+      // An export already sent is logged first, before any step below.
+      await expect(why.locator('[data-if-sent="without_sign_off"]')).toContainText('logs that submission first, on its submissions page, as it happened, before any step below');
+      await expect(why.locator('[data-if-sent="without_sign_off"]')).toContainText('sent without sign-off: pricing went stale after export');
       const steps = why.getByRole('list', { name: 'What to do instead' }).getByRole('listitem');
       await expect(steps).toHaveCount(3);
       await expect(steps.nth(0)).toContainText('Re-price: done already.');
-      await expect(steps.nth(1)).toContainText('A new version:');
+      // Every line is stale, so no new version can be written from it yet.
+      await expect(steps.nth(1)).toContainText('A new version: not yet.');
       await expect(steps.nth(2)).toContainText('A new export:');
-      await expect(why.locator('[data-if-sent="without_sign_off"]')).toContainText('sent without sign-off: pricing went stale after export');
       const attest = attestation.getByRole('button', { name: 'Attest the export' });
       await expect(attest).toBeDisabled();
       await expect(attest).toHaveAccessibleDescription(/never attested/);
@@ -88,6 +98,7 @@ test('an export whose pricing went stale after it was made is never attested, an
       const form = page.getByRole('region', { name: 'Log a submission' });
       const notice = form.locator('[data-attestation="never"][data-unattested-reason="pricing_stale_after_export"]');
       await expect(notice).toContainText('This export is never attested: its pricing went stale after the export');
+      await expect(notice.locator('[data-if-sent="first"]')).toContainText('If it already went to the payer, log it here first');
       await expect(notice).toContainText('If it has not gone to the payer, do not send it');
       await expect(notice).toContainText('It is recorded as sent without sign-off: pricing went stale after export');
       await expect(form.locator('[data-attestation="waiting"]')).toHaveCount(0);
@@ -119,6 +130,29 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expectAccessible(page, 'Case ledger, a submission sent without sign-off');
     });
 
+    await test.step('then, in the order the pages give, every stale line is written off: the case closes, the submission stays logged, and the submissions page says a closed case takes no submission', async () => {
+      await page.goto(casePath);
+      const lines = page.getByRole('list', { name: 'Case lines' });
+      await expect(lines.locator('[data-case-line]')).toHaveCount(3);
+      await expect(lines.locator('[data-pricing-check="PRICING_NOT_IN_EFFECT"]').first()).toContainText('log that submission on the submissions page first');
+      for (let written = 0; written < 3; written += 1) {
+        const open = lines.locator('[data-case-line]').filter({ has: page.getByText('Write this line off') }).first();
+        const lineId = (await open.getAttribute('data-case-line')) ?? '';
+        await open.getByText('Write this line off').click();
+        await open.getByRole('combobox', { name: 'Reason' }).selectOption({ label: 'Not worth pursuit' });
+        await open.getByRole('checkbox').check();
+        await open.getByRole('button', { name: 'Write off' }).click();
+        await expect(page.locator(`[data-case-line="${lineId}"]`).getByText('Write this line off')).toHaveCount(0);
+      }
+      await page.goto(`${casePath}/submissions`);
+      const form = page.getByRole('region', { name: 'Log a submission' });
+      await expect(form.locator('[data-case-closed="true"]')).toContainText('This case is closed written off');
+      await expect(form.getByRole('button', { name: /^Log the submission/ })).toHaveCount(0);
+      await expect(page.getByRole('region', { name: 'Submission log' }).locator('[data-submission-sent="unattested"]')).toContainText(WORDS);
+      await expectAccessible(page, 'Submissions, a case closed written off');
+      assertNoPhi('url', page.url(), { known: KNOWN });
+    });
+
     await test.step('the review says it was logged sent without sign-off, and it leaves the reviewer’s list of exports waiting', async () => {
       await reviewer.goto(reviewPath);
       const why = reviewer.getByRole('region', { name: 'Attestation' }).locator('[data-stale-export]');
@@ -128,6 +162,7 @@ test('an export whose pricing went stale after it was made is never attested, an
       await expect(reviewer.getByRole('region', { name: 'Attestation' }).getByRole('button', { name: 'Attest the export' })).toBeDisabled();
       await reviewer.goto(`/p/${practiceId}/packet-reviews`);
       await expect(reviewer.getByRole('region', { name: 'Exports waiting' })).toContainText('No export is waiting');
+      await expect(reviewer.getByRole('region', { name: 'Exports never attested' })).toHaveCount(0);
     });
   } finally {
     await context.close();

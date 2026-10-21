@@ -1,0 +1,22 @@
+{
+  "case": "CAS-29",
+  "module": "CAS",
+  "title": "Submission of an export whose pricing went stale after it was made",
+  "assertion": "Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/worker/src/packets/unattested-submission.db.test.ts",
+    "apps/web/src/lib/routes/unattested-submission-routes.db.test.ts",
+    "apps/web/src/lib/packets/unattested.test.ts",
+    "apps/web/e2e/unattested.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Prices CAS-08 again after its export: an action on its lines, no file of its own.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

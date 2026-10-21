@@ -296,7 +296,12 @@ locks, shared: the practice's and every practice's withdrawal key) in a statemen
 and a `rule_release_withdrawal`. Under READ COMMITTED each later statement of a trigger takes a new snapshot, so a
 step that waited reads the change once committed and refuses (or flags), and a change that waited commits after a
 step that was current when it was made. The shared side never waits on a row the writers lock and the writers touch no
-packet version, so there is no lock cycle.
+packet version, so there is no lock cycle. That holds only at READ COMMITTED: a REPEATABLE READ or SERIALIZABLE
+transaction keeps the snapshot it took before the change and would read past the lock (review reproduced a version
+attested after its pricing went stale and its export was logged sent without sign-off, on a session that set its own
+isolation), so `pricing_current_read_lock()` refuses any other isolation level (SQLSTATE 25000), and approval, the export
+guard, the attestation and the submission's flag with it; the application's only such transactions are read-only (the
+audit copy, the restore drill, the domain-model generator).
 
 It is enforced wherever a packet moves. Approval: `packet_version_approval_pricing` (BEFORE UPDATE, first by name; it
 does not replace `packet_version_rules`) refuses "a packet version is approved only while its pricing is current",
@@ -352,18 +357,27 @@ whose pricing is no longer current), and `submission_pricing_check` writes `subm
 in the submitter's name, once (`audit_event_submission_unattested` refuses any other); the attestation then refuses
 the version for good. `tp_app` writes neither column. `logSubmission()` asks `packetVersionUnattestedReason()` before
 the database decides again, and the log route requires the person's confirmation (`sentWithoutSignOff`) that the
-export went to the payer without the reviewer's sign-off, refusing without it. The founder's words are
+export went to the payer without the reviewer's sign-off, refusing without it; the service checks the confirmation
+again against what the INSERT returned and rolls back one the database recorded sent without sign-off unconfirmed
+(`SENT_WITHOUT_SIGN_OFF_UNCONFIRMED`), so a re-price committed between the page and the INSERT never logs one. The founder's words are
 `SUBMISSION_UNATTESTED_WORDS` ("sent without sign-off: pricing went stale after export"), said everywhere the
 submission shows (`apps/web/src/lib/packets/unattested.ts`): the submissions page says the export is never attested,
 not to send it if it has not gone, and how to log it if it has, with the confirmation box and "Log the submission
 sent without sign-off"; the log marks it "Sent without sign-off"; the packet builder says the export is never attested
-rather than waiting for the reviewer, and links the submissions page; the review page explains the refusal and what to do
-instead in three steps, re-price (already done when an accepted re-run priced the lines again; otherwise a re-run
-under what is in force now, accepted), a new version on the pricing in effect (the stale lines written off, since
-refreshing a case is PR 11's) and a new export that a reviewer attests, and says once the export was logged sent
-without sign-off; Reconciliation lists every such submission with its cause and the payer's latest answer; and the
+rather than waiting for the reviewer, and links the submissions page; the review page explains the refusal by each stale
+line's own cause, says first that an export already sent is logged before any step (once every line is written off the
+case is closed and takes no submission), then what to do instead in three steps, re-price (done already only when every
+stale line was priced again by an accepted re-run or a later run; otherwise the lines each cause leaves not priced
+again, whose period is re-run under what is in force now and accepted), a new version on the pricing in effect (the
+stale lines written off, since refreshing a case is PR 11's; none yet when every line is stale) and a new export that a
+reviewer attests, and says once the export was logged sent without sign-off; the builder, the submissions page and the
+case page's stale line say "log it first" too; the submissions page still offers an export an edit replaced, logged
+only as sent before the edit, and on a case closed written off says how to log one (a line reopened with the reason)
+instead of offering a form; the reviewer's list shows a never-attested export apart, marked so, until it is logged or
+replaced, and lists no export of a closed case; Reconciliation lists every such submission with its cause and the payer's latest answer; and the
 audit report's state column and its payer approved and recovered section count them per case
-(`unattested_submissions`, present only when there is one). The attest route's refusal says the same
+(`unattested_submissions`, present only when there is one), with the PDF's sentence under By case, which the Reports
+screen shows too (`unattestedSubmissionsNote()`). The attest route's refusal says the same
 (`PRICING_BLOCKED_TEXT.attestation`).
 
 *Item #5: a contract window's unit and start, and the rule the product computes.* A contract window could only mean
@@ -472,9 +486,12 @@ becomes `unverified`), the CHECKs hold every existing row (no version has a cite
 `pricing_check`), the functions and triggers are new (those on `pricing_run`, `contract_version`, `payer_plan_mapping`
 and `rule_release_withdrawal` take only an advisory lock), and the replaced ones keep their signatures and accept
 tp-packet/1, a version with no window citation and a report of a release not withdrawn as before. For the previous
-image, its tp-packet/1 versions are written and approved but their export is refused, its submissions of unattested
-exports are refused (its service refuses each before the database, so it logs none sent without sign-off) and those it
-logs are flagged by the database, its approvals and exports of a version whose
+image, its tp-packet/1 versions are written and approved but its export job exports nothing (its UPDATE carries no
+tp-packet-verifier/2 report, which the guard refuses, so no copy of its own reaches a payer, and none goes out without a
+contact), its submission service has no attestation check and sends the plain INSERT, which the database decides (an
+attested export is logged as before; an export whose pricing went stale after the new image's job made it is logged sent
+without sign-off, with its reason and its event, but without the person's confirmation and without its page showing
+it; any other unattested export is refused) and flags, its approvals and exports of a version whose
 pricing is not current are refused, its report job fails a report on a withdrawn release when it makes it ready, its
 export job writes no attempt events (a refusal shows as in progress, then as failed with no result after an hour), its
 export route records its requests in the person's name as before, its
@@ -675,7 +692,8 @@ copy only, and the internal record stays where it lives and is shown on the revi
   what the payment rules in effect supplied, by release (D14); the narrative alone in its block; the line schedule
   without the patient control number or trace reference, `Total` in its first cell; the dispute window's dates only
   (D2, Q3), with the contract's clause or the release's record; each line's window and how its expected amount is
-  computed; interest (D9); the evidence by its labels; the requested action; and "Approved for submission by
+  computed (above the first level the level's own window alone: no first-level clause, record or line window, in the
+  PDF or the CSV); an unrounded amount in the rounded one's form, grouped and signed, its fraction of a cent kept; interest (D9); the evidence by its labels; the requested action; and "Approved for submission by
   <practice> on <date>, reference <REF>." with "Correspondence about this dispute: <contact>." (D4 to D6). No login,
   approval time, specialist line, audit flag, evidence gap, status, verification, version number, trace reference or
   footer; a version without a stated last day is refused with a TypeError rather than printed.
@@ -697,7 +715,8 @@ copy only, and the internal record stays where it lives and is shown on the revi
   (`practice.settings.set_correspondence`) is gated by `agreement.sign`, the permission only the practice
   administrator holds, as the proof level's is by `proof_level.set`, so the registry's persona tests and the setter
   agree; a permission of its own needs the schema (see "What later pull requests take"). A name or office
-  and a 10-digit phone are required; the extension, an email and a full mailing address are optional; no other key.
+  and a 10-digit phone are required; the extension, an email and a full mailing address are optional; no other key;
+  the name and the address lines hold no @, so the contact's email stays the one email printed.
   It is validated by the web's Zod schema and again by `correspondenceContactSetting()`, read back by
   `correspondenceContactOf()` (`set`, `missing` or `malformed`, never a default), read at export inside the export's
   transaction, and never logged: the setter's audit event `correspondence_contact_set` and the route's
@@ -717,7 +736,7 @@ copy only, and the internal record stays where it lives and is shown on the revi
 - **D8. File names carry the reference**: `payment-dispute-<REF>.pdf` and `payment-dispute-<REF>-schedule.csv` on the
   four download routes, where they were `packet-<versionId>.pdf` and `packet-schedule-<versionId>.csv`.
 - **D9. Interest states only what code computed (Q4 (a)).** The rule sentence ("State <ST>[, <statute>]: payment due <N>
-  <basis> days after the payer received the claim[, interest at <R>% a year] (release <n>).") and its exclusions; the
+  <basis> days after the payer received the claim[, interest at <R>% a year] (release <n>).") and its exclusions, in words (`INTEREST_EXCLUSION_TEXT`: "self-funded ERISA plans", never the release's code); the
   `Interest by line` table lists only the lines whose interest was computed, totalled as "Interest stated in this
   request: $X"; with none computed the rule prints alone, and with no rule on file the section reads "Prompt-pay
   interest is not stated in this request." "cannot be computed", "can be computed" and "in all" are never printed.
@@ -803,6 +822,30 @@ Open for the founder then, and ruled on 2026-10-20 (Owner rulings (2026-10-20)):
 - **What "the remittance date" means.** The build names BPR16 the payment date and treats the remittance date as the
   advice's own date, which nothing verifies until PR 6c; the founder may instead rule that "the remittance date" means
   BPR16, in which case the lists stop offering both and the screen says which date is counted.
+
+## Review fixes (2026-10-21)
+
+Review of the round that built #37 part 1 and the submission sent without sign-off found, and this pull request fixes:
+a REPEATABLE READ or SERIALIZABLE session read past the pricing lock (now refused, as the Decision says); a re-price
+committed between the submissions page and the INSERT could log a submission sent without sign-off unconfirmed (now
+rolled back); the worker's own login could log a submission of an attested export in a person's name
+(`submission_belongs()`, replaced in this pull request's unmerged migration, refuses that login as the attestation and
+the record of a submission sent without sign-off already did); the migration header's and this ADR's account of the
+previous image (its export job exports nothing; its submission service sends the plain INSERT); the stale export's
+steps in an order that, followed, closed the case before the export already sent could be logged (now "log it first",
+the replaced export still offered, and the closed case's remedy); "Re-price: done already" chosen from the version's
+worst cause rather than each line's; the reviewer's list showing a never-attested export as work waiting; the payer's
+copy printing a prompt-pay exclusion as its code (now in words, `INTEREST_EXCLUSION_TEXT`, on the review page too),
+stating the first level's windows and clauses under a level-2 window (now the level's own window alone, with no
+per-line window in the PDF or the CSV), and printing an unrounded amount ungrouped beside its rounded one
+(`formatUnroundedUsd()`); the leak scan, which now also refuses anything shaped like a code outside the narrative, the
+quoted clauses and the CSV's header, over every route through the renderer and every contact a practice may set; an @
+in the contact's name or address lines, refused so the contact's email stays the one email printed; and wording (a
+missing contact said three times under a destructive alert, a malformed contact called missing, "your practice
+administrator" to people who have none, the reference's letters, and the Reports screen without the PDF's sentence on
+submissions sent without sign-off). Tests: the isolation refusal, the CTE that forges the record in the same statement,
+the worker's login, a re-price and a withdrawal held open together while such a submission is logged, the
+confirmation read against the INSERT, and the steps followed in their stated order through the routes and the browser.
 
 ## Owner rulings (2026-10-20)
 

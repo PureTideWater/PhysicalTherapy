@@ -38,7 +38,7 @@ export const PAYER_COPY_TEXT =
   'The PDF and the CSV are the payer’s copy: the practice’s letter with its figures, citations and evidence, closed by the approval line with the packet’s reference and your correspondence contact. They carry no login, record ID, SHA-256 or internal note; those stay on the reviewer’s review page.';
 
 /** What a missing contact means, beside a disabled Export button. */
-export const CONTACT_MISSING_TEXT = 'Your practice administrator sets the correspondence contact under Settings, Correspondence; the export prints it.';
+export const CONTACT_MISSING_TEXT = 'The practice’s administrator sets the correspondence contact under Settings, Correspondence; the export prints it.';
 
 /** A contact stored in a form the payer's copy cannot print (never replaced by a default). */
-export const CONTACT_MALFORMED_TEXT = 'The correspondence contact on file is not in a form the payer’s copy can print. Your practice administrator sets it again under Settings, Correspondence.';
+export const CONTACT_MALFORMED_TEXT = 'The correspondence contact on file is not in a form the payer’s copy can print. The practice’s administrator sets it again under Settings, Correspondence.';

@@ -108,6 +108,7 @@ Every case the suites must contain, by module, with the fixture that exercises i
 | CAS-26 | Payer copy of an export | No login, record ID, SHA-256, verification, internal note, or interest not computed; approval line, reference and contact printed; the internal record on the review page |
 | CAS-27 | Export with no correspondence contact | Refused before anything is queued, with the remedy; the job refuses with its code and prints nothing |
 | CAS-28 | Packet found by its reference | Every version of the practice whose reference matches, none of another practice |
+| CAS-29 | Submission of an export whose pricing went stale after it was made | Never attested; logged only as sent without sign-off, with the person’s confirmation, its reason and the database’s audit event; any other unattested export refused |
 
 ## Ledger (LED)
 

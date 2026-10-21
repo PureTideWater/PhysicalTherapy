@@ -171,6 +171,8 @@ export interface SubmittableVersion {
    * only an attested export is logged (attested, or still current and waiting for the reviewer).
    */
   readonly unattestedReason: SubmissionUnattestedReason | null;
+  /** How many lines the version has (when every one is stale, no new version can be written from it yet). */
+  readonly versionLines: number;
 }
 
 /**
@@ -209,7 +211,89 @@ export async function submittableVersion(scope: Scope, input: { readonly practic
         attestedAt: row.attested_at?.toISOString() ?? null,
         pricing: await pricingNow(scope, { practiceId: input.practiceId, content: row.content, requestId: input.requestId }),
         unattestedReason: row.attested_at === null ? await packetVersionUnattestedReason(scope.client, { practiceId: input.practiceId, versionId: row.id }) : null,
+        versionLines: row.content.lines.length,
       };
+}
+
+/** An export an edit replaced that may still be logged, as sent before the edit (CAS-13). */
+export interface EarlierExport {
+  readonly versionId: string;
+  readonly versionNo: number;
+  readonly disputeLevel: number;
+  readonly exportedOn: string;
+  /** The day the next version was written (UTC): the export is logged only as sent before it. */
+  readonly replacedOn: string;
+  /** The last day it may be logged as sent (the day before replacedOn). */
+  readonly lastDay: string;
+  readonly exportSha256: string;
+  readonly exportCsvSha256: string;
+  readonly packetReference: string | null;
+  readonly attested: boolean;
+  /** 'pricing_stale_after_export' when it is never attested and is logged sent without sign-off; null when attested. */
+  readonly unattestedReason: SubmissionUnattestedReason | null;
+}
+
+/** How many replaced exports the page offers at most, newest first. */
+export const EARLIER_EXPORTS_LISTED = 5;
+
+/**
+ * The exports an edit replaced that a submission may still send (submission_belongs: a replaced version is logged only
+ * when it went to the payer before the next version was written): exported at least a day before that, not logged yet,
+ * either attested or never attested because its pricing went stale after the export (logged sent without sign-off), and
+ * dated no later than the case's latest submission allows; newest first. So an export that went to the payer is still
+ * logged after the stale lines were written off and a new version written (the founder's ruling of 2026-10-20). The
+ * database decides again as it is logged.
+ */
+export async function earlierExports(scope: Scope, input: { readonly practiceId: string; readonly caseId: string }): Promise<readonly EarlierExport[]> {
+  const { rows } = await scope.client.query<{
+    id: string;
+    version_no: number;
+    dispute_level: number;
+    exported_on: string;
+    replaced_on: string;
+    last_day: string;
+    export_sha256: string;
+    export_csv_sha256: string;
+    approved_sha256: string | null;
+    attested: boolean;
+    unattested_reason: string | null;
+  }>(
+    `SELECT v.id, v.version_no, v.dispute_level, (v.exported_at AT TIME ZONE 'UTC')::date::text AS exported_on,
+            (n.created_at AT TIME ZONE 'UTC')::date::text AS replaced_on, ((n.created_at AT TIME ZONE 'UTC')::date - 1)::text AS last_day,
+            v.export_sha256, v.export_csv_sha256, v.approved_sha256, v.attested_by IS NOT NULL AS attested,
+            CASE WHEN v.attested_by IS NULL THEN packet_version_unattested_reason(v.id) END AS unattested_reason
+       FROM packet p
+       JOIN packet_version v ON v.packet_id = p.id AND v.practice_id = p.practice_id AND v.id <> p.current_version_id
+       JOIN packet_version n ON n.packet_id = v.packet_id AND n.version_no = v.version_no + 1
+      WHERE p.case_id = $1 AND p.practice_id = $2 AND v.exported_at IS NOT NULL
+        AND (v.exported_at AT TIME ZONE 'UTC')::date < (n.created_at AT TIME ZONE 'UTC')::date
+        AND NOT EXISTS (SELECT 1 FROM submission s WHERE s.packet_version_id = v.id AND s.practice_id = v.practice_id)
+        AND NOT EXISTS (SELECT 1 FROM submission s WHERE s.case_id = p.case_id AND s.practice_id = p.practice_id AND s.submitted_on >= (n.created_at AT TIME ZONE 'UTC')::date)
+      ORDER BY v.version_no DESC
+      LIMIT ${String(EARLIER_EXPORTS_LISTED)}`,
+    [input.caseId, input.practiceId],
+  );
+  return rows.flatMap((row) => {
+    const reason = row.unattested_reason === null ? null : submissionSentOf(row.unattested_reason);
+    if (!row.attested && reason?.kind !== 'unattested') {
+      return [];
+    }
+    return [
+      {
+        versionId: row.id,
+        versionNo: row.version_no,
+        disputeLevel: row.dispute_level,
+        exportedOn: row.exported_on,
+        replacedOn: row.replaced_on,
+        lastDay: row.last_day,
+        exportSha256: row.export_sha256,
+        exportCsvSha256: row.export_csv_sha256,
+        packetReference: row.approved_sha256 === null ? null : packetReference(row.approved_sha256),
+        attested: row.attested,
+        unattestedReason: reason?.kind === 'unattested' ? reason.reason : null,
+      },
+    ];
+  });
 }
 
 /** The pricing check the database recorded on a submission when it was logged (null for one it cannot see or logged before the check). */

@@ -388,20 +388,23 @@ export const setProofLevelAction = practiceRoute({
 
 /** The contact form's fields, as their refusals name them (CORRESPONDENCE_FIELDS but the whole contact's). */
 const blankText = (max: number, message: string) => z.string().trim().max(max, message).optional().default('');
+/** The name and the address lines hold no @: the email field holds the one email the payer's copy prints. */
+const NO_AT = 'no @ here: an email goes in its own field';
+const noAt = <T extends z.ZodType<string, unknown>>(schema: T): T => schema.refine((value: string) => !value.includes('@'), NO_AT);
 
 /**
  * The correspondence contact as the form sends it (D6; Q1 (a)): a name or office and a phone required, the extension,
- * email and a full mailing address optional. The same rules again in @tp/packets correspondenceContactSetting(), which
- * the worker's setter applies before anything is written.
+ * email and a full mailing address optional, and no @ in the name or an address line. The same rules again in @tp/packets
+ * correspondenceContactSetting(), which the worker's setter applies before anything is written.
  */
 export const correspondenceForm = z.object({
-  name: z.string().trim().min(1, 'a name or office').max(120, 'a name or office of at most 120 characters'),
+  name: noAt(z.string().trim().min(1, 'a name or office').max(120, 'a name or office of at most 120 characters')),
   phone: z.string().trim().min(1, 'a 10-digit phone number, such as (919) 555-0100').max(32, 'a 10-digit phone number, such as (919) 555-0100'),
   phone_extension: blankText(6, 'an extension of 1 to 6 digits').pipe(z.string().regex(/^\d{0,6}$/, 'an extension of 1 to 6 digits')),
   email: blankText(254, 'an email address of at most 254 characters'),
-  address_line1: blankText(100, 'at most 100 characters'),
-  address_line2: blankText(100, 'at most 100 characters'),
-  address_city: blankText(100, 'at most 100 characters'),
+  address_line1: noAt(blankText(100, 'at most 100 characters')),
+  address_line2: noAt(blankText(100, 'at most 100 characters')),
+  address_city: noAt(blankText(100, 'at most 100 characters')),
   address_state: blankText(2, 'a USPS state or territory code, such as NC').pipe(z.string().toUpperCase()),
   address_zip: blankText(10, 'a ZIP code of five digits, or ZIP+4'),
 });

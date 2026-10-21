@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { RATE_RECORD_FIELDS, amendVersion, approveRateRecordField, approveVersion, signOffVersion, verifyDisputeWindow } from '@tp/contracts';
 import { readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createOrganization, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
@@ -28,6 +29,7 @@ import { MemoryQueue } from '../uploads/queue';
 import { attestPacketExportAction, packetReviewPage, packetReviewsPage } from './packets';
 import { reconciliationPage } from './reconciliation';
 import { logSubmissionAction, submissionsPage } from './submissions';
+import { reopenLineAction, writeOffLineAction } from './triage';
 
 /**
  * A submission sent without sign-off, through the screens' routes against PostgreSQL (the founder's ruling of
@@ -249,8 +251,8 @@ describe('an export whose pricing went stale after it was made and before its at
     const review = ok(await call(packetReviewPage, setup.reviewer, { ...P(setup.practice), caseId: setup.caseId, versionId: setup.versionId }));
     expect(review).toMatchObject({ unattestedReason: REASON, sentWithoutSignOff: null, review: { attestation: null, pricingNow: { status: 'PRICING_NOT_IN_EFFECT' } } });
     expect(refused(await attestThroughRoute(setup)).map((issue) => issue.message)).toEqual([PRICING_BLOCKED_TEXT.attestation]);
-    // Waiting in the reviewer's list until it is logged.
-    expect(ok(await call(packetReviewsPage, setup.reviewer, P(setup.practice))).awaiting.map((entry) => entry.versionId)).toEqual([setup.versionId]);
+    // Listed for the reviewer until it is logged, marked never attested: never shown as work waiting.
+    expect(ok(await call(packetReviewsPage, setup.reviewer, P(setup.practice))).awaiting.map((entry) => [entry.versionId, entry.neverAttested])).toEqual([[setup.versionId, true]]);
   }, 120_000);
 
   it('is not logged without the person’s confirmation that it went without sign-off, and the reviewer cannot log it', async () => {
@@ -344,4 +346,111 @@ describe('an attested export whose pricing went stale since', () => {
     expect(page.submissions.map((submission) => submission.sent)).toEqual([{ kind: 'attested' }]);
     expect(ok(await call(reconciliationPage, setup.practice.manager, P(setup.practice))).unattested).toEqual({ total: 0, items: [] });
   }, 300_000);
+});
+
+/** The case's lines in row order (by service date), as the case page writes them off. */
+const caseLines = (setup: Exported) =>
+  owner<{ id: string }>(setup.practice, 'SELECT cl.id FROM case_line cl JOIN service_line sl ON sl.id = cl.service_line_id WHERE cl.case_id = $1 ORDER BY sl.service_date, cl.id', [setup.caseId]);
+const writeOff = async (setup: Exported, lineIds: readonly string[]) => {
+  for (const caseLineId of lineIds) {
+    ok(await call(writeOffLineAction, setup.practice.manager, P(setup.practice), { caseLineId, reason: 'other', text: 'SYNTHETIC: its pricing went stale', confirm: 'on' }));
+  }
+};
+const caseState = async (setup: Exported) => (await owner<{ state: string }>(setup.practice, 'SELECT state FROM "case" WHERE id = $1', [setup.caseId]))[0]?.state;
+const submissions = (setup: Exported) => call(submissionsPage, setup.practice.manager, { ...P(setup.practice), caseId: setup.caseId });
+const yesterday = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+
+describe('the stale export’s steps followed in the order the pages give them (the founder’s ruling of 2026-10-20)', () => {
+  it('every line stale: the export already sent is logged first, then every line written off closes the case, and nothing is left waiting', async () => {
+    const setup = await exportedCase('unattested routes: steps in order');
+    await acceptedRerun(setup);
+    const before = ok(await submissions(setup));
+    expect(before).toMatchObject({ closed: false, earlier: [], submittable: { unattestedReason: REASON, versionLines: 3 } });
+    // 1. Log it first, as it happened.
+    const logged = ok(await logThroughRoute(setup, setup.practice.manager, { sentWithoutSignOff: 'on' }));
+    expect(await stored(setup)).toEqual([{ id: logged.objectId, unattested_reason: REASON, pricing_check: 'PRICING_NOT_IN_EFFECT', submitted_by: setup.practice.manager }]);
+    // 2. Every line is stale, so no new version can be written; writing them all off closes the case.
+    await writeOff(setup, (await caseLines(setup)).map((line) => line.id));
+    expect(await caseState(setup)).toBe('closed_written_off');
+    // The submission stays logged; the page offers no form on the closed case, and the reviewer has nothing listed.
+    const after = ok(await submissions(setup));
+    expect(after.closed).toBe(true);
+    expect(after.submissions.map((entry) => [entry.submissionId, entry.sent])).toEqual([[logged.objectId, { kind: 'unattested', reason: REASON }]]);
+    expect(ok(await call(packetReviewsPage, setup.reviewer, P(setup.practice))).awaiting).toEqual([]);
+  }, 360_000);
+
+  it('every line written off before the export already sent was logged: the page says the case takes no submission, and a line reopened logs it', async () => {
+    const setup = await exportedCase('unattested routes: written off first');
+    await acceptedRerun(setup);
+    const lines = (await caseLines(setup)).map((line) => line.id);
+    await writeOff(setup, lines);
+    expect(await caseState(setup)).toBe('closed_written_off');
+    const closed = ok(await submissions(setup));
+    expect(closed.closed).toBe(true);
+    // The database takes no submission on the closed case (the page shows how to log one instead of a form).
+    expect(refused(await logThroughRoute(setup, setup.practice.manager, { sentWithoutSignOff: 'on' })).map((issue) => issue.message)).toEqual(['a case closed written off takes no submission']);
+    expect(await stored(setup)).toEqual([]);
+    // Nor does the reviewer's list keep the closed case's export: the attestation refuses it.
+    expect(ok(await call(packetReviewsPage, setup.reviewer, P(setup.practice))).awaiting).toEqual([]);
+    // The remedy the page gives: a line reopened with the reason, then the submission logged.
+    ok(await call(reopenLineAction, setup.practice.manager, P(setup.practice), { caseLineId: lines[0] ?? '', reason: 'SYNTHETIC: the export already went to the payer' }));
+    const reopened = ok(await submissions(setup));
+    expect(reopened).toMatchObject({ closed: false, submittable: { versionId: setup.versionId, unattestedReason: REASON } });
+    ok(await logThroughRoute(setup, setup.practice.manager, { sentWithoutSignOff: 'on' }));
+    expect((await stored(setup)).map((row) => row.unattested_reason)).toEqual([REASON]);
+  }, 360_000);
+
+  it('some lines stale: after they are written off and a new version written, the export already sent is still offered and logged as sent before the edit', async () => {
+    const setup = await exportedCase('unattested routes: partly stale');
+    // An amendment from March 6 closes the version the lines were priced under after March 5: rows 2 and 3 are stale, row 1 current.
+    const { practice } = setup;
+    const versionId = (await owner<{ contract_version_id: string }>(practice, 'SELECT DISTINCT contract_version_id FROM priced_line WHERE pricing_run_id = $1', [setup.runId]))[0]?.contract_version_id ?? '';
+    const successor = await w.as(practice, w.pricing.specialist, async (context) => {
+      const amended = await amendVersion(context, { practiceId: practice.practiceId, versionId, effectiveFrom: '2026-03-06' });
+      const { rows } = await context.scope.client.query<{ id: string }>('SELECT id FROM rate_record WHERE contract_version_id = $1', [amended.versionId]);
+      for (const row of rows) {
+        for (const field of RATE_RECORD_FIELDS) {
+          await approveRateRecordField(context, { practiceId: practice.practiceId, rateRecordId: row.id, field });
+        }
+      }
+      await verifyDisputeWindow(context, { practiceId: practice.practiceId, versionId: amended.versionId });
+      await approveVersion(context, { practiceId: practice.practiceId, versionId: amended.versionId });
+      return amended.versionId;
+    });
+    await w.as(practice, practice.manager, (context) => signOffVersion(context, { practiceId: practice.practiceId, versionId: successor }));
+    const page = ok(await submissions(setup));
+    expect(page.submittable).toMatchObject({ unattestedReason: REASON, versionLines: 3, pricing: { status: 'CONTRACT_VERSION_NOT_IN_FORCE' } });
+    expect(page.submittable?.pricing.lines.map((line) => [line.row, line.check])).toEqual([
+      [2, 'CONTRACT_VERSION_NOT_IN_FORCE'],
+      [3, 'CONTRACT_VERSION_NOT_IN_FORCE'],
+    ]);
+    // The export was made two days ago (as the superuser, with the triggers off: the database never moves an export's time).
+    await w.owner.query('BEGIN');
+    try {
+      await w.owner.query('SET LOCAL session_replication_role = replica');
+      await w.owner.query("UPDATE packet_version SET exported_at = exported_at - interval '2 days' WHERE id = $1", [setup.versionId]);
+      await w.owner.query('COMMIT');
+    } catch (error) {
+      await w.owner.query('ROLLBACK');
+      throw error;
+    }
+    // The steps taken first: the stale lines written off, and a new version written on the line left.
+    const lines = (await caseLines(setup)).map((line) => line.id);
+    await writeOff(setup, lines.slice(1));
+    const replacement = await as(practice, practice.manager, (scope) =>
+      writePacketVersion(scope, w.keys, { practiceId: practice.practiceId, caseId: setup.caseId, basedOnVersionId: setup.versionId, promptPayState: null, requestId: `test-${randomUUID()}` }),
+    );
+    expect(replacement.versionId).not.toBe(setup.versionId);
+    // The replaced export is still offered, logged only as sent before the edit.
+    const offered = ok(await submissions(setup));
+    expect(offered.submittable).toBeNull();
+    expect(offered.earlier).toMatchObject([{ versionId: setup.versionId, versionNo: 1, unattestedReason: REASON, attested: false, lastDay: yesterday(), replacedOn: today() }]);
+    // Dated the day of the edit, it is refused; dated before it, logged sent without sign-off.
+    expect(refused(await logThroughRoute(setup, practice.manager, { sentWithoutSignOff: 'on' })).map((issue) => issue.message)).toEqual([
+      "a submission sends the packet's current version; one an edit replaced is logged only when it was sent before the edit",
+    ]);
+    ok(await logThroughRoute(setup, practice.manager, { sentWithoutSignOff: 'on', submittedOn: yesterday() }));
+    expect((await stored(setup)).map((row) => [row.unattested_reason, row.pricing_check])).toEqual([[REASON, 'CONTRACT_VERSION_NOT_IN_FORCE']]);
+    expect(ok(await submissions(setup)).earlier).toEqual([]);
+  }, 360_000);
 });

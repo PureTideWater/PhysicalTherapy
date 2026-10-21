@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { STALE_EXPORT_REVIEW, staleExportSteps } from '../../lib/packets/unattested';
+import { STALE_EXPORT_REVIEW, type StalePricing, staleExportSteps } from '../../lib/packets/unattested';
 import { StaleExportReview, UnattestedSubmissions } from './unattested';
 
 /**
@@ -21,29 +21,36 @@ const text = (markup: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+/** CAS-08's three lines after an accepted re-run, every one priced again. */
+const RE_PRICED: StalePricing = { status: 'PRICING_NOT_IN_EFFECT', lines: [1, 2, 3].map((row) => ({ row, check: 'PRICING_NOT_IN_EFFECT' })) };
+/** Row 2 under a withdrawn release, of three. */
+const WITHDRAWN: StalePricing = { status: 'RELEASE_WITHDRAWN', lines: [{ row: 2, check: 'RELEASE_WITHDRAWN' }] };
+
 describe('the review’s explanation of an export whose pricing went stale after it was made', () => {
-  it('says why it is never attested, the three steps in order, and how an export already sent is logged', () => {
-    const markup = renderToStaticMarkup(<StaleExportReview cause="RELEASE_WITHDRAWN" unattestedReason="pricing_stale_after_export" sent={null} />);
+  it('says why it is never attested, that an export already sent is logged first, then the three steps in order', () => {
+    const markup = renderToStaticMarkup(<StaleExportReview pricing={WITHDRAWN} versionLines={3} unattestedReason="pricing_stale_after_export" sent={null} />);
     expect(markup).toContain('data-stale-export="RELEASE_WITHDRAWN"');
     expect(markup).toContain('data-sent="no"');
     expect(text(markup)).toContain(STALE_EXPORT_REVIEW.title);
-    expect(text(markup)).toContain(STALE_EXPORT_REVIEW.why('RELEASE_WITHDRAWN'));
+    expect(text(markup)).toContain(STALE_EXPORT_REVIEW.why(WITHDRAWN));
     expect([...markup.matchAll(/data-step="([a-z]+)"/g)].map((match) => match[1])).toEqual(['reprice', 'version', 'export']);
-    for (const step of staleExportSteps('RELEASE_WITHDRAWN')) {
+    for (const step of staleExportSteps(WITHDRAWN, 3)) {
       expect(text(markup)).toContain(step.text);
     }
     expect(markup).toContain('data-if-sent="without_sign_off"');
     expect(text(markup)).toContain(STALE_EXPORT_REVIEW.ifSent);
+    // Log first: said before the steps.
+    expect(markup.indexOf('data-if-sent')).toBeLessThan(markup.indexOf('data-step="reprice"'));
   });
 
   it('says once it was logged sent without sign-off, and offers no log of an export nothing says may be', () => {
-    const sent = renderToStaticMarkup(<StaleExportReview cause="PRICING_NOT_IN_EFFECT" unattestedReason={null} sent={{ submittedOn: '2026-10-20' }} />);
+    const sent = renderToStaticMarkup(<StaleExportReview pricing={RE_PRICED} versionLines={3} unattestedReason={null} sent={{ submittedOn: '2026-10-20' }} />);
     expect(sent).toContain('data-sent="without_sign_off"');
     expect(sent).toContain('data-sent-without-sign-off="2026-10-20"');
     expect(text(sent)).toContain(STALE_EXPORT_REVIEW.sent('2026-10-20'));
     expect(sent).not.toContain('data-if-sent');
     // An export made before the export's checks were recorded: never attested, and not logged without sign-off either.
-    const before = renderToStaticMarkup(<StaleExportReview cause="PRICING_NOT_IN_EFFECT" unattestedReason={null} sent={null} />);
+    const before = renderToStaticMarkup(<StaleExportReview pricing={RE_PRICED} versionLines={3} unattestedReason={null} sent={null} />);
     expect(before).not.toContain('data-if-sent');
     expect(text(before)).not.toContain(STALE_EXPORT_REVIEW.ifSent);
   });
