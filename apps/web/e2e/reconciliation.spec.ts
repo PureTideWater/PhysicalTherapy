@@ -66,6 +66,17 @@ async function expectFigure(page: Page, practiceId: string, figure: string, text
   }).toPass({ timeout: 90_000 });
 }
 
+/**
+ * The first case line's stage on the Reconciliation screen, once the worker has moved it: the stage can follow the
+ * ledger's figure by a moment under load (the figure read deposited while the line still read Payer approved).
+ */
+async function expectLineStage(page: Page, practiceId: string, stage: string): Promise<void> {
+  await expect(async () => {
+    await page.goto(`/p/${practiceId}/reconciliation`);
+    await expect(page.getByRole('list', { name: 'Case lines' }).getByRole('listitem').first().locator('[data-line-stage]')).toHaveText(stage, { timeout: 1_000 });
+  }).toPass({ timeout: 90_000 });
+}
+
 test('an adjusted remittance, a posting export, an EFT export and a recoupment move the ledger, and the ROI statement recomputes from its entries (J10, milestone 9)', async ({ page, browser }) => {
   test.setTimeout(420_000);
   const practiceId = await ledgerPractice();
@@ -137,6 +148,7 @@ test('an adjusted remittance, a posting export, an EFT export and a recoupment m
     await withWorker(async () => {
       await uploadExport(page, 'eft_export', 'eft-export.csv', 'text/csv');
       await expectFigure(page, practiceId, 'deposited', '$30.00');
+      await expectLineStage(page, practiceId, 'Recovered (posted or deposited)');
     });
     await expect(page.locator('[data-figure="recovered"]')).toContainText('$30.00');
     await expect(page.locator('[data-figure="recovered"]')).toContainText('Recovered (deposited)');
