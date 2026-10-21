@@ -348,7 +348,11 @@ worst-shape result (the capacity test's 50,000 rows through the upload route, SY
 operator functions) and proves the paging, the sums against the summary and, in a process of its own under a 512 MiB
 heap (the web task's memory), that the read and render of the first, a middle and the last page each list 50 groups
 or the last 7 in about 140 KB of HTML and add under 10 MiB to the heap; the harness opens each emailed link and then
-its last page.
+its last page. Each read ranks every group in SQL: about 0.2 s at the worst shape on PostgreSQL 18, because
+`screening_standing()`, which the ranking calls for every row and every group, is a SQL-standard body (`RETURN`) the
+planner inlines; with a `SET search_path` of its own it was not inlined and a read took 0.47 s, which put that test's
+sweep of all 206 pages at 109.6 s of its 120 s on CI (7bcb5fc). The test now reads the pages four at a time and states
+each step's time limit with the measurements behind it.
 
 **An unguessable link, emailed only.** The token is 32 letters a to z drawn by rejection sampling from the
 operating system's random bytes (about 150 bits), letters only so the URL guard admits it, at
@@ -424,9 +428,11 @@ no `practice_id`, no registry row, no other role's privilege):
 - `marketing_campaign`: the campaign codes the founder lists (`console_register_marketing_campaign()`, a platform
   administrator; its screen is PR 7's), append-only, each with an ID the listing's audit event names. That a listed
   campaign is one sent to many people is the founder's rule, kept by review; PR 7's reports show a campaign's cohort
-  only from a minimum size.
+  only at 11 or more (Owner rulings (2026-10-21)). Every row that keeps a link's campaign code keeps it only when it is
+  listed here as the row is written, `other` for any other code (Owner rulings (2026-10-21)).
 - `screening_prospect` gains `source` (the closed list of decision 8, optional), `utm_source`, `utm_medium`,
-  `utm_campaign` and `paid_click` (from the attribution cookie), `referring_firm` (optional, screened by
+  `utm_campaign` (kept only when listed, `other` otherwise) and `paid_click` (from the attribution cookie),
+  `referring_firm` (optional, screened by
   `textPhiFindings`), `followup_consent_sha256` (null until PR 6e captures consent) and `screening_terms_sha256` (the
   SHA-256 of the screening terms accepted, decision 19; null until the terms' wording, the founder's and counsel's,
   and its checkbox land). `screening_run` gains `first_opened_at`: set by the result page's signal
@@ -455,7 +461,9 @@ the kind of paid click (`paid_search` for `gclid`, `gbraid`, `wbraid` or `msclki
 `li_fat_id`, `ttclid` or `twclid`), read by presence alone, so the click ID never leaves the URL. `Max-Age` 30 days,
 `Path=/`, `HttpOnly`, `SameSite=Lax`, `Secure` on https; the first visit wins. The screening and request-audit
 handlers read it on the server (`src/lib/http/attribution.ts`), check every value again, and pass the four values; the
-database's CHECKs hold the same shape. No script reads it, no third party receives it, and nothing logs it. The
+database's CHECKs hold the same shape, and the database keeps the campaign code only when the founder lists it
+(`other` otherwise; Owner rulings (2026-10-21)), so a name typed into a link's campaign stays in the visitor's own
+cookie and is stored nowhere. No script reads it, no third party receives it, and nothing logs it. The
 privacy notice (#51) discloses it; counsel confirms the disclosure. Until that review is recorded a production server
 neither sets the cookie nor reads it (docs/product/legal-surfaces.md, `attribution-cookie`;
 `src/lib/legal-surfaces.ts`), so no campaign code is kept from a visit before the disclosure exists, from the first
@@ -694,7 +702,8 @@ capacity test.
 What stays open: counsel on the reworded surfaces and the cookie disclosure, on keeping a converted prospect's summary
 12 months without consent, on unlinked outcomes and the stated linkage while a summary or request is kept, on a
 different address replacing a request's summary and on telling that address so; the founder on a summary that matches
-by the contact address alone (built: deleted, its request left without one); the terms' wording and whether their hash is required; PR 6e's
+by the contact address alone (built: deleted, its request left without one; kept as built, Owner rulings (2026-10-21));
+the terms' wording and whether their hash is required; PR 6e's
 consent capture, withdrawal page and reminders; PR 7's funnel, lead list and campaign screen (a schema PR for its read
 functions).
 
@@ -753,6 +762,58 @@ cap and the honest message), sized from these measurements and decisions 14 and 
 records, from the keyed read's measured seconds (PR 6b); the weekly schedule, which fires once the default branch
 carries workflows (audit #54); a larger runner once the Team organization exists; #31's check of the scale release's
 counts against release 1's real sources.
+
+## Owner rulings (2026-10-21)
+
+The founder, Tyler Williams, ruled on 2026-10-21 on what PR 6's review of that day left open. The question on the
+campaign code was whether a code from a landing page's link is kept only when it is on the founder's list, because a
+shape check cannot catch a person's name typed inside a code.
+
+- **A summary that matches by the contact address alone: kept as built.** A later screening from the same contact
+  address under another practice name or ZIP deletes the earlier kept summary at its own completion, so the practice
+  never has two exact-totals records to subtract, and carries no request: the request stays, without a summary, and is
+  never carried onto another practice's figures. *Built:* `operator_screening_complete()` and its event
+  `screening_lead_left_request`, naming the request (`screening.db.test.ts`).
+- **The result page and the email say when a summary is kept with an earlier request.** A screening whose summary
+  took over the request of an earlier screening with the same practice name and ZIP says so, and that the details are
+  kept with that request for 12 months from this screening. *Built:* `kept_with` (`earlier_request`) from
+  `screening_result_summary()` and `operator_screening_complete()`, in one wording for both (`wording.ts`,
+  `retention.ts`).
+- **Deletion goes through PR 6e's withdrawal link.** A consenting prospect deletes their kept summary with the link
+  PR 6e sends; PR 6 builds the database's part (`screening_lead_withdraw()`, by the token's SHA-256, its products
+  with it, an audit event, an unknown token answered alike) and no other way to delete a summary early. A summary kept
+  with a request still goes with the request (#51's deletion).
+- **Requests keep `utm_campaign` only when it is on the founder's list; source and medium keep the shape checks.**
+  Every row that keeps a link's campaign code keeps it only when it is listed in `marketing_campaign` as the row is
+  written, `other` when a code was given that is not listed, and null when none was: `screening_prospect`,
+  `screening_lead` and `prospect_request` (`utm_campaign`) and `screening_outcome` (`campaign`), the only four columns
+  that hold one. *Built:* in Postgres, so no write path can store an unlisted code: `marketing_campaign_kept()` names
+  the code as kept, and a trigger on each table (`marketing_campaign_listed_only()`, `screening_outcome_campaign_listed()`)
+  applies it before every insert and every update that names the column, whoever writes: the definer functions, the
+  owner's own statements, and any role later granted a write (the trigger runs as the writer, who must then read the
+  list too, or the write fails). The application role writes none of these columns directly (no grant). A code of
+  the wrong shape is refused by the trigger under the column's constraint name before the CHECK could print the row,
+  so no error carries it. An outcome takes its prospect's code as kept, so the two never differ, and a kept summary and
+  a conversion's request copy the prospect's. The triggers sit beside the tables' immutability guards: the application
+  role's review of a request names only the columns it is granted and never fires its trigger, and an update that
+  names the column meets the guard (`prospect_request_fixed()`, `screening_lead_rules()`, `screening_outcome_rules()`,
+  and `reject_change()` on a prospect), so a row's code is set once, as it is written. `utm_source` and `utm_medium`
+  are kept as given, under their shape checks, and the web layer keeps its shape checks on all three. **A code listed
+  later does not change a row already stored as `other`:** the code that row was given was never stored, so nothing
+  can be reclassified; only rows written after the listing keep it. Where the code goes: the visitor's own first-touch
+  cookie, in their browser, may still carry it; no log line, job payload, audit event, error message or email does
+  (`routes.db.test.ts` searches the services' log lines, the queued jobs, the emails, a refusal and the audit trail
+  for one; the e2e journey proves an unlisted code from a landing link stored as `other`, and registers its listed
+  campaign through `console_register_marketing_campaign()`).
+- **PR 7's campaign reports use a minimum cohort of 11.** A report shows a campaign's counts only for a cohort of 11
+  or more outcomes, the CMS small-cell standard the screening's rows already keep. Built with PR 7's read functions;
+  nothing in PR 6 reports a cohort.
+- **The images fix went to `claude/build-platform` as its own pull request.** #32 (8f6e4d5 cherry-picked, the two
+  Dockerfiles byte-identical) merged as 5df4108; PR 6 merged that base, so its images are the base's.
+
+What stays open: counsel and the founder on the wording of what a request and a kept summary keep, which still says
+"the campaign codes ... of the link you came from" and may now say that the campaign code is kept only when it is one
+we list (`retention.ts`, `wording.ts`); PR 7's campaign screen, from which the founder lists codes.
 
 ## Revisit when
 
