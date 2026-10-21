@@ -24,6 +24,7 @@ export {
   withActor,
   withJobScope,
   withPracticeScope,
+  withPublicSnapshot,
 } from './scope';
 export {
   type Effect,

@@ -66,7 +66,8 @@ export async function releaseHeader(client: ScopeClient, releaseNo: number): Pro
   return row === undefined ? null : { releaseNo: row.release_no, manifestSha256: row.manifest_sha256 };
 }
 
-interface RecordRow {
+/** A rule record as rule_record stores it: what the engine reads, its window as dates, and the SHA-256 the loader stored. */
+export interface StoredRecordRow {
   readonly record_type: RuleRecord['record_type'];
   readonly key: Record<string, string>;
   readonly value: Record<string, unknown>;
@@ -76,21 +77,13 @@ interface RecordRow {
 }
 
 /**
- * A published release as the engine reads it, from rule_release and rule_record. The table keeps each
- * record's type, key, value and window (what the engine reads) and the SHA-256 the loader computed
- * from the whole record file entry; the trace names every record by that stored hash, as ADR 0029
- * says it does (`rule_record.sha256`), not by a hash of the columns read back.
+ * A release as the engine reads it, from its header and its stored records (pure). The table keeps each record's
+ * type, key, value and window (what the engine reads) and the SHA-256 the loader computed from the whole record
+ * file entry; the trace names every record by that stored hash, as ADR 0029 says it does (`rule_record.sha256`),
+ * not by a hash of the columns read back. The screening adapter indexes the records operator_screening_release()
+ * returns through it too.
  */
-export async function loadRuleRelease(client: ScopeClient, releaseNo: number): Promise<IndexedRelease> {
-  const header = await releaseHeader(client, releaseNo);
-  if (header === null) {
-    throw new RuleReleaseMismatchError(releaseNo, await currentReleaseNo(client));
-  }
-  const { rows } = await client.query<RecordRow>(
-    `SELECT record_type, key, value, effective_from::text AS effective_from, effective_to::text AS effective_to, sha256
-       FROM rule_record WHERE release_no = $1 ORDER BY record_type, effective_from, id`,
-    [releaseNo],
-  );
+export function indexStoredRelease(header: ReleaseHeader, rows: readonly StoredRecordRow[]): IndexedRelease {
   const stored = new Map<RuleRecord, string>();
   const records = rows.map((row) => {
     // The fields the engine reads; the source, verification, quotes and notes stay in the release files.
@@ -112,4 +105,18 @@ export async function loadRuleRelease(client: ScopeClient, releaseNo: number): P
       return { record_type: record.record_type, key: { ...(record.key as Record<string, string>) }, effective_from: record.effective_from, effective_to: record.effective_to, sha256 };
     },
   };
+}
+
+/** A published release as the engine reads it, from rule_release and rule_record (indexStoredRelease). */
+export async function loadRuleRelease(client: ScopeClient, releaseNo: number): Promise<IndexedRelease> {
+  const header = await releaseHeader(client, releaseNo);
+  if (header === null) {
+    throw new RuleReleaseMismatchError(releaseNo, await currentReleaseNo(client));
+  }
+  const { rows } = await client.query<StoredRecordRow>(
+    `SELECT record_type, key, value, effective_from::text AS effective_from, effective_to::text AS effective_to, sha256
+       FROM rule_record WHERE release_no = $1 ORDER BY record_type, effective_from, id`,
+    [releaseNo],
+  );
+  return indexStoredRelease(header, rows);
 }

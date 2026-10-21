@@ -254,6 +254,15 @@ describe('documentChanges, on synthetic schema changes', () => {
     expect(summary).toContain('**This summary could not read the new document line by line**');
   });
 
+  it("reports a change to a code block's info string, and not a longer fence around the same block", () => {
+    const cross = /\n```text\n[\s\S]*?\n```\n/.exec(committed)?.[0] ?? '';
+    expect(cross).not.toBe('');
+    const relabelled = documentChanges(committed, edit(committed, cross, cross.replace('\n```text\n', '\n```console\n')));
+    expect(relabelled.map((c) => `${c.category} ${c.kind}`).sort()).toEqual(['cross-checks added', 'cross-checks removed']);
+    const longer = edit(committed, cross, cross.replace('\n```text\n', '\n````text\n').replace(/\n```\n$/, '\n````\n'));
+    expect(documentChanges(committed, longer)).toEqual([]);
+  });
+
   it('reports a change to any line it does not fold (every 41st line of the document, edited)', () => {
     const reading = readDocument(committed);
     const foldedSet = new Set(reading.folded);

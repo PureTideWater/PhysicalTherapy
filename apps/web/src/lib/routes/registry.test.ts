@@ -30,6 +30,7 @@ import * as reportDocuments from './report-documents';
 import * as reports from './reports';
 import * as roi from './roi';
 import * as ruleReleases from './rule-releases';
+import * as screening from '../screening/routes';
 import * as security from './security';
 import * as settings from './settings';
 import * as signIn from './sign-in';
@@ -81,6 +82,7 @@ const EXPORTED = new Map<string, Route>(
     reports,
     roi,
     ruleReleases,
+    screening,
     security,
     settings,
     signIn,
@@ -219,9 +221,10 @@ describe('every registered route', () => {
     if (route.access.kind === 'public') {
       expect(route.phi).toBe(false);
       // Sign-in, Stripe's and the e-signature vendor's webhooks, which their signatures authenticate (docs/adr/0050,
-      // 0053), the audit request, the status page, the maintenance page, the load balancer's health check (0055), and
-      // the security contact: the disclosure page and security.txt (audit item #20 (f)).
-      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance|security)$|^\/api\/health$|^\/\.well-known\/security\.txt$/);
+      // 0053), the audit request, the status page, the maintenance page, the load balancer's health check (0055), the
+      // free screening, its result link and the result page's opened signal (0062), and the security contact: the
+      // disclosure page and security.txt (audit item #20 (f)).
+      expect(route.path).toMatch(/^\/(api\/)?sign-in|^\/api\/(billing|agreements)\/webhook$|^\/(request-audit|status|maintenance|security)$|^\/api\/health$|^\/screening(\/results\/\[resultId\])?$|^\/api\/screening\/opened$|^\/\.well-known\/security\.txt$/);
     }
     if (route.method !== 'GET' || route.kind === 'action') {
       // Every POST and PUT is checked for the application's origin, but a webhook its sender signs (docs/adr/0053).

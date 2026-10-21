@@ -19,22 +19,12 @@ export const SECURITY_TXT_EXPIRES = '2027-04-30T00:00:00.000Z';
 /** How many days before the expiry disclosure.test.ts fails, so the file is renewed while it is still current. */
 export const SECURITY_TXT_RENEW_DAYS = 30;
 
-/** The disclosure page's parts that carry a legal commitment, by their ids in docs/product/legal-surfaces.md. */
-export const DISCLOSURE_LEGAL_SURFACES = ['disclosure-response-times', 'good-faith-research'] as const;
-
 /**
- * The legal surfaces still waiting for their review (docs/product/legal-surfaces.md, "Before: any production
- * deploy"). A production server leaves each of them out, so a draft commitment never reaches the public there before
- * counsel or the security official has reviewed it; every other environment shows it, where it is read in place. The
- * pull request that records a surface's review takes its row off the list and its id out of here
- * (tools/test/legal-surfaces.test.ts holds the two to each other).
+ * The disclosure page's parts that carry a legal commitment, by their ids in docs/product/legal-surfaces.md, and the
+ * list of surfaces still waiting for their review, which a production server leaves out (src/lib/legal-surfaces.ts
+ * holds both, with the screening's and the attribution cookie's).
  */
-export const LEGAL_SURFACES_AWAITING_REVIEW: ReadonlySet<string> = new Set<string>(['disclosure-response-times', 'good-faith-research']);
-
-/** True when a server in `environment` shows the legal surface `id`. */
-export function showsLegalSurface(id: string, environment: 'dev' | 'staging' | 'production'): boolean {
-  return environment !== 'production' || !LEGAL_SURFACES_AWAITING_REVIEW.has(id);
-}
+export { DISCLOSURE_LEGAL_SURFACES, LEGAL_SURFACES_AWAITING_REVIEW, showsLegalSurface } from '../legal-surfaces';
 
 /** The one language reports are read in (Preferred-Languages, RFC 5646 tags). */
 export const PREFERRED_LANGUAGES = 'en';

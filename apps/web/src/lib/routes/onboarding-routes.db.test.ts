@@ -23,7 +23,8 @@ import type { CookieJar, Outcome, Route, RouteRequest } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { MemoryQueue } from '../uploads/queue';
 import { compliancePage, exportEvidence, recordEvidence, sendEvidence } from './compliance';
-import { convertProspect, prospectsPage, publishTerms, resendInvitationFromConsole, uploadAgreement } from './console-onboarding';
+import { ATTRIBUTION_COOKIE } from '../http/attribution';
+import { DECLINED_REASON_LABELS, convertProspect, prospectsPage, publishTerms, resendInvitationFromConsole, reviewProspect, uploadAgreement } from './console-onboarding';
 import { ESIGN_WEBHOOK_MAX_BYTES, acceptTerms, agreementWebhook, requestAudit, termsPage } from './onboarding';
 import { practiceHome } from './practice';
 import { EMAIL_IN_USE, accessLogPage, agreementsSettingsPage, confirmAgreementsAction, inviteUserAction, proofLevelPage, resendInvitationAction, setProofLevelAction, settingsPage, usersSettingsPage } from './settings';
@@ -207,6 +208,92 @@ describe('the audit request (J1)', () => {
     const organizationId = converted.redirect?.split('/').at(-1) ?? '';
     expect((await owner.query<{ kind: string; name: string }>('SELECT kind, name FROM organization WHERE id = $1', [organizationId])).rows).toEqual([{ kind: 'group', name: 'Synthetic Physical Therapy' }]);
     expect((await call(convertProspect, platformAdmin, {}, { prospectId: prospect?.id })).status).toBe('not_found');
+  });
+});
+
+describe('the audit request’s attribution and the console’s decline reasons (audit #57; the founder’s rulings of 2026-10-20)', () => {
+  /** A request from the form, with the attribution cookie the proxy set and the two optional answers. */
+  async function requested(organizationName: string, extra: Record<string, unknown> = {}, cookie?: string): Promise<Outcome<unknown>> {
+    const jar: CookieJar = { get: (name) => (name === ATTRIBUTION_COOKIE ? cookie : undefined), set: () => undefined, delete: () => undefined };
+    return call(
+      requestAudit,
+      null,
+      {},
+      { contactName: 'Synthetic Contact', contactEmail: 'attributed@synthetic.test', organizationName, locations: '1', payers: 'Synthetic Payer', billingArrangement: 'mixed', ...extra },
+      cookie === undefined ? {} : { cookies: jar },
+    );
+  }
+  const columns = 'SELECT source, utm_source, utm_medium, utm_campaign, paid_click, referring_firm, from_screening, status, declined_reason FROM prospect_request WHERE organization_name = $1';
+
+  it('keeps how the requester heard of us, the cookie’s codes and kind of click, and the referring firm; refuses a source off the list or a firm with an identifier', async () => {
+    // The founder lists the campaign, so the request keeps its code (the founder's ruling of 2026-10-21).
+    await owner.query("INSERT INTO marketing_campaign (code, label, added_by) VALUES ('fall-launch', 'SYNTHETIC fall launch', $1)", [platformAdmin]);
+    expect((await requested('Synthetic Attributed Clinic', { heardFrom: 'association', referringFirm: ' Synthetic  Billing Partners ' }, 's=apta&m=newsletter&c=fall-launch&k=paid_search')).status).toBe('ok');
+    expect((await owner.query(columns, ['Synthetic Attributed Clinic'])).rows).toEqual([
+      { source: 'association', utm_source: 'apta', utm_medium: 'newsletter', utm_campaign: 'fall-launch', paid_click: 'paid_search', referring_firm: 'Synthetic Billing Partners', from_screening: false, status: 'new', declined_reason: null },
+    ]);
+    // A code of a code's shape that no one listed (a name typed into a link) is kept as other, never as given.
+    expect((await requested('Synthetic Unlisted Clinic', {}, 's=apta&m=newsletter&c=jane-doe-follow-up')).status).toBe('ok');
+    expect((await owner.query(columns, ['Synthetic Unlisted Clinic'])).rows).toEqual([
+      { source: null, utm_source: 'apta', utm_medium: 'newsletter', utm_campaign: 'other', paid_click: null, referring_firm: null, from_screening: false, status: 'new', declined_reason: null },
+    ]);
+    expect((await owner.query("SELECT count(*)::int AS n FROM prospect_request WHERE utm_campaign = 'jane-doe-follow-up'")).rows).toEqual([{ n: 0 }]);
+    // Blank answers are none.
+    expect((await requested('Synthetic Blank Clinic', { heardFrom: '', referringFirm: '' })).status).toBe('ok');
+    expect((await owner.query(columns, ['Synthetic Blank Clinic'])).rows).toEqual([
+      { source: null, utm_source: null, utm_medium: null, utm_campaign: null, paid_click: null, referring_firm: null, from_screening: false, status: 'new', declined_reason: null },
+    ]);
+    expect((await requested('Synthetic Friend Clinic', { heardFrom: 'friend' })).status).toBe('invalid');
+    const firm = await requested('Synthetic Identifier Clinic', { referringFirm: 'Synthetic Billing, born 04/12/1961' });
+    expect(firm.status).toBe('invalid');
+    expect((await owner.query("SELECT 1 FROM prospect_request WHERE organization_name IN ('Synthetic Friend Clinic', 'Synthetic Identifier Clinic')")).rows).toEqual([]);
+  });
+
+  it('declines with a reason from the closed list as the application role, and refuses a decline without one, a contacted request with one, or not_recorded', async () => {
+    await requested('Synthetic Declined Clinic');
+    await requested('Synthetic Contacted Clinic');
+    await requested('Synthetic Previous Image Clinic');
+    const page = ok(await call(prospectsPage, platformAdmin, { status: 'new' }));
+    expect(page.declinedReasons.map((reason) => reason.value)).toEqual([
+      'no_response',
+      'not_now',
+      'price',
+      'too_little_to_recover',
+      'chose_other',
+      'doing_it_themselves',
+      'data_unavailable',
+      'compliance_declined',
+      'not_a_fit',
+      'not_a_prospect',
+      'other',
+    ]);
+    const id = (name: string) => page.prospects.find((row) => row.organizationName === name)?.id;
+    const declined = id('Synthetic Declined Clinic');
+    expect((await call(reviewProspect, platformAdmin, {}, { prospectId: declined, status: 'declined' })).status).toBe('invalid');
+    expect((await call(reviewProspect, platformAdmin, {}, { prospectId: declined, status: 'declined', declinedReason: 'not_recorded' })).status).toBe('invalid');
+    expect((await call(reviewProspect, platformAdmin, {}, { prospectId: id('Synthetic Contacted Clinic'), status: 'contacted', declinedReason: 'price' })).status).toBe('invalid');
+    expect(ok(await call(reviewProspect, platformAdmin, {}, { prospectId: declined, status: 'declined', declinedReason: 'too_little_to_recover' }))).toEqual({ objectId: declined, redirect: '/console/prospects' });
+    expect(ok(await call(reviewProspect, platformAdmin, {}, { prospectId: id('Synthetic Contacted Clinic'), status: 'contacted', declinedReason: '' }))).toMatchObject({ objectId: id('Synthetic Contacted Clinic') });
+    expect((await owner.query(columns, ['Synthetic Declined Clinic'])).rows[0]).toMatchObject({ status: 'declined', declined_reason: 'too_little_to_recover' });
+    expect((await owner.query(columns, ['Synthetic Contacted Clinic'])).rows[0]).toMatchObject({ status: 'contacted', declined_reason: null });
+    // A declined request is done: the route finds nothing to review, and the database keeps its status and reason.
+    expect((await call(reviewProspect, platformAdmin, {}, { prospectId: declined, status: 'declined', declinedReason: 'price' })).status).toBe('not_found');
+    // The previous image's decline, as the application role with the administrator's actor: no reason, so not_recorded;
+    // a change to a declined request's reason is refused by the database's built-in rules alone (no function to execute).
+    await withActor(app, platformAdmin, async (scope) => {
+      await scope.client.query("UPDATE prospect_request SET status = 'declined', reviewed_by = app_actor_id() WHERE organization_name = 'Synthetic Previous Image Clinic'");
+    });
+    expect((await owner.query(columns, ['Synthetic Previous Image Clinic'])).rows[0]).toMatchObject({ status: 'declined', declined_reason: 'not_recorded' });
+    await expect(
+      withActor(app, platformAdmin, (scope) => scope.client.query("UPDATE prospect_request SET declined_reason = 'price', reviewed_by = app_actor_id() WHERE organization_name = 'Synthetic Declined Clinic'")),
+    ).rejects.toMatchObject({ code: '23514' });
+    // The page names a declined request's reason.
+    const declinedPage = ok(await call(prospectsPage, platformAdmin, { status: 'declined' }));
+    expect(declinedPage.prospects.find((row) => row.organizationName === 'Synthetic Declined Clinic')?.declinedReason).toBe('too_little_to_recover');
+    expect(DECLINED_REASON_LABELS.too_little_to_recover).toBe('Too little to recover');
+    // And a request still converts as the application role, with the new CHECKs in place.
+    const contacted = id('Synthetic Contacted Clinic');
+    expect(ok(await call(convertProspect, platformAdmin, {}, { prospectId: contacted })).redirect).toMatch(/^\/console\/organizations\//);
   });
 });
 

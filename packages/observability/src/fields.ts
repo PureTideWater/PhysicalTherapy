@@ -37,15 +37,31 @@ export const ALLOWED_LOG_FIELDS = [
   'contract_version_id',
   'rate_record_id',
   'release_no',
+  'screening_run_id',
   'error_code',
 ] as const;
 
-export type LogField = (typeof ALLOWED_LOG_FIELDS)[number];
+/**
+ * Fields that hold a number and nothing else: a phase's elapsed milliseconds and the count of records it read or
+ * wrote (docs/adr/0062, the screening's phase timings). The runtime logger drops one whose value is not a finite,
+ * non-negative number, so neither can carry text.
+ */
+export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count'] as const;
 
-const ALLOWED = new Set<string>(ALLOWED_LOG_FIELDS);
+export type IdentifierLogField = (typeof ALLOWED_LOG_FIELDS)[number];
+export type NumericLogField = (typeof NUMERIC_LOG_FIELDS)[number];
+export type LogField = IdentifierLogField | NumericLogField;
+
+const ALLOWED = new Set<string>([...ALLOWED_LOG_FIELDS, ...NUMERIC_LOG_FIELDS]);
+const NUMERIC = new Set<string>(NUMERIC_LOG_FIELDS);
 
 export function isAllowedLogField(key: string): key is LogField {
   return ALLOWED.has(key);
+}
+
+/** Whether the field holds a number only (NUMERIC_LOG_FIELDS). */
+export function isNumericLogField(key: string): key is NumericLogField {
+  return NUMERIC.has(key);
 }
 
 /**

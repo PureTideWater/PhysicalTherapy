@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `04f09010ce635b4e7717a82b92535ad0ea488220` on branch `co-001/pr-05-packet-deadline` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 41; head `20261103090000_deadline_verification_and_export_attestation.sql`
-- PostgreSQL 18; schema `public`: 79 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
-- PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 23 organization- or user-scoped tables with RLS forced; 8 global tables
-- RLS: 71 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 156 policies
-- Functions in `public`: 269 (113 SECURITY DEFINER); triggers: 226, none disabled or replica-only; rewrite rules on tables: none
+- Generated at commit `e297346a80e83be2b26b75223e6fd34471c1c04c` on branch `co-001/pr-06-free-screening` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 42; head `20261104090000_free_screening.sql`
+- PostgreSQL 18; schema `public`: 88 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
+- PHI flag: 44 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 32 organization- or user-scoped tables with RLS forced; 8 global tables
+- RLS: 80 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 165 policies
+- Functions in `public`: 324 (140 SECURITY DEFINER); triggers: 255, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 31 tables and 147 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 40 tables and 147 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -55,7 +55,7 @@
 | 9 | [Packets](#area-packets) | Pricing, triage and cases (PHI) | 4 | 4 | The dispute packet, its immutable verified versions (approval and export recorded on the version), the submissions a customer logs and the payer responses captured against them. |
 | 10 | [Ledger](#area-ledger) | Ledger and reconciliation (PHI) | 5 | 5 | The signed, append-only recovery ledger, the matches that pair its evidence, the posting-export and EFT-export rows it matches against, and the ROI statement. |
 | 11 | [Model gateway](#area-models) | Model gateway (PHI references only) | 4 | 2 | Each model call (references and hashes only), evaluation examples, the proposals a person decides, and budget holds taken before a call. |
-| 12 | [Billing and onboarding](#area-billing) | Operations (no PHI by design) | 10 | 0 | Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, user invitations, and terms of use with their acceptances. |
+| 12 | [Billing and onboarding](#area-billing) | Operations (no PHI by design) | 19 | 0 | Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, platform place-of-service split, runs and aggregate results, the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice). |
 | 13 | [Operations](#area-operations) | Operations (no PHI by design) | 15 | 3 | The append-only audit log, job runs, in-app notifications and digests (counts and totals only), feature flags, mutation request keys, rate-limit counters, restore drills, the public status page, support tickets and the receipts of the support inbox, SOC 2 evidence records, and the migration ledger. |
 
 ## PHI flag and row-level security by table
@@ -92,6 +92,7 @@
 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols) | - | - |
 | [`line_status`](#table-line-status) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 2 | 6 | SELECT, INSERT(cols) | - | - |
+| [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
 | [`membership`](#table-membership) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 4 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 0 | SELECT, INSERT(cols), DELETE | - | - |
 | [`model_call`](#table-model-call) | Model gateway | tenant (nullable practice_id), not registered | uuid NULL | yes | yes | 2 | 2 | SELECT, INSERT(cols), UPDATE(cols) | - | SELECT, INSERT(cols) |
@@ -112,7 +113,7 @@
 | [`practice`](#table-practice) | Tenancy and access | PHI (registered) | id (the tenant key) | yes | yes | 4 | 6 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`priced_line`](#table-priced-line) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 3 | SELECT, INSERT(cols) | - | - |
 | [`pricing_run`](#table-pricing-run) | Pricing, triage and cases | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
-| [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, UPDATE(cols) | - | - |
+| [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 3 | SELECT, UPDATE(cols) | - | - |
 | [`provider_adjustment`](#table-provider-adjustment) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 0 | - | - | - |
 | [`rate_record`](#table-rate-record) | Payers, contracts and rates | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols), UPDATE(cols), DELETE | - | - |
@@ -125,6 +126,14 @@
 | [`rule_release`](#table-rule-release) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 2 | SELECT | - | - |
 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | - | no | no | 0 | 3 | SELECT | - | - |
 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | - | no | no | 0 | 0 | - | - | - |
+| [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
+| [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
+| [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
+| [`screening_place_of_service_split`](#table-screening-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 2 | - | - | - |
+| [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 4 | - | - | - |
+| [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
+| [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
+| [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 1 | 3 | - | - | - |
 | [`service_line`](#table-service-line) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 1 | 2 | SELECT, INSERT(cols) | - | - |
 | [`source_document`](#table-source-document) | Documents and remittances | PHI (registered) | uuid NOT NULL | yes | yes | 4 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, UPDATE(cols) | - | - |
@@ -4001,7 +4010,7 @@ Invariants enforced by constraints:
 
 <a id="area-billing"></a>
 
-Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, user invitations, and terms of use with their acceptances.
+Stripe subscriptions, invoices and webhook events, the one-subscription claim, nightly usage counts and the billing standing view; the public audit request, with its attribution and decline reason, user invitations, and terms of use with their acceptances; and the free screening's prospects, uploads, platform place-of-service split, runs and aggregate results, the counts-only outcome every screening leaves, the frozen summary a converted or consenting practice keeps for 12 months, and the campaign codes the founder lists (no PHI, no practice).
 
 | Table | Class | RLS / FORCE | Policies | tp_app | Created by | Dictionary |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -4015,6 +4024,15 @@ Stripe subscriptions, invoices and webhook events, the one-subscription claim, n
 | [`invitation`](#table-invitation) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | SELECT | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`terms_version`](#table-terms-version) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT, INSERT(cols) | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
 | [`terms_acceptance`](#table-terms-acceptance) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 3 | SELECT, INSERT(cols) | `20261030090000_customer_sign_in_and_readiness` | not in the Data dictionary |
+| [`screening_prospect`](#table-screening-prospect) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_upload`](#table-screening-upload) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_place_of_service_split`](#table-screening-place-of-service-split) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_run`](#table-screening-run) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_result`](#table-screening-result) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_outcome`](#table-screening-outcome) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_lead`](#table-screening-lead) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`screening_lead_product`](#table-screening-lead-product) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
+| [`marketing_campaign`](#table-marketing-campaign) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261104090000_free_screening` | not in the Data dictionary |
 
 ### Table `subscription`
 
@@ -4371,10 +4389,10 @@ SELECT o.id AS organization_id,
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 3 policies; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261030090000_customer_sign_in_and_readiness` (ADR 0043, ADR 0053)
+- Created by `20261030090000_customer_sign_in_and_readiness` (ADR 0043, ADR 0053); its DDL, policies or trigger functions changed by `20261104090000_free_screening`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, UPDATE(cols)
-- Column grant: `tp_app` UPDATE (`organization_id`, `reviewed_by`, `status`)
+- Column grant: `tp_app` UPDATE (`declined_reason`, `organization_id`, `reviewed_by`, `status`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -4391,6 +4409,14 @@ SELECT o.id AS organization_id,
 | 11 | `reviewed_at` | `timestamp with time zone` | null |  |  | `20261030090000` |  |
 | 12 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261030090000` |  |
 | 13 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261030090000` |  |
+| 14 | `source` | `text` | null |  |  | `20261104090000` | its conditional CHECKs name search, billing_firm, colleague, association, event, social, paidwhole_email, article, other |
+| 15 | `utm_source` | `text` | null |  |  | `20261104090000` |  |
+| 16 | `utm_medium` | `text` | null |  |  | `20261104090000` |  |
+| 17 | `utm_campaign` | `text` | null |  |  | `20261104090000` |  |
+| 18 | `paid_click` | `text` | null |  |  | `20261104090000` | one of paid_search, paid_social |
+| 19 | `referring_firm` | `text` | null |  |  | `20261104090000` |  |
+| 20 | `from_screening` | `boolean` | NOT NULL | `false` |  | `20261104090000` |  |
+| 21 | `declined_reason` | `text` | null |  |  | `20261104090000` | its conditional CHECKs name no_response, not_now, price, too_little_to_recover, chose_other, doing_it_themselves, data_unavailable, compliance_declined, not_a_fit, not_a_prospect, other, not_recorded |
 
 Keys:
 - Primary: (id)
@@ -4415,16 +4441,28 @@ Invariants enforced by constraints:
 - `prospect_request_contact_email_check`: `CHECK (contact_email ~ '^[^@ ]+@[^@ ]+$'::text AND length(contact_email) <= 254)`
 - `prospect_request_contact_name_check`: `CHECK (btrim(contact_name) <> ''::text AND length(contact_name) <= 200)`
 - `prospect_request_converted`: `CHECK ((status = 'converted'::text) = (organization_id IS NOT NULL))`
+- `prospect_request_declined`: `CHECK ((status = 'declined'::text) = (declined_reason IS NOT NULL))`
+- `prospect_request_declined_reason`: `CHECK (declined_reason IS NULL OR (declined_reason = ANY (ARRAY['no_response'::text, 'not_now'::text, 'price'::text, 'too_little_to_recover'::text, 'chose_other'::text, 'doing_it_themselves'::text, 'data_unavailable'::text, 'compliance_declined'::text, 'not_a_fit'::text, 'not_a_prospect'::text, 'other'::text, 'not_recorded'::text])))`
 - `prospect_request_locations_check`: `CHECK (locations >= 1 AND locations <= 1000)`
 - `prospect_request_organization_name_check`: `CHECK (btrim(organization_name) <> ''::text AND length(organization_name) <= 200)`
+- `prospect_request_paid_click`: `CHECK (paid_click = ANY (ARRAY['paid_search'::text, 'paid_social'::text]))`
 - `prospect_request_payers`: `CHECK (prospect_payers_valid(payers))`
+- `prospect_request_referring_firm`: `CHECK (btrim(referring_firm) <> ''::text AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm))`
 - `prospect_request_review`: `CHECK ((status = 'new'::text) = (reviewed_by IS NULL) AND (reviewed_by IS NULL) = (reviewed_at IS NULL))`
+- `prospect_request_source`: `CHECK (source IS NULL OR (source = ANY (ARRAY['search'::text, 'billing_firm'::text, 'colleague'::text, 'association'::text, 'event'::text, 'social'::text, 'paidwhole_email'::text, 'article'::text, 'other'::text])))`
 - `prospect_request_status_check`: `CHECK (status = ANY (ARRAY['new'::text, 'contacted'::text, 'converted'::text, 'declined'::text]))`
+- `prospect_request_utm_campaign`: `CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `prospect_request_utm_medium`: `CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `prospect_request_utm_source`: `CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
 
 Invariants enforced by triggers:
+- `prospect_request_campaign_listed`: `BEFORE INSERT OR UPDATE OF utm_campaign ON prospect_request FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only()`
+  - "a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores"
 - `prospect_request_fixed`: `BEFORE UPDATE ON prospect_request FOR EACH ROW EXECUTE FUNCTION prospect_request_fixed()`
   - "a prospect request is kept as it was received"
   - "a converted request names its organization for good"
+  - "a declined request keeps its status and its reason"
+  - "a decline names its reason from the list; not recorded is only the previous image's"
 
 Maintains `updated_at`: `prospect_request_updated_at`.
 
@@ -4576,6 +4614,634 @@ Invariants enforced by constraints:
 Invariants enforced by triggers:
 - `terms_acceptance_accepted_now`: `BEFORE INSERT ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION terms_accepted_now()`
 - `terms_acceptance_append_only`: `BEFORE DELETE OR UPDATE ON terms_acceptance FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `screening_prospect`
+
+<a id="table-screening-prospect"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `practice_name` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 3 | `state` | `text` | NOT NULL |  |  | `20261104090000` | one of AL, AK, AZ, AR, CA, CO, CT, DE, FL, GA, HI, ID, IL, IN, IA, KS, KY, LA, ME, MD, MA, MI, MN, MS, MO, MT, NE, NV, NH, NJ, NM, NY, NC, ND, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VT, VA, WA, WV, WI, WY, DC, PR, VI, GU, AS, MP |
+| 4 | `zip` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 5 | `contact_email` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 6 | `source` | `text` | null |  |  | `20261104090000` | its conditional CHECKs name search, billing_firm, colleague, association, event, social, paidwhole_email, article, other |
+| 7 | `utm_source` | `text` | null |  |  | `20261104090000` |  |
+| 8 | `utm_medium` | `text` | null |  |  | `20261104090000` |  |
+| 9 | `utm_campaign` | `text` | null |  |  | `20261104090000` |  |
+| 10 | `paid_click` | `text` | null |  |  | `20261104090000` | one of paid_search, paid_social |
+| 11 | `referring_firm` | `text` | null |  |  | `20261104090000` |  |
+| 12 | `followup_consent_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 13 | `screening_terms_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 14 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 15 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+
+Indexes:
+- `screening_prospect_by_contact`: `USING btree (contact_email)`
+- `screening_prospect_by_expiry`: `USING btree (expires_at)`
+- `screening_prospect_by_practice`: `USING btree (zip, screening_practice_key(practice_name))`
+
+Policies (1):
+- `screening_prospect_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_prospect_contact_email`: `CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_'{\|}~-]+(\.[a-z0-9!#$%&''*+/=?^_'{\|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'::text AND length(contact_email) <= 254 AND strpos(contact_email, '@'::text) <= 65 AND contact_email = lower(contact_email))`
+- `screening_prospect_expiry`: `CHECK (expires_at = (created_at + '30 days'::interval))`
+- `screening_prospect_followup_consent`: `CHECK (followup_consent_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_prospect_paid_click`: `CHECK (paid_click = ANY (ARRAY['paid_search'::text, 'paid_social'::text]))`
+- `screening_prospect_practice_name`: `CHECK (btrim(practice_name) <> ''::text AND length(practice_name) <= 200 AND practice_name = btrim(practice_name))`
+- `screening_prospect_referring_firm`: `CHECK (btrim(referring_firm) <> ''::text AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm))`
+- `screening_prospect_screening_terms`: `CHECK (screening_terms_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_prospect_source`: `CHECK (source IS NULL OR (source = ANY (ARRAY['search'::text, 'billing_firm'::text, 'colleague'::text, 'association'::text, 'event'::text, 'social'::text, 'paidwhole_email'::text, 'article'::text, 'other'::text])))`
+- `screening_prospect_state`: `CHECK (state = ANY (ARRAY['AL'::text, 'AK'::text, 'AZ'::text, 'AR'::text, 'CA'::text, 'CO'::text, 'CT'::text, 'DE'::text, 'FL'::text, 'GA'::text, 'HI'::text, 'ID'::text, 'IL'::text, 'IN'::text, 'IA'::text, 'KS'::text, 'KY'::text, 'LA'::text, 'ME'::text, 'MD'::text, 'MA'::text, 'MI'::text, 'MN'::text, 'MS'::text, 'MO'::text, 'MT'::text, 'NE'::text, 'NV'::text, 'NH'::text, 'NJ'::text, 'NM'::text, 'NY'::text, 'NC'::text, 'ND'::text, 'OH'::text, 'OK'::text, 'OR'::text, 'PA'::text, 'RI'::text, 'SC'::text, 'SD'::text, 'TN'::text, 'TX'::text, 'UT'::text, 'VT'::text, 'VA'::text, 'WA'::text, 'WV'::text, 'WI'::text, 'WY'::text, 'DC'::text, 'PR'::text, 'VI'::text, 'GU'::text, 'AS'::text, 'MP'::text]))`
+- `screening_prospect_utm_campaign`: `CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_prospect_utm_medium`: `CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_prospect_utm_source`: `CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_prospect_zip`: `CHECK (zip ~ '^[0-9]{5}$'::text)`
+
+Invariants enforced by triggers:
+- `screening_prospect_campaign_listed`: `BEFORE INSERT OR UPDATE OF utm_campaign ON screening_prospect FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only()`
+  - "a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores"
+- `screening_prospect_fixed`: `BEFORE UPDATE ON screening_prospect FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_prospect_kept_until_expiry`: `BEFORE DELETE ON screening_prospect FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
+  - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
+- `screening_prospect_no_truncate`: `BEFORE TRUNCATE ON screening_prospect FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `screening_upload`
+
+<a id="table-screening-upload"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `prospect_id` | `uuid` | NOT NULL |  | `screening_prospect(id)` | `20261104090000` |  |
+| 3 | `rows_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 4 | `row_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 5 | `status` | `text` | NOT NULL |  |  | `20261104090000` | one of accepted, rejected |
+| 6 | `rejection_reasons` | `jsonb` | NOT NULL | `'[]'::jsonb` |  | `20261104090000` |  |
+| 7 | `left_out_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 8 | `left_out_claim_lines` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 9 | `left_out_allowed_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 10 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 11 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+- Foreign `screening_upload_prospect_id_fkey`: (prospect_id) -> `screening_prospect`(id), on delete cascade
+
+Indexes:
+- `screening_upload_by_prospect`: `USING btree (prospect_id)`
+
+Policies (1):
+- `screening_upload_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_upload_accepted_rows`: `CHECK (status <> 'accepted'::text OR row_count >= 1 AND row_count <= 50000 AND (row_count + left_out_rows) <= 50000)`
+- `screening_upload_expiry`: `CHECK (expires_at = (created_at + '30 days'::interval))`
+- `screening_upload_left_out_accepted`: `CHECK (status = 'accepted'::text OR left_out_rows = 0)`
+- `screening_upload_left_out_allowed`: `CHECK (left_out_allowed_cents >= 0 AND left_out_allowed_cents <= (2500000::bigint * left_out_claim_lines))`
+- `screening_upload_left_out_claim_lines`: `CHECK (left_out_claim_lines >= left_out_rows AND left_out_claim_lines <= (10 * left_out_rows))`
+- `screening_upload_left_out_rows`: `CHECK (left_out_rows >= 0 AND left_out_rows <= 50000)`
+- `screening_upload_reasons`: `CHECK (screening_rejections_valid(rejection_reasons))`
+- `screening_upload_rejected`: `CHECK ((status = 'rejected'::text) = CASE     WHEN jsonb_typeof(rejection_reasons) = 'array'::text THEN jsonb_array_length(rejection_reasons) > 0     ELSE false END)`
+- `screening_upload_row_count`: `CHECK (row_count >= 0 AND row_count <= 10000000)`
+- `screening_upload_rows_hashed`: `CHECK ((status = 'accepted'::text) = (rows_sha256 IS NOT NULL))`
+- `screening_upload_rows_sha256`: `CHECK (rows_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_upload_status`: `CHECK (status = ANY (ARRAY['accepted'::text, 'rejected'::text]))`
+
+Invariants enforced by triggers:
+- `screening_upload_fixed`: `BEFORE UPDATE ON screening_upload FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_upload_kept_until_expiry`: `BEFORE DELETE ON screening_upload FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
+  - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
+- `screening_upload_no_truncate`: `BEFORE TRUNCATE ON screening_upload FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `screening_place_of_service_split`
+
+<a id="table-screening-place-of-service-split"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `settings` | `jsonb` | NOT NULL |  |  | `20261104090000` |  |
+| 3 | `approved_by` | `uuid` | NOT NULL |  | `user(id)` | `20261104090000` |  |
+| 4 | `approved_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+- Foreign `screening_place_of_service_split_approved_by_fkey`: (approved_by) -> `user`(id), on delete no action
+
+Indexes:
+- `screening_place_of_service_split_in_force`: `USING btree (approved_at DESC, id DESC)`
+
+Policies (1):
+- `screening_place_of_service_split_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_place_of_service_split_settings`: `CHECK (screening_split_valid(settings))`
+
+Invariants enforced by triggers:
+- `screening_place_of_service_split_append_only`: `BEFORE DELETE OR UPDATE ON screening_place_of_service_split FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_place_of_service_split_no_truncate`: `BEFORE TRUNCATE ON screening_place_of_service_split FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `screening_run`
+
+<a id="table-screening-run"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `upload_id` | `uuid` | NOT NULL |  | `screening_upload(id)` | `20261104090000` |  |
+| 3 | `release_no` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `release_manifest_sha256` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 5 | `place_of_service_split_id` | `uuid` | NOT NULL |  | `screening_place_of_service_split(id)` | `20261104090000` |  |
+| 6 | `row_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 7 | `status` | `text` | NOT NULL | `'queued'::text` |  | `20261104090000` | one of queued, pricing, complete, failed |
+| 8 | `attempts` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 9 | `started_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 10 | `completed_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 11 | `failed_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 12 | `engine_version` | `text` | null |  |  | `20261104090000` |  |
+| 13 | `failure_code` | `text` | null |  |  | `20261104090000` |  |
+| 14 | `result_token_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 15 | `converted_prospect_request_id` | `uuid` | null |  | `prospect_request(id)` | `20261104090000` |  |
+| 16 | `converted_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 17 | `first_opened_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 18 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 19 | `expires_at` | `timestamp with time zone` | NOT NULL | `(now() + '30 days'::interval)` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `screening_run_result_token_sha256_key`: `UNIQUE (result_token_sha256)`
+- Unique `screening_run_upload_id_key`: `UNIQUE (upload_id)`
+- Foreign `screening_run_converted_prospect_request_id_fkey`: (converted_prospect_request_id) -> `prospect_request`(id), on delete no action
+- Foreign `screening_run_place_of_service_split_id_fkey`: (place_of_service_split_id) -> `screening_place_of_service_split`(id), on delete no action
+- Foreign `screening_run_upload_id_fkey`: (upload_id) -> `screening_upload`(id), on delete cascade
+
+Indexes:
+- `screening_run_by_status`: `USING btree (status, created_at)`
+
+Policies (1):
+- `screening_run_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_run_attempts`: `CHECK (attempts >= 0 AND attempts <= 3)`
+- `screening_run_complete`: `CHECK ((status = 'complete'::text) = (result_token_sha256 IS NOT NULL) AND (status = 'complete'::text) = (completed_at IS NOT NULL) AND (status = 'complete'::text) = (engine_version IS NOT NULL))`
+- `screening_run_converted`: `CHECK ((converted_at IS NULL) = (converted_prospect_request_id IS NULL) AND (converted_at IS NULL OR status = 'complete'::text))`
+- `screening_run_engine_version`: `CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'::text)`
+- `screening_run_expiry`: `CHECK (expires_at = (created_at + '30 days'::interval))`
+- `screening_run_failed`: `CHECK ((status = 'failed'::text) = (failure_code IS NOT NULL) AND (status = 'failed'::text) = (failed_at IS NOT NULL))`
+- `screening_run_failure_code`: `CHECK (failure_code ~ '^[A-Z][A-Z0-9_]{0,63}$'::text)`
+- `screening_run_opened`: `CHECK (first_opened_at IS NULL OR status = 'complete'::text)`
+- `screening_run_release_manifest`: `CHECK (release_manifest_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_run_release_no`: `CHECK (release_no > 0)`
+- `screening_run_result_token`: `CHECK (result_token_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_run_row_count`: `CHECK (row_count >= 1 AND row_count <= 50000)`
+- `screening_run_started`: `CHECK ((status <> 'queued'::text OR started_at IS NULL AND attempts = 0) AND ((status <> ALL (ARRAY['pricing'::text, 'complete'::text])) OR started_at IS NOT NULL AND attempts >= 1))`
+- `screening_run_status`: `CHECK (status = ANY (ARRAY['queued'::text, 'pricing'::text, 'complete'::text, 'failed'::text]))`
+
+Invariants enforced by triggers:
+- `screening_run_kept_until_expiry`: `BEFORE DELETE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_kept_until_expiry()`
+  - "a screening is kept until it expires, 30 days after its upload, or a later screening of the same practice replaces it"
+- `screening_run_no_truncate`: `BEFORE TRUNCATE ON screening_run FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_run_rules`: `BEFORE UPDATE ON screening_run FOR EACH ROW EXECUTE FUNCTION screening_run_rules()`
+  - "a screening run keeps its upload, release, split, row count and dates"
+  - "a screening run is claimed one attempt at a time, from when it is claimed"
+  - "a screening run ends on the attempt that priced it"
+  - "a screening is opened and converts once it is complete"
+  - "a complete screening keeps its result and its link"
+  - "a screening converts to an audit request once"
+  - "a screening result is first opened once"
+  - "a complete screening changes only by its conversion or its first open"
+  - "a screening run moves queued, pricing, then complete or failed"
+
+### Table `screening_result`
+
+<a id="table-screening-result"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `run_id`, `row_no`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `run_id` | `uuid` | NOT NULL |  | `screening_run(id)` | `20261104090000` |  |
+| 2 | `row_no` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 3 | `procedure_code` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `modifiers` | `text[]` | NOT NULL |  |  | `20261104090000` |  |
+| 5 | `units` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 6 | `place_of_service` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 7 | `payer_product` | `text` | NOT NULL |  |  | `20261104090000` | one of medicare_ffs, ma_noncontracted, ma_contracted, commercial, medicaid, other |
+| 8 | `service_band` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 9 | `claim_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 10 | `observed_allowed_cents` | `bigint` | NOT NULL |  |  | `20261104090000` |  |
+| 11 | `disposition` | `text` | NOT NULL |  |  | `20261104090000` | one of pending, priced, unpriced, rates_change_in_band, contract_required, not_screened |
+| 12 | `expected_line_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 13 | `expected_line_unrounded` | `numeric` | null |  |  | `20261104090000` |  |
+| 14 | `expected_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 15 | `difference_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 16 | `in_reduction_pool` | `boolean` | null |  |  | `20261104090000` |  |
+| 17 | `reduced_line_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 18 | `reduced_line_unrounded` | `numeric` | null |  |  | `20261104090000` |  |
+| 19 | `reduced_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 20 | `reduced_difference_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 21 | `reduced_trace_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 22 | `unpriced_reason` | `text` | null |  |  | `20261104090000` | one of NO_AGREEMENT, NO_MAPPING, AMBIGUOUS_RATE, NO_RATE_FOR_CODE, NO_PFS_VALUE, UNSUPPORTED_METHOD, SECONDARY_PAYER, MUE_EXCEEDED, UNITS_RULE_UNKNOWN, DATE_OUTSIDE_VERSIONS, REVERSED_CLAIM, ENGINE_ERROR |
+| 23 | `unpriced_detail` | `text` | null |  |  | `20261104090000` |  |
+| 24 | `trace_sha256` | `text` | null |  |  | `20261104090000` |  |
+
+Keys:
+- Primary: (run_id, row_no)
+- Unique `screening_result_once`: `UNIQUE (run_id, procedure_code, modifiers, units, place_of_service, payer_product, service_band)`
+- Foreign `screening_result_run_id_fkey`: (run_id) -> `screening_run`(id), on delete cascade
+
+Indexes:
+- `screening_result_pending`: `USING btree (run_id, row_no) WHERE (disposition = 'pending'::text)`
+
+Policies (1):
+- `screening_result_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_result_claim_count`: `CHECK (claim_count >= 11 AND claim_count <= 100000)`
+- `screening_result_contract_required`: `CHECK ((payer_product = ANY (ARRAY['ma_contracted'::text, 'commercial'::text])) = (disposition = 'contract_required'::text))`
+- `screening_result_disposition`: `CHECK (disposition = ANY (ARRAY['pending'::text, 'priced'::text, 'unpriced'::text, 'rates_change_in_band'::text, 'contract_required'::text, 'not_screened'::text]))`
+- `screening_result_figures`: `CHECK (disposition <> 'priced'::text OR expected_line_cents >= 0 AND abs(expected_line_unrounded - expected_line_cents::numeric) < 1::numeric AND expected_cents = (expected_line_cents * claim_count) AND difference_cents = (expected_cents - observed_allowed_cents))`
+- `screening_result_medicare`: `CHECK ((payer_product <> ALL (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text])) OR (disposition = ANY (ARRAY['pending'::text, 'priced'::text, 'unpriced'::text, 'rates_change_in_band'::text])))`
+- `screening_result_modifiers`: `CHECK (screening_modifiers_valid(modifiers))`
+- `screening_result_not_screened`: `CHECK ((payer_product = ANY (ARRAY['medicaid'::text, 'other'::text])) = (disposition = 'not_screened'::text))`
+- `screening_result_observed`: `CHECK (observed_allowed_cents >= 0 AND observed_allowed_cents <= '99999999999'::bigint AND observed_allowed_cents <= (2500000::bigint * claim_count))`
+- `screening_result_payer_product`: `CHECK (payer_product = ANY (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text, 'ma_contracted'::text, 'commercial'::text, 'medicaid'::text, 'other'::text]))`
+- `screening_result_place_of_service`: `CHECK (place_of_service ~ '^(0[1-9]\|[1-9][0-9])$'::text)`
+- `screening_result_priced`: `CHECK ((disposition = 'priced'::text) = (expected_line_cents IS NOT NULL) AND (disposition = 'priced'::text) = (expected_line_unrounded IS NOT NULL) AND (disposition = 'priced'::text) = (expected_cents IS NOT NULL) AND (disposition = 'priced'::text) = (difference_cents IS NOT NULL) AND (disposition = 'priced'::text) = (in_reduction_pool IS NOT NULL))`
+- `screening_result_procedure_code`: `CHECK (procedure_code ~ '^([0-9]{4}[0-9FMTU]\|[A-V][0-9]{4})$'::text)`
+- `screening_result_reduced`: `CHECK (COALESCE(disposition = 'priced'::text AND in_reduction_pool, false) = (reduced_line_cents IS NOT NULL) AND COALESCE(disposition = 'priced'::text AND in_reduction_pool, false) = (reduced_line_unrounded IS NOT NULL) AND COALESCE(disposition = 'priced'::text AND in_reduction_pool, false) = (reduced_cents IS NOT NULL) AND COALESCE(disposition = 'priced'::text AND in_reduction_pool, false) = (reduced_difference_cents IS NOT NULL) AND COALESCE(disposition = 'priced'::text AND in_reduction_pool, false) = (reduced_trace_sha256 IS NOT NULL))`
+- `screening_result_reduced_figures`: `CHECK (reduced_line_cents IS NULL OR reduced_line_cents >= 0 AND reduced_line_cents <= expected_line_cents AND abs(reduced_line_unrounded - reduced_line_cents::numeric) < 1::numeric AND reduced_cents = (reduced_line_cents * claim_count) AND reduced_difference_cents = (reduced_cents - observed_allowed_cents))`
+- `screening_result_reduced_trace_sha256`: `CHECK (reduced_trace_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_result_row_no`: `CHECK (row_no >= 1 AND row_no <= 50000)`
+- `screening_result_service_band`: `CHECK (service_band ~ '^20[0-9]{2}-Q[1-4]$'::text)`
+- `screening_result_trace`: `CHECK ((disposition = ANY (ARRAY['priced'::text, 'unpriced'::text, 'rates_change_in_band'::text])) = (trace_sha256 IS NOT NULL))`
+- `screening_result_trace_sha256`: `CHECK (trace_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_result_units`: `CHECK (units >= 1 AND units <= 999)`
+- `screening_result_unpriced`: `CHECK ((disposition = 'unpriced'::text) = (unpriced_reason IS NOT NULL) AND (unpriced_detail IS NULL OR (unpriced_reason = ANY (ARRAY['ENGINE_ERROR'::text, 'NO_PFS_VALUE'::text]))))`
+- `screening_result_unpriced_detail`: `CHECK (unpriced_detail ~ '^[a-z][a-z0-9_]{0,63}$'::text)`
+- `screening_result_unpriced_reason`: `CHECK (unpriced_reason = ANY (ARRAY['NO_AGREEMENT'::text, 'NO_MAPPING'::text, 'AMBIGUOUS_RATE'::text, 'NO_RATE_FOR_CODE'::text, 'NO_PFS_VALUE'::text, 'UNSUPPORTED_METHOD'::text, 'SECONDARY_PAYER'::text, 'MUE_EXCEEDED'::text, 'UNITS_RULE_UNKNOWN'::text, 'DATE_OUTSIDE_VERSIONS'::text, 'REVERSED_CLAIM'::text, 'ENGINE_ERROR'::text]))`
+
+Invariants enforced by triggers:
+- `screening_result_inserted`: `AFTER INSERT ON screening_result REFERENCING NEW TABLE AS screening_inserted FOR EACH STATEMENT EXECUTE FUNCTION screening_result_inserted()`
+  - "a screening's rows are inserted with its run, before it is priced"
+- `screening_result_no_truncate`: `BEFORE TRUNCATE ON screening_result FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_result_rules`: `BEFORE UPDATE ON screening_result FOR EACH ROW EXECUTE FUNCTION screening_result_rules()`
+  - "a screening row keeps the facts it was uploaded with"
+  - "a screening row is priced once, from pending"
+
+### Table `screening_outcome`
+
+<a id="table-screening-outcome"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `upload_id` | `uuid` | null |  | `screening_upload(id)` | `20261104090000` |  |
+| 3 | `screened_month` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `stage` | `text` | NOT NULL |  |  | `20261104090000` | one of refused, accepted, priced, failed |
+| 5 | `source` | `text` | null |  |  | `20261104090000` | its conditional CHECKs name search, billing_firm, colleague, association, event, social, paidwhole_email, article, other |
+| 6 | `channel` | `text` | NOT NULL |  |  | `20261104090000` | one of none, email, paid_search, paid_social, social, partner, event, content, other |
+| 7 | `campaign` | `text` | null |  |  | `20261104090000` |  |
+| 8 | `consented` | `boolean` | NOT NULL | `false` |  | `20261104090000` |  |
+| 9 | `row_band` | `text` | NOT NULL |  |  | `20261104090000` | one of none, 1_100, 101_1k, 1k_10k, 10k_50k, over_50k |
+| 10 | `left_out_band` | `text` | NOT NULL | `'none'::text` |  | `20261104090000` | one of none, 1_100, 101_1k, 1k_10k, 10k_50k |
+| 11 | `refusal_codes` | `text[]` | NOT NULL | `'{}'::text[]` |  | `20261104090000` |  |
+| 12 | `after_refusal` | `boolean` | NOT NULL | `false` |  | `20261104090000` |  |
+| 13 | `release_no` | `integer` | null |  |  | `20261104090000` |  |
+| 14 | `engine_version` | `text` | null |  |  | `20261104090000` |  |
+| 15 | `priced_share_pct` | `smallint` | null |  |  | `20261104090000` |  |
+| 16 | `contract_share_pct` | `smallint` | null |  |  | `20261104090000` |  |
+| 17 | `could_not_price_share_pct` | `smallint` | null |  |  | `20261104090000` |  |
+| 18 | `not_screened_share_pct` | `smallint` | null |  |  | `20261104090000` |  |
+| 19 | `anomaly_band` | `text` | null |  |  | `20261104090000` | one of none, 1_100, 101_1k, 1k_10k, 10k_50k |
+| 20 | `anomaly_difference_band` | `text` | null |  |  | `20261104090000` | one of none, under_1k, 1k_to_10k, 10k_to_50k, 50k_to_250k, 250k_or_more |
+| 21 | `first_open_band` | `text` | null |  |  | `20261104090000` | one of same_day, 1_2_days, 3_7_days, 8_30_days |
+| 22 | `converted` | `boolean` | NOT NULL | `false` |  | `20261104090000` |  |
+| 23 | `superseded` | `boolean` | NOT NULL | `false` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `screening_outcome_upload_id_key`: `UNIQUE (upload_id)`
+- Foreign `screening_outcome_upload_id_fkey`: (upload_id) -> `screening_upload`(id), on delete set null
+
+Indexes:
+- `screening_outcome_by_cohort`: `USING btree (screened_month, source, channel, campaign)`
+
+Policies (1):
+- `screening_outcome_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_outcome_accepted_rows`: `CHECK (stage = 'refused'::text OR (row_band <> ALL (ARRAY['none'::text, 'over_50k'::text])))`
+- `screening_outcome_anomaly_band`: `CHECK (anomaly_band = ANY (ARRAY['none'::text, '1_100'::text, '101_1k'::text, '1k_10k'::text, '10k_50k'::text]))`
+- `screening_outcome_band`: `CHECK (stage <> 'priced'::text OR (anomaly_band = 'none'::text) = (anomaly_difference_band = 'none'::text))`
+- `screening_outcome_campaign`: `CHECK (campaign IS NULL OR campaign = 'other'::text OR campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_outcome_channel`: `CHECK (channel = ANY (ARRAY['none'::text, 'email'::text, 'paid_search'::text, 'paid_social'::text, 'social'::text, 'partner'::text, 'event'::text, 'content'::text, 'other'::text]))`
+- `screening_outcome_contract_share`: `CHECK (contract_share_pct >= 0 AND contract_share_pct <= 100)`
+- `screening_outcome_converted`: `CHECK (NOT converted OR stage = 'priced'::text)`
+- `screening_outcome_could_not_price_share`: `CHECK (could_not_price_share_pct >= 0 AND could_not_price_share_pct <= 100)`
+- `screening_outcome_difference_band`: `CHECK (anomaly_difference_band = ANY (ARRAY['none'::text, 'under_1k'::text, '1k_to_10k'::text, '10k_to_50k'::text, '50k_to_250k'::text, '250k_or_more'::text]))`
+- `screening_outcome_engine`: `CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'::text)`
+- `screening_outcome_left_out_band`: `CHECK (left_out_band = ANY (ARRAY['none'::text, '1_100'::text, '101_1k'::text, '1k_10k'::text, '10k_50k'::text]))`
+- `screening_outcome_month`: `CHECK (screened_month ~ '^20[0-9]{2}-(0[1-9]\|1[0-2])$'::text)`
+- `screening_outcome_not_screened_share`: `CHECK (not_screened_share_pct >= 0 AND not_screened_share_pct <= 100)`
+- `screening_outcome_open_band`: `CHECK (first_open_band = ANY (ARRAY['same_day'::text, '1_2_days'::text, '3_7_days'::text, '8_30_days'::text]))`
+- `screening_outcome_opened`: `CHECK (first_open_band IS NULL OR stage = 'priced'::text)`
+- `screening_outcome_pinned`: `CHECK ((stage = 'refused'::text) = (release_no IS NULL))`
+- `screening_outcome_priced`: `CHECK ((stage = 'priced'::text) = (engine_version IS NOT NULL) AND (stage = 'priced'::text) = (priced_share_pct IS NOT NULL) AND (stage = 'priced'::text) = (contract_share_pct IS NOT NULL) AND (stage = 'priced'::text) = (could_not_price_share_pct IS NOT NULL) AND (stage = 'priced'::text) = (not_screened_share_pct IS NOT NULL) AND (stage = 'priced'::text) = (anomaly_band IS NOT NULL) AND (stage = 'priced'::text) = (anomaly_difference_band IS NOT NULL))`
+- `screening_outcome_priced_share`: `CHECK (priced_share_pct >= 0 AND priced_share_pct <= 100)`
+- `screening_outcome_refusal_codes`: `CHECK (screening_refusal_codes_valid(refusal_codes))`
+- `screening_outcome_refused`: `CHECK ((stage = 'refused'::text) = (cardinality(refusal_codes) > 0) AND (stage <> 'refused'::text OR release_no IS NULL AND left_out_band = 'none'::text AND NOT consented AND NOT superseded) AND (NOT after_refusal OR stage <> 'refused'::text))`
+- `screening_outcome_release`: `CHECK (release_no > 0)`
+- `screening_outcome_row_band`: `CHECK (row_band = ANY (ARRAY['none'::text, '1_100'::text, '101_1k'::text, '1k_10k'::text, '10k_50k'::text, 'over_50k'::text]))`
+- `screening_outcome_shares`: `CHECK (stage <> 'priced'::text OR (priced_share_pct + contract_share_pct + could_not_price_share_pct + not_screened_share_pct) >= 97 AND (priced_share_pct + contract_share_pct + could_not_price_share_pct + not_screened_share_pct) <= 100 OR (priced_share_pct + contract_share_pct + could_not_price_share_pct + not_screened_share_pct) = 0)`
+- `screening_outcome_source`: `CHECK (source IS NULL OR (source = ANY (ARRAY['search'::text, 'billing_firm'::text, 'colleague'::text, 'association'::text, 'event'::text, 'social'::text, 'paidwhole_email'::text, 'article'::text, 'other'::text])))`
+- `screening_outcome_stage`: `CHECK (stage = ANY (ARRAY['refused'::text, 'accepted'::text, 'priced'::text, 'failed'::text]))`
+
+Invariants enforced by triggers:
+- `screening_outcome_campaign_listed`: `BEFORE INSERT OR UPDATE OF campaign ON screening_outcome FOR EACH ROW EXECUTE FUNCTION screening_outcome_campaign_listed()`
+  - "a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores"
+- `screening_outcome_kept`: `BEFORE DELETE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_outcome_no_truncate`: `BEFORE TRUNCATE ON screening_outcome FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_outcome_rules`: `BEFORE UPDATE ON screening_outcome FOR EACH ROW EXECUTE FUNCTION screening_outcome_rules()`
+  - "an outcome no longer linked to its screening is sealed"
+  - "an outcome keeps what it was written with"
+  - "an outcome's link to its screening only goes"
+  - "an outcome moves from accepted to priced or failed"
+  - "an outcome's figures are set once, as it is priced"
+  - "an outcome's first open is set once"
+  - "an outcome's flags are set once"
+
+### Table `screening_lead`
+
+<a id="table-screening-lead"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `id`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 2 | `upload_id` | `uuid` | null |  | `screening_upload(id)` | `20261104090000` |  |
+| 3 | `practice_name` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `state` | `text` | NOT NULL |  |  | `20261104090000` | one of AL, AK, AZ, AR, CA, CO, CT, DE, FL, GA, HI, ID, IL, IN, IA, KS, KY, LA, ME, MD, MA, MI, MN, MS, MO, MT, NE, NV, NH, NJ, NM, NY, NC, ND, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VT, VA, WA, WV, WI, WY, DC, PR, VI, GU, AS, MP |
+| 5 | `zip` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 6 | `contact_email` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 7 | `source` | `text` | null |  |  | `20261104090000` | its conditional CHECKs name search, billing_firm, colleague, association, event, social, paidwhole_email, article, other |
+| 8 | `utm_source` | `text` | null |  |  | `20261104090000` |  |
+| 9 | `utm_medium` | `text` | null |  |  | `20261104090000` |  |
+| 10 | `utm_campaign` | `text` | null |  |  | `20261104090000` |  |
+| 11 | `paid_click` | `text` | null |  |  | `20261104090000` | one of paid_search, paid_social |
+| 12 | `referring_firm` | `text` | null |  |  | `20261104090000` |  |
+| 13 | `consent_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 14 | `withdrawal_token_sha256` | `text` | null |  |  | `20261104090000` |  |
+| 15 | `reminder_sent_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 16 | `prospect_request_id` | `uuid` | null |  | `prospect_request(id)` | `20261104090000` |  |
+| 17 | `release_no` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 18 | `release_manifest_sha256` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 19 | `engine_version` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 20 | `labels_version` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 21 | `screened_at` | `timestamp with time zone` | NOT NULL |  |  | `20261104090000` |  |
+| 22 | `result_first_opened_at` | `timestamp with time zone` | null |  |  | `20261104090000` |  |
+| 23 | `row_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 24 | `claim_lines` | `bigint` | NOT NULL |  |  | `20261104090000` |  |
+| 25 | `observed_cents` | `bigint` | NOT NULL |  |  | `20261104090000` |  |
+| 26 | `anomaly_rows` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 27 | `left_out_rows` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 28 | `left_out_claim_lines` | `integer` | null |  |  | `20261104090000` |  |
+| 29 | `left_out_allowed_cents` | `bigint` | null |  |  | `20261104090000` |  |
+| 30 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+| 31 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261104090000` |  |
+
+Keys:
+- Primary: (id)
+- Unique `screening_lead_prospect_request_id_key`: `UNIQUE (prospect_request_id)`
+- Unique `screening_lead_upload_id_key`: `UNIQUE (upload_id)`
+- Unique `screening_lead_withdrawal_token_sha256_key`: `UNIQUE (withdrawal_token_sha256)`
+- Foreign `screening_lead_prospect_request_id_fkey`: (prospect_request_id) -> `prospect_request`(id), on delete cascade
+- Foreign `screening_lead_upload_id_fkey`: (upload_id) -> `screening_upload`(id), on delete set null
+
+Indexes:
+- `screening_lead_by_contact`: `USING btree (contact_email)`
+- `screening_lead_by_expiry`: `USING btree (expires_at)`
+- `screening_lead_by_practice`: `USING btree (zip, screening_practice_key(practice_name))`
+
+Policies (1):
+- `screening_lead_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_lead_anomaly_rows`: `CHECK (anomaly_rows >= 0 AND anomaly_rows <= 50000)`
+- `screening_lead_basis`: `CHECK (consent_sha256 IS NOT NULL OR prospect_request_id IS NOT NULL)`
+- `screening_lead_claim_lines`: `CHECK (claim_lines >= 11)`
+- `screening_lead_consent`: `CHECK (consent_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_lead_consent_only`: `CHECK (consent_sha256 IS NOT NULL OR withdrawal_token_sha256 IS NULL AND reminder_sent_at IS NULL)`
+- `screening_lead_contact_email`: `CHECK (contact_email ~ '^[a-z0-9!#$%&''*+/=?^_'{\|}~-]+(\.[a-z0-9!#$%&''*+/=?^_'{\|}~-]+)*@[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$'::text AND length(contact_email) <= 254 AND strpos(contact_email, '@'::text) <= 65 AND contact_email = lower(contact_email))`
+- `screening_lead_engine`: `CHECK (engine_version ~ '^[a-z0-9][a-z0-9./-]{0,31}$'::text)`
+- `screening_lead_expiry`: `CHECK (expires_at > screened_at AND expires_at <= (screened_at + '1 year'::interval))`
+- `screening_lead_labels`: `CHECK (labels_version ~ '^screening-labels/20[0-9]{2}-[0-9]{2}-[0-9]{2}$'::text)`
+- `screening_lead_left_out`: `CHECK ((left_out_claim_lines IS NULL) = (left_out_allowed_cents IS NULL) AND (left_out_claim_lines IS NULL OR left_out_rows > 0))`
+- `screening_lead_left_out_allowed`: `CHECK (left_out_allowed_cents >= 0)`
+- `screening_lead_left_out_claim_lines`: `CHECK (left_out_claim_lines >= 11)`
+- `screening_lead_left_out_rows`: `CHECK (left_out_rows >= 0 AND left_out_rows <= 50000)`
+- `screening_lead_observed`: `CHECK (observed_cents >= 0)`
+- `screening_lead_paid_click`: `CHECK (paid_click = ANY (ARRAY['paid_search'::text, 'paid_social'::text]))`
+- `screening_lead_practice_name`: `CHECK (btrim(practice_name) <> ''::text AND length(practice_name) <= 200 AND practice_name = btrim(practice_name))`
+- `screening_lead_referring_firm`: `CHECK (btrim(referring_firm) <> ''::text AND length(referring_firm) <= 200 AND referring_firm = btrim(referring_firm))`
+- `screening_lead_release`: `CHECK (release_no > 0)`
+- `screening_lead_release_manifest`: `CHECK (release_manifest_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_lead_row_count`: `CHECK (row_count >= 1 AND row_count <= 50000)`
+- `screening_lead_source`: `CHECK (source IS NULL OR (source = ANY (ARRAY['search'::text, 'billing_firm'::text, 'colleague'::text, 'association'::text, 'event'::text, 'social'::text, 'paidwhole_email'::text, 'article'::text, 'other'::text])))`
+- `screening_lead_state`: `CHECK (state = ANY (ARRAY['AL'::text, 'AK'::text, 'AZ'::text, 'AR'::text, 'CA'::text, 'CO'::text, 'CT'::text, 'DE'::text, 'FL'::text, 'GA'::text, 'HI'::text, 'ID'::text, 'IL'::text, 'IN'::text, 'IA'::text, 'KS'::text, 'KY'::text, 'LA'::text, 'ME'::text, 'MD'::text, 'MA'::text, 'MI'::text, 'MN'::text, 'MS'::text, 'MO'::text, 'MT'::text, 'NE'::text, 'NV'::text, 'NH'::text, 'NJ'::text, 'NM'::text, 'NY'::text, 'NC'::text, 'ND'::text, 'OH'::text, 'OK'::text, 'OR'::text, 'PA'::text, 'RI'::text, 'SC'::text, 'SD'::text, 'TN'::text, 'TX'::text, 'UT'::text, 'VT'::text, 'VA'::text, 'WA'::text, 'WV'::text, 'WI'::text, 'WY'::text, 'DC'::text, 'PR'::text, 'VI'::text, 'GU'::text, 'AS'::text, 'MP'::text]))`
+- `screening_lead_utm_campaign`: `CHECK (utm_campaign ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_lead_utm_medium`: `CHECK (utm_medium ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_lead_utm_source`: `CHECK (utm_source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text)`
+- `screening_lead_withdrawal_token`: `CHECK (withdrawal_token_sha256 ~ '^[0-9a-f]{64}$'::text)`
+- `screening_lead_zip`: `CHECK (zip ~ '^[0-9]{5}$'::text)`
+
+Invariants enforced by triggers:
+- `screening_lead_campaign_listed`: `BEFORE INSERT OR UPDATE OF utm_campaign ON screening_lead FOR EACH ROW EXECUTE FUNCTION marketing_campaign_listed_only()`
+  - "a campaign code is 1 to 64 lower-case letters, digits, dots, hyphens and underscores"
+- `screening_lead_kept`: `BEFORE DELETE ON screening_lead FOR EACH ROW EXECUTE FUNCTION screening_lead_kept()`
+  - "a kept screening summary is kept 12 months from its upload, until a later screening of the practice replaces it, or until it is withdrawn"
+- `screening_lead_no_truncate`: `BEFORE TRUNCATE ON screening_lead FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_lead_rules`: `BEFORE UPDATE ON screening_lead FOR EACH ROW EXECUTE FUNCTION screening_lead_rules()`
+  - "a kept screening summary keeps what it was frozen with"
+  - "a kept screening summary's link goes once, and its first open, request, withdrawal token and reminder are each set once"
+  - "a kept screening summary's expiry moves only to now, as it is withdrawn"
+
+### Table `screening_lead_product`
+
+<a id="table-screening-lead-product"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `lead_id`, `payer_product`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `lead_id` | `uuid` | NOT NULL |  | `screening_lead(id)` | `20261104090000` |  |
+| 2 | `payer_product` | `text` | NOT NULL |  |  | `20261104090000` | one of medicare_ffs, ma_noncontracted, ma_contracted, commercial, medicaid, other |
+| 3 | `row_count` | `integer` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `claim_lines` | `bigint` | NOT NULL |  |  | `20261104090000` |  |
+| 5 | `observed_cents` | `bigint` | NOT NULL |  |  | `20261104090000` |  |
+| 6 | `priced_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 7 | `priced_claim_lines` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 8 | `priced_observed_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 9 | `expected_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 10 | `lowest_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 11 | `pooled_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 12 | `anomaly_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 13 | `could_not_price_rows` | `integer` | NOT NULL | `0` |  | `20261104090000` |  |
+| 14 | `could_not_price_claim_lines` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+| 15 | `could_not_price_observed_cents` | `bigint` | NOT NULL | `0` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (lead_id, payer_product)
+- Foreign `screening_lead_product_lead_id_fkey`: (lead_id) -> `screening_lead`(id), on delete cascade
+
+Policies (1):
+- `screening_lead_product_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `screening_lead_product_cells`: `CHECK ((priced_claim_lines = 0 OR priced_claim_lines >= 11) AND (could_not_price_claim_lines = 0 OR could_not_price_claim_lines >= 11))`
+- `screening_lead_product_claim_lines`: `CHECK (claim_lines >= 11)`
+- `screening_lead_product_could_not_price_observed`: `CHECK (could_not_price_observed_cents >= 0)`
+- `screening_lead_product_expected`: `CHECK (expected_cents >= 0)`
+- `screening_lead_product_figures`: `CHECK (lowest_cents <= expected_cents AND pooled_rows >= 0 AND pooled_rows <= priced_rows AND anomaly_rows >= 0 AND anomaly_rows <= priced_rows)`
+- `screening_lead_product_lowest`: `CHECK (lowest_cents >= 0)`
+- `screening_lead_product_medicare`: `CHECK ((payer_product = ANY (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text])) OR priced_rows = 0 AND priced_claim_lines = 0 AND priced_observed_cents = 0 AND expected_cents = 0 AND lowest_cents = 0 AND pooled_rows = 0 AND anomaly_rows = 0 AND could_not_price_rows = 0 AND could_not_price_claim_lines = 0 AND could_not_price_observed_cents = 0)`
+- `screening_lead_product_observed`: `CHECK (observed_cents >= 0)`
+- `screening_lead_product_partition`: `CHECK ((payer_product <> ALL (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text])) OR (priced_rows + could_not_price_rows) = row_count AND (priced_claim_lines + could_not_price_claim_lines) = claim_lines AND (priced_observed_cents + could_not_price_observed_cents) = observed_cents)`
+- `screening_lead_product_payer_product`: `CHECK (payer_product = ANY (ARRAY['medicare_ffs'::text, 'ma_noncontracted'::text, 'ma_contracted'::text, 'commercial'::text, 'medicaid'::text, 'other'::text]))`
+- `screening_lead_product_priced_observed`: `CHECK (priced_observed_cents >= 0)`
+- `screening_lead_product_priced_rows`: `CHECK (priced_rows >= 0)`
+- `screening_lead_product_row_count`: `CHECK (row_count >= 1 AND row_count <= 50000)`
+
+Invariants enforced by triggers:
+- `screening_lead_product_fixed`: `BEFORE UPDATE ON screening_lead_product FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `screening_lead_product_kept`: `BEFORE DELETE ON screening_lead_product FOR EACH ROW EXECUTE FUNCTION screening_lead_product_kept()`
+  - "a kept screening summary's products go only with it"
+- `screening_lead_product_no_truncate`: `BEFORE TRUNCATE ON screening_lead_product FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+
+### Table `marketing_campaign`
+
+<a id="table-marketing-campaign"></a>
+
+- Class: organization- or user-scoped (RLS, no practice_id)
+- Row-level security: enabled, forced; 1 policy; owner `tp_owner`
+- Dictionary: not in the Data dictionary
+- Created by `20261104090000_free_screening` (ADR 0062)
+- Primary key: `code`
+- Privileges: none for any group role
+
+| # | Column | Type | Null | Default | References | Since | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `code` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 2 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261104090000` |  |
+| 3 | `label` | `text` | NOT NULL |  |  | `20261104090000` |  |
+| 4 | `added_by` | `uuid` | NOT NULL |  | `user(id)` | `20261104090000` |  |
+| 5 | `added_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261104090000` |  |
+
+Keys:
+- Primary: (code)
+- Unique `marketing_campaign_id_key`: `UNIQUE (id)`
+- Foreign `marketing_campaign_added_by_fkey`: (added_by) -> `user`(id), on delete no action
+
+Policies (1):
+- `marketing_campaign_owner`: PERMISSIVE FOR ALL TO tp_owner
+  - USING `true`
+  - WITH CHECK `true`
+
+Invariants enforced by constraints:
+- `marketing_campaign_code`: `CHECK (code ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text AND code <> 'other'::text)`
+- `marketing_campaign_label`: `CHECK (btrim(label) <> ''::text AND length(label) <= 120 AND label = btrim(label))`
+
+Invariants enforced by triggers:
+- `marketing_campaign_fixed`: `BEFORE DELETE OR UPDATE ON marketing_campaign FOR EACH ROW EXECUTE FUNCTION reject_change()`
+  - "% is append-only: % is refused"
+- `marketing_campaign_no_truncate`: `BEFORE TRUNCATE ON marketing_campaign FOR EACH STATEMENT EXECUTE FUNCTION reject_change()`
   - "% is append-only: % is refused"
 
 ## 13. Operations
@@ -5343,7 +6009,7 @@ Invariants enforced by constraints:
 
 ## Divergences from the Data dictionary
 
-The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1, are what the founder approves. C2, C3, C4 and C5 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. Where a status says a part is built, that part is schema like any other, described above and approved with it. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
+The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1 and C5, are what the founder approves. C2, C3 and C4 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. Where a status says a part is built, that part is schema like any other, described above and approved with it. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
 
 Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 15 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
 
@@ -5422,7 +6088,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | C2 | CO-12 names tables that do not exist | Change Order 001, CO-12 | practice_settings gains two columns; packet_export records five parts. | Settings are practice.settings jsonb (the dictionary's own practice row), guarded by CHECKs and practice_setting_keys(). No packet_export table exists: an export is five columns on packet_version (export_pdf_key, export_csv_key, export_sha256, export_csv_sha256, exported_at), with the verifier's report over what it rendered (export_verifier_report) and the reimbursement reviewer's attestation over its two SHA-256 (attested_by, attested_at, attestation; 20261103090000, ADR 0061, D16), made only once the attester has downloaded both files since the export: each download is an audit_event (packet_export_pdf_downloaded, packet_export_csv_downloaded) that audit_event_packet_download records only on a connection that is not the worker's own login (app_session_is_job(), the marker role tp_job), for a person who may read the export, read by packet_export_downloads_of_actor(), so no table is added (the founder's addition of 2026-10-18). | proposed (reconciliation-001, decisions D26 and D29): two keys in practice.settings; a new packet_export table with its parts. Built in part: the export's verifier report and the attestation on packet_version, with the downloads it needs in audit_event (20261103090000, ADR 0061, D16), are approved as the packet_version and audit_event sections describe them, and only the rest is a proposal |
 | C3 | CO-12 'roles enum' and 'enum' columns | Change Order 001, CO-12 | Add financial_reviewer and auditor to the roles enum; readiness_grade and deadline_verification_status as enums. | There are no PostgreSQL enum types. Roles are text with CHECK membership_role_check and role_permission_role_check (10 roles); every enumeration is a CHECK. deadline_verification_status is built so (20261103090000, ADR 0061): packet_version.deadline_verification_status is text generated from the version's content, with CHECK packet_version_deadline_verification_status_check (verified, unverified, not_applicable). | proposed (CO-12; the schema's rule that every enumeration is text with a CHECK, reconciliation-001 D2 on C3): readiness_grade and the two roles, still to come (PR 8, PR 14). Built in part: packet_version.deadline_verification_status, text generated from the content with its CHECK (20261103090000, ADR 0061; what verified means is D17 a), is approved as the packet_version section describes it, and only the rest is a proposal |
 | C4 | CO-12 case_transition_log has no practice_id | Change Order 001, CO-12; CLAUDE.md rule 4 | CO-12: case_id, from_state, to_state, actor_id, allowed, reason, at. CLAUDE.md: every table that can hold PHI has practice_id and FORCE ROW LEVEL SECURITY. | Not built. | proposed (reconciliation-001, decision D25): practice_id, a registry row, FORCE RLS; reason a closed code |
-| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Not built. prospect_request is the precedent: no practice_id, RLS forced, submitted only through submit_prospect_request() (SECURITY DEFINER); platform reviewers update only its review columns (prospect_request_platform_review, prospect_request_fixed). | proposed (reconciliation-001, decision D18): built as prospect_request is, so the catalog test does not change |
+| C5 | CO-12 screening tables 'outside the RLS catalog' | Change Order 001, CO-04 and CO-12; packages/db/src/catalog.ts | CO-04: no practice_id, outside the RLS catalog. The catalog test: a table without RLS is global and the application role may only read it. | Built as prospect_request is (migration 20261104090000, ADR 0062): screening_prospect, screening_upload, screening_run and screening_result, a fifth, screening_place_of_service_split, the platform split the engine needs (no rule record carries one), and four more by the founder's rulings of 2026-10-20 (audit #57): screening_outcome, the counts-only outcome every screening leaves, kept with no end date; screening_lead and screening_lead_product, the frozen summary of a converted or consenting practice's screening, kept 12 months from the upload; and marketing_campaign, the campaign codes the founder lists. Each is in public with RLS forced and the owner's policy alone, no practice_id, no phi_table_registry row and no privilege for any other role. The application writes them only through submit_screening() and reject_screening_upload() (which also write the outcome), reads a result by its link token's SHA-256, records its first open through screening_result_opened(), converts it through convert_screening() (which keeps the summary with the request), withdraws a consent summary through screening_lead_withdraw(), and the console approves the split through console_approve_screening_split() and lists a campaign through console_register_marketing_campaign() (all SECURITY DEFINER); the platform jobs use operator_screening_*() as tp_operator, the release's keyed records read by the run's own keys (operator_screening_run_keys(), operator_screening_run_records(); audit #53). An upload stores its row count and coded reasons, the SHA-256 of the rows accepted (computed by submit_screening() from the rows it stores; never a hash of the file, which holds the rows left out, and none on a refused upload), and of the rows of fewer than 11 claim lines the browser left out three numbers alone, never a byte of the file; no row of fewer than 11 claim lines is stored (the CMS small-cell standard, the founder's ruling of 2026-10-18), and a practice keeps one accepted screening and one kept summary at a time (a later one of the same ZIP and practice name, or the same contact address, replaces it, a summary at the later screening's completion; a summary kept with a request passes to the later screening, carrying the request, only when its ZIP and practice name match, and is deleted with no successor when the address alone matches, its request kept without one), so no two can be subtracted into a smaller cell. An outcome holds bands, whole-percent shares, closed codes and flags, never a name, an email, a ZIP, an exact count, a date or a dollar figure, and is unlinked when its screening goes and then sealed; a summary's claim-line sums are 0 or at least 11 by CHECK. The rules: screening_outcome_rules (fixed columns, one-way stage, flags and first open once, sealed once unlinked; DELETE and TRUNCATE refused), screening_lead_rules (fixed but for its link, first open, request, withdrawal token, reminder and a withdrawal's expiry), screening_lead_kept (deleted only on expiry or withdrawal, replacement, or its request's deletion), and marketing_campaign append-only; catalog.ts is unchanged, and SEC-17 reads the catalog for PHI-shaped columns across the nine tables. | decided (reconciliation-001, decision D18 a, approved 2026-10-17; the founder's rulings of 2026-10-20 on audit #57, decisions 7 to 12 and 17 to 19) and built; approving this document approves the fifth table and the four of audit #57, which CO-12 does not list |
 
 ### D. Tables not in the Data dictionary (informational)
 
@@ -5439,26 +6105,35 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D9 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D10 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | `20261023120000_recovery_ledger` | ADR 0042 |
 | D11 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | `20261016120000_remittances` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 |
-| D12 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
-| D13 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
-| D14 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D15 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D16 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D17 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
-| D18 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
-| D19 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D20 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
-| D21 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
-| D22 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D23 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D24 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D25 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
-| D26 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
-| D27 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D28 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D29 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D30 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
-| D31 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D12 | [`marketing_campaign`](#table-marketing-campaign) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D13 | [`model_budget_hold`](#table-model-budget-hold) | Model gateway | PHI (registered) | `20261031090000_model_budget_holds` | ADR 0054 |
+| D14 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
+| D15 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D16 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D17 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D18 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
+| D19 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
+| D20 | [`role_permission`](#table-role-permission) | Tenancy and access | global (no practice_id, no RLS) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D21 | [`rule_release_withdrawal`](#table-rule-release-withdrawal) | Global content | global (no practice_id, no RLS) | `20261019150000_reruns_and_release_withdrawal` | ADR 0037 |
+| D22 | [`schema_migrations`](#table-schema-migrations) | Operations | global (no practice_id, no RLS) | the migration runner (packages/db/src/migrate.ts, CREATE TABLE IF NOT EXISTS before the first migration; ADR 0009) | - |
+| D23 | [`screening_lead`](#table-screening-lead) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D24 | [`screening_lead_product`](#table-screening-lead-product) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D25 | [`screening_outcome`](#table-screening-outcome) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D26 | [`screening_place_of_service_split`](#table-screening-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D27 | [`screening_prospect`](#table-screening-prospect) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D28 | [`screening_result`](#table-screening-result) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D29 | [`screening_run`](#table-screening-run) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D30 | [`screening_upload`](#table-screening-upload) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
+| D31 | [`status_component`](#table-status-component) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D32 | [`status_incident`](#table-status-incident) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D33 | [`status_incident_update`](#table-status-incident-update) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D34 | [`subscription_claim`](#table-subscription-claim) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261101090000_billing_review` | ADR 0050, ADR 0055 |
+| D35 | [`support_mail_receipt`](#table-support-mail-receipt) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261101120000_support_mail` | ADR 0055 |
+| D36 | [`support_ticket`](#table-support-ticket) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D37 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D38 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
+| D39 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
+| D40 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 
 ### E. Columns not in the Data dictionary (informational)
 
@@ -5579,6 +6254,29 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `billing_event.outcome` | `received`, `applied`, `stale`, `ignored`, `unknown_customer` |
 | `prospect_request.billing_arrangement` | `in_house`, `billing_firm`, `mixed`, `other` |
 | `prospect_request.status` | `new`, `contacted`, `converted`, `declined` |
+| `prospect_request.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
+| `prospect_request.paid_click` | `paid_search`, `paid_social` |
+| `prospect_request.declined_reason` | named by conditional CHECKs only: `no_response`, `not_now`, `price`, `too_little_to_recover`, `chose_other`, `doing_it_themselves`, `data_unavailable`, `compliance_declined`, `not_a_fit`, `not_a_prospect`, `other`, `not_recorded` |
+| `screening_prospect.state` | `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `DC`, `PR`, `VI`, `GU`, `AS`, `MP` |
+| `screening_prospect.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
+| `screening_prospect.paid_click` | `paid_search`, `paid_social` |
+| `screening_upload.status` | `accepted`, `rejected` |
+| `screening_run.status` | `queued`, `pricing`, `complete`, `failed` |
+| `screening_result.payer_product` | `medicare_ffs`, `ma_noncontracted`, `ma_contracted`, `commercial`, `medicaid`, `other` |
+| `screening_result.disposition` | `pending`, `priced`, `unpriced`, `rates_change_in_band`, `contract_required`, `not_screened` |
+| `screening_result.unpriced_reason` | `NO_AGREEMENT`, `NO_MAPPING`, `AMBIGUOUS_RATE`, `NO_RATE_FOR_CODE`, `NO_PFS_VALUE`, `UNSUPPORTED_METHOD`, `SECONDARY_PAYER`, `MUE_EXCEEDED`, `UNITS_RULE_UNKNOWN`, `DATE_OUTSIDE_VERSIONS`, `REVERSED_CLAIM`, `ENGINE_ERROR` |
+| `screening_outcome.stage` | `refused`, `accepted`, `priced`, `failed` |
+| `screening_outcome.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
+| `screening_outcome.channel` | `none`, `email`, `paid_search`, `paid_social`, `social`, `partner`, `event`, `content`, `other` |
+| `screening_outcome.row_band` | `none`, `1_100`, `101_1k`, `1k_10k`, `10k_50k`, `over_50k` |
+| `screening_outcome.left_out_band` | `none`, `1_100`, `101_1k`, `1k_10k`, `10k_50k` |
+| `screening_outcome.anomaly_band` | `none`, `1_100`, `101_1k`, `1k_10k`, `10k_50k` |
+| `screening_outcome.anomaly_difference_band` | `none`, `under_1k`, `1k_to_10k`, `10k_to_50k`, `50k_to_250k`, `250k_or_more` |
+| `screening_outcome.first_open_band` | `same_day`, `1_2_days`, `3_7_days`, `8_30_days` |
+| `screening_lead.state` | `AL`, `AK`, `AZ`, `AR`, `CA`, `CO`, `CT`, `DE`, `FL`, `GA`, `HI`, `ID`, `IL`, `IN`, `IA`, `KS`, `KY`, `LA`, `ME`, `MD`, `MA`, `MI`, `MN`, `MS`, `MO`, `MT`, `NE`, `NV`, `NH`, `NJ`, `NM`, `NY`, `NC`, `ND`, `OH`, `OK`, `OR`, `PA`, `RI`, `SC`, `SD`, `TN`, `TX`, `UT`, `VT`, `VA`, `WA`, `WV`, `WI`, `WY`, `DC`, `PR`, `VI`, `GU`, `AS`, `MP` |
+| `screening_lead.source` | named by conditional CHECKs only: `search`, `billing_firm`, `colleague`, `association`, `event`, `social`, `paidwhole_email`, `article`, `other` |
+| `screening_lead.paid_click` | `paid_search`, `paid_social` |
+| `screening_lead_product.payer_product` | `medicare_ffs`, `ma_noncontracted`, `ma_contracted`, `commercial`, `medicaid`, `other` |
 | `audit_event.actor_kind` | `user`, `service`, `system` |
 | `job_run.job_type` | `intake`, `parse_835`, `monitor`, `price`, `triage`, `audit_report`, `reconcile`, `digest`, `export`, `packet_export`, `roi_statement`, `report_document` |
 | `job_run.outcome` | `running`, `retrying`, `succeeded`, `failed`, `refused` |
@@ -5672,13 +6370,16 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `claim_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `daa5449712c05f35` |
 | `compliance_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7f1e947036b56ec1` |
 | `compliance_workforce()` | `TABLE(user_id uuid, email text, roles text[])` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7cc132ead4ab0ff3` |
+| `console_approve_screening_split(jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f4a65351b09222fe` |
 | `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
 | `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `99b8bdc1d3dee83b` |
 | `console_model_spend(date)` | `TABLE(practice_id uuid, organization_id uuid, name text, calls integer, spent_unrounded numeric)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `e376a7bc2663c81e` |
 | `console_practice_settings(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, zip text, settings jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `dc30760ef5f79626` |
 | `console_practices(uuid)` | `TABLE(practice_id uuid, organization_id uuid, name text, status text, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `76b2df303a07e7c7` |
+| `console_register_marketing_campaign(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77e5b8145f5d7a10` |
 | `console_release_runs()` | `TABLE(release_no integer, practice_id uuid, name text, runs bigint, runs_in_effect bigint, reruns bigint, reruns_accepted bigint, changed_lines bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `adc1da81e4e077a8` |
 | `console_restore_drills(integer)` | `TABLE(started_at timestamp with time zone, completed_at timestamp with time zone, duration_ms bigint, outcome text, catalog_problems integer, error_code text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `399a93a1a8318075` |
+| `console_screening_splits()` | `TABLE(id uuid, settings jsonb, approved_by uuid, approved_by_email text, approved_at timestamp with time zone, in_force boolean)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `38251dbf0646d018` |
 | `console_set_practice_settings(uuid,text,jsonb)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `af645fb832f3bf10` |
 | `console_support_grants()` | `TABLE(support_grant_id uuid, practice_id uuid, user_id uuid, ticket text, reason text, created_at timestamp with time zone, expires_at timestamp with time zone, notified_at timestamp with time zone, reads bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b335e4849f0c246b` |
 | `console_support_tickets(text,integer)` | `TABLE(ticket_id uuid, number bigint, requester_email text, organizations text[], screen text, category text, subject text, message text, status text, created_at timestamp with time zone, status_changed_at timestamp with time zone)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `581668ca764c385c` |
@@ -5690,6 +6391,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d19fbe631239fef` |
 | `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `84ee4071d9947f3d` |
 | `contract_window_rule_computed(text,text)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bb55ce276d1c3288` |
+| `convert_screening(text,text,integer,text[],text,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ae9476bcd4ee8b04` |
 | `current_rule_release()` | `integer` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `888c946804c94d4f` |
 | `current_terms_version()` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1f6b0bde64fc4a4b` |
 | `data_rights_permit(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app, tp_operator |  | `97a340475b983d2f` |
@@ -5723,6 +6425,9 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `line_status_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `6d34625159838cf3` |
 | `ma_dispute_route_confirmed()` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b7b976b0230f8b43` |
 | `maintenance_on()` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1a688a810ac58550` |
+| `marketing_campaign_kept(text)` | `text` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `fc3ead84269c9c23` |
+| `marketing_campaign_listed_only()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918ae38efbc9e36e` |
+| `marketing_channel(text,text)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `b07290ad9961ab28` |
 | `membership_invitation()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5101211402a5e23c` |
 | `membership_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `974ecfab878a2e77` |
 | `membership_role_fits_organization()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `114480521bb0ddf4` |
@@ -5746,6 +6451,18 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_practice_administrator_emails(uuid)` | `TABLE(email text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `e66800658c20c850` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_record_support_notice(uuid,text,text)` | `TABLE(recorded boolean, reads bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `cd723eaf7325fa60` |
+| `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `bd1872d80d9defc5` |
+| `operator_screening_complete(uuid,text,text,text,text,integer)` | `TABLE(contact_email text, row_count integer, kept_with text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `256efa16c74f6126` |
+| `operator_screening_due(integer,integer)` | `TABLE(run_id uuid, status text, attempts integer)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6fcad5f2528ea9e3` |
+| `operator_screening_expire(integer,text)` | `TABLE(prospects integer, runs integer, leads integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `a3499f0dfb1e11a0` |
+| `operator_screening_fail(uuid,text,text,integer)` | `TABLE(contact_email text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `cab57814adf9e4fb` |
+| `operator_screening_record(uuid,integer[],text[],bigint[],numeric[],bigint[],bigint[],boolean[],bigint[],numeric[],bigint[],bigint[],text[],text[],text[],text[],integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d362dc679ee42f4e` |
+| `operator_screening_release(uuid)` | `TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `5aebd280575c17bd` |
+| `operator_screening_reminder_sent(uuid,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `b251d387b919a3db` |
+| `operator_screening_reminders_due(integer,integer)` | `TABLE(lead_id uuid, contact_email text, expires_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `8f34240464dd59d1` |
+| `operator_screening_rows(uuid,integer,integer,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `ad7e736c4810324f` |
+| `operator_screening_run_keys(uuid)` | `TABLE(codes text[], zip text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `1e83fdac05e34b0c` |
+| `operator_screening_run_records(uuid)` | `TABLE(record_type text, key jsonb, value jsonb, effective_from text, effective_to text, sha256 text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `9b658afae09d0e3b` |
 | `operator_support_mail_read(text[])` | `TABLE(mail_ref text)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `da2a6ab110478618` |
 | `organization_administrator_count(uuid)` | `bigint` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `45fcaf44bc28ae33` |
 | `organization_kind_fixed()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d5a3d13bd118aac9` |
@@ -5820,7 +6537,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `pricing_run_release_withdrawn(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1297cd9fd72f4ee7` |
 | `pricing_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3379cd08846946da` |
 | `prospect_payers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app |  | `7cf431c07bbe1f8f` |
-| `prospect_request_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a237fe3144a5d610` |
+| `prospect_request_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `deb5e1b28d963590` |
 | `provider_adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d679b25d16c44132` |
 | `public_status_components()` | `TABLE(key text, name text, status text, changed_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `79a7ae3915c12b37` |
 | `public_status_incidents(timestamp with time zone)` | `TABLE(incident_id uuid, title text, impact text, components text[], status text, started_at timestamp with time zone, resolved_at timestamp with time zone, updates jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7678a79b3367ec80` |
@@ -5833,6 +6550,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `record_sign_in_with_mfa()` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `33357d6149a90f6c` |
 | `refuse_new_work_while_suspended()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0a92559e621ef0f0` |
 | `reject_change()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `9a6259207407034b` |
+| `reject_screening_upload(text,text,text,text,integer,jsonb,text,text,text,text,text,text,text,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c1a6345eced698e8` |
 | `remittance_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `e23bac606a695625` |
 | `report_document_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1f2bfc271aad9a0c` |
 | `report_document_no_truncate()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `a4415278b751e6c5` |
@@ -5847,6 +6565,39 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `rule_record_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `f638f6a6b42be99a` |
 | `rule_release_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `495c52b559208d41` |
 | `rule_release_withdrawal_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c0f7ed15484f7fd1` |
+| `screening_count_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `3c43fb92e0243276` |
+| `screening_difference_band(bigint)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `02bf48b2aefc21ae` |
+| `screening_freeze_lead(uuid,uuid,text,boolean,text)` | `uuid` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `0621e0dd445907d7` |
+| `screening_kept_until_expiry()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `d8ac90005f95ba48` |
+| `screening_labels_version()` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `d6f05e3a1a9e8ead` |
+| `screening_lead_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `ff98a981ccca6e52` |
+| `screening_lead_product_kept()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5918c9fea644753d` |
+| `screening_lead_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4cacbc9f27720745` |
+| `screening_lead_withdraw(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `788ee69fa361503e` |
+| `screening_modifiers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `5ce982845defbad6` |
+| `screening_open_band(timestamp with time zone,timestamp with time zone)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `5378a847ee1b6828` |
+| `screening_outcome_campaign_listed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2f4aca68279c8f28` |
+| `screening_outcome_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `59b133f63acf44b8` |
+| `screening_practice_key(text)` | `text` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `8908831954ae9c4f` |
+| `screening_refusal_codes_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `95409d8e26e38755` |
+| `screening_rejection_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `de376c36d4958863` |
+| `screening_rejections_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` |  |  | `44d088a7b92201f1` |
+| `screening_replaced(uuid)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `0447db227547c072` |
+| `screening_result_coverage(text)` | `TABLE(payer_product text, disposition text, unpriced_reason text, unpriced_detail text, rows integer, claim_lines bigint, observed_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d0ded51d5c43a4fd` |
+| `screening_result_group_totals(text,integer,integer)` | `TABLE(groups integer, anomaly_groups integer, within_reduction_groups integer, page_size integer, pages integer, page_no integer, first_group integer, last_group integer, other_groups integer, other_anomaly_groups integer, other_rows integer, other_claim_lines bigint, other_expected_cents bigint, other_lowest_cents bigint, other_observed_cents bigint, other_difference_cents bigint, other_lowest_difference_cents bigint)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `05273a55a84f7373` |
+| `screening_result_groups(text,integer,integer)` | `TABLE(group_no integer, payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, reduced_cents bigint, observed_cents bigint, difference_cents bigint, reduced_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, anomaly boolean, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `77fb171b2ad9e91d` |
+| `screening_result_inserted()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f556a1e47dc13dee` |
+| `screening_result_opened(text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e002cbad4fce3ed8` |
+| `screening_result_ranked_groups(text)` | `TABLE(group_no integer, payer_product text, procedure_code text, rows integer, claim_lines bigint, expected_cents bigint, lowest_cents bigint, observed_cents bigint, difference_cents bigint, lowest_difference_cents bigint, in_reduction_pool boolean, anomaly_rows integer, standing text)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `2ae6e52259eb8e4b` |
+| `screening_result_rows(text,integer)` | `TABLE(row_no integer, procedure_code text, modifiers text[], units integer, place_of_service text, payer_product text, service_band text, claim_count integer, observed_allowed_cents bigint, expected_line_cents bigint, expected_cents bigint, difference_cents bigint, in_reduction_pool boolean, reduced_line_cents bigint, reduced_cents bigint, reduced_difference_cents bigint, standing text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1fc6b8482bf8d179` |
+| `screening_result_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `740dacdcc9915f56` |
+| `screening_result_summary(text)` | `TABLE(run_id uuid, practice_name text, state text, zip text, release_no integer, engine_version text, created_at timestamp with time zone, expires_at timestamp with time zone, rows integer, claim_lines bigint, observed_cents bigint, priced_rows integer, priced_claim_lines bigint, expected_cents bigint, priced_observed_cents bigint, difference_cents bigint, pooled_rows integer, reduced_cents bigint, reduced_difference_cents bigint, contract_rows integer, contract_claim_lines bigint, contract_observed_cents bigint, not_screened_rows integer, not_screened_claim_lines bigint, not_screened_observed_cents bigint, unpriced_rows integer, unpriced_claim_lines bigint, unpriced_observed_cents bigint, left_out_rows integer, left_out_claim_lines bigint, left_out_observed_cents bigint, converted boolean, release_withdrawn boolean, kept_with text)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9244e6d684b81b70` |
+| `screening_run_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `864b90656f5809db` |
+| `screening_split_in_force()` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `32bb20f8a402f18e` |
+| `screening_split_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` |  |  | `44ae8e24ea5d8386` |
+| `screening_standing(bigint,bigint,bigint,bigint)` | `text` | sql | invoker | immutable |  |  |  | `d8feb37d697d3992` |
+| `screening_status()` | `TABLE(release_no integer, place_of_service_split_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `031f73e50cc18a6d` |
+| `screening_zip_status(text)` | `TABLE(known boolean, plus_four_required boolean)` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `84bfe38789333636` |
 | `service_line_priced_in_effect(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `25da75c9275ad787` |
 | `service_line_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `4a5052e6217f6e34` |
 | `set_feature_flag(text,text,uuid,jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ab0833dc69f73120` |
@@ -5866,6 +6617,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `submission_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `220ce03d1ea0f31f` |
 | `submission_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `918129137c88ee12` |
 | `submit_prospect_request(text,text,text,integer,text[],text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2ae418d0e1c59c6` |
+| `submit_prospect_request(text,text,text,integer,text[],text,text,text,text,text,text,text)` | `uuid` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e227f669a9295eeb` |
+| `submit_screening(text,text,text,text,text[],text[],integer[],text[],text[],text[],bigint[],integer[],integer,integer,bigint,text,text,text,text,text,text,text,text,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d1c5e372e8847e92` |
 | `subscription_claim_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `24615116b611dcb0` |
 | `subscription_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9bff8d1f6d16f0e6` |
 | `support_grant_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `4e2ccf3fc52ddc22` |
@@ -5940,13 +6693,14 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 39 | `20261101120000_support_mail.sql` | ADR 0055 | `b643fa75d0f3f2998cb116fd21e242734e9d60ebfccea3a99a0216442eaf5c74` |
 | 40 | `20261102090000_era_export_intake.sql` | ADR 0031, ADR 0059, ADR 0060 | `19f8d0a5e56ec0f006b7d904af9c789897174fd492818401f315dcc87366a4b8` |
 | 41 | `20261103090000_deadline_verification_and_export_attestation.sql` | ADR 0038, ADR 0041, ADR 0049, ADR 0061 | `96f983c0c1ce8b6e50c16b532dd4b668488ddcb7a9919a320af178bae9c3ca30` |
+| 42 | `20261104090000_free_screening.sql` | ADR 0062 | `8bc938ac54150a7d1d93255acb4610851b3d2bd85f37d6b7a521a6ed950b0a43` |
 
 ## Cross-checks
 
 Run against the same migrated database by `packages/db/src/domain-model/cross-check.ts`: the Drizzle schema (packages/db/src/schema) against the live columns, as packages/db/src/migrate.db.test.ts does, and the repository's own catalog test function, catalogProblems() in packages/db/src/catalog.ts.
 
 ```text
-Drizzle tables: 78; migrated tables (excluding schema_migrations): 78
+Drizzle tables: 87; migrated tables (excluding schema_migrations): 87
 In the database, not in Drizzle: none
 In Drizzle, not in the database: none
 Column differences (name, type, nullability): 0
@@ -5955,6 +6709,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261103090000_deadline_verification_and_export_attestation.sql` (41 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1. It does not decide C2, C3, C4 and C5, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261104090000_free_screening.sql` (42 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: Tyler Williams  Date: 2026-10-21  Document SHA-256: `6f72ea56563c379e05a601f3af019ad4ce3358f55cc02b06fcec17ea23d830a0`
+Approved by: Tyler Williams  Date: 2026-10-21  Document SHA-256: `a17f33aa3b3ace6efcf11171789b6cfbdb0193f0dc76be5b28cdd47840deebfe`

@@ -5,10 +5,12 @@
   "type": "module",
   "description": "Repository tooling: the log lint, content checker, release scripts and CI guards.",
   "exports": {
-    "./workspace": "./release/workspace.ts"
+    "./workspace": "./release/workspace.ts",
+    "./screening-capacity/uploads": "./screening-capacity/uploads.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "screening:capacity": "tsx screening-capacity/run.ts"
   },
   "dependencies": {
     "@tp/contracts": "workspace:*",
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "fast-check": "catalog:",
+    "playwright-core": "1.56.1",
     "@types/node": "catalog:",
     "@types/pg": "catalog:",
     "eslint": "^10.12.0",

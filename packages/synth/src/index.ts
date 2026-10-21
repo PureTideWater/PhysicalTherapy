@@ -61,6 +61,10 @@ export { CONTRACT_SET_DIR, CONTRACT_SET_SIZE, contractSetFiles, contractSetSpecs
 export { NARRATIVE_SET_DIR, NARRATIVE_SET_SIZE, narrativeSetCases, narrativeSetFiles } from './eval/narrative-set';
 export { SCAN_HEIGHT, SCAN_WIDTH, TEXTRACT_RECORDING_FORMAT, type RecordedBlock, type TextractRecording, scannedPdf, textractRecording } from './formats/scan';
 
+// The screening capacity test's production-shaped SYNTHETIC release and uploads (audit #53 part 1; docs/adr/0062).
+export * from './release/scale';
+export * from './screening/uploads';
+
 // Writing fixtures.
 export { INTERCHANGE_HEADER, SYNTHETIC_FIXTURES, SyntheticSenderError, assertSyntheticFixture, assertSyntheticHeaders, assertSyntheticX12, driftFrom, searchableText, startsInterchange, writeCases } from './write';
 

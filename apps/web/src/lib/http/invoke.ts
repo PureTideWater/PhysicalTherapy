@@ -379,6 +379,10 @@ export function publicRoute<P, I, R>(spec: PublicSpec<P, I, R>): Route<R> {
         if (error instanceof InputError) {
           return { status: 'invalid', issues: error.issues };
         }
+        // What a public link names is not there (a screening's result link that expired; docs/adr/0062).
+        if (error instanceof NotFoundError) {
+          return { status: 'not_found' };
+        }
         throw error;
       }
     },

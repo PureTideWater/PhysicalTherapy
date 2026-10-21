@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { ALLOWED_LOG_FIELDS, forbiddenFieldLabel, isAllowedLogField } from './fields';
+import { ALLOWED_LOG_FIELDS, NUMERIC_LOG_FIELDS, forbiddenFieldLabel, isAllowedLogField, isNumericLogField } from './fields';
 
 describe('ALLOWED_LOG_FIELDS', () => {
   it('holds only identifier and code fields', () => {
@@ -10,18 +10,31 @@ describe('ALLOWED_LOG_FIELDS', () => {
   });
 
   it('never contains a forbidden field', () => {
-    for (const field of ALLOWED_LOG_FIELDS) {
+    for (const field of [...ALLOWED_LOG_FIELDS, ...NUMERIC_LOG_FIELDS]) {
       expect(forbiddenFieldLabel(field), field).toBeUndefined();
     }
   });
 
   it('has no duplicates', () => {
-    expect(new Set(ALLOWED_LOG_FIELDS).size).toBe(ALLOWED_LOG_FIELDS.length);
+    const all = [...ALLOWED_LOG_FIELDS, ...NUMERIC_LOG_FIELDS];
+    expect(new Set(all).size).toBe(all.length);
   });
 
   it('answers membership', () => {
     expect(isAllowedLogField('practice_id')).toBe(true);
+    expect(isAllowedLogField('elapsed_ms')).toBe(true);
     expect(isAllowedLogField('patient_name')).toBe(false);
+  });
+});
+
+describe('NUMERIC_LOG_FIELDS', () => {
+  it('names a measure, milliseconds or a count, and nothing that could hold text', () => {
+    expect([...NUMERIC_LOG_FIELDS]).toEqual(['elapsed_ms', 'record_count']);
+    for (const field of NUMERIC_LOG_FIELDS) {
+      expect(field).toMatch(/^[a-z]+(_[a-z]+)*_(ms|count)$/);
+      expect(isNumericLogField(field)).toBe(true);
+    }
+    expect(isNumericLogField('practice_id')).toBe(false);
   });
 });
 

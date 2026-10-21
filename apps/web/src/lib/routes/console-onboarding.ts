@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 
-import { AGREEMENT_KINDS, PROSPECT_STATUSES, type ProspectBillingArrangement, type ProspectStatus } from '@tp/db/runtime';
+import {
+  AGREEMENT_KINDS,
+  OFFERED_DECLINED_REASONS,
+  PROSPECT_STATUSES,
+  type ProspectBillingArrangement,
+  type ProspectDeclinedReason,
+  type ProspectStatus,
+} from '@tp/db/runtime';
 import { z } from 'zod';
 
 import { AgreementDocumentError, agreementDocumentKey, isPdf, readAgreementUpload } from '../agreements/documents';
@@ -14,7 +21,8 @@ import { opaqueId, optionalText, requiredText } from './schemas';
  * organizations, practices and agreements; docs/adr/0053). Platform routes, no practice in scope:
  *
  * - Prospect requests (/console/prospects): the audit requests the public form received, marked contacted or
- *   declined, or converted into a new practice group named after the request.
+ *   declined (with the reason, from a closed list: audit #57, the founder's ruling of 2026-10-20), or converted into a
+ *   new practice group named after the request.
  * - Invitations, sent again from the organization's page (Cognito's resend; the local outbox in development).
  * - A signed agreement recorded by upload: the server hashes the PDF it receives and keeps it under an opaque key
  *   (the e-signature vendor's webhook records the others; the console's existing form records one by reference).
@@ -23,6 +31,22 @@ import { opaqueId, optionalText, requiredText } from './schemas';
  */
 
 const PROSPECTS_PER_PAGE = 50;
+
+/** Why a request was declined, as the console offers it (decision 9; not_recorded is a past decline's, never offered). */
+export const DECLINED_REASON_LABELS: Readonly<Record<ProspectDeclinedReason, string>> = {
+  no_response: 'Stopped responding',
+  not_now: 'Not now',
+  price: 'Price',
+  too_little_to_recover: 'Too little to recover',
+  chose_other: 'Chose another vendor or their billing firm',
+  doing_it_themselves: 'Doing it themselves',
+  data_unavailable: 'Could not provide remittances or contracts',
+  compliance_declined: 'Their compliance or security review said no',
+  not_a_fit: 'Not a fit',
+  not_a_prospect: 'Not a prospect (spam, vendor, student or duplicate)',
+  other: 'Other',
+  not_recorded: 'Not recorded',
+};
 
 export interface ProspectView {
   readonly id: string;
@@ -36,6 +60,8 @@ export interface ProspectView {
   readonly organizationId: string | null;
   readonly createdAt: Date;
   readonly reviewedAt: Date | null;
+  /** Why it was declined; null unless declined. */
+  readonly declinedReason: ProspectDeclinedReason | null;
 }
 
 export const prospectsPage = platformRoute({
@@ -59,6 +85,7 @@ export const prospectsPage = platformRoute({
       organization_id: string | null;
       created_at: Date;
       reviewed_at: Date | null;
+      declined_reason: ProspectDeclinedReason | null;
       total: string;
     }>(
       `SELECT *, count(*) OVER () AS total FROM prospect_request WHERE ($1::text IS NULL OR status = $1)
@@ -84,8 +111,10 @@ export const prospectsPage = platformRoute({
           organizationId: row.organization_id,
           createdAt: row.created_at,
           reviewedAt: row.reviewed_at,
+          declinedReason: row.declined_reason,
         }),
       ),
+      declinedReasons: OFFERED_DECLINED_REASONS.map((value) => ({ value, label: DECLINED_REASON_LABELS[value] })),
     };
   },
   sample: { params: () => ({}) },
@@ -98,13 +127,24 @@ export const reviewProspect = platformRoute({
   phi: false,
   permission: 'organization.manage',
   params: z.object({}),
-  input: z.object({ prospectId: opaqueId, status: z.enum(['contacted', 'declined']) }),
+  input: z.object({
+    prospectId: opaqueId,
+    status: z.enum(['contacted', 'declined']),
+    // Required when declining, and only then; blank is none.
+    declinedReason: z.preprocess((value) => (value === '' ? undefined : value), z.enum(OFFERED_DECLINED_REASONS, { message: 'choose why the request was declined' }).optional()),
+  }),
   audit: { action: 'prospect_reviewed', objectType: 'prospect_request' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const { rowCount } = await scope.client.query("UPDATE prospect_request SET status = $2, reviewed_by = app_actor_id() WHERE id = $1 AND status IN ('new', 'contacted')", [
-      input.prospectId,
-      input.status,
-    ]);
+    if (input.status === 'declined' && input.declinedReason === undefined) {
+      throw new InputError([{ field: 'declinedReason', message: 'choose why the request was declined' }]);
+    }
+    if (input.status === 'contacted' && input.declinedReason !== undefined) {
+      throw new InputError([{ field: 'declinedReason', message: 'a reason is given only when declining' }]);
+    }
+    const { rowCount } = await scope.client.query(
+      "UPDATE prospect_request SET status = $2, declined_reason = $3, reviewed_by = app_actor_id() WHERE id = $1 AND status IN ('new', 'contacted')",
+      [input.prospectId, input.status, input.declinedReason ?? null],
+    );
     if (rowCount !== 1) {
       throw new NotFoundError();
     }

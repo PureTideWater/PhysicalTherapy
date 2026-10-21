@@ -1,0 +1,23 @@
+{
+  "case": "SCR-05",
+  "module": "SCR",
+  "title": "Screening output wording",
+  "assertion": "No page, message or email says owed, underpaid or recovered; no tagline",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "tools/brand-copy/scan.test.ts",
+    "apps/worker/src/screening/message.test.ts",
+    "apps/web/src/components/screening/result.test.tsx",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Wording is held by the copy lint and by tests of what the routes, components and emails return; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -14,7 +14,7 @@ import { practiceId, signInWithTotp } from './helpers';
 
 const FONT_HOSTS = /fonts\.googleapis\.com|fonts\.gstatic\.com/i;
 
-const PUBLIC_PAGES = ['/', '/sign-in', '/sign-in/hardware-key', '/request-audit', '/status', '/terms', '/support', '/maintenance', '/security'];
+const PUBLIC_PAGES = ['/', '/sign-in', '/sign-in/hardware-key', '/request-audit', '/screening', '/status', '/terms', '/support', '/maintenance', '/security'];
 const PRACTICE_PAGES = ['', '/claims', '/remittances', '/uploads', '/contracts', '/coverage', '/cases', '/anomalies', '/reports', '/reconciliation', '/notifications', '/settings'];
 const ACCOUNT_PAGES = ['/account/devices', '/account/notifications'];
 

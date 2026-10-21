@@ -1,0 +1,5 @@
+{
+  "//": "The child process of result-page.large.db.test.ts (render-result.tsx): tsx compiles only the files its tsconfig includes with that tsconfig's JSX, so this one takes the web app's settings and includes @tp/ui's components beside the web app's own.",
+  "extends": "../../../../tsconfig.json",
+  "include": ["../../../../src", "../../../../../../packages/ui/src"]
+}

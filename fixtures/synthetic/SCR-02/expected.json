@@ -1,0 +1,24 @@
+{
+  "case": "SCR-02",
+  "module": "SCR",
+  "title": "Screening pricing of a clean upload",
+  "assertion": "Each Medicare row is the engine's one-line amount before sequestration times its claim count in bigint, and a code in the reduction across codes also its amount as a later code of a visit; a row is an anomaly only more than $5 a claim line below its lowest figure; MA contracted and commercial rows count toward the dollars that cannot be priced without a contract; 50,000 rows return a result in under 60 seconds",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/screening/adapter.test.ts",
+    "apps/worker/src/screening/screening.db.test.ts",
+    "apps/web/src/components/screening/result.test.tsx",
+    "apps/web/src/lib/screening/routes.db.test.ts",
+    "apps/web/src/lib/screening/screening.large.db.test.ts",
+    "apps/web/e2e/screening.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

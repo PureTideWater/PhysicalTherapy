@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { fakePool } from '../test-support/fake-pool';
 import { ScopeError, isUuid, requireUuid } from './ids';
-import { JobActorIsPersonError, OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope } from './scope';
+import { JobActorIsPersonError, OnePracticePerJobError, accessByPractice, onePracticeJob, withActor, withJobScope, withPracticeScope, withPublicSnapshot } from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -137,6 +137,26 @@ describe('withPracticeScope', () => {
     expect(() => withPracticeScope(pool, { actorId: ACTOR, practiceIds: ['{a,b}'] }, () => Promise.resolve())).toThrow(
       new ScopeError('every practice ID must be a UUID'),
     );
+  });
+});
+
+describe('withPublicSnapshot', () => {
+  it('reads a public page in one read-only snapshot with no actor and no practice set, and commits', async () => {
+    const { pool, texts, released } = fakePool((text) => (text === 'SELECT 1 AS one' ? [{ one: 1 }] : undefined));
+    const result = await withPublicSnapshot(pool, async (client) => (await client.query<{ one: number }>('SELECT 1 AS one')).rows[0]?.one);
+    expect(result).toBe(1);
+    expect(texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'SELECT 1 AS one', 'COMMIT']);
+    expect(released).toEqual([false]);
+  });
+
+  it('rolls back when the read fails, rethrows, and destroys a connection whose rollback fails', async () => {
+    const failing = fakePool();
+    await expect(withPublicSnapshot(failing.pool, () => Promise.reject(new Error('not found')))).rejects.toThrow('not found');
+    expect(failing.texts()).toEqual(['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'ROLLBACK']);
+    expect(failing.released).toEqual([false]);
+    const lost = fakePool((text) => (text === 'ROLLBACK' ? new Error('connection lost') : undefined));
+    await expect(withPublicSnapshot(lost.pool, () => Promise.reject(new Error('not found')))).rejects.toThrow('not found');
+    expect(lost.released).toEqual([true]);
   });
 });
 

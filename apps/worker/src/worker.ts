@@ -157,10 +157,11 @@ async function runPlatformJob<T extends PlatformJobType>(type: T, job: QueuedJob
 }
 
 /**
- * Starts pg-boss, creates every queue, subscribes a handler to each and starts the heartbeat. With
- * platform handlers it also creates, schedules and works the platform queues (UTC schedules, one job
- * of each queued or active at a time). Without practice handlers (a platform-only worker) it creates
- * the practice queues and works none of them.
+ * Starts pg-boss, creates every queue, subscribes a handler to each and starts the heartbeat. Every worker
+ * creates the platform queues too, so a producer's send (the web app's screening job, docs/adr/0062) never meets a
+ * missing queue whichever worker started first; with platform handlers it also schedules and works them (UTC
+ * schedules, one job of each queued or active at a time). Without practice handlers (a platform-only worker) it
+ * creates the practice queues and works none of them.
  */
 export async function startWorker(options: WorkerOptions): Promise<RunningWorker> {
   const { boss, logger } = options;
@@ -168,6 +169,9 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   await boss.start();
   for (const type of JOB_TYPES) {
     await boss.createQueue(type, queueOptions(type));
+  }
+  for (const type of PLATFORM_JOB_TYPES) {
+    await boss.createQueue(type, QUEUE_OPTIONS);
   }
   if (practice !== undefined) {
     for (const type of JOB_TYPES) {
@@ -181,7 +185,6 @@ export async function startWorker(options: WorkerOptions): Promise<RunningWorker
   const { platform } = options;
   if (platform !== undefined) {
     for (const type of PLATFORM_JOB_TYPES) {
-      await boss.createQueue(type, QUEUE_OPTIONS);
       await boss.schedule(type, PLATFORM_SCHEDULES[type], {}, { tz: 'UTC', singletonKey: type });
       await boss.work(type, { batchSize: 1 }, async (jobs) => {
         for (const job of jobs) {

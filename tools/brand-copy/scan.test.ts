@@ -197,6 +197,16 @@ describe('the copy lint: screening (CO-11; decision D11)', () => {
     expect(rules(SCREENING, "export const A = () => <><PaidWholeLockup size={28} /><p>Lines priced below the public rate, by payer.</p></>;")).toEqual([]);
   });
 
+  it('reads the worker’s screening (its emails and the upload’s refusals) as screening files', () => {
+    const WORKER = 'apps/worker/src/screening/message.ts';
+    expect(isScreeningFile(WORKER)).toBe(true);
+    expect(isScreeningFile('apps/worker/src/screening/format.ts')).toBe(true);
+    expect(rules(WORKER, "const lines = ['Your screening shows what you are owed.'];")).toEqual(['screening-owed']);
+    expect(rules(WORKER, "const lines = ['Rows recovered (posted) since'];")).toEqual(['screening-recovered']);
+    expect(rules('apps/worker/src/screening/format.ts', "throw new Error('Lines underpaid by the payer');")).toEqual(['screening-underpaid']);
+    expect(rules(WORKER, "const lines = ['The rows below the Medicare figure, and the dollars that cannot be priced without a contract.'];")).toEqual([]);
+  });
+
   it('applies the screening words only to screening files', () => {
     expect(rules(PAGE, "const a = 'What you are owed, and underpaid lines'; export const A = () => <PaidWholeLockup tagline />;")).toEqual([]);
   });
@@ -257,6 +267,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/reconcile/stages.ts',
       'apps/worker/src/reconcile/statement-html.ts',
       'apps/worker/src/report/html.ts',
+      'apps/worker/src/screening/message.ts',
       'apps/worker/src/support/support-mail.ts',
       'packages/contracts/src/calendar.ts',
       'packages/packets/src/draft.ts',
@@ -295,6 +306,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/digest/view.ts',
       'apps/worker/src/digest/job.ts',
       'apps/worker/src/mail/template.ts',
+      'apps/worker/src/screening/message.ts',
       'apps/worker/src/billing/dunning.ts',
       'apps/worker/src/platform/support-notices.ts',
       'apps/worker/src/support/support-mail.ts',

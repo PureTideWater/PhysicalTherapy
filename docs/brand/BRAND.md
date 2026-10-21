@@ -45,8 +45,8 @@ make it flush with the ring, never move it from 12 o'clock.
 
 | Lockup | Use | File / component |
 | --- | --- | --- |
-| Horizontal | App header, documents, decks | `<PaidWholeLockup/>`; `/brand/paidwhole-lockup-horizontal.svg` |
-| Horizontal with tagline | Marketing pages, email header (as its PNG, section 7) | `<PaidWholeLockup tagline/>`; `/brand/paidwhole-lockup-horizontal-tagline.svg`; `/brand/paidwhole-lockup-horizontal-tagline-1200w.png` |
+| Horizontal | App header, documents, decks; a prospect's (free screening) email header, as its PNG (section 7; ADR 0062, decision D11) | `<PaidWholeLockup/>`; `/brand/paidwhole-lockup-horizontal.svg`; `/brand/paidwhole-lockup-horizontal-1200w.png` |
+| Horizontal with tagline | Marketing pages, a customer's email header (as its PNG, section 7; never a screening's) | `<PaidWholeLockup tagline/>`; `/brand/paidwhole-lockup-horizontal-tagline.svg`; `/brand/paidwhole-lockup-horizontal-tagline-1200w.png` |
 | Stacked | Sign-in, on Paper (section 7); square placements (avatars with name, tiles) | `<PaidWholeLockup stacked/>`; `/brand/paidwhole-lockup-stacked.svg` |
 | Symbol | Favicon, app icon, table rows, loading states, anywhere under 120 px wide | `<PaidWholeMark/>` |
 
@@ -128,7 +128,12 @@ Contract-verified calculation without cash is a line status (validated), never a
   turn the keystone back into a progress ring). Use a plain progress bar for progress.
 - Email: the horizontal lockup with its tagline in the header, as the outlined art's PNG
   (`/brand/paidwhole-lockup-horizontal-tagline-1200w.png`, 1200 px wide, drawn at 160 px with the
-  alternative text "PaidWhole"; some mail clients strip SVG), on White. The image loads from the
+  alternative text "PaidWhole"; some mail clients strip SVG), on White. The one exception is a
+  prospect's email (a free screening's link or notice, `variant: 'prospect'` in
+  `apps/worker/src/mail/template.ts`): it is headed by the lockup without the tagline,
+  `/brand/paidwhole-lockup-horizontal-1200w.png`, drawn at the same 160 px, because the tagline
+  says "owed" and a screening never does (decision D11 a, ADR 0062; the copy lint refuses owed,
+  underpaid and recovered in the screening's files). The image loads from the
   CloudFront static host (`STATIC_ASSET_ORIGIN`), never from the application; with no static host
   configured, the message goes without it, and the wordmark is never typed in its place. Hex colors
   from `tokens.ts` (CSS variables do not work in email); Plex Sans falls back to system sans.

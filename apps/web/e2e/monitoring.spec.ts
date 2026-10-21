@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { expect, test } from '@playwright/test';
@@ -7,9 +7,9 @@ import { assertNoPhi } from '@tp/observability';
 
 import { personaEmail } from '../scripts/synthetic-personas';
 import { expectAccessible } from './a11y';
-import { E2E_MAIL_OUTBOX_DIR } from './env';
 import { signInWithTotp, withDatabase } from './helpers';
 import { journeyPractice, queue, signedOffSchedule, until, userId } from './journeys';
+import { outboxFor } from './outbox';
 import { MONITORED_PRACTICE, startLocalWorker } from './worker';
 
 /**
@@ -46,23 +46,6 @@ function windowDays(): number {
   const paid = Date.UTC(2026, 3, 8);
   const now = new Date();
   return Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - paid) / 86_400_000) + 7;
-}
-
-interface OutboxMessage {
-  readonly to: readonly string[];
-  readonly subject: string;
-  readonly body: string;
-}
-
-function outboxFor(email: string): OutboxMessage[] {
-  if (!existsSync(E2E_MAIL_OUTBOX_DIR)) {
-    return [];
-  }
-  // Only messages renamed into place: the local sender writes each under a hidden name first.
-  return readdirSync(E2E_MAIL_OUTBOX_DIR)
-    .filter((file) => file.endsWith('.json'))
-    .map((file) => JSON.parse(readFileSync(path.join(E2E_MAIL_OUTBOX_DIR, file), 'utf8')) as OutboxMessage)
-    .filter((message) => message.to.includes(email));
 }
 
 test('the chain plans, prices, triages and tells the practice; the monthly digest reaches the outbox in counts and totals; three failures show as the last run failed (J11)', async ({ page }) => {
