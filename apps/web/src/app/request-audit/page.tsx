@@ -44,7 +44,9 @@ export default async function RequestAuditPage(props: { readonly searchParams: P
             <CardTitle>About your practice</CardTitle>
             <CardDescription>
               No patient information: only who you are, your locations, the payers you bill and how you bill. A PaidWhole audit compares what your payers paid with what your contracts say.{' '}
-              <span data-copy="kept">{REQUEST_AUDIT_KEPT}</span>
+              <span data-copy="kept" data-legal-surface="request-audit-kept">
+                {REQUEST_AUDIT_KEPT}
+              </span>
             </CardDescription>
           </CardHeader>
           <CardContent>

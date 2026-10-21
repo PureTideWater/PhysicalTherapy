@@ -349,12 +349,13 @@ describe('no silent "not found": a read outside the fetch fails the run', () => 
     expect(await runState(runId)).toEqual({ status: 'failed', failure_code: 'RELEASE_READ_OUTSIDE_FETCH', pending: rows.length, engine_errors: 0, recorded: 0 });
   });
 
-  it('fails the run the same way when the codes priced are not the key set', async () => {
+  it('completes a run whose key set holds a code no row priced: every code priced is in it, which is all the check asks', async () => {
+    // A key set larger than the codes priced fetched records nothing read; a stale claim that overtook an attempt leaves
+    // it pricing fewer codes than its key set, and the attempt's fence, not this check, stops it (screening.db.test.ts).
     const runId = await submit(rows, '00011');
     const alterReleaseRead = { keys: (keys: { readonly codes: readonly string[]; readonly zip: string }) => ({ ...keys, codes: [...keys.codes, '97530'] }) };
-    expect(await priceScreeningRun(dependencies(new MemoryMailSender(), { alterReleaseRead }), runId)).toBe('failed');
-    const state = await runState(runId);
-    expect(state).toMatchObject({ status: 'failed', failure_code: 'RELEASE_READ_OUTSIDE_FETCH', engine_errors: 0 });
+    expect(await priceScreeningRun(dependencies(new MemoryMailSender(), { alterReleaseRead }), runId)).toBe('complete');
+    expect(await runState(runId)).toMatchObject({ status: 'complete', pending: 0, engine_errors: 0 });
   });
 });
 

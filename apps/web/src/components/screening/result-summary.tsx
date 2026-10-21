@@ -14,7 +14,7 @@ import {
   SCREENING_INVESTIGATORY_NOTE,
   leftOutNote,
 } from '../../lib/screening/labels';
-import { convertedRetention, resultRetention } from '../../lib/screening/retention';
+import { type KeptWith, resultRetention } from '../../lib/screening/retention';
 import { utc, utcDate } from '../format';
 
 /**
@@ -58,6 +58,8 @@ export interface ScreeningSummaryData extends ScreeningGroupTotals {
   readonly expiresAt: Date | string;
   /** The rule release it was priced under has since been withdrawn. */
   readonly releaseWithdrawn: boolean;
+  /** What this screening's summary is kept with, as the database says (screening_result_summary's kept_with). */
+  readonly keptWith: KeptWith;
   readonly priced: ScreeningPricedTotals;
   /** Medicare Advantage under contract and commercial rows (decision D20 a). */
   readonly contractRequired: ScreeningGroupTotals;
@@ -120,9 +122,10 @@ function GroupStats({ group, slot }: { readonly group: ScreeningGroupTotals; rea
 
 /**
  * Who the screening is for, under which release, until when the link opens it, and what is kept after it closes
- * (audit #57; the founder's ruling of 2026-10-20, decision 7: the plain list). Once an audit was requested from it, the
- * notice says the screening's totals are kept with the request for 12 months from the screening, and that its record
- * of counts can be matched to the request while the request is kept.
+ * (audit #57; the founder's rulings of 2026-10-20, decisions 7, 17 and 18: the plain list). What its summary is kept
+ * with comes from the database: nothing, the audit request made from it, or an earlier screening's request of the same
+ * practice name and ZIP code that it took over (then the prospect is told their details are kept with that request).
+ * A legal surface counsel reviews before the screening opens (docs/product/legal-surfaces.md, screening-kept-result).
  */
 export function ScreeningHeading({ summary, converted = false }: { readonly summary: ScreeningSummaryData; readonly converted?: boolean }) {
   const until = utcDate(summary.expiresAt);
@@ -133,8 +136,8 @@ export function ScreeningHeading({ summary, converted = false }: { readonly summ
         <span data-copy="practice">{summary.practiceName}</span>, {summary.state} <span className="font-mono tabular-nums">{summary.zip}</span>. Screened {utc(summary.createdAt)} under rule release{' '}
         <span className="font-mono tabular-nums">{summary.releaseNo}</span> (engine <span className="font-mono">{summary.engineVersion}</span>).
       </p>
-      <p className="text-sm text-muted-foreground" data-copy={converted ? 'kept-converted' : 'kept'}>
-        {converted ? convertedRetention(until) : resultRetention(until)}
+      <p className="text-sm text-muted-foreground" data-copy={converted ? 'kept-converted' : 'kept'} data-kept-with={summary.keptWith} data-legal-surface="screening-kept-result">
+        {resultRetention(until, summary.keptWith, converted)}
       </p>
     </div>
   );

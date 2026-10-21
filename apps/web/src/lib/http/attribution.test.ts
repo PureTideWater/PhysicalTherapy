@@ -37,6 +37,21 @@ describe('campaign codes', () => {
     expect(normaliseCampaignCode('a'.repeat(64))).toBe('a'.repeat(64));
   });
 
+  it('drops a code with an identifier’s shape: a member ID, a Medicare Beneficiary Identifier, a phone number, a date of birth, digits alone', () => {
+    for (const raw of ['MBR123456789', 'mbr-123-456-789', '1EG4-TE5-MK73', '1eg4te5mk73', '555-867-5309', '555.867.5309', '1980-04-12', '19800412', '04/12/1980', '123-45-6789', '20261021', '42']) {
+      expect(normaliseCampaignCode(raw), raw).toBeNull();
+    }
+    // A link's own labels keep their digits: a year, a version, a quarter.
+    expect(normaliseCampaignCode('spring-2026')).toBe('spring-2026');
+    expect(normaliseCampaignCode('q4-2026-webinar')).toBe('q4-2026-webinar');
+    expect(normaliseCampaignCode('fall_2026.v2')).toBe('fall_2026.v2');
+    // A name has no shape a check can see: it is kept as the code it is (an unlisted code is 'other' on the outcome).
+    expect(normaliseCampaignCode('Jane Doe')).toBe('jane-doe');
+    // A link that carries them sets none of them; read back from a cookie, they are dropped the same way.
+    expect(attributionFromUrl(url('utm_source=mbr123456789&utm_campaign=1980-04-12'))).toBeNull();
+    expect(decodeAttribution('s=mbr123456789&m=email&c=1eg4te5mk73')).toEqual({ source: null, medium: 'email', campaign: null, click: null });
+  });
+
   it('drops anything that is not a code: empty, too long, an email address, a leading mark or another script', () => {
     for (const raw of [null, undefined, '', '   ', 'a'.repeat(65), 'jane.doe@synthetic.test', '-leading', '.dot', 'naïve', 'semi;colon', 'slash/path', 'percent%20']) {
       expect(normaliseCampaignCode(raw), String(raw)).toBeNull();
@@ -86,20 +101,29 @@ describe('the cookie', () => {
     expect(decodeAttribution('x'.repeat(513))).toEqual(NO_ATTRIBUTION);
     expect(decodeAttribution('s=Jane%20Doe&m=email&c=a%40b&k=gclid')).toEqual({ source: null, medium: 'email', campaign: null, click: null });
     const jar: CookieJar = { get: (name) => (name === ATTRIBUTION_COOKIE ? 's=search&k=paid_search' : undefined), set: () => undefined, delete: () => undefined };
-    expect(readAttribution(jar)).toEqual({ source: 'search', medium: null, campaign: null, click: 'paid_search' });
+    expect(readAttribution(jar, 'dev')).toEqual({ source: 'search', medium: null, campaign: null, click: 'paid_search' });
+    // A production server reads none until the cookie's review is recorded (docs/product/legal-surfaces.md).
+    expect(readAttribution(jar, 'production')).toEqual(NO_ATTRIBUTION);
+    expect(readAttribution(jar, 'staging')).toEqual({ source: 'search', medium: null, campaign: null, click: 'paid_search' });
+  });
+
+  it('is neither set nor read on a production server until its review is recorded, and is everywhere else', () => {
+    const with_ = url('utm_source=newsletter&utm_medium=email');
+    expect(firstTouch({ method: 'GET', url: with_, hasCookie: false, environment: 'production' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: with_, hasCookie: false, environment: 'staging' })).toBe('s=newsletter&m=email');
   });
 
   it('is set on a page GET with attribution and no cookie yet, for 30 days, and never on a POST, an asset, /api or over one already set', () => {
     expect(ATTRIBUTION_MAX_AGE_SECONDS).toBe(30 * 24 * 60 * 60);
     const with_ = url('utm_source=newsletter&utm_medium=email');
-    expect(firstTouch({ method: 'GET', url: with_, hasCookie: false })).toBe('s=newsletter&m=email');
-    expect(firstTouch({ method: 'GET', url: with_, hasCookie: true })).toBeNull();
-    expect(firstTouch({ method: 'POST', url: with_, hasCookie: false })).toBeNull();
-    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/api/screening/opened'), hasCookie: false })).toBeNull();
-    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/api'), hasCookie: false })).toBeNull();
-    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/_next/data/build/page.json'), hasCookie: false })).toBeNull();
-    expect(firstTouch({ method: 'GET', url: url('page=2'), hasCookie: false })).toBeNull();
-    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/apiary'), hasCookie: false })).toBe('s=x');
+    expect(firstTouch({ method: 'GET', url: with_, hasCookie: false, environment: 'dev' })).toBe('s=newsletter&m=email');
+    expect(firstTouch({ method: 'GET', url: with_, hasCookie: true, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'POST', url: with_, hasCookie: false, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/api/screening/opened'), hasCookie: false, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/api'), hasCookie: false, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/_next/data/build/page.json'), hasCookie: false, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: url('page=2'), hasCookie: false, environment: 'dev' })).toBeNull();
+    expect(firstTouch({ method: 'GET', url: url('utm_source=x', '/apiary'), hasCookie: false, environment: 'dev' })).toBe('s=x');
   });
 });
 

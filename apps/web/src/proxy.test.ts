@@ -13,12 +13,18 @@ import { proxy } from './proxy';
  */
 
 const ORIGIN = process.env.APP_ORIGIN;
+const ENVIRONMENT = process.env.TP_ENVIRONMENT;
 
 afterEach(() => {
-  if (ORIGIN === undefined) {
-    delete process.env.APP_ORIGIN;
-  } else {
-    process.env.APP_ORIGIN = ORIGIN;
+  for (const [name, value] of [
+    ['APP_ORIGIN', ORIGIN],
+    ['TP_ENVIRONMENT', ENVIRONMENT],
+  ] as const) {
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
   }
 });
 
@@ -65,5 +71,14 @@ describe('the proxy', () => {
     expect(setCookie(proxy(request('/screening?utm_source=x', { method: 'POST' })))).toBeNull();
     expect(setCookie(proxy(request('/screening')))).toBeNull();
     expect(setCookie(proxy(request('/screening?utm_source=jane.doe%40synthetic.test')))).toBeNull();
+    // A code with an identifier's shape sets nothing either: a member ID, a date of birth, a phone number.
+    expect(setCookie(proxy(request('/screening?utm_source=mbr123456789&utm_campaign=1980-04-12&utm_medium=555-867-5309')))).toBeNull();
+  });
+
+  it('sets no attribution cookie on a production server until the cookie’s review is recorded (docs/product/legal-surfaces.md)', () => {
+    process.env.TP_ENVIRONMENT = 'production';
+    expect(setCookie(proxy(request('/screening?utm_source=newsletter&utm_medium=email')))).toBeNull();
+    process.env.TP_ENVIRONMENT = 'staging';
+    expect(setCookie(proxy(request('/screening?utm_source=newsletter&utm_medium=email')))).toMatch(/^pw_first_touch=/);
   });
 });

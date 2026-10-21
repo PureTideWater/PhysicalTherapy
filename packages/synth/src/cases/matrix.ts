@@ -150,31 +150,31 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-08',
     title: "The screening's capacity under production limits (audit #53 part 1; the founder's rulings of 2026-10-20, decisions 13 to 16)",
     assertion:
-      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once with a small one behind them; fails on an OOM kill, a restart, anonymous memory above 90% of a limit, a limit not applied, a runner too small, a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), or an oracle mismatch; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
+      'The production images at production\'s task sizes, Postgres at db.t4g.medium\'s size or the runner\'s share with gp3\'s baseline and a 2 ms round trip, the SYNTHETIC scale release (2.2 million records): the practice and worst 50,000-row uploads alone and three at once (cold, the worst ones distinct) with a small one queued behind them; fails on an OOM kill (Postgres\'s included), a restart, anonymous memory above 90% of a limit, a limit or cold start not applied, a runner too small, a wrong, unfinished or stalled result, a result page that does not open (its first page of groups or its last), a small upload not queued behind the large ones, an oracle mismatch or an oracle short of an upload\'s Medicare rows (S1-1, S2-1, S3-1), or a run of fewer than S1 to S5; the time to email reported as "open, PR 6b" until environments.ts declares the screening\'s consumer, then failing above 48 s on the runner (60 s scaled by the runner-to-Fargate factor once staging measures it)',
   },
   {
     id: 'SCR-09',
     title: 'The release read by key (audit #53 part 2)',
     assertion:
-      "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; a lookup outside the keys fetched, a row outside the key set or codes priced unequal to it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR",
+      "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; the key set and its records read on one snapshot; a lookup outside the keys fetched, a row outside the key set or a code priced outside it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR; an attempt a stale claim overtook stops at its next call",
   },
   {
     id: 'SCR-10',
     title: "A screening's counts-only outcome (audit #57; the founder's rulings of 2026-10-20)",
     assertion:
-      'Written at submission, refusal, completion and failure by the database alone: stage, month, source, the channel computed from the medium and click kind, a listed campaign or other, bands of the row counts, whole-percent shares summing 97 to 100, the anomaly and dollar bands, the open band and the conversion; no name, email, ZIP, exact count, date or dollar figure; unlinked on expiry and replacement, then sealed; never deleted; two outcomes of a practice whose row differs by one claim line differ in no count',
+      'Written at submission, refusal, completion and failure by the database alone: stage, month, source, the channel computed from the medium and click kind, a listed campaign or other, bands of the row counts, whole-percent shares summing 97 to 100, the anomaly and dollar bands, the open band, the conversion, and whether an accepted screening followed a refused upload (on the accepted outcome; a refused one is never changed); no name, email, ZIP, exact count, date or dollar figure; unlinked on expiry and replacement, then sealed; never deleted; two outcomes of a practice whose row differs by one claim line differ in no count',
   },
   {
     id: 'SCR-11',
     title: "A converted or consenting practice's kept summary",
     assertion:
-      "Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused",
+      "Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused; a conversion after a withdrawal keeps it on the request alone, never the withdrawn consent",
   },
   {
     id: 'SCR-12',
     title: 'Attribution on the screening and the audit request',
     assertion:
-      "The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); both forms keep how the prospect heard of us (closed list, optional), the cookie's codes and click kind, and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list",
+      "The proxy sets pw_first_touch once from a landing URL's campaign codes and paid click (HttpOnly, SameSite=Lax, 30 days, never the click ID, never on /api or Next's assets); a code with an identifier's shape (a member ID, a date, a phone number, a Medicare Beneficiary Identifier, digits alone) dropped; a production server neither sets nor reads it until its legal review is recorded; both forms keep how the prospect heard of us (closed list, optional), the cookie's codes and click kind, and a screened referring firm; conversion carries them with from_screening; the console declines a request with a reason from the closed list",
   },
   {
     id: 'SCR-13',
@@ -186,7 +186,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SCR-14',
     title: 'A later screening of a practice with a kept summary',
     assertion:
-      "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), carrying its request, an audit event naming it; a failed, abandoned or refused resend deletes nothing",
+      "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), an audit event naming it; its request is carried over only by the same ZIP and practice name, and an address-only match leaves the request without a summary; the result page and email of a screening that took a request over say its details are kept with it; a failed, abandoned or refused resend deletes nothing, and a completion after expiry is refused",
   },
   { id: 'JOB-01', title: 'Replayed job with the same key', assertion: 'No duplicate effects' },
   { id: 'JOB-02', title: 'Three failures', assertion: 'Alert raised; dashboard shows last run failed' },

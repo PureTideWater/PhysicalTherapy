@@ -18,7 +18,9 @@ export default function ScreeningResultNotFound() {
       <main className="mx-auto flex w-full max-w-xl flex-col gap-4 px-4 py-8 md:p-10" data-state="screening-not-found">
         <h1 className="text-[2rem] font-bold leading-display tracking-display">This screening link is not open</h1>
         <p className="text-base text-muted-foreground">
-          <span data-copy="kept">{CLOSED_LINK_KEPT}</span> A link may also be one whose screening is still being priced: the email with the link is sent once it is ready. Check that the whole link was
+          <span data-copy="kept" data-legal-surface="screening-kept-closed-link">
+            {CLOSED_LINK_KEPT}
+          </span> A link may also be one whose screening is still being priced: the email with the link is sent once it is ready. Check that the whole link was
           copied.
         </p>
         <p className="text-sm">

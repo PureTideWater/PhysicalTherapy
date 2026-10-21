@@ -2,7 +2,7 @@
   "case": "SCR-14",
   "module": "SCR",
   "title": "A later screening of a practice with a kept summary",
-  "assertion": "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), carrying its request, an audit event naming it; a failed, abandoned or refused resend deletes nothing",
+  "assertion": "The earlier summary is replaced at the later screening's completion (same address, or same ZIP and practice name), an audit event naming it; its request is carried over only by the same ZIP and practice name, and an address-only match leaves the request without a summary; the result page and email of a screening that took a request over say its details are kept with it; a failed, abandoned or refused resend deletes nothing, and a completion after expiry is refused",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": ["packages/db/src/screening.db.test.ts"],

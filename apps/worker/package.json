@@ -20,6 +20,7 @@
     "./era-formats": "./src/parse/era/formats.ts",
     "./screening": "./src/screening/public.ts",
     "./screening-format": "./src/screening/format.ts",
+    "./screening-wording": "./src/screening/wording.ts",
     "./screening-oracle": "./src/screening/test-support/legacy-release.ts"
   },
   "scripts": {

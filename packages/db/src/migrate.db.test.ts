@@ -269,6 +269,17 @@ describe('the free screening migration (20261104090000) over requests declined b
       // A decline without a reason (the previous image's) records not_recorded; a contacted request takes no reason.
       await query(url, "UPDATE prospect_request SET status = 'declined', reviewed_by = $2 WHERE id = $1", [open?.id, user]);
       expect(await query(url, 'SELECT declined_reason FROM prospect_request WHERE id = $1', [open?.id])).toEqual([{ declined_reason: 'not_recorded' }]);
+      // A decline that names not_recorded itself is refused, so that reason only ever means the previous image's.
+      const [another] = await query<{ id: string }>(
+        url,
+        `INSERT INTO prospect_request (contact_name, contact_email, organization_name, locations, payers, billing_arrangement) VALUES ('SYNTHETIC', 'another@synthetic.test', 'SYNTHETIC ANOTHER ORG', 1, ARRAY['SYNTHETIC PAYER'], 'in_house') RETURNING id`,
+      );
+      await expect(query(url, "UPDATE prospect_request SET status = 'declined', declined_reason = 'not_recorded', reviewed_by = $2 WHERE id = $1", [another?.id, user])).rejects.toMatchObject({
+        code: '23514',
+        constraint: 'prospect_request_declined_reason',
+      });
+      await query(url, "UPDATE prospect_request SET status = 'declined', declined_reason = 'price', reviewed_by = $2 WHERE id = $1", [another?.id, user]);
+      expect(await query(url, 'SELECT declined_reason FROM prospect_request WHERE id = $1', [another?.id])).toEqual([{ declined_reason: 'price' }]);
       await expect(
         query(
           url,

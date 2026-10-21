@@ -24,9 +24,11 @@ import {
   screeningTokenHash,
   storableRejections,
 } from '@tp/worker/screening';
+import { KEPT_WITH, type KeptWith } from '@tp/worker/screening-wording';
 import { z } from 'zod';
 
 import { attributionValues, readAttribution } from '../http/attribution';
+import { type Environment, SCREENING_LEGAL_SURFACES, showsLegalSurfaces } from '../legal-surfaces';
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
@@ -138,6 +140,25 @@ async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeC
   }
 }
 
+/**
+ * Reads in one read-only transaction at REPEATABLE READ: every statement sees one snapshot and one now(), so a result
+ * the expiry job or a replacing submission deletes between two reads is either read whole or not found, never a summary
+ * over an empty page of groups.
+ */
+async function withSnapshot<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
+  return withClient(pool, async (client) => {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    try {
+      const result = await work(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
+  });
+}
+
 function pgError(error: unknown): { readonly code: string; readonly constraint: string | undefined } | null {
   if (typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string') {
     const constraint = 'constraint' in error && typeof error.constraint === 'string' ? error.constraint : undefined;
@@ -153,7 +174,7 @@ export const screeningPage = publicRoute({
   phi: false,
   params: z.object({ sent: optionalText(z.literal('1')) }),
   handle: async ({ params, services }): Promise<ScreeningPageData> => {
-    const { open, releaseNo } = await screeningOpen(services.pool);
+    const { open, releaseNo } = await screeningOpen(services.pool, services.environment);
     return {
       sent: params.sent !== undefined,
       open,
@@ -314,8 +335,15 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
 
-/** Whether screening is open: a rule release in force and a place-of-service split approved. */
-async function screeningOpen(pool: ScopePool<ScopeClient>): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
+/**
+ * Whether screening is open: a rule release in force and a place-of-service split approved, and, on a production
+ * server, counsel's review of what the screening says is kept recorded (src/lib/legal-surfaces.ts: until then nothing is
+ * screened or kept there under wording counsel has not confirmed).
+ */
+async function screeningOpen(pool: ScopePool<ScopeClient>, environment: Environment): Promise<{ readonly open: boolean; readonly releaseNo: number | null }> {
+  if (!showsLegalSurfaces(SCREENING_LEGAL_SURFACES, environment)) {
+    return { open: false, releaseNo: null };
+  }
   const status = await withClient(pool, async (client) => {
     const { rows } = await client.query<{ release_no: number | null; place_of_service_split_id: string | null }>('SELECT release_no, place_of_service_split_id FROM screening_status()');
     return rows[0];
@@ -406,7 +434,7 @@ export const screeningSubmit = publicRoute({
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     // Nothing about a prospect is recorded before screening opens (release 1), not even a refusal.
-    if (!(await screeningOpen(services.pool)).open) {
+    if (!(await screeningOpen(services.pool, services.environment)).open) {
       throw new InputError([SCREENING_CLOSED]);
     }
     const prospect = prospectFields(input);
@@ -421,7 +449,7 @@ export const screeningSubmit = publicRoute({
     // How the prospect heard of us, the first-party cookie's campaign codes and kind of paid click (read on the
     // server, checked again by the database), and the referring firm. The screening terms' SHA-256 is null until their
     // wording and checkbox land (audit #51); the follow-up consent's until PR 6e captures it.
-    const attribution = [prospect.heardFrom, ...attributionValues(readAttribution(request.cookies)), prospect.referringFirm];
+    const attribution = [prospect.heardFrom, ...attributionValues(readAttribution(request.cookies, services.environment)), prospect.referringFirm];
     const termsSha256 = null;
     const consentSha256 = null;
     if ('reasons' in checked) {
@@ -549,6 +577,8 @@ export interface ScreeningSummary extends ScreeningGroupTotals {
   readonly expiresAt: Date;
   /** The rule release the screening was priced under has since been withdrawn: its figures are under content known to be wrong. */
   readonly releaseWithdrawn: boolean;
+  /** What this screening's summary is kept with (screening_result_summary's kept_with), which its notice says. */
+  readonly keptWith: KeptWith;
   readonly priced: ScreeningPricedTotals;
   /** MA contracted and commercial rows: the dollars that cannot be priced without a contract. */
   readonly contractRequired: ScreeningGroupTotals;
@@ -716,7 +746,15 @@ type SummaryRow = Record<
   readonly expires_at: Date;
   readonly converted: boolean;
   readonly release_withdrawn: boolean;
+  readonly kept_with: string;
 };
+
+function keptWithOf(text: string): KeptWith {
+  if (!(KEPT_WITH as readonly string[]).includes(text)) {
+    throw new Error('the database gave a kept summary basis this page does not know');
+  }
+  return text as KeptWith;
+}
 
 export const screeningResult = publicRoute({
   id: 'public.screening_result',
@@ -726,7 +764,8 @@ export const screeningResult = publicRoute({
   params: z.object({ resultId, requested: optionalText(z.literal('1')), groups: groupsPage }),
   handle: async ({ params, services }): Promise<ScreeningResultData> => {
     const hash = screeningTokenHash(params.resultId);
-    return withClient(services.pool, async (client) => {
+    // Every read on one snapshot (withSnapshot): the summary, the counts, the page of groups, the coverage and the rows.
+    return withSnapshot(services.pool, async (client) => {
       const summary = (await client.query<SummaryRow>('SELECT * FROM screening_result_summary($1)', [hash])).rows[0];
       if (summary === undefined) {
         throw new NotFoundError();
@@ -819,6 +858,7 @@ export const screeningResult = publicRoute({
           createdAt: summary.created_at,
           expiresAt: summary.expires_at,
           releaseWithdrawn: summary.release_withdrawn,
+          keptWith: keptWithOf(summary.kept_with),
           ...totals('rows', 'claim_lines', 'observed_cents'),
           priced: {
             ...totals('priced_rows', 'priced_claim_lines', 'priced_observed_cents'),

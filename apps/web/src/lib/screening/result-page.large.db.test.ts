@@ -68,7 +68,9 @@ beforeAll(async () => {
     )
   ).rows[0]?.id;
   expect(run).toBeDefined();
-  expect((await owner.query('SELECT * FROM operator_screening_claim($1)', [run])).rows).toHaveLength(1);
+  const claimed = (await owner.query<{ attempt: number }>('SELECT attempt FROM operator_screening_claim($1)', [run])).rows;
+  expect(claimed).toHaveLength(1);
+  const attempt = claimed[0]?.attempt;
   const rows = (
     await owner.query<{ row_no: number; claim_count: number; observed_allowed_cents: string; payer_product: string }>(
       'SELECT row_no, claim_count, observed_allowed_cents::text AS observed_allowed_cents, payer_product FROM screening_result WHERE run_id = $1 ORDER BY row_no',
@@ -81,7 +83,7 @@ beforeAll(async () => {
     const batch = rows.slice(at, at + 5_000).map((row) => ({ row, figures: figures(row.row_no, row.claim_count, BigInt(row.observed_allowed_cents)) }));
     const recorded = await owner.query<{ n: number }>(
       `SELECT operator_screening_record($1::uuid, $2::integer[], $3::text[], $4::bigint[], $5::numeric[], $6::bigint[], $7::bigint[], $8::boolean[], $9::bigint[],
-                                        $10::numeric[], $11::bigint[], $12::bigint[], $13::text[], $14::text[], $15::text[], $16::text[]) AS n`,
+                                        $10::numeric[], $11::bigint[], $12::bigint[], $13::text[], $14::text[], $15::text[], $16::text[], $17::integer) AS n`,
       [
         run,
         batch.map(({ row }) => row.row_no),
@@ -99,6 +101,7 @@ beforeAll(async () => {
         batch.map(() => null),
         batch.map(() => null),
         batch.map(({ figures: f }) => f.trace),
+        attempt,
       ],
     );
     expect(recorded.rows[0]?.n).toBe(batch.length);
@@ -108,7 +111,7 @@ beforeAll(async () => {
     .replace(/[0-9]/g, (digit) => 'ghijklmnop'.charAt(Number(digit)))
     .slice(0, 32);
   hash = screeningTokenHash(token);
-  expect((await owner.query('SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4)', [run, hash, 'engine/synthetic', 'test-worst-shape'])).rows).toHaveLength(1);
+  expect((await owner.query('SELECT * FROM operator_screening_complete($1, $2, NULL, $3, $4, $5)', [run, hash, 'engine/synthetic', 'test-worst-shape', attempt])).rows).toHaveLength(1);
 }, 300_000);
 
 afterAll(async () => {

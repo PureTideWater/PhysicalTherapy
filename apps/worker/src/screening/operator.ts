@@ -26,12 +26,16 @@ export interface OperatorPool {
   connect(): Promise<OperatorConnection>;
 }
 
-/** One transaction as the operator role, committed when `run` returns and rolled back when it throws. */
-export async function asOperator<T>(pool: OperatorPool, run: (client: OperatorClient) => Promise<T>): Promise<T> {
+/**
+ * One transaction as the operator role, committed when `run` returns and rolled back when it throws. With `snapshot`,
+ * a read-only transaction at REPEATABLE READ: every statement in it reads one snapshot, so two reads that check the
+ * same thing (the release's key set and its keyed records) cannot see a change made between them.
+ */
+export async function asOperator<T>(pool: OperatorPool, run: (client: OperatorClient) => Promise<T>, options: { readonly snapshot?: boolean } = {}): Promise<T> {
   const client = await pool.connect();
   let broken = false;
   try {
-    await client.query('BEGIN');
+    await client.query(options.snapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' : 'BEGIN');
     try {
       await client.query(`SET LOCAL ROLE ${OPERATOR_ROLE}`);
       await client.query("SELECT set_config('app.practice_ids', '{}', true)");
@@ -140,12 +144,12 @@ export async function runRecords(client: OperatorClient, runId: string): Promise
   return rows as StoredRecordRow[];
 }
 
-/** The run's rows still to price after a row number, at most 5,000. */
-export async function pendingRows(client: OperatorClient, runId: string, afterRow: number, atMost: number): Promise<PendingScreeningRow[]> {
+/** The run's rows still to price after a row number, at most 5,000; none for an attempt the run has moved past. */
+export async function pendingRows(client: OperatorClient, runId: string, afterRow: number, atMost: number, attempt: number): Promise<PendingScreeningRow[]> {
   const { rows } = await client.query(
     `SELECT row_no, procedure_code, modifiers, units, place_of_service, payer_product, service_band, claim_count, observed_allowed_cents::text AS observed_allowed_cents
-       FROM operator_screening_rows($1, $2, $3)`,
-    [runId, afterRow, atMost],
+       FROM operator_screening_rows($1, $2, $3, $4)`,
+    [runId, afterRow, atMost, attempt],
   );
   return (
     rows as {
@@ -174,12 +178,15 @@ export async function pendingRows(client: OperatorClient, runId: string, afterRo
 
 const text = (amount: Cents | undefined): string | null => (amount === undefined ? null : amount.toString());
 
-/** Records what pricing found for up to 5,000 rows, in one statement. Returns how many it recorded. */
-export async function recordRows(client: OperatorClient, runId: string, outcomes: readonly { readonly rowNo: number; readonly outcome: ScreeningRowOutcome }[]): Promise<number> {
+/**
+ * Records what pricing found for up to 5,000 rows, in one statement, by the attempt that claimed the run. Returns how
+ * many it recorded; an attempt the run has moved past is refused (attemptSuperseded()).
+ */
+export async function recordRows(client: OperatorClient, runId: string, outcomes: readonly { readonly rowNo: number; readonly outcome: ScreeningRowOutcome }[], attempt: number): Promise<number> {
   const priced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'priced' ? item.outcome : undefined);
   const reduced = (item: (typeof outcomes)[number]) => priced(item)?.reduced ?? undefined;
   const unpriced = (item: (typeof outcomes)[number]) => (item.outcome.disposition === 'unpriced' ? item.outcome : undefined);
-  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) AS recorded', [
+  const { rows } = await client.query('SELECT operator_screening_record($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) AS recorded', [
     runId,
     outcomes.map((item) => item.rowNo),
     outcomes.map((item) => item.outcome.disposition),
@@ -196,15 +203,19 @@ export async function recordRows(client: OperatorClient, runId: string, outcomes
     outcomes.map((item) => unpriced(item)?.reason ?? null),
     outcomes.map((item) => unpriced(item)?.detail ?? null),
     outcomes.map((item) => item.outcome.traceSha256),
+    attempt,
   ]);
   return (rows[0] as { recorded: number } | undefined)?.recorded ?? 0;
 }
 
 /**
- * Completes a run with its token's hash; where its email goes, or null when it was complete already. The database
- * writes the run's counts-only outcome and replaces the practice's earlier kept summaries in the same transaction, and
- * keeps this run's summary when a request is carried over or the prospect consented. A consent summary needs the
- * SHA-256 of its withdrawal link's token, which PR 6e's consent capture makes; until then no prospect consents and
+ * Completes a run with its token's hash, by the attempt that claimed it; where its email goes, its row count and what
+ * its summary is kept with, or null when it was complete already. An attempt the run has moved past is refused, and a
+ * run a later screening replaced is gone (attemptSuperseded() names both); a run whose screening expired while it was
+ * priced is refused too (screeningExpired()). The database writes the run's counts-only outcome and replaces the
+ * practice's earlier kept summaries in the same transaction, and keeps this run's summary when a request of the same
+ * practice is carried over (kept_with 'earlier_request') or the prospect consented ('consent'). A consent summary needs
+ * the SHA-256 of its withdrawal link's token, which PR 6e's consent capture makes; until then no prospect consents and
  * none is passed.
  */
 export async function completeRun(
@@ -213,16 +224,30 @@ export async function completeRun(
   tokenSha256: string,
   engine: string,
   requestId: string,
+  attempt: number,
   withdrawalTokenSha256: string | null = null,
-): Promise<{ readonly contactEmail: string; readonly rowCount: number } | null> {
-  const { rows } = await client.query('SELECT contact_email, row_count FROM operator_screening_complete($1, $2, $3, $4, $5)', [runId, tokenSha256, withdrawalTokenSha256, engine, requestId]);
-  const row = rows[0] as { contact_email: string; row_count: number } | undefined;
-  return row === undefined ? null : { contactEmail: row.contact_email, rowCount: row.row_count };
+): Promise<{ readonly contactEmail: string; readonly rowCount: number; readonly keptWith: CompletedKeptWith } | null> {
+  const { rows } = await client.query('SELECT contact_email, row_count, kept_with FROM operator_screening_complete($1, $2, $3, $4, $5, $6)', [runId, tokenSha256, withdrawalTokenSha256, engine, requestId, attempt]);
+  const row = rows[0] as { contact_email: string; row_count: number; kept_with: string } | undefined;
+  if (row === undefined) {
+    return null;
+  }
+  if (!(COMPLETED_KEPT_WITH as readonly string[]).includes(row.kept_with)) {
+    throw new Error('the database gave a kept summary basis the worker does not know');
+  }
+  return { contactEmail: row.contact_email, rowCount: row.row_count, keptWith: row.kept_with as CompletedKeptWith };
 }
 
-/** Fails a queued or pricing run with a code; where its notice goes, or null when it had ended already. */
-export async function failRun(client: OperatorClient, runId: string, failureCode: string, requestId: string): Promise<{ readonly contactEmail: string } | null> {
-  const { rows } = await client.query('SELECT contact_email FROM operator_screening_fail($1, $2, $3)', [runId, failureCode, requestId]);
+/** What a completed run's summary can be kept with (operator_screening_complete's kept_with). */
+export const COMPLETED_KEPT_WITH = ['none', 'earlier_request', 'consent'] as const;
+export type CompletedKeptWith = (typeof COMPLETED_KEPT_WITH)[number];
+
+/**
+ * Fails a queued or pricing run with a code; where its notice goes, or null when it had ended already or (an attempt
+ * named) the run has moved past that attempt. The sweep, failing a run out of attempts, names none.
+ */
+export async function failRun(client: OperatorClient, runId: string, failureCode: string, requestId: string, attempt: number | null): Promise<{ readonly contactEmail: string } | null> {
+  const { rows } = await client.query('SELECT contact_email FROM operator_screening_fail($1, $2, $3, $4)', [runId, failureCode, requestId, attempt]);
   const row = rows[0] as { contact_email: string } | undefined;
   return row === undefined ? null : { contactEmail: row.contact_email };
 }
@@ -232,4 +257,22 @@ export async function expireBatch(client: OperatorClient, atMost: number, reques
   const { rows } = await client.query('SELECT prospects, runs, leads FROM operator_screening_expire($1, $2)', [atMost, requestId]);
   const row = rows[0] as { prospects: number; runs: number; leads: number } | undefined;
   return { prospects: row?.prospects ?? 0, runs: row?.runs ?? 0, leads: row?.leads ?? 0 };
+}
+
+/**
+ * Whether a call failed because this attempt no longer prices the run: a stale claim overtook it (the run has moved past
+ * its attempt, screening_run_attempt) or a later screening of the practice replaced the run (no such run).
+ */
+/** Whether a completion was refused because the run's screening expired while it was priced (screening_run_expired). */
+export function screeningExpired(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === '23514' && 'constraint' in error && (error as { constraint?: unknown }).constraint === 'screening_run_expired';
+}
+
+export function attemptSuperseded(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) {
+    return false;
+  }
+  const { code } = error as { readonly code?: unknown };
+  const constraint = 'constraint' in error ? (error as { readonly constraint?: unknown }).constraint : undefined;
+  return (code === '23514' && constraint === 'screening_run_attempt') || code === 'P0002';
 }

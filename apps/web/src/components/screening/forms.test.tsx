@@ -20,7 +20,7 @@ const TOKEN = 'qwertyuiopasdfghjklzxcvbnmqwerty';
 
 describe('the conversion form', () => {
   it('asks for the contact’s name, locations, payers and billing arrangement, and carries the result’s link token', () => {
-    const html = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted={false} />);
+    const html = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted={false} keptWith="none" />);
     for (const name of ['contactName', 'locations', 'payers', 'billingArrangement']) {
       expect(html).toContain(`name="${name}"`);
     }
@@ -30,11 +30,20 @@ describe('the conversion form', () => {
     expect(html).toContain('Request an audit');
   });
 
+  it('says what the request keeps: the screening’s summary, or, when that is already kept with an earlier request of the practice, that it has none of its own', () => {
+    const own = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted={false} keptWith="none" />);
+    expect(own).toContain('data-legal-surface="screening-kept-convert"');
+    expect(own).toContain('with your request for 12 months from the screening');
+    const carried = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted={false} keptWith="earlier_request" />);
+    expect(carried).toContain('already kept with an audit request made from an earlier screening of this practice');
+    expect(carried).toContain('with no summary of its own');
+  });
+
   it('says the request was received once sent, and does not ask twice', () => {
-    const sent = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested converted />);
+    const sent = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested converted keptWith="own_request" />);
     expect(sent).toContain('Audit request received');
     expect(sent).not.toContain('<form');
-    const before = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted />);
+    const before = renderToStaticMarkup(<ScreeningConvertForm action={action} resultId={TOKEN} arrangements={ARRANGEMENTS} requested={false} converted keptWith="own_request" />);
     expect(before).toContain('An audit was requested from this screening');
     expect(before).not.toContain('<form');
   });

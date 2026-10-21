@@ -132,7 +132,7 @@ export const requestAudit = publicRoute({
         payers,
         input.billingArrangement,
         input.heardFrom ?? null,
-        ...attributionValues(readAttribution(request.cookies)),
+        ...attributionValues(readAttribution(request.cookies, services.environment)),
         firm,
       ]);
     } finally {

@@ -1,4 +1,5 @@
 import type { MailMessage } from '../mail/mail';
+import { type KeptWith, emailKept } from './wording';
 
 /**
  * The emails of a free screening (Change Order 001, CO-04; reconciliation-001, D21 a): the link to the result,
@@ -10,8 +11,11 @@ import type { MailMessage } from '../mail/mail';
  * What a message holds: fixed sentences, the count of rows the upload had, and one link. Never a dollar figure, a
  * date, a code, the practice's name or anything from the file; the link's only identifier is the result's
  * unguessable token, which the caller passes in and which is never logged (a refusal here names the rule, never
- * the link). The result email says what is deleted when the link closes and what is kept: a record of counts that
- * names no one (audit #57; the founder's ruling of 2026-10-20, decision 7, the plain list).
+ * the link). The result email says what is deleted when the link closes and what is kept (wording.ts, emailKept): a
+ * record of counts that names no one, the plain list (audit #57; the founder's ruling of 2026-10-20, decision 7), and
+ * this screening's summary when the database kept one (with an earlier screening's request it took over, decision 17,
+ * or consent), so a prospect whose screening took a request over is told their details are kept with it. A legal
+ * surface counsel reviews before the screening opens: docs/product/legal-surfaces.md, data-legal-surface="screening-kept-email".
  */
 
 /** A result link's path: /screening/results/ and the 32-letter token (apps/worker/src/screening/token.ts). */
@@ -61,14 +65,27 @@ function rowsText(rows: number): string {
   return `${rows.toLocaleString('en-US')} ${rows === 1 ? 'row' : 'rows'}`;
 }
 
-/** The email that carries a completed screening's link, which opens the result for 30 days from the upload. */
-export function screeningResultMessage({ to, link, rows }: { readonly to: string | readonly string[]; readonly link: string; readonly rows: number }): MailMessage {
+/**
+ * The email that carries a completed screening's link, which opens the result for 30 days from the upload, and what
+ * this screening's summary is kept with, as the completion said (none by default).
+ */
+export function screeningResultMessage({
+  to,
+  link,
+  rows,
+  keptWith = 'none',
+}: {
+  readonly to: string | readonly string[];
+  readonly link: string;
+  readonly rows: number;
+  readonly keptWith?: Exclude<KeptWith, 'own_request'>;
+}): MailMessage {
   return {
     to: recipients(to),
     subject: 'Your screening is ready',
     lines: [
       `The screening you started on the PaidWhole screening page is ready. It covers the ${rowsText(rows)} of your upload.`,
-      'The link below opens it for 30 days from your upload, or until a later screening for the same practice or from this address replaces it. Then we delete the result and your details, and keep only a record of counts that names no one: ranges of the file’s rows and dollars, the shares priced, how you heard of us, whether the result was opened or an audit requested, the release and the month.',
+      emailKept(keptWith),
       'Anyone with the link can open it, so share it only with people at your practice.',
       'If you did not start a screening, ignore this message; nothing more will be sent.',
       'Open your screening:',

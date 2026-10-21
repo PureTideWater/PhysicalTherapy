@@ -2,7 +2,7 @@
   "case": "SCR-11",
   "module": "SCR",
   "title": "A converted or consenting practice's kept summary",
-  "assertion": "Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused",
+  "assertion": "Frozen at conversion (or at completion with consent and a withdrawal link) with the result's sums, the attribution, the labels' version and the first open; every claim-line sum 0 or at least 11; the left-out sums only at 11 or more; kept 12 months, then deleted with its products; withdrawn or deleted with its request; any other delete refused; a conversion after a withdrawal keeps it on the request alone, never the withdrawn consent",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [

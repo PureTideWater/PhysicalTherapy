@@ -149,6 +149,7 @@ export function ScreeningUploadForm({ action, states, maxRows, minClaimLines, se
             autoComplete="postal-code"
             hint="The five-digit ZIP of the practice's location, which names the Medicare locality the rows are priced at; a ZIP code that spans two Medicare localities cannot be screened yet."
           />
+          {/* The hint is a legal surface counsel reviews before the screening opens: docs/product/legal-surfaces.md, data-legal-surface="screening-kept-upload". */}
           <Field label="Work email" name="contactEmail" type="email" required maxLength={254} autoComplete="email" hint={UPLOAD_EMAIL_HINT} />
           <SelectField label={HEARD_FROM_LABEL} name="heardFrom" options={sources} />
           <Field label={REFERRING_FIRM_LABEL} name="referringFirm" maxLength={200} autoComplete="off" hint={REFERRING_FIRM_HINT} />

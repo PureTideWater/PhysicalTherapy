@@ -58,7 +58,9 @@ describe('the screening upload form', () => {
     expect(firm).toContain('maxLength="200"');
     expect(firm).not.toContain('required');
     expect(plain).toContain(UPLOAD_EMAIL_HINT);
-    expect(UPLOAD_EMAIL_HINT).toContain('keep only a record of counts that names no one');
+    expect(UPLOAD_EMAIL_HINT).toContain('keep a record of counts that names no one');
+    // What happens if the practice has, or asks for, an audit, without saying whether it has (decision 17).
+    expect(UPLOAD_EMAIL_HINT).toContain('If an audit is requested from the screening, or was requested from an earlier screening with the same practice name and ZIP code');
     expect(plain).toContain(ABOUT_PRACTICE);
   });
 

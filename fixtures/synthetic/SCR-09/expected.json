@@ -2,7 +2,7 @@
   "case": "SCR-09",
   "module": "SCR",
   "title": "The release read by key (audit #53 part 2)",
-  "assertion": "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; a lookup outside the keys fetched, a row outside the key set or codes priced unequal to it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR",
+  "assertion": "A release's shared types held once per release and manifest (two releases at most); each run's keyed records read by its own codes and ZIP; every stored row equal to what the old read and adapter (frozen at 3c1b289) give for the same run; the key set and its records read on one snapshot; a lookup outside the keys fetched, a row outside the key set or a code priced outside it fail the run as RELEASE_READ_OUTSIDE_FETCH before its batch is recorded, never a row priced ENGINE_ERROR; an attempt a stale claim overtook stops at its next call",
   "synthetic": true,
   "completesIn": 6,
   "assertedBy": [

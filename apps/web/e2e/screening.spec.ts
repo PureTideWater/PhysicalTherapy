@@ -7,7 +7,7 @@ import { cents, formatUsd } from '@tp/money';
 
 import { ATTRIBUTION_COOKIE } from '../src/lib/http/attribution';
 import { MEDICARE_FIGURE_LABEL, REDUCED_FIGURE_LABEL, WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
-import { CONVERT_KEPT, REQUEST_AUDIT_KEPT, SENT_KEPT } from '../src/lib/screening/retention';
+import { KEPT_SUMMARY, REQUEST_AUDIT_KEPT, SENT_KEPT, convertKept } from '../src/lib/screening/retention';
 import { expectAccessible } from './a11y';
 import { registerKeyAndSignIn, withDatabase } from './helpers';
 import {
@@ -289,7 +289,8 @@ test('a specialist approves the split; a file with patient information is refuse
     link = resultLinkIn(message as NonNullable<typeof message>);
     expect(message?.body).not.toMatch(/\$|\d{4}-\d{2}-\d{2}/);
     // What is kept once the link closes, in the plain list (decision 7).
-    expect(message?.body.replace(/\s+/g, ' ')).toContain('keep only a record of counts that names no one');
+    expect(message?.body.replace(/\s+/g, ' ')).toContain('Then we delete the result and the details you gave, unless an audit is requested from it');
+    expect(message?.body.replace(/\s+/g, ' ')).toContain('We keep a record of counts that names no one');
     expect(message?.html).not.toContain('tagline');
     expect(`${message?.body ?? ''} ${message?.html ?? ''}`).not.toMatch(FORBIDDEN);
     // The token's hash alone is stored.
@@ -306,7 +307,10 @@ test('a specialist approves the split; a file with patient information is refuse
     expect(await opened()).toBeNull();
     await page.waitForTimeout(2500);
     expect(await opened()).toBeNull();
-    await expect(page.locator('[data-copy="kept"]')).toContainText('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave. We keep a record of counts that names no one');
+    await expect(page.locator('[data-copy="kept"]')).toContainText('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave.');
+    await expect(page.locator('[data-copy="kept"]')).toContainText('We keep a record of counts that names no one');
+    // Nothing of this screening is kept with a request yet (the database's kept_with).
+    await expect(page.locator('[data-copy="kept"]')).toHaveAttribute('data-kept-with', 'none');
     const sums = await withDatabase(async (client) => {
       const { rows } = await client.query<{ disposition: string; expected: string | null; observed: string }>(
         `SELECT s.disposition, sum(s.expected_cents)::text AS expected, sum(s.observed_allowed_cents)::text AS observed
@@ -391,7 +395,7 @@ test('a specialist approves the split; a file with patient information is refuse
   });
 
   await test.step('converting it records an audit request with its attribution, keeps the screening’s summary with it, and says so (SCR-06, SCR-11)', async () => {
-    await expect(page.locator('[data-copy="convert-kept"]')).toHaveText(CONVERT_KEPT);
+    await expect(page.locator('[data-copy="convert-kept"]')).toHaveText(convertKept('none'));
     await page.getByLabel('Your name').fill('SYNTHETIC CONTACT');
     await page.getByLabel('Locations').fill('2');
     await page.getByLabel('Payers you bill').fill('SYNTHETIC PAYER A\nSYNTHETIC PAYER B');
@@ -444,7 +448,8 @@ test('a specialist approves the split; a file with patient information is refuse
     await page.reload();
     await expect(page.locator('[data-state="requested"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Request an audit' })).toHaveCount(0);
-    await expect(page.locator('[data-copy="kept-converted"]')).toContainText('Because you requested an audit, we keep this screening’s totals');
+    await expect(page.locator('[data-copy="kept-converted"]')).toContainText(`Because you requested an audit, we keep ${KEPT_SUMMARY}`);
+    await expect(page.locator('[data-copy="kept-converted"]')).toHaveAttribute('data-kept-with', 'own_request');
     await expect(page.locator('[data-copy="kept-converted"]')).toContainText('while we keep your request, yours can be matched to it');
   });
 

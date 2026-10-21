@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { ATTRIBUTION_COOKIE, ATTRIBUTION_MAX_AGE_SECONDS, firstTouch } from './lib/http/attribution';
 import { contentSecurityPolicy, newNonce, staticAssetOrigin, uploadOrigins } from './lib/http/security-headers';
+import { environmentFrom } from './lib/legal-surfaces';
 
 /**
  * The per-request Content-Security-Policy with its nonce (docs/adr/0053; Next's guide: the nonce is read from
@@ -9,7 +10,9 @@ import { contentSecurityPolicy, newNonce, staticAssetOrigin, uploadOrigins } fro
  * attribution cookie (docs/adr/0062, Outcomes, leads and attribution; the founder's ruling of 2026-10-20). This proxy
  * never authorizes anything and touches no database, and it reads and sets one cookie only, the attribution cookie:
  * on a page GET whose URL carries campaign codes or a paid click, and no such cookie yet, it sets pw_first_touch (30
- * days, the first visit wins; src/lib/http/attribution.ts) with the codes and the kind of click, never a click ID.
+ * days, the first visit wins; src/lib/http/attribution.ts) with the codes and the kind of click, never a click ID. The
+ * cookie is a legal surface (docs/product/legal-surfaces.md, data-legal-surface="attribution-cookie"): a production
+ * server sets none until counsel's review of its disclosure is recorded.
  * Every route still runs its own checks in its handler and in Postgres (docs/adr/0017). The fixed security headers
  * come from next.config.ts, so static assets carry them too.
  */
@@ -27,7 +30,7 @@ export function proxy(request: NextRequest): NextResponse {
   const response = NextResponse.next({ request: { headers } });
   response.headers.set('content-security-policy', policy);
   // The URL as the browser sent it (Next's nextUrl rewrites a /_next/data path to the page's).
-  const touch = firstTouch({ method: request.method, url: new URL(request.url), hasCookie: request.cookies.has(ATTRIBUTION_COOKIE) });
+  const touch = firstTouch({ method: request.method, url: new URL(request.url), hasCookie: request.cookies.has(ATTRIBUTION_COOKIE), environment: environmentFrom(process.env) });
   if (touch !== null) {
     response.cookies.set(ATTRIBUTION_COOKIE, touch, {
       maxAge: ATTRIBUTION_MAX_AGE_SECONDS,

@@ -220,6 +220,8 @@ export const SCREENING_LEAD_MONTHS = 12;
 /** The campaign codes an outcome may name: the founder lists campaigns sent to many people; a listed code stays listed. */
 export const marketingCampaign = pgTable('marketing_campaign', {
   code: text('code').primaryKey(),
+  /** What the listing's audit event names. */
+  id: uuid('id').notNull().unique().defaultRandom(),
   label: text('label').notNull(),
   addedBy: uuid('added_by')
     .notNull()
@@ -252,8 +254,8 @@ export const screeningOutcome = pgTable(
     leftOutBand: text('left_out_band', { enum: SCREENING_COUNT_BANDS }).notNull().default('none'),
     /** A refused upload's reason codes, distinct and ascending. */
     refusalCodes: text('refusal_codes').array().notNull().default(sql`'{}'::text[]`),
-    /** A refused upload the practice followed with an accepted one. */
-    retried: boolean('retried').notNull().default(false),
+    /** An accepted screening that followed a refused upload of the practice still kept. */
+    afterRefusal: boolean('after_refusal').notNull().default(false),
     releaseNo: integer('release_no'),
     engineVersion: text('engine_version'),
     pricedSharePct: smallint('priced_share_pct'),

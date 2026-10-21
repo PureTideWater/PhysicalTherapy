@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryMailSender, mailBody, mailBodyHtml } from '../mail/mail';
 import { EMAIL_LOCKUP_PATH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS } from '../mail/template';
 import { ScreeningMessageError, screeningFailedMessage, screeningResultLink, screeningResultMessage, screeningStartLink } from './message';
+import { KEPT_COUNTS, KEPT_SUMMARY, emailKept } from './wording';
 
 /**
  * The screening emails (CO-04; decisions D11 and D21 a): the result's link as the prospect variant, the lockup without
@@ -32,10 +33,28 @@ describe('the screening result email', () => {
     expect(message.lines.join(' ')).toContain('30 days from your upload');
     // A practice keeps one screening at a time: a later one replaces this one, and its link stops opening it.
     expect(message.lines.join(' ')).toContain('or until a later screening for the same practice or from this address replaces it');
-    // What is deleted, and the plain list of what is kept (the founder's ruling of 2026-10-20, decision 7).
-    expect(message.lines.join(' ')).toContain(
-      'Then we delete the result and your details, and keep only a record of counts that names no one: ranges of the file’s rows and dollars, the shares priced, how you heard of us, whether the result was opened or an audit requested, the release and the month.',
-    );
+    // What is deleted, and the plain list of what is kept (the founder's ruling of 2026-10-20, decision 7), from the one
+    // wording every surface uses: nothing of this screening is kept but its record of counts unless an audit is requested.
+    expect(message.lines).toContain(emailKept('none'));
+    expect(emailKept('none')).toContain('Then we delete the result and the details you gave, unless an audit is requested from it');
+    expect(emailKept('none')).toContain(`We keep a record of counts that names no one: ${KEPT_COUNTS}.`);
+  });
+
+  it('tells a prospect whose screening took over an earlier request that their details are kept with it, and for how long', () => {
+    const carried = screeningResultMessage({ to: TO, link: LINK, rows: 3, keptWith: 'earlier_request' });
+    const text = carried.lines.join(' ');
+    expect(carried.lines).toContain(emailKept('earlier_request'));
+    expect(text).toContain('An audit was requested for this practice from an earlier screening with the same practice name and ZIP code');
+    expect(text).toContain(`we now keep ${KEPT_SUMMARY} with that request, in place of the earlier screening’s, for 12 months from this screening`);
+    expect(text).not.toContain('Then we delete the result and the details you gave');
+    // The kept summary's list names every column it holds: the email address and the campaign codes among them.
+    for (const kept of ['email address', 'ZIP code', 'practice name', 'campaign codes', 'kind of paid click', 'referring firm', 'when the result was first opened']) {
+      expect(KEPT_SUMMARY, kept).toContain(kept);
+    }
+    // The record of counts' list names the link's kind, the open, a refusal's kinds of problem and a replacement.
+    for (const kept of ['kind of link', 'how soon the result was first opened', 'kinds of problem', 'followed a refused upload', 'later screening replaced it']) {
+      expect(KEPT_COUNTS, kept).toContain(kept);
+    }
   });
 
   it('holds no dollar figure, no date, no code and none of the words screening never uses', () => {
@@ -47,8 +66,8 @@ describe('the screening result email', () => {
       expect(text).not.toMatch(/\$|\bcents?\b|\d[\d,.]*\s*dollars?\b/i);
       expect(text).not.toMatch(/\b20\d{2}-\d{2}-\d{2}\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
     }
-    // The only numbers are the row count and the 30 days.
-    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30']);
+    // The only numbers are the row count, the 30 days and the 12 months.
+    expect(body.replace(LINK, '').match(/\d[\d,]*/g)).toEqual(['1,234', '30', '12']);
   });
 
   it('is headed by the lockup without the tagline (D11), with the prospect’s footer, never the customer’s', () => {

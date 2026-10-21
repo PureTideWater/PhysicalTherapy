@@ -26,7 +26,7 @@ export function ScreeningResultView({ data, convert }: { readonly data: Screenin
       <ScreeningAnomalies groups={data.groups} page={data.groupPage} path={`/screening/results/${data.resultId}`} />
       <ScreeningCoverage coverage={data.coverage} />
       <ScreeningTopRows rows={data.rows} />
-      <ScreeningConvertForm action={convert} resultId={data.resultId} arrangements={data.arrangements} requested={data.requested} converted={data.converted} />
+      <ScreeningConvertForm action={convert} resultId={data.resultId} arrangements={data.arrangements} requested={data.requested} converted={data.converted} keptWith={data.summary.keptWith} />
       <p className="text-sm text-muted-foreground">
         Screen another file:{' '}
         <Link className="underline" href="/screening">

@@ -14,7 +14,9 @@ import { type MailMessage, type MailSender, MemoryMailSender } from '../mail/mai
 import { ScreeningPricer, beforeSequestration, releaseChangeDays, screeningClaim } from './adapter';
 import { expireScreenings } from './expiry';
 import { type ScreeningJobDependencies, forgetScreeningReleases, priceScreeningRun, sweepScreeningRuns } from './job';
+import { asOperator, claimRun, failRun, runKeys, runRecords } from './operator';
 import { SCREENING_TOKEN, screeningTokenHash } from './token';
+import { emailKept } from './wording';
 
 /**
  * The screening jobs against a scratch database (test matrix SCR-02, pricing, and SCR-03, expiry; docs/adr/0062),
@@ -502,6 +504,75 @@ describe('a run is priced once, retried after a failed send, and failed when it 
     expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 2 }]);
   });
 
+  it('stops a slow attempt a stale claim overtakes at its next call, failing nothing and sending nothing, and the run completes once', async () => {
+    const runId = await submit();
+    const mail = new MemoryMailSender();
+    // While attempt 1 is past its keyed read, its pricing turns stale and a second claim takes the run over.
+    const overtake = async () => {
+      await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SET LOCAL ROLE tp_operator');
+        expect((await client.query<{ attempt: number }>('SELECT attempt FROM operator_screening_claim($1)', [runId])).rows).toEqual([{ attempt: 2 }]);
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+    };
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: overtake }), runId)).toBe('not_claimed');
+    expect(mail.sent).toEqual([]);
+    expect(lines.map((line) => line.error_code).filter((code) => code !== undefined)).toEqual(['SCREENING_ATTEMPT_SUPERSEDED']);
+    expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'pricing', attempts: 2 }]);
+    expect((await results(runId)).filter((row) => row.disposition === 'pending').length).toBeGreaterThan(0);
+    // The claim that took it over stops in turn (here, by going stale), and the next one prices and sends once.
+    await rewind("UPDATE screening_run SET started_at = started_at - interval '11 minutes' WHERE id = $1", [runId]);
+    expect(await sweepScreeningRuns(dependencies(mail), { minQueuedAgeSeconds: 0 })).toEqual({ complete: 1, failed: 0, skipped: 0 });
+    expect(mail.sent.map((message) => message.subject)).toEqual(['Your screening is ready']);
+    expect((await owner.query('SELECT status, attempts FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'complete', attempts: 3 }]);
+  });
+
+  it('stops quietly when a later screening of the practice replaces the run while it is priced: no failure, no email, no read outside the fetch', async () => {
+    const practice = practiceName();
+    const runId = await submit({ practice });
+    const mail = new MemoryMailSender();
+    let replacement = '';
+    const replace = async () => {
+      replacement = await submit({ practice });
+    };
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: replace }), runId)).toBe('not_claimed');
+    expect(mail.sent).toEqual([]);
+    expect(lines.map((line) => line.error_code).filter((code) => code !== undefined)).toEqual(['SCREENING_ATTEMPT_SUPERSEDED']);
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ n: 0 }]);
+    expect(await priceScreeningRun(dependencies(mail), replacement)).toBe('complete');
+  });
+
+  it('fails a run whose screening expired while it was priced, as EXPIRED, and tells its contact, sending no link', async () => {
+    const runId = await submit();
+    const mail = new MemoryMailSender();
+    const expire = () => age(runId, 31);
+    expect(await priceScreeningRun(dependencies(mail, { afterKeyedRead: expire }), runId)).toBe('failed');
+    expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ status: 'failed', failure_code: 'EXPIRED' }]);
+    expect(mail.sent.map((message) => message.subject)).toEqual(['Your screening could not be completed']);
+    expect(lines.map((line) => line.error_code).filter((code) => code !== undefined)).toEqual(['EXPIRED']);
+    // The expiry job deletes it, as any expired screening.
+    expect((await expireScreenings({ operator: admin, jobId: randomUUID() })).prospects).toBeGreaterThanOrEqual(1);
+    expect((await owner.query('SELECT count(*)::int AS n FROM screening_run WHERE id = $1', [runId])).rows).toEqual([{ n: 0 }]);
+  });
+
+  it('tells the prospect whose screening took over an earlier request of the same practice that their details are kept with it', async () => {
+    const practice = practiceName();
+    const mail = new MemoryMailSender();
+    const first = await submit({ practice });
+    expect(await priceScreeningRun(dependencies(mail), first)).toBe('complete');
+    expect(mail.sent[0]?.lines).toContain(emailKept('none'));
+    const hash = screeningTokenHash(tokenOf(mail.sent[0]));
+    await asApp('SELECT convert_screening($1, $2, $3, $4, $5, $6) AS id', [hash, 'SYNTHETIC CONTACT', 1, ['SYNTHETIC PAYER'], 'in_house', `test-${randomUUID()}`]);
+    const later = await submit({ practice, email: `colleague.${randomUUID().slice(0, 8)}@synthetic.test` });
+    expect(await priceScreeningRun(dependencies(mail), later)).toBe('complete');
+    expect(mail.sent[1]?.lines).toContain(emailKept('earlier_request'));
+  });
+
   it('lets no contact address the mail service refuses hold up the sweep, and still fails that run once it is out of attempts', async () => {
     const poison = 'refused.synthetic@clinic-refused.synthetic.test';
     const poisonRun = await submit({ email: poison });
@@ -604,7 +675,24 @@ describe('a release withdrawn after a screening was pinned to it', () => {
     expect(await priceScreeningRun(dependencies(mail), priced)).toBe('complete');
     const hash = screeningTokenHash(tokenOf(mail.sent[0]));
     expect(await asApp('SELECT release_no, release_withdrawn FROM screening_result_summary($1)', [hash])).toEqual([{ release_no: 900004, release_withdrawn: false }]);
-    await withdrawRelease(owner, { release: 900004, reason: 'SYNTHETIC: withdrawn under a screening in a test' });
+    // The keyed read takes the key set and its records on one snapshot: a withdrawal committed between the two reads is
+    // seen by neither, so the records still answer for the keys read; read apart, the records would come back empty for
+    // keys the view then admits (a "could not price" the engine never found).
+    const between = await submit({ email: 'prospect.between.reads@synthetic.test' });
+    expect(await asOperator(admin, (client) => claimRun(client, between))).not.toBeNull();
+    const read = await asOperator(
+      admin,
+      async (client) => {
+        const keys = await runKeys(client, between);
+        await withdrawRelease(owner, { release: 900004, reason: 'SYNTHETIC: withdrawn under a screening in a test' });
+        return { keys, records: await runRecords(client, between) };
+      },
+      { snapshot: true },
+    );
+    expect(read.keys?.codes.length).toBeGreaterThan(0);
+    expect(read.records.some((record) => record.record_type === 'locality_map')).toBe(true);
+    expect(await asOperator(admin, (client) => runRecords(client, between))).toEqual([]);
+    await asOperator(admin, (client) => failRun(client, between, 'RELEASE_UNAVAILABLE', 'test-between', null));
     // This process still holds the release it read; the claim says it is withdrawn, so the run fails and its contact is told.
     expect(await priceScreeningRun(dependencies(mail), waiting)).toBe('failed');
     expect((await owner.query('SELECT status, failure_code FROM screening_run WHERE id = $1', [waiting])).rows).toEqual([{ status: 'failed', failure_code: 'RELEASE_UNAVAILABLE' }]);

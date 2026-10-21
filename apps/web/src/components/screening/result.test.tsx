@@ -22,6 +22,7 @@ import {
 } from '../../lib/screening/labels';
 import { type ScreeningGroup, type ScreeningGroupPage, type ScreeningRow, ScreeningAnomalies, ScreeningTopRows, anomaliesDescription } from './anomalies';
 import { type ScreeningCoverageRow, ScreeningCoverage } from './coverage';
+import { KEPT_COUNTS, KEPT_SUMMARY } from '../../lib/screening/retention';
 import { type ScreeningSummaryData, ScreeningHeading, ScreeningReleaseWithdrawn, ScreeningSummary, differenceWords } from './result-summary';
 
 /**
@@ -46,6 +47,7 @@ const SUMMARY: ScreeningSummaryData = {
   createdAt: '2026-10-18T12:00:00.000Z',
   expiresAt: '2026-11-17T12:00:00.000Z',
   releaseWithdrawn: false,
+  keptWith: 'none',
   rows: 6,
   claimLines: 140,
   observedCents: c(1_234_500n),
@@ -543,5 +545,33 @@ describe('a screening’s words (SCR-05, the screens)', () => {
     expect(text(html)).not.toMatch(FORBIDDEN);
     expect(text(html)).not.toContain(tagline);
     expect(text(html)).not.toContain(tagline.split('.')[0] ?? tagline);
+  });
+});
+
+describe('what the result says is kept (audit #57; decisions 7, 17 and 18)', () => {
+  const kept = (summary: ScreeningSummaryData, converted = false) => {
+    const html = renderToStaticMarkup(<ScreeningHeading summary={summary} converted={converted} />);
+    return /data-legal-surface="screening-kept-result"[^>]*>([^<]*)</.exec(html)?.[1]?.replaceAll('&#x27;', '’').replaceAll('&amp;', '&') ?? '';
+  };
+
+  it('says nothing but the record of counts is kept unless an audit is requested, and lists both records in full', () => {
+    const text = kept(SUMMARY);
+    expect(text).toContain('Then we delete the result: its rows and figures, and the practice name, ZIP code and email address you gave.');
+    expect(text).toContain(`If you request an audit from it, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening.`);
+    expect(text).toContain(KEPT_COUNTS);
+  });
+
+  it('tells a prospect whose screening took over an earlier request that their details are kept with it, never that they are deleted', () => {
+    const text = kept({ ...SUMMARY, keptWith: 'earlier_request' });
+    expect(text).toContain('An audit was requested for this practice from an earlier screening with the same practice name and ZIP code');
+    expect(text).toContain(`we keep ${KEPT_SUMMARY} with that request, in place of the earlier screening’s, for 12 months from this screening`);
+    expect(text).not.toContain('and the practice name, ZIP code and email address you gave');
+    expect(kept({ ...SUMMARY, keptWith: 'earlier_request' }, true)).toContain('your own request is kept beside it');
+  });
+
+  it('says a converted screening’s summary is kept with its request, and that its record of counts can be matched to it', () => {
+    const text = kept({ ...SUMMARY, keptWith: 'own_request' }, true);
+    expect(text).toContain(`Because you requested an audit, we keep ${KEPT_SUMMARY} with your request for 12 months from the screening.`);
+    expect(text).toContain('while we keep your request, yours can be matched to it');
   });
 });

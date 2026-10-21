@@ -1,5 +1,7 @@
 import { PAID_CLICKS, type PaidClick } from '@tp/db/runtime';
+import { textPhiFindings } from '@tp/observability';
 
+import { ATTRIBUTION_LEGAL_SURFACES, type Environment, showsLegalSurfaces } from '../legal-surfaces';
 import type { CookieJar } from './route';
 
 /**
@@ -10,7 +12,9 @@ import type { CookieJar } from './route';
  * normalised and shape-checked here, and the kind of paid click (paid_search or paid_social) from the presence of an
  * advertiser's click-ID parameter: never the click ID's value, which stays in the URL. HttpOnly, SameSite=Lax, Secure
  * on https; no script reads it, no third party receives it, and nothing logs it. The screening and audit-request
- * handlers read it on the server and pass the four values to the database, which checks their shape again.
+ * handlers read it on the server and pass the four values to the database, which checks their shape again. A legal
+ * surface counsel reviews with the privacy notice (docs/product/legal-surfaces.md, attribution-cookie): until that
+ * review is recorded a production server neither sets the cookie nor reads it (src/lib/legal-surfaces.ts).
  */
 
 export const ATTRIBUTION_COOKIE = 'pw_first_touch';
@@ -36,16 +40,34 @@ export interface Attribution {
 
 export const NO_ATTRIBUTION: Attribution = { source: null, medium: null, campaign: null, click: null };
 
+/** A Medicare Beneficiary Identifier's shape (11 characters: digit, letter, letter or digit, digit, and so on), separators taken out. */
+const MBI_SHAPE = /^[1-9][a-z][a-z0-9]\d[a-z][a-z0-9]\d[a-z]{2}\d{2}$/;
+
+/**
+ * Whether a campaign code has an identifier's shape, as text a person writes is screened (textPhiFindings: nine or
+ * more digits, an SSN, a date, an email address, a phone number), read as it came, as kept and with its separators
+ * taken out; a Medicare Beneficiary Identifier's shape; or digits and separators alone. A link's campaign code is the
+ * founder's own label for a mailing or an advertisement, so a code shaped like an identifier is never one.
+ */
+export function identifierShaped(raw: string, code: string): boolean {
+  const bare = code.replace(/[-._]/g, '');
+  return textPhiFindings(raw).length > 0 || textPhiFindings(code).length > 0 || textPhiFindings(bare).length > 0 || MBI_SHAPE.test(bare) || /^\d*$/.test(bare);
+}
+
 /**
  * A campaign code as kept: lower-cased and trimmed, each run of white space or '+' turned into '-', then held to
- * CAMPAIGN_CODE; anything else (an email address, a name, a long or empty value) is dropped.
+ * CAMPAIGN_CODE; anything else (an email address, a long or empty value) is dropped, and so is a code with an
+ * identifier's shape (identifierShaped: a member ID, a date of birth, a phone number, a Medicare Beneficiary
+ * Identifier, digits alone). A name has no shape a check can see, so one in a link's code is kept as the code it is:
+ * an unlisted code counts as 'other' on the counts-only outcome, and is kept as it came only with the screening, its
+ * summary or its request.
  */
 export function normaliseCampaignCode(raw: string | null | undefined): string | null {
   if (raw === null || raw === undefined) {
     return null;
   }
   const code = raw.trim().toLowerCase().replace(/[\s+]+/g, '-');
-  return CAMPAIGN_CODE.test(code) ? code : null;
+  return CAMPAIGN_CODE.test(code) && !identifierShaped(raw, code) ? code : null;
 }
 
 /** The kind of paid click a URL's parameters carry, by a click-ID parameter's presence alone; search first. */
@@ -99,15 +121,20 @@ export function decodeAttribution(value: string | null | undefined): Attribution
   }
   const code = (key: string) => {
     const raw = parameters.get(key);
-    return raw !== null && CAMPAIGN_CODE.test(raw) ? raw : null;
+    return raw !== null && CAMPAIGN_CODE.test(raw) && !identifierShaped(raw, raw) ? raw : null;
   };
   const click = parameters.get('k');
   return { source: code('s'), medium: code('m'), campaign: code('c'), click: (PAID_CLICKS as readonly string[]).includes(click ?? '') ? (click as PaidClick) : null };
 }
 
-/** The visitor's attribution, from the request's cookie (none when it is absent or unreadable). */
-export function readAttribution(cookies: CookieJar): Attribution {
-  return decodeAttribution(cookies.get(ATTRIBUTION_COOKIE));
+/** Whether a server in `environment` sets and reads the attribution cookie: not in production until its review is recorded. */
+export function attributionCookieAllowed(environment: Environment): boolean {
+  return showsLegalSurfaces(ATTRIBUTION_LEGAL_SURFACES, environment);
+}
+
+/** The visitor's attribution, from the request's cookie (none when it is absent, unreadable, or not yet allowed in `environment`). */
+export function readAttribution(cookies: CookieJar, environment: Environment): Attribution {
+  return attributionCookieAllowed(environment) ? decodeAttribution(cookies.get(ATTRIBUTION_COOKIE)) : NO_ATTRIBUTION;
 }
 
 /** The four values a submission passes to the database, in its order: source, medium, campaign and the kind of paid click. */
@@ -117,10 +144,10 @@ export function attributionValues(attribution: Attribution): readonly [string | 
 
 /**
  * Whether the proxy sets the cookie for this request: a page GET (not Next's assets and not /api), with no cookie
- * yet, whose URL carries attribution. The value to set, or null.
+ * yet, whose URL carries attribution, on a server allowed to set it. The value to set, or null.
  */
-export function firstTouch(request: { readonly method: string; readonly url: URL; readonly hasCookie: boolean }): string | null {
-  if (request.method !== 'GET' || request.hasCookie) {
+export function firstTouch(request: { readonly method: string; readonly url: URL; readonly hasCookie: boolean; readonly environment: Environment }): string | null {
+  if (request.method !== 'GET' || request.hasCookie || !attributionCookieAllowed(request.environment)) {
     return null;
   }
   const { pathname } = request.url;
