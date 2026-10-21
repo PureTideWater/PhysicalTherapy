@@ -1,6 +1,6 @@
 import { IDENTIFIER_KINDS, type PacketContent } from './format';
 import { interestStated, lineInterestStated } from './interest';
-import { planName } from './payer';
+import { planText } from './payer';
 import { readableText } from './readable';
 import { type FigureKind, canonicalNumber, scanText } from './scan';
 
@@ -9,9 +9,9 @@ import { type FigureKind, canonicalNumber, scanText } from './scan';
  * draftPacketNarrative: "every number, date, code and count in the text must match the inputs
  * exactly"). Built from the stored version, so anyone can check a stored narrative again. Amounts are
  * cents as integer text, numbers and percentages plain decimals, dates ISO. The contract's quoted
- * clause, the statute, the identification of practice, payer and plan (the plan as the payer's copy names it, by its
- * name or its identifier without the remittance key's qualifier, ./payer.ts), and the contract's title are
- * read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it. No
+ * clause, the statute, the identification of practice, payer and plan (the plan as the payer's copy prints it, by
+ * its name, its identifier without the remittance key's qualifier, or its type in words, ./payer.ts), and the
+ * contract's title are read with the narrative's own scanner, so a figure they hold may be repeated exactly as they hold it. No
  * remittance key is among them: the payer's ID and the plan's key are the record's, and the scanner reads a key
  * as an identifier whether or not it holds a digit, so a narrative cannot state one.
  * No identifier of a patient or a claim is ever an input: they are placeholders, one per schedule row.
@@ -160,11 +160,14 @@ export function narrativeFacts(content: PacketContent): NarrativeFacts {
 
   sets.quoted(content.practice.name);
   sets.quoted(content.payer.name);
-  // The plan as the payer's copy names it (./payer.ts): its name (an ERA export's plan as the export names it), or its
-  // identifier without the remittance key's qualifier when no name is known. The key itself ("CE:SYNPLAN-63",
-  // "CE:SYNPLAN-FIX-ONE") is the record's: the scanner reads any token led by a qualifier code as an identifier, digit
-  // or not (./scan.ts), and no input holds one, so a narrative stating a key fails.
-  sets.quoted(planName(content.payer).text);
+  // The plan exactly as the payer's copy prints it (./payer.ts planText()): "plan <name>" (an ERA export's plan as
+  // the export names it), "plan identifier <id>" without the remittance key's qualifier when no name is known, or
+  // "plan type <words>" for a plan known only by its claim filing indicator (the founder's ruling of 2026-10-21),
+  // whose code is no figure, so "plan identifier 12" fails; nothing when the copy leaves the plan out (ZZ, or an
+  // indicator with no words, which refuses the copy). The key itself ("CE:SYNPLAN-63", "CLP06:12") is the record's:
+  // the scanner reads any token led by a qualifier code as an identifier, digit or not (./scan.ts), and no input
+  // holds one, so a narrative stating a key fails.
+  sets.quoted(planText(content.payer));
 
   for (const percent of pattern.contract_percentages) {
     sets.percents.add(canonicalNumber(percent));

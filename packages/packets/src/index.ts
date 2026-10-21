@@ -100,7 +100,7 @@ export {
   lineHoldsOnlyPlaceholders,
   placeholder,
 } from './placeholders';
-export { QUALIFIED_IDENTIFIER, type RemittanceKey, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
+export { CLAIM_FILING_INDICATOR_TEXT, type PlanNaming, QUALIFIED_IDENTIFIER, type RemittanceKey, payerAndPlanText, payerText, planName, planText, remittanceKey } from './payer';
 export { type ReadableText, type TextSpan, readableText } from './readable';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
 export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
