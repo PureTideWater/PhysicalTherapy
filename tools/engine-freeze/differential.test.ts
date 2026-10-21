@@ -313,7 +313,7 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     expect(base.price).not.toBe(price);
   });
 
-  it(`prices every golden claim the base holds as the base engine does (at least ${String(GOLDEN_FLOOR.claims)} claims and ${String(GOLDEN_FLOOR.lines)} lines)`, () => {
+  it(`prices every golden claim the base holds as the base engine does (at least ${String(GOLDEN_FLOOR.claims)} claims and ${String(GOLDEN_FLOOR.lines)} lines)`, async ({ annotate }) => {
     ready();
     const names = git(['ls-tree', '--name-only', BASE, '--', `${GOLDEN_CLAIMS_DIR}/`])
       .split('\n')
@@ -330,9 +330,11 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     }
     expect(names.length).toBeGreaterThanOrEqual(GOLDEN_FLOOR.claims);
     expect(lines).toBeGreaterThanOrEqual(GOLDEN_FLOOR.lines);
+    // The counts compared, in the reporter's output and CI's log.
+    await annotate(`base equals head on ${String(names.length)} golden claims and ${String(lines)} lines`);
   });
 
-  it(`prices ${String(GENERATED_CLAIMS)} generated claims with five-digit ZIPs as the base engine does`, () => {
+  it(`prices ${String(GENERATED_CLAIMS)} generated claims with five-digit ZIPs as the base engine does`, async ({ annotate }) => {
     ready();
     for (const number of RELEASES) baseRelease(RELEASE_DIRS[number]);
     let stopped = 0;
@@ -355,5 +357,6 @@ describe.skipIf(SKIPPED)('the base engine and this one price alike everywhere bu
     // covers prices as well as stops.
     expect(priced, `${String(priced)} priced and ${String(stopped)} stopped lines`).toBeGreaterThan(GENERATED_CLAIMS / 2);
     expect(stopped, `${String(priced)} priced and ${String(stopped)} stopped lines`).toBeGreaterThan(GENERATED_CLAIMS / 2);
+    await annotate(`base equals head on ${String(GENERATED_CLAIMS)} generated claims: ${String(priced)} priced and ${String(stopped)} stopped lines`);
   }, 900_000);
 });
