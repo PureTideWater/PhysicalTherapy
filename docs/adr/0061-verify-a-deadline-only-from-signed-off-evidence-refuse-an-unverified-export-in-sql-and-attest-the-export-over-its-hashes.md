@@ -688,12 +688,19 @@ copy only, and the internal record stays where it lives and is shown on the revi
   review page renders all of it (the Internal record card).
 - **D2. What the payer's copy prints** (`apps/worker/src/packets/html.ts`): the title and running header as before, the
   practice's name leading (ADR 0056); the cover's and identification's reference (`Reference <REF>`); [1] the contract's
-  title, version, effective dates and page with the quoted clause (no document ID or SHA-256), or the regulation; [2]
+  title, version, effective dates and page with the quoted clause (no document ID or SHA-256) under "Contract citation",
+  or the regulation under "Regulation cited"; [2]
   what the payment rules in effect supplied, by release (D14); the narrative alone in its block; the line schedule
   without the patient control number or trace reference, `Total` in its first cell; the dispute window's dates only
   (D2, Q3), with the contract's clause or the release's record; each line's window and how its expected amount is
   computed (above the first level the level's own window alone: no first-level clause, record or line window, in the
-  PDF or the CSV); an unrounded amount in the rounded one's form, grouped and signed, its fraction of a cent kept; interest (D9); the evidence by its labels; the requested action; and "Approved for submission by
+  PDF or the CSV; the version's content holds no clause for a later level's own window yet, since contract disputes stop
+  at the first level until PR 8 carries each appeal level's page, quote and hash, and a Medicare Advantage
+  reconsideration window waits for Q34; once one lands its clause is a source of that level and the copy prints it);
+  every code of a closed list (a method, step, rounding rule or program) in words (`words.ts`), one without words
+  refusing the copy as a print failure rather than printing it; an unrounded amount in the rounded one's form, grouped
+  and signed, its fraction of a cent kept; interest (D9); the evidence by its labels; the requested action; and
+  "Approved for submission by
   <practice> on <date>, reference <REF>." with "Correspondence about this dispute: <contact>." (D4 to D6). No login,
   approval time, specialist line, audit flag, evidence gap, status, verification, version number, trace reference or
   footer; a version without a stated last day is refused with a TypeError rather than printed.
@@ -732,7 +739,10 @@ copy only, and the internal record stays where it lives and is shown on the revi
   Correspondence; the web's request and `requestPacketExport()` refuse before anything is queued; the job records
   `packet_export_refused` with purpose `contact_missing`, logs `PACKET_CORRESPONDENCE_CONTACT_MISSING`, returns
   rather than throws (never retried), and reads the contact again before any narrative is decrypted, refusing alike
-  if a concurrent change unset it.
+  if a concurrent change unset it. The export guard holds it in SQL too (review of 2026-10-21): it refuses an export
+  whose practice holds no contact object with a non-blank name and a 10-digit North American phone, the two fields
+  Q1 (a) requires, so no code on the worker's login exports a copy without one; the job's `correspondenceContactOf()`
+  reads the whole contact.
 - **D8. File names carry the reference**: `payment-dispute-<REF>.pdf` and `payment-dispute-<REF>-schedule.csv` on the
   four download routes, where they were `packet-<versionId>.pdf` and `packet-schedule-<versionId>.csv`.
 - **D9. Interest states only what code computed (Q4 (a)).** The rule sentence ("State <ST>[, <statute>]: payment due <N>
@@ -740,18 +750,29 @@ copy only, and the internal record stays where it lives and is shown on the revi
   `Interest by line` table lists only the lines whose interest was computed, totalled as "Interest stated in this
   request: $X"; with none computed the rule prints alone, and with no rule on file the section reads "Prompt-pay
   interest is not stated in this request." "cannot be computed", "can be computed" and "in all" are never printed.
+  $0.00 is not stated either (`lineInterestStated()`, `interestStated()`; review of 2026-10-21): a line paid on time,
+  with the version dated before its due date, computes $0.00 while interest on its unpaid shortfall keeps accruing after
+  the due date, so it is neither listed nor totalled, and the requested action, the draft and the CSV say nothing of it;
+  printed and demanded, $0.00 would read as the practice stating no interest. Counsel's review of Q4 covers this case.
   `draftNarrative()` writes no interest sentence when no line computed it, and [4] stays printed whenever the version
   states interest, so a narrative citing it names a printed section.
 - **D10. The reviewer's checklist is the founder's seven items (Q5 (a))**: `figures` (now covering the practice's
   correspondence contact, printed as set), `deadline` (shown on the review page; the payer's files state the window's
-  end and its clause, not its verification), `calculation` (each trace's SHA-256 on the review page), `identifiers`,
-  `payer_copy` (new: the files are fit to send to the payer, with the approval line, the reference and the contact, and
-  no login, record ID, SHA-256 or internal note), `files` and `independent`. The attest action's Zod schema builds its
+  end and, at the first level, the clause or record behind it, not its verification), `calculation` (each trace's SHA-256 on the review page), `identifiers`,
+  `payer_copy` (new: the files are fit to send to the payer; the PDF closes with the approval line, the reference and
+  the contact, the CSV is its line schedule, its file named by the reference, and neither carries a login, record ID,
+  SHA-256 or internal note), `files` and `independent`. Review of 2026-10-21 found the design's wording of `payer_copy`
+  (the CSV naming the practice, the approval line, the reference and the contact, which it does not) and of `deadline`
+  (the files stating the window's clause, which they do not above the first level) untrue, so both say what each file
+  carries; the founder confirms the wording. The review page shows an attestation's items by the codes it records, in
+  the checklist's wording today, and says so. The attest action's Zod schema builds its
   `confirm_<id>` fields from the checklist, so a form missing any box is refused before the service runs and the list
   and the schema cannot drift. The attestation CHECK accepts any code, so no schema change.
 - **D11 to D13.** The verifier's inputs do not change (the same narrative, content and identifiers), so its report
   and the export guard hold; the payer's copy prints exactly the narrative the export's verifier passed, and nothing
-  else in its block (tested over the HTML and over the printed PDF's text). The job hashes the exact bytes it prints
+  else in its block (tested over the HTML and over the printed PDF's text). A narrative states only what the copy prints
+  beside it: above the first level the lines' first-level windows and the clause behind them are no figure of it, and
+  interest is one only where stated (above $0.00). The job hashes the exact bytes it prints
   and the attestation binds them, so it binds the files the payer receives. The renderer gets no login and no hash
   (`PayerCopy`: the approval's date, the reference, the contact); the job no longer reads `packet_version_people()`.
 - **D14. Record numbers stay printed.** `release <n>` and `contract version <n>` are PaidWhole's own record numbers, and
@@ -847,6 +868,34 @@ submissions sent without sign-off). Tests: the isolation refusal, the CTE that f
 the worker's login, a re-price and a withdrawal held open together while such a submission is logged, the
 confirmation read against the INSERT, and the steps followed in their stated order through the routes and the browser.
 
+## Review fixes (2026-10-21, second round)
+
+The second review of 2026-10-21 (three reviewers, at `73b7f2d` and the four local commits after it) found, and this
+pull request fixes: a narrative at a later level could still state the lines' first-level windows and their clause,
+which the copy no longer prints (the verifier's facts now leave them out there); a code of a closed list without its
+words printed lower-cased, which no scan could tell from prose (now refused, and `words.test.ts` holds every method,
+rounding rule, engine step and program to its words); $0.00 interest stated, totalled and demanded; a regulation cited
+under "Contract citation"; the leak scan's routes (the methods of T9 with every step, a release record of no program, a
+window of no stated days, a contract's end date and a plan's name, and DB1 over an export that computes interest); the
+export guard's missing contact check (D7); the checklist's and the screens' claim that the CSV carries the approval
+line, the reference and the contact (D10); the confirmation box's claim that the export went after its pricing went
+stale (it went without sign-off, whenever it went); the review page asking for both downloads and promising an
+attestation of an export it says is never attested (now "Not attested", no download asked for, and the Approved alone
+alert promising nothing); the line trace's `remittance_date` without the founder's reading (now glossed as the payment
+date); the case timeline showing a submission sent without sign-off like an attested one; the submission log's bare
+"Reference" beside the packet's reference; an attested review showing today's checklist as if attested (now the
+attestation's own codes, today's words, said so); the ZIP field's digits-only keypad (ZIP+4 as nine digits is stored
+hyphenated); and the settings and by-reference pages on no layout check. Tests: the facts at a later level and of
+$0.00 interest, the words lists, the guard's contact check in SQL, the report's count gathered from the database on the
+case it belongs to, and the new pages at 1280 and 390 px.
+
+Named, not changed: **an export the previous image made before the export guard, whose pricing went stale since, can be
+neither attested nor logged.** `packet_version_unattested_reason()` needs the guard's `export_verifier_report` to know
+the pricing was current at the export, and the attestation refuses stale pricing, so such an export's submission is
+never logged and reconciliation cannot track the payer's answer to it. The submissions page says so and to tell
+support. No production export exists (PR 5 is unmerged); whether a staging environment holds such an export that was
+sent, and the remedy if one does, are open for the founder.
+
 ## Owner rulings (2026-10-20)
 
 The founder, Tyler Williams, ruled on this pull request on 2026-10-20:
@@ -878,7 +927,9 @@ The founder, Tyler Williams, ruled on this pull request on 2026-10-20:
   definitions of each start and its "not verified" line, and the e2e contracts journey, which cites "within 120 days
   of the remittance date" from the remittance date and finds it unverified. The engine's trace still labels BPR16
   `remittance_date` (`packages/pricing`, frozen until PR 6c); the line page and the journeys' setup now call that
-  date the payment date. This answers the second question the review fixes left open; the lists keep both dates.
+  date the payment date, and the line page's trace says beside the claim facts and the dispute window step that the
+  engine's `remittance_date` is the payment date, not the remittance advice's own date. This answers the second
+  question the review fixes left open; the lists keep both dates.
 
 ## Owner rulings (2026-10-18)
 
